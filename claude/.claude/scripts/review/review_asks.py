@@ -9,10 +9,9 @@ from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
+from ask_outcome_words import ACCEPTED, REJECTED
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
-ACCEPTED = "accepted"
-REJECTED = "rejected"
 MODIFIED = "modified"
 ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED)
 ACCEPT_MEANS = "make this change"
@@ -33,6 +32,39 @@ CONDITIONAL_CHANGE = re.compile(
     re.IGNORECASE)
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
+
+
+WRONG_COUNT = "wrong-count"
+UNKNOWN_OUTCOME = "unknown-outcome"
+MISSING_NOTE = "missing-note"
+
+
+class OutcomeError(Exception):
+    """An outcome word the grammar refuses. `problem` is WRONG_COUNT, UNKNOWN_OUTCOME or MISSING_NOTE; `number` is the
+    1-based word that broke it (0 for a wrong count); `word` is that word (every word given, for a wrong count)."""
+
+    def __init__(self, problem, number, word):
+        super().__init__(f"{problem}: outcome {number} {word!r}")
+        self.problem = problem
+        self.number = number
+        self.word = word
+
+
+def parse_outcome_words(words, count, allowed, note_required):
+    """(the outcome of each word, the note after `:` of each, "" when none). Raises OutcomeError for a wrong number of
+    words, an outcome not in `allowed`, or an outcome in `note_required` with a blank note."""
+    if len(words) != count:
+        raise OutcomeError(WRONG_COUNT, 0, words)
+    outcomes, notes = [], []
+    for number, word in enumerate(words, 1):
+        outcome, _separator, note = word.partition(":")
+        if outcome not in allowed:
+            raise OutcomeError(UNKNOWN_OUTCOME, number, word)
+        if outcome in note_required and not note.strip():
+            raise OutcomeError(MISSING_NOTE, number, word)
+        outcomes.append(outcome)
+        notes.append(one_line(note, None))
+    return outcomes, notes
 
 
 def jump_anchor_args(asks):
@@ -95,28 +127,30 @@ def numbered_ask_lines(asks, detail=False):
 
 
 class OutcomeRow(NamedTuple):
-    """One ask's outcome row: the finding_id it was logged under, the log helper's exit code and output, and the
-    stderr note for an ask logged under a new id (None otherwise)."""
+    """One ask's outcome row: the finding_id it was logged under, the log helper's exit code and output, the stderr
+    note for an ask logged under a new id (None otherwise), and the command that logs the row."""
     finding_id: str
     code: int
     output: str
     new_finding_id_note: str | None
+    command: list
 
 
-def supply_finding_ask_ids(asks, session_id, logger, context, cwd=None):
+def supply_finding_ask_ids(asks, session_id, logger, context, cwd=None, stall=None):
     """Give each ask that is a finding the id of its ask row, as handback.supply_ask_finding_ids does."""
     finding_asks = [item for item in asks if not handback.is_plan_impact_ask(item)]
-    handback.supply_ask_finding_ids(finding_asks, session_id, logger, context, cwd)
+    handback.supply_ask_finding_ids(finding_asks, session_id, logger, context, cwd, stall)
 
 
-def log_ask_outcome(logger, context, item, outcome, decided_by, cwd=None):
+def log_ask_outcome(logger, context, item, outcome, decided_by, cwd=None, stall=None):
     """The OutcomeRow of one ask's outcome, logged with the log helper at `logger`, or None for a plan-impact ask.
-    context holds the run fields the ask row and its outcome row share."""
+    context holds the run fields the ask row and its outcome row share. A `stall` that an earlier call set skips the
+    call: the row comes back not logged, with its command."""
     if handback.is_plan_impact_ask(item):
         return None
 
     finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
-    code, output = run_command(["bash", str(logger), "kind=finding", f"finding_id={finding_id}",
-                                *handback.ask_row_fields(context, item), f"ask_outcome={outcome}",
-                                f"ask_decided_by={decided_by}"], cwd)
-    return OutcomeRow(finding_id, code, output, new_finding_id_note)
+    command = ["bash", str(logger), "kind=finding", f"finding_id={finding_id}",
+               *handback.ask_row_fields(context, item), f"ask_outcome={outcome}", f"ask_decided_by={decided_by}"]
+    result = handback.run_logger(command, cwd, stall)
+    return OutcomeRow(finding_id, result.code, result.output, new_finding_id_note, command)

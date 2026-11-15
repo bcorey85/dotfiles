@@ -37,6 +37,28 @@ class WithoutPathsTest(unittest.TestCase):
         self.assertEqual(["a"], script_utils.without_paths(["a"], []))
 
 
+class CanAppendTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.folder = pathlib.Path(temp.name)
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes to a read-only file")
+    def test_a_file_needs_to_be_writable_and_a_missing_one_needs_a_writable_folder(self):
+        writable = self.folder / "w.jsonl"
+        writable.write_text("")
+        read_only = self.folder / "r.jsonl"
+        read_only.write_text("")
+        os.chmod(read_only, 0o444)
+
+        self.assertTrue(script_utils.can_append(writable))
+        self.assertFalse(script_utils.can_append(read_only))
+        self.assertTrue(script_utils.can_append(self.folder / "new.jsonl"))
+        os.chmod(self.folder, 0o555)
+        self.addCleanup(os.chmod, self.folder, 0o755)
+        self.assertFalse(script_utils.can_append(self.folder / "new.jsonl"))
+
+
 class StateFilePathTest(unittest.TestCase):
     def test_every_character_outside_the_safe_set_becomes_an_underscore_and_the_suffix_is_added(self):
         cases = [

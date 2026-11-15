@@ -25,7 +25,10 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"),
-                ("lib", "source_text.py"), ("lib", "notes_paths.py"), ("lib", "local_check.py"))
+                ("lib", "source_text.py"), ("lib", "notes_paths.py"), ("lib", "local_check.py"),
+                ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
+                ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
+                ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -929,6 +932,297 @@ class ReviewedWorkCommitTest(GateCase):
         with open(str(self.store_dir / "s1.jsonl"), "a") as handle:
             handle.write(json.dumps({"kind": "plan-ruling", "session_id": "s1", "ts": 2, "decision": "defer"}) + "\n")
         self.record_reviewed_tree()
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def append_store_rows(self, *rows):
+        self.store_dir.mkdir(parents=True, exist_ok=True)
+        with open(str(self.store_dir / "s1.jsonl"), "a") as handle:
+            handle.write("".join(json.dumps(row) + "\n" for row in rows))
+
+    def phase_asks_open_row(self):
+        ask = {"question": "`a.py:3` [correctness] — Should an empty list count as none?", "file_line": "a.py:3",
+               "change": "return [] for empty", "gate": "code-reviewer", "class": "correctness"}
+        return {"kind": "phase-asks-open", "session_id": "s1", "ts": 2, "repo": str(self.repo.resolve()),
+                "asks": [ask], "contexts": [{}], "packet_keys": ["loop-a:2"]}
+
+    def converged_with_open_phase_asks(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        self.append_store_rows(self.phase_asks_open_row())
+
+    def test_a_converged_review_with_phase_asks_not_ruled_on_denies_the_commit_and_names_the_rule_command(self):
+        self.converged_with_open_phase_asks()
+
+        finished = self.commit("git commit -a -m x")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("Should an empty list count as none?", reason)
+        self.assertIn("phase_asks.py rule 'accepted|rejected:<one-line reason>'", reason)
+        self.assertIn("Do not run /review again", reason)
+        self.assertIn(f"cd {self.repo.resolve()} && python3", reason)
+
+    def test_a_notes_only_commit_passes_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "x.md").write_text("notes\n")
+        self.git(self.repo, "add", "docs/x.md")
+
+        self.assert_silent(self.commit('git commit -q -m "notes"'))
+
+    def test_a_no_review_order_passes_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        transcript = self.write_transcript(self.user_prompt("[no-review] commit this"))
+
+        self.assert_silent(self.commit("git commit -a -m x", transcript_path=transcript))
+
+    def test_the_commit_passes_once_the_phase_asks_are_ruled_on(self):
+        self.converged_with_open_phase_asks()
+        self.append_store_rows({"kind": "phase-asks-ruled", "session_id": "s1", "ts": 3, "open_ts": 2,
+                                "repo": str(self.repo.resolve()),
+                                "rulings": [{"outcome": "accepted", "reason": "fixes a defect in scope",
+                                             "finding_id": "0ff295856f1a9ccc"}]})
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_converged_review_with_no_open_phase_asks_row_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_newer_hand_back_of_the_repo_leaves_the_open_phase_asks_blocking_the_commit(self):
+        self.converged_with_open_phase_asks()
+        self.append_store_rows({"kind": "handback", "session_id": "s1", "ts": 9, "status": "converged",
+                                "message": ""})
+        self.record_reviewed_tree()
+
+        self.assert_denies(self.commit("git commit -a -m x"), "1 ask(s) that you have not ruled on")
+
+    def test_phase_asks_an_earlier_session_opened_block_a_session_that_has_no_review_events(self):
+        self.converged_with_open_phase_asks()
+
+        finished = self.commit("git commit -a -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_commit_after_a_cd_meets_the_phase_asks_in_a_session_with_no_review_events(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f"cd {self.repo.resolve()} && git commit -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_commit_over_two_lines_meets_the_phase_asks_in_a_session_with_no_review_events(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit("git add -A\ngit commit -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_commit_after_a_cd_in_a_session_with_events_gets_the_asks_deny_not_the_review_deny(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f"cd {self.repo.resolve()} && git commit -m x")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def open_row_in(self, repo):
+        return {**self.phase_asks_open_row(), "repo": str(repo.resolve())}
+
+    def test_a_commit_the_gate_cannot_place_in_any_repo_passes_the_asks_check_while_another_repo_has_open_asks(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f"cd {self.tmp} && git commit -m x", cwd=self.tmp, session="s2")
+
+        self.assert_silent(finished)
+
+    def test_a_cd_into_another_repo_with_open_asks_is_denied_naming_that_repos_rule_line(self):
+        other = self.make_repo("other")
+        self.append_store_rows(self.open_row_in(other))
+
+        finished = self.commit(f"cd {other.resolve()} && git commit -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn(f"cd {other.resolve()} && ", reason)
+
+    def test_a_subshell_cd_into_another_repo_with_open_asks_is_denied(self):
+        other = self.make_repo("other")
+        self.append_store_rows(self.open_row_in(other))
+
+        finished = self.commit(f"( cd {other.resolve()} && git commit -m x )", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_cd_from_outside_a_work_tree_into_a_repo_with_open_asks_is_denied_for_that_repo(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f"cd {self.repo.resolve()} && git commit -m x", cwd=self.tmp, session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_git_c_commit_with_a_substitution_in_the_message_is_denied_for_the_named_repo(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f'git -C {self.repo.resolve()} commit -m "$(echo hi)"', cwd=self.tmp, session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_named_repo_with_no_open_asks_passes_while_another_repo_has_open_asks(self):
+        other = self.make_repo("other")
+        self.append_store_rows(self.open_row_in(other))
+
+        for command in (f"cd {self.repo.resolve()} && git commit -m x",
+                        f'git -C {self.repo.resolve()} commit -m "$(echo hi)"'):
+            with self.subTest(command):
+                self.assert_silent(self.commit(command, cwd=self.tmp, session="s2"))
+
+    def test_a_relative_cd_is_read_from_the_hook_cwd(self):
+        other = self.make_repo("other")
+        self.append_store_rows(self.open_row_in(other))
+
+        finished = self.commit("cd other && git commit -m x", cwd=self.tmp, session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_commit_with_a_hook_event_that_has_no_cwd_does_not_crash_and_passes(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s2",
+                   "tool_input": {"command": "cd /nowhere && git commit -m x"}}
+
+        finished = self.fire_raw(json.dumps(payload))
+
+        self.assert_silent(finished)
+
+    def test_an_unreadable_store_entry_is_skipped_and_the_other_files_asks_still_deny(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        (self.store_dir / "zz.jsonl").mkdir()
+
+        finished = self.commit("git commit -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        self.assertIn("zz.jsonl", finished.stderr)
+        self.assertIn("handback_store: skipped unreadable hand-back store entry", finished.stderr)
+
+    def test_a_subshell_cd_that_has_closed_leaves_the_commit_in_the_start_repo(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        other = self.make_repo("other")
+
+        finished = self.commit(f"(cd {other.resolve()} && true) && git commit -m x", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_commit_in_a_dir_the_gate_cannot_place_is_not_denied_for_the_start_repos_asks(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        self.make_repo("other")
+        commands = ('cd "$WT" && git commit -m x', "pushd /nowhere-a && cd - && cd - && git commit -m x",
+                    "env -C /nowhere-b git commit -m x", "git --git-dir=/nowhere-c/.git commit -m x")
+
+        for command in commands:
+            with self.subTest(command):
+                self.assert_silent(self.commit(command, session="s2"))
+
+    def test_a_command_the_gate_cannot_read_is_checked_in_the_start_repo(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit("git commit -m 'unclosed", session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_git_c_dir_with_a_tilde_is_placed_in_the_same_repo_for_credit_and_for_the_asks_check(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        command = "git -C ~/../repo commit -a -m x"
+
+        self.assert_silent(self.commit(command, cwd="/"))
+
+        self.append_store_rows(self.phase_asks_open_row())
+        self.assert_denies(self.commit(command, cwd="/"), "1 ask(s) that you have not ruled on")
+
+    def test_a_torn_row_of_a_repo_whose_name_starts_with_this_repos_name_does_not_deny_this_repo(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        store_file = self.store_dir / "s1.jsonl"
+        sibling = str(self.repo.resolve()) + "-other"
+        torn_row = '{"kind": "phase-asks-open", "session_id": "s9", "repo": "' + sibling + '", "asks": [{"que'
+        store_file.write_text(store_file.read_text() + torn_row + "\n")
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_torn_row_cut_inside_the_repo_value_is_skipped_with_a_stderr_line(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        store_file = self.store_dir / "s1.jsonl"
+        repo = str(self.repo.resolve())
+        store_file.write_text(store_file.read_text() + '{"kind": "phase-asks-open", "repo": "' + repo[:-2] + "\n")
+        line_number = len(store_file.read_text().splitlines())
+
+        finished = self.commit("git commit -m x")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        self.assertNotIn("Cannot read the phase review asks", finished.stdout)
+        self.assertIn("handback_store: skipped damaged", finished.stderr)
+        self.assertIn(f"s1.jsonl:{line_number}", finished.stderr)
+
+    def test_a_row_cut_right_after_the_repo_key_is_skipped_and_the_commit_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        store_file = self.store_dir / "s1.jsonl"
+        store_file.write_text(store_file.read_text() + '{"kind": "phase-asks-open", "repo": "\n')
+        line_number = len(store_file.read_text().splitlines())
+
+        finished = self.commit("git commit -a -m x")
+
+        self.assertEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("handback_store: skipped damaged", finished.stderr)
+        self.assertIn(f"s1.jsonl:{line_number}", finished.stderr)
+
+    def test_a_notes_only_commit_passes_in_a_new_session_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "x.md").write_text("notes\n")
+        self.git(self.repo, "add", "docs/x.md")
+
+        self.assert_silent(self.commit('git commit -q -m "notes"', session="s2"))
+
+    def test_a_damaged_phase_asks_row_denies_the_commit_naming_the_file_and_line(self):
+        self.converged_with_open_phase_asks()
+        store_file = self.store_dir / "s1.jsonl"
+        repo = str(self.repo.resolve())
+        damaged = {
+            "asks is not a list": json.dumps({**self.phase_asks_open_row(), "asks": "oops"}),
+            "ruled row has no rulings": json.dumps({"kind": "phase-asks-ruled", "repo": repo, "ts": 3}),
+            "row cut off after the repo": '{"kind": "phase-asks-open", "repo": "' + repo + '", "asks": [{"que',
+        }
+        for case, line in damaged.items():
+            with self.subTest(case):
+                good_rows = store_file.read_text()
+                store_file.write_text(good_rows + line + "\n")
+                line_number = len(store_file.read_text().splitlines())
+
+                finished = self.commit("git commit -a -m x")
+
+                self.assert_denies(finished, f"[review-commit-gate] Cannot read the phase review asks: {store_file}:"
+                                   f"{line_number}")
+                self.assertEqual(finished.stderr, "")
+                store_file.write_text(good_rows)
+
+    def test_a_torn_row_of_another_kind_that_mentions_phase_asks_does_not_deny_the_commit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        store_file = self.store_dir / "s1.jsonl"
+        torn_dispatch = '{"kind": "dispatch", "session_id": "s9", "prompt": "merge fix/phase-asks-need-a-ruling'
+        store_file.write_text(store_file.read_text() + torn_dispatch + "\n")
+
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_open_phase_asks_of_another_repo_do_not_block_this_one(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.review_converged()
+        other = self.make_repo("other")
+        self.append_store_rows({**self.phase_asks_open_row(), "repo": str(other.resolve())})
 
         self.assert_silent(self.commit("git commit -a -m x"))
 

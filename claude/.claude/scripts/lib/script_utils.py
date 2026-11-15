@@ -368,20 +368,31 @@ def details_with_outcome(outcomes, outcome):
     return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}
 
 
-def run_command(command, cwd=None, stdin=None, timeout=None):
-    """Run a command as run_process does and return (exit code, stdout and stderr joined and stripped). A program that
-    is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note
-    after what it printed."""
+CommandResult = namedtuple("CommandResult", "code output timed_out")
+
+
+def run_command_result(command, cwd=None, stdin=None, timeout=None):
+    """Run a command as run_process does and return a CommandResult: the exit code, stdout and stderr joined and
+    stripped, and whether the run passed `timeout`. A program that is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a
+    run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note after what it printed. timed_out is True only for
+    that run, never for a program that exits with the same code itself."""
     try:
         code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout)
     except FileNotFoundError:
         program = command if isinstance(command, str) else command[0]
-        return COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found"
+        return CommandResult(COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found", False)
 
     output = (stdout + stderr).strip()
     if code is None:
-        return TIMEOUT_EXIT_CODE, (output + f"\ntimed out after {timeout} seconds").strip()
-    return code, output
+        timed_out_output = (output + f"\ntimed out after {timeout} seconds").strip()
+        return CommandResult(TIMEOUT_EXIT_CODE, timed_out_output, True)
+    return CommandResult(code, output, False)
+
+
+def run_command(command, cwd=None, stdin=None, timeout=None):
+    """Run a command as run_command_result does and return (exit code, output)."""
+    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout)
+    return result.code, result.output
 
 
 def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
@@ -1095,6 +1106,14 @@ def append_jsonl(path, row):
         os.write(descriptor, line)
     finally:
         os.close(descriptor)
+
+
+def can_append(path):
+    """True when a row can be appended to the file `path` (a file not made yet needs a writable folder)."""
+    path = pathlib.Path(path)
+    if path.exists():
+        return os.access(path, os.W_OK)
+    return os.access(path.parent, os.W_OK)
 
 
 def state_file_path(state_dir, name, suffix):

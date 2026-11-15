@@ -34,9 +34,9 @@ class GuidanceRulesTest(unittest.TestCase):
     def test_code_stops_end_as_statements_asks_are_decided_and_main_relays_with_no_tool_call(self):
         text = guidance_text("skills/code/SKILL.md")
         self.assertIn("A stop states what stopped and what the user does next; it never ends on a question.", text)
-        self.assertIn("Decide each `ask[]` entry yourself; never stop on one.", text)
-        self.assertIn("ask_decided_by=session", text)
-        self.assertIn("finding_id=<entry finding_id>", text)
+        self.assertIn("Decide each listed ask yourself; never stop on one.", text)
+        self.assertIn("phase_asks.py rule", text)
+        self.assertNotIn("log-review-finding kind=finding", text)
         self.assertIn("When two paths are both defensible, take the one closer to the plan and name it in the report.",
                       text)
         self.assertNotIn("or when two paths are both defensible", text)

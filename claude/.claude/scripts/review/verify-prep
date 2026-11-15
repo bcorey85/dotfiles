@@ -404,6 +404,7 @@ def main(argv):
                "fullCheck": vc.full_check_state(top),
                "verifierOutputDir": str(fresh_verifier_output_dir(top)),
                "reviewLoggedTree": review_logged_tree, "reviewAsks": earlier_context.get("reviewAsks"),
+               vc.REVIEW_ASKS_RULED_TREE: earlier_context.get(vc.REVIEW_ASKS_RULED_TREE),
                "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)
     print(print_plan(context))

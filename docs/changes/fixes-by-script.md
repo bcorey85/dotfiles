@@ -29,9 +29,9 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | skill/review | 17 | 11 |
 | script/shell-write-gate | 14 | 0 |
 | script/review-loop | 13 | 6 |
+| script/verify-prep | 13 | 3 |
 | script/staged-claim-gate | 12 | 1 |
 | script/verify-log | 12 | 5 |
-| script/verify-prep | 12 | 2 |
 | script/log-review-finding | 11 | 0 |
 | script/pull-keep-index | 11 | 8 |
 | script/git-discipline-gate | 9 | 1 |

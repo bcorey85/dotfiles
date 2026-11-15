@@ -40,6 +40,39 @@ class PassedTestCountTest(unittest.TestCase):
                 self.assertEqual(0, test_run_output.passed_test_count(output))
 
 
+UNITTEST_OK = "..\n" + "-" * 70 + "\nRan 7 tests in 0.105s\n\nOK\n"
+
+
+class UnittestCountTest(unittest.TestCase):
+    def test_a_passing_unittest_run_counts_the_tests_it_ran(self):
+        self.assertEqual(7, test_run_output.passed_test_count(UNITTEST_OK))
+
+    def test_a_single_test_run_counts_one(self):
+        self.assertEqual(1, test_run_output.passed_test_count("Ran 1 test in 0.001s\n\nOK\n"))
+
+    def test_a_skipped_test_still_counts_as_ran(self):
+        output = "Ran 7 tests in 0.105s\n\nOK (skipped=2)\n"
+
+        self.assertEqual(7, test_run_output.passed_test_count(output))
+
+    def test_a_run_of_zero_tests_counts_none(self):
+        for tail in ("OK", "NO TESTS RAN", "NO TESTS RAN (skipped=1)"):
+            with self.subTest(tail=tail):
+                output = f"Ran 0 tests in 0.000s\n\n{tail}\n"
+                self.assertEqual(0, test_run_output.passed_test_count(output))
+
+    def test_a_failed_unittest_run_counts_none(self):
+        output = "Ran 7 tests in 0.105s\n\nFAILED (failures=1)\n"
+
+        self.assertEqual(0, test_run_output.passed_test_count(output))
+
+    def test_a_colour_escape_around_a_count_does_not_hide_it(self):
+        vitest = "\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m2 passed\x1b[39m\x1b[22m\x1b[90m (2)\x1b[39m"
+
+        self.assertEqual(2, test_run_output.passed_test_count(vitest))
+        self.assertEqual(1, len(test_run_output.runner_summaries(vitest)))
+
+
 class CommandSummariesTextTest(unittest.TestCase):
     def test_no_summaries_read_as_an_empty_string(self):
         self.assertEqual("", test_run_output.command_summaries_text([]))
@@ -87,6 +120,17 @@ class MatchesNoTestTest(unittest.TestCase):
         for command, runner in runs:
             with self.subTest(runner=runner):
                 self.assertFalse(test_run_output.matches_no_test(command, 0, PASSING_SUMMARIES[runner]))
+
+    def test_a_filtered_unittest_run_that_passed_is_not_a_no_match(self):
+        command = "python3 -m unittest discover -s tests/scripts -k alpha -k beta"
+
+        self.assertFalse(test_run_output.matches_no_test(command, 0, UNITTEST_OK))
+
+    def test_a_filtered_unittest_run_of_zero_tests_is_a_no_match(self):
+        command = "python3 -m unittest discover -s tests/scripts -k alpha"
+        output = "Ran 0 tests in 0.000s\n\nNO TESTS RAN\n"
+
+        self.assertTrue(test_run_output.matches_no_test(command, 0, output))
 
     def test_a_filtered_run_that_ran_no_test_is_a_no_match(self):
         self.assertTrue(test_run_output.matches_no_test("npx vitest run -t totals", 0, NO_TEST_OUTPUTS["vitest"]))

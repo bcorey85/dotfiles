@@ -73,6 +73,7 @@ import full_check_receipt
 import local_check
 import reviewed_tree
 import script_utils
+from ansi_text import strip_ansi
 from check_output import (
     FAILING_TEST_LINE,
     failing_block_details,
@@ -327,12 +328,13 @@ def environment_gap(repo, log_text):
 def failing_step_lines(log_lines):
     """The lint errors with their file:line, the FAIL and ERROR lines (vitest's leading-space FAIL and \xd7 lines too)
     and the `FAILED: <steps>` step-summary lines of a failed check's log, in log order."""
+    plain_lines = [strip_ansi(line) for line in log_lines]
     picked = []
-    for index, line in enumerate(log_lines):
-        is_lint_error = (LINT_RULE_LINE.match(line) and index + 1 < len(log_lines)
-                         and LINT_LOCATION_LINE.match(log_lines[index + 1]))
+    for index, line in enumerate(plain_lines):
+        is_lint_error = (LINT_RULE_LINE.match(line) and index + 1 < len(plain_lines)
+                         and LINT_LOCATION_LINE.match(plain_lines[index + 1]))
         if is_lint_error:
-            picked += [line, log_lines[index + 1]]
+            picked += [line, plain_lines[index + 1]]
         elif FAILING_TEST_LINE.match(line) or FAILED_STEPS_LINE.match(line):
             picked.append(line)
     return picked

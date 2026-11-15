@@ -7,20 +7,20 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-585 fix notes
+588 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 57 | 9 |
+| script/review-fix | 59 | 11 |
 | script/review-loop-script | 57 | 7 |
 | script/handback | 54 | 4 |
 | script/review-commit-gate | 37 | 3 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 23 | 2 |
-| script/coder-gate | 21 | 1 |
+| script/full-check | 24 | 3 |
+| script/coder-gate | 22 | 2 |
 | agent/review-loop | 20 | 0 |
 | script/script-utils | 20 | 5 |
 | script/plan-format | 19 | 2 |
@@ -37,25 +37,26 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/git-discipline-gate | 9 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 0 |
+| script/refactor-flow | 8 | 3 |
 | script/verify-common | 8 | 3 |
 | script/code-review-start | 7 | 3 |
 | script/code-wait | 7 | 2 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
-| script/refactor-flow | 7 | 2 |
 | script/shell-command | 7 | 3 |
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
+| script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/review-launch | 5 | 5 |
 | script/reviewer-dispatch | 5 | 0 |
+| script/test-run-output | 5 | 1 |
 | skill/refactor | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
-| script/check-output | 4 | 0 |
 | script/format-changed | 4 | 1 |
 | script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
@@ -63,7 +64,6 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/parallel-tests | 4 | 0 |
 | script/run-sh | 4 | 1 |
 | script/source-paths | 4 | 2 |
-| script/test-run-output | 4 | 0 |
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
@@ -110,6 +110,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | rule/frontend-style | 1 | 0 |
 | rule/toolkit-script-rules | 1 | 0 |
 | script/agent-foreground | 1 | 0 |
+| script/ansi-text | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
 | script/code-step-gates | 1 | 0 |
@@ -151,6 +152,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |
+| script/tests | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/waiting-review-launch | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |

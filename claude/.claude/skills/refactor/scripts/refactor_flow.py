@@ -54,6 +54,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ansi_text
 import handoff_files
 import numstat
 import plan_format
@@ -489,7 +490,7 @@ def run_jscpd(target, timeout):
     prefix = target if Path(target).is_dir() else ""
     pairs = []
     in_clone = False
-    plain = re.sub(r"\x1b\[[0-9;]*m", "", done.stdout)
+    plain = ansi_text.strip_ansi(done.stdout)
     for line in plain.splitlines():
         if line.startswith("Clone found"):
             in_clone = True

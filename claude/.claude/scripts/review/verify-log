@@ -20,6 +20,9 @@ Empty rows are an error unless --result NA, which logs a run row with no result 
 --escapes-only logs the escape rows of a run that was already logged in full; an escape logged once is not logged again.
 A run with no gaps prints ASKS OPEN in place of CLEAN while the branch review of this tree logged an `ask` finding;
 --asks-ruled prints the user's ruling on those asks and lets the run print CLEAN.
+--asks-ruled, on a run that prints CLEAN, also saves the tree it ruled on as reviewAsksRuledTree (the commit gate reads
+it only as "the asks are ruled"; credit still needs the logged tree to equal the current tree);
+a new `review` log clears it.
 
 review: logs the branch-wide code-reviewer run row (stamped with a fingerprint of the tree as it stands, so prep can
 tell a later change) and one finding row per reviewer finding. --rows is a JSON list of
@@ -218,10 +221,10 @@ def require_current_review(context, top):
     or an earlier-tree row a converged /review carries forward)."""
     if "fingerprint" not in context:
         raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.context_fingerprint(context, top)
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get(vc.REVIEW_LOGGED_TREE), top)
     if not review["ran"]:
         raise vc.VerifyError(f"no branch-wide code review covers this tree ({review['reason']}): rerun verify-prep "
                              "and do its review step first")
@@ -244,8 +247,8 @@ def log_review(args, context, top):
     if declared is None and "--rows" not in options:
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
+    fingerprint = vc.context_fingerprint(context, top)
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get(vc.REVIEW_LOGGED_TREE), top)
     logged_on_this_tree = review["ran"] and not review.get("coveredByCommitReview")
     if logged_on_this_tree:
         raise vc.VerifyError(f"a branch review already counts for this tree ({review['reason']}): nothing to "
@@ -265,9 +268,10 @@ def log_review(args, context, top):
     check_all(writes, top)
     write_all(writes, top)
 
-    context["reviewLoggedTree"] = fingerprint
+    context[vc.REVIEW_LOGGED_TREE] = fingerprint
     open_asks = [log_text(finding["desc"], None) for finding in findings if finding["actioned"] == ASK]
-    context["reviewAsks"] = open_asks
+    context[vc.REVIEW_ASKS] = open_asks
+    context.pop(vc.REVIEW_ASKS_RULED_TREE, None)
     vc.save_context(vc.context_path(context["repo"], context["branch"]), context)
     print(f"logged code-reviewer branch-exit run row and {len(findings)} finding row(s)")
     return 0
@@ -379,9 +383,9 @@ def open_review_asks(context):
     """The asks the branch review left open on the tree verify-prep measured; a review of an older tree has none,
     unless a converged /review covers this tree and carries that review forward."""
     covered = context["review"].get("coveredByCommitReview")
-    if not covered and context.get("reviewLoggedTree") != context["fingerprint"]:
+    if not covered and context.get(vc.REVIEW_LOGGED_TREE) != context["fingerprint"]:
         return []
-    return context.get("reviewAsks") or []
+    return context.get(vc.REVIEW_ASKS) or []
 
 
 def log_rows(args, context, top):
@@ -441,6 +445,9 @@ def log_rows(args, context, top):
             context["escapes"].append(write["escapeKey"])
         vc.save_context(state_path, context)
 
+    if asks_ruled is not None and open_asks:
+        # Set before write_all so the marksLogged save carries it: this run reaches CLEAN.
+        context[vc.REVIEW_ASKS_RULED_TREE] = context["fingerprint"]
     write_all(writes, top, record)
 
     if escapes_only:

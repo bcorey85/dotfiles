@@ -840,18 +840,37 @@ def agent_transcript_path(hook):
     return subagent_transcript_path(hook["transcript_path"], hook["agent_id"])
 
 
-def frontmatter_value(text, key):
-    """The text after `key:` on the first such line of the file's frontmatter; None when there is no frontmatter or no
-    such key."""
-    frontmatter = FRONTMATTER.match(text)
+def _frontmatter_key_line(text, key):
+    """(1-based file line, text after `key:`) of the first `key:` line in the file's frontmatter; None when there is
+    no frontmatter or no such key. CRLF line ends read as LF: FRONTMATTER matches `\n` only."""
+    unix_text = text.replace("\r\n", "\n")
+    frontmatter = FRONTMATTER.match(unix_text)
     if frontmatter is None:
         return None
     key_line = re.compile(rf"^{re.escape(key)}:\s*(.*)$")
-    for line in frontmatter.group(1).splitlines():
+    for index, line in enumerate(frontmatter.group(1).splitlines()):
         match = key_line.match(line)
         if match:
-            return match.group(1)
+            return index + 2, match.group(1)
     return None
+
+
+def frontmatter_value(text, key):
+    """The text after `key:` on the first such line of the file's frontmatter; None when there is no frontmatter or no
+    such key."""
+    found = _frontmatter_key_line(text, key)
+    if found is None:
+        return None
+    return found[1]
+
+
+def frontmatter_line_number(text, key):
+    """1-based file line of the first `key:` line in the file's frontmatter; 1 when there is no frontmatter or no such
+    key."""
+    found = _frontmatter_key_line(text, key)
+    if found is None:
+        return 1
+    return found[0]
 
 
 def frontmatter_skills(agent_text):

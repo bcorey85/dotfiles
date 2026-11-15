@@ -37,6 +37,15 @@ Reading, 2026-10-28 intake: NO CHANGE (0.35 per run against a 0.38 median), stil
 
 Reading, 2026-10-29 intake: NO CHANGE (0.38 → 0.28 per run), still held. The after window still holds rows from the scripted loop's logger before its fix.
 
+### Ruling 2026-11-15
+
+Kept; the cost guards are closed (ruled by agent-evals-5e). Every guard fell instead of rising: coder Sonnet cache read
+per dispatch 4,707,383 → 1,660,862, coder responses 58.07 → 24.70, coder wall-clock 954.87 → 335.41 s, test-reviewer
+cache read 1,186,012 → 273,030, test-reviewer wall-clock 280.74 → 86.47 s. The quality reading still open is review
+escapes per code-reviewer run (0.13 → 0.24, NO CHANGE), read by the work intake's edit-watch step. Closed watches:
+`test-sibling-whole-suite-coder-cache-read`, `-coder-responses`, `-coder-wall-clock`, `-test-reviewer-cache-read`,
+`-test-reviewers-wall-clock`.
+
 ## Back-out
 
 Restore the four files from git.

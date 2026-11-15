@@ -30,6 +30,13 @@ Pending. Predicted: the reviewer catches about half of the class, so review esca
 
 None. See `unmeasured`. The escape skills' `docs` class is its own change file of the same date; it makes the share readable.
 
+### Ruling 2026-11-15
+
+Kept; `prose-claims-docs-findings` closed as unreadable (ruled by agent-evals-5e). Docs findings per review run read
+1.89 → 1.93, but the after window spans the 2026-10-27 change that made the scripted review loop write one row per
+finding, and no restart gives a clean before window. Docs findings by stale or new label from 2026-11-15 on are read
+by the intake's `docs-kind.txt`.
+
 ## Back-out
 
 Remove the Step 2 paragraph and the `prose claims (Step 2)` words from the opening line of `agents/code-reviewer.md`.

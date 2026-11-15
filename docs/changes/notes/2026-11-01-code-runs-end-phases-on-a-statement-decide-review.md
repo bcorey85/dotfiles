@@ -36,6 +36,13 @@ Tests: `tests/scripts/test_code_relay.py` (relay word for word, a second relay r
 
 `code-no-asks-main-cache-read`: main-session Opus cache read per /code turn, expected down.
 
+### Ruling 2026-11-15
+
+Kept; `code-no-asks-main-cache-read` closed at NO CHANGE (ruled by agent-evals-5e). Opus main-session cache read per
+/code turn did not fall (650,760 → 760,027 over 531 turns, before range 452,323–770,345), but the edit cuts turns, not
+tokens per turn: /code turns per merged branch fell 29.9 → 19.1, and total Opus main-session cache read per merged
+branch fell 86.9M → 54.9M (ISO weeks 39–42 against 43–46, 34 → 51 merged branches).
+
 ## Back-out
 
 Revert the commit.

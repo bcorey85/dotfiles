@@ -647,8 +647,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(packet["ask"], [])
 
     def test_a_code_edit_against_a_no_code_ruling_reaches_the_packet_and_the_next_reviewer_prompt(self):
-        ruled = ("app.py:2 [bug] Proposed change: deny the limit" + ruled_change_text.CHANGED_MARKER
-                 + "Make no code change.")
+        ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
+                                               "Make no code change.", ruled_change_text.USER_CLAUSE)
         completed = self.run_script({
             "coder": [{"result": "Reworded the message.", "edits": {"app.py": APP_FIXED}}],
             "code-reviewer": [{"result": CLEAN_REVIEW}],
@@ -664,8 +664,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("Make no code change.", reviewer_prompt)
 
     def test_a_coder_that_dies_after_editing_against_a_no_code_ruling_still_reaches_the_packet(self):
-        ruled = ("app.py:2 [bug] Proposed change: deny the limit" + ruled_change_text.CHANGED_MARKER
-                 + "Make no code change.")
+        ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
+                                               "Make no code change.", ruled_change_text.USER_CLAUSE)
         completed = self.run_script({
             "coder": [{"result": "Prompt is too long", "edits": {"app.py": APP_FIXED}, "exit": 1}],
         }, header_extra=self.findings_header(ruled))

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-593 fix notes
+594 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -133,6 +133,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/log-agent-usage | 1 | 0 |
 | script/log-escape-check | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
+| script/mcp-ledger | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/permission-question | 1 | 0 |
 | script/phase-start | 1 | 1 |

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-973 changes
+974 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -38,6 +38,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Register the ledger MCP server under the name sessions call](notes/2026-11-15-register-the-ledger-mcp-server-under-the-name.md) [script/mcp-ledger] scripts/mcp_ledger registers ledger mcp as the user-scope server ledger (the name behind mcp__ledger__*), counts a bare or full-path command as registered, and removes an old agent-memory entry for the same command.
 * [a review-loop coder edit to a CLAUDE.md file becomes an ask for the user](notes/2026-11-15-a-review-loop-coder-edit-to-a-claude-md-file.md) [script/review-loop] A fix coder that changes a file named CLAUDE.md, CLAUDE.local.md or AGENTS.md, unless a finding the user ruled on names it, or a session ruled on the approval ask itself, leaves an open ask in the packet, so the edit never rides out as a silent fix.
 * [The review loop test file runs as four processes, each under the per-process limit](notes/2026-11-15-the-review-loop-test-file-runs-as-four-processes.md) [script/parallel-tests] tests/parallel_tests.py runs test_review_loop_script.py as four processes that each take every fourth test, so a busy machine no longer kills the file at the 1,200 s limit and reports a passing branch as failed.
 * [refactor sweep matches marker words only, not identifiers that hold them](notes/2026-11-15-refactor-sweep-matches-marker-words-only-not.md) [skill/refactor] The /refactor branch-prep sweep no longer lists identifiers such as tree_fingerprint( as debug prints, or TODOS_DIR as a TODO.

@@ -30,11 +30,21 @@ def folded_entries(paths, depth, never_fold=()):
     return entries
 
 
+def protected_first(entries, depth, never_fold):
+    """`entries` with those in a directory of `never_fold` (at `depth`) ahead of the others, each group in its
+    own order. A folded entry names a directory that is not protected, so it stays behind."""
+    protected = {directory_key(path, depth) for path in never_fold}
+    ahead = [entry for entry in entries if directory_key(entry, depth) in protected]
+    behind = [entry for entry in entries if directory_key(entry, depth) not in protected]
+    return [*ahead, *behind]
+
+
 def collapse_paths(paths, max_entries, never_fold=()):
     """The paths as they are when there are at most `max_entries`. Otherwise one entry per directory, taken at the
     deepest directory depth that gives at most `max_entries` entries; a directory that holds a path of
     `never_fold` keeps its files listed one by one. When no depth gives at most `max_entries`, the first
-    `max_entries` entries of the depth with the fewest entries and an `and N more` entry."""
+    `max_entries` entries of the depth with the fewest entries, those of `never_fold` directories ahead of the
+    others, and an `and N more` entry."""
     paths = list(paths)
     if len(paths) <= max_entries:
         return paths
@@ -45,7 +55,9 @@ def collapse_paths(paths, max_entries, never_fold=()):
         entries = folded_entries(paths, depth, never_fold)
         if len(entries) <= max_entries:
             return entries
-        if fewest is None or len(entries) < len(fewest):
-            fewest = entries
-    hidden = len(fewest) - max_entries
-    return [*fewest[:max_entries], f"and {hidden} more"]
+        if fewest is None or len(entries) < len(fewest[0]):
+            fewest = (entries, depth)
+    fewest_entries, fewest_depth = fewest
+    ordered = protected_first(fewest_entries, fewest_depth, never_fold)
+    hidden = len(ordered) - max_entries
+    return [*ordered[:max_entries], f"and {hidden} more"]

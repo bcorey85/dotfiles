@@ -2107,6 +2107,28 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((briefs / "issues.txt").read_text(), f"1. {issue}\n")
         self.assertIn(f"Full text of every issue, in the same numbers: {briefs / 'issues.txt'}", prompt)
 
+    def test_a_short_multi_line_issue_adds_no_file_and_no_full_text_line(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` first line\n  second line"], [],
+                                          ["app.py"], briefs)
+
+        self.assertIn("1. `app.py:2` first line second line", prompt)
+        self.assertNotIn("Full text of every", prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+
+    def test_an_issue_over_the_limit_raw_that_fits_once_its_whitespace_collapses_adds_no_file(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        issue = "`app.py:2` first" + " " * 300 + "second"
+
+        prompt = loop_script.coder_prompt(str(self.repo), [issue], [], ["app.py"], briefs)
+
+        self.assertIn("1. `app.py:2` first second", prompt)
+        self.assertNotIn("Full text of every", prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+
     def test_a_short_issue_and_small_item_list_adds_no_file_and_no_full_text_line(self):
         loop_script = self.load_script_module()
         briefs = self.scratch / "briefs"

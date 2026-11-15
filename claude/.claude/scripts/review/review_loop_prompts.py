@@ -101,16 +101,17 @@ def listed_texts(texts, full_file, noun):
     ISSUE_CHARS on one line. When anything was cut, the numbered full texts go to `full_file`, and the lines name
     it."""
     listed = texts[:MAX_LISTED_ISSUES]
-    shown = [script_utils.one_line(text, ISSUE_CHARS) for text in listed]
+    collapsed = [script_utils.one_line(text, None) for text in listed]
+    shown = [text[:ISSUE_CHARS] for text in collapsed]
     lines = [f"{index}. {text}" for index, text in enumerate(shown, 1)]
     overflow = len(texts) > MAX_LISTED_ISSUES
-    was_cut = overflow or shown != listed
-    if not was_cut:
+    too_long = any(len(text) > ISSUE_CHARS for text in collapsed)
+    if not (overflow or too_long):
         return lines
 
     full_file.parent.mkdir(parents=True, exist_ok=True)
     full_texts = [f"{index}. {text}" for index, text in enumerate(texts, 1)]
-    full_file.write_text("\n\n".join(full_texts) + "\n")
+    script_utils.write_text_atomically(full_file, "\n\n".join(full_texts) + "\n")
     if overflow:
         lines.append(f"{noun.capitalize()}s {MAX_LISTED_ISSUES + 1} to {len(texts)} are only in {full_file}.")
     lines.append(f"Full text of every {noun}, in the same numbers: {full_file}. Read it before you fix.")
@@ -118,16 +119,16 @@ def listed_texts(texts, full_file, noun):
 
 
 def path_list(paths, list_file, in_scope=()):
-    """The paths as one comma-separated line. A list over MAX_LISTED_PATHS is folded by directory, except in a
-    directory that holds a path of `in_scope`, and the line names `list_file`, which holds the full list. A list of
-    at most MAX_LISTED_PATHS is listed whole; a longer one that cannot fold is cut to its first MAX_LISTED_PATHS
-    entries and `and N more`, with the full list in `list_file`."""
+    """The paths as one comma-separated line. A list over MAX_LISTED_PATHS is folded by directory, and the line
+    names `list_file`, which holds the full list. Paths that share a directory with a path of `in_scope` are never
+    folded. When nothing fits even then, the line is cut to its first MAX_LISTED_PATHS entries and `and N more`,
+    and those paths come first. A list of at most MAX_LISTED_PATHS is listed whole."""
     paths = list(paths)
     entries = path_summary.collapse_paths(paths, MAX_LISTED_PATHS, in_scope)
     if entries == paths:
         return ", ".join(paths)
     list_file.parent.mkdir(parents=True, exist_ok=True)
-    list_file.write_text("\n".join(paths) + "\n")
+    script_utils.write_text_atomically(list_file, "\n".join(paths) + "\n")
     return f"{', '.join(entries)} (every path is listed in {list_file})"
 
 

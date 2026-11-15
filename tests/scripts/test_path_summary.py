@@ -63,6 +63,30 @@ class CollapsePathsTest(unittest.TestCase):
 
         self.assertEqual(entries, [*paths[:10], "and 50 more"])
 
+    def test_when_nothing_fits_the_never_fold_neighbours_are_listed_before_any_other_entry_is_cut(self):
+        distant = [f"evalset{index}/case.json" for index in range(7000)]
+        neighbours = [f"src/held{index}.py" for index in range(44)]
+
+        entries = path_summary.collapse_paths([*distant, *neighbours], 40, never_fold=["src/app.py"])
+
+        self.assertEqual(entries, [*neighbours[:40], "and 7004 more"])
+
+    def test_when_nothing_fits_the_slots_left_after_the_never_fold_neighbours_go_to_the_other_entries(self):
+        distant = [f"evalset{index}/case.json" for index in range(7000)]
+        neighbours = [f"src/held{index}.py" for index in range(30)]
+
+        entries = path_summary.collapse_paths([*distant, *neighbours], 40, never_fold=["src/app.py"])
+
+        self.assertEqual(entries, [*neighbours, *distant[:10], "and 6990 more"])
+
+    def test_when_nothing_fits_the_neighbours_are_ordered_at_the_depth_with_the_fewest_entries(self):
+        distant = [f"e{index}/g{number}/case.json" for index in range(50) for number in range(2)]
+        neighbours = [f"src/c{index}/x.py" for index in range(10)]
+
+        entries = path_summary.collapse_paths([*distant, *neighbours], 5, never_fold=["src/app.py"])
+
+        self.assertEqual(entries, [*neighbours[:5], "and 55 more"])
+
     def test_a_directory_with_a_never_fold_path_lists_its_files_one_by_one(self):
         shared = [f"shared/held{index}.py" for index in range(6)]
         other = [f"other/held{index}.py" for index in range(6)]

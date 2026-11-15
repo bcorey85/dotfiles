@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
-asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo) and the reads of
-it that decide whether a hand-back is current. Callers import these names from handback_store directly; handback.py
-imports only the ones it uses itself. The store is one append-only JSON-lines file per session under
+asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo,
+phase-asks-open, phase-asks-ruled) and the reads of it that decide whether a hand-back is current and the
+open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
+these names from handback_store directly; handback.py imports only the ones it uses itself.
+The store is one append-only JSON-lines file per session under
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
+import hashlib
+import json
 import os
 import pathlib
 import sys
@@ -11,10 +15,20 @@ import time
 from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import file_lock
 import reviewed_tree
 import script_utils
 
 STALE_STORE_SECONDS = 7 * 86400
+# Each repo has one lock file for its phase-asks read-then-write steps, so a slow step in one repo never holds up
+# another. Its name does not end in .jsonl: the store globs *.jsonl.
+PHASE_ASKS_LOCK_PREFIX = "phase-asks-"
+PHASE_ASKS_LOCK_SUFFIX = ".lock"
+PHASE_ASKS_LOCK_TIMEOUT_SECONDS = 30
+# Names a shorter wait; a test sets it.
+PHASE_ASKS_LOCK_TIMEOUT_ENV = "HANDBACK_LOCK_TIMEOUT_SECONDS"
+# The field of a phase-asks-ruled row that names the session that ruled; the row's session_id names the opener.
+RULED_BY_KEY = "ruled_by"
 DISPATCH_RAN = "dispatch-ran"
 PLAN_RULING = "plan-ruling"
 # The text of one plan impact a ruling settled. It never clears the gate: only PLAN_RULING does that.
@@ -181,7 +195,8 @@ def prune_stale(keep):
 
 
 def record(session_id, kind, **fields):
-    """Append one row to the session's own file. Other sessions' files are never touched."""
+    """Append one row to `session_id`'s file. A caller may name another session's file: phase_asks.py writes a ruled
+    row to the file of the session that opened the asks."""
     row = {"kind": kind, "ts": time.time(), "session_id": session_id, **fields}
     own_file = session_file(session_id)
     prune_stale(keep=own_file)
@@ -361,3 +376,203 @@ def repo_that_logged_the_asks(session_id, packet_id):
     logged_rows = session_rows(session_id, ASKS_LOGGED_ROW)
     packet_rows = [row for row in logged_rows if row.get("packet_id") == packet_id]
     return packet_rows[-1]["repo"] if packet_rows else None
+
+
+# A /code phase review handed the session a packet with finding asks (the open row, which names its packets in
+# `packet_keys`); the ruled row settles them. The ruled row is written to the file of the session that wrote the open
+# row, so the file that holds the open row also holds its ruling, whichever session ruled.
+PHASE_ASKS_OPEN = "phase-asks-open"
+PHASE_ASKS_RULED = "phase-asks-ruled"
+# The field of a ruled row that holds the `ts` of the open row it answered.
+RULED_OPEN_TS_KEY = "open_ts"
+# Both kinds start with this, so a line without it as a kind value is no phase-asks row.
+PHASE_ASKS_KIND_PREFIX = "phase-asks-"
+
+
+class PhaseAskRowError(Exception):
+    """A phase-asks row of the store is damaged: where it is and the form it should have."""
+
+    def __init__(self, store_file, line_number, expected):
+        super().__init__(f"{store_file}:{line_number}: expected {expected}")
+
+
+class PhaseAsks(NamedTuple):
+    """The phase-ask state of one repo: its latest open row, and the ruled row that answered that very row (None
+    while unruled). Only a newer open row of the repo replaces an open row; a newer hand-back does not."""
+    open_row: dict
+    ruled_row: dict | None
+
+
+class PhaseAskRows(NamedTuple):
+    """Every phase-asks row of one repo from every session's file, each list ordered by `ts`."""
+    open_rows: list
+    ruled_rows: list
+
+
+def phase_ask_row_form_problem(row):
+    """What the phase-asks `row` lacks, as the form it should have, or None when it is well formed."""
+    if not isinstance(row.get("ts"), (int, float)) or isinstance(row.get("ts"), bool):
+        return '"ts" a number'
+    if row["kind"] == PHASE_ASKS_RULED:
+        rulings_list = row.get("rulings")
+        if not isinstance(rulings_list, list) or not all(isinstance(item, dict) for item in rulings_list):
+            return f'a {PHASE_ASKS_RULED} row with "rulings" a list of objects'
+        return None
+    asks = row.get("asks")
+    if not isinstance(asks, list) or not all(isinstance(item, dict) for item in asks):
+        return f'a {PHASE_ASKS_OPEN} row with "asks" a list of objects'
+    contexts = row.get("contexts")
+    if not isinstance(contexts, list) or len(contexts) != len(asks):
+        return f'a {PHASE_ASKS_OPEN} row with "contexts" a list, one object per ask'
+    if not isinstance(row.get("packet_keys"), list):
+        return f'a {PHASE_ASKS_OPEN} row with "packet_keys" a list'
+    return None
+
+
+def torn_line_repo(line):
+    """The repo a line that is not JSON names in full (`"repo": "<path>"` with its closing quote), or None when the
+    line holds no complete repo value."""
+    key = '"repo": '
+    key_at = line.find(key)
+    if key_at == -1:
+        return None
+    try:
+        value, _ = json.JSONDecoder().raw_decode(line[key_at + len(key):])
+    except ValueError:
+        return None
+    return value if isinstance(value, str) else None
+
+
+def phase_ask_rows_of_file(store_file, repo):
+    """The open and ruled phase-asks rows of `repo` in one session file, in append order. Raises PhaseAskRowError
+    for a line that names a phase-asks row of `repo` but is not JSON, or a row of `repo` that is not well formed."""
+    open_rows, ruled_rows = [], []
+    text = store_file.read_text(encoding="utf-8", errors="replace")
+    # The serialized form json.dumps writes, so prompt text that merely names a phase-asks branch is no row.
+    kind_mark = f'"kind": "{PHASE_ASKS_KIND_PREFIX}'
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if kind_mark not in line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            torn_repo = torn_line_repo(line)
+            if torn_repo == repo:
+                raise PhaseAskRowError(store_file, line_number, "one JSON object per line") from error
+            if torn_repo is None:
+                sys.stderr.write(f"handback_store: skipped damaged phase-asks line {store_file}:{line_number}: "
+                                 "it names no complete repo\n")
+            # A line that names another repo in full is skipped silently, as script_utils.read_jsonl skips it.
+            continue
+        if not isinstance(row, dict) or row.get("kind") not in (PHASE_ASKS_OPEN, PHASE_ASKS_RULED):
+            continue
+        if row.get("repo") != repo:
+            continue
+        problem = phase_ask_row_form_problem(row)
+        if problem:
+            raise PhaseAskRowError(store_file, line_number, problem)
+        (open_rows if row["kind"] == PHASE_ASKS_OPEN else ruled_rows).append(row)
+    return open_rows, ruled_rows
+
+
+def read_phase_ask_rows(repo):
+    """The PhaseAskRows of `repo` across every session's file: a /clear, a compaction or a resume starts a session
+    with a new id, and the asks stay open. A store entry that cannot be read is skipped and named on stderr; the
+    rest is read. Raises PhaseAskRowError."""
+    open_rows, ruled_rows = [], []
+    for store_file in sorted(store_dir().glob("*.jsonl")):
+        try:
+            file_open, file_ruled = phase_ask_rows_of_file(store_file, repo)
+        except OSError as error:
+            sys.stderr.write(f"handback_store: skipped unreadable hand-back store entry {store_file}: {error}\n")
+            continue
+        open_rows += file_open
+        ruled_rows += file_ruled
+    return PhaseAskRows(sorted(open_rows, key=lambda row: row["ts"]), sorted(ruled_rows, key=lambda row: row["ts"]))
+
+
+def ruled_row_of(open_row, ruled_rows):
+    """The ruled row that answered `open_row`, or None. A ruled row names its open row by `ts`."""
+    for ruled_row in ruled_rows:
+        if ruled_row.get(RULED_OPEN_TS_KEY) == open_row["ts"]:
+            return ruled_row
+    return None
+
+
+def ruled_packet_keys(rows):
+    """The packet keys of every open row of `rows` that a ruling answered, so a packet that was ruled is not opened
+    again, whichever open row came after it."""
+    keys = []
+    for open_row in rows.open_rows:
+        if ruled_row_of(open_row, rows.ruled_rows) is not None:
+            keys += open_row["packet_keys"]
+    return keys
+
+
+def phase_asks_lock_path(repo):
+    """The lock file of `repo`'s phase-asks steps, named by a digest of the repo path."""
+    digest = hashlib.sha1(repo.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+    return store_dir() / f"{PHASE_ASKS_LOCK_PREFIX}{digest}{PHASE_ASKS_LOCK_SUFFIX}"
+
+
+def phase_asks_lock(repo):
+    """Holds the phase-asks lock of `repo` for a `with` block, so a read of the repo's open and ruled rows and the
+    write that follows it are one step across processes. Fails closed: raises file_lock.LockTimeoutError (an OSError
+    naming the lock file) when the lock stays held for the timeout, and nothing in the block runs."""
+    timeout_seconds = float(os.environ.get(PHASE_ASKS_LOCK_TIMEOUT_ENV) or PHASE_ASKS_LOCK_TIMEOUT_SECONDS)
+    lock_path = phase_asks_lock_path(repo)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    return file_lock.hold_exclusive(lock_path, timeout_seconds)
+
+
+def record_phase_asks_open(session_id, repo, asks, context, packet_key):
+    """Records that the packet named by `packet_key` (its loop folder and iteration) holds these finding asks for the
+    session to rule on, once per packet of `repo`. A newer hand-back of the repo from another review does not make
+    the same packet new. `context` is the ask rows' run fields.
+    While the latest open row is unruled, the new row carries its asks first, each with its own context, so one
+    ruling settles them all; after a ruling the new row holds only the new asks. A packet that any earlier ruling
+    answered adds no row. The read and the append run under phase_asks_lock. Raises what read_phase_ask_rows and
+    phase_asks_lock raise."""
+    with phase_asks_lock(repo):
+        rows = read_phase_ask_rows(repo)
+        state = phase_asks_state_of(rows)
+        carried_asks, carried_contexts, packet_keys = [], [], []
+        if state is not None and state.ruled_row is None:
+            if packet_key in state.open_row["packet_keys"]:
+                return
+            carried_asks = state.open_row["asks"]
+            carried_contexts = state.open_row["contexts"]
+            packet_keys = state.open_row["packet_keys"]
+        elif packet_key in ruled_packet_keys(rows):
+            return
+        record(session_id, PHASE_ASKS_OPEN, repo=repo, asks=carried_asks + asks,
+               contexts=carried_contexts + [context] * len(asks), packet_keys=[*packet_keys, packet_key])
+
+
+def phase_asks_state_of(rows):
+    """The PhaseAsks of `rows`, or None when they hold no open row."""
+    if not rows.open_rows:
+        return None
+    open_row = rows.open_rows[-1]
+    return PhaseAsks(open_row, ruled_row_of(open_row, rows.ruled_rows))
+
+
+def phase_asks_state(repo):
+    """The PhaseAsks of `repo` across every session's file, or None when no open row names it (a store from before
+    these rows, and a repo of None included). Raises what read_phase_ask_rows raises."""
+    return phase_asks_state_of(read_phase_ask_rows(repo))
+
+
+def unruled_open_rows(repo):
+    """Every open row of `repo` that no ruled row answers, oldest first: the latest one and the older ones its asks
+    were carried from. Raises what read_phase_ask_rows raises."""
+    rows = read_phase_ask_rows(repo)
+    return [open_row for open_row in rows.open_rows if ruled_row_of(open_row, rows.ruled_rows) is None]
+
+
+def unruled_phase_asks(repo):
+    """The open row of `repo` whose asks nobody has ruled on, else None. Raises what read_phase_ask_rows raises."""
+    state = phase_asks_state(repo)
+    if state is None or state.ruled_row is not None:
+        return None
+    return state.open_row

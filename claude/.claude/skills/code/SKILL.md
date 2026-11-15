@@ -90,17 +90,8 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
    - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done.
-   - `deferred` → render as `converged`, plus `findings_remaining` under `### Deferred to branch exit`; proceed.
-   - `converged` → put any plan impacts the packet lists on the phase-end list. Leave an impact with `settled: true` off the list and write no Plan Deviations line for it. When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the commit gate clears. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Decide each `ask[]` entry yourself; never stop on one. Accept it when its change fixes a defect inside the phase's scope and changes no acceptance criterion. An ask whose change alters a criterion goes on the phase-end list, routed by the owner rule above. Reject the rest. Dispatch one `coder` for the accepted asks and wait for it, then log one row per ask:
-
-     ```bash
-     ~/.claude/skills/review/log-review-finding kind=finding \
-       lane=<lane> scope=phase phase=<N> iter=<returned iter> \
-       gate=<entry gate> finding_id=<entry finding_id> disposition=ask class=<entry class> 'file=<path>' line=<n> \
-       actioned=ask ask_outcome=<accepted|rejected> ask_decided_by=session desc=- <<'DESC'
-     ask resolved: <one line>
-     DESC
-     ```
+   - `deferred` → handle as `converged` (plan impacts, render, asks and the `phase_asks.py rule` line), plus `findings_remaining` under `### Deferred to branch exit`; proceed.
+   - `converged` → put any plan impacts the packet lists on the phase-end list. Leave an impact with `settled: true` off the list and write no Plan Deviations line for it. When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the commit gate clears. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Run `python3 ~/.claude/scripts/review/phase_asks.py list` from the repo root: it prints every ask to rule on (the packet's `ask[]` entries without the plan-impact ones, after any ask of an earlier packet with no ruling) and the `phase_asks.py rule` line. Decide each listed ask yourself; never stop on one. Accept it when its change fixes a defect inside the phase's scope and changes no acceptance criterion. An ask whose change alters a criterion goes on the phase-end list, routed by the owner rule above. Reject the rest. Dispatch one `coder` for the accepted asks and wait for it, then run that rule line from the repo root, with one `'accepted:<one-line reason>'` or `'rejected:<one-line reason>'` word per listed ask in list order.
 
      List each ruling (the question, accepted or rejected, one-line reason) under `Asks decided` in the phase-complete block. Then proceed to the phase gates.
 

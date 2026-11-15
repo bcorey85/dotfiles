@@ -26,8 +26,7 @@ texts go to `<out>/coder-briefs/<call>/`, and so does any path list over 40 path
 `LoopRun.repair` turns a failed coder call into
 `CoderFailedError`, keeps the findings in `open_fixes` and the changed files in `files_touched`, and `run_loop` stops
 as `critical-blocker` with a blocker that says the findings were not all applied,
-must not be applied outside the review loop, and that the review reruns once the cause is fixed. The `/code` skill's `critical-blocker` route adds: never
-dispatch a coder on the packet's findings yourself.
+must not be applied outside the review loop, and that the review reruns once the cause is fixed.
 
 ## Evidence
 

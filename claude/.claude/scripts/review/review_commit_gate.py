@@ -3,7 +3,8 @@
 
   PostToolUse(Agent): a coder dispatch is recorded with the id of the agent it ran.
   PreToolUse(Bash):   `git commit` in a dirty session is denied, with the reason telling the session to run /review
-                      and commit after it converges. A review's hand-back (handback.py) is what earns the credit.
+                      and commit after it converges. A review's hand-back (handback.py) or a logged /verify-branch
+                      review (verify_common.py) earns the credit.
 
 A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools: no repo
 when no edited file lies in a work tree (a scratch file, a git dir, a deleted worktree), and every repo when its
@@ -57,7 +58,7 @@ a PR body that names `git merge` is no commit. A commit through
 a `!` shell alias earns no credit (it may land in any repo) and is read in the cwd repo for asks; where the repo it
 runs in is placed by git_commit_calls.git_commit_dirs, through commit_placement.py.
 
-A dirty session still commits in four more cases, each checked against something a subagent cannot write:
+A dirty session still commits in five more cases, each checked against something a subagent cannot write:
   - the user's latest prompt in the main transcript starts with `[no-review]` or `[no review]` (the user ordered this
     turn's commits without review; a task notification, a peer session's message, a compaction summary, a `!` shell
     echo and a tool result are not the user's prompt and are skipped)
@@ -70,7 +71,10 @@ A dirty session still commits in four more cases, each checked against something
     dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
     that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt names,
     else the session cwd; a ROOT= or `repo:` line in no work tree names no repo.
-The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
+  - a /verify-branch review is logged for the tree as it stands: the saved context under
+    `~/.claude/state/verify-branch/` for this checkout and branch has `top` equal to this checkout, `reviewLoggedTree`
+    equal to the tree's fingerprint now, and an empty `reviewAsks`
+The last four credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved; a `.` counts after `if`, `then`, `elif`, `else`,
 `while`, `until` and `do` too) or holds a `$` or backtick outside a single-quoted string, a comment or a double-quoted
@@ -117,6 +121,7 @@ import reviewed_tree
 import script_utils
 import shell_statements
 import user_prompts
+import verify_common
 from git_commit_calls import COMMITTING_CALL, NO_COMMIT_FLAGS, runs_commit_call
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
@@ -793,12 +798,15 @@ def review_handed_back_since(session, dirty_at, repo_top):
 
 
 def earns_credit(repo_dir, repo_top, dirty_at, session):
-    """True when a commit in repo_dir concludes a merge, commits the tree a converged review covered, or follows a
-    converged hand-back of that repo stored after dirty_at. repo_top is repo_dir's top level as a string, or None.
-    A repo_dir of None, or one outside a work tree, earns none."""
+    """True when a commit in repo_dir concludes a merge, commits the tree a converged review covered, commits the
+    tree a logged /verify-branch review covered with no ask open, or follows a converged hand-back of that repo
+    stored after dirty_at. repo_top is repo_dir's top level as a string, or None. A repo_dir of None, or one outside
+    a work tree, earns none."""
     if repo_dir is None:
         return False
     if concludes_merge(repo_dir) or reviewed_tree.is_reviewed(session, repo_dir):
+        return True
+    if verify_common.branch_review_covers(repo_dir, timeout=GIT_TIMEOUT_SECONDS):
         return True
 
     return review_handed_back_since(session, dirty_at, repo_top)

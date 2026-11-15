@@ -1,4 +1,5 @@
 """Checks for review_commit_gate.py: a coder dispatch obligates /review before a commit."""
+import io
 import json
 import os
 import pathlib
@@ -8,11 +9,15 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import plan_format
+import script_utils
+import verify_common
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
@@ -29,7 +34,7 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
                 ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
-                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"))
+                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"), ("review", "verify_common.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -95,7 +100,8 @@ class GateCase(unittest.TestCase):
         self.assertEqual(decision["permissionDecisionReason"].count("\n"), 0)
 
     def fire_raw(self, stdin, env_extra=None, cwd=None):
-        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp),
+               "VERIFY_STATE_DIR": str(self.tmp / "verify-state")}
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(self.script)], input=stdin, capture_output=True, text=True, env=env,
                               cwd=str(cwd or self.tmp))
@@ -1434,6 +1440,114 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         (self.repo / "new.py").write_text("new\n")
         self.assert_commit_denied(self.commit("git add new.py && git commit -m x"))
+
+    def log_branch_review(self, top=None, asks=None, branch="main", **overrides):
+        """Save the context verify-log review leaves for self.repo: the tree as it stands, as reviewLoggedTree."""
+        merge_base = self.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        repo_top = self.repo.resolve()
+        context = {"top": str(top or repo_top), "mergeBase": merge_base, "excludeRel": None,
+                   "reviewLoggedTree": verify_common.tree_fingerprint(repo_top, merge_base, None),
+                   "reviewAsks": asks or []}
+        context.update(overrides)
+        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
+            name = script_utils.repo_name(repo_top)
+            verify_common.save_context(verify_common.context_path(name, branch), context)
+
+    def branch_review_covers_with_stderr(self):
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}), \
+                mock.patch.object(sys, "stderr", stderr):
+            covered = verify_common.branch_review_covers(self.repo)
+        return covered, stderr.getvalue()
+
+    def test_branch_review_covers_is_quiet_when_no_context_was_saved(self):
+        covered, stderr = self.branch_review_covers_with_stderr()
+        self.assertFalse(covered)
+        self.assertEqual("", stderr)
+
+    def test_branch_review_covers_reports_a_context_it_cannot_read(self):
+        self.log_branch_review(mergeBase=7)
+        covered, stderr = self.branch_review_covers_with_stderr()
+        self.assertFalse(covered)
+        self.assertIn("review-commit-gate: verify credit unread:", stderr)
+
+    def test_branch_review_covers_reports_a_malformed_or_incomplete_context_file(self):
+        incomplete = json.dumps({"top": str(self.repo.resolve()), "reviewLoggedTree": "t", "excludeRel": None})
+        bad_contexts = {"malformed json": "{not json", "missing mergeBase": incomplete}
+        for label, text in bad_contexts.items():
+            with self.subTest(label):
+                self.log_branch_review()
+                with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
+                    name = script_utils.repo_name(self.repo.resolve())
+                    verify_common.context_path(name, "main").write_text(text)
+                covered, stderr = self.branch_review_covers_with_stderr()
+                self.assertFalse(covered, label)
+                self.assertIn("review-commit-gate: verify credit unread:", stderr, label)
+
+    def test_branch_review_covers_reports_a_fingerprint_it_cannot_compute(self):
+        self.log_branch_review()
+        failure = verify_common.VerifyError("git hung")
+        with mock.patch.object(verify_common, "tree_fingerprint", side_effect=failure):
+            covered, stderr = self.branch_review_covers_with_stderr()
+        self.assertFalse(covered)
+        self.assertIn("review-commit-gate: verify credit unread: git hung", stderr)
+
+    def test_branch_review_covers_passes_its_timeout_to_every_git_call(self):
+        self.log_branch_review()
+        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}), \
+                mock.patch.object(verify_common, "tree_fingerprint", return_value="x") as fingerprint, \
+                mock.patch.object(verify_common, "repo_top", wraps=verify_common.repo_top) as top, \
+                mock.patch.object(verify_common, "require_branch", wraps=verify_common.require_branch) as branch:
+            verify_common.branch_review_covers(self.repo, timeout=7)
+        self.assertEqual(7, top.call_args.kwargs["timeout"])
+        self.assertEqual(7, branch.call_args.kwargs["timeout"])
+        self.assertEqual(7, fingerprint.call_args.kwargs["timeout"])
+
+    def test_a_review_logged_on_another_branch_earns_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(branch="feature")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_of_a_second_real_checkout_earns_no_credit(self):
+        other = self.make_repo("second")
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(top=other.resolve())
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_names_the_checkout_through_its_resolved_path(self):
+        link = self.tmp / "repo-link"
+        link.symlink_to(self.repo, target_is_directory=True)
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git commit -a -m x", cwd=link))
+
+    def test_a_partial_stage_commit_in_a_tree_the_logged_review_covered_passes(self):
+        # The credit is for the work tree, as with a converged review: what is staged does not change it.
+        (self.repo / "base.py").write_text("changed\n")
+        (self.repo / "other.py").write_text("other\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git add base.py && git commit -m x"))
+
+    def test_a_commit_of_the_tree_a_logged_branch_review_covered_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_an_edit_since_the_logged_branch_review_is_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        (self.repo / "base.py").write_text("changed again\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_commit_of_a_logged_branch_review_with_an_open_ask_is_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(asks=[{"question": "keep the retry?"}])
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_of_another_checkout_earns_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(top=self.tmp / "elsewhere")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
 
     def test_an_unreviewed_coder_commit_is_still_denied(self):
         (self.repo / "base.py").write_text("changed\n")

@@ -23,6 +23,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - A lock held across processes: `lib/file_lock.py`. Never write a second flock helper.
 - Stop file names (`stop.md`, `review-stop.md`): `lib/stop_file_names.py`, which imports nothing. The Write gate loads it on every code-fork Write in a run folder.
 - Review-fix state folder and file names, the asks-findings file name, and the `asks_launch_pending`, `correct_open` and `asks_decided_by` keys: `lib/review_fix_names.py`, which imports nothing. `review/review_fix_state.py` re-exports them.
+- Text for a changed or no-code ask ruling on a finding (ruler clauses, marker, no-code test): `lib/ruled_change_text.py` (`changed_text`, `ruled_note`, `is_no_code_ruling`), standard library only.
 - Plan text: `lib/plan_format.py`.
 - TOML files: `lib/toml_file.py` `read_toml`. Never import tomllib elsewhere: the scripts run on Python 3.10.
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`).

@@ -51,6 +51,8 @@ from loop_transcript import FINDING_ID_PATTERN, PRINTED_FINDING_ID
 from plan_format import PLAN_CAUSE, PLAN_CHANGE_MARK, TOOLKIT_CAUSE, plan_impact_cause
 from script_utils import first_number, is_blocker, one_line
 
+# Seconds a call of the log helper gets before it is cut off, so a hung ledger cannot hold a ruling.
+LOGGER_TIMEOUT_SECONDS = 30
 # The status for a loop that stopped because the fix passes removed the change under review.
 FIX_REMOVED_CHANGE = "fix-removed-change"
 PLAN_IMPACT_STATUS = "plan-impact"
@@ -223,18 +225,40 @@ def ask_row_fields(context, item):
             f"class={item.get('class', 'other')}", *location_fields, "actioned=ask"]
 
 
-def log_ask_row(logger, context, item, cwd=None):
+class LoggerStall:
+    """Shared by the calls of one run: set once a call of the log helper passes its timeout, so the run makes no
+    further call and a hung ledger costs one timeout, not one per row."""
+
+    def __init__(self):
+        self.timed_out = False
+
+
+def run_logger(command, cwd=None, stall=None):
+    """Run a log helper command with LOGGER_TIMEOUT_SECONDS and return its CommandResult. With a `stall` that an
+    earlier call set, run nothing and return a timed-out result that says so."""
+    if stall is not None and stall.timed_out:
+        return script_utils.CommandResult(script_utils.TIMEOUT_EXIT_CODE,
+                                          "not run: an earlier log helper call timed out", True)
+
+    result = script_utils.run_command_result(command, cwd, timeout=LOGGER_TIMEOUT_SECONDS)
+    if stall is not None and result.timed_out:
+        stall.timed_out = True
+    return result
+
+
+def log_ask_row(logger, context, item, cwd=None, stall=None):
     """The finding_id that the log helper at `logger` printed for a new ask row, or None when the row was not logged."""
-    code, output = script_utils.run_command(["bash", str(logger), "kind=finding", *ask_row_fields(context, item)], cwd)
-    printed_ids = PRINTED_FINDING_ID.findall(output)
-    return printed_ids[0] if code == 0 and printed_ids else None
+    result = run_logger(["bash", str(logger), "kind=finding", *ask_row_fields(context, item)], cwd, stall)
+    printed_ids = PRINTED_FINDING_ID.findall(result.output)
+    return printed_ids[0] if result.code == 0 and printed_ids else None
 
 
-def supply_ask_finding_ids(asks, session_id, logger, context, cwd=None):
+def supply_ask_finding_ids(asks, session_id, logger, context, cwd=None, stall=None):
     """Give every ask in `asks` without a valid finding_id the id of the ask row the loop logged for it (the stop row's
     ask_rows of this session, matched on file and line), or of an ask row logged here when the loop logged none. A
     valid id on an ask stays and its logged row is never given to another ask. An ask whose row cannot be logged gets
-    none; the outcome is then logged under a new id. The caller saves the asks so a repeat logs no ask row twice."""
+    none; the outcome is then logged under a new id. The caller saves the asks so a repeat logs no ask row twice. A
+    `stall` shared with the caller stops further log helper calls once one has timed out."""
     stop_row = latest(session_id)["stop"] or {}
     written_ids = {ask_finding_id(item) for item in asks}
     logged_rows = [dict(row) for row in stop_row.get("ask_rows") or [] if row["finding_id"] not in written_ids]
@@ -242,7 +266,7 @@ def supply_ask_finding_ids(asks, session_id, logger, context, cwd=None):
         if ask_finding_id(item):
             continue
 
-        finding_id = claim_logged_ask_id(item, logged_rows) or log_ask_row(logger, context, item, cwd)
+        finding_id = claim_logged_ask_id(item, logged_rows) or log_ask_row(logger, context, item, cwd, stall)
         if finding_id:
             item["finding_id"] = finding_id
 

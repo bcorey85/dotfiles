@@ -1,4 +1,5 @@
 """Read a shell command line as steps joined by operators, without running or fully parsing it."""
+import itertools
 import os
 import posixpath
 import re
@@ -324,6 +325,16 @@ def skip_options(words, index, value_options):
 # git's own options that take the next word as their value.
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix",
                      "--attr-source"}
+GIT_GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs",
+                    "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
+                    "--no-lazy-fetch", "--no-advice", "--exec-path")
+# Options that take a value in the `--name=value` form; --exec-path takes one only in this form.
+GIT_EQUALS_OPTIONS = GIT_VALUE_OPTIONS | {"--exec-path"}
+
+
+def is_known_git_global_option(option):
+    name, has_value, _ = option.partition("=")
+    return option in GIT_GLOBAL_FLAGS or (bool(has_value) and name in GIT_EQUALS_OPTIONS)
 
 
 def git_options(words):
@@ -757,6 +768,121 @@ def cd_folder(words):
     if folder == "-" or STACK_INDEX.fullmatch(folder) or UNREAD_FOLDER.search(folder):
         return None
     return folder
+
+
+def git_c_directory(words, directory):
+    """The directory a git call in `words` runs in, from `directory`, moved by each `-C <dir>` before the subcommand
+    (`~` expanded). None when git's options are ones the gate does not follow: `--git-dir`, `--work-tree`,
+    `--config-env`, a `-C` with no or an empty value, or an option git is not known to have."""
+    options, _index = git_options(words)
+    for option, value in options:
+        if option == "-C":
+            if not value:
+                return None
+            directory = os.path.normpath(os.path.join(directory, path_word(value)))
+            continue
+        if not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree", "--config-env")):
+            return None
+    return directory
+
+
+def group_closes(step):
+    """(opened, closed): how many `(` the step opens before its first command, and how many `)` it closes beyond the
+    ones its own text opens after that. A parenthesis in quotes is no group."""
+    quoted = quoted_positions(step, unclosed_is_quoted=False)
+    opened = step[:len(step) - len(step.lstrip(" \t({"))].count("(")
+    unquoted_opens = sum(1 for index, char in enumerate(step) if char == "(" and index not in quoted)
+    unquoted_closes = sum(1 for index, char in enumerate(step) if char == ")" and index not in quoted)
+    return opened, max(0, unquoted_closes - (unquoted_opens - opened))
+
+
+class ShellDirectory:
+    """The directory a shell is in as a command runs, moved by `cd`, `pushd`, `popd` and `cd -`. `current` is None
+    once the shell is somewhere unknown: a target the shell expands, a `popd` or `cd -` with nothing to return to."""
+
+    def __init__(self, current):
+        self.current = current
+        self.previous = None
+        self.stack = []
+
+    def saved(self):
+        """The state a `( ... )` group restores when it closes."""
+        return (self.current, self.previous, tuple(self.stack))
+
+    def restore(self, saved):
+        self.current, self.previous, stack = saved
+        self.stack = list(stack)
+
+    def move_to(self, new_directory):
+        self.previous = self.current
+        self.current = new_directory
+
+    def apply(self, words):
+        """Moves by the `cd`, `pushd` or `popd` call in `words`."""
+        command = words[0]
+        arguments = [word for word in words[1:] if not CD_OPTION.fullmatch(word)]
+        if command == "popd":
+            self.move_to(self.stack.pop() if self.stack else None)
+            return
+        if command == "cd" and arguments == ["-"]:
+            self.current, self.previous = self.previous, self.current
+            return
+        folder = cd_folder(words)
+        if command == "pushd":
+            self.stack.append(self.current)
+        if folder is None or self.current is None:
+            self.move_to(None)
+            return
+        self.move_to(os.path.normpath(os.path.join(self.current, path_word(folder))))
+
+
+def wrapper_moves_directory(words):
+    """True when an `env` or `sudo` wrapper of the simple command `words` runs the command in another directory
+    (`-C <dir>`, `--chdir`)."""
+    word_lists = list(_peeled_word_lists(words))
+    for before, after in itertools.pairwise(word_lists):
+        if os.path.basename(before[0]) not in ("env", "sudo"):
+            continue
+        wrapper_words = before[1:len(before) - len(after)]
+        if any(word == "-C" or word.startswith("--chdir") for word in wrapper_words):
+            return True
+    return False
+
+
+def git_commit_dirs(command, start_dir):
+    """The directory of each `git commit` in the command, read by what the command names: `start_dir`, moved by each
+    `cd`, `pushd`, `popd` and `cd -` the command holds and by each `git -C <dir>` of the call. A `cd` inside
+    `( ... )` ends where the group closes. A commit left out: one after a move to a folder the shell expands or to
+    nowhere known (a `popd` or `cd -` with no earlier directory), one an `env`/`sudo` `-C` moves, and one with options
+    git_c_directory does not follow (`--git-dir`, `--work-tree`). [] when the command holds no such commit, so it
+    names no repo; None when the command cannot be read, and the caller then uses `start_dir`."""
+    shell = ShellDirectory(start_dir)
+    outer_shells = []
+    commit_dirs = []
+    for _operator, step in split_command_steps(command):
+        try:
+            simple_commands = split_simple_commands(step)
+        except ValueError:
+            return None
+        opened, closed = group_closes(step)
+        outer_shells.extend([shell.saved()] * opened)
+        for simple_command in simple_commands:
+            words = command_after_wrappers(simple_command)
+            if not words:
+                continue
+            if words[0] in ("cd", "pushd", "popd"):
+                shell.apply(words)
+                continue
+            if not is_git_word(words[0]) or git_subcommand(words) != "commit":
+                continue
+            if shell.current is None or wrapper_moves_directory(simple_command):
+                continue
+            commit_directory = git_c_directory(words, shell.current)
+            if commit_directory is not None and commit_directory not in commit_dirs:
+                commit_dirs.append(commit_directory)
+        for _group in range(min(closed, len(outer_shells))):
+            shell.restore(outer_shells.pop())
+    return commit_dirs
 
 
 def step_parts(step):

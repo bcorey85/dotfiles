@@ -9,9 +9,9 @@ the tree has not changed since (exit 2: rerun verify-prep).
 rows: a JSON list; each row {"item","verdict","file","line","evidence", optional "severity","guard","signoff"}.
 Every criterion id verify-prep saved needs a verdict row naming it, `missing` included; any id with no row exits 2 and
 writes nothing. The same holds for each ticket criterion, with or without a criteria file: it needs a row whose `item`
-starts with its label (`Ticket #n`, or the criteria-file id when the ticket has no Acceptance or Requirements
-heading or the run has no ticket, as verify-prep lists them; leading markdown emphasis or code marks are allowed),
-and so does each ticket comment (`Comment #n`).
+starts with its label (`Ticket #n`, or the criteria-file id when the ticket has no Acceptance, Requirements or
+Done when heading or the run has no ticket, as verify-prep lists them; leading markdown emphasis or code marks are
+allowed), and so does each ticket comment (`Comment #n`).
 verdict is done|partial|missing|failed-check|needs-manual|overridden|no-criterion. partial, missing, failed-check and
 an overridden row with no `signoff` are gaps. no-criterion is only for a `Comment #n` row: the comment adds or changes
 no criterion; any other row with it exits 2. `line` is an integer or a range like "12-20" (the first number is kept).

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-969 changes
+970 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -39,6 +39,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md) [script/review-asks] `asks-done` no longer refuses an ask whose proposed change starts with "if accepted" as conditional; only "if not accepted" counts.
+* [verify-prep reads a queue item's Done when bullets as the ticket criteria](notes/2026-11-15-verify-prep-reads-a-queue-item-s-done-when-bullets.md) [script/verify-prep, script/plan-format, script/script-utils, script/verify-log, script/verify-common, skill/verify-branch, agent/plan-verifier, rule/global-claude-md] A queue item now works as the ticket of a branch check: its `## Done when` bullets are the criteria, and the owner line names a session for an item a session wrote. No hand copy of the criteria is needed.
 * [Deferred findings reach a resumed /review fix run through --also-fix](notes/2026-11-15-deferred-findings-reach-a-resumed-review-fix-run.md) [script/review-launch, script/review-fix-asks, script/fork-write-scope, script/review-fix-names] `review_fix.py launch --also-fix <file>` adds findings to the fix run after the `--fix` ones, and the code-fork's denied write under `<git dir>/review-fix/` now names that route.
 * [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md) [script/review-fix] A modified ask in the review-fix findings file now says who changed it. A ruling made with `asks-done --by session` no longer reads as the user's change.
 * [test_run_output counts a passing unittest run and ignores colour escapes](notes/2026-11-15-test-run-output-counts-a-passing-unittest-run-and.md) [script/test-run-output, script/check-output, script/refactor-flow, script/coder-gate, script/full-check, script/ansi-text] A unittest run that prints `Ran N tests` and then `OK` counts N passed tests, so a filtered `-k` run is no longer rejected as "exits 0 but ran no test"; ANSI colour escapes no longer hide a runner's summary line (vitest `Tests`, jest `Tests:`), so a coloured summary reaches the runner summaries and the check verdict; coloured FAIL/ERROR lines, cannot-start lines and missing-path lines are found too.

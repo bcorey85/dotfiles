@@ -572,7 +572,7 @@ class PrepTest(VerifyBranchBase):
 
     def test_only_a_missing_heading_falls_back_to_the_criteria_file(self):
         cases = (
-            ("# T\n\n## Acceptance\n\n---\n", "has no list items"),
+            ("# T\n\n## Acceptance\n\n---\n", "has no criteria"),
             ("# T\n\n## Acceptance notes\n\n- a\n", "not a recognized criteria heading"),
         )
         for ticket, message in cases:
@@ -586,7 +586,7 @@ class PrepTest(VerifyBranchBase):
         self.task_dir(ticket=TOPICAL_TICKET, criteria="## Manual only\n\n- **AC1** — x.\n")
         done = self.prep()
         self.assertEqual(done.returncode, 2, done.stdout)
-        self.assertIn("no `## Acceptance*` or `## Requirements*` heading", done.stderr)
+        self.assertIn("no criteria heading", done.stderr)
 
     def test_unknown_option_and_second_positional_exit_2(self):
         self.task_dir()

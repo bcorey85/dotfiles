@@ -89,13 +89,6 @@ local FAMILIES = {
       light = { heading1 = "#e05661", heading = "#eea825" },
     },
   },
-  ["dracula"] = {
-    schemes = { dark = "dracula", light = "alucard" },
-    accents = {
-      dark = { heading1 = "#FF79C6", heading = "#BD93F9" },
-      light = { heading1 = "#A3144D", heading = "#644AC9" },
-    },
-  },
   ["nightfox"] = {
     schemes = { dark = "nightfox", light = "dayfox" },
     accents = {
@@ -283,24 +276,6 @@ local FAMILIES = {
       light = { heading1 = "#b7221f", heading = "#8f6b00" },
     },
   },
-  ["solarized"] = {
-    -- maxmx03/solarized.nvim: one colorscheme that follows vim.o.background.
-    schemes = { dark = "solarized", light = "solarized" },
-    colors_name = "solarized",
-    accents = {
-      dark = { heading1 = "#dc322f", heading = "#b58900" },
-      light = { heading1 = "#dc322f", heading = "#b58900" },
-    },
-  },
-  ["selenized"] = {
-    -- calind/selenized.nvim: one colorscheme that follows vim.o.background.
-    schemes = { dark = "selenized", light = "selenized" },
-    colors_name = "selenized",
-    accents = {
-      dark = { heading1 = "#fa5750", heading = "#dbb32d" },
-      light = { heading1 = "#d2212d", heading = "#ad8900" },
-    },
-  },
   ["flexoki"] = {
     -- kepano/flexoki-neovim: flexoki-dark / flexoki-light both set colors_name "flexoki".
     schemes = { dark = "flexoki-dark", light = "flexoki-light" },
@@ -343,32 +318,6 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#f4906f", heading = "#f7c699" },
       light = { heading1 = "#863716", heading = "#6d4717" },
-    },
-  },
-  ["jellybeans"] = {
-    -- WTFox/jellybeans.nvim: one colorscheme "jellybeans" follows vim.o.background
-    -- (#151515 dark / sepia #f5e6d3 light).
-    schemes = { dark = "jellybeans", light = "jellybeans" },
-    colors_name = "jellybeans",
-    -- Stock diffs are fg-only, which recolours the code; rows take the
-    -- green/red/blue 15% into the ground and words the blue 30%, so syntax
-    -- stays readable.
-    pre = function(mode)
-      local bg = mode == "light" and "#f5e6d3" or "#151515"
-      local hues = mode == "light" and { gr = "#386014", re = "#a02020", ch = "#1670af", bl = "#2952a3" }
-        or { gr = "#70b950", re = "#d74545", ch = "#5f9ecf", bl = "#8197bf" }
-      require("jellybeans").setup({
-        on_highlights = function(highlights)
-          highlights.DiffAdd = { bg = blend(hues.gr, bg, 0.15) }
-          highlights.DiffDelete = { bg = blend(hues.re, bg, 0.15) }
-          highlights.DiffChange = { bg = blend(hues.ch, bg, 0.12) }
-          highlights.DiffText = { bg = blend(hues.bl, bg, 0.30) }
-        end,
-      })
-    end,
-    accents = {
-      dark = { heading1 = "#b0d0f0", heading = "#8fbfdc" },
-      light = { heading1 = "#234291", heading = "#5f43aa" },
     },
   },
   ["rose-pine"] = {

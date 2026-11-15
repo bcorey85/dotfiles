@@ -118,62 +118,6 @@ fg = "#576d74"
 bg = "#fdf5e2"
 grey = "#647a82"
 
-# solarized dark (Schoonover's canonical palette, base03 ground).
-[palettes.solarized-dark]
-red = "#dc322f"
-orange = "#cb4b16"
-yellow = "#b58900"
-green = "#859900"
-blue = "#268bd2"
-branch = "#268bd2"
-teal = "#2aa198"
-purple = "#6c71c4"
-fg = "#839496"
-bg = "#002b36"
-grey = "#586e75"
-
-# solarized light (base3 ground), same accents.
-[palettes.solarized-light]
-red = "#dc322f"
-orange = "#cb4b16"
-yellow = "#b58900"
-green = "#859900"
-blue = "#268bd2"
-branch = "#268bd2"
-teal = "#2aa198"
-purple = "#6c71c4"
-fg = "#657b83"
-bg = "#fdf6e3"
-grey = "#93a1a1"
-
-# selenized dark (Warchoł's palette, bg_0 #103c48).
-[palettes.selenized-dark]
-red = "#fa5750"
-orange = "#ed8649"
-yellow = "#dbb32d"
-green = "#75b938"
-blue = "#4695f7"
-branch = "#4695f7"
-teal = "#41c7b9"
-purple = "#af88eb"
-fg = "#adbcbc"
-bg = "#103c48"
-grey = "#72898f"
-
-# selenized light (bg_0 #fbf3db).
-[palettes.selenized-light]
-red = "#d2212d"
-orange = "#c25d1e"
-yellow = "#ad8900"
-green = "#489100"
-blue = "#0072d4"
-branch = "#0072d4"
-teal = "#009c8f"
-purple = "#8762c6"
-fg = "#53676d"
-bg = "#fbf3db"
-grey = "#909995"
-
 # flexoki dark (kepano's 400 accents on black #100f0f).
 [palettes.flexoki-dark]
 red = "#d14d41"
@@ -257,34 +201,6 @@ purple = "#61457c"
 fg = "#323128"
 bg = "#faf9f5"
 grey = "#6a655d"
-
-# jellybeans dark (#151515).
-[palettes.jellybeans-dark]
-red = "#d74545"
-orange = "#d98870"
-yellow = "#fad07a"
-green = "#99ad6a"
-blue = "#8197bf"
-branch = "#8197bf"
-teal = "#8fbfdc"
-purple = "#c6b6ee"
-fg = "#e8e8d3"
-bg = "#151515"
-grey = "#888888"
-
-# jellybeans light (sepia #f5e6d3).
-[palettes.jellybeans-light]
-red = "#a02020"
-orange = "#954d3b"
-yellow = "#876820"
-green = "#386014"
-blue = "#2952a3"
-branch = "#2952a3"
-teal = "#2b5b77"
-purple = "#5f43aa"
-fg = "#252525"
-bg = "#f5e6d3"
-grey = "#686868"
 
 # catppuccin frappé, verbatim.
 [palettes.catppuccin-dark]
@@ -398,34 +314,6 @@ purple = "#a545c5"
 fg = "#4b505b"
 bg = "#fafafa"
 grey = "#677182"
-
-# dracula dark (dracula/vim), verbatim. No blue upstream; cyan stands in.
-[palettes.dracula-dark]
-red = "#FF5555"
-orange = "#FFB86C"
-yellow = "#F1FA8C"
-green = "#50FA7B"
-blue = "#8BE9FD"
-branch = "#8BE9FD"
-teal = "#8BE9FD"
-purple = "#BD93F9"
-fg = "#F8F8F2"
-bg = "#282A36"
-grey = "#6272A4"
-
-# dracula light (alucard), verbatim. No blue upstream; cyan stands in.
-[palettes.dracula-light]
-red = "#CB3A2A"
-orange = "#A34D14"
-yellow = "#846E15"
-green = "#14710A"
-blue = "#036A96"
-branch = "#036A96"
-teal = "#036A96"
-purple = "#644AC9"
-fg = "#1F1F1F"
-bg = "#FFFBEB"
-grey = "#6C664B"
 
 # nightfox (EdenEast/nightfox.nvim), verbatim.
 [palettes.nightfox-dark]

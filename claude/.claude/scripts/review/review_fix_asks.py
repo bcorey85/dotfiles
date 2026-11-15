@@ -24,6 +24,7 @@ from review_asks import (
     USER_RULED_KEY,
     rejected_ask_text,
 )
+from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -41,6 +42,7 @@ from review_fix_state import (
     save_fix_state,
 )
 from review_loop_findings import criteria_covered, plan_item_criteria_ids
+from ruled_change_text import SESSION_CLAUSE, UNNAMED_CLAUSE, USER_CLAUSE, changed_text
 from saved_handback import dispatched_repo, session_repo
 from script_utils import one_line, split_location
 
@@ -166,15 +168,14 @@ def finding_ask_indexes(asks, outcomes):
             if outcome != REJECTED and not is_plan_impact_ask(item)]
 
 
-def changed_in_place_sentence(decided_by, note):
-    """The sentence that gives a modified ask's `note` to the fix coder, naming who ruled: the user, the session, or
-    no one when `decided_by` is None. `ask_deciders` and `--by` refuse any other word, so none reaches here. The
-    user's words stay as they were because a stored finding text is matched word for word."""
+def ruler_clause(decided_by):
+    """The clause that names who changed a modified ask: the user, the session, or no one when `decided_by` is None.
+    `ask_deciders` and `--by` refuse any other word, so none reaches here."""
     if decided_by == plan_format.USER_RULING:
-        return f"The user changed it; make this change in its place: {note}"
+        return USER_CLAUSE
     if decided_by == plan_format.SESSION_RULING:
-        return f"The session changed it, not the user; make this change in its place: {note}"
-    return f"It was changed at the ruling; make this change in its place: {note}"
+        return SESSION_CLAUSE
+    return UNNAMED_CLAUSE
 
 
 def ask_finding_text(item, note=None, decided_by=None):
@@ -188,7 +189,7 @@ def ask_finding_text(item, note=None, decided_by=None):
     if item.get(USER_RULED_KEY):
         if note is None:
             return change
-        return f"{change} {changed_in_place_sentence(decided_by, note)}"
+        return changed_text(change, note, ruler_clause(decided_by))
     if is_plan_impact_ask(item):
         return f"{item['file_line']} {question} Proposed change: {change}"
     # The question can hold a declined branch the user already ruled against; a coder that reads it may take it.
@@ -196,7 +197,7 @@ def ask_finding_text(item, note=None, decided_by=None):
     # `acceptance_criteria:` line becomes the only source of ids, so it comes after the note.
     text = f"{item['file_line']} [{item['class']}] Proposed change: {change}"
     if note is not None:
-        text += f" {changed_in_place_sentence(decided_by, note)}"
+        text = changed_text(text, note, ruler_clause(decided_by))
     ids = sorted(plan_format.criteria_ids(f"{question} {change} {note or ''}"))
     if ids:
         text += f" acceptance_criteria: {', '.join(ids)}"
@@ -369,7 +370,8 @@ def print_fix_run(target, findings_file, summary_lines):
     return print_action(
         "redispatch", *summary_lines,
         f"The accepted asks are in {findings_file}. Run this launch line now: its fix coder applies them and a "
-        "review round covers the fix.",
+        "review round covers the fix. If findings were deferred to this run, write them to "
+        f"<run folder>/{RUN_FOLDER_FINDINGS_NAME} and add `--also-fix <that file>` to the line.",
         target["asks_launch_line"])
 
 

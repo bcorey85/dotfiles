@@ -32,8 +32,10 @@ import review_loop_findings
 import review_loop_held
 import review_loop_packet
 import review_loop_plan
+import review_loop_prompts
 import review_loop_ruled
 import review_loop_scoped_tests
+import ruled_change_text
 from review_asks import REJECTED
 
 SCRIPT = pathlib.Path(os.environ.get("REVIEW_LOOP_SCRIPT") or toolkit_paths.REVIEW_DIR / "review_loop_script.py")
@@ -373,7 +375,9 @@ class ClosureCheckTest(unittest.TestCase):
         self.assertIn('escape every double quote inside the receipt as \\"', prompts[0])
 
 
-class ReviewLoopScriptTest(unittest.TestCase):
+class ReviewLoopHarness:
+    """Mixin with no tests: the scratch repo, the stand-in `claude` and the readers of what a run stored."""
+
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -462,6 +466,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(handbacks), 1)
         return handbacks[0], handback.load(handbacks[0]["message"])
 
+    def finding_rows(self):
+        return fake_ledger.recorded_rows(self.env, "review_finding")
+
+
+class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_converged_two_round_run_writes_packet_and_rows(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -495,43 +504,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((usage[0]["agent"], usage[0]["model"], usage[0]["driver"]),
                          ("review-loop", "script", "script"))
         self.assertEqual((usage[0]["calls"], usage[0]["tokens"]), (4, 80))
-
-    def test_a_round_two_docs_fix_outside_the_fix_diff_is_deferred_not_sent_to_the_coder(self):
-        outside_docs = "`notes.py:1` [docs] the value has no comment"
-        second_review = f"## Fix\n- {outside_docs}\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}, {"result": "Fixed 1."}],
-            "closure": [{"result": CLOSED}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _, packet = self.stored_packet()
-        self.assertEqual(packet["status"], handback.DEFERRED)
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]], [outside_docs])
-        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 1)
-        notes_rows = [row for row in self.finding_rows() if row["path_key"] == "notes.py"]
-        self.assertEqual([row["actioned"] for row in notes_rows], ["none"])
-
-    def test_a_round_two_bug_fix_outside_the_fix_diff_still_goes_to_the_coder(self):
-        outside_bug = "`notes.py:1` [bug] the value drops key c"
-        outside_docs = "`notes.py:1` [docs] the value has no comment"
-        second_review = f"## Fix\n- {outside_bug}\n- {outside_docs}\n\n## Ask\nNone\n\n## Nit\nNone\n"
-        completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
-                      {"result": "Fixed 1.", "edits": {"notes.py": "value = {'a': 1, 'b': 2, 'c': 3}\n"}}],
-            "closure": [{"result": CLOSED}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        coders = [call for call in self.fake_calls() if call["key"] == "coder"]
-        self.assertEqual(len(coders), 2)
-        self.assertIn("the value drops key c", coders[1]["prompt"])
-        self.assertNotIn("the value has no comment", coders[1]["prompt"])
-        _, packet = self.stored_packet()
-        self.assertIn(outside_bug, [entry["finding"] for entry in packet["fixed"]])
-        self.assertEqual([entry["finding"] for entry in packet["findings_remaining"]], [outside_docs])
 
     def answer_round(self, round_number, text, process):
         """Plays the main session for one review round: waits for the round's manifest, writes `text` as every
@@ -643,6 +615,35 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertIn("SKIPPED 1:", reason)
         self.assertIn("re-asked", reason)
         self.assertEqual(packet["ask"], [])
+
+    def test_a_code_edit_against_a_no_code_ruling_reaches_the_packet_and_the_next_reviewer_prompt(self):
+        ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
+                                               "Make no code change.", ruled_change_text.USER_CLAUSE)
+        completed = self.run_script({
+            "coder": [{"result": "Reworded the message.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(ruled))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["no_code_ruling_broken"],
+                         [{"ruling": "app.py:2 Make no code change.", "file": "app.py"}])
+        reviewer_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][-1]["prompt"]
+        self.assertIn(review_loop_prompts.NO_CODE_REVIEW_RULE, reviewer_prompt)
+        self.assertIn("Make no code change.", reviewer_prompt)
+
+    def test_a_coder_that_dies_after_editing_against_a_no_code_ruling_still_reaches_the_packet(self):
+        ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
+                                               "Make no code change.", ruled_change_text.USER_CLAUSE)
+        completed = self.run_script({
+            "coder": [{"result": "Prompt is too long", "edits": {"app.py": APP_FIXED}, "exit": 1}],
+        }, header_extra=self.findings_header(ruled))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
+        self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
     def test_a_coders_own_skip_line_beats_the_re_ask_text_for_a_user_ruled_finding(self):
         report = ('SKIPPED 1: the limit is meant to be 5\n'
@@ -3041,9 +3042,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual(len(metrics), 1)
         self.assertEqual((metrics[0]["fix"], metrics[0]["ask"], metrics[0]["fixed"]), ("1", "1", "1"))
 
-    def finding_rows(self):
-        return fake_ledger.recorded_rows(self.env, "review_finding")
-
     def test_a_finding_row_takes_the_class_its_reviewer_tagged_and_other_when_untagged(self):
         tagged_review = ("## Fix\n- [bug] `app.py:2` the docstring promises 20 but `limit` is 2\n\n"
                          "## Ask\n- [perf] `app.py:3` should the limit be cached?\n\n"
@@ -3457,7 +3455,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_a_lens_reviewer_prompt_ends_with_its_lens_line_and_a_plain_one_carries_none(self):
         module = self.load_script_module()
         loop = mock.Mock(repo=self.repo, prior_issues=[], round_two_fix_diff_path="", asks=[], brief="",
-                         test_strategy="", iter_count=1)
+                         test_strategy="", iter_count=1, no_code_rulings=[])
         lensed = ("code-reviewer", review_loop_plan.LensOwned(["a.py", "b.py"], review_loop_plan.LENS_B))
         plain = ("code-reviewer", ["a.py"])
 

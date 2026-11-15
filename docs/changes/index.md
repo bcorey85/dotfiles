@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-965 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+969 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [verify-prep reads a queue item's Done when bullets as the ticket criteria](notes/2026-11-15-verify-prep-reads-a-queue-item-s-done-when-bullets.md).
+Latest change: 2026-11-15, [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md).
 
 ## Top gains
 

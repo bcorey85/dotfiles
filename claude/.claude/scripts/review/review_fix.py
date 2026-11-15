@@ -22,9 +22,9 @@ still judges.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
       effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
       same text are two runs.
-  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--user-ruled <N>]...
-                       [--session-ruled <N>]...] [--base <ref>] [--file <path>]... [--handoff <file>]
-                       [--test <cmd>]... [--fast|--deep]
+  review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
+                       [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
+                       [--handoff <file>] [--test <cmd>]... [--fast|--deep]
                        [--iter N] [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers

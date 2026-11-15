@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="onedarkpro"
 
-families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight dracula nightfox duskfox dredge solarized-osaka solarized selenized flexoki token-flint token jellybeans catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine ef-elea ef-maris vitesse; }
+families() { printf '%s\n' onedarkpro edge bamboo gruvbox-material tokyonight nightfox duskfox dredge solarized-osaka flexoki token-flint token catppuccin kanagawa darcula tairiki everforest gruvbox papercolor hybrid rose-pine ef-elea ef-maris vitesse; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -130,9 +130,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # style dark and the darkened-along-hue neon light.
     edge:light)             echo "edge-light" ;;
     edge:*)                 echo "edge-dark" ;;
-    # dracula: BUILTIN matches dracula/vim's terminal map; alucard is custom.
-    dracula:light)          echo "dracula-light" ;;
-    dracula:*)              echo "Dracula" ;;
     # nightfox/duskfox: ghostty BUILTINS, same values as the plugin's palettes.
     nightfox:light)         echo "Dayfox" ;;
     nightfox:*)             echo "Nightfox" ;;
@@ -144,13 +141,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # plugin's extras/ghostty.
     solarized-osaka:light)  echo "solarized-osaka-light" ;;
     solarized-osaka:*)      echo "solarized-osaka-dark" ;;
-    # solarized: ghostty BUILTINS, Schoonover's sixteen with the base tones on
-    # the bright slots.
-    solarized:light)        echo "iTerm2 Solarized Light" ;;
-    solarized:*)            echo "iTerm2 Solarized Dark" ;;
-    # selenized: ghostty BUILTINS, Warchoł's dark and light variants.
-    selenized:light)        echo "Selenized Light" ;;
-    selenized:*)            echo "Selenized Dark" ;;
     # flexoki: ghostty BUILTINS, kepano's sixteen.
     flexoki:light)          echo "Flexoki Light" ;;
     flexoki:*)              echo "Flexoki Dark" ;;
@@ -161,10 +151,6 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # token: the same plugin's default variant, same source.
     token:light)            echo "token-light" ;;
     token:*)                echo "token-dark" ;;
-    # jellybeans: custom files in ghostty/themes/, from the plugin's
-    # extras/ghostty (ghostty's "Jellybeans" builtin is the older vim palette).
-    jellybeans:light)       echo "jellybeans-light" ;;
-    jellybeans:*)           echo "jellybeans-dark" ;;
     # catppuccin: ghostty BUILTINS — frappé dark, latte light.
     catppuccin:light)       echo "Catppuccin Latte" ;;
     catppuccin:*)           echo "Catppuccin Frappe" ;;
@@ -237,9 +223,6 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # [custom_theme].
     edge:light)             echo "vitesse-light" ;;
     edge:*)                 echo "vitesse-dark" ;;
-    # hunk has no alucard; light takes the neutral vitesse base.
-    dracula:light)          echo "vitesse-light" ;;
-    dracula:*)              echo "dracula" ;;
     # nightfox/duskfox: no hunk builtin — BASES of full [custom_theme] blocks.
     # duskfox/dawnfox share rose-pine moon/dawn's neutrals exactly.
     nightfox:light)         echo "rose-pine-dawn" ;;
@@ -255,14 +238,6 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # own panel), so the bases are the nearest greys that pass.
     solarized-osaka:light)  echo "ayu-light" ;;
     solarized-osaka:*)      echo "one-dark-pro" ;;
-    # solarized: BASE of a full [custom_theme] whose syntax follows
-    # solarized.nvim's autumn variant.
-    solarized:light)        echo "solarized-light" ;;
-    solarized:*)            echo "solarized-dark" ;;
-    # selenized: no hunk builtin. Solarized's builtins are the nearest syntax
-    # base, under a diff-only block that sets selenized's text and diff.
-    selenized:light)        echo "solarized-light" ;;
-    selenized:*)            echo "solarized-dark" ;;
     # flexoki: BASE of a full [custom_theme]. hunk has no flexoki; these have
     # the nearest neutrals (warm grey on near-black, black on white).
     flexoki:light)          echo "light-plus" ;;
@@ -276,10 +251,6 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # match (token is #c3c0b8 on #262624 and #323128 on #faf9f5).
     token:light)            echo "vitesse-light" ;;
     token:*)                echo "vitesse-dark" ;;
-    # jellybeans: BASE of a full [custom_theme]. Warm cream on near-black, and
-    # near-black on a warm ground.
-    jellybeans:light)       echo "vitesse-light" ;;
-    jellybeans:*)           echo "vitesse-black" ;;
     # catppuccin: hunk BUILTINS.
     catppuccin:light)       echo "catppuccin-latte" ;;
     catppuccin:*)           echo "catppuccin-frappe" ;;
@@ -353,9 +324,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
   # and both row washes (hunk's builtin washes come from its buildShikiTheme).
   local cmt=""
   case "$1:$2" in
-    tokyonight:light|dracula:light) cmt="#666d64" ;;
-    tokyonight:*)                   cmt="#9098bd" ;;
-    dracula:*)                      cmt="#b0b8cd" ;;
+    tokyonight:light) cmt="#666d64" ;;
+    tokyonight:*)     cmt="#9098bd" ;;
   esac
   # Docstrings take the yellow tokyonight.nvim gives @string.documentation.
   local docstr=""
@@ -398,68 +368,6 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         printf '"%s" = "%s"\n' "$scope" "$docstr"
       done
     fi
-    return 0
-  fi
-  # A diff-only block: syntax stays the builtin's, the diff colours follow nvim,
-  # so hunk, delta and nvim show one diff. Dark rows are the washes neogit
-  # renders (dimmer than DiffAdd/DiffDelete), words those rows 15% toward the
-  # sign; light is DiffAdd/DiffDelete/DiffText. Fields: row washes, word
-  # washes, signs, line number, border, text (delta_apply reads the last three).
-  # chrome_colors puts the family's panels, accent, muted and badges back over
-  # the base's: panel, panelAlt, accent, accentMuted, muted, modified.
-  local diff_colors="" chrome_colors=""
-  case "$1:$2" in
-    # selenized: solarized.nvim paints diffs fg-only, so rows are the green/red
-    # signs 15% into the ground and words 30%; selenized takes the same recipe
-    # from its palette's green and red.
-    selenized:light)
-      diff_colors="#e0e4ba #f5d3c1 #c5d699 #efb4a7 #489100 #d2212d #909995 #cfcebe #3a4d53"
-      chrome_colors="#ece3cc #f5ecd4 #0072d4 #d5cdb6 #909995 #ad8900"
-      ;;
-    selenized:*)
-      diff_colors="#1f4f46 #334049 #2e6243 #56444a #75b938 #fa5750 #72898f #2d5b69 #adbcbc"
-      chrome_colors="#184956 #0d3540 #4695f7 #2d5b69 #72898f #dbb32d"
-      ;;
-  esac
-  if [ -n "$diff_colors" ]; then
-    local d_add d_rem d_add_word d_rem_word d_sign_add d_sign_rem d_line_number d_border d_text
-    read -r d_add d_rem d_add_word d_rem_word d_sign_add d_sign_rem d_line_number d_border d_text <<<"$diff_colors"
-
-    local c_panel c_panel_alt c_accent c_accent_muted c_muted c_modified
-    read -r c_panel c_panel_alt c_accent c_accent_muted c_muted c_modified <<<"$chrome_colors"
-    cat <<EOF
-[custom_theme]
-base             = "$3"
-addedBg          = "$d_add"
-removedBg        = "$d_rem"
-movedAddedBg     = "$d_add"
-movedRemovedBg   = "$d_rem"
-addedContentBg   = "$d_add_word"
-removedContentBg = "$d_rem_word"
-addedSignColor   = "$d_sign_add"
-removedSignColor = "$d_sign_rem"
-fileNew          = "$d_sign_add"
-fileDeleted      = "$d_sign_rem"
-lineNumberFg     = "$d_line_number"
-border           = "$d_border"
-text             = "$d_text"
-panel            = "$c_panel"
-panelAlt         = "$c_panel_alt"
-accent           = "$c_accent"
-accentMuted      = "$c_accent_muted"
-muted            = "$c_muted"
-selectedHunk     = "$c_accent"
-badgeAdded       = "$d_sign_add"
-badgeRemoved     = "$d_sign_rem"
-badgeNeutral     = "$c_accent"
-fileRenamed      = "$c_accent"
-fileModified     = "$c_modified"
-fileUntracked    = "$d_sign_add"
-
-[custom_theme.syntax_scopes]
-"source"         = "$d_text"
-"text"           = "$d_text"
-EOF
     return 0
   fi
   # Some per-family branches below are inert (their families are gone);
@@ -1073,42 +981,6 @@ EOF
 EOF
       )
       ;;
-    # solarized (maxmx03/solarized.nvim, variant autumn): roles are the resolved
-    # fg of nvim's groups; the comment carries theme-sync's contrast floor and
-    # markdown its heading accents. solarized.nvim paints diffs fg-only, so rows
-    # are the green/red signs 15% into the ground and words 30%.
-    solarized:*)
-      local addWord remWord cls key h1="#dc322f" h2="#b58900"
-      bg="#002b36"; panel="#073642"; panelAlt="#002731"; border="#073642"
-      accent="#268bd2"; accentMuted="#0d4552"; text="#839496"; muted="#657b83"
-      addedBg="#143c2e"; removedBg="#212c35"; ctxBg="#002b36"
-      addWord="#284c26"; remWord="#422d34"; lnFg="#586e75"
-      note="#073642"; konst="#6c71c4"; cmt="#7f9093"
-      if [ "$2" = light ]; then
-        bg="#fdf6e3"; panel="#eee8d5"; panelAlt="#fbf3db"; border="#d9d2bc"
-        accentMuted="#d9d2bc"; text="#657b83"; muted="#839496"
-        addedBg="#ebe8c1"; removedBg="#f8d9c8"; ctxBg="#fdf6e3"
-        addWord="#d9da9f"; remWord="#f3bbad"; lnFg="#93a1a1"
-        note="#eee8d5"; konst="#d33682"; cmt="#657b83"
-      fi
-      sAdd="#859900"; sRem="#dc322f"
-      badgeAdd="$sAdd"; badgeRem="$sRem"; badgeNeu="$accent"
-      fRename="$accent"; fMod="#b58900"; fUntracked="$sAdd"
-      kw="#859900"; str="#2aa198"; num="#d33682"; fn="#268bd2"; typ="#b58900"
-      punct="#cb4b16"; op="$kw"; esc="$kw"; lang="$konst"; vbi="$konst"
-      mem="$fn"; param="$fn"; attr="$kw"; tag="$kw"; imp="$punct"; pre="$punct"
-      mac="$punct"; prim="$kw"; ns="$typ"; cls="$typ"; bfn="$fn"; call="$fn"
-      var="$text"; use="$text"; key="$fn"
-      extra=$(cat <<EOF
-"markup.heading"                    = "$h2"
-"entity.name.section"               = "$h2"
-"entity.name.section.markdown"      = "$h2"
-"punctuation.definition.heading.markdown" = "$h2"
-"heading.1.markdown entity.name.section.markdown" = "$h1"
-"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
-EOF
-      )
-      ;;
     # flexoki (kepano/flexoki-neovim): roles are the resolved fg of nvim's
     # groups. Rows are the green/red 15% into the ground, words 30%; the
     # comment is theme-sync's contrast floor over those rows.
@@ -1224,58 +1096,6 @@ EOF
 "keyword.control.exception"         = "$exc"
 "keyword.control.trycatch"          = "$exc"
 "entity.other.attribute-name"       = "$kw"
-"markup.underline.link"             = "$link"
-"markup.heading"                    = "$h2"
-"entity.name.section"               = "$h2"
-"entity.name.section.markdown"      = "$h2"
-"punctuation.definition.heading.markdown" = "$h2"
-"heading.1.markdown entity.name.section.markdown" = "$h1"
-"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
-EOF
-      )
-      ;;
-    # jellybeans (WTFox/jellybeans.nvim): roles are the resolved fg of nvim's
-    # groups. The plugin paints diffs fg-only, so rows are the green/red 15%
-    # into the ground and words 30% (theme-sync sets the same in nvim); the
-    # comment is theme-sync's contrast floor over those rows.
-    jellybeans:*)
-      local addWord remWord cls key h1 h2 exc link ctl tagd
-      bg="#151515"; panel="#1c1c1c"; panelAlt="#333333"; border="#404040"
-      accent="#8197bf"; accentMuted="#384048"; text="#e8e8d3"; muted="#888888"
-      addedBg="#232e1e"; removedBg="#321c1c"; ctxBg="#151515"
-      addWord="#304627"; remWord="#4f2323"
-      sAdd="#70b950"; sRem="#d74545"; lnFg="#605958"
-      fMod="#e6a75a"; note="#1c1c1c"; link="#d2ebbe"
-      kw="#c6b6ee"; ctl="#8fbfdc"; exc="#cc88a3"; op="#b0d0f0"
-      str="#99ad6a"; num="#d98870"; fn="#fbd587"; typ="#e6a75a"; prim="#7299b0"
-      mac="#8197bf"; mem="#dddddd"; param="#ccc5c4"; tagd="#668799"; cmt="#929290"
-      if [ "$2" = light ]; then
-        bg="#f5e6d3"; panel="#e8d5c0"; panelAlt="#d8c8b8"; border="#d7af87"
-        accent="#2952a3"; accentMuted="#e7cfb7"; text="#252525"; muted="#686868"
-        addedBg="#d9d2b6"; removedBg="#e8c8b8"; ctxBg="#f5e6d3"
-        addWord="#bcbe9a"; remWord="#dcab9d"
-        sAdd="#386014"; sRem="#a02020"; lnFg="#605958"
-        fMod="#b87520"; note="#e8d5c0"; link="#457039"
-        kw="#5f43aa"; ctl="#2b5b77"; exc="#904070"; op="#234291"
-        str="#658349"; num="#954d3b"; fn="#916625"; typ="#b87520"; prim="#22495f"
-        mac="#2952a3"; mem="#444444"; param="#555150"; tagd="#3a596a"; cmt="#585858"
-      fi
-      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
-      badgeNeu="$accent"; fRename="$accent"; h1="$op"; h2="$ctl"
-      konst="$num"; lang="$num"; esc="$kw"; vbi="$kw"; bfn="$kw"
-      cls="$typ"; ns="$op"; imp="$op"; attr="$mac"; pre="$mac"
-      tag="$ctl"; punct="$ctl"; call="$fn"
-      var="$text"; use="$text"; key="$text"
-      extra=$(cat <<EOF
-"keyword.control"                   = "$ctl"
-"keyword.control.exception"         = "$exc"
-"keyword.control.trycatch"          = "$exc"
-"keyword.operator.word"             = "$op"
-"keyword.operator.new"              = "$op"
-"keyword.operator.expression"       = "$op"
-"string.regexp"                     = "$ctl"
-"entity.other.attribute-name"       = "$text"
-"punctuation.definition.tag"        = "$tagd"
 "markup.underline.link"             = "$link"
 "markup.heading"                    = "$h2"
 "entity.name.section"               = "$h2"
@@ -2086,27 +1906,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#a0c980" yellow="#deb974" red="#ee848a"
       blue="#6cb6eb" teal="#5dbbc1" peach="#deb974"
       ;;
-    dracula:light)
-      # alucard (#fffbeb, bglighter panel) — verbatim. No blue upstream; purple
-      # holds the ANSI blue slot, as in dracula's own terminal map.
-      base_name="one-light"
-      accent="#644AC9" panel_bg="#ECE9DF" surface_dim="#DEDCCF"
-      surface0="#CECCC0" surface1="#BCBAB3"
-      overlay0="#6C664B" overlay1="#6C664B"
-      text="#1F1F1F" subtext0="#6C664B"
-      green="#14710A" yellow="#846E15" red="#CB3A2A"
-      blue="#644AC9" teal="#036A96" peach="#A34D14"
-      ;;
-    dracula:*)
-      # dracula (#282a36, bgdark panel) — verbatim. Purple holds the blue slot.
-      base_name="one-dark"
-      accent="#BD93F9" panel_bg="#21222C" surface_dim="#343746"
-      surface0="#424450" surface1="#44475A"
-      overlay0="#6272A4" overlay1="#6272A4"
-      text="#F8F8F2" subtext0="#6272A4"
-      green="#50FA7B" yellow="#F1FA8C" red="#FF5555"
-      blue="#BD93F9" teal="#8BE9FD" peach="#FFB86C"
-      ;;
     # nightfox.nvim, verbatim: panel bg0, surfaces bg2/bg3/bg4, overlays fg3/comment.
     nightfox:light)
       base_name="one-light"
@@ -2399,46 +2198,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       green="#849900" yellow="#b28500" red="#db302d"
       blue="#268bd3" teal="#29a298" peach="#ca4c16"
       ;;
-    solarized:light)
-      # solarized light (base3 #fdf6e3 ground, base2 panel), canonical accents.
-      base_name="one-light"
-      accent="#268bd2" panel_bg="#eee8d5" surface_dim="#e4ddc8"
-      surface0="#d9d2bc" surface1="#cbc3ab"
-      overlay0="#93a1a1" overlay1="#839496"
-      text="#586e75" subtext0="#657b83"
-      green="#859900" yellow="#b58900" red="#dc322f"
-      blue="#268bd2" teal="#2aa198" peach="#cb4b16"
-      ;;
-    solarized:*)
-      # solarized dark (base03 #002b36 ground, panel a step darker).
-      base_name="one-dark"
-      accent="#268bd2" panel_bg="#002731" surface_dim="#073642"
-      surface0="#0d4552" surface1="#164f5c"
-      overlay0="#586e75" overlay1="#657b83"
-      text="#839496" subtext0="#657b83"
-      green="#859900" yellow="#b58900" red="#dc322f"
-      blue="#268bd2" teal="#2aa198" peach="#cb4b16"
-      ;;
-    selenized:light)
-      # selenized light (bg_0 #fbf3db ground, bg_1 panel).
-      base_name="one-light"
-      accent="#0072d4" panel_bg="#ece3cc" surface_dim="#e2dac3"
-      surface0="#d5cdb6" surface1="#cfcebe"
-      overlay0="#909995" overlay1="#7d8784"
-      text="#3a4d53" subtext0="#53676d"
-      green="#489100" yellow="#ad8900" red="#d2212d"
-      blue="#0072d4" teal="#009c8f" peach="#c25d1e"
-      ;;
-    selenized:*)
-      # selenized dark (bg_0 #103c48 ground, panel a step darker).
-      base_name="one-dark"
-      accent="#4695f7" panel_bg="#0d3540" surface_dim="#184956"
-      surface0="#2d5b69" surface1="#3a6878"
-      overlay0="#72898f" overlay1="#8a9ea3"
-      text="#adbcbc" subtext0="#8a9ea3"
-      green="#75b938" yellow="#dbb32d" red="#fa5750"
-      blue="#4695f7" teal="#41c7b9" peach="#ed8649"
-      ;;
     flexoki:light)
       # flexoki light (paper #fffcf0 ground, bg-2 panel).
       base_name="one-light"
@@ -2498,26 +2257,6 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c3c0b8" subtext0="#a19c94"
       green="#8fb78c" yellow="#b99d4a" red="#d68585"
       blue="#81a5c4" teal="#7dbbba" peach="#f7c699"
-      ;;
-    jellybeans:light)
-      # jellybeans light (sepia #f5e6d3 ground, grey_one panel).
-      base_name="one-light"
-      accent="#2952a3" panel_bg="#e8d5c0" surface_dim="#d8c8b8"
-      surface0="#cbb9a6" surface1="#b9a691"
-      overlay0="#686868" overlay1="#605958"
-      text="#252525" subtext0="#686868"
-      green="#386014" yellow="#876820" red="#a02020"
-      blue="#2952a3" teal="#2b5b77" peach="#954d3b"
-      ;;
-    jellybeans:*)
-      # jellybeans dark (#151515 ground, grey_one panel).
-      base_name="one-dark"
-      accent="#8197bf" panel_bg="#1c1c1c" surface_dim="#333333"
-      surface0="#404040" surface1="#606060"
-      overlay0="#888888" overlay1="#9098a0"
-      text="#e8e8d3" subtext0="#888888"
-      green="#99ad6a" yellow="#fad07a" red="#d74545"
-      blue="#8197bf" teal="#8fbfdc" peach="#d98870"
       ;;
   esac
 

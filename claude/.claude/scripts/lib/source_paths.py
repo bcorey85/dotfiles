@@ -2,6 +2,7 @@
 rules every gate reads: `is_test_path` (the file belongs to the tests) and `is_runnable_test_file` (a test runner
 can take it alone as a target). It also owns `is_index_file` (a folder's re-export file) and `is_style_file` (a
 stylesheet), which simplify slicing leaves out of its counts."""
+import notes_paths
 
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
                   "Gemfile.lock", "composer.lock", "go.sum", "bun.lockb"}
@@ -98,6 +99,13 @@ LARGE_ADDED_LINES = 40
 def counts_toward_size(path):
     """Whether a changed file's added lines count toward the LARGE_ADDED_LINES bar: counted source, and not a doc."""
     return is_counted_source(path) and not path.endswith(".md")
+
+
+def is_doc_path(path):
+    """Whether a path is a Markdown file or sits under a docs/ folder, at the top or nested."""
+    if path.endswith(notes_paths.NOTES_SUFFIX):
+        return True
+    return path.startswith(notes_paths.DOCS_FOLDER) or f"/{notes_paths.DOCS_FOLDER}" in path
 
 
 def is_large_change(added_lines, new_paths):

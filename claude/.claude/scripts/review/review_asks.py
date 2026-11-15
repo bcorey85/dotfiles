@@ -22,12 +22,12 @@ JUMP_NOTE_LIMIT = 160
 # line, so the conditional-change check skips it.
 USER_RULED_KEY = "user_ruled"
 # A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`,
-# `Otherwise`, `If the user` or `If (not) accepted`, or it holds anywhere `if yes`, `if no,`, `if (not) confirmed/
+# `Otherwise` or `If the user`, or it holds anywhere `if yes`, `if no,`, `if (not) confirmed/
 # approved` or `if the user confirms/approves/accepts/agrees/says`. An accepted answer to it applies the branch the
 # user never chose. A condition inside ordinary code, such as "Return 202 if accepted by the queue" or "Show the banner
-# if the user is an admin", is not one.
+# if the user is an admin", is not one. Nor is `If accepted, X`: it means X once accepted.
 CONDITIONAL_CHANGE = re.compile(
-    r"^\s*(if not|if no(?!-)|unless|otherwise|if the user|if (not )?accepted)\b"
+    r"^\s*(if not|if no(?!-)|unless|otherwise|if the user)\b"
     r"|\bif yes\b|\bif no,|\bif (not )?(confirmed|approved)\b"
     r"|\bif the user (confirms|approves|accepts|agrees|says)\b",
     re.IGNORECASE)

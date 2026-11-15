@@ -3,14 +3,14 @@
 It starts review_loop_script.py --reviewers main as a detached process and returns when the loop asks for reviewers
 (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop exits. With --detach (the /review and /fix
 fork) it returns once the loop has started and names the `code_wait.py review --loop` command that waits on it.
-It records the session's dispatch row,
-writes the prompt file, the loop's pid, <loop dir>/handoff.txt and <loop dir>/launch.json (the packet arguments the
-wait prints, and the flags a later fix run of the same review carries), and keeps its state under
+It records the session's dispatch row, writes the prompt file, the loop's pid, <loop dir>/handoff.txt and
+<loop dir>/launch.json (the packet arguments the wait prints, and the flags a later fix run of the same review
+carries), and keeps its state under
 <git dir>/review-script. It SIGTERMs the process group of every live earlier loop of the same repo, and deletes the
---fix and --handoff files that sit in the code-phase run folder.
+--fix, --also-fix and --handoff files that sit in the code-phase run folder.
 
-A findings file (`--fix`) holds one finding per item: a line that starts with `- ` at column 0, then any indented
-continuation lines. Blank lines may sit between items. Any other line stops the launch.
+A findings file (`--fix`, `--also-fix`) holds one finding per item: a line that starts with `- ` at column 0, then
+any indented continuation lines. Blank lines may sit between items. Any other line stops the launch.
 """
 import argparse
 import json
@@ -82,6 +82,9 @@ def launch_parser():
     parser.add_argument("--repo", help="absolute path of the repo to review, when it is not the cwd's repo")
     parser.add_argument("--fix", metavar="FINDINGS_FILE",
                         help="fix-first: the fix coder applies these findings, then the loop reviews")
+    parser.add_argument("--also-fix", metavar="FINDINGS_FILE",
+                        help="with --fix: more findings for the fix coder, in the same format; they come after "
+                             "the --fix findings, so --user-ruled and --session-ruled numbers stay valid")
     parser.add_argument("--no-review", action="store_true", help="with --fix: apply the findings and review nothing")
     parser.add_argument("--user-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): the user accepted finding N of the findings file, counted "
@@ -109,6 +112,8 @@ def launch_arguments(argv):
     options = launch_parser().parse_args(argv)
     if options.no_review and not options.fix:
         raise LaunchError("--no-review needs --fix: a review-first run with no review does nothing")
+    if options.also_fix and not options.fix:
+        raise LaunchError("--also-fix needs --fix: it adds findings to a fix run")
     if options.user_ruled and not options.fix:
         raise LaunchError("--user-ruled needs --fix: only a fix run applies findings the user accepted")
     if options.session_ruled and not options.fix:
@@ -123,12 +128,13 @@ def launch_arguments(argv):
     return options
 
 
-def read_findings_file(findings_file):
-    """The finding texts of a findings file, one per `- ` item, continuation lines joined with a space."""
+def read_findings_file(findings_file, flag="--fix"):
+    """The finding texts of a findings file, one per `- ` item, continuation lines joined with a space. `flag` names
+    the launch flag that gave the file, for a read error."""
     try:
         lines = pathlib.Path(findings_file).read_text().splitlines()
     except OSError as error:
-        raise LaunchError(f"--fix {findings_file}: {error}") from error
+        raise LaunchError(f"{flag} {findings_file}: {error}") from error
 
     findings = []
     for number, line in enumerate(lines, 1):
@@ -221,7 +227,7 @@ def packet_args(options, launch_file):
 
 def relaunch_args(options, repo, paths, handoff_file):
     """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane,
-    handoff and test commands. `--fix`, `--iter`, `--user-ruled`, `--session-ruled` and `--detach` are the
+    handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--user-ruled`, `--session-ruled` and `--detach` are the
     caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
@@ -304,13 +310,14 @@ def read_user_ruled(launch_file):
 
 
 def consume_run_folder_inputs(repo, options):
-    """Deletes the --fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such as the
-    asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
+    """Deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such
+    as the asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
     cannot leave this launch's file in place for the next one to read."""
     run_folder = script_utils.git_path(repo, code_wait.PHASE_DIR_NAME)
     if run_folder is None:
         return
-    inputs = [pathlib.Path(given).resolve() for given in (options.fix, options.handoff) if given]
+    inputs = [pathlib.Path(given).resolve() for given in (options.fix, options.also_fix, options.handoff)
+              if given]
     consumed = [input_file for input_file in inputs if input_file.parent == run_folder.resolve()]
     if not consumed:
         return
@@ -383,6 +390,8 @@ def fix_run_findings(options, repo):
     if not options.fix:
         return FixRunFindings([], [], [], [], [])
     findings = read_findings_file(options.fix)
+    if options.also_fix:
+        findings += read_findings_file(options.also_fix, "--also-fix")
     # Called only to check the numbers: a --user-ruled or --session-ruled number that names no finding stops the launch.
     ruled_texts("--user-ruled", options.user_ruled, findings)
     ruled_texts("--session-ruled", options.session_ruled, findings)

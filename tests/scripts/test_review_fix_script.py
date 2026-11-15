@@ -3103,6 +3103,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"],
                                           HOME=home, FAKE_LEDGER_WRITE_EXIT="2")
         self.assertIn("ACTION: redispatch", output)
+        self.assertIn("add `--also-fix <that file>` to the line", output)
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 
@@ -3468,6 +3469,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                        FAKE_LEDGER_WRITE_EXIT="2")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
+        self.assertIn("add `--also-fix <that file>` to the line", output)
         first_launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
         self.assertEqual(len(first_launch_lines), 1, output)
 

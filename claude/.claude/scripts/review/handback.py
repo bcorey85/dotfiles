@@ -63,17 +63,17 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
-               "left_alone", "unrun_reviewer", "plan_impacts"]
+               "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts"]
+             "plan_impacts", "no_code_ruling_broken"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes", "left_alone")
-# The list fields whose every entry is a mapping, and the text field each entry requires.
-ENTRY_TEXT_KEYS = {"fixed": "finding", "skipped_fp": "item", "findings_remaining": "finding", "ask": "question",
-                   "plan_impacts": "text"}
+# The list fields whose every entry is a mapping, and the text fields each entry requires.
+ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "findings_remaining": ("finding",),
+                   "ask": ("question",), "plan_impacts": ("text",), "no_code_ruling_broken": ("ruling", "file")}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -408,14 +408,14 @@ ENTRY_NORMALIZERS = {"fixed": fill_fixed_finding, "ask": normalize_ask, "plan_im
 
 def read_json_entries(key, entries):
     """(the entries of the JSON list field `key`, their problems). A mapping list holds only mappings, each with its
-    required text field; the entry is never read as free text. An ask that names no file_line is unlocated. A
+    required text fields; the entry is never read as free text. An ask that names no file_line is unlocated. A
     string list holds only strings. Any other list passes as it is."""
     if key in STRING_LIST_KEYS:
         if script_utils.is_string_list(entries):
             return entries, []
         return [], [f"{key} must be a JSON list of strings, not {one_line(json.dumps(entries), 80)!r}"]
-    required = ENTRY_TEXT_KEYS.get(key)
-    if required is None:
+    required_keys = ENTRY_TEXT_KEYS.get(key)
+    if required_keys is None:
         return entries, []
 
     items = []
@@ -431,8 +431,9 @@ def read_json_entries(key, entries):
         if normalizer:
             normalizer(item)
         is_dropped_ask = key == "ask" and item.get("drop_reason")
-        if not is_dropped_ask and not str(item.get(required) or "").strip():
-            problems.append(f"{key}[{position}] has no {required}: {one_line(json.dumps(entry), 80)!r}")
+        missing = [name for name in required_keys if not str(item.get(name) or "").strip()]
+        if missing and not is_dropped_ask:
+            problems.append(f"{key}[{position}] has no {' and no '.join(missing)}: {one_line(json.dumps(entry), 80)!r}")
             continue
 
         if key == "ask":
@@ -602,6 +603,13 @@ def full_check_lines(packet):
     return lines
 
 
+def no_code_ruling_lines(packet):
+    """One line per code file a coder changed against a no-code ruling, naming the file, then the ruling's location
+    and note."""
+    return [f"Code changed against a no-code ruling: {broken['file']} (ruling: {broken['ruling']})"
+            for broken in packet["no_code_ruling_broken"]]
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer. Fixed findings, nits
     and skipped false positives show as counts only."""
@@ -618,6 +626,7 @@ def render(packet, skill, sections=()):
     if packet["left_alone"]:
         lines.append("Left alone, read for another purpose: " + "; ".join(packet["left_alone"]))
     lines += full_check_lines(packet)
+    lines += no_code_ruling_lines(packet)
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]
@@ -648,15 +657,24 @@ def stored_effective_status(seen):
     return effective_status(packet, seen["dispatch"].get("repo"))
 
 
+def stored_packet(message):
+    """(the packet of a stored hand-back, the parse error or None). A message that is not a JSON packet has no packet
+    and no error. A packet that does not parse returns its error: the commit gate fails closed on it."""
+    if json_packet_text(message) is None:
+        return None, None
+    try:
+        return load(message), None
+    except PacketError as error:
+        return None, str(error)
+
+
 def stored_held_plan_impacts(message):
     """(the held plan impacts of a stored hand-back, the parse error or None). A message that is not a JSON packet has
-    none. A packet that does not parse returns its error: the commit gate fails closed on it."""
-    if json_packet_text(message) is None:
-        return [], None
-    try:
-        return held_plan_impacts(load(message)), None
-    except PacketError as error:
-        return [], str(error)
+    none."""
+    packet, parse_error = stored_packet(message)
+    if packet is None:
+        return [], parse_error
+    return held_plan_impacts(packet), None
 
 
 def false_clean_reason(session_id):
@@ -680,10 +698,11 @@ def standing_false_clean_reason(seen):
         return f"the latest review-loop hand-back is {status}"
     if seen["handback"].get("no_reviewer"):
         return "the review-loop handed back clean with no reviewer run"
-    _held, parse_error = stored_held_plan_impacts(seen["handback"].get("message", ""))
+    _packet, parse_error = stored_packet(seen["handback"].get("message", ""))
     # Fail closed: a hand-back whose plan impacts cannot be read never earns commit credit.
     if parse_error:
-        return f"the latest review-loop hand-back does not parse, so its plan impacts cannot be read: {parse_error}"
+        return (f"the latest review-loop hand-back does not parse, so its plan impacts "
+                f"cannot be read: {parse_error}")
     unruled = unruled_plan_impacts(seen)
     if unruled:
         return f"the review-loop handed back {len(unruled)} plan impact(s) that await a ruling"

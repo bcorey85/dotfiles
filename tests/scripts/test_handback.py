@@ -717,6 +717,31 @@ class RenderTest(HandbackTestBase):
         text = packet_text(CONVERGED_FIELDS, findings_remaining=remaining)
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
+    def test_a_code_change_against_a_no_code_ruling_renders_its_ruling_and_file(self):
+        broken = {"ruling": "`a/c.py:3` Make no code change.", "file": "a/b.py"}
+        packet = handback.load(json_packet(no_code_ruling_broken=[broken]))
+        self.assertIn("Code changed against a no-code ruling: a/b.py (ruling: `a/c.py:3` Make no code change.)",
+                      handback.render(packet, "review"))
+
+    def test_a_no_code_ruling_entry_that_is_not_an_object_with_a_ruling_and_a_file_is_a_packet_error(self):
+        cases = (
+            ("a/b.py", "must be a JSON object"),
+            ({"ruling": "x"}, "has no file"),
+            ({"file": "a/b.py"}, "has no ruling"),
+            ({"issue": 2}, "has no ruling and no file"),
+        )
+        for entry, expected in cases:
+            with self.subTest(entry=entry), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(no_code_ruling_broken=[entry]))
+            self.assertIn("no_code_ruling_broken[0]", raised.exception.problems[0])
+            self.assertIn(expected, raised.exception.problems[0])
+
+    def test_stored_packet_reads_a_non_json_message_as_no_packet_and_a_broken_one_as_an_error(self):
+        self.assertEqual(handback.stored_packet("plain text"), (None, None))
+        packet, error = handback.stored_packet('{"status": "converged", "iter": ')
+        self.assertIsNone(packet)
+        self.assertTrue(error)
+
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
         packet = handback.load(json_packet(iter=0, class_closure="n/a"))
         rendered = handback.render(packet, "review")

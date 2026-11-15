@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-586 fix notes
+589 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -16,7 +16,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/code-step | 166 | 0 |
 | script/review-fix | 59 | 11 |
 | script/review-loop-script | 57 | 7 |
-| script/handback | 53 | 3 |
+| script/handback | 54 | 4 |
 | script/review-commit-gate | 37 | 3 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 24 | 3 |
@@ -27,8 +27,8 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/quality-check-cap | 17 | 0 |
 | skill/code | 17 | 3 |
 | skill/review | 17 | 11 |
+| script/review-loop | 14 | 7 |
 | script/shell-write-gate | 14 | 0 |
-| script/review-loop | 13 | 6 |
 | script/verify-prep | 13 | 3 |
 | script/staged-claim-gate | 12 | 1 |
 | script/verify-log | 12 | 5 |
@@ -51,6 +51,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
+| script/review-launch | 5 | 5 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/test-run-output | 5 | 1 |
 | skill/refactor | 5 | 0 |
@@ -61,8 +62,8 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
-| script/review-launch | 4 | 4 |
 | script/run-sh | 4 | 1 |
+| script/source-paths | 4 | 2 |
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
@@ -71,9 +72,9 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/inline-interpreter-hint | 3 | 0 |
 | script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
+| script/review-asks | 3 | 3 |
 | script/review-loop-packet | 3 | 1 |
 | script/review-scope | 3 | 0 |
-| script/source-paths | 3 | 1 |
 | script/wait-loop-gate | 3 | 1 |
 | agent/code-fork | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
@@ -93,7 +94,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/loop-transcript | 2 | 0 |
 | script/phase-asks | 2 | 2 |
 | script/plan-review-shards | 2 | 1 |
-| script/review-asks | 2 | 2 |
+| script/review-fix-asks | 2 | 2 |
 | script/reviewed-tree | 2 | 1 |
 | script/rg-path-gate | 2 | 0 |
 | script/sweep-scratchpads | 2 | 0 |
@@ -117,6 +118,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/detach | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 1 |
+| script/fork-write-scope | 1 | 1 |
 | script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-commands | 1 | 0 |
@@ -140,9 +142,11 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 1 |
 | script/review | 1 | 0 |
+| script/review-fix-names | 1 | 1 |
 | script/review-loop-findings | 1 | 1 |
 | script/review-loop-fix-induced | 1 | 1 |
 | script/rule-anchors | 1 | 0 |
+| script/ruled-change-text | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/telemetry-enabled | 1 | 0 |

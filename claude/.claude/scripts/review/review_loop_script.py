@@ -11,9 +11,7 @@ block. A `findings:` line makes the run fix-first: the fix coder applies the cal
 The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
-check, telemetry rows, and the hand-back packet. From round two on, a fix whose file:line sits outside the previous
-fix diff, unless its class is bug, correctness or security, goes to the packet's findings_remaining, not to the fix
-coder; such fixes alone end the rounds, and a converged run that still holds one ends `deferred`.
+check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py and writes the full-check receipt. It runs only the `Quality check:` command
 of the repo's CLAUDE.md; it runs none in a repo with no such line. In a repo whose CLAUDE.md holds `Full suite: CI`,
 where the coder calls run the changed files' tests, a run with no runner summary or that ran no test is
@@ -73,7 +71,6 @@ import loop_transcript
 import review_loop_held
 import reviewer_dispatch
 import script_utils
-from capped_review import DEFERRED
 from coder_report import open_questions
 from finding_record import parse_finding
 from review_loop_calls import (
@@ -104,7 +101,7 @@ from review_loop_findings import (
     ruled_plan_split,
     same_finding,
 )
-from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges, split_outside_fixes
+from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_plan import first_round_plan, review_files, second_round_plan
 from review_loop_prompt_file import (
     REVIEWERS_HEADLESS,
@@ -681,22 +678,6 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             return
         self.review_base = start
 
-    def defer_outside_fixes(self, round_fix):
-        """Takes out of the round each fix that split_outside_fixes defers, keeps it open and sets its finding row to
-        `actioned: none`. Returns (round_fix without them, the deferred findings)."""
-        kept_round_fix, deferred = [], []
-        for agent, owned, fixes in round_fix:
-            sent, agent_deferred = split_outside_fixes(self.out, self.iter_count, fixes)
-            kept_round_fix.append((agent, owned, sent))
-            deferred += agent_deferred
-        self.open_fixes += deferred
-
-        for entry in self.round_fixes:
-            if entry["finding"] in deferred:
-                entry["actioned"] = "none"
-        self.round_fixes = [entry for entry in self.round_fixes if entry["finding"] not in deferred]
-        return kept_round_fix, deferred
-
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
         ends here."""
@@ -916,13 +897,10 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
 def walk(loop, check_command, gate_commands):
     """The review rounds, then the full check, the class closure and the scoped tests while the loop converges. With
     gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
-    before commit credit. A converged run that still holds a fix deferred outside the fix diff ends `deferred`."""
-    deferred = []
+    before commit credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
         round_fix, round_nits = loop.review_round()
-        round_fix, round_deferred = loop.defer_outside_fixes(round_fix)
-        deferred += round_deferred
         if not loop.fix_round(round_fix, round_nits):
             break
 
@@ -935,9 +913,6 @@ def walk(loop, check_command, gate_commands):
         loop.scoped_tests_pass(check_command, list(gate_commands))
     elif loop.status == "converged" and loop.gates_every_run:
         loop.run_test_commands(test_commands_of(gate_commands), budgeted=True, stop_when_unrun=True)
-    still_deferred = any(item in loop.open_fixes for item in deferred)
-    if loop.status == "converged" and still_deferred:
-        loop.status = DEFERRED
 
 
 def first_pass(loop, findings, no_review, structure_pass_skipped):

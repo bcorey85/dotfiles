@@ -657,7 +657,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["no_code_ruling_broken"], [{"issue": 1, "file": "app.py"}])
+        self.assertEqual(packet["no_code_ruling_broken"],
+                         [{"ruling": "app.py:2 Make no code change.", "file": "app.py"}])
         reviewer_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][-1]["prompt"]
         self.assertIn(review_loop_prompts.NO_CODE_REVIEW_RULE, reviewer_prompt)
         self.assertIn("Make no code change.", reviewer_prompt)
@@ -671,7 +672,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["no_code_ruling_broken"], [{"issue": 1, "file": "app.py"}])
+        ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
+        self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
     def test_a_coders_own_skip_line_beats_the_re_ask_text_for_a_user_ruled_finding(self):
         report = ('SKIPPED 1: the limit is meant to be 5\n'

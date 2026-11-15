@@ -8,11 +8,17 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
+import fake_ledger
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+# The review modules come from the tree under test (the HOOK_SCRIPTS_DIR override), as the gate does.
+sys.path.insert(0, str(pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "review"))
 import plan_format
+import script_utils
+import verify_common
 
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
@@ -30,7 +36,7 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
                 ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
-                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"))
+                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"), ("review", "verify_common.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -64,6 +70,7 @@ class GateCase(unittest.TestCase):
         self.home.mkdir()
         self.state_dir = self.home / ".claude" / "state" / "review-gate"
         self.store_dir = self.home / ".claude" / "state" / "handback"
+        self.verify_state_dir = str(self.tmp / "verify-state")
         self.scripts = self.tmp / "scripts"
         self.scripts.mkdir()
         for folder, name in STAGED_FILES:
@@ -72,6 +79,14 @@ class GateCase(unittest.TestCase):
             (self.scripts / folder).mkdir(exist_ok=True)
             shutil.copy(str(source), str(self.scripts / folder / name))
         self.script = self.scripts / "review" / "review_commit_gate.py"
+
+    def verify_state(self):
+        return mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": self.verify_state_dir})
+
+    def branch_context_path(self, branch):
+        """The saved verify context path for self.repo on `branch`. Call it inside verify_state()."""
+        name = script_utils.repo_name(self.repo.resolve())
+        return verify_common.context_path(name, branch)
 
     def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True, repo="not-a-repo",
                       message=None):
@@ -96,7 +111,8 @@ class GateCase(unittest.TestCase):
         self.assertEqual(decision["permissionDecisionReason"].count("\n"), 0)
 
     def fire_raw(self, stdin, env_extra=None, cwd=None):
-        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp)}
+        env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp),
+               "VERIFY_STATE_DIR": self.verify_state_dir}
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(self.script)], input=stdin, capture_output=True, text=True, env=env,
                               cwd=str(cwd or self.tmp))
@@ -1435,6 +1451,221 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.dispatch())
         (self.repo / "new.py").write_text("new\n")
         self.assert_commit_denied(self.commit("git add new.py && git commit -m x"))
+
+    def log_branch_review(self, top=None, asks=None, branch="main", **overrides):
+        """Save the context verify-log review leaves for self.repo: the tree as it stands, as reviewLoggedTree."""
+        merge_base = self.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        repo_top = self.repo.resolve()
+        exclude_rel = overrides.get("excludeRel")
+        context = {"top": str(top or repo_top), "mergeBase": merge_base, "excludeRel": exclude_rel,
+                   verify_common.REVIEW_LOGGED_TREE: verify_common.tree_fingerprint(repo_top, merge_base, exclude_rel),
+                   verify_common.REVIEW_ASKS: asks or []}
+        context.update(overrides)
+        with self.verify_state():
+            verify_common.save_context(self.branch_context_path(branch), context)
+
+    def branch_review_covers_with_problem(self):
+        with self.verify_state():
+            credit = verify_common.branch_review_covers(self.repo)
+        return credit.covers, credit.problem
+
+    def test_branch_review_covers_is_quiet_when_no_context_was_saved(self):
+        covered, problem = self.branch_review_covers_with_problem()
+        self.assertFalse(covered)
+        self.assertIsNone(problem)
+
+    def test_branch_review_covers_reports_a_context_it_cannot_read(self):
+        self.log_branch_review(mergeBase=7)
+        covered, problem = self.branch_review_covers_with_problem()
+        self.assertFalse(covered)
+        self.assertIn("verify credit unread:", problem)
+
+    def test_branch_review_covers_reports_a_malformed_or_incomplete_context_file(self):
+        incomplete = json.dumps({"top": str(self.repo.resolve()), verify_common.REVIEW_LOGGED_TREE: "t",
+                                 "excludeRel": None})
+        bad_contexts = {"malformed json": "{not json", "missing mergeBase": incomplete}
+        for label, text in bad_contexts.items():
+            with self.subTest(label):
+                self.log_branch_review()
+                with self.verify_state():
+                    self.branch_context_path("main").write_text(text)
+                covered, problem = self.branch_review_covers_with_problem()
+                self.assertFalse(covered, label)
+                self.assertIn("verify credit unread:", problem, label)
+
+    def test_branch_review_covers_reports_a_fingerprint_it_cannot_compute(self):
+        self.log_branch_review()
+        failure = verify_common.VerifyError("git hung")
+        with mock.patch.object(verify_common, "tree_fingerprint", side_effect=failure):
+            covered, problem = self.branch_review_covers_with_problem()
+        self.assertFalse(covered)
+        self.assertEqual("verify credit unread: git hung", problem)
+
+    def test_branch_review_covers_passes_its_timeout_to_every_git_call(self):
+        self.log_branch_review()
+        with self.verify_state(), \
+                mock.patch.object(verify_common, "tree_fingerprint", return_value="x") as fingerprint, \
+                mock.patch.object(verify_common, "repo_top", wraps=verify_common.repo_top) as top, \
+                mock.patch.object(verify_common, "require_branch", wraps=verify_common.require_branch) as branch:
+            verify_common.branch_review_covers(self.repo, timeout=7)
+        self.assertEqual(7, top.call_args.kwargs["timeout"])
+        self.assertEqual(7, branch.call_args.kwargs["timeout"])
+        self.assertEqual(7, fingerprint.call_args.kwargs["timeout"])
+
+    def test_a_review_logged_on_another_branch_earns_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(branch="feature")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_of_a_second_real_checkout_earns_no_credit(self):
+        other = self.make_repo("second")
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(top=other.resolve())
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_names_the_checkout_through_its_resolved_path(self):
+        link = self.tmp / "repo-link"
+        link.symlink_to(self.repo, target_is_directory=True)
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git commit -a -m x", cwd=link))
+
+    def test_a_partial_stage_commit_in_a_tree_the_logged_review_covered_passes(self):
+        # The credit is for the work tree, as with a converged review: what is staged does not change it.
+        (self.repo / "base.py").write_text("changed\n")
+        (self.repo / "other.py").write_text("other\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git add base.py && git commit -m x"))
+
+    def test_a_commit_of_the_tree_a_logged_branch_review_covered_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_an_edit_since_the_logged_branch_review_is_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review()
+        (self.repo / "base.py").write_text("changed again\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_commit_of_a_logged_branch_review_with_an_open_ask_is_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(asks=[{"question": "keep the retry?"}])
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_an_ask_ruled_on_the_logged_tree_passes(self):
+        (self.repo / "base.py").write_text("changed\n")
+        merge_base = self.git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        tree = verify_common.tree_fingerprint(self.repo.resolve(), merge_base, None)
+        self.log_branch_review(asks=["keep the retry?"], **{verify_common.REVIEW_ASKS_RULED_TREE: tree})
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_an_ask_ruled_on_another_tree_is_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(asks=["keep the retry?"],
+                              **{verify_common.REVIEW_ASKS_RULED_TREE: "an-older-tree"})
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_an_edit_inside_the_excluded_task_dir_after_the_log_keeps_the_credit(self):
+        task_dir = self.repo / "docs" / "task"
+        task_dir.mkdir(parents=True)
+        (task_dir / "plan.md").write_text("plan\n")
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(excludeRel="docs/task")
+        (task_dir / "plan.md").write_text("plan, edited after the log\n")
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_an_edit_inside_a_dir_the_log_did_not_exclude_after_the_log_is_denied(self):
+        task_dir = self.repo / "docs" / "task"
+        task_dir.mkdir(parents=True)
+        (task_dir / "plan.md").write_text("plan\n")
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(excludeRel=None)
+        (task_dir / "plan.md").write_text("plan, edited after the log\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_logged_branch_review_of_another_checkout_earns_no_credit(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(top=self.tmp / "elsewhere")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def run_branch_review_writers(self, review_rows="[]"):
+        """Run the real verify-prep and `verify-log review --result PASS` over self.repo on a feature branch with one
+        uncommitted edit, with the ledger and the finding logger stubbed, and the context kept under
+        VERIFY_STATE_DIR. Returns the environment the writers ran in."""
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "base.py").write_text("changed\n")
+        ticket = self.tmp / "ticket.md"
+        ticket.write_text("# T-1: Thing\n\n## Acceptance Criteria\n\n- It works\n")
+        finder = self.tmp / "finder-stub"
+        finder.write_text("#!/usr/bin/env bash\nexit 0\n")
+        finder.chmod(0o755)
+        env = {**os.environ, **fake_ledger.install(self.tmp), "HOME": str(self.home),
+               "VERIFY_STATE_DIR": self.verify_state_dir, "LOG_REVIEW_FINDING_SCRIPT": str(finder),
+               "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        self.run_writer("verify-prep", ["--ticket-file", str(ticket)], env)
+        self.run_writer("verify-log", ["review", "--result", "PASS", "--rows", "-"], env, input_text=review_rows)
+        return env
+
+    def run_writer(self, name, args, env, input_text=None):
+        writer = SCRIPTS_DIR / "review" / name
+        # The finding logger is a stub, so no run row reaches a ledger: a rerun with no ledger is intended.
+        done = subprocess.run([str(writer), *args], cwd=self.repo, env=env, capture_output=True, text=True,
+                              input=input_text)
+        self.assertEqual(0, done.returncode, done.stderr)
+
+    def test_a_commit_after_the_real_verify_writers_logged_a_review_passes(self):
+        self.run_branch_review_writers()
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def saved_branch_context(self):
+        with self.verify_state():
+            return verify_common.load_context(self.branch_context_path("feature"))
+
+    def rule_on_the_real_ask(self):
+        """Log a review that leaves one ask open, then run verify-prep and `verify-log --asks-ruled`. Returns the env
+        the writers ran in, without a ledger."""
+        ask = [{"desc": "keep the retry?", "file": "base.py", "line": 1, "disposition": "ask", "actioned": "ask"}]
+        env = self.run_branch_review_writers(review_rows=json.dumps(ask))
+        saved = self.saved_branch_context()
+        self.assertTrue(saved[verify_common.REVIEW_ASKS])
+        self.assertNotIn(verify_common.REVIEW_ASKS_RULED_TREE, saved)
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+        # The stub logger records no ledger row, so the rerun reads the review from the saved context: no ledger.
+        env = {**env, "PATH": fake_ledger.path_without_ledger(env["PATH"])}
+        self.run_writer("verify-prep", ["--ticket-file", str(self.tmp / "ticket.md")], env)
+        verdicts = [{"item": "Ticket #1: It works", "verdict": "done", "file": "base.py", "line": 1,
+                     "evidence": "read base.py"}]
+        self.run_writer("verify-log", ["--rows", "-", "--asks-ruled", "user ruled keep, 2026-11-15"], env,
+                        input_text=json.dumps(verdicts))
+        return env
+
+    def test_a_commit_after_the_real_verify_log_ruled_an_ask_passes(self):
+        self.rule_on_the_real_ask()
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_a_prep_rerun_following_the_real_ruling_passes(self):
+        env = self.rule_on_the_real_ask()
+        self.run_writer("verify-prep", ["--ticket-file", str(self.tmp / "ticket.md")], env)
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_commit_after_an_edit_following_the_real_ruling_is_denied(self):
+        self.rule_on_the_real_ask()
+        (self.repo / "base.py").write_text("changed after the ruling\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
+
+    def test_a_commit_of_an_unreadable_verify_record_is_denied_and_names_the_record(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.log_branch_review(mergeBase=7)
+        finished = self.commit("git commit -a -m x")
+        self.assert_commit_denied(finished, stderr=finished.stderr)
+        self.assertIn("review-commit-gate: verify credit unread:", finished.stderr)
+
+    def test_a_commit_after_an_edit_following_the_real_verify_log_is_denied(self):
+        self.run_branch_review_writers()
+        (self.repo / "base.py").write_text("changed after the log\n")
+        self.assert_commit_denied(self.commit("git commit -a -m x"))
 
     def test_an_unreviewed_coder_commit_is_still_denied(self):
         (self.repo / "base.py").write_text("changed\n")

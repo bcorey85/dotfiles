@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import sys
+import typing
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import full_check_receipt
@@ -16,6 +17,12 @@ TOOLKIT_DIR = pathlib.Path(__file__).resolve().parents[2]
 STATE_ROOT = pathlib.Path.home() / ".claude" / "state"
 REVIEW_MARKER = "verify-branch"
 REVIEW_GATE = "code-reviewer"
+# The saved-context key verify-log writes on a --asks-ruled run that prints CLEAN:
+# the tree on which the user ruled on the open review asks.
+REVIEW_ASKS_RULED_TREE = "reviewAsksRuledTree"
+# The saved-context keys verify-log writes for the tree a branch review logged and for the asks it left open.
+REVIEW_LOGGED_TREE = "reviewLoggedTree"
+REVIEW_ASKS = "reviewAsks"
 # review_ran's reason when the ledger lists branch reviews on other trees only; review_state reads it to tell that
 # case from "no branch review logged".
 TREE_DIFFERS_REASON = "the tree differs from the one reviewed"
@@ -171,9 +178,9 @@ def moved_phase_notes(plan_text, name):
 
 # ---------- git ----------
 
-def repo_top(cwd):
+def repo_top(cwd, timeout=None):
     """The repo top level as a resolved path. Raises VerifyError outside a repository."""
-    top = script_utils.repo_root(cwd)
+    top = script_utils.repo_root(cwd, timeout=timeout)
     if top is None:
         raise VerifyError("not inside a git repository")
     return top.resolve()
@@ -211,8 +218,8 @@ def find_base(top, override=None):
     raise VerifyError(f"no base found (tried {', '.join(tried)}); pass --base <ref>")
 
 
-def require_branch(top):
-    branch = script_utils.current_branch(top)
+def require_branch(top, timeout=None):
+    branch = script_utils.current_branch(top, timeout=timeout)
     if not branch:
         raise VerifyError("detached HEAD: check out the branch")
     return branch
@@ -303,6 +310,51 @@ def load_context(path):
     if not path.is_file():
         raise VerifyError(f"no verify-prep context at {path}; run verify-prep first")
     return json.loads(path.read_text())
+
+
+def context_fingerprint(context, top, timeout=None):
+    """The fingerprint of the tree at `top` as a saved context measures it. Every reader of a context hashes through
+    here, so the logged value and the value checked later cannot drift apart."""
+    return tree_fingerprint(top, context["mergeBase"], context["excludeRel"], timeout=timeout)
+
+
+class BranchCredit(typing.NamedTuple):
+    """covers: a logged branch review credits the tree. problem: why the saved record could not be read (None when it
+    was read), for the caller to report under its own name."""
+    covers: bool
+    problem: str | None = None
+
+
+def branch_review_covers(repo_dir, timeout=None):
+    """A BranchCredit: covers is True when verify-log logged a branch review of the tree at repo_dir as it stands and
+    left no ask open. The saved context is the record: its `top` is this checkout, its `reviewLoggedTree` equals the
+    fingerprint computed now, and its `reviewAsks` is empty or `reviewAsksRuledTree` equals the logged tree
+    (saved by a verify-log --asks-ruled run that printed CLEAN). Fails closed: no repo, a detached HEAD or no
+    saved context is `covers` False with no problem; a bad context or a failed fingerprint is False with
+    `problem` set, so the commit gate keeps asking for a review and can print the problem. repo_top,
+    require_branch and the fingerprint's git calls may each run `timeout` seconds;
+    repo_name keeps its own 10 s limit. A git call that times out in repo_top or require_branch reads as no repo
+    or a detached HEAD, so it is `covers` False with no problem too."""
+    try:
+        top = repo_top(repo_dir, timeout=timeout)
+        branch = require_branch(top, timeout=timeout)
+    except VerifyError:
+        return BranchCredit(False)
+
+    try:
+        path = context_path(script_utils.repo_name(top), branch)
+        if not path.is_file():
+            return BranchCredit(False)
+        context = load_context(path)
+        logged_tree = context.get(REVIEW_LOGGED_TREE)
+        if context.get("top") != str(top) or not logged_tree:
+            return BranchCredit(False)
+        ask_open = bool(context.get(REVIEW_ASKS)) and context.get(REVIEW_ASKS_RULED_TREE) != logged_tree
+        if ask_open:
+            return BranchCredit(False)
+        return BranchCredit(logged_tree == context_fingerprint(context, top, timeout=timeout))
+    except (VerifyError, OSError, ValueError, KeyError, TypeError) as error:
+        return BranchCredit(False, f"verify credit unread: {error}")
 
 
 def die(error):

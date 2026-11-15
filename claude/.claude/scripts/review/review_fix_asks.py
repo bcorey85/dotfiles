@@ -168,8 +168,8 @@ def finding_ask_indexes(asks, outcomes):
 
 def changed_in_place_sentence(decided_by, note):
     """The sentence that gives a modified ask's `note` to the fix coder, naming who ruled: the user, the session, or
-    no one when `decided_by` is None or a word that is neither. The user's words stay as they were because a stored
-    finding text is matched word for word."""
+    no one when `decided_by` is None. `ask_deciders` and `--by` refuse any other word, so none reaches here. The
+    user's words stay as they were because a stored finding text is matched word for word."""
     if decided_by == plan_format.USER_RULING:
         return f"The user changed it; make this change in its place: {note}"
     if decided_by == plan_format.SESSION_RULING:
@@ -383,6 +383,10 @@ def ask_deciders(state):
     if not isinstance(deciders, list) or len(deciders) != len(state["asks"]):
         raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state must be a list with one entry per ask "
                          f"({len(state['asks'])}), not {deciders!r}.")
+    for decider in deciders:
+        if decider is not None and not plan_format.is_ruling_by(decider):
+            raise UsageError(f"{ASKS_DECIDED_BY_KEY} in the saved state holds {decider!r}; each entry must be "
+                             f"null, {plan_format.USER_RULING!r} or {plan_format.SESSION_RULING!r}.")
     return deciders
 
 
@@ -643,6 +647,7 @@ def command_correct_asks(options):
     left to apply."""
     state = load_fix_state()
     refuse_unless_correctable(state, options.packet_id)
+    ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)

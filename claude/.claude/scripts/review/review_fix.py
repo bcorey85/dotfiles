@@ -301,7 +301,7 @@ def asks_done_line(asks, state):
     line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
             f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
-            f"'{review_asks.MODIFIED}:<the user's change in one line>', quoted as one shell "
+            f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
             "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
     conditional = conditional_ask_numbers(asks)
     if not conditional:

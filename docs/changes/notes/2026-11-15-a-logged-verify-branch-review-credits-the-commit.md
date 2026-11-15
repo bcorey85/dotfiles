@@ -22,7 +22,9 @@ and branch has `top` equal to this checkout, `reviewLoggedTree` equal to the tre
 `reviewAsks` (an ask counts as ruled when a verify-log `--asks-ruled` run that prints CLEAN saved
 `reviewAsksRuledTree` equal to the logged tree; a new review log clears it). It fails closed and returns an unreadable-record problem to the caller.
 `context_fingerprint` (over `tree_fingerprint`) is the one hash both verify-log and the gate use. verify-prep
-carries `reviewAsksRuledTree` forward when it rebuilds the context.
+carries `reviewAsksRuledTree` forward when it rebuilds the context. The three context keys are named constants in
+`verify_common` (`REVIEW_LOGGED_TREE`, `REVIEW_ASKS`, `REVIEW_ASKS_RULED_TREE`), and verify-log, verify-prep and the
+tests read them from there.
 `review/review_commit_gate.py` `earns_credit` calls it after `is_reviewed` and prints the problem under its own
 name. The `reviewed_tree` record keeps its one writer. `claude/.claude/scripts/CLAUDE.md` gains one
 Owners line naming `branch_review_covers`, and its commit-credit line now reads "Converged-review commit credit". The

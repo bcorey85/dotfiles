@@ -20,6 +20,9 @@ REVIEW_GATE = "code-reviewer"
 # The saved-context key verify-log writes on a --asks-ruled run that prints CLEAN:
 # the tree on which the user ruled on the open review asks.
 REVIEW_ASKS_RULED_TREE = "reviewAsksRuledTree"
+# The saved-context keys verify-log writes for the tree a branch review logged and for the asks it left open.
+REVIEW_LOGGED_TREE = "reviewLoggedTree"
+REVIEW_ASKS = "reviewAsks"
 # review_ran's reason when the ledger lists branch reviews on other trees only; review_state reads it to tell that
 # case from "no branch review logged".
 TREE_DIFFERS_REASON = "the tree differs from the one reviewed"
@@ -325,7 +328,7 @@ class BranchCredit(typing.NamedTuple):
 def branch_review_covers(repo_dir, timeout=None):
     """A BranchCredit: covers is True when verify-log logged a branch review of the tree at repo_dir as it stands and
     left no ask open. The saved context is the record: its `top` is this checkout, its `reviewLoggedTree` equals the
-    fingerprint computed now, and its `reviewAsks` is empty or `reviewAsksRuledTree` equals the logged tree (verify-log
+    fingerprint computed now, and its `reviewAsks` is empty or `reviewAsksRuledTree` equals the logged tree
     (saved by a verify-log --asks-ruled run that printed CLEAN). Fails closed: no repo, a detached HEAD or no
     saved context is `covers` False with no problem; a bad context or a failed fingerprint is False with
     `problem` set, so the commit gate keeps asking for a review and can print the problem. repo_top,
@@ -343,10 +346,10 @@ def branch_review_covers(repo_dir, timeout=None):
         if not path.is_file():
             return BranchCredit(False)
         context = load_context(path)
-        logged_tree = context.get("reviewLoggedTree")
+        logged_tree = context.get(REVIEW_LOGGED_TREE)
         if context.get("top") != str(top) or not logged_tree:
             return BranchCredit(False)
-        ask_open = bool(context.get("reviewAsks")) and context.get(REVIEW_ASKS_RULED_TREE) != logged_tree
+        ask_open = bool(context.get(REVIEW_ASKS)) and context.get(REVIEW_ASKS_RULED_TREE) != logged_tree
         if ask_open:
             return BranchCredit(False)
         return BranchCredit(logged_tree == context_fingerprint(context, top, timeout=timeout))

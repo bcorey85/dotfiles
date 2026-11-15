@@ -69,6 +69,7 @@ class GateCase(unittest.TestCase):
         self.home.mkdir()
         self.state_dir = self.home / ".claude" / "state" / "review-gate"
         self.store_dir = self.home / ".claude" / "state" / "handback"
+        self.verify_state_dir = str(self.tmp / "verify-state")
         self.scripts = self.tmp / "scripts"
         self.scripts.mkdir()
         for folder, name in STAGED_FILES:
@@ -77,6 +78,14 @@ class GateCase(unittest.TestCase):
             (self.scripts / folder).mkdir(exist_ok=True)
             shutil.copy(str(source), str(self.scripts / folder / name))
         self.script = self.scripts / "review" / "review_commit_gate.py"
+
+    def verify_state(self):
+        return mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": self.verify_state_dir})
+
+    def branch_context_path(self, branch):
+        """The saved verify context path for self.repo on `branch`. Call it inside verify_state()."""
+        name = script_utils.repo_name(self.repo.resolve())
+        return verify_common.context_path(name, branch)
 
     def seed_handback(self, status=None, session="s1", dispatches=1, handed_back=True, repo="not-a-repo",
                       message=None):
@@ -102,7 +111,7 @@ class GateCase(unittest.TestCase):
 
     def fire_raw(self, stdin, env_extra=None, cwd=None):
         env = {"PATH": os.environ["PATH"], "HOME": str(self.home), "TMPDIR": str(self.tmp),
-               "VERIFY_STATE_DIR": str(self.tmp / "verify-state")}
+               "VERIFY_STATE_DIR": self.verify_state_dir}
         env.update(env_extra or {})
         return subprocess.run([sys.executable, str(self.script)], input=stdin, capture_output=True, text=True, env=env,
                               cwd=str(cwd or self.tmp))
@@ -1448,15 +1457,14 @@ class ReviewedWorkCommitTest(GateCase):
         repo_top = self.repo.resolve()
         exclude_rel = overrides.get("excludeRel")
         context = {"top": str(top or repo_top), "mergeBase": merge_base, "excludeRel": exclude_rel,
-                   "reviewLoggedTree": verify_common.tree_fingerprint(repo_top, merge_base, exclude_rel),
-                   "reviewAsks": asks or []}
+                   verify_common.REVIEW_LOGGED_TREE: verify_common.tree_fingerprint(repo_top, merge_base, exclude_rel),
+                   verify_common.REVIEW_ASKS: asks or []}
         context.update(overrides)
-        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
-            name = script_utils.repo_name(repo_top)
-            verify_common.save_context(verify_common.context_path(name, branch), context)
+        with self.verify_state():
+            verify_common.save_context(self.branch_context_path(branch), context)
 
     def branch_review_covers_with_problem(self):
-        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
+        with self.verify_state():
             credit = verify_common.branch_review_covers(self.repo)
         return credit.covers, credit.problem
 
@@ -1472,14 +1480,14 @@ class ReviewedWorkCommitTest(GateCase):
         self.assertIn("verify credit unread:", problem)
 
     def test_branch_review_covers_reports_a_malformed_or_incomplete_context_file(self):
-        incomplete = json.dumps({"top": str(self.repo.resolve()), "reviewLoggedTree": "t", "excludeRel": None})
+        incomplete = json.dumps({"top": str(self.repo.resolve()), verify_common.REVIEW_LOGGED_TREE: "t",
+                                 "excludeRel": None})
         bad_contexts = {"malformed json": "{not json", "missing mergeBase": incomplete}
         for label, text in bad_contexts.items():
             with self.subTest(label):
                 self.log_branch_review()
-                with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
-                    name = script_utils.repo_name(self.repo.resolve())
-                    verify_common.context_path(name, "main").write_text(text)
+                with self.verify_state():
+                    self.branch_context_path("main").write_text(text)
                 covered, problem = self.branch_review_covers_with_problem()
                 self.assertFalse(covered, label)
                 self.assertIn("verify credit unread:", problem, label)
@@ -1494,7 +1502,7 @@ class ReviewedWorkCommitTest(GateCase):
 
     def test_branch_review_covers_passes_its_timeout_to_every_git_call(self):
         self.log_branch_review()
-        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}), \
+        with self.verify_state(), \
                 mock.patch.object(verify_common, "tree_fingerprint", return_value="x") as fingerprint, \
                 mock.patch.object(verify_common, "repo_top", wraps=verify_common.repo_top) as top, \
                 mock.patch.object(verify_common, "require_branch", wraps=verify_common.require_branch) as branch:
@@ -1592,7 +1600,7 @@ class ReviewedWorkCommitTest(GateCase):
         finder.write_text("#!/usr/bin/env bash\nexit 0\n")
         finder.chmod(0o755)
         env = {**os.environ, **fake_ledger.install(self.tmp), "HOME": str(self.home),
-               "VERIFY_STATE_DIR": str(self.tmp / "verify-state"), "LOG_REVIEW_FINDING_SCRIPT": str(finder),
+               "VERIFY_STATE_DIR": self.verify_state_dir, "LOG_REVIEW_FINDING_SCRIPT": str(finder),
                "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
                "GIT_COMMITTER_EMAIL": "t@t"}
         self.run_writer("verify-prep", ["--ticket-file", str(ticket)], env)
@@ -1611,9 +1619,8 @@ class ReviewedWorkCommitTest(GateCase):
         self.assert_silent(self.commit("git commit -a -m x"))
 
     def saved_branch_context(self):
-        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.tmp / "verify-state")}):
-            name = script_utils.repo_name(self.repo.resolve())
-            return verify_common.load_context(verify_common.context_path(name, "feature"))
+        with self.verify_state():
+            return verify_common.load_context(self.branch_context_path("feature"))
 
     def rule_on_the_real_ask(self):
         """Log a review that leaves one ask open, then run verify-prep and `verify-log --asks-ruled`. Returns the env
@@ -1621,7 +1628,7 @@ class ReviewedWorkCommitTest(GateCase):
         ask = [{"desc": "keep the retry?", "file": "base.py", "line": 1, "disposition": "ask", "actioned": "ask"}]
         env = self.run_branch_review_writers(review_rows=json.dumps(ask))
         saved = self.saved_branch_context()
-        self.assertTrue(saved["reviewAsks"])
+        self.assertTrue(saved[verify_common.REVIEW_ASKS])
         self.assertNotIn(verify_common.REVIEW_ASKS_RULED_TREE, saved)
         self.assert_commit_denied(self.commit("git commit -a -m x"))
         # The stub logger records no ledger row, so the rerun reads the review from the saved context: no ledger.

@@ -1,3 +1,4 @@
+import importlib
 import os
 import pathlib
 import subprocess
@@ -116,6 +117,192 @@ class SlotPoolTest(unittest.TestCase):
         self.assertEqual(0, finished.returncode, finished.stdout)
         runner_niceness = os.nice(0)
         self.assertEqual(min(runner_niceness + 10, 19), int(niceness_log.read_text()))
+
+
+# Eight tests in two classes; each appends its own id and its process id to RAN_LOG.
+RECORDING_TEST = """import os
+import unittest
+
+
+class Recording:
+    def record(self):
+        with open(os.environ["RAN_LOG"], "a") as log:
+            log.write(f"{self.id()} {os.getpid()}\\n")
+
+    def test_a(self):
+        self.record()
+
+    def test_b(self):
+        self.record()
+
+    def test_c(self):
+        self.record()
+
+    def test_d(self):
+        self.record()
+
+
+class FirstTest(Recording, unittest.TestCase):
+    pass
+
+
+class SecondTest(Recording, unittest.TestCase):
+    pass
+"""
+
+
+# The seventh of eight tests ends its process with no unittest summary.
+CRASHING_TEST = RECORDING_TEST.replace("    def test_c(self):\n        self.record()",
+                                       "    def test_c(self):\n        if type(self).__name__ == 'SecondTest':\n"
+                                       "            os._exit(3)\n        self.record()")
+# The seventh of eight tests sleeps past the limit.
+STALLING_TEST = RECORDING_TEST.replace("    def test_c(self):\n        self.record()",
+                                       "    def test_c(self):\n        if type(self).__name__ == 'SecondTest':\n"
+                                       "            import time\n            time.sleep(60)\n        self.record()")
+# Two tests: with four processes, two of them take no test.
+TWO_TESTS = """import unittest
+
+
+class TwoTest(unittest.TestCase):
+    def test_a(self):
+        pass
+
+    def test_b(self):
+        pass
+"""
+# The first process to load the file sees one test more than the rest: it wins the exclusive create of MARKER_FILE.
+UNEVEN_TEST = RECORDING_TEST + """
+
+try:
+    os.close(os.open(os.environ["MARKER_FILE"], os.O_CREAT | os.O_EXCL))
+except FileExistsError:
+    pass
+else:
+    class ThirdTest(unittest.TestCase):
+        def test_only_one_process_sees(self):
+            pass
+"""
+SHARDED_NAME = "test_review_loop_script.py"
+
+
+class ShardedFileTest(unittest.TestCase):
+    def run_runner(self, file_name, source, arguments=(), limit_seconds=None):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        ran_log = pathlib.Path(scratch.name) / "ran.log"
+        ran_log.write_text("")
+        environment = dict(os.environ, REPO_ROOT=make_repo(self, {file_name: source}),
+                           SUITE_SLOT_DIR=str(pathlib.Path(scratch.name) / "slots"), RAN_LOG=str(ran_log),
+                           MARKER_FILE=str(pathlib.Path(scratch.name) / "marker"))
+        if limit_seconds:
+            environment["TEST_FILE_TIMEOUT_SECONDS"] = str(limit_seconds)
+        finished = subprocess.run([sys.executable, str(PARALLEL_TESTS), *arguments], capture_output=True, text=True,
+                                  env=environment, timeout=50)
+        ran_lines = [line.split() for line in ran_log.read_text().splitlines()]
+        test_ids = sorted(test_id for test_id, _ in ran_lines)
+        process_ids = {process_id for _, process_id in ran_lines}
+        return finished, test_ids, process_ids
+
+    def run_suite(self, file_name, arguments=()):
+        finished, test_ids, process_ids = self.run_runner(file_name, RECORDING_TEST, arguments)
+        self.assertEqual(0, finished.returncode, finished.stdout + finished.stderr)
+        return finished.stdout, test_ids, process_ids
+
+    def assert_all_eight_ran_once_in_four_processes(self, stdout, test_ids, process_ids):
+        expected_ids = sorted(f"test_review_loop_script.{class_name}.test_{letter}"
+                              for class_name in ("FirstTest", "SecondTest") for letter in "abcd")
+        self.assertEqual(expected_ids, test_ids)
+        self.assertEqual(4, len(process_ids), "the file did not run as four processes")
+        self.assertRegex(stdout, r"test_review_loop_script\.py +8 tests .* OK")
+        self.assertIn("8 tests in 1 files", stdout)
+
+    def test_the_review_loop_test_file_runs_in_several_processes_and_each_test_runs_once(self):
+        stdout, test_ids, process_ids = self.run_suite(SHARDED_NAME)
+
+        self.assert_all_eight_ran_once_in_four_processes(stdout, test_ids, process_ids)
+
+    def test_a_run_that_names_only_the_sharded_file_still_runs_every_test_of_it(self):
+        stdout, test_ids, process_ids = self.run_suite(SHARDED_NAME, arguments=[SHARDED_NAME])
+
+        self.assert_all_eight_ran_once_in_four_processes(stdout, test_ids, process_ids)
+
+    def test_one_process_that_crashes_fails_the_file(self):
+        finished, test_ids, _ = self.run_runner(SHARDED_NAME, CRASHING_TEST)
+
+        self.assertEqual(1, finished.returncode, finished.stdout)
+        self.assertRegex(finished.stdout, r"test_review_loop_script\.py .* FAIL")
+        self.assertNotIn("test_review_loop_script.SecondTest.test_c", test_ids)
+        self.assertIn("1 failed", finished.stdout)
+
+    def test_one_process_past_the_limit_fails_the_file_and_names_the_process(self):
+        finished, _, _ = self.run_runner(SHARDED_NAME, STALLING_TEST, limit_seconds=10)
+
+        self.assertEqual(1, finished.returncode, finished.stdout)
+        self.assertRegex(finished.stdout, r"test_review_loop_script\.py .* FAIL")
+        self.assertIn("test_review_loop_script.py timed out after 10s and was killed (process 3 of 4)",
+                      finished.stdout)
+
+    def test_a_process_that_takes_no_test_fails_the_file(self):
+        finished, _, _ = self.run_runner(SHARDED_NAME, TWO_TESTS)
+
+        self.assertEqual(1, finished.returncode, finished.stdout)
+        self.assertRegex(finished.stdout, r"test_review_loop_script\.py +2 tests .* FAIL")
+        self.assertIn("ran no test", finished.stdout)
+
+    def test_processes_that_load_different_numbers_of_tests_fail_the_file(self):
+        finished, _, _ = self.run_runner(SHARDED_NAME, UNEVEN_TEST)
+
+        self.assertEqual(1, finished.returncode, finished.stdout)
+        self.assertRegex(finished.stdout, r"test_review_loop_script\.py .* FAIL")
+        self.assertIn("its processes loaded different numbers of tests: [8, 9]", finished.stdout)
+
+    def test_a_file_with_no_shard_entry_runs_in_one_process(self):
+        stdout, test_ids, process_ids = self.run_suite("test_plain.py")
+
+        self.assertEqual(8, len(test_ids))
+        self.assertEqual(1, len(process_ids))
+        self.assertRegex(stdout, r"test_plain\.py +8 tests .* OK")
+
+
+class CountProblemsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, str(PARALLEL_TESTS.parent))
+        cls.addClassCleanup(sys.path.remove, str(PARALLEL_TESTS.parent))
+        cls.runner = importlib.import_module(PARALLEL_TESTS.stem)
+
+    def problems(self, shard_runs):
+        return self.runner.count_problems("test_big.py", shard_runs)
+
+    def test_counts_that_add_up_to_the_file_give_no_problem(self):
+        whole = {"total": 5, "chosen": 5}
+        self.assertEqual([], self.problems([(5, whole)]))
+        self.assertEqual([], self.problems([(3, {"total": 5, "chosen": 3}), (2, {"total": 5, "chosen": 2})]))
+        self.assertEqual([], self.problems([(0, {"total": 0, "chosen": 0})]))
+
+    def test_fewer_tests_run_than_the_file_holds_is_a_problem(self):
+        problems = self.problems([(3, {"total": 5, "chosen": 3}), (1, {"total": 5, "chosen": 2})])
+
+        self.assertEqual(["test_big.py: 4 tests ran, but the file holds 5",
+                          "test_big.py (one of 2 processes) ran 1 of the 2 tests it took"], problems)
+
+    def test_a_process_with_no_count_is_a_problem(self):
+        problems = self.problems([(3, {"total": 5, "chosen": 3}), (2, None)])
+
+        self.assertEqual(1, len(problems))
+        self.assertIn("wrote no readable count of its tests", problems[0])
+
+    def test_a_report_that_is_not_two_whole_numbers_reads_as_no_report(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        report_path = pathlib.Path(scratch.name) / "report.json"
+
+        self.assertIsNone(self.runner.read_shard_report(report_path))
+        for text in ("", '{"total": 5', "[5, 5]", '{"total": "5", "chosen": 5}', '{"total": 5}'):
+            report_path.write_text(text)
+            self.assertIsNone(self.runner.read_shard_report(report_path), text)
+        report_path.write_text('{"total": 5, "chosen": 2}')
+        self.assertEqual({"total": 5, "chosen": 2}, self.runner.read_shard_report(report_path))
 
 
 if __name__ == "__main__":

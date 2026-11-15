@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-959 changes
+960 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -37,6 +37,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md) [script/review-fix] A modified ask in the review-fix findings file now says who changed it. A ruling made with `asks-done --by session` no longer reads as the user's change.
 * [A /code phase rejection is recorded, so the next review loop drops the repeat](notes/2026-11-15-a-code-phase-rejection-is-recorded-so-the-next.md) [script/phase-asks, script/review-asks, script/review-fix, script/handback-store] An ask the session rejects with `phase_asks.py rule` is stored as a rejected ask, so the next review loop of that repo drops the same ask instead of raising it again.
 * [Accepted ask reaches the fix coder as its proposed change only](notes/2026-11-14-accepted-ask-reaches-the-fix-coder-as-its-proposed.md) [script/review-fix, script/review-loop, script/review-launch] An accepted ask's findings line now holds its class tag and proposed change, never the question or its If-declined branch, and a fix coder that re-asks a ruled ask in OPEN QUESTIONS has that finding skipped, not counted as fixed.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) [shared/review-fork-run, script/review-fix] The review fork's Resume step passes --by session to asks-done, asks-done --correct and decide when the resume text carries a 'ruled by: <session name>' line, and --by user for any other text. The stop footer tells a session that answers to add that line, and the ask presentation names each conditional ask to answer with 'modified:'.

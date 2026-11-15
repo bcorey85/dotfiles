@@ -134,6 +134,30 @@ class ReviewLaunchTest(unittest.TestCase):
         self.assertEqual((loop_dir / "handoff.txt").read_text(), HANDOFF)
         self.assertTrue((loop_dir / "findings.json").is_file())
 
+    def test_also_fix_findings_follow_the_fix_findings_and_the_run_folder_file_is_consumed(self):
+        fix_file = self.run_folder / "asks.md"
+        also_file = self.run_folder / review_fix_names.RUN_FOLDER_FINDINGS_NAME
+        fix_file.write_text("- README.md:1 first bug\n- README.md:2 second bug\n")
+        also_file.write_text("- README.md:3 deferred bug\n  continued\n")
+
+        self.launch("--fix", str(fix_file), "--also-fix", str(also_file), "--user-ruled", "2")
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        kept = json.loads((loop_dir / "findings.json").read_text())
+        self.assertEqual(
+            kept, ["README.md:1 first bug", "README.md:2 second bug", "README.md:3 deferred bug continued"])
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), r"(?m)^user-ruled: 2$")
+        self.assertFalse(fix_file.exists(), "the run-folder --fix file is consumed by the launch")
+        self.assertFalse(also_file.exists(), "the run-folder --also-fix file is consumed by the launch")
+        launch_record = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())
+        self.assertNotIn("--also-fix", json.dumps(launch_record))
+
+    def test_also_fix_without_fix_stops_the_launch(self):
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.launch_arguments(["--also-fix", "x.md"])
+        self.assertIn("needs --fix", str(raised.exception))
+
     def test_a_launch_keeps_inputs_outside_the_run_folder_and_the_asks_findings_file(self):
         outside_fix, outside_handoff = self.write_inputs(self.temp_root / "elsewhere")
         outside_stop = self.run_folder / stop_file_names.REVIEW_STOP_FILE

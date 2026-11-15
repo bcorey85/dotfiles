@@ -15,7 +15,11 @@ from review_loop_findings import (
     repeats_an_ask,
     ruled_plan_impact,
 )
+from review_loop_held import held_path_in_repo, names_held_file
+from review_loop_packet import located
 from review_loop_prompts import user_ruled_issue
+from ruled_change_text import is_no_code_finding, ruled_note
+from source_paths import is_code_path
 
 
 def rejected_ask_records(session_id, repo):
@@ -26,8 +30,34 @@ def rejected_ask_records(session_id, repo):
     return [parse_finding(text) for text in texts]
 
 
+def names_changed_path(finding_path, changed_path, repo):
+    """Whether a finding's path (a reviewer's text: repo-relative, a tail of it, or absolute under `repo`) names the
+    repo-relative `changed_path`."""
+    return names_held_file(held_path_in_repo(finding_path, repo), changed_path)
+
+
+def ruling_line(finding):
+    """One line for the reviewer's list of no-code rulings: the finding's location, then the ruling's note, so a cut
+    of a long line never removes the note."""
+    return f"{located(finding)} {ruled_note(finding.text)}"
+
+
+def broken_ruling_issue(ruled, other_paths, path, every_finding_ruled, repo):
+    """The issue number of the no-code ruling that the change to code file `path` breaks, or 0. `ruled` maps each
+    no-code issue number to its finding; `other_paths` are the paths the other findings and nits name."""
+    named = [number for number, finding in sorted(ruled.items()) if names_changed_path(finding.path, path, repo)]
+    if every_finding_ruled:
+        return named[0] if named else min(ruled)
+    if any(names_changed_path(other, path, repo) for other in other_paths):
+        return 0
+    return named[0] if named else 0
+
+
 class RuledFindings:
     def init_ruled_state(self):
+        # a location-and-note line (`ruling_line`) per finding ruled no code change, for the reviewer prompt
+        self.no_code_rulings = []
+        self.no_code_broken = []  # {"issue", "file"} of each code file a coder changed against such a ruling
         self.rejected_asks = []  # records of the asks the session rejected earlier, which a repeat never stops on
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
@@ -142,6 +172,31 @@ class RuledFindings:
         self.record_plan_impact({"text": text, "gate": "coder", "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled})
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
+
+    def no_code_numbers(self, findings):
+        """The 1-based issue numbers of the findings whose ruling is no code change."""
+        return [number for number, finding in enumerate(findings, 1) if is_no_code_finding(finding.text)]
+
+    def flag_broken_no_code_rulings(self, findings, changed, nits=()):
+        """After a coder pass: records the no-code rulings of `findings` for the next reviewer prompt, and each code
+        file the pass changed against one in `no_code_ruling_broken`. A changed code file breaks a ruling when only
+        no-code findings name it, or when the pass holds nothing but no-code findings (a nit may change code)."""
+        numbers = self.no_code_numbers(findings)
+        if not numbers:
+            return
+        for number in numbers:
+            line = ruling_line(findings[number - 1])
+            if line not in self.no_code_rulings:
+                self.no_code_rulings.append(line)
+        code_changed = [path for path in changed if is_code_path(path)]
+        ruled = {number: findings[number - 1] for number in numbers}
+        other_paths = {finding.path for number, finding in enumerate(findings, 1) if number not in ruled}
+        other_paths |= {nit.path for nit in nits}
+        every_finding_ruled = len(ruled) == len(findings) and not nits
+        for path in code_changed:
+            issue = broken_ruling_issue(ruled, other_paths, path, every_finding_ruled, self.repo)
+            if issue and {"issue": issue, "file": path} not in self.no_code_broken:
+                self.no_code_broken.append({"issue": issue, "file": path})
 
     def issue_text(self, finding):
         """The finding's text for the coder's issue list, marked when the user accepted the finding."""

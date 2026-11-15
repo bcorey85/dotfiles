@@ -31,6 +31,14 @@ judgment: work intake 2026-11-07 put the old review-loop agent at 0.72M (/review
 
 `review-fork-main-cache-read` and `fix-fork-main-cache-read`: Opus main-session cache read per /review and per /fix turn, down.
 
+### Ruling 2026-11-15
+
+Kept; both watches closed at NO CHANGE (ruled by agent-evals-5e). The pooled after window holds only one week, so the
+pooled verdict sits inside a wide before range (/review 825,309 → 806,959 over 148 turns, before 564,670–1,238,803;
+/fix 650,169 → 849,507 over 62 turns, before 382,283–1,580,342). Against the week before install, per turn fell:
+/review 1,197,887 → 806,959 and /fix 1,580,342 → 849,507. Total Opus main-session cache read per merged branch fell
+86.9M → 54.9M over ISO weeks 39–42 against 43–46.
+
 ## Back-out
 
 Restore the two skills' frontmatter and bodies, delete `skills/_shared/review-fork-run.md`, and revert `--detach`, `--loop` and the `review-stop.md` relay.

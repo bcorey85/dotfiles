@@ -1364,7 +1364,8 @@ class OpenAskTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("ASKS OPEN", done.stdout)
         self.assertIn("END-OF-ASK", done.stdout)
-        self.assertTrue(self.context()["reviewAsks"][0].endswith("END-OF-ASK"))
+        common = load_common()
+        self.assertTrue(self.context()[common.REVIEW_ASKS][0].endswith("END-OF-ASK"))
 
     def test_a_ruled_rerun_after_asks_open_is_the_only_logged_run(self):
         self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
@@ -1383,7 +1384,8 @@ class OpenAskTest(VerifyBranchBase):
         self.assertEqual(self.prep().returncode, 0)
         state_file = next((self.temp_root / "state").glob("*.json"))
         saved = self.context()
-        saved["reviewLoggedTree"] = "0" * 40
+        common = load_common()
+        saved[common.REVIEW_LOGGED_TREE] = "0" * 40
         state_file.write_text(json.dumps(saved))
 
         done = self.log("--rows", "-", stdin=self.rows())
@@ -1413,6 +1415,41 @@ class OpenAskTest(VerifyBranchBase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("CLEAN", done.stdout)
         self.assertIn("asks ruled: user kept the plan's reading, 2026-11-01", done.stdout)
+
+    def rule_on_the_open_asks(self):
+        self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)
+        self.assertEqual(self.prep().returncode, 0)
+        done = self.log("--rows", "-", "--asks-ruled", "user kept the plan's reading, 2026-11-01", stdin=self.rows())
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_ruling_saves_the_tree_it_ruled_on(self):
+        self.rule_on_the_open_asks()
+
+        common = load_common()
+        context = self.context()
+        self.assertEqual(context[common.REVIEW_LOGGED_TREE], context[common.REVIEW_ASKS_RULED_TREE])
+
+    def test_a_later_review_log_clears_the_ruled_tree(self):
+        self.rule_on_the_open_asks()
+        # A second review of the same tree exits 2, so the tree changes before the new review is logged.
+        self.write("src/a.py", "print(2)\n")
+        self.assertEqual(self.prep().returncode, 0)
+
+        logged = self.log_review(self.ASK, "PASS WITH WARNINGS")
+
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+
+        common = load_common()
+        self.assertNotIn(common.REVIEW_ASKS_RULED_TREE, self.context())
+
+    def test_a_prep_rerun_keeps_the_ruled_tree(self):
+        self.rule_on_the_open_asks()
+        common = load_common()
+        ruled_tree = self.context()[common.REVIEW_ASKS_RULED_TREE]
+
+        self.assertEqual(self.prep().returncode, 0)
+
+        self.assertEqual(ruled_tree, self.context()[common.REVIEW_ASKS_RULED_TREE])
 
     def test_a_long_ruling_is_shown_whole(self):
         self.assertEqual(self.log_review(self.ASK, "PASS WITH WARNINGS").returncode, 0)

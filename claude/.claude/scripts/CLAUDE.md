@@ -9,11 +9,12 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 ## Owners
 
 - Review converged or clean status: `review/handback.py` `CLEAN_STATUSES` and `false_clean_reason`, and `review/capped_review.py` `effective_status` (a capped packet reads as `deferred` only with no blocker, no open class, no unrun scoped reviewer and a passed full check of the final tree). Read it; never re-derive it from packet text, a transcript or a session line.
-- Commit credit and the reviewed tree: `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`, `reviewed_fingerprint`, which leaves out the notes paths of `lib/notes_paths.py`); the only writer of the record is `handback.record_clean_review`, fed the dispatch repo from the store. Fingerprint the repo that was reviewed, never the hook's cwd.
+- Converged-review commit credit and the reviewed tree: `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`, `reviewed_fingerprint`, which leaves out the notes paths of `lib/notes_paths.py`); the only writer of the record is `handback.record_clean_review`, fed the dispatch repo from the store. Fingerprint the repo that was reviewed, never the hook's cwd.
 - Tree identity: `lib/reviewed_tree.py` `tree_fingerprint` (`work_tree_fingerprint` for the work tree against its HEAD). Never hash a tree another way.
 - Hand-back rows (dispatch, hand-back, stop, step): `review/handback_store.py`.
 - Full-check result and scope: `review/full_check.py` owns the result values. `lib/check_scope.py` owns whether a command is whole or targeted.
 - Whether a full check ran on the current tree: `lib/full_check_receipt.py` (`valid_receipt`, `receipt_problem`), written only by `review/full_check.py`. Never match a command's text or a result line to decide it.
+- Whether a logged branch review covers the current tree with no open ask: `review/verify_common.py` (`branch_review_covers`), from the saved verify context (`verify-log review` and `verify-log --asks-ruled`).
 - Test file and test path: `lib/source_paths.py` (`is_test_path`, `is_runnable_test_file`).
 - Test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
 - Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.
@@ -23,6 +24,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - A lock held across processes: `lib/file_lock.py`. Never write a second flock helper.
 - Stop file names (`stop.md`, `review-stop.md`): `lib/stop_file_names.py`, which imports nothing. The Write gate loads it on every code-fork Write in a run folder.
 - Review-fix state folder and file names, the asks-findings file name, and the `asks_launch_pending`, `correct_open` and `asks_decided_by` keys: `lib/review_fix_names.py`, which imports nothing. `review/review_fix_state.py` re-exports them.
+- Text for a changed or no-code ask ruling on a finding (ruler clauses, marker, no-code test): `lib/ruled_change_text.py` (`changed_text`, `ruled_note`, `is_no_code_ruling`), standard library only.
 - Plan text: `lib/plan_format.py`.
 - TOML files: `lib/toml_file.py` `read_toml`. Never import tomllib elsewhere: the scripts run on Python 3.10.
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`).

@@ -21,7 +21,7 @@
 # header — any key after a table header belongs to that table. Placed below a
 # palette, `format` silently became palettes.<name>.format and starship fell
 # back to the default `$all` format (which pulls in $aws et al.).
-palette = "onedarkpro-dark"
+palette = "dredge-dark"
 
 format = """
 $directory\
@@ -89,34 +89,6 @@ purple = "#924f79"
 fg = "#514036"
 bg = "#f9f5d7"
 grey = "#928374"
-
-# solarized-osaka dark (craftzdog/solarized-osaka.nvim).
-[palettes.solarized-osaka-dark]
-red = "#db302d"
-orange = "#ca4c16"
-yellow = "#b28500"
-green = "#849900"
-blue = "#268bd3"
-branch = "#6d72c5"
-teal = "#29a298"
-purple = "#d23681"
-fg = "#839395"
-bg = "#001419"
-grey = "#586e74"
-
-# solarized-osaka light, accents a tier darker for the cream ground.
-[palettes.solarized-osaka-light]
-red = "#b7221f"
-orange = "#a23c11"
-yellow = "#8f6b00"
-green = "#6f8000"
-blue = "#1b6498"
-branch = "#494eb6"
-teal = "#238682"
-purple = "#b02769"
-fg = "#576d74"
-bg = "#fdf5e2"
-grey = "#647a82"
 
 # flexoki dark (kepano's 400 accents on black #100f0f).
 [palettes.flexoki-dark]
@@ -202,90 +174,6 @@ fg = "#323128"
 bg = "#faf9f5"
 grey = "#6a655d"
 
-# catppuccin frappé, verbatim.
-[palettes.catppuccin-dark]
-red = "#e78284"
-orange = "#ef9f76"
-yellow = "#e5c890"
-green = "#a6d189"
-blue = "#8caaee"
-branch = "#8caaee"
-teal = "#81c8be"
-purple = "#ca9ee6"
-fg = "#c6d0f5"
-bg = "#303446"
-grey = "#838ba7"
-
-# catppuccin latte, verbatim.
-[palettes.catppuccin-light]
-red = "#d20f39"
-orange = "#fe640b"
-yellow = "#df8e1d"
-green = "#40a02b"
-blue = "#1e66f5"
-branch = "#1e66f5"
-teal = "#179299"
-purple = "#8839ef"
-fg = "#4c4f69"
-bg = "#eff1f5"
-grey = "#8c8fa1"
-
-# tokyonight night, verbatim.
-[palettes.tokyonight-dark]
-red = "#f7768e"
-orange = "#ff9e64"
-yellow = "#e0af68"
-green = "#9ece6a"
-blue = "#7aa2f7"
-branch = "#7aa2f7"
-teal = "#1abc9c"
-purple = "#bb9af7"
-fg = "#c0caf5"
-bg = "#1a1b26"
-grey = "#565f89"
-
-# tokyonight day, verbatim.
-[palettes.tokyonight-light]
-red = "#f52a65"
-orange = "#b15c00"
-yellow = "#8c6c3e"
-green = "#587539"
-blue = "#2e7de9"
-branch = "#2e7de9"
-teal = "#118c74"
-purple = "#9854f1"
-fg = "#3760bf"
-bg = "#e1e2e7"
-grey = "#848cb5"
-
-# onedarkpro onedark (olimorris/onedarkpro.nvim), verbatim.
-[palettes.onedarkpro-dark]
-red = "#e06c75"
-orange = "#d19a66"
-yellow = "#e5c07b"
-green = "#98c379"
-blue = "#61afef"
-branch = "#61afef"
-teal = "#56b6c2"
-purple = "#c678dd"
-fg = "#abb2bf"
-bg = "#282c34"
-grey = "#5c6370"
-
-# onedarkpro onelight, verbatim.
-[palettes.onedarkpro-light]
-red = "#e05661"
-orange = "#ee9025"
-yellow = "#eea825"
-green = "#1da912"
-blue = "#118dc3"
-branch = "#118dc3"
-teal = "#56b6c2"
-purple = "#9a77cf"
-fg = "#6a6a6a"
-bg = "#fafafa"
-grey = "#bebebe"
-
 # edge aura dark (dimmed style, bg #2b2d37). Accents identical across
 # styles, so only bg moves; grey is the lifted comment value.
 [palettes.edge-dark]
@@ -343,34 +231,6 @@ fg = "#3d2b5a"
 bg = "#f6f2ee"
 grey = "#837a72"
 
-# duskfox, verbatim.
-[palettes.duskfox-dark]
-red = "#eb6f92"
-orange = "#ea9a97"
-yellow = "#f6c177"
-green = "#a3be8c"
-blue = "#569fba"
-branch = "#569fba"
-teal = "#9ccfd8"
-purple = "#c4a7e7"
-fg = "#e0def4"
-bg = "#232136"
-grey = "#817c9c"
-
-# dawnfox, verbatim.
-[palettes.duskfox-light]
-red = "#b4637a"
-orange = "#d7827e"
-yellow = "#ea9d34"
-green = "#618774"
-blue = "#286983"
-branch = "#286983"
-teal = "#56949f"
-purple = "#907aa9"
-fg = "#575279"
-bg = "#faf4ed"
-grey = "#9893a5"
-
 # dredge (bcorey85/dredge.nvim).
 [palettes.dredge-dark]
 red = "#f78d83"
@@ -424,33 +284,6 @@ purple = "#624c83"
 fg = "#545464"
 bg = "#f2ecbc"
 grey = "#6d6a5d"
-
-# darcula, dark only: the light palette is a verbatim copy.
-[palettes.darcula-dark]
-red = "#f43753"
-orange = "#dc9656"
-yellow = "#ffc66d"
-green = "#98be65"
-blue = "#6897bb"
-branch = "#cc7832"
-teal = "#73cef4"
-purple = "#a785ba"
-fg = "#c9d0d3"
-bg = "#2b2b2b"
-grey = "#929292"
-
-[palettes.darcula-light]
-red = "#f43753"
-orange = "#dc9656"
-yellow = "#ffc66d"
-green = "#98be65"
-blue = "#6897bb"
-branch = "#cc7832"
-teal = "#73cef4"
-purple = "#a785ba"
-fg = "#c9d0d3"
-bg = "#2b2b2b"
-grey = "#929292"
 
 # tairiki: dark, light.
 [palettes.tairiki-dark]
@@ -616,88 +449,6 @@ purple = "#a13865"
 fg = "#393a34"
 bg = "#ffffff"
 grey = "#8f908c"
-
-# rose-pine (rose-pine/neovim): main dark, dawn light. Green is pine, blue and
-# teal are foam, orange is rose.
-[palettes.rose-pine-dark]
-red = "#eb6f92"
-orange = "#ebbcba"
-yellow = "#f6c177"
-green = "#31748f"
-blue = "#9ccfd8"
-branch = "#9ccfd8"
-teal = "#9ccfd8"
-purple = "#c4a7e7"
-fg = "#e0def4"
-bg = "#191724"
-grey = "#908caa"
-
-[palettes.rose-pine-light]
-red = "#b4637a"
-orange = "#d7827e"
-yellow = "#ea9d34"
-green = "#286983"
-blue = "#56949f"
-branch = "#56949f"
-teal = "#56949f"
-purple = "#907aa9"
-fg = "#464261"
-bg = "#faf4ed"
-grey = "#797593"
-
-# ef-elea, ef-maris (oonamo/ef-themes.nvim): the plugin's palettes. Orange is
-# its warmer yellow; grey is fg_dim.
-[palettes.ef-elea-dark]
-red = "#ff656a"
-orange = "#e0b02f"
-yellow = "#cac85f"
-green = "#7fc87f"
-blue = "#57aff6"
-branch = "#57aff6"
-teal = "#6fcfd2"
-purple = "#f59acf"
-fg = "#eaf2ef"
-bg = "#222524"
-grey = "#969faf"
-
-[palettes.ef-elea-light]
-red = "#c3303a"
-orange = "#b04300"
-yellow = "#9a501f"
-green = "#00601f"
-blue = "#375cc6"
-branch = "#375cc6"
-teal = "#1f70af"
-purple = "#80308f"
-fg = "#221321"
-bg = "#edf5e2"
-grey = "#676470"
-
-[palettes.ef-maris-dark]
-red = "#ff6f6f"
-orange = "#f0c060"
-yellow = "#d0d24f"
-green = "#41bf4f"
-blue = "#57b0ff"
-branch = "#57b0ff"
-teal = "#2fd0db"
-purple = "#f59acf"
-fg = "#eaedef"
-bg = "#131c2b"
-grey = "#969faf"
-
-[palettes.ef-maris-light]
-red = "#c3303a"
-orange = "#8b4400"
-yellow = "#805a1f"
-green = "#007010"
-blue = "#375cc6"
-branch = "#375cc6"
-teal = "#1f66af"
-purple = "#80308f"
-fg = "#151a27"
-bg = "#edf4f8"
-grey = "#676470"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

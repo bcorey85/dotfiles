@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-971 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+973 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-15, [a review-loop coder edit to a CLAUDE.md file becomes an ask for the user](notes/2026-11-15-a-review-loop-coder-edit-to-a-claude-md-file.md).
 

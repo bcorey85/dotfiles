@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-957 changes
+958 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -36,6 +36,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The review commit gate judges merge, cherry-pick, revert, am, rebase --continue and commit aliases as commits](notes/2026-11-14-the-review-commit-gate-judges-merge-cherry-pick.md) [script/review-commit-gate, script/shell-command] A /code phase with unreviewed coder work or unruled reviewer questions can no longer commit through git merge, cherry-pick, revert, am, rebase --continue or --skip or a git alias that expands to a commit; the gate denies each where it denies git commit.
 * [Accepted ask reaches the fix coder as its proposed change only](notes/2026-11-14-accepted-ask-reaches-the-fix-coder-as-its-proposed.md) [script/review-fix, script/review-loop, script/review-launch] An accepted ask's findings line now holds its class tag and proposed change, never the question or its If-declined branch, and a fix coder that re-asks a ruled ask in OPEN QUESTIONS has that finding skipped, not counted as fixed.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) [shared/review-fork-run, script/review-fix] The review fork's Resume step passes --by session to asks-done, asks-done --correct and decide when the resume text carries a 'ruled by: <session name>' line, and --by user for any other text. The stop footer tells a session that answers to add that line, and the ask presentation names each conditional ask to answer with 'modified:'.
 * [Review loop: an ask the session rejected is dropped when a later round raises it again](notes/2026-11-13-review-loop-an-ask-the-session-rejected-is-dropped-when-raised-again.md) [script/review-fix, script/review-loop, script/handback-store] asks-done records each rejected ask (file:line and question) in the hand-back store; the loop reads them at start and files a repeat under dropped asks with a reason that says it was already rejected, instead of stopping on it.

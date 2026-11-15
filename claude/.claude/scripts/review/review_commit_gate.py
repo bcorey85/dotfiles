@@ -50,6 +50,13 @@ cannot read also counts when `git`, then only option-like words with an optional
 in it.
 The session stays dirty; a later commit that ships code is denied again.
 
+A git call that makes a commit (`git commit` or another call of git_commit_calls.py), or an alias of one, is judged
+as a commit and is never notes-only. A command with a program beside git reads as a plain-text
+commit for `git commit` only, unless the program is a shell or `eval`, whose text counts every committing call, so
+a PR body that names `git merge` is no commit. A commit through
+a `!` shell alias earns no credit (it may land in any repo) and is read in the cwd repo for asks; where the repo it
+runs in is placed by git_commit_calls.git_commit_dirs, through commit_placement.py.
+
 A dirty session still commits in four more cases, each checked against something a subagent cannot write:
   - the user's latest prompt in the main transcript starts with `[no-review]` or `[no review]` (the user ordered this
     turn's commits without review; a task notification, a peer session's message, a compaction summary, a `!` shell
@@ -73,13 +80,13 @@ holds an empty word or redirection target (it may be an emptied quoted-heredoc m
 `git add` or `git commit`. The words of a plain `git add` or `git commit` are not read for a folder change. A command
 also earns no credit when a step that is not a plain `git commit` counts as a commit (`env -C <dir> git commit`,
 `time git commit`); a `git add` of a file with `commit` in its name does not. When only that lost credit stands
-between a command and a repo a review covers, the deny names each such repo and its `git -C <repo> commit`.
+between a command and a repo a review covers, the deny names each such repo and its `git -C <repo> <subcommand>`.
 
 Finding asks a /code phase review opened in a repo that no session has ruled on deny any session's commit there (a
 merge too); a notes-only commit and `[no-review]` still pass. The check reads the repo of each dir the command names
-(a `cd`/`pushd`/`popd`/`cd -` target, a `git -C` target); a command the gate cannot read is checked in the hook's cwd
-repo. A commit it cannot place (a `cd` to a folder the shell expands, `env -C`, `--git-dir`) is left out, and a command
-with no placed commit passes this check.
+(a `cd`/`pushd`/`popd`/`cd -` target, a `git -C` target); a command the gate cannot read, and a commit it cannot place
+(a `cd` to a folder the shell expands, `env -C`, `--git-dir`), are checked in the hook's cwd repo, and a deny for
+the unplaced call tells the session to run `git -C <repo> <subcommand>` on one line naming the repo it lands in.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event {"kind": "dispatch"|"dirty", "ts",
 "agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
@@ -103,19 +110,20 @@ import time
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import commit_gate_denials
+import commit_placement
 import hook_input
 import notes_paths
 import reviewed_tree
 import script_utils
 import shell_statements
 import user_prompts
+from git_commit_calls import COMMITTING_CALL, NO_COMMIT_FLAGS, runs_commit_call
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
     GIT_VALUE_OPTIONS,
     GROUP_WORDS,
     LINE_CONTINUATION,
-    git_c_directory,
-    git_commit_dirs,
+    command_after_wrappers,
     git_options,
     git_subcommand,
     is_git_word,
@@ -125,7 +133,7 @@ from shell_command import (
     quoted_positions,
     redirection_writes_file,
     resolved_command_words,
-    split_command_steps,
+    runs_shell,
     split_simple_commands,
     substitution_spans,
 )
@@ -142,8 +150,11 @@ FOLDER_FREE_GIT = ("add", "commit")
 # A double-quoted string or an escaped character stays; a single-quoted string and a comment are dropped. The comment
 # alternative comes last, so a `#` inside quotes is consumed by them.
 QUOTED_SPAN = re.compile(r"\"(?:\\.|[^\"\\])*\"|\\.|'[^']*'|(?:^|(?<=[\s;&|()]))#[^\n]*", re.DOTALL | re.MULTILINE)
-# `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch.
+# `(?!-)`: `git commit-tree` and `git commit-graph` write objects and move no branch. COMMIT is the plain-text reading
+# of a command that has a program beside git, where a `git merge` in a message (a PR body) is no commit; COMMITTING
+# reads every committing call, for a command shlex cannot read.
 COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
+COMMITTING = re.compile(r"\bgit[ \t\r\f\v]+" + COMMITTING_CALL)
 # A closing quote, `+`, an opening quote: two string literals joined in a script's source.
 QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
 # Quotes and backslashes, which the shell drops from `git 'commit'` before git runs.
@@ -151,7 +162,7 @@ QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 # An option's value: a quoted string, a `$( )` or backtick substitution, or a plain word.
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
-UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+commit\b(?!-)")
+UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+" + COMMITTING_CALL)
 GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKERS = ("[no-review]", "[no review]")
 # The input key that names the edited file, for each tool a coder edits with.
@@ -183,8 +194,10 @@ SUBSTITUTION_SPAN = re.compile(HEREDOC_WORD.pattern + r"|\$\([^()]*\)|`[^`]*`")
 # Run on the text, so a command shlex reads wrongly or not at all still counts: git, then only git's global options
 # (a known option that takes a value is followed by it; any other option-like word stands alone), then commit.
 GIT_VALUE_OPTION_PATTERN = "|".join(re.escape(option) for option in sorted(GIT_VALUE_OPTIONS))
-GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+(?:(?:" + GIT_VALUE_OPTION_PATTERN + r")[ \t]+" + OPTION_VALUE
-                             + r"|-\S+))*[ \t]+commit\b(?!-)")
+GIT_OPTIONS_THEN = (r"\bgit(?:[ \t]+(?:(?:" + GIT_VALUE_OPTION_PATTERN + r")[ \t]+" + OPTION_VALUE
+                    + r"|-\S+))*[ \t]+")
+GIT_THEN_COMMIT = re.compile(GIT_OPTIONS_THEN + r"commit\b(?!-)")
+GIT_THEN_COMMITTING = re.compile(GIT_OPTIONS_THEN + COMMITTING_CALL)
 COMMIT_FLAGS = {"-q", "-v", "-s", "-n", "-e", "-o", "--quiet", "--verbose", "--signoff", "--no-verify", "--edit",
                 "--no-edit", "--allow-empty", "--allow-empty-message", "--no-gpg-sign", "--no-post-rewrite",
                 "--only", "--status", "--no-status"}
@@ -347,6 +360,12 @@ def text_holds_commit(texts, patterns):
     return any(pattern.search(text) for text in texts for pattern in patterns)
 
 
+def runs_text_as_shell(words):
+    """True when the simple command, after its wrappers, runs a shell or `eval`, which reads its argument as commands.
+    """
+    return runs_shell(words) or command_after_wrappers(words)[:1] == ["eval"]
+
+
 def reads_as_commit(reading):
     unsplit = QUOTED_STRING_JOIN.sub("", reading)
     unquoted = QUOTES_AND_BACKSLASHES.sub("", unsplit)
@@ -357,13 +376,17 @@ def reads_as_commit(reading):
         return text_holds_commit(texts, (UNREADABLE_GIT_THEN_COMMIT, COMMIT, GIT_THEN_COMMIT))
 
     unsafe_commands = [words for words in simple_commands if not is_safe_probe(words)]
-    if any(runs_git_commit(words) for words in unsafe_commands):
+    if any(runs_git_commit(words) or runs_commit_call(words) for words in unsafe_commands):
         return True
 
     if any(is_commit_command(span) for span in substitution_spans(reading)):
         return True
 
     if unsafe_commands:
+        # A shell or `eval` runs the words it is given, so any committing call in its text counts. Any other program
+        # (`gh pr create --body "run git merge"`) only carries the text, so there `git commit` alone counts.
+        if any(runs_text_as_shell(words) for words in unsafe_commands):
+            return text_holds_commit(texts, (COMMITTING, GIT_THEN_COMMITTING))
         return text_holds_commit(texts, (COMMIT, GIT_THEN_COMMIT))
 
     return False
@@ -744,43 +767,7 @@ def credit_repo_dirs(command, cwd):
     credit. Any other command commits in the directories commit_repo_dirs reads."""
     if spans_lines(command) or changes_folder(command) or has_substitution_text(command):
         return [None]
-    return commit_repo_dirs(command, cwd)
-
-
-def commit_repo_dirs(command, cwd):
-    """The directory of every `git commit` in the command: the cwd, moved by each `git -C <dir>` before the
-    subcommand. [None] when the command cannot be read, holds no commit, or any commit uses an option that moves the
-    repo (--git-dir, --work-tree) or a form (`env -C <dir> git commit`) the gate does not follow."""
-    if not cwd:
-        return [None]
-    committed_dirs = []
-    for _, step in split_command_steps(readable_command(command)):
-        try:
-            simple_commands = split_simple_commands(step)
-        except ValueError:
-            return [None]
-        for words in simple_commands:
-            committed_in = commit_dir(words, cwd)
-            if committed_in == "":
-                return [None]
-            if committed_in is None and is_commit_command(shlex.join(words)):
-                return [None]
-            if committed_in is not None and committed_in not in committed_dirs:
-                committed_dirs.append(committed_in)
-    return committed_dirs or [None]
-
-
-def commit_dir(words, directory):
-    """The directory a simple command `git [-C <dir>]... commit` commits in, from `directory`; "" when it is a git
-    command whose options the gate does not follow; None for any other command."""
-    if not is_git_word(words[0]):
-        return None
-    moved = git_c_directory(words, directory)
-    if moved is None:
-        return ""
-    if git_subcommand(words) == "commit":
-        return moved
-    return None
+    return COMMIT_READER.commit_repo_dirs(command, cwd)
 
 
 def concludes_merge(repo_dir):
@@ -861,8 +848,9 @@ def credited_repos(events, transcript_path, session, edited_by_agent):
     return credited
 
 
-def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent):
-    """The deny text: the lost credit when the command is all that stands between it and a reviewed repo."""
+def commit_deny_reason(placed, repo_dirs, events, transcript_path, session, edited_by_agent):
+    """The deny text: the lost credit when the command is all that stands between it and a reviewed repo. Its advice
+    names the subcommand the command ran (`git -C <repo> merge`); `placed` is its commit_placement.PlacedCommits."""
     plan_impact_denial = commit_gate_denials.unruled_plan_impact_denial(repo_dirs, session, GIT_TIMEOUT_SECONDS)
     if plan_impact_denial:
         return plan_impact_denial
@@ -873,15 +861,23 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
     if not reviewed_repos:
         return NO_REVIEW_DENIED
     covered = ", ".join(reviewed_repos)
+    subcommand = git_subcommand(placed.first_call_words) if placed.first_call_words else None
+    subcommand = subcommand or commit_placement.DEFAULT_COMMIT_SUBCOMMAND
+    # A bare subcommand would start a new operation; the advice must continue or skip the running one.
+    resume_flags = [flag for flag in ("--continue", "--skip") if flag in (placed.first_call_words or ())]
+    advised_call = " ".join([subcommand, *resume_flags])
     notes_only_repos = [repo for repo in reviewed_repos if staged_files_are_notes(repo)]
-    if notes_only_repos:
+    # Staged notes are committed by a plain `git commit` only; any other subcommand needs its own advice.
+    if notes_only_repos and subcommand == "commit":
         notes_repos = " or ".join(notes_only_repos)
         return (
             f"[review-commit-gate] This session's /review covers {covered}, but the gate cannot place this command "
             f"in a repo, and every staged file in {notes_repos} is a notes path. Do not run /review again: run a plain "
             "`git commit` from the repo root in its own Bash call, with no `cd`, `env` or `git -C`."
         )
-    suggestions = " or ".join(f"`git -C {shlex.quote(repo)} commit`" for repo in reviewed_repos)
+    suggestions = " or ".join(f"`git -C {shlex.quote(repo)} {advised_call}`" for repo in reviewed_repos)
+    if "--ff-only" in NO_COMMIT_FLAGS.get(subcommand, ()):
+        suggestions += " (or add `--ff-only` if the merge fast-forwards)"
     return (
         f"[review-commit-gate] This session's /review covers {covered}, but the gate cannot place this command "
         "in a repo: a `cd` or other folder change, a `$` or backtick, a wrapper before `git`, or a command over more "
@@ -891,21 +887,22 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
     )
 
 
-def check_commit(command, root, state_file, session):
+COMMIT_READER = commit_placement.CommitReader(is_commit_command, readable_command, GIT_TIMEOUT_SECONDS)
+
+
+def check_commit(command, root, state_file, session, placed):
     """Deny a commit while the session holds unreviewed coder work in a repo it commits in, unless the user ordered
     it without review, every directory it commits in earns credit, or it ships only notes. Also deny it while the
     phase review of a repo it commits in left finding asks that no session has ruled on, even with credit or for a
     merge; a notes-only commit and `[no-review]` still pass. The asks belong to the repo, so a session that has no
-    events of its own (a new session id) meets them too."""
+    events of its own (a new session id) meets them too. `placed` is the command's commit_placement.PlacedCommits."""
     events = gate_events(state_file)
     cwd = jq_field(root, "cwd")
     # A converged hand-back makes every dir clear, so open phase asks are read before that early return.
-    # The asks are read in the dirs the command names (`cd`, `git -C`); only a command that cannot be read falls back
-    # to the cwd. A commit the gate cannot place in a repo is left out, so a command with only such commits names no
-    # repo and passes this check (fail open).
-    named_dirs = git_commit_dirs(readable_command(command), cwd) if cwd else None
-    open_asks_denial = commit_gate_denials.unruled_phase_asks_denial(
-        named_dirs if named_dirs is not None else [cwd], GIT_TIMEOUT_SECONDS)
+    # The asks are read in the dirs the command names; a command that cannot be read, and each commit the gate cannot
+    # place in a repo, is read in the cwd repo (fail closed).
+    open_asks_denial = commit_gate_denials.commit_asks_denial(placed.named_dirs, placed.unplaced, cwd,
+                                                              GIT_TIMEOUT_SECONDS)
     if open_asks_denial is None and not events:
         return
     if user_ordered_no_review(root):
@@ -923,13 +920,18 @@ def check_commit(command, root, state_file, session):
 
     if open_asks_denial:
         raise DenyError(open_asks_denial)
-    raise DenyError(commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_agent))
+    raise DenyError(commit_deny_reason(placed, repo_dirs, events, transcript_path, session, edited_by_agent))
 
 
 def on_pre_tool_use(root, session, state_file):
     command = jq_field(root, "tool_input", "command")
-    if is_commit_command(command):
-        check_commit(command, root, state_file, session)
+    cwd = jq_field(root, "cwd")
+    # Read once: the asks check and the commit test both use the placement. A command that cannot be read names no
+    # dir, so it counts as no commit here (fail open): is_commit_command has read it through its text patterns, which
+    # never see aliases, so an alias inside an unreadable command (`diff <(true) x && git ci -m x`) passes.
+    placed = COMMIT_READER.placed_commits(command, cwd)
+    if is_commit_command(command) or placed.makes_commit():
+        check_commit(command, root, state_file, session, placed)
 
 
 def run(raw, state):

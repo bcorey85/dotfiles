@@ -7,12 +7,10 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-5 open benches, by rank. Each line is the question the bench asks.
+3 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Build an ambiguous multi-ticket fixture that can read plan quality across main-session models (running): A fixture hard enough to show a build gap would settle whether a Sonnet main session can orchestrate /code from a frozen Opus plan, and take part of the 66% of weekly Opus cache read the main session holds.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
-* Removal bench: /review loop as plain prompt steps without review_loop_script (running): Running the review loop as plain prompt steps could drop a script that still needs about one fix a day, at the same bug catch and lower cost.
-* Bench: toolkit safety gates with Read/Edit file I/O against vanilla Bash file I/O (running): Measures what the safety gates and the Read/Edit steering cost or save in tokens and wall-clock on a normal ticket, against stock Claude Code that reads and edits through Bash.

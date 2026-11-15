@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-971 changes
+972 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -38,6 +38,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Register the ledger MCP server under the name sessions call](notes/2026-11-15-register-the-ledger-mcp-server-under-the-name.md) [script/mcp-ledger] scripts/mcp_ledger registers ledger mcp as the user-scope server ledger (the name behind mcp__ledger__*), counts a bare or full-path command as registered, and removes an old agent-memory entry for the same command.
 * [The review loop test file runs as four processes, each under the per-process limit](notes/2026-11-15-the-review-loop-test-file-runs-as-four-processes.md) [script/parallel-tests] tests/parallel_tests.py runs test_review_loop_script.py as four processes that each take every fourth test, so a busy machine no longer kills the file at the 1,200 s limit and reports a passing branch as failed.
 * [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md) [script/review-asks] `asks-done` no longer refuses an ask whose proposed change starts with "if accepted" as conditional; only "if not accepted" counts.
 * [verify-prep reads a queue item's Done when bullets as the ticket criteria](notes/2026-11-15-verify-prep-reads-a-queue-item-s-done-when-bullets.md) [script/verify-prep, script/plan-format, script/script-utils, script/verify-log, script/verify-common, skill/verify-branch, agent/plan-verifier, rule/global-claude-md] A queue item now works as the ticket of a branch check: its `## Done when` bullets are the criteria, and the owner line names a session for an item a session wrote. No hand copy of the criteria is needed.

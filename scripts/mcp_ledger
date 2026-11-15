@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Register `ledger mcp` as the user-scope `agent-memory` MCP server.
-# Safe to run repeatedly. Bash 3.2 compatible (macOS).
+# Register `ledger mcp` as the user-scope `ledger` MCP server, the name sessions call its tools by
+# (mcp__ledger__facts). Removes a user-scope `agent-memory` entry that an earlier version of this script
+# added for the same command. Safe to run repeatedly. Bash 3.2 compatible (macOS).
 
-server_name="agent-memory"
+server_name="ledger"
+old_server_name="agent-memory"
 
+# The toolkit works with no ledger: nothing to register.
 ledger_bin="$(command -v ledger)" || exit 0
 
 # Print the value after "<label>:" on the first line that has it.
@@ -11,7 +14,8 @@ field_value() {
   printf '%s\n' "$1" | sed -n "s/^[[:space:]]*$2:[[:space:]]*//p" | sed -n '1s/[[:space:]]*$//p'
 }
 
-# Succeeds when the `claude mcp get` text in $1 is a user-scope entry for `ledger mcp`.
+# Succeeds when the `claude mcp get` text in $1 is a user-scope entry for `ledger mcp`. The command counts when it is
+# the bare name (a hand-made entry) or the path this script registers.
 is_ledger_entry() {
   local scope command_value args_value
   scope="$(field_value "$1" "Scope")"
@@ -21,49 +25,76 @@ is_ledger_entry() {
     "User config"*) ;;
     *) return 1 ;;
   esac
-  [ "$command_value" = "$ledger_bin" ] && [ "$args_value" = "mcp" ]
+  [ "$args_value" = "mcp" ] || return 1
+  [ "$command_value" = "ledger" ] || [ "$command_value" = "$ledger_bin" ]
 }
 
-existing="$(claude mcp get "$server_name" 2>&1)"
-get_status=$?
+# Registers `ledger mcp` under $server_name, replacing a user-scope entry of that name that runs something else.
+register_ledger() {
+  local existing get_status scope scope_word registered
+  existing="$(claude mcp get "$server_name" 2>&1)"
+  get_status=$?
 
-needs_remove=0
-case "$get_status:$existing" in
-  1:"No MCP server named \"$server_name\""*) ;;
-  0:*)
-    scope="$(field_value "$existing" "Scope")"
-    case "$scope" in
-      "User config"*) ;;
-      *)
-        scope_word="$(printf '%s' "${scope%% *}" | tr '[:upper:]' '[:lower:]')"
-        scope_word="${scope_word:-unknown}"
-        echo "mcp_ledger: $server_name is registered in $scope_word scope"
-        exit 1
-        ;;
-    esac
-    if is_ledger_entry "$existing"; then
-      echo "mcp_ledger: already registered"
-      exit 0
-    fi
-    needs_remove=1
-    ;;
-  *)
-    echo "mcp_ledger: claude mcp get failed"
-    exit 1
-    ;;
-esac
+  case "$get_status:$existing" in
+    1:"No MCP server named \"$server_name\""*) ;;
+    0:*)
+      scope="$(field_value "$existing" "Scope")"
+      case "$scope" in
+        "User config"*) ;;
+        *)
+          scope_word="$(printf '%s' "${scope%% *}" | tr '[:upper:]' '[:lower:]')"
+          scope_word="${scope_word:-unknown}"
+          echo "mcp_ledger: $server_name is registered in $scope_word scope"
+          return 1
+          ;;
+      esac
+      if is_ledger_entry "$existing"; then
+        echo "mcp_ledger: already registered"
+        return 0
+      fi
+      claude mcp remove "$server_name" --scope user || return 1
+      ;;
+    *)
+      echo "mcp_ledger: claude mcp get failed"
+      return 1
+      ;;
+  esac
 
-if [ "$needs_remove" = 1 ]; then
-  claude mcp remove "$server_name" --scope user || exit 1
-fi
+  claude mcp add "$server_name" --scope user -- "$ledger_bin" mcp || return 1
 
-claude mcp add "$server_name" --scope user -- "$ledger_bin" mcp || exit 1
-
-registered="$(claude mcp get "$server_name" 2>&1)" || {
-  echo "mcp_ledger: $server_name is not registered after add"
-  exit 1
+  registered="$(claude mcp get "$server_name" 2>&1)" || {
+    echo "mcp_ledger: $server_name is not registered after add"
+    return 1
+  }
+  if ! is_ledger_entry "$registered"; then
+    echo "mcp_ledger: $server_name does not point at $ledger_bin mcp after add"
+    return 1
+  fi
 }
-if ! is_ledger_entry "$registered"; then
-  echo "mcp_ledger: $server_name does not point at $ledger_bin mcp after add"
-  exit 1
-fi
+
+# Removes the old-name entry when it runs `ledger mcp`, which would expose the same tools twice. An entry that runs
+# anything else is not ours: leave it.
+remove_old_name() {
+  local old_entry old_status
+  old_entry="$(claude mcp get "$old_server_name" 2>&1)"
+  old_status=$?
+
+  case "$old_status:$old_entry" in
+    1:"No MCP server named \"$old_server_name\""*) return 0 ;;
+    0:*) ;;
+    *)
+      echo "mcp_ledger: claude mcp get $old_server_name failed"
+      return 1
+      ;;
+  esac
+
+  if ! is_ledger_entry "$old_entry"; then
+    echo "mcp_ledger: $old_server_name does not run ledger mcp in user scope, left alone"
+    return 0
+  fi
+  claude mcp remove "$old_server_name" --scope user || return 1
+  echo "mcp_ledger: removed old $old_server_name entry"
+}
+
+register_ledger || exit 1
+remove_old_name || exit 1

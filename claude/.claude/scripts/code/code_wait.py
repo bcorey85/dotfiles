@@ -32,6 +32,7 @@ from collections.abc import Callable
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
 import handback
+import handback_store
 import loop_transcript
 import phase_asks
 import reviewer_dispatch
@@ -160,7 +161,8 @@ def read_phase_run(repo):
 def phase_asks_notice(repo):
     """The lines that tell the session to rule on the finding asks of the phase packet the loop left, after opening
     them in the hand-back store. Empty when the loop left no packet, the packet does not parse, or
-    `phase_asks.record_open` opens nothing."""
+    `phase_asks.record_open` opens nothing. Raises what `phase_asks.record_open` raises when the asks cannot be
+    opened; `wait_review` fails the wait on it."""
     folder = loop_dir(repo)
     if folder is None:
         return []
@@ -175,6 +177,10 @@ def phase_asks_notice(repo):
         return []
 
     repo_top = script_utils.repo_root(repo)
+    if repo_top is None:
+        print(f"code_wait: {repo} is not in a work tree, so the packet's asks are not opened for ruling",
+              file=sys.stderr)
+        return []
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     packet_key = f"{folder}:{packet['iter']}"
     return phase_asks.record_open(session_id, str(repo_top), packet, read_phase_run(repo), packet_key)
@@ -358,7 +364,14 @@ def wait_review(repo, words=(), launched_folder=None):
 
     if not run.running():
         code = print_ended_loop(run)
-        notice = phase_asks_notice(repo) if code == 0 and launched_folder is None else []
+        if code != 0 or launched_folder is not None:
+            return code
+        try:
+            notice = phase_asks_notice(repo)
+        except (handback_store.PhaseAskRowError, OSError) as error:
+            print(f"code_wait: the finding asks of the phase packet could not be opened for ruling: {error}")
+            print(f"Run `{run.command}` again to open them for ruling.")
+            return 1
         if notice:
             print("\n".join(notice))
         return code

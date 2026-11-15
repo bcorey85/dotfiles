@@ -1,8 +1,11 @@
 """commit_gate_denials.py: the deny texts of review_commit_gate.py for a commit in a repo with a ruling still open:
-plan impacts the latest review handed back, and phase asks the session has not ruled on, whatever review came after.
-Each function takes the commit's repo dirs, the session id and git_timeout, and returns the deny text, or None when
-nothing is open. Both fail open when the store or its readers cannot be imported: the gate's own no-review deny
-still applies."""
+plan impacts the latest review handed back, and phase asks that no session has ruled on, whatever review came after.
+Each function takes the commit's repo dirs, git_timeout and (the plan impacts) the session id, and returns the deny
+text, or None when nothing is open. Both fail open when the store or its readers cannot be imported: the gate's own
+no-review deny still applies. The phase-asks check also fails open on a store it cannot read, and fails closed on a
+damaged row of the repo (an unparsable line counts only when it names the repo). A commit is never denied for
+another repo's asks: a commit the gate cannot place in a repo is left out of the dirs it is given, so a command with
+no placed commit passes this check."""
 import pathlib
 import shlex
 import sys
@@ -49,19 +52,33 @@ def unruled_plan_impact_denial(repo_dirs, session, git_timeout):
     return None
 
 
-def unruled_phase_asks_denial(repo_dirs, session, git_timeout):
-    """The deny text for a commit in a repo where a phase review handed the session finding asks it has not ruled
-    on, or None. Only a ruling settles them: a later review of the repo leaves them open."""
+def unruled_phase_asks_denial(repo_dirs, git_timeout):
+    """The deny text for a commit in a repo where a phase review handed finding asks that nobody has ruled on, or
+    None. The asks belong to the repo, not to a session: a session with a new id meets them too. Only a ruling
+    settles them: a later review of the repo leaves them open. Only the repos of `repo_dirs` (the dirs the command
+    names) are read; a dir outside any work tree names none, so a commit the gate cannot place in a repo passes
+    this check."""
     try:
+        import ask_outcome_words
         import handback_store
-        import phase_asks
     except ImportError as error:
-        # A missing store or ask module skips this check (fail open): a session with no open row is never blocked.
-        hook_input.emit_stderr(f"review-commit-gate: cannot import phase_asks: {error}\n")
+        # A missing store or word module skips this check (fail open): a session with no open row is never blocked.
+        hook_input.emit_stderr(f"review-commit-gate: cannot import ask_outcome_words: {error}\n")
         return None
 
     for repo_top in commit_repo_tops(repo_dirs, git_timeout):
-        open_row = handback_store.unruled_phase_asks(session, str(repo_top))
+        try:
+            open_row = handback_store.unruled_phase_asks(str(repo_top))
+        except handback_store.PhaseAskRowError as error:
+            # A damaged row of this repo fails closed: the asks it held cannot be told apart from none, and the deny
+            # names the line to fix or delete.
+            return (f"[review-commit-gate] Cannot read the phase review asks: {error}. Fix or delete that line of "
+                    "the hand-back store, then commit.")
+        except OSError as error:
+            # A store that cannot be read fails open: the deny could name no fix, and the plain review deny still
+            # applies. The reason goes to stderr.
+            hook_input.emit_stderr(f"review-commit-gate: cannot read the phase review asks of {repo_top}: {error}\n")
+            continue
         if open_row is None:
             continue
         asks = open_row["asks"]
@@ -70,8 +87,8 @@ def unruled_phase_asks_denial(repo_dirs, session, git_timeout):
         return (
             f"[review-commit-gate] A phase review of {repo_top} handed back {len(asks)} ask(s) that you have "
             f"not ruled on: {listed}. Do not run /review again: rule on them first, with "
-            f"`cd {shlex.quote(str(repo_top))} && {phase_asks.rule_command(len(asks))}` "
-            f"(`{phase_asks.LIST_COMMAND}` shows each ask's change, also from there). "
+            f"`cd {shlex.quote(str(repo_top))} && {ask_outcome_words.rule_command(len(asks))}` "
+            f"(`{ask_outcome_words.LIST_COMMAND}` shows each ask's change, also from there). "
             "Then commit the tree the review covered."
         )
     return None

@@ -63,8 +63,6 @@ A dirty session still commits in four more cases, each checked against something
     dispatch before it, and a review of another repo neither answers nor voids it. A dispatch's repo is the ROOT=
     that review-scope printed in the loop, else its `repo:` line, else the first absolute path the prompt names,
     else the session cwd; a ROOT= or `repo:` line in no work tree names no repo.
-    Finding asks a /code phase review opened (phase_asks.py) and the session has not ruled on deny a commit in
-    that repo, whatever hand-back came later; a notes-only commit and `[no-review]` still pass.
 The last three credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved; a `.` counts after `if`, `then`, `elif`, `else`,
@@ -76,6 +74,12 @@ holds an empty word or redirection target (it may be an emptied quoted-heredoc m
 also earns no credit when a step that is not a plain `git commit` counts as a commit (`env -C <dir> git commit`,
 `time git commit`); a `git add` of a file with `commit` in its name does not. When only that lost credit stands
 between a command and a repo a review covers, the deny names each such repo and its `git -C <repo> commit`.
+
+Finding asks a /code phase review opened in a repo that no session has ruled on deny any session's commit there (a
+merge too); a notes-only commit and `[no-review]` still pass. The check reads the repo of each dir the command names
+(a `cd`/`pushd`/`popd`/`cd -` target, a `git -C` target); a command the gate cannot read is checked in the hook's cwd
+repo. A commit it cannot place (a `cd` to a folder the shell expands, `env -C`, `--git-dir`) is left out, and a command
+with no placed commit passes this check.
 
 State: ~/.claude/state/review-gate/<session>, one line per record: a JSON event {"kind": "dispatch"|"dirty", "ts",
 "agent"}. A plain `dirty` line, from before events carried a time, counts from the file's last change. A leftover
@@ -110,9 +114,12 @@ from shell_command import (
     GIT_VALUE_OPTIONS,
     GROUP_WORDS,
     LINE_CONTINUATION,
+    git_c_directory,
+    git_commit_dirs,
     git_options,
     git_subcommand,
     is_git_word,
+    is_known_git_global_option,
     names_code_runner,
     parse_simple_commands,
     quoted_positions,
@@ -173,11 +180,6 @@ HEREDOC_MESSAGE = re.compile(r'"' + HEREDOC_WORD.pattern + r'"')
 # A quoted heredoc, a `$( )` with no parens inside, or a backtick span. Its spaces and newlines do not end the word it
 # sits in, so is_commit_command also reads the text with each span shrunk to `$S`.
 SUBSTITUTION_SPAN = re.compile(HEREDOC_WORD.pattern + r"|\$\([^()]*\)|`[^`]*`")
-GIT_GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs",
-                    "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
-                    "--no-lazy-fetch", "--no-advice", "--exec-path")
-# Options that take a value in the `--name=value` form; --exec-path takes one only in this form.
-GIT_EQUALS_OPTIONS = GIT_VALUE_OPTIONS | {"--exec-path"}
 # Run on the text, so a command shlex reads wrongly or not at all still counts: git, then only git's global options
 # (a known option that takes a value is followed by it; any other option-like word stands alone), then commit.
 GIT_VALUE_OPTION_PATTERN = "|".join(re.escape(option) for option in sorted(GIT_VALUE_OPTIONS))
@@ -274,11 +276,6 @@ def runs_substitution(word):
     if "$" not in word and "`" not in word:
         return False
     return HEREDOC_WORD.fullmatch(word) is None
-
-
-def is_known_git_global_option(option):
-    name, has_value, _ = option.partition("=")
-    return option in GIT_GLOBAL_FLAGS or (bool(has_value) and name in GIT_EQUALS_OPTIONS)
 
 
 def runs_git_commit(words):
@@ -778,16 +775,11 @@ def commit_dir(words, directory):
     command whose options the gate does not follow; None for any other command."""
     if not is_git_word(words[0]):
         return None
-    options, index = git_options(words)
-    for option, value in options:
-        if option == "-C" and value is not None:
-            if not value:
-                return ""
-            directory = os.path.join(directory, value)
-        elif not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree", "--config-env")):
-            return ""
-    if index < len(words) and words[index] == "commit":
-        return os.path.normpath(directory)
+    moved = git_c_directory(words, directory)
+    if moved is None:
+        return ""
+    if git_subcommand(words) == "commit":
+        return moved
     return None
 
 
@@ -902,20 +894,26 @@ def commit_deny_reason(repo_dirs, events, transcript_path, session, edited_by_ag
 def check_commit(command, root, state_file, session):
     """Deny a commit while the session holds unreviewed coder work in a repo it commits in, unless the user ordered
     it without review, every directory it commits in earns credit, or it ships only notes. Also deny it while the
-    phase review of a repo it commits in left finding asks the session has not ruled on, even with credit; a
-    notes-only commit and `[no-review]` still pass."""
+    phase review of a repo it commits in left finding asks that no session has ruled on, even with credit or for a
+    merge; a notes-only commit and `[no-review]` still pass. The asks belong to the repo, so a session that has no
+    events of its own (a new session id) meets them too."""
     events = gate_events(state_file)
-    if not events:
+    cwd = jq_field(root, "cwd")
+    # A converged hand-back makes every dir clear, so open phase asks are read before that early return.
+    # The asks are read in the dirs the command names (`cd`, `git -C`); only a command that cannot be read falls back
+    # to the cwd. A commit the gate cannot place in a repo is left out, so a command with only such commits names no
+    # repo and passes this check (fail open).
+    named_dirs = git_commit_dirs(readable_command(command), cwd) if cwd else None
+    open_asks_denial = commit_gate_denials.unruled_phase_asks_denial(
+        named_dirs if named_dirs is not None else [cwd], GIT_TIMEOUT_SECONDS)
+    if open_asks_denial is None and not events:
         return
     if user_ordered_no_review(root):
         return
 
-    cwd = jq_field(root, "cwd")
     transcript_path = jq_field(root, "transcript_path")
     repo_dirs = credit_repo_dirs(command, cwd)
     edited_by_agent = edited_repos_by_agent(events, transcript_path)
-    # A converged hand-back makes every dir clear, so open phase asks are read before that early return.
-    open_asks_denial = commit_gate_denials.unruled_phase_asks_denial(repo_dirs, session, GIT_TIMEOUT_SECONDS)
     if open_asks_denial is None and all(
             is_clear(repo_dir, events, transcript_path, session, edited_by_agent) for repo_dir in repo_dirs):
         return

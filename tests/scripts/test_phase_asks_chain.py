@@ -84,9 +84,9 @@ class PhaseAsksChainTest(unittest.TestCase):
         loop_script.write_text(source.replace(LOOP_ENTRY_IMPORT, LOOP_ENTRY_IMPORT + stand_in_lines))
         (self.scripts / "review" / "chain_stand_in.py").write_text(STAND_IN_SOURCE)
 
-    def environment(self, telemetry):
+    def environment(self, telemetry, session=SESSION):
         return {"PATH": self.ledger_env["PATH"], "FAKE_LEDGER_ROWS": self.ledger_env["FAKE_LEDGER_ROWS"],
-                "HOME": str(self.home), "TMPDIR": str(self.tmp), "CLAUDE_CODE_SESSION_ID": SESSION,
+                "HOME": str(self.home), "TMPDIR": str(self.tmp), "CLAUDE_CODE_SESSION_ID": session,
                 "REVIEW_FIX_CLAUDE_DIR": str(toolkit_paths.CLAUDE_DIR), "CLAUDE_TOOLKIT_TELEMETRY": telemetry,
                 "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
                 "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -96,18 +96,19 @@ class PhaseAsksChainTest(unittest.TestCase):
         return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True,
                               env=self.environment("0"))
 
-    def run_step(self, argv, telemetry):
-        return subprocess.run(argv, cwd=self.repo, capture_output=True, text=True, env=self.environment(telemetry))
+    def run_step(self, argv, telemetry, session=SESSION):
+        return subprocess.run(argv, cwd=self.repo, capture_output=True, text=True,
+                              env=self.environment(telemetry, session))
 
-    def fire_gate(self, payload, telemetry):
+    def fire_gate(self, payload, telemetry, session=SESSION):
         gate = self.scripts / "review" / "review_commit_gate.py"
-        event = {"session_id": SESSION, "cwd": str(self.repo), **payload}
+        event = {"session_id": session, "cwd": str(self.repo), **payload}
         return subprocess.run([sys.executable, str(gate)], input=json.dumps(event), capture_output=True, text=True,
-                              cwd=self.repo, env=self.environment(telemetry))
+                              cwd=self.repo, env=self.environment(telemetry, session))
 
-    def commit_attempt(self, telemetry):
+    def commit_attempt(self, telemetry, session=SESSION):
         return self.fire_gate({"hook_event_name": "PreToolUse", "tool_name": "Bash",
-                               "tool_input": {"command": "git commit -a -m x"}}, telemetry)
+                               "tool_input": {"command": "git commit -a -m x"}}, telemetry, session)
 
     def wait_for_the_loop_to_end(self):
         pid = int((self.repo / ".git/code-phase/pid").read_text())
@@ -209,6 +210,23 @@ class PhaseAsksChainTest(unittest.TestCase):
         self.assertEqual(ruled.returncode, 0, ruled.stderr)
         self.assertEqual(self.outcome_rows(), [])
         self.assert_commit_passes("1")
+
+    def test_a_new_session_id_after_the_review_still_meets_the_open_asks_and_can_rule_on_them(self):
+        self.review_the_phase("1")
+        after_clear = "44444444-aaaa-bbbb-cccc-555555555555"
+
+        denied = self.commit_attempt("1", after_clear)
+
+        self.assertEqual(denied.returncode, 0, denied.stderr)
+        decision = json.loads(denied.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn(DENIED_PART, decision["permissionDecisionReason"])
+        rule = self.scripts / "review" / "phase_asks.py"
+        ruled = self.run_step([sys.executable, str(rule), "rule", "accepted:fixes a defect in scope",
+                               "rejected:changes a criterion"], "1", after_clear)
+        self.assertEqual(ruled.returncode, 0, ruled.stderr)
+        passed = self.commit_attempt("1", after_clear)
+        self.assertEqual((passed.returncode, passed.stdout), (0, ""), passed.stderr)
 
     def test_a_ruling_with_one_outcome_for_two_asks_is_refused_and_the_commit_stays_denied(self):
         self.review_the_phase("1")

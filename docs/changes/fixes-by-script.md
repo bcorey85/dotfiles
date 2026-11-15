@@ -15,15 +15,15 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
 | script/review-loop-script | 57 | 8 |
-| script/review-fix | 54 | 7 |
-| script/handback | 52 | 4 |
+| script/review-fix | 55 | 8 |
+| script/handback | 53 | 5 |
 | script/review-commit-gate | 36 | 2 |
 | script/review-loop-gate | 35 | 1 |
 | script/full-check | 23 | 2 |
 | script/coder-gate | 21 | 2 |
 | agent/review-loop | 20 | 0 |
+| script/script-utils | 20 | 6 |
 | script/plan-format | 19 | 2 |
-| script/script-utils | 19 | 5 |
 | script/quality-check-cap | 17 | 0 |
 | skill/code | 17 | 5 |
 | skill/review | 17 | 14 |
@@ -38,19 +38,19 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/comment-bloat-gate | 8 | 1 |
 | script/log-escape | 8 | 1 |
 | script/verify-common | 8 | 3 |
+| script/code-review-start | 7 | 4 |
 | script/code-wait | 7 | 4 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/refactor-flow | 7 | 2 |
-| script/code-review-start | 6 | 3 |
 | script/herdr-worktree | 6 | 2 |
 | script/pipe-shell-check | 6 | 3 |
+| script/shell-command | 6 | 2 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/handback-store | 5 | 3 |
 | script/open-child-gate | 5 | 0 |
 | script/reviewer-dispatch | 5 | 0 |
-| script/shell-command | 5 | 1 |
 | skill/refactor | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
@@ -113,6 +113,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 1 |
 | script/expected-red | 1 | 0 |
+| script/file-lock | 1 | 1 |
 | script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-commands | 1 | 0 |
@@ -137,6 +138,7 @@ Recent: the 7 days up to 2026-11-13, the newest note.
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 1 |
 | script/review | 1 | 0 |
+| script/review-asks | 1 | 1 |
 | script/review-loop-findings | 1 | 1 |
 | script/review-loop-fix-induced | 1 | 1 |
 | script/rule-anchors | 1 | 0 |

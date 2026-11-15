@@ -22,6 +22,8 @@ from shell_command import (
     docker_forwarded_variables,
     docker_set_variables,
     flags_before_value,
+    git_c_directory,
+    git_commit_dirs,
     interpreter_family,
     is_git_word,
     is_long_prefix,
@@ -62,6 +64,90 @@ class IsGitWordTest(unittest.TestCase):
         self.assertTrue(is_git_word("/usr/bin/git"))
         self.assertFalse(is_git_word("git-lfs"))
         self.assertFalse(is_git_word("/usr/bin/gitk"))
+
+
+class GitCommitDirsTest(unittest.TestCase):
+    def test_each_commit_is_read_in_the_dir_its_cd_and_git_c_name(self):
+        cases = (
+            ("git commit -m x", ["/a"]),
+            ("cd /b && git commit -m x", ["/b"]),
+            ("( cd /b && git commit -m x )", ["/b"]),
+            ("cd b && git -C c commit -m x", ["/a/b/c"]),
+            ("git -C /c commit -m \"$(echo hi)\"", ["/c"]),
+            ("cd /b; git commit -m x; cd /c; git commit -m y", ["/b", "/c"]),
+            ("cd ~/r && git commit", [os.path.expanduser("~/r")]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+
+    def test_a_command_with_no_commit_names_no_dir_and_one_that_cannot_be_read_is_none(self):
+        for command in ("cd /b && git status", "ls"):
+            with self.subTest(command):
+                self.assertEqual([], git_commit_dirs(command, "/a"))
+        self.assertIsNone(git_commit_dirs("git commit -m 'unclosed", "/a"))
+
+    def test_a_commit_after_a_cd_to_a_folder_the_shell_expands_is_left_out(self):
+        for command in ('cd "$B" && git commit -m x', "cd $D && git commit -m x", "cd /b && cd $D && git commit"):
+            with self.subTest(command):
+                self.assertEqual([], git_commit_dirs(command, "/a"))
+
+    def test_popd_and_cd_dash_return_to_the_dir_they_name(self):
+        cases = (
+            ("pushd /b && popd && git commit", ["/a"]),
+            ("pushd /b && git commit && popd && git commit", ["/b", "/a"]),
+            ("cd /b && cd - && git commit", ["/a"]),
+            ("cd /b && cd - && cd - && git commit", ["/b"]),
+            ("(cd /b && cd -) && git commit", ["/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+
+    def test_a_commit_after_a_popd_or_cd_dash_with_nothing_to_return_to_is_left_out(self):
+        for command in ("popd && git commit", "cd - && git commit", "pushd && git commit"):
+            with self.subTest(command):
+                self.assertEqual([], git_commit_dirs(command, "/a"))
+
+    def test_a_commit_run_through_env_or_sudo_with_a_chdir_is_left_out(self):
+        for command in ("env -C /b git commit", "env --chdir=/b git commit", "sudo -C /b git commit",
+                        "env -C /b git commit && git commit"):
+            with self.subTest(command):
+                expected = ["/a"] if command.endswith("&& git commit") else []
+                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+        self.assertEqual(["/a"], git_commit_dirs("env -u X git commit", "/a"))
+
+    def test_a_cd_inside_a_subshell_does_not_move_a_commit_after_the_subshell_closes(self):
+        cases = (
+            ("(cd /other && make) && git commit -m x", ["/a"]),
+            ("(cd /other)\ngit commit -m x", ["/a"]),
+            ("( (cd /x && make) && cd /y && git commit -m x )", ["/y"]),
+            ("(cd /b && git commit -m x)", ["/b"]),
+            ("(cd /b && git commit -m x) && git commit -m y", ["/b", "/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+
+    def test_a_commit_whose_git_options_are_not_followed_is_left_out(self):
+        for command in ("git --git-dir=/g commit -m x", "git --work-tree /w commit -m x", "git -C '' commit"):
+            with self.subTest(command):
+                self.assertEqual([], git_commit_dirs(command, "/a"))
+
+
+class GitCDirectoryTest(unittest.TestCase):
+    def test_each_c_option_moves_the_dir_and_a_tilde_is_expanded(self):
+        self.assertEqual("/a/b/c", git_c_directory(["git", "-C", "b", "-C", "c", "commit"], "/a"))
+        self.assertEqual("/b", git_c_directory(["git", "-C", "/b", "commit"], "/a"))
+        self.assertEqual(os.path.expanduser("~/r"), git_c_directory(["git", "-C", "~/r", "commit"], "/a"))
+        self.assertEqual("/a", git_c_directory(["git", "--no-pager", "commit"], "/a"))
+
+    def test_an_option_the_gate_does_not_follow_gives_none(self):
+        for words in (["git", "--git-dir=/g", "commit"], ["git", "--work-tree", "/w", "commit"],
+                      ["git", "--config-env=a=B", "commit"], ["git", "-C", "", "commit"], ["git", "-C"],
+                      ["git", "--unknown-flag", "commit"]):
+            with self.subTest(words):
+                self.assertIsNone(git_c_directory(words, "/a"))
 
 
 class CdFolderTest(unittest.TestCase):

@@ -138,7 +138,6 @@ FIX_THEN_CLEAN = {
 # A stand-in for the stale-prose script, written under its real name: it prints a hit line and exits with the code
 # the test gives it (1 is a hit, 2 a fault of the script).
 STALE_PROSE_STAND_IN = "import sys\nprint('STALE app.py:1 names a changed symbol')\nsys.exit(int(sys.argv[1]))\n"
-READABILITY_STAND_IN = "import sys\nprint('app.py:1 handle — LONG (50 lines, limit 40)')\nsys.exit(int(sys.argv[1]))\n"
 
 
 def git(cwd, *args):
@@ -292,6 +291,44 @@ class WithoutRepeatsTest(unittest.TestCase):
 
         self.assertEqual(kept, [])
         self.assertEqual([ask for ask, _reason in host.dropped_asks], [reworded_line])
+
+    def test_a_re_filed_plan_drift_a_session_accepted_is_not_held_for_a_ruling_again(self):
+        accepted = "README.md:1 [plan-drift] Proposed change: keep the narrower AC2 acceptance_criteria: AC2"
+        refiled = finding_record.parse_finding(
+            "README.md:1 [plan-drift] the narrower AC2 wording drops deletes. acceptance_criteria: AC2")
+        host = RepeatFilterHost()
+        host.session_ruled = [accepted]
+
+        to_coder, ruling_held = host.route_plan_items("code-reviewer", [refiled])
+
+        self.assertEqual(to_coder, [refiled])
+        self.assertEqual(ruling_held, [])
+        self.assertEqual(host.plan_impacts, [])
+
+    def test_a_plan_drift_ask_re_filed_after_a_session_accepted_it_is_dropped(self):
+        accepted = "README.md:1 [plan-drift] Proposed change: keep the narrower AC2 acceptance_criteria: AC2"
+        refiled = finding_record.parse_finding(
+            "`README.md:1` [plan-drift] the narrower AC2 wording drops deletes. acceptance_criteria: AC2")
+        host = RepeatFilterHost()
+        host.session_ruled = [accepted]
+
+        dropped = host.drops_repeated_ask(refiled)
+
+        self.assertTrue(dropped)
+        self.assertEqual([ask for ask, _reason in host.dropped_asks], [refiled])
+
+    def test_a_coder_plan_impact_a_session_accepted_is_recorded_adopted_and_settled(self):
+        accepted = "README.md:1 [plan-drift] Proposed change: keep the narrower AC2 acceptance_criteria: AC2"
+        report = ("PLAN-IMPACT:\n  assumed: the wording is kept\n  found: README.md:1 [plan-drift] it drops deletes\n"
+                  "  changes: the wording\n  acceptance_criteria: AC2\n  cause: plan\nPLAN-IMPACT: yes")
+        host = RepeatFilterHost()
+        host.session_ruled = [accepted]
+
+        held = host.record_coder_plan_impact(report, ["README.md"])
+
+        self.assertFalse(held)
+        self.assertTrue(host.plan_impacts[0]["settled"])
+        self.assertTrue(host.plan_impacts[0]["adopted"])
 
 
 class ClosureCheckTest(unittest.TestCase):
@@ -573,6 +610,68 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual([entry.get("given") for entry in callers], [True])
         self.assertEqual([entry.get("given") for entry in reviewers], [None])
 
+    def test_a_fix_first_finding_the_coder_re_asks_in_open_questions_is_skipped_not_fixed(self):
+        report = 'Reworded the message.\nOPEN QUESTIONS: ["app.py:2 should the limit be denied instead?"]'
+        completed = self.run_script({
+            "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: deny the limit") + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["skipped_fp"]), 1)
+        self.assertEqual([entry.get("given") for entry in packet["skipped_fp"]], [True])
+        reason = packet["skipped_fp"][0]["reason"]
+        self.assertIn("re-asked", reason)
+        self.assertIn("app.py:2 should the limit be denied instead?", reason)
+
+    def test_a_fix_first_finding_a_session_ruled_and_the_coder_re_asks_is_skipped_not_fixed(self):
+        report = 'Reworded the message.\nOPEN QUESTIONS: ["app.py:2 should the limit be denied instead?"]'
+        completed = self.run_script({
+            "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: deny the limit") + "session-ruled: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(len(packet["skipped_fp"]), 1)
+        reason = packet["skipped_fp"][0]["reason"]
+        self.assertIn("SKIPPED 1:", reason)
+        self.assertIn("re-asked", reason)
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_coders_own_skip_line_beats_the_re_ask_text_for_a_user_ruled_finding(self):
+        report = ('SKIPPED 1: the limit is meant to be 5\n'
+                  'OPEN QUESTIONS: ["app.py:2 should the limit be denied instead?"]')
+        completed = self.run_script({
+            "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: deny the limit") + self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        reason = packet["skipped_fp"][0]["reason"]
+        self.assertIn("the limit is meant to be 5", reason)
+        self.assertNotIn("re-asked", reason)
+
+    def test_a_fix_first_finding_the_user_did_not_rule_on_stays_fixed_when_open_questions_name_it(self):
+        report = 'Reworded the message.\nOPEN QUESTIONS: ["app.py:2 should the limit be denied instead?"]'
+        completed = self.run_script({
+            "coder": [{"result": report, "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: deny the limit"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual([entry["finding"] for entry in packet["fixed"]], ["app.py:2 Proposed change: deny the limit"])
+
     def test_a_fix_first_run_marks_a_no_change_skip_as_given_in_the_packet(self):
         completed = self.run_script({
             "coder": [{"result": "Fixed 1."}],
@@ -584,6 +683,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]], ["the coder made no change"])
         self.assertEqual([entry.get("given") for entry in packet["skipped_fp"]], [True])
+
     def test_a_fix_first_run_rejects_a_blank_finding_text(self):
         completed = self.run_script({}, header_extra=self.findings_header("a.py:1 - x", " "))
 
@@ -1515,35 +1615,6 @@ class ReviewLoopScriptTest(unittest.TestCase):
         script.write_text(STALE_PROSE_STAND_IN)
         return f"python3 {script} {exit_code}"
 
-    def readability_command(self, exit_code):
-        script = self.scratch / "readability_check.py"
-        script.write_text(READABILITY_STAND_IN)
-        return f"python3 {script} {exit_code}"
-
-    def test_a_readability_hit_goes_to_the_coder_before_a_stale_prose_hit(self):
-        readability_reply = {"result": "Split it.", "edits": {"app.py": APP_FIXED + "# split\n"}}
-        prose_reply = {"result": "Every claim still holds."}
-        scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], readability_reply, prose_reply]}
-        self.save_gate_commands(["grep -q 'limit = 20' app.py", self.stale_prose_command(1),
-                                 self.readability_command(1)])
-
-        completed = self.run_script(scenario)
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        row, packet = self.stored_packet()
-        self.assertEqual((packet["status"], packet["blockers"]), ("converged", []))
-        self.assertTrue(row["unreviewed_fix"])
-        calls = json.dumps(self.fake_calls())
-        self.assertLess(calls.index("LONG (50 lines"), calls.index("STALE app.py:1"))
-
-    def test_a_readability_check_that_fails_itself_stops_the_loop(self):
-        completed = self.run_with_scoped_tests([self.readability_command(2)], FIX_THEN_CLEAN)
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _row, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "critical-blocker")
-        self.assertIn("readability check failing", packet["blockers"][0])
-
     def run_with_a_stale_prose_hit(self, prose_coder_reply, test_commands=(), **script_options):
         scenario = {**FIX_THEN_CLEAN, "coder": [*FIX_THEN_CLEAN["coder"], prose_coder_reply]}
         self.save_gate_commands([*test_commands, self.stale_prose_command(1)])
@@ -2226,7 +2297,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
                     loop.gates_every_run = gates_every_run
                     run = loop_script.coder_gate.ScopedRun(f"{label}: cmd", [], [], [], [f"{label}: cmd"], True)
                     with mock.patch.object(loop_script.coder_gate, "scoped_run", return_value=run), \
-                            mock.patch.object(loop, "hit_check_pass", return_value=False):
+                            mock.patch.object(loop, "stale_prose_pass", return_value=False):
                         loop.scoped_tests_pass("check", ["cmd"])
 
                     self.assertEqual(loop.status, expected_status)

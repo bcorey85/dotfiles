@@ -5,6 +5,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import finding_record
 import review_user_ruled
 from handback_store import NO_RULINGS, Rulings
 
@@ -38,6 +39,47 @@ class SkippedEntryAsAskTest(unittest.TestCase):
             entry = {"item": "x", "reason": f"not needed{ending}", "file_line": "x.py:1", "class": "other"}
             ask = review_user_ruled.skipped_entry_as_ask(entry)
             self.assertIn("not needed. Apply it anyway?", ask["question"], f"ending {ending!r}")
+
+
+class ReaskedFindingsTest(unittest.TestCase):
+    def test_a_question_naming_a_findings_file_and_line_marks_only_that_finding(self):
+        texts = ["a.py:3 Proposed change: deny it", "a.py:9 Proposed change: log it", "plain text with no location"]
+        findings = [finding_record.parse_finding(text) for text in texts]
+        reasked = review_user_ruled.reasked_findings(findings, ["unrelated?", "a.py:3 deny or reword?"], texts)
+        self.assertEqual(list(reasked), [1])
+        self.assertTrue(reasked[1].startswith("SKIPPED 1: "))
+        self.assertIn("a.py:3 deny or reword?", reasked[1])
+
+    def test_a_ruled_finding_with_no_path_is_not_marked_by_a_question_naming_a_location(self):
+        text = "plain text with no location"
+        findings = [finding_record.parse_finding(text)]
+        self.assertEqual(review_user_ruled.reasked_findings(findings, ["a.py:3 deny or reword?"], [text]), {})
+
+    def test_a_question_naming_two_locations_marks_the_finding_when_one_matches(self):
+        text = "a.py:3 Proposed change: deny it"
+        findings = [finding_record.parse_finding(text)]
+        reasked = review_user_ruled.reasked_findings(findings, ["b.py:7 and a.py:3 conflict?"], [text])
+        self.assertEqual(list(reasked), [1])
+
+    def test_a_question_naming_a_longer_line_or_path_does_not_mark_the_finding(self):
+        text = "a.py:3 Proposed change: deny it"
+        findings = [finding_record.parse_finding(text)]
+        for question in ["a.py:30 deny or reword?", "a.py:31 deny or reword?", "src/a.py:31 deny or reword?",
+                         "lib/a.py:3 deny or reword?"]:
+            self.assertEqual(review_user_ruled.reasked_findings(findings, [question], [text]), {}, question)
+
+    def test_no_open_question_marks_nothing(self):
+        text = "a.py:3 Proposed change: deny it"
+        findings = [finding_record.parse_finding(text)]
+        self.assertEqual(review_user_ruled.reasked_findings(findings, [], [text]), {})
+
+    def test_a_finding_the_user_did_not_rule_on_is_not_marked_and_keeps_its_number(self):
+        texts = ["a.py:3 Proposed change: deny it", "a.py:9 Proposed change: log it"]
+        findings = [finding_record.parse_finding(text) for text in texts]
+        questions = ["a.py:3 deny or reword?", "a.py:9 log or drop?"]
+        reasked = review_user_ruled.reasked_findings(findings, questions, [texts[1]])
+        self.assertEqual(list(reasked), [2])
+        self.assertTrue(reasked[2].startswith("SKIPPED 2: "))
 
 
 class DropPacketUserRuledMarksTest(unittest.TestCase):
@@ -109,7 +151,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         ruled = ["a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2 (ruled)"]
 
         rulings = Rulings(ruled, [])
-        kept, numbers, dropped = review_user_ruled.leave_out_ruled_impacts(findings, [2, 3], rulings)
+        kept, numbers, _session, dropped = review_user_ruled.leave_out_ruled_impacts(findings, [2, 3], rulings)
 
         self.assertEqual((kept, numbers, dropped), ([findings[0], findings[2]], [2], [impact]))
 
@@ -120,7 +162,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
                  "— change: reword AC2 to 7 days"]
 
         rulings = Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([accepted], [1], []))
+        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([accepted], [1], [], []))
 
     def test_the_exact_accepted_finding_is_left_out_and_a_different_one_on_the_same_criterion_stays(self):
         exact = "app.py:9 [plan-drift] does AC2 hold for deletes? Proposed change: keep the narrower AC2"
@@ -131,7 +173,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         rulings = Rulings(ruled, [stored_finding])
         result = review_user_ruled.leave_out_ruled_impacts([exact, different], [1, 2], rulings)
 
-        self.assertEqual(result, ([different], [1], [exact]))
+        self.assertEqual(result, ([different], [1], [], [exact]))
 
     def test_a_skipped_entry_of_the_exact_accepted_finding_stays_a_skip_and_a_different_one_becomes_an_ask(self):
         exact = "app.py:9 [plan-drift] does AC2 hold for deletes? Proposed change: keep the narrower AC2"
@@ -148,7 +190,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         ruled = ["a.py:1 [plan-drift] the reword of AC2 is narrower than the ticket! acceptance_criteria: AC2"]
 
         rulings = Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([], [], [accepted]))
+        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([], [], [], [accepted]))
 
     def test_a_finding_the_user_did_not_accept_is_left_out_by_criterion_ids(self):
         other = "a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2"
@@ -156,13 +198,37 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
 
         rulings = Rulings(ruled, [])
         self.assertEqual(review_user_ruled.leave_out_ruled_impacts([other, "y.py:2 [bug] two"], [2], rulings),
-                         (["y.py:2 [bug] two"], [1], [other]))
+                         (["y.py:2 [bug] two"], [1], [], [other]))
+
+    def test_the_session_ruled_number_follows_the_drop_of_an_earlier_finding(self):
+        settled = "a.py:1 [plan-drift] does AC2 hold? Proposed change: keep AC2"
+        other = "b.py:3 [plan-drift] purge() skips deletes Proposed change: handle deletes"
+        rulings = Rulings(["PLAN-IMPACT: unrelated cache change. acceptance_criteria: none"], [settled])
+
+        result = review_user_ruled.leave_out_ruled_impacts([settled, other], [1], rulings, [2])
+
+        self.assertEqual(result, ([other], [], [1], [settled]))
+
+    def test_a_session_ruled_number_stays_as_named_when_nothing_is_dropped(self):
+        twin = "a.py:1 [plan-drift] does AC2 hold? Proposed change: keep AC2"
+
+        result = review_user_ruled.leave_out_ruled_impacts([twin, twin], [], NO_RULINGS, [2])
+
+        self.assertEqual(result, ([twin, twin], [], [2], []))
+
+    def test_a_session_accepted_finding_sharing_a_criterion_id_with_a_ruling_stays_in_the_fix_run(self):
+        different = "b.py:3 [plan-drift] purge() skips deletes that AC2 requires Proposed change: handle deletes"
+        ruled = ["PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"]
+
+        result = review_user_ruled.leave_out_ruled_impacts([different], [], Rulings(ruled, []), [1])
+
+        self.assertEqual(result, ([different], [], [1], []))
 
     def test_nothing_is_dropped_when_no_ruling_is_recorded(self):
         findings = ["a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2"]
 
         self.assertEqual(review_user_ruled.leave_out_ruled_impacts(findings, [1], NO_RULINGS),
-                         (findings, [1], []))
+                         (findings, [1], [], []))
 
 
 if __name__ == "__main__":

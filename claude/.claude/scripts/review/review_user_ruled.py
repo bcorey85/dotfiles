@@ -5,15 +5,42 @@ gave comes back as an ask that carries the coder's reason, except a plan impact 
 and the packet stops on it like on any other ask.
 """
 import os
+from typing import NamedTuple
 
 import handback
 import handback_store
 from handback_store import NO_RULINGS
 from review_asks import USER_RULED_KEY
 from review_loop_findings import is_plan_item_text, near_title, ruled_plan_impact
-from script_utils import drop_numbered, one_line
+from script_utils import drop_numbered, locations_named, one_line
 
 SKIP_QUESTION = "You accepted this change; the fix coder skipped it: {reason}. Apply it anyway?"
+
+
+def reasked_findings(findings, questions, ruled_texts):
+    """Finding number -> the `SKIPPED <n>:` line for each finding the user or a session ruled on (its text is in
+    `ruled_texts`; a record with a path and line) that one of the coder's open `questions` names by its file:line. A
+    coder that asks again about a finding already ruled on has not applied it. A finding nobody ruled on is never
+    marked: a question about it is the coder's own open point."""
+    reasked = {}
+    for number, finding in enumerate(findings, 1):
+        if finding.text not in ruled_texts:
+            continue
+        question = question_naming_finding(finding, questions)
+        if question is None:
+            continue
+        quoted = one_line(question, None)
+        reasked[number] = f"SKIPPED {number}: the coder re-asked it in OPEN QUESTIONS: {quoted}"
+    return reasked
+
+
+def question_naming_finding(finding, questions):
+    """The first of `questions` that names the finding's file:line, None when none does."""
+    pointer = (finding.path, finding.line)
+    for question in questions:
+        if pointer in locations_named(question):
+            return question
+    return None
 
 
 def skipped_entry_as_ask(entry):
@@ -63,14 +90,30 @@ def settled_by_recorded_ruling(text, rulings, accepted=False):
     return any(near_title(known, text) for known in rulings.impacts)
 
 
-def leave_out_ruled_impacts(findings, user_ruled_numbers, rulings=NO_RULINGS):
-    """(the findings without the plan-change findings a ruling settled, the user-ruled numbers renumbered to follow,
-    the dropped findings). The fix coder would skip such a finding for want of a sign-off the ruling already gave."""
-    dropped_numbers = [number for number, text in enumerate(findings, 1)
-                       if settled_by_recorded_ruling(text, rulings, number in user_ruled_numbers)]
+def settled_impact_numbers(findings, accepted_numbers, rulings):
+    """The 1-based numbers of the plan-change findings a recorded ruling settled. `accepted_numbers` are the findings
+    the user or a session accepted."""
+    return [number for number, text in enumerate(findings, 1)
+            if settled_by_recorded_ruling(text, rulings, number in accepted_numbers)]
+
+
+class LeftOut(NamedTuple):
+    kept: list
+    user_ruled_numbers: list
+    session_ruled_numbers: list
+    dropped: list
+
+
+def leave_out_ruled_impacts(findings, user_ruled_numbers, rulings=NO_RULINGS, session_ruled_numbers=()):
+    """The findings without the plan-change findings a ruling settled, the user-ruled and session-ruled numbers
+    renumbered to follow, and the dropped findings. The fix coder would skip such a finding for want of a sign-off
+    the ruling already gave."""
+    accepted_numbers = [*user_ruled_numbers, *session_ruled_numbers]
+    dropped_numbers = settled_impact_numbers(findings, accepted_numbers, rulings)
     dropped = [findings[number - 1] for number in dropped_numbers]
-    kept, kept_numbers = drop_numbered(findings, dropped_numbers, user_ruled_numbers)
-    return kept, kept_numbers, dropped
+    kept, kept_user_numbers = drop_numbered(findings, dropped_numbers, user_ruled_numbers)
+    _, kept_session_numbers = drop_numbered(findings, dropped_numbers, session_ruled_numbers)
+    return LeftOut(kept, kept_user_numbers, kept_session_numbers, dropped)
 
 
 def is_user_ruled_entry(entry, user_ruled, rulings=NO_RULINGS):

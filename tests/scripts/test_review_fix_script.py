@@ -18,6 +18,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import finding_record
 import handback
 import handback_store
 import plan_format
@@ -125,8 +126,8 @@ RULED_IMPACT = {"text": "PLAN-IMPACT:\n  assumed: AC2 as written\n  found: the r
 RULED_IMPACT_ASK = ask_entry("AC2 reworded narrower", "README.md:1", finding_id="a1b2c3d4e5f60003",
                              question="[plan-drift] does AC2 still hold for deletes? acceptance_criteria: AC2",
                              change="keep the narrower AC2", ask_class="plan-drift")
-RULED_IMPACT_FINDING = (f"{RULED_IMPACT_ASK['file_line']} {RULED_IMPACT_ASK['question']} "
-                        f"Proposed change: {RULED_IMPACT_ASK['change']}")
+RULED_IMPACT_FINDING = (f"{RULED_IMPACT_ASK['file_line']} [plan-drift] "
+                        f"Proposed change: {RULED_IMPACT_ASK['change']} acceptance_criteria: AC2")
 RULED_IMPACT_SKIP = {"item": RULED_IMPACT_FINDING, "reason": "needs the user's sign-off on the plan",
                      "file_line": "README.md:1", "given": True, "class": "plan-drift"}
 
@@ -1002,6 +1003,32 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn(os.path.realpath(self.repo), output)
         self.assertNotIn("present-asks", output)
         self.assertEqual(len(self.ledger_writes()), logged_before)
+
+    def test_the_ask_presentation_names_the_conditional_asks_to_answer_modified_and_no_others(self):
+        conditional = ask_entry("confirm", "src/a.ts:1", question="Confirm?", change="If not confirmed, revert X")
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[RETRY_ASK, conditional]),
+                                   "--scope", "branch-exit")
+        self.assertEqual(code, 0, output)
+        self.assertIn("Answer ask 2 with 'modified:<change with no condition>': "
+                      "accepted or rejected is refused on a conditional change", output)
+
+    def test_the_ask_presentation_lists_every_conditional_ask_number(self):
+        first = ask_entry("one", "src/a.ts:1", question="Confirm?", change="If not confirmed, revert X")
+        second = ask_entry("two", "src/b.ts:2", question="Confirm?", change="If not confirmed, revert Y")
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[RETRY_ASK, first, second]),
+                                   "--scope", "branch-exit")
+        self.assertEqual(code, 0, output)
+        self.assertIn("Answer asks 2, 3 with 'modified:<change with no condition>'", output)
+
+    def test_the_conditional_ask_list_skips_a_converted_ask_whose_change_holds_an_if(self):
+        converted = {**ask_entry("conv", "src/a.ts:1", change="deny it if the flag is off"),
+                     review_fix_asks.USER_RULED_KEY: True}
+        self.assertEqual(review_fix_asks.conditional_ask_numbers([converted]), [])
+
+    def test_the_ask_presentation_has_no_conditional_instruction_when_no_ask_is_conditional(self):
+        code, output = self.packet(WITH_ASK, "--scope", "branch-exit")
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("refused on a conditional change", output)
 
     def test_asks_are_jumped_listed_and_logged_with_their_outcomes(self):
         code, output = self.packet(WITH_ASK, "--scope", "branch-exit")
@@ -2479,6 +2506,13 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_asks_done_by_session_prints_no_user_ruled_on_the_launch_line(self):
         self.assertNotIn("--user-ruled", self.launch_line_of_asks_done_by("session"))
 
+    def test_asks_done_by_session_prints_session_ruled_on_the_launch_line(self):
+        line = self.launch_line_of_asks_done_by("session")
+        self.assertEqual(line[line.index("--session-ruled") + 1], "1")
+
+    def test_asks_done_by_user_prints_no_session_ruled_on_the_launch_line(self):
+        self.assertNotIn("--session-ruled", self.launch_line_of_asks_done_by("user"))
+
     def no_record_launch_line_of_asks_done_by(self, by):
         home = str(self.temp_root / "home")
         code, output = self.packet(self.ONE_ASK, HOME=home)
@@ -2492,6 +2526,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_asks_done_by_session_with_no_launch_record_prints_no_user_ruled(self):
         self.assertNotIn("--user-ruled", self.no_record_launch_line_of_asks_done_by("session"))
+
+    def test_asks_done_by_session_with_no_launch_record_prints_session_ruled(self):
+        line = shlex.split(self.no_record_launch_line_of_asks_done_by("session"))
+        self.assertEqual(line[line.index("--session-ruled") + 1], "1")
 
     def test_correct_by_session_after_asks_done_by_user_keeps_user_ruled(self):
         home = str(self.temp_root / "home")
@@ -2553,7 +2591,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         for message, asks, outcomes, deciders, expected in cases:
             with self.subTest(message):
                 state = {"asks": asks, "ask_outcomes": outcomes, review_fix_asks.ASKS_DECIDED_BY_KEY: deciders}
-                self.assertEqual(expected, review_fix_asks.user_ruled_numbers(state), message)
+                actual = review_fix_asks.ruled_numbers(state, plan_format.USER_RULING)
+                self.assertEqual(expected, actual, message)
 
     def test_ask_deciders_rejects_a_saved_value_that_is_not_a_list_of_one_entry_per_ask(self):
         import review_fix_asks
@@ -2572,6 +2611,82 @@ class ReviewFixScriptTest(unittest.TestCase):
         lines = review_fix_asks.ask_finding_lines([converted], ["accepted"], [""])
 
         self.assertEqual(["- " + finding], lines)
+
+    def test_an_accepted_asks_line_drops_the_question_and_its_declined_branch(self):
+        ask = {"question": "Deny the commands? If declined: reword the message instead.", "change": "deny them",
+               "file_line": "hook.py:4", "class": "bug"}
+        line = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(line, "hook.py:4 [bug] Proposed change: deny them")
+        self.assertEqual(finding_record.parse_finding(line).finding_class, "bug")
+
+    def test_a_modified_plan_drift_ask_takes_its_criterion_ids_from_the_note_too(self):
+        ask = {"question": "[plan-drift] does AC2 still hold?", "change": "keep the narrower wording",
+               "file_line": "README.md:1", "class": "plan-drift"}
+        state = {"asks": [ask], "ask_outcomes": ["modified"], "ask_notes": ["move it to AC3"]}
+
+        text = review_fix_asks.accepted_finding_texts(asks=[ask], outcomes=["modified"], notes=["move it to AC3"])[0]
+
+        self.assertEqual(plan_format.criteria_ids(text), {"AC2", "AC3"})
+        covered = review_fix_asks.findings_covered_by_impact(state, "PLAN-IMPACT:\n  acceptance_criteria: AC2, AC3")
+        self.assertEqual(covered, [text])
+
+    def test_a_modified_converted_ask_keeps_the_users_change(self):
+        ask = {"question": "the fix coder skipped it. Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
+               "file_line": "src/a.py:3", "class": "bug", review_fix_asks.USER_RULED_KEY: True}
+
+        texts = review_fix_asks.accepted_finding_texts([ask], ["modified"], ["cap at 5 instead"])
+
+        self.assertEqual(texts, ["src/a.py:3 [bug] cap it The user changed it; make this change in its place: "
+                                 "cap at 5 instead"])
+
+    def test_a_modified_ask_keeps_its_change_note(self):
+        ask = {"question": "If declined: reword.", "change": "deny them", "file_line": "hook.py:4", "class": "bug"}
+        lines = review_fix_asks.ask_finding_lines([ask], ["modified"], ["deny only rm"])
+        self.assertEqual(lines, ["- hook.py:4 [bug] Proposed change: deny them The user changed it; make this change "
+                                 "in its place: deny only rm"])
+
+    def test_a_plan_drift_ask_keeps_the_criterion_ids_only_its_question_names(self):
+        ask = {"question": "[plan-drift] does AC2 still hold for deletes? acceptance_criteria: AC2",
+               "change": "keep the narrower wording", "file_line": "README.md:1", "class": "plan-drift"}
+        text = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(plan_format.criteria_ids(text), {"AC2"})
+        state = {"asks": [ask], "ask_outcomes": ["accepted"], "ask_notes": [""]}
+        covered = review_fix_asks.findings_covered_by_impact(state, "PLAN-IMPACT:\n  acceptance_criteria: AC2")
+        self.assertEqual(covered, [text])
+
+    def test_a_non_drift_ask_keeps_the_criterion_ids_only_its_question_names(self):
+        ask = {"question": "does AC2 still hold for deletes?", "change": "add a delete test",
+               "file_line": "README.md:1", "class": "test-gap"}
+        text = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(plan_format.criteria_ids(text), {"AC2"})
+        state = {"asks": [ask], "ask_outcomes": ["accepted"], "ask_notes": [""]}
+        covered = review_fix_asks.findings_covered_by_impact(state, "PLAN-IMPACT:\n  acceptance_criteria: AC2")
+        self.assertEqual(covered, [text])
+
+    def test_a_plan_drift_ask_keeps_the_criterion_ids_its_change_names_too(self):
+        ask = {"question": "[plan-drift] does AC2 still hold for deletes?",
+               "change": "reword AC3 to say deletes too", "file_line": "README.md:1", "class": "plan-drift"}
+        text = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(plan_format.criteria_ids(text), {"AC2", "AC3"})
+        state = {"asks": [ask], "ask_outcomes": ["accepted"], "ask_notes": [""]}
+        covered = review_fix_asks.findings_covered_by_impact(state, "PLAN-IMPACT:\n  acceptance_criteria: AC2")
+        self.assertEqual(covered, [])
+
+    def test_a_plan_drift_answer_line_in_the_change_beats_an_id_named_in_the_question_prose(self):
+        ask = {"question": "[plan-drift] does AC2 still hold?", "change": "acceptance_criteria: none",
+               "file_line": "README.md:1", "class": "plan-drift"}
+        text = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(plan_format.criteria_ids(text), set())
+
+    def test_a_plan_drift_ask_naming_no_criterion_appends_no_acceptance_criteria_line(self):
+        ask = {"question": "does it hold?", "change": "x", "file_line": "README.md:1", "class": "plan-drift"}
+        self.assertEqual(review_fix_asks.ask_finding_text(ask), "README.md:1 [plan-drift] Proposed change: x")
+
+    def test_a_plan_impact_asks_text_keeps_its_question(self):
+        ask = {"question": "PLAN-IMPACT: queue is at-most-once", "change": "adopt it", "file_line": "a.ts:1",
+               "class": "plan-drift"}
+        text = review_fix_asks.ask_finding_text(ask)
+        self.assertEqual(text, "a.ts:1 PLAN-IMPACT: queue is at-most-once Proposed change: adopt it")
 
     def test_a_fix_launch_carries_only_the_user_ruled_findings_into_the_packet(self):
         home = str(self.temp_root / "home")
@@ -3054,18 +3169,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[impact_ask, real_ask]))
         self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
-        self.assertEqual(findings_file.read_text(), "- b.ts:2 cap? Proposed change: cap at 3\n")
+        self.assertEqual(findings_file.read_text(), "- b.ts:2 [smell] Proposed change: cap at 3\n")
 
-    def test_a_long_question_and_a_multi_line_note_reach_the_findings_file_whole_on_one_item(self):
-        long_question = "why " * 100 + "end"
-        long_ask = ask_entry("long", "b.ts:2", finding_id="a1b2c3d4e5f60004", question=long_question,
+    def test_a_long_change_and_a_multi_line_note_reach_the_findings_file_whole_on_one_item(self):
+        dropped_question_probe = "QUESTIONPROBE " * 100 + "end"
+        long_ask = ask_entry("long", "b.ts:2", finding_id="a1b2c3d4e5f60004", question=dropped_question_probe,
                              change="change " * 60 + "done")
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[long_ask]))
         self.run_script(["asks-done", "--by", "user", "modified:first line\n  second line"])
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
         findings = findings_file.read_text()
         self.assertEqual(len(findings.splitlines()), 1, findings)
-        self.assertIn(long_question.strip(), findings)
+        self.assertNotIn("QUESTIONPROBE", findings)
+        self.assertIn("change " * 60 + "done", findings)
         self.assertIn("done The user changed it", findings)
         self.assertTrue(findings.endswith("make this change in its place: first line second line\n"), findings)
 
@@ -3077,8 +3193,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("dispatch a coder", output)
         first_loop = self.loop_dirs()[0]
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
-        self.assertEqual(findings_file.read_text(), "- src/retry.ts:10 Should retries be capped at 3 or configurable? "
-                         "Proposed change: cap retries at 3\n")
+        self.assertEqual(findings_file.read_text(), "- src/retry.ts:10 [smell] Proposed change: cap retries at 3\n")
         launch_line = output.splitlines()[-1]
         self.assertEqual(shlex.split(launch_line)[2:], [
             "launch", "--fix", str(findings_file), "--user-ruled", "1", "--iter", "1", "--repo",
@@ -3098,8 +3213,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("iter: 1\n", prompt)
         self.assertIn("Review the greeting change.", prompt)
         self.assertEqual(json.loads((fix_loop / "findings.json").read_text()),
-                         ["src/retry.ts:10 Should retries be capped at 3 or configurable? Proposed change: cap "
-                          "retries at 3"])
+                         ["src/retry.ts:10 [smell] Proposed change: cap retries at 3"])
 
         packet_command = waited.stdout.split("`")[1]
         packet_args = shlex.split(packet_command)[2:]
@@ -3193,7 +3307,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: redispatch", output)
         findings_file = script_utils.git_path(self.repo, "review-fix") / "ask-findings.md"
-        self.assertEqual(findings_file.read_text(), "- src/db.ts:5 Add an index on tenant_id? Proposed change: add an "
+        self.assertEqual(findings_file.read_text(), "- src/db.ts:5 [perf] Proposed change: add an "
                          "index on tenant_id The user changed it; make this change in its place: index tenant_id "
                          "and region\n")
 
@@ -4131,7 +4245,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         finding = ("README.md:1 PLAN-IMPACT: drop the retry? acceptance_criteria: AC3 "
                    "Proposed change: drop the retry")
         rulings = handback_store.Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings), ([], [], [finding]))
+        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings), ([], [], [], [finding]))
 
     def test_a_rejected_ask_is_recorded_by_file_and_question_and_an_accepted_one_is_not(self):
         home = str(self.temp_root / "home")

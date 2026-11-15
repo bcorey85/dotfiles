@@ -62,7 +62,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 STALE_PROSE_LOG = "stale-prose.log"
-READABILITY_LOG = "readability.log"
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib", "telemetry")]
 import change_removal
 import coder_gate
@@ -75,6 +74,7 @@ import review_loop_held
 import reviewer_dispatch
 import script_utils
 from capped_review import DEFERRED
+from coder_report import open_questions
 from finding_record import parse_finding
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
@@ -113,6 +113,7 @@ from review_loop_prompt_file import (
 from review_loop_prompts import coder_prompt, reviewer_prompt
 from review_loop_ruled import RuledFindings
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
+from review_user_ruled import reasked_findings
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
@@ -139,15 +140,6 @@ def disposition_call(text, repo, out):
                                   '{"fix": [..], "ask": [..], "nit": [..]}', model="sonnet")
     return finding_records({"fix": parsed.get("fix", []), "ask": parsed.get("ask", []), "nit": parsed.get("nit", []),
                             "assessment": ""})
-
-
-class HitCheck(typing.NamedTuple):
-    """A gate check whose hits go to a coder pass: its name in messages, the coder call, its log file, its commands."""
-
-    label: str
-    call_name: str
-    log: str
-    commands: list
 
 
 class LaterPhaseEditError(RuntimeError):
@@ -773,6 +765,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             self.record_coder_plan_impact(report, changed)
 
         skips = skipped_issues(report, len(findings))
+        reasked = reasked_findings(findings, open_questions(report), self.ruled_texts)
+        skips = {**reasked, **skips}
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         kept = [item for number, item in enumerate(findings, 1) if number not in skips]
@@ -829,53 +823,47 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
 
     def scoped_tests_pass(self, check_command, gate_commands):
         """The phase's scoped tests after a fix that no passed full check ran after. A red one stops the loop. The
-        readability and stale-prose checks are no tests: their hits go to the coder, readability first, since its
-        repair can change the prose a stale-prose hit names."""
-        readability_commands = [command for command in gate_commands if coder_gate.is_readability_check(command)]
+        stale-prose check is no test: its hits go to the coder."""
         prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
         test_commands = test_commands_of(gate_commands)
         # On a loop that gates every run the gate commands are the user's named tests: an unrun one must not pass.
         if not self.run_test_commands(test_commands, stop_when_unrun=self.gates_every_run):
             return
 
-        readability = HitCheck("readability check", "coder-readability", READABILITY_LOG, readability_commands)
-        prose = HitCheck("stale-prose check", "coder-prose", STALE_PROSE_LOG, prose_commands)
-        edited = self.hit_check_pass(check_command, readability)
-        if self.status == "converged":
-            edited = self.hit_check_pass(check_command, prose) or edited
+        edited = self.stale_prose_pass(check_command, prose_commands)
         if edited and self.status == "converged" and self.untested_fix:
             self.run_test_commands(test_commands, stop_when_unrun=self.gates_every_run)
 
-    def hit_check_pass(self, check_command, check):
-        """One coder pass on the hits of a readability or stale-prose check after the last fix. Only a real hit (exit
+    def stale_prose_pass(self, check_command, prose_commands):
+        """One coder pass on the hits of a stale-prose check after the last fix. Only a real hit (exit
         1) goes to the coder; with no edit the last pass stays the one before it, and with one the full check runs
         again. Any other failure of the check stops as `critical-blocker`, and a result that is neither a pass nor a
         hit joins `scoped_tests`. True when the coder edited a file."""
-        if not check.commands:
+        if not prose_commands:
             return False
 
-        log_path = self.out / check.log
-        result, hit_outputs, script_failures = coder_gate.run_hit_check(self.repo, check.commands, self.gate_env,
+        log_path = self.out / STALE_PROSE_LOG
+        result, hit_outputs, script_failures = coder_gate.run_hit_check(self.repo, prose_commands, self.gate_env,
                                                                         log_path)
         if script_failures:
-            self.stop("critical-blocker", [f"{check.label} failing:\n" + "\n\n".join(script_failures)])
+            self.stop("critical-blocker", ["stale-prose check failing:\n" + "\n\n".join(script_failures)])
             return False
 
         if not hit_outputs:
             if result != coder_gate.SCOPED_PASSED:
-                self.scoped_tests += f"; {check.label} {result}"
+                self.scoped_tests += f"; stale-prose check {result}"
             return False
 
         hits = [parse_finding("\n\n".join(hit_outputs))]
         pass_before_repair = self.last_pass
-        _report, _diffs, changed = self.repair(check.call_name, hits)
+        _report, _diffs, changed = self.repair("coder-prose", hits)
         self.mark_repaired(hits, changed, records_skip=False)
         if not changed:
             self.last_pass = pass_before_repair
             return False
 
         self.next_round()
-        self.recheck_full_check(check_command, f"full check failing after the {check.label} repair")
+        self.recheck_full_check(check_command, "full check failing after the stale-prose check repair")
         return True
 
     def outcome(self, ask_ids, ask_rows):

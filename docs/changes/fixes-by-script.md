@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-582 fix notes
+583 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -37,12 +37,12 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/git-discipline-gate | 9 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 0 |
+| script/refactor-flow | 8 | 3 |
 | script/verify-common | 8 | 3 |
 | script/code-review-start | 7 | 3 |
 | script/code-wait | 7 | 2 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
-| script/refactor-flow | 7 | 2 |
 | script/shell-command | 7 | 3 |
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 2 |
@@ -51,6 +51,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/reviewer-dispatch | 5 | 0 |
+| script/test-run-output | 5 | 1 |
 | skill/refactor | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
@@ -62,7 +63,6 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/parallel-tests | 4 | 0 |
 | script/review-launch | 4 | 4 |
 | script/run-sh | 4 | 1 |
-| script/test-run-output | 4 | 0 |
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |

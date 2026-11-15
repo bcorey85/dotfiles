@@ -60,6 +60,7 @@ import check_output
 import script_utils
 import shell_command
 import test_run_output
+from ansi_text import strip_ansi
 from check_output import (
     failing_test_lines,
     failing_test_quote,
@@ -305,7 +306,7 @@ def _failure_of(command, code, output, verdict):
         return GateFailure(command, "exit 0", output + check_output.SUMMARY_FAILURE_NOTE)
     if verdict == check_output.NO_TESTS_RAN:
         return GateFailure(command, "exit 0", output + check_output.NO_TEST_MATCHED_NOTE)
-    if names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(output):
+    if names_django_test_run(command) and check_output.NO_TESTS_RAN_OUTPUT.search(strip_ansi(output)):
         return GateFailure(command, "exit 0", output)
     return None
 

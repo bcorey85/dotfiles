@@ -3,6 +3,7 @@ and which tests failed."""
 import pathlib
 import re
 
+from ansi_text import strip_ansi
 from check_scope import prints_own_runner_summary, runs_tests
 from test_run_output import matches_no_test, runner_summaries
 
@@ -154,17 +155,19 @@ def is_repo_module(module_name, repo_root):
 
 def failing_test_lines(output):
     """The lines of the output that name a failed test, without repeats, at most MAX_FAILING_TEST_LINES."""
-    names = [line.strip() for line in output.splitlines() if FAILING_TEST_LINE.match(line)]
+    plain = strip_ansi(output)
+    names = [line.strip() for line in plain.splitlines() if FAILING_TEST_LINE.match(line)]
     return list(dict.fromkeys(names))[:MAX_FAILING_TEST_LINES]
 
 
 def cannot_start_line(code, output):
     """The first output line that shows the tool could not start, or None. A passing run, a run whose runner summary
     reports failures and a run with failing-test lines never read as one: a test's own output may quote the text."""
-    if code == 0 or SUMMARY_FAILURE.search(output) or failing_test_lines(output):
+    plain = strip_ansi(output)
+    if code == 0 or SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
         return None
 
-    for line in output.splitlines():
+    for line in plain.splitlines():
         stripped = line.strip()
         # Match the runner text at the line start, after the tool's own `error: ` prefix, so a traceback line such as
         # `AssertionError: Command not found: uv` does not read as a failure to start.
@@ -178,7 +181,8 @@ def cannot_start_line(code, output):
 def tail_with_failing_tests(output, tail):
     """The tail of the output with the failing-test lines of the whole output above it, the ones the tail does not
     already hold."""
-    missing = [line for line in failing_test_lines(output) if line not in tail]
+    plain_tail = strip_ansi(tail)
+    missing = [line for line in failing_test_lines(output) if line not in plain_tail]
     if not missing:
         return tail
     return FAILING_TESTS_HEADER + "\n".join(missing) + "\n\n" + tail
@@ -206,7 +210,8 @@ def failing_test_errors(output, lines_per_test=MAX_ERROR_LINES_PER_TEST):
     keeps its first line and its last `lines_per_test - 1`, so a traceback keeps its final error message. Empty when no
     failing line has any error text after it."""
     quoted = []
-    for failing_line, *detail_lines in failing_blocks(output.splitlines()):
+    plain = strip_ansi(output)
+    for failing_line, *detail_lines in failing_blocks(plain.splitlines()):
         details = []
         is_rust_block = bool(PANIC_LINE.match(failing_line.strip())
                              or RUST_FAILED_TEST_HEADER.match(failing_line.strip()))
@@ -237,7 +242,8 @@ def failing_blocks(lines):
     the next failing test line or the end of the log. Jest prints one FAIL line per file and a `●` block per test, with
     blank lines between the blocks, so a block runs across its blank lines. A jest `PASS` line is not a detail."""
     block = None
-    for line in lines:
+    for raw_line in lines:
+        line = strip_ansi(raw_line)
         if FAILING_TEST_LINE.match(line):
             if block:
                 yield block
@@ -254,6 +260,7 @@ def normalized_log_line(line):
     error counts stay. A per-run clock line (`Time: 1.2 s`) keeps its label and loses its time and, for vitest, the
     parenthetical after it; any other text after the time stays. Any other line keeps its counts: `expected 3 passed`
     in an assertion message is not a runner summary."""
+    line = strip_ansi(line)
     # A per-run clock line keeps its label and loses only its time, so it compares equal across runs.
     line = RUN_CLOCK_LINE.sub(r"\g<label>", line)
     # A panic line's thread id differs per run, and its line and column move when a diff shifts the file.
@@ -291,7 +298,8 @@ def failing_block_details(log_lines):
 
 def missing_path(lines):
     """(line, path) for the first line that says a step stopped on a path that does not exist, else None."""
-    for line in lines:
+    for raw_line in lines:
+        line = strip_ansi(raw_line)
         match = next((match for pattern in MISSING_PATH_LINES if (match := pattern.match(line))), None)
         if match:
             return line.strip(), match.group("path")
@@ -301,9 +309,10 @@ def missing_path(lines):
 def stopped_on_missing_path(output):
     """True when a failed check's output says it stopped on a path that does not exist (a file list passed as one
     word, a typo): the check never ran on the files."""
-    if CHECK_MISSING_PATH.search(output):
+    plain = strip_ansi(output)
+    if CHECK_MISSING_PATH.search(plain):
         return True
-    return missing_path(output.splitlines()) is not None
+    return missing_path(plain.splitlines()) is not None
 
 
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):
@@ -317,23 +326,24 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if code in COMMAND_NOT_RUN_CODES:
         return True
 
-    if TESTS_FAILED.search(output):
+    plain = strip_ansi(output)
+    if TESTS_FAILED.search(plain):
         return False
 
-    if RUNNER_CANNOT_START.search(output) or NO_PACKAGE_MANIFEST.search(output):
+    if RUNNER_CANNOT_START.search(plain) or NO_PACKAGE_MANIFEST.search(plain):
         return True
 
-    if PACKAGE_MANAGER_MISMATCH.search(output):
+    if PACKAGE_MANAGER_MISMATCH.search(plain):
         return True
 
     # The no-test lines a run prints at exit 0 count only at exit 0: beside another step's non-zero exit, that step is
     # the reason.
-    ran_no_test = (code == PYTEST_NO_TESTS_CODE or NO_TESTS_RAN_OUTPUT.search(output)
-                   or (code == 0 and NO_TESTS_EXIT_ZERO.search(output)))
-    if ran_no_test and not failing_test_lines(output):
+    ran_no_test = (code == PYTEST_NO_TESTS_CODE or NO_TESTS_RAN_OUTPUT.search(plain)
+                   or (code == 0 and NO_TESTS_EXIT_ZERO.search(plain)))
+    if ran_no_test and not failing_test_lines(plain):
         return True
 
-    missing_modules = MISSING_MODULE.findall(output)
+    missing_modules = MISSING_MODULE.findall(plain)
     if not include_missing_modules or not missing_modules:
         return False
     return not any(is_repo_module(name, repo_root) for name in missing_modules)
@@ -344,10 +354,11 @@ def is_django_settings_fault(command, output, changed_file_list):
     is not a code defect. A SyntaxError, or a change to a settings module or an app config, which can raise the
     settings error itself, makes it a defect. Under `manage.py test` the settings load first, so a settings error
     there comes from the repo's code."""
-    if not PYTEST_COMMAND.search(command) or not DJANGO_SETTINGS_ERROR.search(output):
+    plain = strip_ansi(output)
+    if not PYTEST_COMMAND.search(command) or not DJANGO_SETTINGS_ERROR.search(plain):
         return False
 
-    if TESTS_FAILED.search(output) or SYNTAX_ERROR.search(output):
+    if TESTS_FAILED.search(plain) or SYNTAX_ERROR.search(plain):
         return False
     return not any(DJANGO_CONFIG_FILE.search(name) for name in changed_file_list)
 
@@ -365,11 +376,12 @@ def check_verdict(command, code, output):
     if code != 0:
         return FAILED
 
-    summaries = runner_summaries(output, limit=None)
+    plain = strip_ansi(output)
+    summaries = runner_summaries(plain, limit=None)
     if SUMMARY_FAILURE.search("\n".join(summaries)):
         return FAILED_EXIT_ZERO
-    if prints_own_runner_summary(command) and matches_no_test(command, code, output):
+    if prints_own_runner_summary(command) and matches_no_test(command, code, plain):
         return NO_TESTS_RAN
-    if runs_tests(command) and (NO_TESTS_RAN_OUTPUT.search(output) or NO_TESTS_EXIT_ZERO.search(output)):
+    if runs_tests(command) and (NO_TESTS_RAN_OUTPUT.search(plain) or NO_TESTS_EXIT_ZERO.search(plain)):
         return NO_TESTS_RAN
     return PASSED

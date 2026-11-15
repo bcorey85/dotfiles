@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-589 fix notes
+590 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -15,7 +15,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
 | script/review-fix | 59 | 11 |
-| script/review-loop-script | 57 | 7 |
+| script/review-loop-script | 58 | 8 |
 | script/handback | 54 | 4 |
 | script/review-commit-gate | 38 | 4 |
 | script/review-loop-gate | 35 | 0 |
@@ -30,9 +30,9 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/review-loop | 14 | 7 |
 | script/shell-write-gate | 14 | 0 |
 | script/verify-prep | 13 | 3 |
+| script/log-review-finding | 12 | 1 |
 | script/staged-claim-gate | 12 | 1 |
 | script/verify-log | 12 | 5 |
-| script/log-review-finding | 11 | 0 |
 | script/pull-keep-index | 11 | 8 |
 | script/git-discipline-gate | 9 | 1 |
 | script/verify-common | 9 | 4 |
@@ -60,6 +60,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/format-changed | 4 | 1 |
 | script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
+| script/ledger-write | 4 | 1 |
 | script/log-scan | 4 | 0 |
 | script/parallel-tests | 4 | 0 |
 | script/run-sh | 4 | 1 |
@@ -70,7 +71,6 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/adr-flow | 3 | 0 |
 | script/code | 3 | 0 |
 | script/inline-interpreter-hint | 3 | 0 |
-| script/ledger-write | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
 | script/review-asks | 3 | 3 |
 | script/review-loop-packet | 3 | 1 |
@@ -116,6 +116,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 1 |
+| script/diff-ranges | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 1 |
 | script/fork-write-scope | 1 | 1 |
@@ -143,6 +144,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/reply-json | 1 | 1 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 1 |
+| script/review-loop-docs-kind | 1 | 1 |
 | script/review-loop-findings | 1 | 1 |
 | script/review-loop-fix-induced | 1 | 1 |
 | script/rule-anchors | 1 | 0 |

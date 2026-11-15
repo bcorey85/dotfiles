@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-969 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+970 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md).
+Latest change: 2026-11-15, [Review loop labels each docs finding stale or new from the diff](notes/2026-11-15-review-loop-labels-each-docs-finding-stale-or-new.md).
 
 ## Top gains
 

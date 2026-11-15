@@ -25,6 +25,8 @@
 #
 # Files, each overridden by the variable beside it:
 #   review_finding, review_run  ~/.claude/review-findings.jsonl  REVIEW_FINDINGS_FILE
+#   review_finding_label        ~/.claude/review-finding-labels.jsonl  REVIEW_FINDING_LABELS_FILE
+#     (--local only: {finding_id, docs_kind} of a row whose label the ledger refused)
 #   review_metrics              ~/.claude/review-metrics.jsonl   REVIEW_METRICS_FILE
 #   review_escape               ~/.claude/review-escapes.jsonl   REVIEW_ESCAPES_FILE
 #   spec_run                    ~/.claude/spec-runs.jsonl        SPEC_RUNS_FILE
@@ -71,6 +73,7 @@ fi
 case "$row_type" in
   review_finding) log_file="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=finding ;;
   review_run) log_file="${REVIEW_FINDINGS_FILE:-$HOME/.claude/review-findings.jsonl}"; schema_version=3; kind=run ;;
+  review_finding_label) log_file="${REVIEW_FINDING_LABELS_FILE:-$HOME/.claude/review-finding-labels.jsonl}"; schema_version=1; kind="" ;;
   review_metrics) log_file="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"; schema_version=2; kind="" ;;
   review_escape) log_file="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"; schema_version=2; kind="" ;;
   spec_run) log_file="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"; schema_version=1; kind="" ;;

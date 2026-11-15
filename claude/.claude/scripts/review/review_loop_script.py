@@ -72,6 +72,7 @@ import review_loop_held
 import reviewer_dispatch
 import script_utils
 from coder_report import open_questions
+from diff_ranges import added_ranges
 from finding_record import parse_finding
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
@@ -86,6 +87,7 @@ from review_loop_closure import (
     receipt_still_open,
 )
 from review_loop_coder import CoderCallError, coder_call, coder_fault_notes
+from review_loop_docs_kind import change_added_ranges, docs_kind
 from review_loop_findings import (
     PLAN_CHANGE_YES,
     POINTER_ASK_REASON,
@@ -114,6 +116,7 @@ from review_user_ruled import reasked_findings
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
+FIRST_ROUND = 1  # the only round labeled against the whole change; a resumed loop starts past it, unlabeled
 LOG_TIMEOUT_SECONDS = 60
 ABSENT_FILE_REASON = "the file is not in the tree"
 NO_CHANGE_REASON = "the coder made no change"
@@ -276,6 +279,8 @@ def finding_log_command(run, row, finding, fix_ranges):
     fix_induced = fix_induced_tag(finding.get("fix_induced", ""), row["iter"], path, line, fix_ranges)
     if fix_induced:
         command.append(f"fix_induced={fix_induced}")
+    if finding.get("docs_kind"):
+        command.append(f"docs_kind={finding['docs_kind']}")
     return command
 
 
@@ -387,6 +392,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
     def init_round_state(self):
         """The per-round bookkeeping: dispatches, filed entries, which pass ran last and what it left untested."""
         self.round_two_fix_diff_path = ""
+        self.docs_added = None  # the added lines docs_kind labels against; None in a resumed loop's first round
         self.files = {}
         self.dispatches = []
         self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
@@ -523,6 +529,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             return
         else:
             finding["spot"] = new_spot(path, finding["title"], entries)
+            finding["docs_kind"] = docs_kind(self.repo, self.docs_added, finding["finding"])
             entries.append(finding)
             findings.append(finding)
             filed = finding
@@ -531,10 +538,12 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             self.round_fixes.append(filed)
 
     def refile(self, earlier, finding):
-        """Updates an earlier round's entry from the same finding filed again, keeping its spot."""
+        """Updates an earlier round's entry from the same finding filed again, keeping its spot. The label is set
+        again from this round's diff, class and line."""
         finding["spot"] = earlier["spot"]
         if finding["disposition"] == "ask":
             finding["finding"] = earlier["finding"]
+        finding["docs_kind"] = docs_kind(self.repo, self.docs_added, finding["finding"])
         earlier.update(finding)
 
     def record_review(self, agent, owned, parsed, fixes, design):
@@ -608,6 +617,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         self.last_review_round = self.iter_count
 
         self.round_claimed, self.round_fixes = set(), []
+        if self.iter_count == FIRST_ROUND:
+            self.docs_added = change_added_ranges(self.repo, self.review_base)
         round_fix, round_nits = [], []
         tree_paths = git_lines(self.repo, "ls-files", "--cached", "--others", "--exclude-standard")
         for (agent, owned), review in zip(self.dispatches, reviews, strict=True):
@@ -709,7 +720,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         if self.iter_count < ROUND_BUDGET:
             self.plan_second_round(round_fix, result, skipped_findings)
         # A toolkit .md file is code, so only a docs-class fix that changes only .md files skips the re-review.
-        docs_only = (bool(applied) and all(item.finding_class == "docs" for item in applied)
+        docs_only = (bool(applied) and all(item.finding_class == handback.DOCS_CLASS for item in applied)
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
 
@@ -747,8 +758,10 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
     def plan_second_round(self, round_fix, result, skipped_findings):
         """Writes the round's fix diff for the next reviewers and plans which of them run."""
         fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
-        fix_diff_file.write_text("\n\n".join(result.diffs))
+        fix_diff_text = "\n\n".join(result.diffs)
+        fix_diff_file.write_text(fix_diff_text)
         self.round_two_fix_diff_path = str(fix_diff_file)
+        self.docs_added = added_ranges(fix_diff_text)
         self.dispatches = second_round_plan(round_fix, result.changed, skipped_findings, result.diffs)
 
     def fix_first(self, texts):

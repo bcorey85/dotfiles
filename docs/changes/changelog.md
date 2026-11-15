@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-975 changes
+976 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Review loop labels each docs finding stale or new from the diff](notes/2026-11-15-review-loop-labels-each-docs-finding-stale-or-new.md) [script/review-loop-script, script/review-loop-docs-kind, script/log-review-finding, script/diff-ranges, script/ledger-write] `review_loop_script.py` logs each docs-class finding of every loop reviewer with `docs_kind=stale` when the cited line stood before the change under review, and `docs_kind=new` when the change added the line. The script computes the label from the diff; no model passes it. A finding the script cannot place carries no label.
 * [Scripts folder CLAUDE.md names the owner of commit placement, ask outcome words and the file lock](notes/2026-11-14-scripts-folder-claude-md-names-the-owner-of-commit.md) [rule/scripts-claude-md] Three owner lines tell a coder under scripts/ to import the commit-folder lookup, the ask outcome words and the file lock, in place of writing a second copy.
 * [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) [agent/test-reviewer] The test reviewer now opens the fixture of every test that asserts an order and reports a fixture already in the expected order as a fix. On Sonnet it used to miss that gap in half its reviews of a real-size phase.
 * [The reviewer reports a query on an unindexed column as a fix](notes/2026-11-10-the-reviewer-reports-a-query-on-an-unindexed.md) [agent/code-reviewer] The code reviewer now reports a new query that filters or sorts on a column with no index as a fix, where it used to stay silent or raise it as a question or a nit on TypeScript backends.

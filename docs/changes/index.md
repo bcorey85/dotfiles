@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-975 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+976 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-15, [Register the ledger MCP server under the name sessions call](notes/2026-11-15-register-the-ledger-mcp-server-under-the-name.md).
 

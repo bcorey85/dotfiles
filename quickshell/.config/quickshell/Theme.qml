@@ -10,7 +10,7 @@ import QtQuick
 Singleton {
     id: root
 
-    property string family: "onedarkpro"
+    property string family: "dredge"
     property string mode: "dark"
 
     readonly property var palettes: ({
@@ -37,18 +37,6 @@ Singleton {
             fg: "#514036", muted: "#928374",
             green: "#72761e", red: "#af2528", teal: "#477a5b",
             orange: "#b94c07", yellow: "#b4730e", magenta: "#924f79"
-        },
-        "solarized-osaka-dark": {
-            bg: "#001419", panel: "#000c10", border: "#063540",
-            fg: "#839395", muted: "#586e74",
-            green: "#849900", red: "#db302d", teal: "#29a298",
-            orange: "#ca4c16", yellow: "#b28500", magenta: "#d23681"
-        },
-        "solarized-osaka-light": {
-            bg: "#fdf5e2", panel: "#ede7d3", border: "#d8d0b6",
-            fg: "#576d74", muted: "#647a82",
-            green: "#6f8000", red: "#b7221f", teal: "#238682",
-            orange: "#a23c11", yellow: "#8f6b00", magenta: "#b02769"
         },
         "flexoki-dark": {
             bg: "#100f0f", panel: "#1c1b1a", border: "#343331",
@@ -86,42 +74,6 @@ Singleton {
             green: "#365a33", red: "#ad5253", teal: "#185b5b",
             orange: "#863716", yellow: "#857238", magenta: "#794f5f"
         },
-        "catppuccin-dark": {
-            bg: "#303446", panel: "#292c3c", border: "#414559",
-            fg: "#c6d0f5", muted: "#838ba7",
-            green: "#a6d189", red: "#e78284", teal: "#81c8be",
-            orange: "#ef9f76", yellow: "#e5c890", magenta: "#ca9ee6"
-        },
-        "catppuccin-light": {
-            bg: "#eff1f5", panel: "#e6e9ef", border: "#ccd0da",
-            fg: "#4c4f69", muted: "#8c8fa1",
-            green: "#40a02b", red: "#d20f39", teal: "#179299",
-            orange: "#fe640b", yellow: "#df8e1d", magenta: "#8839ef"
-        },
-        "tokyonight-dark": {
-            bg: "#1a1b26", panel: "#16161e", border: "#3b4261",
-            fg: "#c0caf5", muted: "#565f89",
-            green: "#9ece6a", red: "#f7768e", teal: "#1abc9c",
-            orange: "#ff9e64", yellow: "#e0af68", magenta: "#bb9af7"
-        },
-        "tokyonight-light": {
-            bg: "#e1e2e7", panel: "#d0d5e3", border: "#a8aecb",
-            fg: "#3760bf", muted: "#848cb5",
-            green: "#587539", red: "#f52a65", teal: "#118c74",
-            orange: "#b15c00", yellow: "#8c6c3e", magenta: "#9854f1"
-        },
-        "onedarkpro-dark": {
-            bg: "#282c34", panel: "#21252b", border: "#3b4048",
-            fg: "#abb2bf", muted: "#7f848e",
-            green: "#98c379", red: "#e06c75", teal: "#56b6c2",
-            orange: "#d19a66", yellow: "#e5c07b", magenta: "#c678dd"
-        },
-        "onedarkpro-light": {
-            bg: "#fafafa", panel: "#efefef", border: "#e7e7e7",
-            fg: "#6a6a6a", muted: "#9b9fa6",
-            green: "#1da912", red: "#e05661", teal: "#56b6c2",
-            orange: "#ee9025", yellow: "#eea825", magenta: "#9a77cf"
-        },
         "edge-dark": {
             bg: "#2b2d37", panel: "#333644", border: "#454b60",
             fg: "#c5cdd9", muted: "#9199a9",
@@ -146,18 +98,6 @@ Singleton {
             green: "#396847", red: "#a5222f", teal: "#287980",
             orange: "#955f61", yellow: "#AC5402", magenta: "#6e33ce"
         },
-        "duskfox-dark": {
-            bg: "#232136", panel: "#191726", border: "#373354",
-            fg: "#e0def4", muted: "#817c9c",
-            green: "#a3be8c", red: "#eb6f92", teal: "#9ccfd8",
-            orange: "#ea9a97", yellow: "#f6c177", magenta: "#c4a7e7"
-        },
-        "duskfox-light": {
-            bg: "#faf4ed", panel: "#ebe5df", border: "#ebdfe4",
-            fg: "#575279", muted: "#9893a5",
-            green: "#618774", red: "#b4637a", teal: "#56949f",
-            orange: "#d7827e", yellow: "#ea9d34", magenta: "#907aa9"
-        },
         "dredge-dark": {
             bg: "#191f25", panel: "#12181e", border: "#41484f",
             fg: "#c1cfdc", muted: "#a5a9b0",
@@ -181,18 +121,6 @@ Singleton {
             fg: "#545464", muted: "#6d6a5d",
             green: "#587137", red: "#bf374c", teal: "#4e6f69",
             orange: "#ab4e00", yellow: "#716b39", magenta: "#a44e6c"
-        },
-        "darcula-dark": {
-            bg: "#2b2b2b", panel: "#242424", border: "#484848",
-            fg: "#c9d0d3", muted: "#929292",
-            green: "#98be65", red: "#f43753", teal: "#73cef4",
-            orange: "#dc9656", yellow: "#ffc66d", magenta: "#a785ba"
-        },
-        "darcula-light": {
-            bg: "#2b2b2b", panel: "#242424", border: "#484848",
-            fg: "#c9d0d3", muted: "#929292",
-            green: "#98be65", red: "#f43753", teal: "#73cef4",
-            orange: "#dc9656", yellow: "#ffc66d", magenta: "#a785ba"
         },
         "tairiki-dark": {
             bg: "#151515", panel: "#1d1f21", border: "#3b3f4c",
@@ -266,42 +194,6 @@ Singleton {
             green: "#1e754f", red: "#ab5959", teal: "#2993a3",
             orange: "#a65e2b", yellow: "#bda437", magenta: "#a13865"
         },
-        "rose-pine-dark": {
-            bg: "#191724", panel: "#1f1d2e", border: "#403d52",
-            fg: "#e0def4", muted: "#908caa",
-            green: "#31748f", red: "#eb6f92", teal: "#9ccfd8",
-            orange: "#ebbcba", yellow: "#f6c177", magenta: "#c4a7e7"
-        },
-        "rose-pine-light": {
-            bg: "#faf4ed", panel: "#fffaf3", border: "#dfdad9",
-            fg: "#464261", muted: "#797593",
-            green: "#286983", red: "#b4637a", teal: "#56949f",
-            orange: "#d7827e", yellow: "#ea9d34", magenta: "#907aa9"
-        },
-        "ef-elea-dark": {
-            bg: "#222524", panel: "#303332", border: "#5e6160",
-            fg: "#eaf2ef", muted: "#969faf",
-            green: "#7fc87f", red: "#ff656a", teal: "#6fcfd2",
-            orange: "#e0b02f", yellow: "#cac85f", magenta: "#f59acf"
-        },
-        "ef-elea-light": {
-            bg: "#edf5e2", panel: "#e3e9d6", border: "#b0b7aa",
-            fg: "#221321", muted: "#676470",
-            green: "#00601f", red: "#c3303a", teal: "#1f70af",
-            orange: "#b04300", yellow: "#9a501f", magenta: "#80308f"
-        },
-        "ef-maris-dark": {
-            bg: "#131c2b", panel: "#1d2c39", border: "#4a5664",
-            fg: "#eaedef", muted: "#969faf",
-            green: "#41bf4f", red: "#ff6f6f", teal: "#2fd0db",
-            orange: "#f0c060", yellow: "#d0d24f", magenta: "#f59acf"
-        },
-        "ef-maris-light": {
-            bg: "#edf4f8", panel: "#e0e7ef", border: "#afb8c3",
-            fg: "#151a27", muted: "#676470",
-            green: "#007010", red: "#c3303a", teal: "#1f66af",
-            orange: "#8b4400", yellow: "#805a1f", magenta: "#80308f"
-        },
         "aura-dark": {
             bg: "#15141b", panel: "#1e1c28", border: "#3b3557",
             fg: "#bdbdbd", muted: "#8e8e8e",
@@ -316,8 +208,8 @@ Singleton {
         }
     })
 
-    // Unknown family falls back to onedarkpro rather than leaving the bar unpainted.
-    readonly property var p: palettes[family + "-" + mode] ?? palettes["onedarkpro-" + mode] ?? palettes["onedarkpro-dark"]
+    // Unknown family falls back to dredge rather than leaving the bar unpainted.
+    readonly property var p: palettes[family + "-" + mode] ?? palettes["dredge-" + mode] ?? palettes["dredge-dark"]
 
     readonly property color bg: p.bg
     readonly property color panel: p.panel

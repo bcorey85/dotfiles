@@ -42,6 +42,13 @@ dispatch should fall and review findings per code-reviewer run should not rise.
 
 `coder-guard-make-check-seconds` and `coder-guard-make-review-findings`.
 
+### Ruling 2026-11-15
+
+Kept; both watches closed (ruled by agent-evals-5e). Coder check seconds per dispatch fell 160.02 → 111.05, inside the
+before range (`coder-guard-make-check-seconds`, NO CHANGE). The review-findings guard (`coder-guard-make-review-findings`,
+3.76 → 6.01, MOVED) is unreadable: its after window spans the 2026-10-27 change that made the scripted review loop
+write one row per finding, which raises the count on its own, and no restart gives a clean before window.
+
 ## Back-out
 
 Restore `claude/.claude/scripts/code/coder_gate.py` and `tests/scripts/test_coder_gate.py` from git (its new tests call

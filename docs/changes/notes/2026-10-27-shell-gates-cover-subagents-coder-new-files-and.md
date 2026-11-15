@@ -51,6 +51,13 @@ unmeasured: "no intake number reads these gates' blocks: the work intake lumps t
 
 — (unmeasured; see frontmatter)
 
+### Ruling 2026-11-15
+
+Kept; `shell-gates-cover-subagents` closed as unreadable for this edit (ruled by agent-evals-5e). Coder blocks per
+coder run rose 0.20 → 0.62 (MOVED), but the rise does not start at install: shell-write-gate coder blocks per run were
+0.12 in ISO week 44, then 0.70 in week 45 and 1.07 in week 46, after seven later gate commits. That rise is its own
+queue item in agent-evals (`shell-write-gate-coder-blocks-rose-ninefold-after`).
+
 ## Back-out
 
 Revert the commit. No saved state depends on it.

@@ -56,6 +56,11 @@ uses since 15eab346. The cap is unchanged and now pinned by a test.
 `code-review-over-cap-rounds` (lanes code and eng-spec) and `review-over-cap-rounds` (lane none): code-reviewer `run`
 rows past round 2 per review loop. Before value 0.00; any reading above 0 is a defect.
 
+### Ruling 2026-11-15
+
+Kept; `code-review-over-cap-rounds` closed at NO CHANGE (ruled by agent-evals-5e). Rounds past the cap stayed at
+zero: 0 of 177 /code review loops, as before. The cap holds; there is nothing left to fall.
+
 ## Back-out
 
 Revert the commit; /code's loop then runs headless reviewers again.

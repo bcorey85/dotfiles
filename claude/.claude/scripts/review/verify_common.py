@@ -171,9 +171,9 @@ def moved_phase_notes(plan_text, name):
 
 # ---------- git ----------
 
-def repo_top(cwd):
+def repo_top(cwd, timeout=None):
     """The repo top level as a resolved path. Raises VerifyError outside a repository."""
-    top = script_utils.repo_root(cwd)
+    top = script_utils.repo_root(cwd, timeout=timeout)
     if top is None:
         raise VerifyError("not inside a git repository")
     return top.resolve()
@@ -211,8 +211,8 @@ def find_base(top, override=None):
     raise VerifyError(f"no base found (tried {', '.join(tried)}); pass --base <ref>")
 
 
-def require_branch(top):
-    branch = script_utils.current_branch(top)
+def require_branch(top, timeout=None):
+    branch = script_utils.current_branch(top, timeout=timeout)
     if not branch:
         raise VerifyError("detached HEAD: check out the branch")
     return branch
@@ -303,6 +303,40 @@ def load_context(path):
     if not path.is_file():
         raise VerifyError(f"no verify-prep context at {path}; run verify-prep first")
     return json.loads(path.read_text())
+
+
+def context_fingerprint(context, top, timeout=None):
+    """The fingerprint of the tree at `top` as a saved context measures it. Every reader of a context hashes through
+    here, so the logged value and the value checked later cannot drift apart."""
+    return tree_fingerprint(top, context["mergeBase"], context["excludeRel"], timeout=timeout)
+
+
+def branch_review_covers(repo_dir, timeout=None):
+    """True when verify-log logged a branch review of the tree at repo_dir as it stands and left no ask open. The
+    saved context is the record: its `top` is this checkout, its `reviewLoggedTree` equals the fingerprint computed
+    now, and its `reviewAsks` is empty. Fails closed: no repo, a detached HEAD or no saved context is a quiet False; a
+    bad context or a failed fingerprint prints a review-commit-gate line on stderr and returns False, so the commit
+    gate keeps asking for a review. Each git call may run `timeout` seconds."""
+    try:
+        top = repo_top(repo_dir, timeout=timeout)
+        branch = require_branch(top, timeout=timeout)
+    except VerifyError:
+        return False
+
+    try:
+        path = context_path(script_utils.repo_name(top), branch)
+        if not path.is_file():
+            return False
+        context = load_context(path)
+        logged_tree = context.get("reviewLoggedTree")
+        if context.get("top") != str(top) or not logged_tree:
+            return False
+        if context.get("reviewAsks"):
+            return False
+        return logged_tree == context_fingerprint(context, top, timeout=timeout)
+    except (VerifyError, OSError, ValueError, KeyError, TypeError) as error:
+        print(f"review-commit-gate: verify credit unread: {error}", file=sys.stderr)
+        return False
 
 
 def die(error):

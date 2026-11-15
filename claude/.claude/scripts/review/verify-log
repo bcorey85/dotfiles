@@ -218,7 +218,7 @@ def require_current_review(context, top):
     or an earlier-tree row a converged /review carries forward)."""
     if "fingerprint" not in context:
         raise vc.VerifyError("the saved verify-prep context has no tree fingerprint: rerun verify-prep")
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.context_fingerprint(context, top)
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
     review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
@@ -244,7 +244,7 @@ def log_review(args, context, top):
     if declared is None and "--rows" not in options:
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
-    fingerprint = vc.tree_fingerprint(top, context["mergeBase"], context["excludeRel"])
+    fingerprint = vc.context_fingerprint(context, top)
     review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
     logged_on_this_tree = review["ran"] and not review.get("coveredByCommitReview")
     if logged_on_this_tree:

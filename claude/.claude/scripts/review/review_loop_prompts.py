@@ -2,7 +2,13 @@
 import json
 
 import handback
+import path_summary
 import plan_format
+import script_utils
+
+ISSUE_CHARS = 240
+MAX_LISTED_ISSUES = 50
+MAX_LISTED_PATHS = 40
 
 FENCE = (
     'Fix only the issues listed below. Do not refactor surrounding code. Do not "improve" things you '
@@ -46,8 +52,9 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
 
 
 def user_ruled_issue(text, ruled_at):
-    """An issue the user accepted, marked with the time of the ruling."""
-    return f"{text} [accepted by the user, ruled {ruled_at}]"
+    """An issue the user accepted, marked with the time of the ruling. The marker comes first so the cut of a long
+    issue never removes it."""
+    return f"[accepted by the user, ruled {ruled_at}] {text}"
 
 
 def review_scope_lines(repo, owned, prior_issues, open_asks):
@@ -89,19 +96,59 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
     return "\n".join(lines)
 
 
-def coder_prompt(repo, findings, small_items, files, gate_env=(), later_phase_files=(), guidance="", held_files=()):
+def listed_texts(texts, full_file, noun):
+    """The lines that list `texts` in the coder prompt: the first MAX_LISTED_ISSUES, numbered, each cut to
+    ISSUE_CHARS on one line. When anything was cut, the numbered full texts go to `full_file`, and the lines name
+    it."""
+    listed = texts[:MAX_LISTED_ISSUES]
+    collapsed = [script_utils.one_line(text, None) for text in listed]
+    shown = [text[:ISSUE_CHARS] for text in collapsed]
+    lines = [f"{index}. {text}" for index, text in enumerate(shown, 1)]
+    overflow = len(texts) > MAX_LISTED_ISSUES
+    too_long = any(len(text) > ISSUE_CHARS for text in collapsed)
+    if not (overflow or too_long):
+        return lines
+
+    full_file.parent.mkdir(parents=True, exist_ok=True)
+    full_texts = [f"{index}. {text}" for index, text in enumerate(texts, 1)]
+    script_utils.write_text_atomically(full_file, "\n\n".join(full_texts) + "\n")
+    if overflow:
+        lines.append(f"{noun.capitalize()}s {MAX_LISTED_ISSUES + 1} to {len(texts)} are only in {full_file}.")
+    lines.append(f"Full text of every {noun}, in the same numbers: {full_file}. Read it before you fix.")
+    return lines
+
+
+def path_list(paths, list_file, in_scope=()):
+    """The paths as one comma-separated line. A list over MAX_LISTED_PATHS is folded by directory, and the line
+    names `list_file`, which holds the full list. Paths that share a directory with a path of `in_scope` are never
+    folded. When nothing fits even then, the line is cut to its first MAX_LISTED_PATHS entries and `and N more`,
+    and those paths come first. A list of at most MAX_LISTED_PATHS is listed whole."""
+    paths = list(paths)
+    entries = path_summary.collapse_paths(paths, MAX_LISTED_PATHS, in_scope)
+    if entries == paths:
+        return ", ".join(paths)
+    list_file.parent.mkdir(parents=True, exist_ok=True)
+    script_utils.write_text_atomically(list_file, "\n".join(paths) + "\n")
+    return f"{', '.join(entries)} (every path is listed in {list_file})"
+
+
+def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), later_phase_files=(), guidance="",
+                 held_files=()):
+    """The fix coder's brief. `list_dir` is the folder that takes the full issue texts, the full small-item texts
+    and each path list the brief folds."""
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
-    body += [f"{index}. {finding}" for index, finding in enumerate(findings, 1)]
+    body += listed_texts(findings, list_dir / "issues.txt", "issue")
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
-                 "where n is the issue number above. When you stop on a PLAN-IMPACT, write that line for each issue "
+                 "where n is the issue's number. When you stop on a PLAN-IMPACT, write that line for each issue "
                  "you left unapplied.", "", SCOPED_TESTS]
     if small_items:
-        body += ["", "## Small items", "", SMALL_ITEMS, ""] + [f"- {item}" for item in small_items]
-    body += ["", "Files in scope: " + ", ".join(files)]
+        body += ["", "## Small items", "", SMALL_ITEMS, "",
+                 *listed_texts(small_items, list_dir / "small-items.txt", "small item")]
+    body += ["", "Files in scope: " + path_list(files, list_dir / "files-in-scope.txt")]
     if later_phase_files:
-        body += ["", LATER_PHASE_RULE + ", ".join(sorted(later_phase_files))]
+        body += ["", LATER_PHASE_RULE + path_list(sorted(later_phase_files), list_dir / "later-phase-files.txt", files)]
     if held_files:
-        body += ["", HELD_FILES_RULE + ", ".join(sorted(held_files))]
+        body += ["", HELD_FILES_RULE + path_list(sorted(held_files), list_dir / "held-files.txt", files)]
     if guidance:
         body += ["", GUIDANCE_RULE + guidance]
     gate_env_text = plan_format.gate_env_text(list(gate_env))

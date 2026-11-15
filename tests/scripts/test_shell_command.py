@@ -1,6 +1,7 @@
 """Checks for shell_command.py: reading a command line as steps joined by operators."""
 import os
 import pathlib
+import re
 import sys
 import unittest
 import unittest.mock
@@ -13,6 +14,14 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
                                                                   else LIVE_SCRIPTS_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+from git_commit_calls import (
+    COMMITTING_CALL,
+    UNPLACED_COMMIT,
+    git_call_commits,
+    git_commit_dirs,
+    runs_commit_call,
+    stopping_flags,
+)
 from shell_command import (
     and_steps,
     and_steps_or_whole,
@@ -23,7 +32,6 @@ from shell_command import (
     docker_set_variables,
     flags_before_value,
     git_c_directory,
-    git_commit_dirs,
     interpreter_family,
     is_git_word,
     is_long_prefix,
@@ -45,6 +53,20 @@ from shell_command import (
     without_assignments,
     without_flag_values,
 )
+
+# The gate's text pattern for `git`, then a call that makes a commit.
+GIT_THEN_CALL = r"\bgit[ \t]+" + COMMITTING_CALL
+
+
+def plain_commit_call(words, _directory):
+    """A commit_call for git_commit_dirs: a call commits when git_call_commits says it does by itself."""
+    return git_call_commits(words)
+
+
+def plain_commit_dirs(command, start_dir):
+    """git_commit_dirs where a call commits when git_call_commits says it does by itself."""
+    placed = git_commit_dirs(command, start_dir, plain_commit_call)
+    return None if placed is None else placed.commit_dirs
 
 
 class InterpreterFamilyTest(unittest.TestCase):
@@ -79,18 +101,156 @@ class GitCommitDirsTest(unittest.TestCase):
         )
         for command, expected in cases:
             with self.subTest(command):
-                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+
+    def test_each_call_that_makes_a_commit_is_read_in_its_dir_and_a_sequence_end_is_not(self):
+        cases = (
+            ("git merge --no-edit side", ["/a"]),
+            ("cd /b && git -C c cherry-pick abc", ["/b/c"]),
+            ("git revert HEAD", ["/a"]),
+            ("git rebase --continue", ["/a"]),
+            ("git rebase main", []),
+            ("git merge --abort", []),
+            ("git cherry-pick --quit", []),
+            ("git rebase --skip", ["/a"]),
+            ("git am --continue", ["/a"]),
+            ("git am --abort", []),
+            ("git merge --no-commit side", []),
+            ("git merge --squash side", []),
+            ("git cherry-pick -n abc", []),
+            ("git cherry-pick --no-commit abc", []),
+            ("git revert -n abc", []),
+            ("git revert --no-commit abc", []),
+            ("git am --skip", ["/a"]),
+            ("git am --quit", []),
+            ("git revert --abort", []),
+            ("git am --show-current-patch", []),
+            ("git merge --no-commit --commit side", ["/a"]),
+            ("git merge --commit --no-commit side", []),
+            ("git merge --squash --no-commit --commit side", ["/a"]),
+            ("git merge --squash --no-squash side", ["/a"]),
+            ("git merge --no-squash --squash side", []),
+            ("git merge --no-commit --abort", []),
+            ("git pull origin main", []),
+            ("git cherry-pick --continue", ["/a"]),
+            ("git revert --skip", ["/a"]),
+            ("git merge --ff-only origin/master", []),
+            ("git merge --ff-only --no-ff side", ["/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+
+    def test_a_commit_message_holding_a_stop_flag_still_commits(self):
+        cases = (
+            ('git commit -m "handle --abort"', ["/a"]),
+            ("git commit -m --abort", ["/a"]),
+            ("git commit -m --quit", ["/a"]),
+            ("git commit --no-commit -m x", ["/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+
+    def test_a_stop_flag_given_as_an_options_value_is_a_message_not_a_stop(self):
+        cases = (
+            ("git merge --no-ff -m --abort side", ["/a"]),
+            ("git merge -m --quit side", ["/a"]),
+            ("git merge -m --squash side", ["/a"]),
+            ("git merge -m --no-commit side", ["/a"]),
+            ("git merge -F --abort side", ["/a"]),
+            ("git merge -m msg --squash side", []),
+            ("git am --exclude --abort mbox", ["/a"]),
+            ("git cherry-pick -m --abort abc", ["/a"]),
+            ("git revert -m 1 --no-commit abc", []),
+            ("git cherry-pick -X --quit abc", ["/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+
+    def test_abort_and_quit_end_the_sequence_only_as_the_calls_one_argument(self):
+        cases = (
+            ("git merge --abort", []),
+            ("git am --quit", []),
+            ("git merge --abort side", ["/a"]),
+            ("git merge side --abort", ["/a"]),
+            ("git cherry-pick --abort abc", ["/a"]),
+        )
+        for command, expected in cases:
+            with self.subTest(command):
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+
+    def test_the_text_pattern_ends_the_sequence_only_right_after_the_subcommand_and_skips_option_values(self):
+        stays_a_commit = ("git merge -m --abort side", "git merge --no-ff -m --abort side",
+                          "git merge -m --squash side", "git am --exclude --abort mbox", "git merge side --abort")
+        for text in stays_a_commit:
+            with self.subTest(text):
+                self.assertIsNotNone(re.search(GIT_THEN_CALL, text))
+        stops = ("git merge --abort", "git merge -m msg --squash side", "git merge side --no-commit",
+                 "git merge origin main --ff-only")
+        for text in stops:
+            with self.subTest(text):
+                self.assertIsNone(re.search(GIT_THEN_CALL, text))
+
+    def test_stopping_flags_are_empty_for_commit_and_hold_the_stops_of_the_others(self):
+        self.assertEqual((), stopping_flags("commit"))
+        self.assertIn("--quit", stopping_flags("merge"))
+        self.assertIn("--no-commit", stopping_flags("merge"))
+        self.assertIn("--show-current-patch", stopping_flags("am"))
+        self.assertIn("--abort", stopping_flags("rebase"))
+
+    def test_a_commit_call_given_to_git_commit_dirs_decides_which_calls_count(self):
+        placed = git_commit_dirs("cd /b && git -C c ci -m x && git status && git -C d status", "/a",
+                                 lambda words, directory: "ci" in words and directory == "/b/c")
+        self.assertEqual(["/b/c"], placed.commit_dirs)
+        self.assertEqual(["git", "-C", "c", "ci", "-m", "x"], placed.first_call_words)
+
+    def test_a_git_call_after_parallel_xargs_or_find_exec_is_placed(self):
+        commands = ("parallel git merge ::: x", "xargs git merge", "find . -exec git merge {} ;",
+                    "find . -execdir git merge {} ;", "watch git merge", "flock /tmp/l git merge topic")
+        for command in commands:
+            with self.subTest(command=command):
+                placed = git_commit_dirs(command, "/a", lambda words, _directory: "merge" in words)
+                self.assertEqual(["/a"], placed.commit_dirs)
+                self.assertEqual("git", placed.first_call_words[0])
+
+    def test_find_without_exec_is_no_launcher(self):
+        self.assertEqual([], plain_commit_dirs("find . -name git merge", "/a"))
+
+    def test_a_git_word_that_is_only_an_argument_starts_no_call(self):
+        for command in ("echo git merge topic", "echo run git commit now", "git log --grep git merge",
+                        "git diff HEAD -- git commit"):
+            with self.subTest(command=command):
+                self.assertEqual([], plain_commit_dirs(command, "/a"))
+
+    def test_a_commit_call_that_answers_unplaced_commit_is_listed_unplaced_and_names_no_dir(self):
+        placed = git_commit_dirs("git -C /b ship && git -C /c ci", "/a",
+                                 lambda words, _directory: UNPLACED_COMMIT if "ship" in words else True)
+        self.assertEqual(["/c"], placed.commit_dirs)
+        self.assertEqual([["git", "-C", "/b", "ship"]], placed.unplaced)
+
+    def test_a_commit_that_cannot_be_placed_is_listed_in_the_unplaced_argument_and_a_placed_one_is_not(self):
+        commands = ('cd "$WT" && git commit -m x', "popd && git commit -m x",
+                    "env -C /b git commit -m x", "git --git-dir=/b/.git commit -m x")
+        for command in commands:
+            with self.subTest(command):
+                placed = git_commit_dirs(command, "/a", plain_commit_call)
+                self.assertEqual([], placed.commit_dirs)
+                self.assertEqual(1, len(placed.unplaced))
+        placed = git_commit_dirs("cd /b && git commit -m x && git -C /c status", "/a", plain_commit_call)
+        self.assertEqual([], placed.unplaced)
 
     def test_a_command_with_no_commit_names_no_dir_and_one_that_cannot_be_read_is_none(self):
         for command in ("cd /b && git status", "ls"):
             with self.subTest(command):
-                self.assertEqual([], git_commit_dirs(command, "/a"))
-        self.assertIsNone(git_commit_dirs("git commit -m 'unclosed", "/a"))
+                self.assertEqual([], plain_commit_dirs(command, "/a"))
+        self.assertIsNone(plain_commit_dirs("git commit -m 'unclosed", "/a"))
 
     def test_a_commit_after_a_cd_to_a_folder_the_shell_expands_is_left_out(self):
         for command in ('cd "$B" && git commit -m x', "cd $D && git commit -m x", "cd /b && cd $D && git commit"):
             with self.subTest(command):
-                self.assertEqual([], git_commit_dirs(command, "/a"))
+                self.assertEqual([], plain_commit_dirs(command, "/a"))
 
     def test_popd_and_cd_dash_return_to_the_dir_they_name(self):
         cases = (
@@ -102,20 +262,20 @@ class GitCommitDirsTest(unittest.TestCase):
         )
         for command, expected in cases:
             with self.subTest(command):
-                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
 
     def test_a_commit_after_a_popd_or_cd_dash_with_nothing_to_return_to_is_left_out(self):
         for command in ("popd && git commit", "cd - && git commit", "pushd && git commit"):
             with self.subTest(command):
-                self.assertEqual([], git_commit_dirs(command, "/a"))
+                self.assertEqual([], plain_commit_dirs(command, "/a"))
 
     def test_a_commit_run_through_env_or_sudo_with_a_chdir_is_left_out(self):
         for command in ("env -C /b git commit", "env --chdir=/b git commit", "sudo -C /b git commit",
                         "env -C /b git commit && git commit"):
             with self.subTest(command):
                 expected = ["/a"] if command.endswith("&& git commit") else []
-                self.assertEqual(expected, git_commit_dirs(command, "/a"))
-        self.assertEqual(["/a"], git_commit_dirs("env -u X git commit", "/a"))
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
+        self.assertEqual(["/a"], plain_commit_dirs("env -u X git commit", "/a"))
 
     def test_a_cd_inside_a_subshell_does_not_move_a_commit_after_the_subshell_closes(self):
         cases = (
@@ -127,12 +287,26 @@ class GitCommitDirsTest(unittest.TestCase):
         )
         for command, expected in cases:
             with self.subTest(command):
-                self.assertEqual(expected, git_commit_dirs(command, "/a"))
+                self.assertEqual(expected, plain_commit_dirs(command, "/a"))
 
     def test_a_commit_whose_git_options_are_not_followed_is_left_out(self):
         for command in ("git --git-dir=/g commit -m x", "git --work-tree /w commit -m x", "git -C '' commit"):
             with self.subTest(command):
-                self.assertEqual([], git_commit_dirs(command, "/a"))
+                self.assertEqual([], plain_commit_dirs(command, "/a"))
+
+
+class RunsCommitCallTest(unittest.TestCase):
+    def test_a_pull_is_no_commit_call(self):
+        self.assertFalse(git_call_commits(["git", "pull"]))
+        self.assertFalse(runs_commit_call(["git", "pull", "--no-rebase"]))
+
+    def test_a_commit_call_behind_a_launcher_counts_and_one_behind_echo_does_not(self):
+        for command in (["parallel", "git", "merge", "x"], ["flock", "/tmp/l", "git", "merge", "x"],
+                        ["watch", "git", "merge"], ["find", ".", "-execdir", "git", "merge", "{}", ";"]):
+            with self.subTest(command=command):
+                self.assertTrue(runs_commit_call(command))
+        self.assertFalse(runs_commit_call(["echo", "git", "merge", "x"]))
+        self.assertFalse(runs_commit_call(["find", ".", "-name", "git", "merge"]))
 
 
 class GitCDirectoryTest(unittest.TestCase):
@@ -141,6 +315,14 @@ class GitCDirectoryTest(unittest.TestCase):
         self.assertEqual("/b", git_c_directory(["git", "-C", "/b", "commit"], "/a"))
         self.assertEqual(os.path.expanduser("~/r"), git_c_directory(["git", "-C", "~/r", "commit"], "/a"))
         self.assertEqual("/a", git_c_directory(["git", "--no-pager", "commit"], "/a"))
+
+    def test_an_alias_or_an_editor_config_moves_nothing_and_another_c_is_not_followed(self):
+        for config in ("alias.ci=commit", "core.editor=true", "sequence.editor=true"):
+            with self.subTest(config):
+                self.assertEqual("/a", git_c_directory(["git", "-c", config, "rebase", "--continue"], "/a"))
+        for config in ("core.worktree=/w", "core.editorx=true", "user.name=x"):
+            with self.subTest(config):
+                self.assertIsNone(git_c_directory(["git", "-c", config, "commit"], "/a"))
 
     def test_an_option_the_gate_does_not_follow_gives_none(self):
         for words in (["git", "--git-dir=/g", "commit"], ["git", "--work-tree", "/w", "commit"],

@@ -110,7 +110,7 @@ def coder_call(role, prompt, repo, out, held):
         after = after_call(role, repo, held, backup, held_before, head_before)
         changed = changed_paths(before, after)
         if not changed:
-            raise
+            raise CoderCallError(str(error), []) from error
         raise failed_call_error(error, changed) from error
 
     record_loop_written(repo, held, untracked)

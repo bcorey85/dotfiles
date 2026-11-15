@@ -841,10 +841,11 @@ class ReviewLoopScriptTest(unittest.TestCase):
             "coder": [{"result": "boom", "exit": 1, "outside_edits": {"notes.py": later}}],
         }, header_extra="files: app.py\n")
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual((self.repo / "notes.py").read_text(), later)
         _row, packet = self.stored_packet()
-        self.assertIn("boom", packet["tool_fault"])
+        self.assertIn("boom", packet["blockers"][0])
+        self.assertEqual(len(packet["findings_remaining"]), 1)
         self.assertIn("held files changed while coder1 ran", packet["tool_fault"])
         self.assertIn("notes.py", packet["tool_fault"])
 
@@ -1740,7 +1741,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.assertEqual((packet["full_check"], packet["full_check_command"]), ("passed", "make check"))
         self.assertEqual("", packet["tool_fault"])
 
-    def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole(self):
+    def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole_in_its_issues_file(self):
         script = self.scratch / "stale_prose.py"
         script.write_text("import sys\nprint('HEADER-OF-THE-REPORT')\nprint('x' * 13000)\nprint('LAST-HIT-LINE')\n"
                           "sys.exit(1)\n")
@@ -1750,9 +1751,9 @@ class ReviewLoopScriptTest(unittest.TestCase):
         completed = self.run_script(scenario)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        calls = json.dumps(self.fake_calls())
-        self.assertIn("HEADER-OF-THE-REPORT", calls)
-        self.assertIn("LAST-HIT-LINE", calls)
+        issues_file = self.state_dir / "loop-script" / AGENT_ID / "coder-briefs" / "coder-prose" / "issues.txt"
+        self.assertIn("HEADER-OF-THE-REPORT", json.dumps(self.fake_calls()))
+        self.assertIn("LAST-HIT-LINE", issues_file.read_text())
 
     def test_a_red_scoped_test_stops_the_loop_before_a_stale_prose_hit_reaches_the_coder(self):
         completed = self.run_with_scoped_tests(["grep -q 'limit = 99' app.py", self.stale_prose_command(1)],
@@ -1996,12 +1997,174 @@ class ReviewLoopScriptTest(unittest.TestCase):
             "coder": [{"result": limit_hit, "edits": {"app.py": APP_FIXED}, "exit": 1}],
         })
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertEqual(packet["files_touched"], ["app.py"])
         self.assertIn(limit_hit, packet["blockers"][0])
         self.assertIn("changed app.py before it died", packet["blockers"][0])
+        self.assertEqual(len(packet["findings_remaining"]), 1)
+
+    def test_a_coder_call_that_fails_stops_loudly_and_keeps_the_findings_in_the_packet(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Prompt is too long", "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(len(packet["findings_remaining"]), 1)
+        self.assertIn("`app.py:2` the limit is wrong", packet["findings_remaining"][0]["finding"])
+        blocker = packet["blockers"][0]
+        self.assertIn("Prompt is too long", blocker)
+        self.assertRegex(blocker, r"reply \S+/call-\d+-coder1\.json, stderr \S+/call-\d+-coder1\.err\.")
+        self.assertIn("Never apply them outside the review loop", blocker)
+
+    def test_an_error_after_a_successful_coder_call_is_a_crash_not_a_failed_coder_call(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        loop_script = sys.modules["review_loop_script"]
+        coder_module = sys.modules["review_loop_coder"]
+
+        with mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+                mock.patch.object(coder_module, "write_fix_diffs", side_effect=RuntimeError("diff write broke")), \
+                self.assertRaises(RuntimeError) as raised:
+            loop.repair("coder1", [])
+
+        self.assertNotIsInstance(raised.exception, loop_script.CoderFailedError)
+        self.assertNotIsInstance(raised.exception, coder_module.CoderCallError)
+        self.assertNotIn("coder call failed", str(raised.exception))
+        self.assertIn("diff write broke", str(raised.exception))
+
+    def test_the_fix_coder_prompt_stays_small_with_a_huge_finding_set_and_held_file_list(self):
+        many_findings = "".join(f"- `app.py:2` [bug] finding {index} " + "the value is wrong " * 100 + "\n"
+                                for index in range(200))
+        review = f"## Fix\n{many_findings}\n## Ask\nNone\n\n## Nit\nNone\n"
+        held_names = [f"evalset/blind/cache/intent/{index:040x}.json" for index in range(7000)]
+        held_names.reverse()
+
+        completed = self.run_script({"code-reviewer": [{"result": review}, {"result": CLEAN_REVIEW}],
+                                     "coder": [{"result": "Fixed."}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"held files: {', '.join(held_names)}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prompt = next(call["prompt"] for call in self.fake_calls() if call["key"] == "coder")
+        self.assertLess(len(prompt), 20000)
+        self.assertIn("evalset/blind/cache/intent/ (7000 files)", prompt)
+        brief_dir = next((self.state_dir / "loop-script" / AGENT_ID / "coder-briefs").iterdir())
+        self.assertEqual((brief_dir / "held-files.txt").read_text().split(), sorted(held_names))
+        issues_text = (brief_dir / "issues.txt").read_text()
+        self.assertEqual(issues_text.count("the value is wrong"), 200 * 100)
+        self.assertIn(str(brief_dir / "issues.txt"), prompt)
+        self.assertIn("Issues 51 to 200 are only in", prompt)
+
+    def test_the_coder_prompt_files_every_long_list_and_cuts_the_small_items(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        files = [f"src/mod{index}/file.py" for index in range(60)]
+        later_phase = {f"later/part{index}/file.py" for index in range(60)}
+        small_items = [f"nit {index} " + "long " * 200 for index in range(60)]
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], small_items, files, briefs,
+                                          later_phase_files=later_phase)
+
+        self.assertLess(len(prompt), 30000)
+        self.assertIn(str(briefs / "files-in-scope.txt"), prompt)
+        self.assertIn("src/ (60 files)", prompt)
+        self.assertIn("later/ (60 files)", prompt)
+        self.assertEqual((briefs / "files-in-scope.txt").read_text().split(), files)
+        self.assertIn(str(briefs / "later-phase-files.txt"), prompt)
+        self.assertEqual((briefs / "later-phase-files.txt").read_text().split(), sorted(later_phase))
+        self.assertIn(str(briefs / "small-items.txt"), prompt)
+        self.assertEqual((briefs / "small-items.txt").read_text().count("long "), 60 * 200)
+        self.assertIn("Small items 51 to 60 are only in", prompt)
+        listed = [line for line in prompt.splitlines() if re.match(r"\d+\. nit ", line)]
+        self.assertEqual(len(listed), 50)
+        self.assertTrue(all(len(line) <= 245 for line in listed), "a small item was not cut")
+
+    def test_later_phase_and_held_files_beside_an_in_scope_file_are_not_folded_into_its_directory(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        others = {f"a/f{index}.py" for index in range(45)}
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], [], ["a/z.py"], briefs,
+                                          later_phase_files=others, held_files=others)
+
+        self.assertNotIn("a/ (45 files)", prompt)
+        self.assertIn("a/f0.py", prompt)
+        self.assertIn("and 5 more", prompt)
+
+    def test_a_multi_line_issue_is_listed_on_one_line_cut_to_the_limit_and_filed_in_full(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        issue = "`app.py:2` first line\nsecond line " + "word " * 100
+
+        prompt = loop_script.coder_prompt(str(self.repo), [issue], [], ["app.py"], briefs)
+
+        listed = next(line for line in prompt.splitlines() if line.startswith("1. "))
+        self.assertLessEqual(len(listed), 245)
+        self.assertIn("first line second line", listed)
+        self.assertEqual((briefs / "issues.txt").read_text(), f"1. {issue}\n")
+        self.assertIn(f"Full text of every issue, in the same numbers: {briefs / 'issues.txt'}", prompt)
+
+    def test_a_short_multi_line_issue_adds_no_file_and_no_full_text_line(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` first line\n  second line"], [],
+                                          ["app.py"], briefs)
+
+        self.assertIn("1. `app.py:2` first line second line", prompt)
+        self.assertNotIn("Full text of every", prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+
+    def test_an_issue_over_the_limit_raw_that_fits_once_its_whitespace_collapses_adds_no_file(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        issue = "`app.py:2` first" + " " * 300 + "second"
+
+        prompt = loop_script.coder_prompt(str(self.repo), [issue], [], ["app.py"], briefs)
+
+        self.assertIn("1. `app.py:2` first second", prompt)
+        self.assertNotIn("Full text of every", prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+
+    def test_a_short_issue_and_small_item_list_adds_no_file_and_no_full_text_line(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], ["tidy the name"],
+                                          ["app.py"], briefs)
+
+        self.assertNotIn("Full text of every", prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+        self.assertFalse((briefs / "small-items.txt").exists())
+
+    def test_the_overflow_line_appears_at_one_over_the_listed_limit_and_not_at_the_limit(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        at_limit = [f"`app.py:2` issue {index}" for index in range(50)]
+
+        at_prompt = loop_script.coder_prompt(str(self.repo), at_limit, [], ["app.py"], briefs)
+
+        self.assertNotIn("Issues 51 to", at_prompt)
+        self.assertNotIn("Full text of every", at_prompt)
+        self.assertFalse((briefs / "issues.txt").exists())
+        over_prompt = loop_script.coder_prompt(str(self.repo), [*at_limit, "`app.py:2` issue 50"], [], ["app.py"],
+                                               briefs)
+        self.assertIn("Issues 51 to 51 are only in", over_prompt)
+
+    def test_sixty_files_each_alone_in_its_own_directory_are_capped_in_the_prompt_and_filed_in_full(self):
+        loop_script = self.load_script_module()
+        briefs = self.scratch / "briefs"
+        files = [f"dir{index}/file.py" for index in range(60)]
+
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], [], files, briefs)
+
+        self.assertIn(", ".join(files[:40]) + ", and 20 more", prompt)
+        self.assertNotIn("dir40/file.py,", prompt)
+        self.assertIn(str(briefs / "files-in-scope.txt"), prompt)
+        self.assertEqual((briefs / "files-in-scope.txt").read_text().split(), files)
 
     def test_a_repo_with_no_declared_check_is_reviewed_and_its_packet_says_no_full_check_ran(self):
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
@@ -2622,7 +2785,8 @@ class ReviewLoopScriptTest(unittest.TestCase):
     def test_every_coder_prompt_tells_the_coder_to_run_only_the_tests_for_its_changed_files(self):
         loop_script = self.load_script_module()
 
-        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], ["a small item"], ["app.py"])
+        prompt = loop_script.coder_prompt(str(self.repo), ["`app.py:2` wrong limit"], ["a small item"], ["app.py"],
+                                          self.scratch / "briefs")
 
         self.assertIn("Run only the tests for the files you changed.", prompt)
         self.assertIn("Do not run lint suites, the full test suite or other repo-wide checks", prompt)
@@ -4138,6 +4302,20 @@ class ReviewLoopScriptTest(unittest.TestCase):
 
     def test_a_user_ruled_finding_reaches_the_fix_coder_marked_with_the_ruling_time(self):
         completed = self.run_ruled_fix(self.USER_RULED_HEADER)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        issues = self.fake_calls()[0]["prompt"].partition("## Issues")[2]
+        self.assertIn("[accepted by the user, ruled 2026-11-13 11:32:00Z]", issues)
+
+    def test_a_long_user_ruled_finding_keeps_its_marker_in_the_issue_the_coder_reads(self):
+        long_finding = self.RULED_FINDING + " " + "The reword drops the second clause of the ticket. " * 8
+        self.assertGreater(len(long_finding), 240)
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header(long_finding) + self.USER_RULED_HEADER)
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         issues = self.fake_calls()[0]["prompt"].partition("## Issues")[2]

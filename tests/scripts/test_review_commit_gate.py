@@ -28,7 +28,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "source_text.py"), ("lib", "notes_paths.py"), ("lib", "local_check.py"),
                 ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
-                ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"))
+                ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
+                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -36,6 +37,22 @@ COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no conve
                  "plain `git commit` (with `git add` of single named files if needed) from the repo root in its "
                  "own Bash call, with no `cd`, `env` or `git -C`, because the gate passes that form. A commit "
                  "after a `cd` earns no credit even when a review converged: run it as `git -C <dir> commit`.")
+
+
+class StagedLayoutTest(unittest.TestCase):
+    """The gate puts review/ before lib/ on sys.path, so a stale copy of a lib module in review/ would run in its
+    place."""
+
+    def test_each_staged_file_is_in_the_real_tree_folder_it_is_staged_to(self):
+        for folder, name in STAGED_FILES:
+            with self.subTest(name):
+                in_tree = (SCRIPTS_DIR / folder / name).exists() or (INSTALLED_DIR / folder / name).exists()
+                self.assertTrue(in_tree, f"{folder}/{name} is in no tree")
+
+    def test_no_module_of_lib_has_a_same_named_copy_in_review(self):
+        lib_names = {path.name for path in toolkit_paths.LIB_DIR.glob("*.py")}
+        review_names = {path.name for path in toolkit_paths.REVIEW_DIR.glob("*.py")}
+        self.assertEqual(set(), lib_names & review_names)
 
 
 class GateCase(unittest.TestCase):
@@ -395,6 +412,18 @@ class NotesOnlyCommitTest(GateCase):
         self.stage("src/a.py")
         self.assert_commit_denied(self.commit_in('git commit -q -m "code"'))
         self.assertEqual(self.state(), "dirty\n")
+
+    def test_a_merge_is_never_notes_only_while_a_commit_of_the_same_notes_passes(self):
+        identity = ("-c", "user.name=t", "-c", "user.email=t@t")
+        self.stage("base.py")
+        self.git(self.repo, *identity, "commit", "-q", "-m", "base")
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        self.stage("side.py")
+        self.git(self.repo, *identity, "commit", "-q", "-m", "side")
+        self.git(self.repo, "checkout", "-q", "-")
+        self.stage(self.NOTES)
+        self.assert_silent(self.commit_in('git commit -q -m "notes"'))
+        self.assert_commit_denied(self.commit_in("git merge side"))
 
     def commit_notes_list(self, text="# queue notes\nqueue/\n\nQUEUE.md\n", repo=None):
         """Commit `.claude/notes-paths` in the test repo, so HEAD holds the list."""
@@ -1114,15 +1143,42 @@ class ReviewedWorkCommitTest(GateCase):
 
         self.assert_denies(finished, "1 ask(s) that you have not ruled on")
 
-    def test_a_commit_in_a_dir_the_gate_cannot_place_is_not_denied_for_the_start_repos_asks(self):
+    def test_a_commit_in_a_dir_the_gate_cannot_place_is_denied_for_the_hook_cwd_repos_asks(self):
         self.append_store_rows(self.phase_asks_open_row())
-        self.make_repo("other")
-        commands = ('cd "$WT" && git commit -m x', "pushd /nowhere-a && cd - && cd - && git commit -m x",
+        commands = ('cd "$WT" && git commit -m x', "popd && git commit -m x",
                     "env -C /nowhere-b git commit -m x", "git --git-dir=/nowhere-c/.git commit -m x")
 
         for command in commands:
             with self.subTest(command):
-                self.assert_silent(self.commit(command, session="s2"))
+                finished = self.commit(command, session="s2")
+                self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+                reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertIn("git -C <repo> <subcommand>", reason)
+                self.assertIn("one line", reason)
+
+    def test_a_commit_in_a_placed_repo_is_denied_without_the_name_the_repo_advice(self):
+        self.append_store_rows(self.phase_asks_open_row())
+
+        finished = self.commit(f'git -C {self.repo.resolve()} commit -m x && cd "$D" && git commit -m y', session="s2")
+
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertNotIn("git -C <repo>", reason)
+
+    def test_an_alias_commit_the_gate_cannot_place_is_denied_for_the_hook_cwd_repos_asks(self):
+        self.git(self.repo, "config", "alias.ci", "commit -a")
+        self.append_store_rows(self.phase_asks_open_row())
+        commands = ('cd "$WT" && git ci -m x', "env -C /nowhere-b git ci -m x",
+                    "git --git-dir=/nowhere-c/.git ci -m x")
+
+        for command in commands:
+            with self.subTest(command):
+                self.assert_denies(self.commit(command, session="s2"), "1 ask(s) that you have not ruled on")
+
+    def test_a_cd_to_a_shell_expanded_folder_with_no_open_asks_passes_the_asks_check(self):
+        finished = self.commit('cd "$WT" && git commit -m x', session="s2")
+
+        self.assert_silent(finished)
 
     def test_a_command_the_gate_cannot_read_is_checked_in_the_start_repo(self):
         self.append_store_rows(self.phase_asks_open_row())
@@ -1976,6 +2032,220 @@ class ReviewedWorkCommitTest(GateCase):
         transcript = self.write_transcript(self.user_prompt("[no-review] commit this"),
                                            self.user_prompt("now more", origin={"kind": "human"}))
         self.assert_commit_denied(self.commit("git commit --allow-empty -m x", transcript_path=transcript))
+
+    def branch_with_commit(self, branch="side"):
+        """A branch off main holding one commit that touches a new file, with main checked out again."""
+        self.git(self.repo, "checkout", "-q", "-b", branch)
+        (self.repo / f"{branch}.py").write_text("side\n")
+        self.git(self.repo, "add", f"{branch}.py")
+        self.git(self.repo, "commit", "-q", "-m", branch)
+        self.git(self.repo, "checkout", "-q", "main")
+
+    def test_a_call_that_makes_a_commit_is_denied_where_a_commit_is_denied(self):
+        self.branch_with_commit()
+        commands = (
+            "git merge side", "git merge --no-edit side", "git -C . merge --no-ff side",
+            "GIT_EDITOR=true git rebase --continue", "GIT_EDITOR=true git rebase --skip",
+            "git cherry-pick side", "git revert --no-edit HEAD", "git am --continue", "git am --skip",
+            "env GIT_EDITOR=true git merge side", "sudo git merge side", "cd $WT && git merge side",
+            "diff <(true) x && git merge side", "diff <(true) x && git cherry-pick abc",
+            'sh -c "git merge side"', 'eval "git merge x"',
+            'diff <(true) x && git commit -m "handle --abort"', 'diff <(true) x && git commit -m "drop --quit flag"',
+            'diff <(true) x && git merge -m "fix --abort" side', "sh -c \"git commit -m 'fix --abort path'\"",
+            "git commit -m --abort",
+            "git merge -m --abort side", "git merge --no-ff -m --abort side", "git merge -m --quit side",
+            "git merge -m --squash side", "git merge -m --no-commit side", "git am --exclude --abort mbox",
+            "git merge --abort side", "git merge side --abort",
+            "diff <(true) x && git merge -m --abort side", "diff <(true) x && git merge -m --squash side",
+            "diff <(true) x && git am --exclude --abort mbox",
+            "parallel git merge ::: side", "watch git merge side", "xargs git merge", "find . -exec git merge side ;",
+            "git merge --ff-only --no-ff side", "diff <(true) x && git merge --ff-only --no-ff side",
+            "git merge --squash --no-squash side",
+            "diff <(true) x && git merge --squash --no-squash side",
+            "git -c ALIAS.ci=commit ci -m x", "git -c alias.a=b -c alias.b=commit a -m x",
+        )
+        for command in commands:
+            with self.subTest(command):
+                self.assert_commit_denied(self.commit(command))
+
+    def test_a_call_that_ends_a_sequence_or_leaves_its_result_uncommitted_passes(self):
+        self.branch_with_commit()
+        commands = (
+            "git merge --abort", "git cherry-pick --abort", "git revert --quit", "git rebase --abort",
+            "git am --abort", "git rebase main", "git merge --no-commit side", "git merge --squash side",
+            "git cherry-pick -n side", "git revert --no-commit HEAD", "git am --show-current-patch",
+            "git merge --commit --no-commit side",
+            "git merge --no-ff -m msg --squash side", "git merge --ff-only side",
+            "git cherry-pick -s -n x", "git revert -s --no-commit x", "git am --show-current-patch=diff",
+            "git pull",
+        )
+        for command in commands:
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_a_call_that_stays_uncommitted_or_ends_a_sequence_passes_in_a_command_the_gate_cannot_read(self):
+        self.branch_with_commit()
+        commands = (
+            "diff <(true) x && git merge --no-commit side", "diff <(true) x && git merge --commit --no-commit side",
+            "diff <(true) x && git cherry-pick --abort", "diff <(true) x && git merge --abort --commit",
+            "diff <(true) x && git merge --ff-only side",
+        )
+        for command in commands:
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_an_alias_that_expands_to_a_commit_is_denied_where_a_commit_is_denied(self):
+        self.git(self.repo, "config", "alias.ci", "commit -a")
+        self.git(self.repo, "config", "alias.shell-ci", "!git commit")
+        self.git(self.repo, "config", "alias.again", "ci")
+        self.git(self.repo, "config", "alias.m", "merge")
+        for command in ("git ci -m x", "git shell-ci -m x", "git again -m x", "git m side",
+                        "git -c alias.zz=commit zz -m x", "env GIT_EDITOR=true git ci -m x",
+                        "git -c alias.zz=status -c alias.zz=commit zz -m x"):
+            with self.subTest(command):
+                self.assert_commit_denied(self.commit(command))
+
+    def test_an_alias_commit_the_gate_cannot_place_is_denied_in_a_session_with_coder_work(self):
+        self.git(self.repo, "config", "alias.ci", "commit -a")
+        for command in ('cd "$WT" && git ci -m x', "env -C /nowhere-b git ci -m x"):
+            with self.subTest(command):
+                self.assert_commit_denied(self.commit(command))
+
+    def test_the_longest_alias_chain_that_is_read_is_denied(self):
+        for name, value in (("a", "b"), ("b", "c"), ("c", "d"), ("d", "commit")):
+            self.git(self.repo, "config", "alias." + name, value)
+        self.assert_commit_denied(self.commit("git a"))
+
+    def test_a_merge_whose_last_mode_flag_commits_is_denied_in_a_command_the_gate_cannot_read(self):
+        self.branch_with_commit()
+        self.assert_commit_denied(self.commit("diff <(true) x && git merge --no-commit --commit side"))
+
+    def test_an_alias_chain_past_the_depth_limit_passes(self):
+        for name, value in (("a", "b"), ("b", "c"), ("c", "d"), ("d", "e"), ("e", "commit")):
+            self.git(self.repo, "config", "alias." + name, value)
+        self.assert_silent(self.commit("git a"))
+
+    def test_a_merge_whose_last_mode_flag_commits_is_denied(self):
+        self.branch_with_commit()
+        self.assert_commit_denied(self.commit("git merge --no-commit --commit side"))
+
+    def test_an_alias_that_names_itself_passes_without_hanging(self):
+        self.git(self.repo, "config", "alias.a", "a")
+        self.assert_silent(self.commit("git a"))
+
+    def test_an_alias_git_words_cannot_parse_is_denied(self):
+        self.git(self.repo, "config", "alias.bad", "commit 'unterminated")
+        self.assert_commit_denied(self.commit("git bad"))
+
+    def test_a_call_option_alias_is_read_by_its_value_and_by_the_subcommand_it_names(self):
+        for command in ("git -c alias.zz=status zz", "git -c alias.zz=commit status"):
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_an_alias_that_expands_to_no_commit_passes(self):
+        self.git(self.repo, "config", "alias.st", "status -s")
+        self.git(self.repo, "config", "alias.say", "!echo hi")
+        self.git(self.repo, "config", "alias.s", "st")
+        self.git(self.repo, "config", "alias.m", "merge")
+        for command in ("git st", "git say", "git s", "git m --abort", "git m --no-commit side"):
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_an_alias_is_read_in_the_repo_the_call_runs_in(self):
+        other = self.make_repo("other")
+        self.git(other, "config", "alias.ci", "commit")
+        for command in (f"git -C {other} ci -m x", f"cd {other} && git ci -m x"):
+            with self.subTest(command):
+                self.assert_commit_denied(self.commit(command))
+        self.assert_silent(self.commit("git ci -m x"))
+
+    def test_a_commit_through_a_shell_alias_earns_no_credit_in_the_cwd_repo(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.git(self.repo, "config", "alias.ship", "!cd /nowhere-b && git commit -am x")
+        for command in ("git -c alias.x='!cd /nowhere-b && git commit -am x' x", "git ship"):
+            with self.subTest(command):
+                self.assert_lost_credit_denied(self.commit(command))
+        self.assert_silent(self.commit("git commit -a -m x"))
+
+    def test_a_shell_alias_commit_is_read_in_the_cwd_repo_for_the_asks_check(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        finished = self.commit("git -c alias.x='!cd /nowhere-b && git commit -am x' x", session="s2")
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
+
+    def test_a_continue_with_an_editor_that_never_opens_earns_the_credit_of_the_cwd_repo(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        commands = ("GIT_EDITOR=true git rebase --continue", "git -c core.editor=true rebase --continue",
+                    "git -c core.editor=true merge --continue", "git -c sequence.editor=true rebase --continue",
+                    "GIT_EDITOR=true git merge --continue")
+        for command in commands:
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_a_lost_credit_deny_names_the_subcommand_that_was_denied(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        finished = self.commit(f"cd {self.repo} && git merge --no-edit side", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} merge`")
+        finished = self.commit(f"cd {self.repo} && git commit -a -m x", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} commit`")
+        for flag in ("--continue", "--skip"):
+            finished = self.commit(f"cd {self.repo} && git rebase {flag}", cwd=self.tmp)
+            self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} rebase {flag}`")
+        for subcommand, flag in (("cherry-pick", "--continue"), ("am", "--skip")):
+            finished = self.commit(f"cd {self.repo} && git {subcommand} {flag}", cwd=self.tmp)
+            self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} {subcommand} {flag}`")
+
+    def test_a_lost_credit_deny_for_merge_offers_ff_only_and_for_commit_does_not(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        finished = self.commit(f"cd {self.repo} && git merge --no-edit side", cwd=self.tmp)
+        self.assert_denies(finished, "(or add `--ff-only` if the merge fast-forwards)")
+        finished = self.commit(f"cd {self.repo} && git commit -a -m x", cwd=self.tmp)
+        self.assertNotIn("--ff-only", finished.stderr)
+
+    def test_a_lost_credit_deny_names_an_alias_set_in_the_directory_the_call_runs_in(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.git(self.repo, "config", "alias.ci", "commit -a")
+        command = f"git -C {self.repo} ci -m x && git --git-dir=/nonexistent/.git commit -m y"
+        finished = self.commit(command, cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} ci`")
+
+    def test_a_lost_credit_deny_names_an_alias_of_the_repo_a_cd_moves_into(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        self.git(self.repo, "config", "alias.ci", "commit -a")
+        finished = self.commit(f"cd {self.repo} && git ci -m x", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} ci`")
+
+    def test_a_lost_credit_deny_names_commit_when_the_command_cannot_be_read(self):
+        (self.repo / "base.py").write_text("changed\n")
+        self.seed_repo_handback(self.repo)
+        finished = self.commit("diff <(true) x && git merge side", cwd=self.tmp)
+        self.assert_denies(finished, f"`git -C {os.path.realpath(self.repo)} commit`")
+
+    def test_a_program_that_names_a_committing_call_in_its_message_is_no_commit(self):
+        commands = ('gh pr create --title x --body "run git merge first"',
+                    'gh pr comment 1 --body "please git revert abc"')
+        for command in commands:
+            with self.subTest(command):
+                self.assert_silent(self.commit(command))
+
+    def test_the_users_push_line_that_rebases_inside_its_script_passes(self):
+        command = (f"python3 ~/.claude/scripts/tools/pull_keep_index.py {self.repo} "
+                   f"&& git -C {self.repo} push -u origin HEAD")
+        self.assert_silent(self.commit(command))
+
+    def test_a_merge_in_a_session_with_no_open_state_passes(self):
+        self.branch_with_commit()
+        self.assert_silent(self.commit("git merge --no-edit side", session="no-state"))
+
+    def test_a_merge_meets_the_phase_asks_in_a_session_with_no_review_events(self):
+        self.append_store_rows(self.phase_asks_open_row())
+        finished = self.commit("git merge --no-edit side", session="s2")
+        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
 
 
 if __name__ == "__main__":

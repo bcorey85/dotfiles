@@ -31,7 +31,7 @@ Queue item `scoped-test-check-calls-a-passing-unittest-run-a`: a coder hand-back
 
 Eight new tests in `tests/scripts/test_test_run_output.py` plus `tests/scripts/test_ansi_text.py`; the named test and four others fail on the old script. `tests/scripts/test_check_output.py` adds eleven coloured-output tests (check_output, coder_gate and full_check); ten fail on the old scripts, and the tail-holds-a-coloured-line test guards the new tail strip. Sweep over 13,439 runner-summary tool outputs under `~/.claude/projects/`: counted above zero 8,638 before, 11,514 after; all 2,948 passing unittest outputs count (2,874 read as zero before). The rest are non-passing text (failed Django runs, diffs, panics), spot-checked, not each verified.
 
-Suite: `bash tests/run.sh` passes, 4185 tests, 0 failed.
+Suite: `bash tests/run.sh` passes, 4196 tests in 148 files, 0 failed.
 
 ## Watch
 

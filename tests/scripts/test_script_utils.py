@@ -154,6 +154,29 @@ class TopLevelSectionsTest(unittest.TestCase):
         self.assertEqual([], script_utils.top_level_sections(["a", "# b"]))
 
 
+class FrontmatterLineNumberTest(unittest.TestCase):
+    def test_the_key_line_inside_the_frontmatter_gives_its_1_based_line(self):
+        text = '---\ntype: "X"\ngenerated: {"by": "a"}\n---\n\nbody\n'
+        self.assertEqual(3, script_utils.frontmatter_line_number(text, "generated"))
+
+    def test_a_body_line_with_the_key_is_not_the_frontmatter_key(self):
+        text = '---\ntype: "X"\n---\n\ngenerated: in the body\n'
+        self.assertEqual(1, script_utils.frontmatter_line_number(text, "generated"))
+
+    def test_text_with_no_frontmatter_gives_line_1(self):
+        self.assertEqual(1, script_utils.frontmatter_line_number("generated: x\n", "generated"))
+
+
+class FrontmatterCrlfTest(unittest.TestCase):
+    CRLF_TEXT = '---\r\ntype: "X"\r\ngenerated: {"by": "a"}\r\n---\r\n\r\nbody\r\n'
+
+    def test_a_crlf_frontmatter_value_is_read_without_the_carriage_return(self):
+        self.assertEqual('{"by": "a"}', script_utils.frontmatter_value(self.CRLF_TEXT, "generated"))
+
+    def test_a_crlf_frontmatter_key_line_gives_its_1_based_line(self):
+        self.assertEqual(3, script_utils.frontmatter_line_number(self.CRLF_TEXT, "generated"))
+
+
 class SubagentTranscriptPathTest(unittest.TestCase):
     def test_the_subagent_transcript_sits_in_a_folder_named_for_the_session_transcript(self):
         self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.subagent_transcript_path("/t/s.jsonl", "a1"))

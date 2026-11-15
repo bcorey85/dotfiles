@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-585 fix notes
+586 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -21,24 +21,24 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 24 | 3 |
 | script/coder-gate | 22 | 2 |
+| script/script-utils | 21 | 6 |
 | agent/review-loop | 20 | 0 |
-| script/script-utils | 20 | 5 |
-| script/plan-format | 19 | 2 |
+| script/plan-format | 20 | 3 |
 | script/quality-check-cap | 17 | 0 |
 | skill/code | 17 | 3 |
 | skill/review | 17 | 11 |
 | script/shell-write-gate | 14 | 0 |
 | script/review-loop | 13 | 6 |
+| script/verify-prep | 13 | 3 |
 | script/staged-claim-gate | 12 | 1 |
-| script/verify-prep | 12 | 2 |
+| script/verify-log | 12 | 5 |
 | script/log-review-finding | 11 | 0 |
 | script/pull-keep-index | 11 | 8 |
-| script/verify-log | 11 | 4 |
 | script/git-discipline-gate | 9 | 1 |
+| script/verify-common | 9 | 4 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 0 |
 | script/refactor-flow | 8 | 3 |
-| script/verify-common | 8 | 3 |
 | script/code-review-start | 7 | 3 |
 | script/code-wait | 7 | 2 |
 | script/criteria-dry-run | 7 | 1 |

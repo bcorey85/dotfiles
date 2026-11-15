@@ -18,7 +18,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
 - Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.
 - Shell command parsing in a gate: `lib/shell_command.py`. Never use a bare `shlex.split`, `str.split` or operator regex on a command.
-- Which folder a git commit lands in: `lib/shell_command.py` (`git_commit_dirs`, `git_c_directory`). Never read the hook's cwd alone.
+- Whether a git call makes a commit, and which folder it lands in: `lib/git_commit_calls.py` (`git_call_commits`, `git_commit_dirs`), with `lib/shell_command.py` `git_c_directory`; through an alias: `lib/git_alias_commits.py`. Never read the hook's cwd alone.
 - Ask outcome words (`accepted`, `rejected`) and the ruling command the commit gate prints: `lib/ask_outcome_words.py`, which imports nothing.
 - A lock held across processes: `lib/file_lock.py`. Never write a second flock helper.
 - Stop file names (`stop.md`, `review-stop.md`): `lib/stop_file_names.py`, which imports nothing. The Write gate loads it on every code-fork Write in a run folder.

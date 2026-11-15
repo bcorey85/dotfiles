@@ -4331,8 +4331,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         sent = json.loads(findings_files[0].read_text())
         self.assertEqual(len(sent), 1)
         self.assertIn("cap the retry", sent[0])
-        state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
-        prompt = next((state_dir / "loop-script").glob("*/prompt.txt")).read_text()
+        prompt = (findings_files[0].parent / "prompt.txt").read_text()
         self.assertRegex(prompt, rf"(?m)^{review_loop_prompt_file.USER_RULED_HEADER_KEY}: 1$")
 
     def test_a_decide_ruling_links_only_the_accepted_asks_of_its_criterion_in_the_same_packet(self):

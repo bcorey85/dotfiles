@@ -7,14 +7,14 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-584 fix notes
+585 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 58 | 10 |
+| script/review-fix | 59 | 11 |
 | script/review-loop-script | 57 | 7 |
 | script/handback | 53 | 3 |
 | script/review-commit-gate | 37 | 3 |
@@ -148,6 +148,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |
+| script/tests | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/waiting-review-launch | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |

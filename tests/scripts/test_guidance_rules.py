@@ -104,8 +104,21 @@ class GuidanceRulesTest(unittest.TestCase):
 
     def test_the_orchestrator_never_answers_a_question_put_to_the_user_in_another_session_s_pane(self):
         text = guidance_text("orchestration.md")
-        self.assertIn("Never submit text in another session's input box to answer a question put to the user", text)
-        self.assertIn("tell the user to answer in that pane", text)
+        self.assertIn("Never submit text in another session's input box to answer a question put to the user, and "
+                      "never tell the user to answer in another pane.", text)
+        self.assertIn("Put the question to the user in this pane, then send that session the user's own words with "
+                      "SendMessage, quoted and dated", text)
+        self.assertNotIn("answer in that pane", text)
+
+    def test_a_session_that_forks_a_worktree_keeps_the_user_in_its_own_pane(self):
+        text = guidance_text("orchestration.md")
+        self.assertIn("this session's name, read from ListAgents, as the session the fork reports to", text)
+        self.assertIn("the fork sends every question for the user and its result there with SendMessage, and never "
+                      "asks in its own pane", text)
+        self.assertIn("tell the user the fork's name and that it reports here; never tell the user to switch panes",
+                      text)
+        self.assertIn("pass on to the user what the fork sends", text)
+        self.assertNotIn("tell the user to switch there", text)
 
     def test_a_coder_runs_a_changed_test_file_through_the_sharding_runner(self):
         text = repo_doc_text("toolkit-script-rules.md")

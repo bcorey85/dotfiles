@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-960 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+961 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-14, [The review commit gate judges merge, cherry-pick, revert, am, rebase --continue and commit aliases as commits](notes/2026-11-14-the-review-commit-gate-judges-merge-cherry-pick.md).
+Latest change: 2026-11-15, [A /code phase rejection is recorded, so the next review loop drops the repeat](notes/2026-11-15-a-code-phase-rejection-is-recorded-so-the-next.md).
 
 ## Top gains
 

@@ -9,7 +9,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
 import handback
-import review_fix_asks
+import review_asks
 import review_loop_findings
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
@@ -322,7 +322,7 @@ class RejectedAskRepeatTest(unittest.TestCase):
     def test_a_short_pathless_ask_is_dropped_when_raised_again_word_for_word(self):
         ask_text = "[bug] Should the cap be 3? — change: set the cap to 3"
         item = {"file_line": handback.UNLOCATED, "question": "Should the cap be 3?", "change": "set the cap to 3"}
-        stored = review_fix_asks.rejected_ask_text(item)
+        stored = review_asks.rejected_ask_text(item)
 
         self.assertTrue(self.repeats(ask_text, [stored]))
 

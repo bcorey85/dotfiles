@@ -388,7 +388,7 @@ def main(argv):
         except ValueError:
             earlier_context = {}
     earlier_escapes = earlier_context.get("escapes", [])
-    review_logged_tree = earlier_context.get("reviewLoggedTree")
+    review_logged_tree = earlier_context.get(vc.REVIEW_LOGGED_TREE)
     review = vc.review_state(repo, branch, fingerprint, review_logged_tree, top)
 
     plan_file = plan_path or ticket_path
@@ -403,7 +403,7 @@ def main(argv):
                "excludeRel": exclude_rel, "fingerprint": fingerprint, "review": review,
                "fullCheck": vc.full_check_state(top),
                "verifierOutputDir": str(fresh_verifier_output_dir(top)),
-               "reviewLoggedTree": review_logged_tree, "reviewAsks": earlier_context.get("reviewAsks"),
+               vc.REVIEW_LOGGED_TREE: review_logged_tree, vc.REVIEW_ASKS: earlier_context.get(vc.REVIEW_ASKS),
                vc.REVIEW_ASKS_RULED_TREE: earlier_context.get(vc.REVIEW_ASKS_RULED_TREE),
                "logged": False, "escapes": earlier_escapes}
     vc.save_context(state_path, context)

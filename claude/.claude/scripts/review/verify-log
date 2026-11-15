@@ -224,7 +224,7 @@ def require_current_review(context, top):
     fingerprint = vc.context_fingerprint(context, top)
     if fingerprint != context["fingerprint"]:
         raise vc.VerifyError("the tree changed since verify-prep measured it: rerun verify-prep")
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get(vc.REVIEW_LOGGED_TREE), top)
     if not review["ran"]:
         raise vc.VerifyError(f"no branch-wide code review covers this tree ({review['reason']}): rerun verify-prep "
                              "and do its review step first")
@@ -248,7 +248,7 @@ def log_review(args, context, top):
         raise vc.VerifyError("review needs --rows (a JSON list; [] when the reviewer found nothing)")
 
     fingerprint = vc.context_fingerprint(context, top)
-    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get("reviewLoggedTree"), top)
+    review = vc.review_state(context["repo"], context["branch"], fingerprint, context.get(vc.REVIEW_LOGGED_TREE), top)
     logged_on_this_tree = review["ran"] and not review.get("coveredByCommitReview")
     if logged_on_this_tree:
         raise vc.VerifyError(f"a branch review already counts for this tree ({review['reason']}): nothing to "
@@ -268,9 +268,9 @@ def log_review(args, context, top):
     check_all(writes, top)
     write_all(writes, top)
 
-    context["reviewLoggedTree"] = fingerprint
+    context[vc.REVIEW_LOGGED_TREE] = fingerprint
     open_asks = [log_text(finding["desc"], None) for finding in findings if finding["actioned"] == ASK]
-    context["reviewAsks"] = open_asks
+    context[vc.REVIEW_ASKS] = open_asks
     context.pop(vc.REVIEW_ASKS_RULED_TREE, None)
     vc.save_context(vc.context_path(context["repo"], context["branch"]), context)
     print(f"logged code-reviewer branch-exit run row and {len(findings)} finding row(s)")
@@ -383,9 +383,9 @@ def open_review_asks(context):
     """The asks the branch review left open on the tree verify-prep measured; a review of an older tree has none,
     unless a converged /review covers this tree and carries that review forward."""
     covered = context["review"].get("coveredByCommitReview")
-    if not covered and context.get("reviewLoggedTree") != context["fingerprint"]:
+    if not covered and context.get(vc.REVIEW_LOGGED_TREE) != context["fingerprint"]:
         return []
-    return context.get("reviewAsks") or []
+    return context.get(vc.REVIEW_ASKS) or []
 
 
 def log_rows(args, context, top):

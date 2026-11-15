@@ -6,12 +6,15 @@
   parallel_tests.py --worker FILE I N     (internal) run the tests of FILE whose position mod N is I
 
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
-wall-clock. Expected failures and skips follow unittest: they do not fail the file."""
+wall-clock. Each process writes how many tests the file holds; the file fails when the tests its processes ran do
+not add up to that number, or when one of several processes ran none. Expected failures and skips follow unittest:
+they do not fail the file."""
 
 import concurrent.futures
 import fcntl
 import functools
 import importlib
+import json
 import os
 import pathlib
 import re
@@ -25,13 +28,16 @@ import unittest
 # REPO_ROOT overrides the repo that holds tests/scripts, so the bundle copy can run against the installed suite.
 REPO_ROOT = pathlib.Path(os.environ.get("REPO_ROOT") or pathlib.Path(__file__).resolve().parent.parent)
 SCRIPTS_TESTS = REPO_ROOT / "tests" / "scripts"
-# A test process that runs longer than this many seconds is killed and its file reported as failed. The slowest file
-# takes about 240s on Linux; TEST_FILE_TIMEOUT_SECONDS overrides the limit.
+# A test process that runs longer than this many seconds is killed and its file reported as failed.
+# TEST_FILE_TIMEOUT_SECONDS overrides the limit.
 FILE_TIMEOUT_SECONDS = float(os.environ.get("TEST_FILE_TIMEOUT_SECONDS") or 1200)
 # How much nicer than the runner each test process runs.
 WORKER_NICENESS = 10
-# Files known to take minutes; each runs as this many processes.
-SHARDS = {}
+# Files known to take minutes; each runs as this many processes, and the limit above applies to each process. The
+# file's printed seconds are the sum over its processes.
+SHARDS = {"test_review_loop_script.py": 4}
+# Names the file where a test process writes how many tests the file holds and how many it took.
+SHARD_REPORT_VARIABLE = "PARALLEL_TESTS_SHARD_REPORT"
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
 HEAVY_FIRST = ["test_verify_branch_script.py", "test_refactor_flow.py", "test_review_fix_script.py", "test_adr_flow.py"]
 
@@ -51,6 +57,9 @@ def run_worker(test_file, shard_index, shard_count):
     module = importlib.import_module(pathlib.Path(test_file).stem)
     all_tests = list(flatten(unittest.defaultTestLoader.loadTestsFromModule(module)))
     chosen = [test for position, test in enumerate(all_tests) if position % shard_count == shard_index]
+    report_file = os.environ.get(SHARD_REPORT_VARIABLE)
+    if report_file:
+        pathlib.Path(report_file).write_text(json.dumps({"total": len(all_tests), "chosen": len(chosen)}))
     suite = unittest.TestSuite(chosen)
     outcome = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if outcome.wasSuccessful() else 1
@@ -134,16 +143,52 @@ def acquire_slot(folder, count):
         time.sleep(0.05)
 
 
-def run_job(job, environment):
+def run_job(job, environment, report_folder):
     slot_descriptor = acquire_slot(slot_folder(), slot_count())
     try:
-        return run_job_in_slot(job, environment)
+        return run_job_in_slot(job, environment, report_folder)
     finally:
         os.close(slot_descriptor)
 
 
-def run_job_in_slot(job, environment):
+def read_shard_report(report_path):
+    # Returns the {"total", "chosen"} counts a test process wrote, or None when it wrote none or broke off mid-write.
+    try:
+        report = json.loads(report_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict) or not all(isinstance(report.get(key), int) for key in ("total", "chosen")):
+        return None
+    return report
+
+
+def count_problems(test_file, shard_runs):
+    # Returns one line per way the processes of a file fail to add up to the whole file. `shard_runs` holds one
+    # (tests run, shard report) pair per process.
+    shard_count = len(shard_runs)
+    process_name = f"{test_file} (one of {shard_count} processes)" if shard_count > 1 else test_file
+    reports = [report for _, report in shard_runs]
+    if None in reports:
+        return [f"{process_name} wrote no readable count of its tests"]
+    problems = []
+    totals = sorted({report["total"] for report in reports})
+    if len(totals) > 1:
+        problems.append(f"{test_file}: its processes loaded different numbers of tests: {totals}")
+    tests_run = sum(count for count, _ in shard_runs)
+    if tests_run != totals[0]:
+        problems.append(f"{test_file}: {tests_run} tests ran, but the file holds {totals[0]}")
+    for count, report in shard_runs:
+        if count != report["chosen"]:
+            problems.append(f"{process_name} ran {count} of the {report['chosen']} tests it took")
+    if shard_count > 1 and any(count == 0 for count, _ in shard_runs):
+        problems.append(f"{process_name} ran no test: lower its SHARDS entry or remove it")
+    return problems
+
+
+def run_job_in_slot(job, environment, report_folder):
     test_file, shard_index, shard_count = job
+    report_path = pathlib.Path(report_folder) / f"{test_file}.{shard_index}.json"
+    environment = dict(environment, **{SHARD_REPORT_VARIABLE: str(report_path)})
     started = time.monotonic()
     command = [
         sys.executable,
@@ -177,10 +222,12 @@ def run_job_in_slot(job, environment):
     seconds = time.monotonic() - started
     output = (stdout or "") + (stderr or "")
     if timed_out:
-        output += f"\n{test_file} timed out after {FILE_TIMEOUT_SECONDS:g}s and was killed\n"
+        process_note = f" (process {shard_index + 1} of {shard_count})" if shard_count > 1 else ""
+        output += f"\n{test_file} timed out after {FILE_TIMEOUT_SECONDS:g}s and was killed{process_note}\n"
     ran = re.search(r"^Ran (\d+) tests?", output, re.MULTILINE)
     test_count = int(ran.group(1)) if ran else 0
-    return test_file, test_count, seconds, not timed_out and process.returncode == 0 and ran is not None, output
+    passed = not timed_out and process.returncode == 0 and ran is not None
+    return test_file, test_count, seconds, passed, output, read_shard_report(report_path)
 
 
 def main(file_names=()):
@@ -197,15 +244,25 @@ def main(file_names=()):
     with tempfile.TemporaryDirectory() as config_folder:
         fixed_git_config = write_fixed_git_config(config_folder)
         environment = fixed_git_environment(fixed_git_config)
-        job_runner = functools.partial(run_job, environment=environment)
+        job_runner = functools.partial(run_job, environment=environment, report_folder=config_folder)
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            for test_file, test_count, seconds, passed, output in pool.map(job_runner, jobs):
-                entry = per_file.setdefault(test_file, {"count": 0, "seconds": 0.0, "passed": True, "failures": []})
+            for test_file, test_count, seconds, passed, output, shard_report in pool.map(job_runner, jobs):
+                entry = per_file.setdefault(
+                    test_file, {"count": 0, "seconds": 0.0, "passed": True, "failures": [], "shard_runs": []}
+                )
                 entry["count"] += test_count
                 entry["seconds"] += seconds
                 entry["passed"] = entry["passed"] and passed
+                entry["shard_runs"].append((test_count, shard_report))
                 if not passed:
                     entry["failures"].append(output)
+
+    # A file whose processes all passed still fails when their test counts do not add up to the whole file.
+    for test_file, entry in per_file.items():
+        problems = count_problems(test_file, entry["shard_runs"])
+        if problems and entry["passed"]:
+            entry["passed"] = False
+            entry["failures"].append("\n".join(problems))
 
     total_tests, total_seconds, failed_files = 0, 0.0, []
     for test_file in sorted(per_file):

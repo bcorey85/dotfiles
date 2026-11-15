@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-592 fix notes
+593 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -125,6 +125,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/gate-replay | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
+| script/herdr-worktree-prune | 1 | 1 |
 | script/herdr-worktree-watch | 1 | 1 |
 | script/hook-input | 1 | 0 |
 | script/hook-local-row | 1 | 0 |

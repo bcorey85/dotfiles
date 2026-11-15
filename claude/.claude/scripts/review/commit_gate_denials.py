@@ -1,11 +1,13 @@
 """commit_gate_denials.py: the deny texts of review_commit_gate.py for a commit in a repo with a ruling still open:
 plan impacts the latest review handed back, and phase asks that no session has ruled on, whatever review came after.
-Each function takes the commit's repo dirs, git_timeout and (the plan impacts) the session id, and returns the deny
-text, or None when nothing is open. Both fail open when the store or its readers cannot be imported: the gate's own
-no-review deny still applies. The phase-asks check also fails open on a store it cannot read, and fails closed on a
-damaged row of the repo (an unparsable line counts only when it names the repo). A commit is never denied for
-another repo's asks: a commit the gate cannot place in a repo is left out of the dirs it is given, so a command with
-no placed commit passes this check."""
+unruled_plan_impact_denial and unruled_phase_asks_denial take the commit's repo dirs, git_timeout and (the plan
+impacts) the session id; commit_asks_denial takes the dirs the command placed, the commits it left unplaced and the
+hook's cwd, and wraps unruled_phase_asks_denial. Each returns the deny text, or None when nothing is open. The two
+that import the store fail open when the store or its readers cannot be imported: the gate's own no-review deny still
+applies. The phase-asks check also fails open on a store it cannot read, and fails closed on a
+damaged row of the repo (an unparsable line counts only when it names the repo). A commit the gate
+cannot place in a repo is read in the hook's cwd repo (fail closed), so it can be denied for that repo's asks
+(commit_asks_denial)."""
 import pathlib
 import shlex
 import sys
@@ -52,12 +54,28 @@ def unruled_plan_impact_denial(repo_dirs, session, git_timeout):
     return None
 
 
+def commit_asks_denial(named_dirs, unplaced_commits, cwd, git_timeout):
+    """unruled_phase_asks_denial for a command whose commits git_commit_dirs placed in `named_dirs` (None: the
+    command cannot be read) and left `unplaced_commits` out. The placed dirs are judged as they are. Only when they
+    draw no deny does an unplaced commit count as one in the hook's `cwd` repo (fail closed: the gate cannot tell which
+    repo it lands in), and that deny tells the session to name the repo with `git -C`."""
+    if named_dirs is None:
+        return unruled_phase_asks_denial([cwd], git_timeout)
+    named_denial = unruled_phase_asks_denial(list(named_dirs), git_timeout)
+    if named_denial is not None or not unplaced_commits:
+        return named_denial
+    cwd_denial = unruled_phase_asks_denial([cwd], git_timeout)
+    if cwd_denial is None:
+        return None
+    return (cwd_denial + " The gate cannot place this command's git call in a repo: run `git -C <repo> <subcommand>` "
+            "on one line naming the repo the call lands in, with no `cd`, `env -C` or `--git-dir`.")
+
+
 def unruled_phase_asks_denial(repo_dirs, git_timeout):
     """The deny text for a commit in a repo where a phase review handed finding asks that nobody has ruled on, or
     None. The asks belong to the repo, not to a session: a session with a new id meets them too. Only a ruling
     settles them: a later review of the repo leaves them open. Only the repos of `repo_dirs` (the dirs the command
-    names) are read; a dir outside any work tree names none, so a commit the gate cannot place in a repo passes
-    this check."""
+    names) are read; a dir outside any work tree names none."""
     try:
         import ask_outcome_words
         import handback_store

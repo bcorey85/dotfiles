@@ -92,7 +92,7 @@ class PlanFormatError(Exception):
 
 
 class NoCriteriaHeadingError(PlanFormatError):
-    """A ticket with no `## Acceptance*` or `## Requirements*` heading."""
+    """A ticket with no `## Acceptance*`, `## Requirements*` or `## Done when` heading."""
 
 
 def _duplicate_phase_failure(section_id, first_line, index):
@@ -1077,8 +1077,13 @@ def _ac_reference_failure(criterion_id, where, criteria, criteria_name, nearby):
 
 
 # The ticket's acceptance criteria. verify-prep, verify-log and the plan check all read them through ticket_criteria.
-AC_HEADING = re.compile(r"^(#{2,3})\s+(?:acceptance(?:\s+criteria)?|requirements)\s*:?\s*$", re.I)
-AC_HEADING_LOOSE = re.compile(r"^(#{2,3})\s+(?:acceptance|requirements)\b", re.I)
+# `Done when` is the heading a queue item writes its criteria under, as bullets or as prose paragraphs.
+DONE_WHEN = r"done\s+when"
+# The criteria headings as the errors name them; keep in step with AC_HEADING.
+CRITERIA_HEADING_NAMES = "`Acceptance`, `Acceptance` + `criteria`, `Requirements`, `Done when`"
+AC_HEADING = re.compile(rf"^(#{{2,3}})\s+(?:acceptance(?:\s+criteria)?|requirements|{DONE_WHEN})\s*:?\s*$", re.I)
+DONE_WHEN_HEADING = re.compile(rf"^#{{2,3}}\s+{DONE_WHEN}\s*:?\s*$", re.I)
+AC_HEADING_LOOSE = re.compile(rf"^(#{{2,3}})\s+(?:acceptance|requirements|{DONE_WHEN})\b", re.I)
 LISTITEM = re.compile(r"^(\s*)(?:[-*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*)$")
 
 
@@ -1145,9 +1150,51 @@ def top_level_items(body, name="section", first_line=1):
         is_prose = (not match and line.strip() and not line.startswith((" ", "\t")) and re.search(r"\w", line))
         if is_prose:
             raise PlanFormatError(f"{name}:{first_line + offset}: prose in the criteria section is not a list item, "
-                                  f"so it would be skipped: {line.strip()[:80]}")
+                                  f"so it would be skipped: {line.strip()[:80]} "
+                                  "(make it a list item, or move it under another heading)")
         _fold_item_line(items, match, line)
     return items
+
+
+PROSE_CRITERIA_FIX = "write each criterion as a paragraph of plain lines or as a list item"
+
+
+def paragraph_items(body, name="section", first_line=1):
+    """Criteria of a section written as prose: each blank-line-separated paragraph is one item, its lines joined with
+    single spaces. A fenced block, a sub-heading or a blockquote line raises PlanFormatError (`name:line`): each
+    would be folded into a criterion's text or split it."""
+    items = []
+    paragraph = []
+    for offset, line in enumerate(body):
+        where = f"{name}:{first_line + offset}:"
+        if script_utils.FENCE_OPEN.match(line):
+            raise PlanFormatError(f"{where} fenced block in a prose criteria section; {PROSE_CRITERIA_FIX}")
+        if heading_level(line):
+            raise PlanFormatError(f"{where} sub-heading in a prose criteria section; {PROSE_CRITERIA_FIX}")
+        if line.lstrip().startswith(">"):
+            raise PlanFormatError(f"{where} blockquote line in a prose criteria section; {PROSE_CRITERIA_FIX}")
+        if line.strip():
+            paragraph.append(line.strip())
+            continue
+        if paragraph:
+            items.append(" ".join(paragraph))
+            paragraph = []
+    if paragraph:
+        items.append(" ".join(paragraph))
+    return items
+
+
+def criteria_section_items(lines, heading_index, name="ticket"):
+    """The criteria under the heading at lines[heading_index]. Under a `Done when` heading, a section with prose and no
+    list item at all is read as paragraphs (queue items write it that way). Any other section, and a `Done when`
+    section that holds a list item, is read by top_level_items, so prose beside bullets stops loudly."""
+    body = section_body(lines, heading_index)
+    first_line = heading_index + 2
+    is_done_when = DONE_WHEN_HEADING.match(lines[heading_index]) is not None
+    has_list_item = any(LISTITEM.match(line) for line in body)
+    if is_done_when and not has_list_item:
+        return paragraph_items(body, name, first_line)
+    return top_level_items(body, name, first_line)
 
 
 def _fold_item_line(items, match, line):
@@ -1171,19 +1218,21 @@ def ticket_criteria(ticket_text, name="ticket"):
         if AC_HEADING_LOOSE.match(line) and not AC_HEADING.match(line):
             raise PlanFormatError(
                 f"{name}:{number}: heading `{line.strip()}` is not a recognized criteria heading "
-                "(`Acceptance`, `Acceptance` + `criteria`, `Requirements`); rename it or what it holds is not read"
+                f"({CRITERIA_HEADING_NAMES}); rename it or what it holds is not read"
             )
     candidates = [i for i, line in enumerate(lines) if AC_HEADING.match(line)]
     if not candidates:
-        raise NoCriteriaHeadingError(f"{name}: no `## Acceptance*` or `## Requirements*` heading in the ticket; "
-                                "refusing to treat zero criteria as a pass")
+        raise NoCriteriaHeadingError(f"{name}: no criteria heading ({CRITERIA_HEADING_NAMES}) in "
+                                     "the ticket; refusing to treat zero criteria as a pass")
     candidates.sort(key=lambda i: (heading_level(lines[i]), i))
     for index in candidates:
-        items = top_level_items(section_body(lines, index), name, index + 2)
+        items = criteria_section_items(lines, index, name)
         if items:
             return [{"number": n, "label": f"Ticket #{n}", "text": text} for n, text in enumerate(items, 1)]
     raise PlanFormatError(
-        f"{name}: heading `{lines[candidates[0]].strip()}` has no list items; refusing to treat zero criteria as a pass"
+        f"{name}: heading `{lines[candidates[0]].strip()}` has no criteria "
+        "(no list item, and no paragraph under `Done when`); "
+        "refusing to treat zero criteria as a pass"
     )
 
 
@@ -1246,8 +1295,9 @@ def ticket_comments(ticket_text, name="ticket"):
     return comment_entries([" ".join(parts) for parts in comments])
 
 
-# Who owns a ticket's criteria, and so who may cut or reword one. A ticket copied from a queue item names the item in a
-# `Source:` line; the item's `generated.by` says whether a person or a session wrote the criteria.
+# Who owns a ticket's criteria, and so who may cut or reword one. A ticket that is itself a queue item carries its own
+# `generated.by`. A ticket copied from a queue item names the item in a `Source:` line and takes that item's
+# `generated.by`. Either way it says whether a person or a session wrote the criteria.
 CRITERIA_OWNER_USER = "user"
 CRITERIA_OWNER_PLAN = "plan"
 CRITERIA_OWNER_SESSION = "session"
@@ -1265,6 +1315,7 @@ QUEUE_SOURCE_FORM = re.compile(r"^~/agent-evals/queue/[a-z0-9-]+\.md(?: .*)?$")
 SOURCE_LINE = re.compile(r"^(?:-\s+)?source:\s*(.*)$", re.I)
 GENERATED_FORM = 'generated: {"by": "<author>", ...}'
 HUMAN_AUTHOR_PREFIX = "human:"
+QUEUE_ITEM_TYPE = "QueueItem"
 
 
 def queue_source_line(ticket_lines):
@@ -1291,21 +1342,42 @@ def queue_item_author(ticket_name, number, source_value):
         raise PlanFormatError(f"{where} queue file {queue_file} does not exist; the Source line must name an "
                               "existing queue item (pull ~/agent-evals if the item was queued on another machine)")
 
-    generated_value = script_utils.frontmatter_value(queue_file.read_text(), "generated")
+    return queue_text_author(where, f"queue file {queue_file}", queue_file.read_text())
+
+
+def queue_text_author(where, subject, queue_text):
+    """The `generated.by` author in a queue item's frontmatter text. Raises PlanFormatError (`where subject ...`)
+    when the key is missing, is not a JSON object, or has no non-empty `by`."""
+    generated_value = script_utils.frontmatter_value(queue_text, "generated")
     if generated_value is None:
-        raise PlanFormatError(f"{where} queue file {queue_file} has no `generated:` frontmatter key; expected "
+        raise PlanFormatError(f"{where} {subject} has no `generated:` frontmatter key; expected "
                               f"`{GENERATED_FORM}`")
 
     try:
         generated_object = json.loads(generated_value)
     except json.JSONDecodeError as error:
-        raise PlanFormatError(f"{where} queue file {queue_file} `generated:` is not a JSON object ({error}); "
+        raise PlanFormatError(f"{where} {subject} `generated:` is not a JSON object ({error}); "
                               f"expected `{GENERATED_FORM}`") from error
     author = generated_object.get("by") if isinstance(generated_object, dict) else None
     if not isinstance(author, str) or not author.strip():
-        raise PlanFormatError(f"{where} queue file {queue_file} `generated:` has no non-empty `by`; expected "
+        raise PlanFormatError(f"{where} {subject} `generated:` has no non-empty `by`; expected "
                               f"`{GENERATED_FORM}`")
     return author.strip()
+
+
+def is_queue_item_text(text):
+    """True when the text's frontmatter says `type: "QueueItem"`, quoted or not."""
+    type_value = script_utils.frontmatter_value(text, "type")
+    if type_value is None:
+        return False
+    return type_value.strip().strip('"') == QUEUE_ITEM_TYPE
+
+
+def author_owner(author):
+    """`user` for a `human:` author; `session` for any other (a model, or a `process:` script: not the user)."""
+    if author.startswith(HUMAN_AUTHOR_PREFIX):
+        return CRITERIA_OWNER_USER
+    return CRITERIA_OWNER_SESSION
 
 
 def owner_record(ticket_path, owner, source):
@@ -1314,19 +1386,25 @@ def owner_record(ticket_path, owner, source):
 
 
 def criteria_owner(ticket_path):
-    """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket whose first queue `Source:` line names
-    a queue item is `session` when the item's `generated.by` is not a `human:` author, else `user`. Without one, a
-    ticket with no criteria heading is `plan`, and any other ticket is `user`. A `Source:` line outside the queue
-    folder never changes the owner. Raises PlanFormatError on a queue line the item cannot back, and on a ticket the
-    criteria reader cannot parse."""
+    """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket that is itself a queue item
+    (frontmatter `type: "QueueItem"`) takes its own `generated.by` the same way, with `source` None. A ticket whose
+    first queue `Source:` line names a queue item is `session` when the item's `generated.by` is not a `human:`
+    author, else `user`. Without one, a ticket with no criteria heading is `plan`, and any other ticket is `user`.
+    A `Source:` line outside the queue folder never changes the owner. Raises PlanFormatError on a queue line the
+    item cannot back, a queue item with no readable `generated.by`, and on a ticket the criteria reader cannot parse."""
     ticket_name = str(ticket_path)
     ticket_text = pathlib.Path(ticket_path).read_text()
+    if is_queue_item_text(ticket_text):
+        generated_line = script_utils.frontmatter_line_number(ticket_text, "generated")
+        where = f"{ticket_name}:{generated_line}:"
+        author = queue_text_author(where, "queue item", ticket_text)
+        return owner_record(ticket_path, author_owner(author), None)
+
     queue_source = queue_source_line(ticket_text.splitlines())
     if queue_source is not None:
         number, source_value = queue_source
         author = queue_item_author(ticket_name, number, source_value)
-        owner = CRITERIA_OWNER_USER if author.startswith(HUMAN_AUTHOR_PREFIX) else CRITERIA_OWNER_SESSION
-        return owner_record(ticket_path, owner, source_value)
+        return owner_record(ticket_path, author_owner(author), source_value)
 
     try:
         ticket_criteria(ticket_text, ticket_name)

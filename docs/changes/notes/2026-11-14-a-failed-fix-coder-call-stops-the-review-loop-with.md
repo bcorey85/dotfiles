@@ -18,9 +18,12 @@ unmeasured: "No run measures how often a brief passed the prompt limit."
 ## Change
 
 `review_loop_prompts.coder_prompt` lists at most 50 issues and 50 small items, each cut to 240 characters, and folds any
-file list over 40 paths by directory with `lib/path_summary.collapse_paths`. When no depth folds the list to
-40 entries or fewer, the brief lists the first 40 entries of the depth with the fewest entries and `and N more`. Held and later-phase paths that share a
-directory with an in-scope file are listed one by one, never folded. When an issue or small item is cut, or more than 50 are given, the full texts go to `<out>/coder-briefs/<call>/`, and so does any path list over 40 paths; the brief names each file it writes. `LoopRun.repair` turns a failed coder call into
+file list over 40 paths by directory with `lib/path_summary.collapse_paths`. Held and later-phase paths that share a
+directory with an in-scope file are never folded. When no depth folds the list to 40 entries or fewer even then, the
+brief lists the first 40 entries (those paths first) and `and N more`, and the full list is in the named file. When an
+issue or small item is longer than 240 characters once its whitespace is collapsed, or more than 50 are given, the full
+texts go to `<out>/coder-briefs/<call>/`, and so does any path list over 40 paths; the brief names each file it writes.
+`LoopRun.repair` turns a failed coder call into
 `CoderFailedError`, keeps the findings in `open_fixes` and the changed files in `files_touched`, and `run_loop` stops
 as `critical-blocker` with a blocker that says the findings were not all applied,
 must not be applied outside the review loop, and that the review reruns once the cause is fixed. The `/code` skill's `critical-blocker` route adds: never

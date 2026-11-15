@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-977 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+978 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [herdr-worktree-prune lists and removes merged, clean lane worktrees](notes/2026-11-15-herdr-worktree-prune-lists-and-removes-merged.md).
+Latest change: 2026-11-15, [Five skills stop pointing to the denied question tool](notes/2026-11-15-five-skills-stop-pointing-to-the-denied-question.md).
 
 ## Top gains
 

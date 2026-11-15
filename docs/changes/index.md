@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-962 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+963 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-15, [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md).
 

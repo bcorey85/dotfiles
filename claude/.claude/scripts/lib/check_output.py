@@ -210,8 +210,7 @@ def failing_test_errors(output, lines_per_test=MAX_ERROR_LINES_PER_TEST):
     keeps its first line and its last `lines_per_test - 1`, so a traceback keeps its final error message. Empty when no
     failing line has any error text after it."""
     quoted = []
-    plain = strip_ansi(output)
-    for failing_line, *detail_lines in failing_blocks(plain.splitlines()):
+    for failing_line, *detail_lines in failing_blocks(output.splitlines()):
         details = []
         is_rust_block = bool(PANIC_LINE.match(failing_line.strip())
                              or RUST_FAILED_TEST_HEADER.match(failing_line.strip()))

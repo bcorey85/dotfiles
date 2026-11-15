@@ -25,7 +25,7 @@ import finding_record
 import handback
 import handback_store
 import plan_format
-import review_fix_asks
+import review_asks
 import review_loop_calls
 import review_loop_closure
 import review_loop_findings
@@ -2814,7 +2814,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.reset_fake_run()
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
                                           "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+            review_asks.record_rejected_asks([SESSION], os.path.realpath(self.repo), first_packet["ask"], [REJECTED])
         first_finding_count = len(self.finding_rows())
         first_run_count = len(fake_ledger.recorded_rows(self.env, "review_run"))
 
@@ -3382,7 +3382,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.reset_fake_run()
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
                                           "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+            review_asks.record_rejected_asks([SESSION], os.path.realpath(self.repo), first_packet["ask"], [REJECTED])
         # The reviewer words the same ask again, on another line.
         again = "## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] should the window be pinned?\n\n## Nit\nNone\n"
 
@@ -3401,7 +3401,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         rejected_ask = {"file_line": "app.py:3", "question": plan_text}
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
                                           "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_rejected_asks([rejected_ask], [REJECTED], os.path.realpath(self.repo))
+            review_asks.record_rejected_asks([SESSION], os.path.realpath(self.repo), [rejected_ask], [REJECTED])
         again = f"## Fix\n- `app.py:3` [design-decision] {plan_text}\n\n## Ask\nNone\n\n## Nit\nNone\n"
 
         second = self.run_script({"code-reviewer": [{"result": again}]})
@@ -3425,7 +3425,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.reset_fake_run()
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
                                           "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+            review_asks.record_rejected_asks([SESSION], os.path.realpath(self.repo), first_packet["ask"], [REJECTED])
 
         second = self.run_script({"code-reviewer": [{"result": ask_report}]})
 
@@ -3456,7 +3456,7 @@ class ReviewLoopScriptTest(unittest.TestCase):
         self.reset_fake_run()
         with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"],
                                           "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_rejected_asks(first_packet["ask"], [REJECTED], os.path.realpath(self.repo))
+            review_asks.record_rejected_asks([SESSION], os.path.realpath(self.repo), first_packet["ask"], [REJECTED])
         again = "## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] should the window be pinned?\n\n## Nit\nNone\n"
         first_finding_count = len(self.finding_rows())
         first_run_count = len(fake_ledger.recorded_rows(self.env, "review_run"))

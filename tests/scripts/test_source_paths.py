@@ -1,7 +1,10 @@
 import importlib.util
+import sys
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
 module_spec = importlib.util.spec_from_file_location("source_paths", toolkit_paths.LIB_DIR / "source_paths.py")
 source_paths = importlib.util.module_from_spec(module_spec)
@@ -116,6 +119,20 @@ class TestFileRuleTableTest(unittest.TestCase):
         for log_line, expected in cases.items():
             with self.subTest(log_line=log_line):
                 self.assertEqual(expected, source_paths.names_spec_file(log_line))
+
+
+class IsDocPathTest(unittest.TestCase):
+    def test_markdown_and_docs_folders_are_docs_and_other_paths_are_not(self):
+        cases = {
+            "docs/changes/notes/x.md": True,
+            "README.md": True,
+            "x/docs/y.py": True,
+            "a/b.py": False,
+        }
+
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(expected, source_paths.is_doc_path(path))
 
 
 if __name__ == "__main__":

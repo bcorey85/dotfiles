@@ -51,6 +51,14 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
 
 
+NO_CODE_REVIEW_RULE = ("These findings were ruled no code change. File a [plan-drift] finding for any code the fix "
+                       "diff adds for one of them:")
+
+NO_CODE_CODER_RULE = ("Issues ruled no code change: {numbers}. For each, edit no source or test file; make only the "
+                      "doc or note edit the ruling names. When a ruling cannot be met without code, leave it "
+                      "unapplied and write `SKIPPED <n>: <reason>` for it.")
+
+
 def user_ruled_issue(text, ruled_at):
     """An issue the user accepted, marked with the time of the ruling. The marker comes first so the cut of a long
     issue never removes it."""
@@ -76,7 +84,8 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
     return lines
 
 
-def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", test_strategy=""):
+def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", test_strategy="",
+                    no_code_rulings=()):
     # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
@@ -91,6 +100,9 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
                          "leaves without the tests it asks for:\n" + test_strategy)
     if agent == "smell-reviewer":
         lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
+    if no_code_rulings:
+        lines.append(NO_CODE_REVIEW_RULE)
+        lines += [f"  - {script_utils.one_line(text, ISSUE_CHARS)}" for text in no_code_rulings]
     if brief:
         lines.append(brief)
     return "\n".join(lines)
@@ -133,7 +145,7 @@ def path_list(paths, list_file, in_scope=()):
 
 
 def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), later_phase_files=(), guidance="",
-                 held_files=()):
+                 held_files=(), no_code_numbers=()):
     """The fix coder's brief. `list_dir` is the folder that takes the full issue texts, the full small-item texts
     and each path list the brief folds."""
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
@@ -141,6 +153,8 @@ def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), late
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
                  "where n is the issue's number. When you stop on a PLAN-IMPACT, write that line for each issue "
                  "you left unapplied.", "", SCOPED_TESTS]
+    if no_code_numbers:
+        body += ["", "## No code change", "", NO_CODE_CODER_RULE.format(numbers=", ".join(map(str, no_code_numbers)))]
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, "",
                  *listed_texts(small_items, list_dir / "small-items.txt", "small item")]

@@ -1,9 +1,12 @@
 """The folder, file and state-key names of the review-fix state. No imports: the Write gate loads this module on every
-code-fork Write in a run folder, so it must stay free of anything slow."""
+code-fork Write, so it must stay free of anything slow."""
 
 REVIEW_FIX_FOLDER = "review-fix"
 STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
+# The run folder's findings file: `/fix` passes it to `--fix`, and a fork writes it for `launch --also-fix` to add
+# findings to the fix run asks-done printed. The run folder is the one place the fork may write.
+RUN_FOLDER_FINDINGS_NAME = "fix-findings.md"
 # Set by asks-done when it prints a fix run, cleared when that run launches. The fork-write gate reads it.
 PENDING_LAUNCH_KEY = "asks_launch_pending"
 # Set when a --correct call had a row fail and the stored answers leave no ask to apply (the pending launch was

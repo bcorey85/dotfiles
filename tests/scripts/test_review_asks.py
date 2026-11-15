@@ -20,6 +20,7 @@ class IsConditionalChangeTest(unittest.TestCase):
             "Keep X if yes",
             "Remove it if no, keep it",
             "If the user agrees, drop the column",
+            "If not accepted, keep X",
         ]
         for change in conditional:
             with self.subTest(change):
@@ -39,6 +40,9 @@ class IsConditionalChangeTest(unittest.TestCase):
             "Keep the loop if no caller depends on it",
             "Show the banner if the user is an admin",
             "Return 202 if accepted by the queue",
+            "if accepted, return `[]` when the list is empty",
+            "if accepted as a cut, build `COMMIT` and `GIT_THEN_COMMIT` from `commit\\b(?!-)` again and leave "
+            "`COMMITTING_CALL` only in `UNREADABLE_GIT_THEN_COMMIT`.",
             "",
         ]
         for change in plain:

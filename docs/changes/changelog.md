@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-969 changes
+971 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -38,6 +38,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [a review-loop coder edit to a CLAUDE.md file becomes an ask for the user](notes/2026-11-15-a-review-loop-coder-edit-to-a-claude-md-file.md) [script/review-loop] A fix coder that changes a file named CLAUDE.md, CLAUDE.local.md or AGENTS.md, unless a finding the user ruled on names it, or a session ruled on the approval ask itself, leaves an open ask in the packet, so the edit never rides out as a silent fix.
+* [refactor sweep matches marker words only, not identifiers that hold them](notes/2026-11-15-refactor-sweep-matches-marker-words-only-not.md) [skill/refactor] The /refactor branch-prep sweep no longer lists identifiers such as tree_fingerprint( as debug prints, or TODOS_DIR as a TODO.
 * [An ask whose change starts with if accepted is not refused as conditional](notes/2026-11-15-an-ask-whose-change-starts-with-if-accepted-is-not.md) [script/review-asks] `asks-done` no longer refuses an ask whose proposed change starts with "if accepted" as conditional; only "if not accepted" counts.
 * [Deferred findings reach a resumed /review fix run through --also-fix](notes/2026-11-15-deferred-findings-reach-a-resumed-review-fix-run.md) [script/review-launch, script/review-fix-asks, script/fork-write-scope, script/review-fix-names] `review_fix.py launch --also-fix <file>` adds findings to the fix run after the `--fix` ones, and the code-fork's denied write under `<git dir>/review-fix/` now names that route.
 * [The fix brief names who changed an ask: the user or the session](notes/2026-11-15-the-fix-brief-names-who-changed-an-ask-the-user-or.md) [script/review-fix] A modified ask in the review-fix findings file now says who changed it. A ruling made with `asks-done --by session` no longer reads as the user's change.

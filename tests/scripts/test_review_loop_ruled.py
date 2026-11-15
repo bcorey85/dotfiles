@@ -8,9 +8,11 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import review_loop_findings
 import review_loop_packet
 import review_loop_prompts
 import review_loop_ruled
+import review_loop_script
 import ruled_change_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
@@ -29,6 +31,65 @@ class Host(review_loop_ruled.RuledFindings):
     def __init__(self):
         self.repo = "/repo"
         self.init_ruled_state()
+
+
+class ApprovalOnlyPathsTest(unittest.TestCase):
+    def test_only_a_basename_of_claude_md_needs_approval(self):
+        changed = ["a/b.py", "CLAUDE.md", "x/y/CLAUDE.md", "NOT_CLAUDE.md", "docs/CLAUDE.md.bak", "claude.md"]
+        self.assertEqual(review_loop_ruled.approval_only_paths(changed), ["CLAUDE.md", "x/y/CLAUDE.md"])
+
+    def test_an_agents_md_and_a_claude_local_md_edit_need_approval(self):
+        changed = ["AGENTS.md", "x/CLAUDE.local.md", "a/b.py"]
+        self.assertEqual(review_loop_ruled.approval_only_paths(changed), ["AGENTS.md", "x/CLAUDE.local.md"])
+
+
+def approval_host(user_ruled=(), session_ruled=()):
+    host = Host()
+    host.asks, host.ask_gates = [], {}
+    host.user_ruled, host.session_ruled = list(user_ruled), list(session_ruled)
+    host.add_ask = lambda agent, item: review_loop_script.LoopRun.add_ask(host, agent, item)
+    return host
+
+
+class ApprovalAskFilingTest(unittest.TestCase):
+    def test_two_files_are_two_asks(self):
+        host = approval_host()
+        host.ask_for_approval_only_edits(["CLAUDE.md", "x/CLAUDE.md"], [])
+        self.assertEqual(len(host.asks), 2)
+
+    def test_an_agents_md_and_a_claude_local_md_edit_each_file_an_ask(self):
+        host = approval_host()
+        host.ask_for_approval_only_edits(["AGENTS.md", "CLAUDE.local.md"], [])
+        self.assertEqual(len(host.asks), 2)
+
+
+class ApprovalRulingTest(unittest.TestCase):
+    def ask_filed(self, finding, user_ruled=(), session_ruled=(), changed="CLAUDE.md"):
+        host = approval_host(user_ruled, session_ruled)
+        host.ask_for_approval_only_edits([changed], [finding])
+        return len(host.asks)
+
+    def test_a_user_ruling_on_an_absolute_path_finding_files_no_ask(self):
+        finding = parse_finding("`/repo/sub/CLAUDE.md:7` [bug] Proposed change: reword the rule.")
+        self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text], changed="sub/CLAUDE.md"), 0)
+
+    def test_a_session_ruling_on_a_reviewer_finding_for_claude_md_still_files_the_ask(self):
+        finding = parse_finding("`CLAUDE.md:7` [bug] Proposed change: reword the rule.")
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
+
+    def test_a_user_ruling_on_a_finding_for_claude_md_files_no_ask(self):
+        finding = parse_finding("`CLAUDE.md:7` [bug] Proposed change: reword the rule.")
+        self.assertEqual(self.ask_filed(finding, user_ruled=[finding.text]), 0)
+
+    def test_a_session_ruling_on_the_approval_ask_itself_files_no_ask(self):
+        finding = parse_finding(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 0)
+
+
+class ApprovalAskTextTest(unittest.TestCase):
+    def test_the_ask_is_one_unconditional_change(self):
+        _question, change = review_loop_findings.ask_parts(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        self.assertEqual(change, "revert the fix coder's edit to `CLAUDE.md`.")
 
 
 class NoCodeRulingTest(unittest.TestCase):

@@ -1,9 +1,13 @@
-"""review_loop_ruled.py: what a review loop does with asks it drops and with findings the user already ruled on, as a
-mixin for `LoopRun`. The host class holds asks, plan_impacts and resolved_texts."""
+"""review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
+a coder's edit to an approval-only file (it files an ask), as a mixin for `LoopRun`. The host class holds asks,
+plan_impacts and resolved_texts, and provides `add_ask`."""
+from pathlib import PurePosixPath
+
 import coder_report
 import handback_store
 import plan_format
 from finding_record import parse_finding
+from format_files import PROMPT_MARKDOWN_NAMES
 from review_loop_findings import (
     NOTE_ASK_REASON,
     REJECTED_ASK_REASON,
@@ -20,6 +24,22 @@ from review_loop_packet import located
 from review_loop_prompts import user_ruled_issue
 from ruled_change_text import is_no_code_finding, ruled_note
 from source_paths import is_doc_path
+
+# The gate the ask is logged under: log-review-finding has no gate name for this ask, so it uses `drift-gate`.
+APPROVAL_ASK_GATE = "drift-gate"
+
+
+def approval_only_paths(changed):
+    """The paths in `changed` whose basename is one of `PROMPT_MARKDOWN_NAMES` (CLAUDE.md, CLAUDE.local.md,
+    AGENTS.md). A coder never changes these without the user's approval, so each edit becomes an ask."""
+    return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
+
+
+def approval_ask_text(path):
+    """The text of the ask for a coder's edit to the approval-only file `path`."""
+    # One unconditional change: accepting reverts the edit, rejecting keeps it.
+    return (f"`{path}:1` [other] A fix coder edited `{path}`, which needs the user's approval. "
+            f"Change: revert the fix coder's edit to `{path}`.")
 
 
 def no_code_numbers(findings):
@@ -177,6 +197,28 @@ class RuledFindings:
         self.record_plan_impact({"text": text, "gate": "coder", "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled})
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
+
+    def ask_for_approval_only_edits(self, changed, findings):
+        """After a coder pass on `findings`: files one ask for the user per approval-only file (see
+        `approval_only_paths`) the pass changed. The ask rides the packet's ask list like a reviewer ask: a /code
+        phase review's commit gate holds the commit until it is ruled; the run's status is unchanged. The same file in
+        a later round stays one ask. A file that a finding the user ruled on names is not asked about: the ruling is
+        the approval. A session's ruling is no approval, except on this ask itself (a revert), which would otherwise
+        be filed again."""
+        ruling_findings = [finding for finding in findings if self.is_approval_ruling(finding)]
+        for path in approval_only_paths(changed):
+            if any(names_changed_path(finding.path, path, self.repo) for finding in ruling_findings):
+                continue
+            text = approval_ask_text(path)
+            self.add_ask(APPROVAL_ASK_GATE, parse_finding(text))
+
+    def is_approval_ruling(self, finding):
+        """True when the user ruled on `finding`, or a session ruled on the approval ask for its path."""
+        if finding.text in self.user_ruled:
+            return True
+        if finding.text not in self.session_ruled:
+            return False
+        return finding.text.startswith(approval_ask_text(finding.path))
 
     def flag_broken_no_code_rulings(self, findings, changed, nits=()):
         """After a coder pass: records the no-code rulings of `findings` for the next reviewer prompt, and each code

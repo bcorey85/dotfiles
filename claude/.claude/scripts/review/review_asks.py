@@ -9,6 +9,7 @@ from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
+import handback_store
 from ask_outcome_words import ACCEPTED, REJECTED
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
@@ -154,3 +155,26 @@ def log_ask_outcome(logger, context, item, outcome, decided_by, cwd=None, stall=
                *handback.ask_row_fields(context, item), f"ask_outcome={outcome}", f"ask_decided_by={decided_by}"]
     result = handback.run_logger(command, cwd, stall)
     return OutcomeRow(finding_id, result.code, result.output, new_finding_id_note, command)
+
+
+def rejected_ask_text(item):
+    """The text a rejected ask is stored under: its file:line and question (the text before the ask's change, the part
+    a later review loop compares). Review-fix and phase asks share this shape: handback.normalize_ask fills the
+    question; review_loop_packet sets file_line (`path:line` or UNLOCATED)."""
+    question = one_line(item["question"], None)
+    # An ask with no location is stored as its question alone: a live ask's title has no `unlocated` word to match.
+    if item["file_line"] == handback.UNLOCATED:
+        return question
+    return f"{item['file_line']} {question}"
+
+
+def record_rejected_asks(session_ids, repo, asks, outcomes):
+    """Records each ask answered "rejected" in the hand-back store under `repo` (the key handback_store.ruled_rows_repo
+    gives), once for each of `session_ids`, so a later round of the review loop drops a repeat of it instead of
+    stopping on it. A text a session already holds as rejected adds no row."""
+    for item, outcome in zip(asks, outcomes, strict=True):
+        if outcome != REJECTED:
+            continue
+        text = rejected_ask_text(item)
+        for session_id in session_ids:
+            handback_store.record_rejected_ask(session_id, text, repo)

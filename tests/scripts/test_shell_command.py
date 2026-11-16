@@ -35,12 +35,14 @@ from shell_command import (
     interpreter_family,
     is_git_word,
     is_long_prefix,
+    is_redirect_word,
     is_short_cluster,
     names_code_runner,
     options_before_separator,
     parse_simple_commands,
     path_word,
     quoted_positions,
+    redirect_takes_next_word,
     redirection_writes_file,
     runs_only_after_success,
     segment_words,
@@ -52,6 +54,8 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
     without_flag_values,
+    words_by_blank,
+    words_without_redirections,
 )
 
 # The gate's text pattern for `git`, then a call that makes a commit.
@@ -78,6 +82,20 @@ class InterpreterFamilyTest(unittest.TestCase):
         for word, family in cases.items():
             with self.subTest(word=word):
                 self.assertEqual(family, interpreter_family(word))
+
+
+class RedirectWordTest(unittest.TestCase):
+    def test_a_word_that_starts_a_redirect_is_one(self):
+        for word in (">", "2>", "&>f", ">>f"):
+            self.assertTrue(is_redirect_word(word), word)
+        for word in ("echo", "a>b", "-i"):
+            self.assertFalse(is_redirect_word(word), word)
+
+    def test_a_redirect_word_with_no_target_takes_the_next_word(self):
+        for word in (">", "2>", "&>", ">&"):
+            self.assertTrue(redirect_takes_next_word(word), word)
+        for word in (">f", "&>f", "2>&1"):
+            self.assertFalse(redirect_takes_next_word(word), word)
 
 
 class IsGitWordTest(unittest.TestCase):
@@ -358,6 +376,45 @@ class AndStepsTest(unittest.TestCase):
     def test_any_other_operator_gives_the_stripped_command_as_the_one_step_when_asked_for_the_whole(self):
         self.assertEqual(["ruff check .", "pytest -q"], and_steps_or_whole(" ruff check . && pytest -q "))
         self.assertEqual(["a && b; c"], and_steps_or_whole(" a && b; c "))
+
+
+class WordsByBlankTest(unittest.TestCase):
+    def test_text_is_split_on_blanks_and_newlines_with_quotes_ignored(self):
+        self.assertEqual(["sed", "-i", "'s/a", "b/'", "f"], words_by_blank("sed  -i\t's/a b/'\nf "))
+
+    def test_an_unbalanced_quote_makes_segment_words_fall_back_to_the_same_split(self):
+        self.assertEqual(["echo", "'a", "b"], words_by_blank("echo 'a b"))
+        self.assertEqual(words_by_blank("echo 'a b"), segment_words("echo 'a b"))
+
+
+class WordsWithoutRedirectionsTest(unittest.TestCase):
+    def test_an_unquoted_redirection_is_left_out_with_its_bare_target(self):
+        cases = {
+            "sed -i s/a/b/ f > out.log": ["sed", "-i", "s/a/b/", "f"],
+            "sed -i s/a/b/ f 2>&1": ["sed", "-i", "s/a/b/", "f"],
+            "sed -i s/a/b/ f >out.log g": ["sed", "-i", "s/a/b/", "f", "g"],
+            "sed -i s/a/b/ f &> out.log": ["sed", "-i", "s/a/b/", "f"],
+        }
+        for text, expected in cases.items():
+            self.assertEqual(words_without_redirections(text), expected, text)
+
+    def test_a_quoted_or_escaped_redirect_look_alike_stays_a_word(self):
+        cases = {
+            "x '>&' f": ["x", ">&", "f"],
+            'x ">&" f': ["x", ">&", "f"],
+            "x '2>&' f": ["x", "2>&", "f"],
+            "x '>' f": ["x", ">", "f"],
+            "x '2>' f": ["x", "2>", "f"],
+            "x \\> f": ["x", ">", "f"],
+        }
+        for text, expected in cases.items():
+            self.assertEqual(words_without_redirections(text), expected, text)
+
+    def test_a_quoted_script_with_an_escaped_ampersand_keeps_the_real_redirection_after_it(self):
+        self.assertEqual(words_without_redirections("sed -i 's/a/g(\\&c)/' f 2>&1"), ["sed", "-i", "s/a/g(\\&c)/", "f"])
+
+    def test_an_unclosed_quote_gives_none(self):
+        self.assertIsNone(words_without_redirections("echo 'a b"))
 
 
 class ContainsWordRunTest(unittest.TestCase):
@@ -737,6 +794,10 @@ class CommandAfterWrappersTest(unittest.TestCase):
             "bin/until cargo test": ["bin/until", "cargo", "test"],
             "uv pip install x": ["uv", "pip", "install", "x"],
             "timeout": [],
+            "nocorrect git commit": ["git", "commit"],
+            "noglob sh": ["sh"],
+            "- . ./env.sh": [".", "./env.sh"],
+            "nocorrect noglob command builtin . ./env.sh": [".", "./env.sh"],
         }
         for command, expected in cases.items():
             with self.subTest(command=command):

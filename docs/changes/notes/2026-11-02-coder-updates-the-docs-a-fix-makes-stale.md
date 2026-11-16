@@ -34,6 +34,12 @@ Runs that left no stale text went from 0 of 16 to 10 of 16. Every rule-on miss l
 
 `coder-updates-stale-docs`: docs-class review findings per review run, expected down.
 
+### Ruling 2026-11-15
+
+Kept; `coder-updates-stale-docs` closed as unreadable (ruled by agent-evals-5e). Docs findings per review run read
+1.75 → 2.00 (NO CHANGE), but the before window spans the 2026-10-27 change that made the scripted review loop write
+one row per finding. Docs findings labelled stale, from 2026-11-15 on, are read by the intake's `docs-kind.txt`.
+
 ## Back-out
 
 Delete the stale-docs sentence from `## Fixing a review finding` in `claude/.claude/skills/coder-core/SKILL.md`.

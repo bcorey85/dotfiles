@@ -27,6 +27,8 @@ One work plan, read in full: about 45 to 50% of the spec repeated another sectio
 
 plan defects per finished plan in the work logs, 14.4 now (130 since 2026-09-05 over 9 plans), and spec line counts.
 
+Reading, 2026-11-15: `spec-states-each-fact-once` NO CHANGE, closed, kept. Plan escapes past plan review per finished plan: 0 in 20 plans after the edit, against a before median of 1.50 (range 0.00-14.00). The count is at zero with nothing left to fall, and two other plan edits of the same day share the reading. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 restore the verbatim-copy bullet and the old template comment. Bench check, five build phases of one plan, index against the verbatim copy: both followed all 27 decisions with 0 violations, and reviewers asked to undo a decision 0 times. Cost 3% lower and coder cache read per dispatch 4% lower, inside run-to-run noise. Kept

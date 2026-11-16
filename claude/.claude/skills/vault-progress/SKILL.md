@@ -1,7 +1,7 @@
 ---
 name: vault-progress
 description: Weekly capability distillation — measure what the vault actually gained this week, chart it against trajectory.md's named gaps, and decide the next step together. Read-only on trajectory.md unless the user approves an edit in-session. Triggers on "/vault-progress", "what did I learn this week", "am I closing the gap", "weekly progress".
-allowed-tools: [Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion]
+allowed-tools: [Read, Glob, Grep, Bash, Write, Edit]
 ---
 
 # Vault Progress — did the gap move?
@@ -82,7 +82,7 @@ Three to six bullets on **content**, not counts — what the week's notes are ac
 
 1. Present the chart, the delta, and the distillation. Lead with the 1–3 findings that
    would change a decision.
-2. Ask **2–3 pointed questions**, via `AskUserQuestion`, each citing the week's
+2. Ask **2–3 pointed questions**, each citing the week's
    evidence. Never generic reflection prompts. The good ones sound like:
    - "Four Postgres notes landed and the roadmap step is unmarked — is the step done,
      or did the notes come from setup rather than the step?"

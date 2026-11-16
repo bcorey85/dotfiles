@@ -8,7 +8,6 @@ allowed-tools:
     Glob,
     Grep,
     Agent,
-    AskUserQuestion,
     Skill,
     mcp__jira__getJiraIssue,
     mcp__claude_ai_Atlassian__getJiraIssue,
@@ -84,7 +83,7 @@ No preamble, no research dump. Underspecified past bounding → that IS the repo
 
 ## Step 5: Hand off
 
-Offer via `AskUserQuestion`: recommended first, adjacent second, `just the estimate` always. Choice → invoke with key/text plus the depth on `/eng-spec` routes; estimate-only → stop.
+Offer: recommended first, adjacent second, `just the estimate` always. Choice → invoke with key/text plus the depth on `/eng-spec` routes; estimate-only → stop.
 
 When the routing is L/XL and **no ticket exists**, add one line offering `/create-ticket` before the
 spec.

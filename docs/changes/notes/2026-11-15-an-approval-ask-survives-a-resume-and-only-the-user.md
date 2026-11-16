@@ -34,7 +34,7 @@ New tests in `test_review_loop_ruled.py` (resume, edit gone, rejected, packet fl
 
 Known limit: an approval-only edit the dead run made but never filed (it died before the ask was filed) is not found again. The loop restores asks only from the paths it saved, and a scan of the whole diff for approval-only files was ruled out.
 
-Known exception: `approval-asks.json` is written once per coder pass that files an approval ask, not once per run as `scripts/CLAUDE.md` asks. A single write at the end of the run would lose the ask when the run dies, which is the defect this change fixes.
+Known exception: `approval-asks.json` is written at the start of a run that holds saved paths and each time a coder pass files an approval ask, not once per run as `scripts/CLAUDE.md` asks. A single write at the end of the run would lose the ask when the run dies, which is the defect this change fixes.
 
 Rulings (this change ran with no plan folder, so its decision log is here), all by agent-evals-5e (the orchestrating session), 2026-11-15:
 

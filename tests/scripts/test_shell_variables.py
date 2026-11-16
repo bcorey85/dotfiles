@@ -76,6 +76,20 @@ class LiteralValuesTest(unittest.TestCase):
         self.assertEqual(values("S=/tmp/x; echo hi > $S/a-b_c.log", "$S/a-b_c.log"), ["/tmp/x/a-b_c.log"])
         self.assertEqual(values('S=/tmp/x; echo hi > "$S/a"', '"$S/a"'), ['"/tmp/x/a"'])
 
+    def test_a_reference_cut_by_a_quote_or_backslash_before_a_name_character_is_unproven(self):
+        for use in ('"$S"xt', '$S""xt', "$S''xt", "$S\\xt", '"$S""xt"'):
+            command = f"Sxt=/tmp/x; S=/tmp/y; echo hi > {use}"
+            # The use step holds the raw quotes; the target is the word the parser returns.
+            self.assertIsNone(values(command, "$Sxt"), use)
+
+    def test_a_reference_followed_by_a_quote_and_no_name_character_stays_proven(self):
+        self.assertEqual(values('S=/tmp/x; echo hi > "$S"/a', "$S/a"), ["/tmp/x/a"])
+        self.assertEqual(values('S=/tmp/x; echo hi > "${S}"xt', "${S}xt"), ["/tmp/xxt"])
+
+    def test_a_brace_group_opened_on_its_own_line_is_no_main_shell_assignment(self):
+        for command in ("{\nS=/tmp/x/\n} | tr a b; echo hi > ${S}a", "{\nS=/tmp/x/\n} > /dev/null & echo hi > ${S}a"):
+            self.assertIsNone(values(command, "${S}a"), command)
+
     def test_a_same_name_inner_loop_that_already_ended_is_unproven(self):
         command = "for t in /tmp/claude-1000; do for t in /home/brandon; do :; done; echo > $t/x; done"
         self.assertIsNone(values(command, "$t/x", step=4))
@@ -101,7 +115,8 @@ class LiteralValuesTest(unittest.TestCase):
 
     def test_a_name_the_shell_sets_itself_is_unproven(self):
         for name in ("RANDOM", "SECONDS", "LINENO", "UID", "EUID", "PPID", "BASHPID", "SRANDOM", "EPOCHSECONDS",
-                     "EPOCHREALTIME", "HISTCMD", "BASH_COMMAND", "GROUPS", "SHLVL", "PWD", "REPLY"):
+                     "EPOCHREALTIME", "HISTCMD", "BASH_COMMAND", "GROUPS", "SHLVL", "PWD", "REPLY",
+                     "histchars", "HISTCHARS"):
             command = f"{name}=/tmp/x; echo hi > ${name}/a"
             self.assertIsNone(values(command, f"${name}/a"), command)
 

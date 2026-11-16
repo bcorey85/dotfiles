@@ -1245,6 +1245,26 @@ class ShellWriteGateTest(unittest.TestCase):
             reason = self.coder_denied(command)
             self.assertIn("[coder_unresolved_var]", reason, command)
 
+    def test_a_quote_or_backslash_that_ends_a_name_keeps_the_variable_target_deny(self):
+        tracked = f"{self.repo}/tracked.t"
+        for command in (f'Sxt=/tmp/y; S={tracked}; echo hi > "$S"xt', f'Sxt=/tmp/y; S={tracked}; echo hi > $S""xt',
+                        f"Sxt=/tmp/y; S={tracked}; echo hi > $S''xt", f"Sxt=/tmp/y; S={tracked}; echo hi > $S\\xt",
+                        f'Sxt=/tmp/y; S={tracked}; echo hi | tee "$S"xt',
+                        'for t in /tmp/a; do for tx in /tmp/b; do echo hi > "$t"x; done; done'):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_may_redirect_through_a_quoted_variable_that_no_quote_cuts(self):
+        for command in ('S=/tmp/claude-1000/x; echo hi > "$S/a.log"', 'S=/tmp/claude-1000/x; echo hi > "$S"/a.log',
+                        'S=/tmp/claude-1000/x; echo hi > "${S}"/a.log', 'S=/tmp/claude-1000/x; echo hi > "${S}"x'):
+            self.coder_allowed(command)
+
+    def test_an_assignment_in_a_brace_group_opened_on_its_own_line_that_runs_in_a_subshell_is_unproven(self):
+        for command in (f"{{\nS=/tmp/x/\n}} | tr a b; echo hi > ${{S}}{self.repo}/tracked.txt",
+                        f"{{\nS=/tmp/x/\n}} > /dev/null & echo hi > ${{S}}{self.repo}/tracked.txt"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
     def test_a_quoted_subscript_in_an_argument_keeps_the_variable_target_deny(self):
         command = 'S=/tmp/x; grep "foo[0-9]" f > $S/a'
         reason = self.coder_denied(command)

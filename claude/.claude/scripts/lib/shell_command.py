@@ -10,7 +10,7 @@ SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W
 # `&` sends the step before it to the background.
 OPERATOR = re.compile(r"(\|\||&&|(?<!>)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
-LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
+LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
 REDIRECT_CHARS = set("<>&")

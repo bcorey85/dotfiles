@@ -74,9 +74,10 @@ SHELL_SET_NAMES = frozenset({"REPLY", "reply", "OPTARG", "OPTIND", "MAPFILE", "P
                              "HISTCMD", "BASH_COMMAND", "GROUPS", "SHLVL", "_", "MATCH", "MBEGIN", "MEND", "match",
                              "mbegin", "mend", "BASH_REMATCH", "DIRSTACK", "USERNAME", "FUNCNAME", "BASH_SUBSHELL",
                              "BASH_LINENO", "BASH_SOURCE", "BASH_ARGC", "BASH_ARGV", "COPROC", "pipestatus",
-                             "SHELLOPTS", "BASHOPTS", "BASH_VERSINFO", "BASH_MONOSECONDS", "PATH", "path", "CDPATH",
-                             "cdpath", "FPATH", "fpath", "MANPATH", "manpath", "MAILPATH", "mailpath", "MODULE_PATH",
-                             "module_path", "FIGNORE", "fignore", "PSVAR", "psvar", "WATCH", "watch"})
+                             "histchars", "HISTCHARS", "SHELLOPTS", "BASHOPTS", "BASH_VERSINFO", "BASH_MONOSECONDS",
+                             "PATH", "path", "CDPATH", "cdpath", "FPATH", "fpath", "MANPATH", "manpath", "MAILPATH",
+                             "mailpath", "MODULE_PATH", "module_path", "FIGNORE", "fignore", "PSVAR", "psvar",
+                             "WATCH", "watch"})
 # A named file descriptor (`{S}>file`) sets the variable to the descriptor number.
 NAMED_FD = re.compile(rf"\{{({NAME})\}}(?=[<>])")
 VARIABLE_REFERENCE = re.compile(rf"\$\{{({NAME})\}}|\$({NAME})")
@@ -87,6 +88,9 @@ WORD_TAIL = re.compile(r"[^\s;&|()<>]+$")
 REFERENCE_FREE_TARGET = re.compile(rf"([\"']?){SAFE_CHARS}*\1")
 # A `:` right after a reference starts a zsh modifier (`$S:h`).
 MODIFIER_AFTER_NAME = re.compile(rf"\$\{{{NAME}\}}:|\${NAME}:")
+# An unbraced reference that quotes or a backslash cut from the name characters after it (`"$S"ps`, `$S\ps`): the
+# parser returns the word with the quotes gone, so a reader of that word sees the longer name `$Sps`.
+CUT_REFERENCE = re.compile(rf"\${NAME}(?:[\"']|\\)+\w")
 # `[[ A -eq B ]]` and `$[E]` evaluate a variable's value as arithmetic, which can assign a name that no word shows. A
 # test whose operands are both numeric literals is safe.
 _ARITHMETIC_OPERATOR = r"-(?:eq|ne|lt|le|gt|ge)"
@@ -432,11 +436,11 @@ class ShellVariables:
 
     def literal_values(self, text, step_index):
         """Every literal text that `text` (a redirect or tee target) can expand to when the shell runs the step at
-        step_index, or None when a variable in it has no proven value, the step quotes a `$`, the command is unreadable,
-        or the expansions pass MAX_VALUES."""
+        step_index, or None when a variable in it has no proven value, the step quotes a `$` or cuts a reference from
+        the name characters after it (CUT_REFERENCE), the command is unreadable, or the expansions pass MAX_VALUES."""
         names = variable_names(text)
         step = self.steps[step_index][1]
-        if names is None or not self.readable or has_literal_dollar(step):
+        if names is None or not self.readable or has_literal_dollar(step) or CUT_REFERENCE.search(step):
             return None
         unique = list(dict.fromkeys(names))
         value_lists = [self.values_of(name, step_index) for name in unique]

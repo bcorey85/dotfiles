@@ -5,7 +5,7 @@ import re
 
 import shell_command
 from code_text import SPC
-from script_utils import ENV_NAME
+from script_utils import ENV_ASSIGNMENT_NAME
 
 SED_INPLACE = re.compile(r"(^|" + SPC + r")(-[a-zA-Z]*i|--in-place(" + SPC + r"|=|$))")
 PERL_I = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*i")
@@ -24,7 +24,6 @@ INVOKER_WORDS = (";", "\\;", "+")
 # A short flag group that ends in the flag that hands the editor its script: sed's `-e`, perl's `-e` and `-E`. A sed
 # `-E` is its extended-regex flag, and awk has no combined script flag.
 COMBINED_SCRIPT_FLAGS = {"sed": re.compile(r"^-[a-zA-Z0-9]*e$"), "perl": re.compile(r"^-[a-zA-Z0-9]*[eE]$")}
-ASSIGNMENT_OPERAND = re.compile(rf"^{ENV_NAME}=")
 # The operand an editor behind `xargs`, `parallel` or `fd -x` gets from the invoker: it names no file the gate can see.
 UNKNOWN_OPERAND = "(the files its invoker passes in)"
 STDIN_FILE_INVOKERS = ("xargs", "parallel")
@@ -55,7 +54,8 @@ def runs_fd(command_words):
 
 def has_unseen_files(operands):
     """True when the operands include a file list the gate cannot see: the invoker's own list (`xargs`, `parallel`,
-    `fd -x`), `find -exec`'s `{}`, or a segment it could not read. No such list is ever a scratch file."""
+    `fd -x`), or `find -exec`'s `{}`. No such list is ever a scratch file. A segment it could not read gives no
+    operands at all, which the caller denies as well."""
     return any(operand == UNKNOWN_OPERAND or "{}" in operand for operand in operands)
 
 
@@ -141,7 +141,7 @@ def file_operands(segment, editor):
     # Only awk reads `NAME=value` as an assignment; sed and perl open it as a file.
     drops_assignments = family == "awk"
     files = [word for word in operands
-             if word not in INVOKER_WORDS and not (drops_assignments and ASSIGNMENT_OPERAND.match(word))]
+             if word not in INVOKER_WORDS and not (drops_assignments and ENV_ASSIGNMENT_NAME.match(word))]
     command_words = shell_command.command_after_wrappers(words, peel_containers=False)
     before_editor = words[:start]
     if any(word.rsplit("/", 1)[-1] in STDIN_FILE_INVOKERS or is_invoker_option(word, command_words)

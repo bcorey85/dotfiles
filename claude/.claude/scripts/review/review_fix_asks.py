@@ -662,9 +662,10 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
-def refuse_session_on_user_only(asks, decided_by):
-    """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`."""
-    refusal = review_asks.user_only_refusal(asks, decided_by, f"asks-done --by {plan_format.USER_RULING} ...")
+def refuse_session_on_user_only(asks, decided_by, user_command):
+    """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`. `user_command` is the
+    call the refusal tells the session to use for the user's ruling."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, user_command)
     if refusal:
         raise UsageError(refusal)
 
@@ -679,10 +680,14 @@ def command_correct_asks(options):
     ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
-    refuse_session_on_user_only(asks, options.decided_by)
     outcomes, notes = read_outcomes(options.outcome_words, asks)
     refuse_conditional_changes(asks, outcomes)
     indexes = corrected_ask_indexes(state, asks, outcomes, notes)
+    # Blank the uncorrected asks, keeping their places, so the refusal names only corrected user_only asks by
+    # their listing numbers.
+    corrected_asks = [item if index in indexes else {} for index, item in enumerate(asks)]
+    user_command = f"asks-done --correct --by {plan_format.USER_RULING} ..."
+    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by)
 
     summary = f"Corrected {len(indexes)} ask outcome row(s)."
@@ -767,7 +772,7 @@ def command_asks_done(argv):
 
     target, outcomes, notes, decided_by = read_answers(state, options, waiting)
     asks = target["asks"]
-    refuse_session_on_user_only(asks, decided_by)
+    refuse_session_on_user_only(asks, decided_by, f"asks-done --by {plan_format.USER_RULING} ...")
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
     refuse_damaged_approval_paths(repo, asks, outcomes)
     finding_lines = ask_finding_lines(asks, outcomes, notes, uniform_deciders(asks, decided_by))

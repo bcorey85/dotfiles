@@ -112,6 +112,42 @@ class AskRulerTest(unittest.TestCase):
         self.assertEqual(self.state_file().read_bytes(), state_before)
         self.assertEqual(len(self.ledger_writes()), rows_before)
 
+    def rule_user_only_beside_ordinary_ask(self):
+        user_only_ask = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_ask, SECOND_ASK]))
+        self.asks_done("--by", "user", "modified:one", "modified:two")
+
+    def test_a_session_correction_of_only_the_ordinary_ask_beside_a_user_only_ask_records_the_session(self):
+        self.rule_user_only_beside_ordinary_ask()
+
+        self.asks_done("--correct", "--by", "session", "modified:one", "modified:three")
+
+        state = json.loads(self.state_file().read_text())
+        self.assertEqual(state[review_fix_asks.ASKS_DECIDED_BY_KEY], ["user", "session"])
+
+    def test_a_session_correction_that_changes_the_user_only_ask_in_a_mixed_batch_is_refused(self):
+        self.rule_user_only_beside_ordinary_ask()
+        state_before = self.state_file().read_bytes()
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "modified:uno", "modified:three"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 1 are user_only", output)
+        self.assertIn("`asks-done --correct --by user ...`", output)
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_the_refusal_names_the_listing_number_of_a_user_only_ask_in_second_place(self):
+        user_only_second = {**SECOND_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, user_only_second]))
+        self.asks_done("--by", "user", "modified:one", "modified:two")
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "modified:one", "modified:three"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+
     def test_a_converted_ask_names_its_ruler_in_both_branches(self):
         converted = {"question": "Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
                      "file_line": "src/a.py:3", "class": "bug", review_fix_asks.USER_RULED_KEY: True}

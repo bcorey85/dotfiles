@@ -41,11 +41,11 @@ Rulings (this change ran with no plan folder, so its decision log is here), all 
 
 - Prompt text the review loop added (`code/SKILL.md`, `_shared/review-fork-run.md`, `docs/rule-anchors.md`) reverted to master: out of scope; skill text needs rule-meter runs. Twice: after phase 1 and after the second review pass. The branch review's ask to add a `[user only]` clause to those two skill lines: left out, the refusal message carries the rule.
 - Branch review ask, commit-gate deny prints a `rule` line `phase_asks.py rule` refuses: fix it; script output with a test is in scope.
-- Branch review ask, `asks-done --by user` credits every ask of the batch to the user, not only `user_only` asks: keep today's behavior, older than this change; agent-evals-5e queues it separately.
+- Branch review ask, `asks-done --by user` credits every ask of the batch to the user, not only `user_only` asks: keep today's behavior, older than this change; agent-evals-5e queues it separately. This change makes `--by user` mandatory for a first `asks-done` whose batch holds a `user_only` ask, so every ask of that batch is credited to the user.
 - Branch review ask, `approval-asks.json` written once per coder pass against the once-per-run rule: accepted as an exception (see Result); agent-evals-5e takes the `scripts/CLAUDE.md` wording to the user.
 - Size: the fix rounds after the first commit grew the branch past its 24-file limit; the code was cut back to that commit plus the commit-gate fix. The branch-keyed saved file, the damaged-file stop in the loop and the batched hashing went with it. The ask that a read on another checkout deletes the saved asks: accepted only as "delete nothing", moot after the cut (the file has no branch key). The ask to keep a detached HEAD's asks across a commit: rejected, a detached HEAD runs only on benches.
 - Review ask at `review_loop_ruled.py:292` accepted: a user `rejected` ruling on a user-only ask drops its path from `approval-asks.json`.
-- Review ask at `review_loop_ruled.py:152` (a per-path base for a coder's own commit) rejected: the orchestrator owns git and the loop snapshots before each coder call.
+- Review ask at `review_loop_ruled.py:152` (a per-path base for a coder's own commit) rejected as asked. The second review pass's fixes still adopted a per-path blob base, taken before each coder pass (`snapshot_approval_blobs`, read by `user_only_bases`), and that base ships.
 - `approval_asks_store.py` kept as the one owner of the saved approval paths.
 
 ## Watch

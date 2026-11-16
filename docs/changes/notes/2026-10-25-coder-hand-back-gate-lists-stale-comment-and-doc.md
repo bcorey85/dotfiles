@@ -45,6 +45,15 @@ write and 3.7k output per coder step.
 - `stale-prose-handback-coder-cache-read`: coder Sonnet cache read per dispatch. A rise is the expected price; keep
   the edit on WORSE here while the docs watch reads BETTER, and revert if the docs watch reads NO CHANGE or WORSE.
 
+### Ruling 2026-11-15
+
+Kept; all three watches closed (ruled by agent-evals-5e). The cost guard fell: coder Sonnet cache read per dispatch
+4,707,383 → 1,660,862 (`stale-prose-handback-coder-cache-read`). The two findings-log readings
+(`stale-prose-handback-docs-findings` 1.92 → 1.93, `stale-prose-handback-severe-findings` 0.55 → 0.82) are unreadable:
+every before window spans the 2026-10-27 change that made the scripted review loop write one row per finding, so no
+restart gives a clean before. The open quality reading is review escapes per code-reviewer run (0.13 → 0.24), and docs
+findings by stale or new label from 2026-11-15 on (intake `docs-kind.txt`).
+
 ## Back-out
 
 Remove the stale-prose append from `start_phase_coder` in `code_step.py`; the script can stay unused.

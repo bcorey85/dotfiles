@@ -50,6 +50,10 @@ The touched test files pass: `test_code_review_start`, `test_gate_commands`, `te
 - `code-plain-steps-review-escapes`: review escapes per review run, flat.
 - `code-plain-steps-main-cache-read`: main-session cache-read tokens per `/code` turn, flat.
 
+Reading, 2026-11-15: `code-plain-steps-review-escapes` MOVED, closed, kept. Review escapes per code-reviewer run: 0.11 median before (range 0.02-0.32), 0.02 after (9 of 460, 7 days). The move is down. Separate from the rate: 26 review escapes reached the PR bot on 4 work branches on 2026-11-04 and 2026-11-05, 13 of them medium severity; eight review edits overlap those days, so no one edit carries them. Rows counted: work repos and agent-ledger-dev only.
+
+Reading, 2026-11-15: `code-plain-steps-main-cache-read` NO CHANGE, closed, kept. Main-session cache-read tokens per /code turn: 648,595 median before (range 452,323-770,345), 760,027 after (531 turns), inside the before range. Two other /code main-session edits share the reading. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Revert the branch's merge commit. That restores `code_step*.py`, its tests, the settings.json hooks, the keyed coder gate and the herdr `--headless` insert together.

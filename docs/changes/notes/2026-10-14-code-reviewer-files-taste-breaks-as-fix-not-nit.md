@@ -29,6 +29,12 @@ Work logs: a third of escapes since Aug 31 were caught by the user by hand, over
 
 user catches of smell, duplication and test kinds in the next intake.
 
+### Ruling 2026-11-15
+
+Kept; `code-reviewer-taste-as-fix` closed at NO CHANGE (ruled by agent-evals-5e). The user-caught share of smell and
+duplication escapes past plan review fell 0.32 → 0.10 (4 of 39), inside the before range; it moved the way the edit
+aims and nothing in the work rows argues for a revert.
+
 ## Back-out
 
 restore the old line, "Naming and dead weight that don't obscure intent and break no written rule → `nit`."

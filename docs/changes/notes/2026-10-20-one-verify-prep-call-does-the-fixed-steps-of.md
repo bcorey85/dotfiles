@@ -37,6 +37,8 @@ Installed 2026-10-20. The `verify-branch` front matter kept its live description
 
 Reading, 2026-10-27 intake: `verify-branch-one-call` BETTER, closed. Main-session responses per `/verify-branch` turn went from a 9.85 median (range 7.35–13.50) to 6.42, over 33 turns. The escapes watch has no data yet.
 
+Reading, 2026-11-15: `verify-branch-one-call-escapes` MOVED, closed, kept. Review escapes per code-reviewer run: 0.16 median before (range 0.09-0.24), 0.02 after (20 of 1,016). The move is down. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Restore the previous `SKILL.md`, `closing-phases.md` and `code-step.py` from the dotfiles history and delete the three scripts.

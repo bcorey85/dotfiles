@@ -53,6 +53,11 @@ touched files.
 median 0.12, range 0.04-0.34). `closing-permission-stop-hook-wait` is the guard: user wait per turn end (before median
 258 s, range 79-664 s).
 
+### Ruling 2026-11-15
+
+Kept; `closing-permission-stop-hook-wait` closed at NO CHANGE (ruled by agent-evals-5e). User wait per typed-reply turn
+end fell 225.39 → 184.83 s over 1,636 turns, inside the before range; the guard shows no added wait.
+
 ## Back-out
 
 Revert the commit. That removes `permission_question.py`, the Stop-only branch in `staged_claim_gate.py` and the

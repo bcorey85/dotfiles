@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-977 changes
+979 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [herdr-worktree-prune lists and removes merged, clean lane worktrees](notes/2026-11-15-herdr-worktree-prune-lists-and-removes-merged.md) [script/herdr-worktree-prune] A new command beside herdr-worktree lists the finished lane worktrees of a repo and, with --apply, removes each with git worktree remove and then deletes its branch with git update-ref -d on the checked commit; --branches does the same for merged branches that have no worktree.
 * [Review loop labels each docs finding stale or new from the diff](notes/2026-11-15-review-loop-labels-each-docs-finding-stale-or-new.md) [script/review-loop-script, script/review-loop-docs-kind, script/log-review-finding, script/diff-ranges, script/ledger-write] `review_loop_script.py` logs each docs-class finding of every loop reviewer with `docs_kind=stale` when the cited line stood before the change under review, and `docs_kind=new` when the change added the line. The script computes the label from the diff; no model passes it. A finding the script cannot place carries no label.
 * [Scripts folder CLAUDE.md names the owner of commit placement, ask outcome words and the file lock](notes/2026-11-14-scripts-folder-claude-md-names-the-owner-of-commit.md) [rule/scripts-claude-md] Three owner lines tell a coder under scripts/ to import the commit-folder lookup, the ask outcome words and the file lock, in place of writing a second copy.
 * [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) [agent/test-reviewer] The test reviewer now opens the fixture of every test that asserts an order and reports a fixture already in the expected order as a fix. On Sonnet it used to miss that gap in half its reviews of a real-size phase.
@@ -35,6 +36,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Five skills stop pointing to the denied question tool](notes/2026-11-15-five-skills-stop-pointing-to-the-denied-question.md) [skill/peer-review, skill/vault-progress, skill/triage, skill/refactor, skill/eng-arch] Six steps in five skills no longer tell the session to use AskUserQuestion, which settings.json denies; each step asks in plain text.
 * [Review loop fixes every round-two finding again](notes/2026-11-15-review-loop-fixes-every-round-two-finding-again.md) [script/review-loop, script/review-loop-fix-induced] The review loop sends every round-two `fix` finding to the fix coder again, whatever its class and wherever its line sits. The rule that left a non-bug fix outside the previous fix diff open in `findings_remaining` is removed from `review_loop_script.py` and `review_loop_fix_induced.py`.
 * [The coder hand-back no longer checks readability](notes/2026-11-14-the-coder-hand-back-no-longer-checks-readability.md) [script/coder-gate, script/review-loop-script, script/gate-commands, script/code-review-start] The readability check is gone from every gate command list: the coder's hand-back is never refused for a readability hit, and the review loop runs no readability pass. readability_check.py and readability_ts.mjs are deleted; the stale-prose check stays.
 

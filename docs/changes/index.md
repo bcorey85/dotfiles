@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-977 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+979 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-15, [An approval ask survives a resume, only the user rules it, and a keep ruling is not asked again](notes/2026-11-15-an-approval-ask-survives-a-resume-and-only-the-user.md).
+Latest change: 2026-11-15, [Five skills stop pointing to the denied question tool](notes/2026-11-15-five-skills-stop-pointing-to-the-denied-question.md).
 
 ## Top gains
 

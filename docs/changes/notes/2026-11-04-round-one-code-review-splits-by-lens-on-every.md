@@ -48,6 +48,12 @@ Reading 2026-11-11 (work intake, data to 2026-11-10, toolkit repos left out):
 - Fixed bug or correctness findings per code-reviewer run, `/code` reviews: round one 0.30 → 0.81, round two
   0.19 → 0.19.
 
+### Ruling 2026-11-15
+
+Kept; cost guard `review-lens-split-cache-read` closed (ruled by agent-evals-5e). Review-loop cache read per /code loop
+run fell instead of rising: 7,305,263 → 2,490,538 over 80 runs. The quality reading `review-lens-split-escapes` stays
+open in the work intake's edit-watch step.
+
 ## Back-out
 
 Restore the size gate in `first_round_plan` (split by file above 5 files and 300 changed lines), drop `LensOwned` and

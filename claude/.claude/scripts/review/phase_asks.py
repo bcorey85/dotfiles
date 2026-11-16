@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""phase_asks.py: the session's ruling on the finding asks of a /code phase review's packet.
+"""phase_asks.py: the ruling on the finding asks of a /code phase review's packet.
 
     python3 phase_asks.py list
-    python3 phase_asks.py rule <accepted|rejected>:<one-line reason> ...
+    python3 phase_asks.py rule [--by user] <accepted|rejected>:<one-line reason> ...
+
+An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md) is refused (exit 2, nothing
+logged) unless the call carries `--by user`, which the session uses only to record the user's own ruling.
 
 `code_wait.py review` opens the asks (one `phase-asks-open` row in the hand-back store) when it returns a clean
 phase packet (converged, or capped and read as deferred) that holds finding asks. `list` prints them. `rule` takes
-one outcome per finding ask, in order, logs each ask's outcome row decided by the session, and stores one
-`phase-asks-ruled` row that names the open row it answers; the commit gate denies a commit in the repo until that
-row exists, in whichever session opened the asks; a notes-only commit still passes. Each ask ruled `rejected` is
-also stored as a rejected-ask row (for the ruling session and each opener), so the next review loop drops a repeat
-of it. A later review of the repo leaves the asks open: only a newer phase packet with finding asks replaces them.
+one outcome per finding ask, in order, logs each ask's outcome row decided by the session, except a user-only ask's
+row under `--by user`, which is decided by the user, and stores one `phase-asks-ruled` row that names the open
+row it answers; the commit gate denies a commit in the repo until that row exists, in whichever session opened
+the asks; a notes-only commit still passes. Each ask ruled `rejected` is also stored as a rejected-ask row (for
+the ruling session and each opener), so the next review loop drops a repeat of it. A later review of the repo
+leaves the asks open: only a newer phase packet with finding asks replaces them.
 The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
 Run from the repo root. Exit 0 when done, 2 when the call is refused (nothing is logged then), 1 when the store is
 damaged or cannot be written (the message names the file and line).
@@ -21,14 +25,27 @@ import pathlib
 import shlex
 import sys
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import capped_review
 import handback
 import handback_store
 import plan_format
 import review_asks
 import script_utils
-from ask_outcome_words import ACCEPTED, LIST_COMMAND, OUTCOME_PLACEHOLDER, REJECTED, rule_command
+from approval_asks_store import (
+    ApprovalAsksFileError,
+    check_approval_paths_readable,
+    forget_rejected_approval_paths,
+)
+from ask_outcome_words import (
+    ACCEPTED,
+    LIST_COMMAND,
+    OUTCOME_PLACEHOLDER,
+    REJECTED,
+    USER_ONLY_KEY,
+    rule_command,
+    rule_instruction,
+)
 from review_fix_state import ASK_LOGGER
 
 RULABLE_OUTCOMES = (ACCEPTED, REJECTED)
@@ -68,8 +85,10 @@ def record_open(session_id, repo, packet, run_info, packet_key):
     unruled = handback_store.unruled_phase_asks(repo)
     if unruled is None:
         return []
-    open_count = len(unruled["asks"])
-    return [f"{open_count} finding ask(s) await your ruling: run `{LIST_COMMAND}`, then `{rule_command(open_count)}`."]
+    open_asks = unruled["asks"]
+    open_count = len(open_asks)
+    return [f"{open_count} finding ask(s) await your ruling: run `{LIST_COMMAND}`, then "
+            f"{rule_instruction(open_asks)}."]
 
 
 def session_state():
@@ -102,7 +121,7 @@ def command_list():
     if state.ruled_row is not None:
         print("These asks are already ruled. Done.")
         return 0
-    print(f"Rule on all {len(asks)} in order: `{rule_command(len(asks))}`")
+    print(f"Rule on all {len(asks)} in order: {rule_instruction(asks)}")
     return 0
 
 
@@ -133,8 +152,41 @@ def supply_ids_by_context(session_id, repo, asks, contexts, stall):
         review_asks.supply_finding_ask_ids(run_asks, session_id, ASK_LOGGER, context, repo, stall)
 
 
-def log_outcomes(session_id, repo, asks, rulings, contexts):
-    """Logs each ask's outcome row under the ask's own context (`contexts` is one per ask), one per ask.
+def split_ruler(words):
+    """(ruler, the outcome words, None), or (None, None, the refusal text). `--by user` marks the ruling as the
+    user's; no `--by` is the session's."""
+    outcome_words, ruler = script_utils.pop_option(words, "--by")
+    if ruler is None:
+        return plan_format.SESSION_RULING, outcome_words, None
+    if ruler != plan_format.USER_RULING:
+        return None, None, f"--by takes only `{plan_format.USER_RULING}`, not {ruler!r}"
+    return ruler, outcome_words, None
+
+
+def ruler_of_call(words, asks):
+    """(ruler, the outcome words, None), or (None, None, the refusal text) when the `--by` word is unknown or a
+    session rules on a user-only ask."""
+    ruler, outcome_words, refusal = split_ruler(words)
+    if refusal:
+        return None, None, refusal
+    user_command = f"rule --by {plan_format.USER_RULING} ..."
+    refusal = review_asks.user_only_refusal(asks, ruler, user_command)
+    if refusal:
+        return None, None, refusal
+    return ruler, outcome_words, None
+
+
+def ruler_of_ask(item, call_ruler):
+    """Who decided one ask. A `--by user` call is the user's ruling on a user-only ask only; the session rules the
+    other asks of the batch."""
+    if call_ruler == plan_format.USER_RULING and item.get(USER_ONLY_KEY):
+        return plan_format.USER_RULING
+    return plan_format.SESSION_RULING
+
+
+def log_outcomes(session_id, repo, asks, rulings, contexts, ruler=plan_format.SESSION_RULING):
+    """Logs each ask's outcome row under the ask's own context (`contexts` is one per ask), one per ask. `ruler` is
+    the call's: the row of a user-only ask is decided by the user under `--by user`, every other row by the session.
     Returns one line per row that did not log; the ruling stands either way. After one log helper call times out, no
     other call is made: a hung ledger costs one timeout, and each unlogged row still gets its line."""
     stall = handback.LoggerStall()
@@ -142,8 +194,7 @@ def log_outcomes(session_id, repo, asks, rulings, contexts):
     failures = []
     for number, (item, (outcome, _reason)) in enumerate(zip(asks, rulings, strict=True), 1):
         context = contexts[number - 1]
-        row = review_asks.log_ask_outcome(ASK_LOGGER, context, item, outcome, plan_format.SESSION_RULING, repo,
-                                         stall)
+        row = review_asks.log_ask_outcome(ASK_LOGGER, context, item, outcome, ruler_of_ask(item, ruler), repo, stall)
         if row.code != 0:
             failures.append(f"ask {number}: {script_utils.one_line(row.output, 160)}. "
                             f"Log it later with `{shlex.join(row.command)}`")
@@ -184,9 +235,14 @@ def rule_open_asks(words):
         return 2
 
     asks = state.open_row["asks"]
-    rulings, refusal = read_rulings(words, len(asks))
+    ruler, outcome_words, refusal = ruler_of_call(words, asks)
     if refusal:
-        print(f"phase_asks: {refusal}. Run `{rule_command(len(asks))}`", file=sys.stderr)
+        print(f"phase_asks: {refusal}. Nothing was logged.", file=sys.stderr)
+        return 2
+    rulings, refusal = read_rulings(outcome_words, len(asks))
+    if refusal:
+        print(f"phase_asks: {refusal}. Run `{rule_command(len(asks), by_user=ruler == plan_format.USER_RULING)}`",
+              file=sys.stderr)
         return 2
 
     # A ruled row goes to the file of each session whose open row it answers (the latest open row, and the older ones
@@ -203,13 +259,23 @@ def rule_open_asks(words):
                   "logged.", file=sys.stderr)
             return 1
 
+    rows_repo = handback_store.ruled_rows_repo(repo)
+    outcomes = [outcome for outcome, _reason in rulings]
+    # Checked before any row is written: a damaged file must stop the ruling with nothing logged.
+    try:
+        check_approval_paths_readable(rows_repo, asks, outcomes)
+    except ApprovalAsksFileError as error:
+        print(f"phase_asks: {error}. Nothing was logged.", file=sys.stderr)
+        return 1
+
     # Before the outcome rows: a hung or failed logger must not lose them. A rerun adds none (the store skips a text
     # already rejected). The key is the one the review loop reads them under.
-    review_asks.record_rejected_asks(store_sessions, handback_store.ruled_rows_repo(repo), asks,
-                                     [outcome for outcome, _reason in rulings])
+    review_asks.record_rejected_asks(store_sessions, rows_repo, asks, outcomes)
+    # A rejected approval ask leaves the saved paths, so a resumed review loop does not file it again.
+    forget_rejected_approval_paths(rows_repo, asks, outcomes)
 
     contexts = state.open_row["contexts"]
-    failures = log_outcomes(session_id, repo, asks, rulings, contexts)
+    failures = log_outcomes(session_id, repo, asks, rulings, contexts, ruler)
     # One row per answered open row, after the outcome rows: a logger failure must not leave the commit gate closed.
     # A row names the open row it answers, so an open row written while the outcomes were logging stays open.
     ruled_rulings = [{"outcome": outcome, "reason": reason, "finding_id": item.get("finding_id")}

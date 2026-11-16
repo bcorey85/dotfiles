@@ -7,10 +7,11 @@ import shutil
 import sys
 from typing import NamedTuple
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 import handback
 import handback_store
-from ask_outcome_words import ACCEPTED, REJECTED
+import plan_format
+from ask_outcome_words import ACCEPTED, REJECTED, USER_ONLY_KEY, USER_ONLY_MARK, user_only_numbers
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
 MODIFIED = "modified"
@@ -110,18 +111,35 @@ def accept_reject_lines(change):
     return hanging_indent_lines(f"   Accept = {ACCEPT_MEANS}: ", text)
 
 
+def user_only_refusal(asks, ruler, user_command):
+    """The refusal text when a session (`ruler` is not the user) rules on an ask only the user rules, else None.
+    `user_command` is the call that records the user's ruling."""
+    if ruler == plan_format.USER_RULING:
+        return None
+    numbers = [str(number) for number in user_only_numbers(asks)]
+    if not numbers:
+        return None
+    return (f"ask(s) {', '.join(numbers)} are user_only: only the user rules them, never the session (a fix coder "
+            "edited an approval-only file). Hand them to the user, and when the user has ruled, record the user's "
+            f"outcome with `--by user`: `{user_command}` with the user's outcome")
+
+
 def numbered_ask_lines(asks, detail=False):
     """The numbered listing of the asks, each with the one change an accepted answer makes; a multi-line text's later
     lines sit indented under its number. detail adds the location and `[gate/class]` after the number and lists the
-    question alone, as /review prints it."""
+    question alone, as /review prints it. A `user_only` ask is marked."""
     lines = []
     for number, item in enumerate(asks, 1):
+        is_user_only = bool(item.get(USER_ONLY_KEY))
         if detail:
             ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
-            lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]")
+            user_suffix = f" {USER_ONLY_MARK}" if is_user_only else ""
+            lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]"
+                         f"{user_suffix}")
             lines += hanging_indent_lines("   ", item["question"])
         else:
-            lines += hanging_indent_lines(f"{number}. ", ask_text(item))
+            user_prefix = f"{USER_ONLY_MARK} " if is_user_only else ""
+            lines += hanging_indent_lines(f"{number}. {user_prefix}", ask_text(item))
         if item.get("change"):
             lines += accept_reject_lines(item["change"])
     return lines

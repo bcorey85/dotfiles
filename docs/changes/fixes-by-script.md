@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-595 fix notes
+596 fix notes
 
 Recent: the 7 days up to 2026-11-15, the newest note.
 
@@ -27,7 +27,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/quality-check-cap | 17 | 0 |
 | skill/code | 17 | 3 |
 | skill/review | 17 | 11 |
-| script/review-loop | 15 | 8 |
+| script/review-loop | 16 | 9 |
 | script/shell-write-gate | 14 | 0 |
 | script/verify-prep | 14 | 4 |
 | script/verify-log | 13 | 6 |
@@ -63,6 +63,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/herdr-phase-change | 4 | 0 |
 | script/ledger-write | 4 | 1 |
 | script/log-scan | 4 | 0 |
+| script/review-asks | 4 | 4 |
 | script/run-sh | 4 | 1 |
 | script/source-paths | 4 | 2 |
 | skill/eng-spec | 4 | 0 |
@@ -72,7 +73,8 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/code | 3 | 0 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
-| script/review-asks | 3 | 3 |
+| script/phase-asks | 3 | 3 |
+| script/review-fix-asks | 3 | 3 |
 | script/review-loop-packet | 3 | 1 |
 | script/review-scope | 3 | 0 |
 | script/wait-loop-gate | 3 | 1 |
@@ -92,9 +94,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/ledger-deferred | 2 | 0 |
 | script/log-review-check | 2 | 0 |
 | script/loop-transcript | 2 | 0 |
-| script/phase-asks | 2 | 2 |
 | script/plan-review-shards | 2 | 1 |
-| script/review-fix-asks | 2 | 2 |
 | script/reviewed-tree | 2 | 1 |
 | script/rg-path-gate | 2 | 0 |
 | script/sweep-scratchpads | 2 | 0 |

@@ -659,6 +659,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
                               self.guidance, self.held_files, no_code_numbers(findings))
         self.last_pass = "coder"
         self.untested_fix = True
+        self.snapshot_approval_blobs()
         try:
             result = coder_call(call_name, prompt, self.repo, self.out, self.held_files)
         except CoderCallError as error:
@@ -893,6 +894,7 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,
+            "user_only_asks": self.user_only_asks,
             "dropped_asks": self.dropped_asks,
             "ask_ids": ask_ids,
             "ask_rows": ask_rows,

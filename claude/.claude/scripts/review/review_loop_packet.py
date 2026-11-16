@@ -14,6 +14,7 @@ import handback
 import handback_store
 import review_loop_coder
 import script_utils
+from ask_outcome_words import USER_ONLY_KEY
 from review_loop_findings import UNLOCATED, ask_parts
 
 PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied", "settled")
@@ -37,18 +38,21 @@ def finding_entry(finding):
     return {"finding": finding.text, "file_line": located(finding)}
 
 
-def ask_entry(ask, gate, finding_id):
+def ask_entry(ask, gate, finding_id, user_only=False):
     question, change = ask_parts(ask.text)
     entry = {"question": question, "file_line": located(ask), "change": change, "gate": gate,
              "class": ask.finding_class}
     if finding_id:
         entry["finding_id"] = finding_id
+    if user_only:
+        entry[USER_ONLY_KEY] = True
     return entry
 
 
 def ask_entries(outcome):
     """The packet's ask entries: each kept ask, then each dropped one with its drop reason."""
-    asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask))
+    asks = [ask_entry(ask, outcome["ask_gates"].get(ask, handback.DEFAULT_GATE), outcome["ask_ids"].get(ask),
+                      ask in outcome["user_only_asks"])
             for ask in outcome["asks"]]
     dropped = outcome["dropped_asks"]
     return asks + [{"text": ask.text, "file_line": located(ask), "drop_reason": reason} for ask, reason in dropped]
@@ -95,7 +99,7 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "dropped_asks": [], "ask_ids": {}, "ask_rows": [],
+    "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {}, "ask_rows": [],
     "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",
     "full_check_summaries": [],
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],

@@ -20,6 +20,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import approval_asks_store
 import ask_outcome_words
 import file_lock
 import handback_store
@@ -41,6 +42,12 @@ PLAN_IMPACT_QUESTION = "PLAN-IMPACT: the retry the plan asks for cannot work. Ch
 def ask(question, finding_id, line):
     return {"question": question, "file_line": f"src/a.py:{line}", "change": "make the change", "gate": "code-reviewer",
             "class": "correctness", "finding_id": finding_id}
+
+
+def user_only_ask(path, finding_id, line):
+    """The ask of a coder's edit to the approval-only file `path`, marked for the user alone."""
+    text = f"A fix coder edited `{path}`, which needs the user's approval."
+    return {**ask(text, finding_id, line), ask_outcome_words.USER_ONLY_KEY: True}
 
 
 ASKS = [ask("Should an empty list count as none?", FIRST_ID, 3), ask("Should the cap be 3?", SECOND_ID, 9)]
@@ -818,6 +825,134 @@ class PlaceholderRefusalTest(unittest.TestCase):
         _rulings, refusal = phase_asks.read_rulings(["modified:x"], 1)
 
         self.assertIn("must start with", refusal)
+
+
+class UserOnlyAskTest(ScriptRunCase):
+    """An ask marked `user_only` (a coder's edit to an approval-only file) is ruled by the user, never a session."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_script("rule", "accepted:a", "rejected:b")
+        open_ask = user_only_ask("CLAUDE.md", "3cc295856f1a9fff", 1)
+        handback_store.record_phase_asks_open(SESSION, self.repo_top, [open_ask], CONTEXT, "loop-c:3")
+        self.rows_before = self.outcome_rows()
+
+    def test_a_session_ruling_is_refused_and_logs_nothing(self):
+        code, _, error = self.run_script("rule", "rejected:keep the edit")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 1 are user_only: only the user rules them, never the session", error)
+        self.assertIn("record the user's outcome with `--by user`: `rule --by user ...`", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+        self.assertIsNotNone(handback_store.unruled_phase_asks(self.repo_top))
+
+    def test_the_open_message_hands_a_user_only_ask_to_the_user(self):
+        packet = {**json.loads(packet_with([user_only_ask("CLAUDE.md", "4dd295856f1a9fff", 1)])),
+                  "iter": 4, "review_round": 4}
+
+        lines = phase_asks.record_open(SESSION, self.repo_top, packet, {"lane": "code", "phase": "3"}, "loop-d:4")
+
+        self.assertEqual(len(lines), 1)
+        self.assertIn("hand ask(s) ", lines[0])
+        self.assertIn("--by user", lines[0])
+
+    def test_a_wrong_outcome_count_by_the_user_hints_the_by_user_line(self):
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:a", "rejected:b")
+
+        self.assertEqual(code, 2)
+        self.assertIn("rule --by user ", error)
+
+    def test_list_marks_the_user_only_ask_and_prints_the_by_user_line(self):
+        code, output, error = self.run_script("list")
+
+        self.assertEqual(code, 0, error)
+        self.assertIn("1. [user only] ", output)
+        self.assertIn("rule --by user ", output)
+        self.assertIn("hand ask(s) 1 to the user", output)
+
+    def test_by_may_follow_the_outcome_words(self):
+        code, _, error = self.run_script("rule", "rejected:keep the edit", "--by", "user")
+
+        self.assertEqual(code, 0, error)
+        self.assertEqual(self.outcome_rows()[-1]["ask_decided_by"], "user")
+
+    def test_a_bare_by_is_refused(self):
+        code, _, error = self.run_script("rule", "rejected:keep the edit", "--by")
+
+        self.assertEqual(code, 2)
+        self.assertIn("--by takes only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_one_user_only_ask_among_two_refuses_the_call_and_names_that_ask(self):
+        plain_ask = ask("Should it log?", "4dd295856f1a9fff", 2)
+        handback_store.record_phase_asks_open(SESSION, self.repo_top,
+                                              [plain_ask, user_only_ask("CLAUDE.md", "5ee295856f1a9fff", 1)],
+                                              CONTEXT, "loop-c:4")
+        rows_before = self.outcome_rows()
+
+        code, _, error = self.run_script("rule", "accepted:a", "rejected:b")
+
+        self.assertEqual(code, 2)
+        # ask 2 is the plain ask; the open asks carried from setUp's row hold the other user-only ask
+        self.assertIn("ask(s) 1, 3 are user_only: only the user rules them", error)
+        self.assertEqual(self.outcome_rows(), rows_before)
+
+    def test_a_ruling_marked_as_the_users_is_logged_decided_by_the_user(self):
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:keep the edit")
+
+        self.assertEqual(code, 0, error)
+        row = self.outcome_rows()[-1]
+        self.assertEqual((row["ask_outcome"], row["ask_decided_by"]), ("rejected", "user"))
+        self.assertIsNone(handback_store.unruled_phase_asks(self.repo_top))
+
+    def test_a_user_ruling_is_the_users_only_on_the_user_only_ask(self):
+        self.run_script("rule", "--by", "user", "rejected:keep the edit")
+        plain_ask = ask("Should it log?", "4dd295856f1a9fff", 2)
+        handback_store.record_phase_asks_open(SESSION, self.repo_top,
+                                              [user_only_ask("AGENTS.md", "5ee295856f1a9fff", 1), plain_ask],
+                                              CONTEXT, "loop-c:4")
+
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:keep the edit", "accepted:log it")
+
+        self.assertEqual(code, 0, error)
+        decided_by = {row["finding_id"]: row["ask_decided_by"] for row in self.outcome_rows()[-2:]}
+        self.assertEqual(decided_by, {"5ee295856f1a9fff": "user", "4dd295856f1a9fff": "session"})
+
+    def test_an_unknown_ruler_is_refused(self):
+        code, _, error = self.run_script("rule", "--by", "robot", "rejected:keep the edit")
+
+        self.assertEqual(code, 2)
+        self.assertIn("--by takes only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def open_approval_ask_for(self, path):
+        approval_ask = {**user_only_ask(path, "6ff295856f1a9fff", 1),
+                        "change": approval_asks_store.approval_change(path)}
+        handback_store.record_phase_asks_open(SESSION, self.repo_top, [approval_ask], CONTEXT, "loop-c:5")
+
+    def test_a_user_rejection_drops_the_path_even_with_a_space_in_a_folder_name(self):
+        self.open_approval_ask_for("docs dir/CLAUDE.md")
+        approval_asks_store.write_approval_paths(self.repo_top, {"docs dir/CLAUDE.md": None, "AGENTS.md": None})
+
+        # Every open ask is rejected: the ask carried from setUp's row names no saved path.
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:keep", "rejected:keep")
+
+        self.assertEqual(code, 0, error)
+        self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo_top)), ["AGENTS.md"])
+
+    def test_a_damaged_saved_file_stops_a_rejection_with_nothing_logged(self):
+        self.open_approval_ask_for("CLAUDE.md")
+        saved = approval_asks_store.approval_paths_file(self.repo_top)
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_text("{")
+        rows_before = self.outcome_rows()
+
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:keep", "rejected:keep")
+
+        self.assertEqual(code, 1)
+        self.assertIn("approval-asks.json", error)
+        self.assertEqual(self.outcome_rows(), rows_before)
+        self.assertIsNotNone(handback_store.unruled_phase_asks(self.repo_top))
 
 
 if __name__ == "__main__":

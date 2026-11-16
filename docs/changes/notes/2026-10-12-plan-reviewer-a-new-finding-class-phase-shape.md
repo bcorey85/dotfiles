@@ -29,6 +29,8 @@ Seeded plan: the reviewer caught 0 of 3 planted shape defects before and 3 of 3 
 
 plan-drift escapes past plan review, and whether the criteria cap fires on most plans.
 
+Reading, 2026-11-15: `plan-review-phase-shape` NO CHANGE, closed, kept. Plan-drift escapes past plan review per finished plan: 0 in 20 plans after the edit, against a before median of 1.00 (range 0.00-14.00). The count is at zero with nothing left to fall, and two other plan edits of the same day share the reading. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 delete the paragraph

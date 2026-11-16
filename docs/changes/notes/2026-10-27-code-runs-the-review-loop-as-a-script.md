@@ -50,6 +50,8 @@ overlap: "The open escape watches read every review run; this one guards against
 
 Review-loop cache read per run at work: 8.16M before (range 5.14M-9.36M), 3.04M after over 114 runs, a 63% cut. Kept; watch closed.
 
+Reading, 2026-11-15: `scripted-review-loop-escapes` MOVED, closed, kept. Review escapes per code-reviewer run: 0.13 median before (range 0.04-0.45), 0.02 after (20 of 960). The move is down. Separate from the rate: 26 review escapes reached the PR bot on 4 work branches on 2026-11-04 and 2026-11-05, 13 of them medium severity; eight review edits overlap those days, so no one edit carries them. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Set `CODE_STEP_REVIEW_LOOP=agent` to dispatch the agent again, or revert the commit.

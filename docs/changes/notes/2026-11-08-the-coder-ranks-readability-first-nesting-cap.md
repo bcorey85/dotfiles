@@ -34,6 +34,8 @@ Rule-meter, 8 runs with the text and 8 without, under a brief that pulls the oth
 
 `coder-readability-first-findings`: smell, duplication, complexity and naming findings per review run, good direction down. `coder-readability-first-coder-cost`: Sonnet coder cache read per dispatch, good direction flat.
 
+Reading, 2026-11-15: `coder-readability-first-findings` WORSE, closed, kept. Smell, duplication and complexity findings per code-reviewer run: 0.55 median before (range 0.28-0.92), 1.07 after (638 of 599 runs, 8 days). Kept, because the rise came before this edit: in the work rows alone the rate went 0.64 to 1.18 in the week of 2026-11-02, when round-one review split by lens, and read 1.25 the week after this edit. The edit shows no fall in that one week; it is not the cause of the rise. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Delete the section from `skills/coder-core/SKILL.md` and its anchor row.

@@ -31,6 +31,8 @@ Effect unmeasured until the next intake; the hook-block-list-cut watch already r
 
 —
 
+Reading, 2026-11-15: `hook-block-list-cut` NO CHANGE, closed, kept. Hook blocks per day on the listed rules: 19.36 median before (range 13.86-40.57), 26.15 after (523 in 20 days), inside the before range. Dropping the list from the always-loaded rules did not raise blocks. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 restore the old deny text of the indirect-shell rule

@@ -27,6 +27,8 @@ Six runs per arm on a planted 15-phase plan. Recall median 10 of 12 both ways (t
 
 plan-review escapes per spec run in the work logs.
 
+Reading, 2026-11-15: `plan-review-two-shards` NO CHANGE, closed, kept. Plan escapes past plan review per finished plan: 0 in 20 plans after the edit, against a before median of 1.50 (range 0.00-14.00). Two shards in place of three let no more plan defects through. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 restore the seam bullet, its lossy-view paragraph and "three" in the review phase file

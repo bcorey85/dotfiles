@@ -10,7 +10,7 @@ SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W
 # `&` sends the step before it to the background.
 OPERATOR = re.compile(r"(\|\||&&|(?<!>)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
-LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]))*")
+LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
 REDIRECT_CHARS = set("<>&")
@@ -20,6 +20,10 @@ HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\
 SPACED_REDIRECT_NUMBER = re.compile(r"(?<!\S)\d+[ \t]+[<>]")
 # The target of `>&1`, `2>&1` or `>&-` copies or closes a file descriptor; any other `>&` target is a file.
 FILE_DESCRIPTOR_TARGET = re.compile(r"\d+-?|-")
+# A word that starts a redirect: `>f`, `<f`, `2>f`, `&>f`.
+REDIRECT_WORD = re.compile(r"(?:\d+|&)?[<>]")
+# A bare redirect word (`>`, `2>`, `&>>`) takes the next word as its target; `2>&1` and `>out` carry theirs.
+BARE_REDIRECT_WORD = re.compile(r"^(\d*[<>]{1,2}|\d*>&|&>{1,2})$")
 # docker and docker compose options that take the next word as their value. `--opt=value` is one word, read as a flag.
 DOCKER_VALUE_OPTIONS = {
     "-e", "--env", "-w", "--workdir", "-u", "--user", "--entrypoint", "-v", "--volume", "--name", "-p", "--publish",
@@ -64,6 +68,10 @@ WRAPPER_VALUE_OPTIONS = {
     "ionice": {"-c", "-n", "-p"},
     "unbuffer": set(),
     "taskset": set(),
+    # zsh precommand modifiers: each runs the command after it (`-` is a login-shell marker, a lone word).
+    "nocorrect": set(),
+    "noglob": set(),
+    "-": set(),
 }
 # The wrappers whose first word after their options is a value, not the command: timeout's duration, taskset's CPU
 # mask or list.
@@ -151,6 +159,16 @@ def redirection_writes_file(operator, target):
     if ">" not in operator or target == "/dev/null":
         return False
     return not (operator.endswith("&") and FILE_DESCRIPTOR_TARGET.fullmatch(target))
+
+
+def is_redirect_word(word):
+    """True when the word starts with a redirect operator; one that starts with a quote or backslash never does."""
+    return bool(REDIRECT_WORD.match(word))
+
+
+def redirect_takes_next_word(word):
+    """True when the redirect word has no target of its own, so the next word is its target."""
+    return bool(BARE_REDIRECT_WORD.match(word))
 
 
 def split_simple_commands(command):
@@ -527,10 +545,62 @@ def step_words(command):
 def segment_words(segment):
     """The words of one command text, quotes removed: shlex.split reads back what shlex.join wrote, so quoted inline
     code stays one word. Text shlex cannot read (an unbalanced quote) is split on whitespace."""
+    words = closed_segment_words(segment)
+    if words is None:
+        return words_by_blank(segment)
+    return words
+
+
+def words_by_blank(text):
+    """The words of text split on blanks and newlines, quotes ignored."""
+    return [word for word in re.split(r"[ \t\n]+", text) if word]
+
+
+def closed_segment_words(segment):
+    """The words of one command text with the quotes removed, or None when a quote never closes (the text is cut off,
+    so no word after the quote can be told from the text inside it)."""
     try:
         return shlex.split(segment)
     except ValueError:
-        return [word for word in re.split(r"[ \t\n]+", segment) if word]
+        return None
+
+
+def words_without_redirections(text):
+    """The words of one command text with the quotes removed and each redirection left out, the target of a bare `>`
+    with it, or None when a quote never closes. A redirection is a blank-separated piece of the raw text that starts
+    with its operator: a quoted or escaped look-alike (`'>&'`, `\\>`, `'2>'`) starts with a quote or a backslash, so it
+    stays a word."""
+    quoted = quoted_positions(text)
+    words = []
+    skip_target = False
+    for raw_word in _raw_words(text, quoted):
+        if skip_target:
+            skip_target = False
+            continue
+        if is_redirect_word(raw_word):
+            skip_target = redirect_takes_next_word(raw_word)
+            continue
+        piece = closed_segment_words(raw_word)
+        if piece is None:
+            return None
+        words += piece
+    return words
+
+
+def _raw_words(text, quoted):
+    # The pieces of the text between the blanks that sit outside quotes and are not escaped, quotes still in place.
+    raw_words = []
+    current = ""
+    for index, character in enumerate(text):
+        if character in " \t\r\n" and index not in quoted:
+            if current:
+                raw_words.append(current)
+            current = ""
+            continue
+        current += character
+    if current:
+        raw_words.append(current)
+    return raw_words
 
 
 def names_code_runner(command):
@@ -896,9 +966,23 @@ def step_parts(step):
     return step[start:closing[0]], step[closing[-1] + 1:]
 
 
+def paren_depth_change(step):
+    """How many `( ... )` subshells the step text opens, minus how many it closes. A quoted parenthesis counts for
+    nothing."""
+    quoted = quoted_positions(step, unclosed_is_quoted=False)
+    unquoted = [char for index, char in enumerate(step) if index not in quoted]
+    return unquoted.count("(") - unquoted.count(")")
+
+
+def closes_brace_group(step):
+    """True when the step ends in a `}` that closes a `{ ...; }` group."""
+    return TRAILING_BRACES.search(step) is not None
+
+
 def group_depth_change(step):
-    """How many `( ... )` and `{ ...; }` groups the step text opens, minus how many it closes."""
-    change = step.count("(") - step.count(")")
+    """How many `( ... )` and `{ ...; }` groups the step text opens, minus how many it closes. A quoted parenthesis
+    opens and closes nothing."""
+    change = paren_depth_change(step)
     change += LEADING_BRACES.match(step).group().count("{")
     trailing = TRAILING_BRACES.search(step)
     return change - (trailing.group().count("}") if trailing else 0)

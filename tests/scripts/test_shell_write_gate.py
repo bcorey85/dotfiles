@@ -1,7 +1,9 @@
 """Checks for shell_write_gate.py, the PreToolUse(Bash) hook that denies shell writes bypassing Write/Edit."""
+import ast
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -9,6 +11,9 @@ import tempfile
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import shell_write_denial
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
                       or toolkit_paths.GATES_DIR) / "shell_write_gate.py"
@@ -73,7 +78,7 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_unparseable_input_fails_closed(self):
         for stdin in ("not json", json.dumps({"tool_input": "ls"}), json.dumps([1])):
             reason = self.denied(self.run_hook(stdin))
-            self.assertEqual(reason, "[shell-write-gate] hook input did not parse — failing closed. "
+            self.assertEqual(reason, "[shell-write-gate] [input_parse_fail] hook input did not parse — failing closed. "
                                      "Report this to the user.")
 
     def test_skip_hooks_env_passes(self):
@@ -85,7 +90,8 @@ class ShellWriteGateTest(unittest.TestCase):
 
     def test_sed_in_place_denied_with_target_and_hint(self):
         reason = self.assert_denied("sed -i 's/a/b/' tracked.txt")
-        self.assertTrue(reason.startswith("[shell-write-gate] in-place editing of tracked.txt bypasses the "
+        self.assertTrue(reason.startswith("[shell-write-gate] [inplace_edit] in-place editing of tracked.txt "
+                                          "bypasses the "
                                           "Write/Edit hook pipeline. Use the Write or Edit tool."))
         self.assertIn(HINT, reason)
 
@@ -132,9 +138,10 @@ class ShellWriteGateTest(unittest.TestCase):
                         "sed -i 's/a\\|b/c/' f", "sed -i 's/\\(a\\)/b/' f"):
             self.assert_denied(command)
 
-    def test_target_falls_back_to_whole_segment_when_last_word_is_unusable(self):
-        self.assertIn("in-place editing of sed -i s/a/b/ -n bypasses",
-                      self.assert_denied("sed -i s/a/b/ -n"))
+    def test_a_step_with_no_file_operand_is_denied_in_plain_words(self):
+        reason = self.assert_denied("sed -i s/a/b/ -n")
+        self.assertIn("in-place editing by sed found no file operand it can read", reason)
+        self.assertNotIn("s/a/b/", reason)
         self.assertIn("in-place editing of f bypasses", self.assert_denied("sed -i 's/a/b/' \"f\""))
 
     def test_editor_names_as_arguments_pass(self):
@@ -154,7 +161,7 @@ class ShellWriteGateTest(unittest.TestCase):
                         "echo hi | tee -a -i tracked.txt", "echo hi > './tracked.txt'",
                         "echo hi > \"tracked.txt\"", "echo hi 2> tracked.txt"):
             reason = self.assert_denied(command)
-            self.assertTrue(reason.startswith(f"[shell-write-gate] {self.repo}/"), reason)
+            self.assertTrue(reason.startswith(f"[shell-write-gate] [tracked_target] {self.repo}/"), reason)
             self.assertIn("tracked.txt is git-tracked. Shell writes bypass the Write/Edit hook pipeline "
                           "(comment/prose/budget gates). Use the Write or Edit tool.", reason)
             self.assertIn(HINT, reason)
@@ -388,6 +395,12 @@ class ShellWriteGateTest(unittest.TestCase):
             payload = {"tool_input": {"command": f"echo hi > {target}"}, "cwd": str(self.repo), "agent_type": "coder"}
             reason = self.denied(self.run_hook(json.dumps(payload), env_extra={"HOME": str(outside)}))
             self.assertIn(f"{outside}/new.py", reason)
+
+    def test_coder_target_through_home_on_a_tracked_file_is_denied(self):
+        payload = {"tool_input": {"command": "echo hi > $HOME/tracked.txt"}, "cwd": str(self.repo),
+                   "agent_type": "coder"}
+        reason = self.denied(self.run_hook(json.dumps(payload), env_extra={"HOME": str(self.repo)}))
+        self.assertIn("[tracked_target]", reason)
 
     def test_regex_fallback_finds_the_redirect_target(self):
         reason = self.assert_denied("grep 'x\\|y' f > tracked.txt")
@@ -1194,6 +1207,550 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assertNotIn("git restore", reason)
         reason = self.assert_denied("git show HEAD > tracked.txt", agent="coder")
         self.assertNotIn("git restore", reason)
+
+    # variable targets of a coder
+
+    def coder_allowed(self, command, **options):
+        self.assert_allowed(command, agent="coder", cwd=str(self.make_outside_dir()), **options)
+
+    def coder_denied(self, command, **options):
+        return self.assert_denied(command, agent="coder", cwd=str(self.make_outside_dir()), **options)
+
+    def test_a_coder_may_redirect_through_a_for_variable_over_literal_words(self):
+        for command in ("for t in a b c; do echo hi > /tmp/swg_$t.log 2>&1; done",
+                        "for t in a b; do echo hi >> /var/tmp/swg-t-$t.log; done",
+                        'for t in a b; do echo hi | tee "/tmp/swg_${t}.log"; done',
+                        "for t in a b; do\n  echo hi > /tmp/swg_$t.log\ndone",
+                        "for a in x y; do for b in 1 2; do echo hi > /tmp/swg_${a}_$b.log; done; done",
+                        "for t in a b; do echo hi 2> /tmp/swg_$t.err; done"):
+            self.coder_allowed(command)
+
+    def test_a_coder_may_redirect_through_a_variable_assigned_once_before(self):
+        for command in ("S=/tmp/swg; echo hi > $S/a.log", "S=/tmp/swg\necho hi > $S/a.log",
+                        "export S=/tmp/swg; echo hi > $S/a.log", "S=/tmp/swg && echo hi > $S/a.log",
+                        "cd /tmp && S=/tmp/swg && echo hi > $S/a.log", 'S="/tmp/swg"; echo hi > "$S/a.log"',
+                        "S=/tmp/swg; echo hi > ${S}/a.log", "S=/tmp/swg; echo hi >> $S/a.log",
+                        "S=/tmp/swg; echo hi | tee -a $S/a.log", "S=/tmp/swg; echo hi 2> $S/a.err",
+                        "S=/tmp/swg; N=a; echo hi > $S/$N.log", "export A=1; B=/tmp/swg; echo hi > $B/a.log",
+                        f"S={self.tmp}/swg; echo hi > $S/a.log"):
+            self.coder_allowed(command)
+
+    def test_a_coder_variable_target_with_expansion_syntax_is_denied(self):
+        for command in ("S=/tmp/x; echo hi > $S[1]/zz", "S=/tmp/x; echo hi > ${S}[1]/zz",
+                        "S=/tmp/x; echo hi > $S:h:h/zz", "S=/tmp/x; echo hi > ${S}:h/zz",
+                        "S=/tmp/x; echo hi > $S/*", "S=/tmp/x; echo hi > $S/?",
+                        "S=/tmp/x; echo hi > $S/{a,../../etc/zz}", "S=/tmp/x; echo hi > $S/\\\\zz",
+                        "S=/tmp/x; echo hi | tee $S/{a,b}", "S=/tmp/x; echo hi > ~/$S",
+                        "S=/tmp/x; echo hi > ${S:-/etc}/zz", "for d in a b; do echo hi > /tmp/$d/*; done"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_quote_or_backslash_that_ends_a_name_keeps_the_variable_target_deny(self):
+        tracked = f"{self.repo}/tracked.t"
+        for command in (f'Sxt=/tmp/y; S={tracked}; echo hi > "$S"xt', f'Sxt=/tmp/y; S={tracked}; echo hi > $S""xt',
+                        f"Sxt=/tmp/y; S={tracked}; echo hi > $S''xt", f"Sxt=/tmp/y; S={tracked}; echo hi > $S\\xt",
+                        f'Sxt=/tmp/y; S={tracked}; echo hi | tee "$S"xt',
+                        'for t in /tmp/a; do for tx in /tmp/b; do echo hi > "$t"x; done; done'):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_may_redirect_through_a_quoted_variable_that_no_quote_cuts(self):
+        for command in ('S=/tmp/claude-1000/x; echo hi > "$S/a.log"', 'S=/tmp/claude-1000/x; echo hi > "$S"/a.log',
+                        'S=/tmp/claude-1000/x; echo hi > "${S}"/a.log', 'S=/tmp/claude-1000/x; echo hi > "${S}"x'):
+            self.coder_allowed(command)
+
+    def test_an_assignment_in_a_brace_group_opened_on_its_own_line_that_runs_in_a_subshell_is_unproven(self):
+        for command in (f"{{\nS=/tmp/x/\n}} | tr a b; echo hi > ${{S}}{self.repo}/tracked.txt",
+                        f"{{\nS=/tmp/x/\n}} > /dev/null & echo hi > ${{S}}{self.repo}/tracked.txt"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_quoted_subscript_in_an_argument_keeps_the_variable_target_deny(self):
+        command = 'S=/tmp/x; grep "foo[0-9]" f > $S/a'
+        reason = self.coder_denied(command)
+        self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_an_assignment_the_group_reader_may_misplace_keeps_the_variable_target_deny(self):
+        for command in ("echo `true\nHOME=/tmp/x\n`; echo hi > $HOME/a",
+                        '( echo ")"\nHOME=/tmp/x\n); echo hi > $HOME/a',
+                        "x=$(echo ')'\nHOME=/tmp/x\n); echo hi > $HOME/a",
+                        'echo "`\nS=/tmp/x\n`"; echo hi > $S/a',
+                        '( echo ")"; S=a/b; true ); echo hi > /tmp/$S/../../home/zz_probe',
+                        '( echo ")"; S=/tmp/x; true ); echo hi > $S/a',
+                        "{ echo '}'; S=/tmp/x; }; echo hi > $S/a",
+                        "echo '`' `\nS=/tmp/x\n` '`'; echo hi > $S/a",
+                        "echo \\` `\nS=/tmp/x\n` \\`; echo hi > $S/a",
+                        'echo "\\`" `\nS=/tmp/x\n` "\\`"; echo hi > $S/a',
+                        "( echo }; S=/tmp/x; true ); echo hi > $S/../home/brandon/zz_probe",
+                        "( echo a }\nS=/tmp/x\n); echo hi > $S/../home/brandon/zz_probe",
+                        "( ls; echo } }; S=/tmp/x; true ); echo hi > $S/a"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_code_in_a_glob_qualifier_or_a_child_shell_heredoc_keeps_the_variable_target_deny(self):
+        for command in ("S=/tmp/x; N=/x/S; ls *(e+'read $N:t <val'+); echo hi > $S/zz_probe",
+                        "S=/tmp/x; N=/x/S; print -l $N:t >/dev/null; echo hi > $S/zz_probe",
+                        "S=a/b; bash <<'EOF2'\necho hi > /tmp/$S/../../home/zz_probe\nEOF2"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_dev_prefix_does_not_hide_a_new_file_behind_dot_dot(self):
+        reason = self.coder_denied("S=/dev; echo hi > $S/../home/zz_probe")
+        self.assertIn("[coder_new_file]", reason)
+
+    def test_a_dev_dot_dot_target_is_a_new_file_through_a_loop_or_a_literal(self):
+        for command in ("for d in /dev/shm /dev/fd; do echo hi > $d/../../home/zz_probe; done",
+                        "echo hi > /dev/../home/zz_probe"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_new_file]", reason, command)
+
+    def test_an_in_place_edit_behind_find_exec_or_xargs_is_denied(self):
+        for command in ("find . -name '*.md' -exec sed -i s/a/b/ {} /tmp/claude-1000/scr1 \\;",
+                        "find . -name '*.md' -exec sed -i s/a/b/ {} /tmp/claude-1000/scr1 +",
+                        "ls | xargs sed -i s/a/b/",
+                        "fd md -x sed -i s/a/b/ /tmp/claude-1000/x",
+                        "fd md -Hx sed -i s/a/b/ /tmp/claude-1000/x",
+                        "fd md --exec-batch sed -i s/a/b/ /tmp/claude-1000/x"):
+            reason = self.assert_denied(command)
+            self.assertIn("[inplace_edit]", reason, command)
+
+    def test_a_file_list_the_gate_cannot_see_is_no_scratch_file_whatever_the_cwd(self):
+        scratch = self.make_claude_scratch_file()
+        for command in ("fd md /some/repo -x gawk -i inplace 1",
+                        "fd md /some/repo -X gawk -i inplace 1",
+                        "ls | xargs gawk -i inplace 1",
+                        "ls | parallel gawk -i inplace 1",
+                        "find /repo -exec sed -i s/a/b/ {} +"):
+            reason = self.assert_denied(command, cwd=str(scratch))
+            self.assertIn("[inplace_edit]", reason, command)
+
+    def test_a_quoted_or_escaped_redirect_look_alike_hides_no_file_operand(self):
+        scratch = self.make_claude_scratch_file()
+        for look_alike in ("'>&'", '">&"', "'2>&'", "'>'", "'2>'", "\\>"):
+            command = f"gawk -i inplace 1 {scratch}/probe.txt {look_alike} tracked.txt"
+            reason = self.assert_denied(command)
+            self.assertIn("[inplace_edit]", reason, command)
+
+    def test_a_real_redirect_after_a_scratch_file_still_passes(self):
+        scratch = self.make_claude_scratch_file()
+        self.assert_allowed(f"sed -i s/a/b/ {scratch}/probe.txt > /dev/null")
+        self.assert_allowed(f"sed -i s/a/b/ {scratch}/probe.txt 2>&1")
+
+    def test_an_fd_exec_flag_on_another_command_makes_no_invoker(self):
+        for flagged, plain in (("grep -x gawk -i inplace notes.txt", "grep gawk -i inplace notes.txt"),
+                               ("ssh -X host gawk -i inplace 1 /etc/x", "ssh host gawk -i inplace 1 /etc/x")):
+            flagged_run = self.run_command(flagged)
+            plain_run = self.run_command(plain)
+            self.assertEqual((flagged_run.returncode, flagged_run.stdout), (plain_run.returncode, plain_run.stdout),
+                             flagged)
+
+    def test_fdfind_exec_is_an_invoker(self):
+        reason = self.assert_denied("fdfind -x gawk -i inplace 1")
+        self.assertIn("[inplace_edit]", reason)
+
+    def test_the_deny_for_an_editor_behind_an_invoker_names_no_operand_the_command_lacks(self):
+        reason = self.assert_denied("ls | parallel sed -i s/a/b/")
+        self.assertIn("in-place editing of (the files its invoker passes in) bypasses", reason)
+
+    def test_a_coder_variable_target_is_denied_when_the_value_is_not_proven(self):
+        for command in ("for f in *.rs; do echo hi > /tmp/$f.log; done",
+                        "for f in $(ls); do echo hi > /tmp/$f.log; done",
+                        "for f in $FILES; do echo hi > /tmp/$f.log; done",
+                        "for f in `ls`; do echo hi > /tmp/$f.log; done",
+                        "for f in {a,b}; do echo hi > /tmp/$f.log; done",
+                        "S=/tmp/a; S=/tmp/b; echo hi > $S/x.log",
+                        "S=/tmp/a; echo hi > $S/x.log; S=/etc",
+                        "(S=/tmp/swg); echo hi > $S/a.log",
+                        "{ S=/tmp/swg; }; echo hi > $S/a.log",
+                        "false || S=/tmp/swg; echo hi > $S/a.log",
+                        "[ -n \"$X\" ] && S=/tmp/swg; echo hi > $S/a.log",
+                        "if true; then S=/tmp/swg; fi; echo hi > $S/a.log",
+                        "for t in a; do S=/tmp/swg; done; echo hi > $S/a.log",
+                        "S=/tmp/swg & echo hi > $S/a.log", "S=/tmp/swg | cat; echo hi > $S/a.log",
+                        "for t in a b; do :; done; echo hi > /tmp/swg_$t.log",
+                        "for t in a b; do echo hi > /tmp/swg_$t.log; done > /tmp/swg_$t.out",
+                        "S=/tmp/swg echo hi > $S/a.log", "echo hi > $S/a.log", "echo hi > $UNSET/a.log",
+                        "i=0; i=$((i+1)); echo hi > /tmp/swg_$i.log",
+                        "read S; echo hi > $S/a.log", "S=/tmp/swg; eval 'S=/etc'; echo hi > $S/a.log",
+                        "S=/tmp/swg; declare S=/etc; echo hi > $S/a.log",
+                        "S=/tmp/swg; unset S; echo hi > $S/a.log",
+                        "S=/tmp/swg; local S=/etc; echo hi > $S/a.log",
+                        "S=/tmp/swg; source env.sh; echo hi > $S/a.log",
+                        "S=/tmp/swg; . env.sh; echo hi > $S/a.log",
+                        "S=/tmp/swg; f() { S=/etc; }; f; echo hi > $S/a.log",
+                        "S=/tmp/swg; echo hi > ${S:-/etc}/a.log", "S=/tmp/swg; echo hi > ${S:=/etc}/a.log",
+                        "S=$(mktemp -d); echo hi > $S/a.log", "S=`mktemp -d`; echo hi > $S/a.log",
+                        "echo hi > $(mktemp -d)/a.log", "S=/tmp/swg; echo hi > '$S/a.log'",
+                        "S=/tmp/swg; echo hi > \\$S/a.log", "S=/tmp/swg; echo '$1' > $S/a.log",
+                        "echo hi > $=args", 'S="/tmp/sw g"; echo hi > $S/a.log',
+                        "S=/tmp/*; echo hi > $S/a.log", "S=~/x; echo hi > $S/a.log",
+                        "S=/tmp/swg; echo hi > $S/a.log && S=/etc",
+                        "for d in a b; do d=/etc; echo hi > /tmp/$d/x.log; done",
+                        "S=/tmp/swg; printf -v \\S %s /home/brandon; echo hi > $S/a.log",
+                        "S=/tmp/swg; N=T; printf -v \"${N/T/S}\" %s /home/brandon; echo hi > $S/a.log",
+                        "S=/tmp/swg; declare S\\=/home/brandon/newdir; echo hi > $S/a.log",
+                        "S=/tmp/swg; trap '. /tmp/f' DEBUG; echo hi > $S/a.log",
+                        "S=/tmp/swg; E=$(cat /tmp/f); [[ E -eq 1 ]]; echo hi > $S/a.log",
+                        "S=/tmp/swg; >/dev/null printf -v $(cat /tmp/n) %s x; echo hi > $S/a.log",
+                        "S=/tmp/swg; set -A $(cat /tmp/n) x; echo hi > $S/a.log",
+                        "S=/tmp/a:=ls; echo hi > $S/a.log"):
+            reason = self.coder_denied(command)
+            self.assertTrue(reason.startswith("[shell-write-gate] [coder_unresolved_var] "), (command, reason))
+
+    def test_a_coder_variable_value_outside_the_temp_dirs_is_denied(self):
+        outside = self.make_outside_dir()
+        link = self.tmp / "link"
+        os.symlink(str(outside), str(link))
+        # A `..` piece is never proven, so those stay unresolved; a proven value outside the temp dirs is a new file.
+        tags = {"S=/etc; echo hi > $S/a.log": "coder_new_file",
+                "S=/tmp/../etc; echo hi > $S/a.log": "coder_unresolved_var",
+                "S=/tmp/swg/..; echo hi > $S/a.log": "coder_unresolved_var",
+                "for d in /tmp/a /etc; do echo hi > $d/x.log; done": "coder_new_file",
+                "for d in a ..; do echo hi > /tmp/$d/x.log; done": "coder_unresolved_var",
+                "S=; echo hi > $S/new.log": "coder_new_file",
+                f"S={link}; echo hi > $S/new.log": "coder_new_file",
+                f"for d in {link}; do echo hi > $d/new.log; done": "coder_new_file",
+                "S=out; echo hi > $S/new.log": "coder_new_file"}
+        for command, tag in tags.items():
+            reason = self.coder_denied(command)
+            self.assertTrue(reason.startswith(f"[shell-write-gate] [{tag}] "), (command, reason))
+
+    def test_an_empty_proven_value_as_the_whole_target_writes_nothing_and_is_allowed(self):
+        self.coder_allowed("S=; echo hi > $S")
+
+    def test_a_coder_may_redirect_through_a_quoted_assignment_and_a_quoted_target(self):
+        self.coder_allowed('S="/tmp/swg"; echo hi > "$S/a.log"')
+
+    def test_a_substituted_absolute_value_joined_after_a_temp_prefix_stays_under_the_prefix(self):
+        self.coder_allowed("S=/etc/x; echo hi > /tmp/$S.log")
+
+    def test_a_coder_variable_target_is_denied_when_it_names_a_tracked_file(self):
+        for command in ("S=tracked.txt; echo hi > $S", f"S={self.repo}/tracked.txt; echo hi > $S",
+                        "for f in untracked.txt tracked.txt; do echo hi > $f; done",
+                        f"for d in {self.repo}; do echo hi > $d/tracked.txt; done"):
+            reason = self.assert_denied(command, agent="coder")
+            self.assertTrue(reason.startswith("[shell-write-gate] [tracked_target] "), (command, reason))
+            self.assertIn("tracked.txt is git-tracked", reason)
+
+    def test_a_coder_cannot_reach_the_environment_temp_dir_through_a_variable_it_sets(self):
+        for command in ("TMPDIR=/etc; echo hi > $TMPDIR/a.log", "HOME=/etc; echo hi > $HOME/a.log"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+        self.coder_allowed(f"TMPDIR={self.tmp}; echo hi > $TMPDIR/a.log")
+
+    def test_a_coder_variable_target_is_denied_when_the_environment_temp_dir_is_not_set(self):
+        payload = {"tool_input": {"command": "echo hi > $TMPDIR/a.log"}, "cwd": str(self.make_outside_dir()),
+                   "agent_type": "coder"}
+        reason = self.denied(self.run_hook(json.dumps(payload), env_extra={"TMPDIR": ""}))
+        self.assertIn("[coder_new_file]", reason)
+
+    def test_a_variable_target_of_another_agent_keeps_its_verdict(self):
+        # A non-coder agent's variable target (`S=tracked.txt; echo hi > $S`, glob loops) stays allowed: old behavior,
+        # outside this item. A new main-session deny needs its own replay.
+        for agent in (None, "reviewer"):
+            for command in ("S=/tmp/swg; echo hi > $S/a.log", "echo hi > $UNSET/a.log", "S=tracked.txt; echo hi > $S",
+                            "for f in *.rs; do echo hi > /tmp/$f.log; done"):
+                self.assert_allowed(command, agent=agent)
+        reason = self.assert_denied("S=/tmp; echo hi > $S/../tracked.txt && echo hi > tracked.txt")
+        self.assertIn("[tracked_target]", reason)
+
+    def test_a_coder_variable_proof_does_not_survive_a_shadowing_or_hidden_assignment(self):
+        for command in ("for t in /tmp/claude-1000; do for t in /home/brandon; do :; done; echo > $t/x; done",
+                        "S=/tmp/claude-1000; S[1,16]=/home/brandon/zz; echo > $S/a",
+                        "S=/tmp/x; print -v S /etc; echo hi > $S/a", "S=/tmp/x; integer S; echo hi > $S/a",
+                        "S=/tmp/x; vared S; echo hi > $S/a", "S=/tmp/x; sysread S; echo hi > $S/a",
+                        "read S; echo hi > $S/a", "S=/tmp/x; read S; echo > $S/a", "S=/tmp/x; unset S; echo > $S/a",
+                        "S=/tmp/x; declare S; echo > $S/a", "S=/tmp/x; read -r S < f; echo > $S/a",
+                        "echo | while read S; do echo > $S/a; done", "S=/tmp/x; let S++; echo > $S/a",
+                        "REPLY=/tmp/x; read; echo > $REPLY/a"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_variable_proof_does_not_survive_a_modifier_dot_an_alias_or_an_option_change(self):
+        for middle in ("nocorrect . ./env.sh", "noglob . ./env.sh", "- . ./env.sh",
+                       "nocorrect noglob command builtin . ./env.sh", "alias s=.", "setopt shwordsplit",
+                       "unsetopt glob", "emulate sh"):
+            reason = self.coder_denied(f"S=/tmp/swg; {middle}; echo x > $S/a")
+            self.assertIn("[coder_unresolved_var]", reason, middle)
+
+    def test_a_coder_variable_proof_survives_set_o_pipefail(self):
+        self.coder_allowed("S=/tmp/swg; set -o pipefail; echo x > $S/a")
+
+    def test_a_coder_target_with_glob_or_modifier_syntax_beside_a_variable_is_denied(self):
+        for target in ("$S/passwd(:s.tmp.etc.)", "$S/a(:h:h:h)", "$S/a<->", "$S/a#b", "$S/a^b", "=ls$S",
+                       '"$S/a|b"'):
+            reason = self.coder_denied(f"S=/tmp/x; echo hi > {target}")
+            self.assertIn("[coder_unresolved_var]", reason, target)
+
+    def test_a_coder_pipe_after_a_variable_target_checks_the_target_before_the_pipe(self):
+        self.coder_allowed("S=/tmp/swg; echo hi > $S/a|cat")
+
+    def test_a_coder_may_loop_over_words_named_like_builtins(self):
+        self.coder_allowed("for t in read write; do cargo test $t > /tmp/swg_$t.log; done")
+
+    def test_a_coder_may_redirect_a_variable_target_beside_a_quoted_parenthesis_or_angle_bracket(self):
+        self.coder_allowed("S=/tmp/swg; sed 's/^\\([0-9]*\\):x/\\1/' f > $S/a.tsv")
+        self.coder_allowed("S=/tmp/swg; grep \"a<b\" f > $S/a.log")
+
+    def test_a_coder_target_in_a_double_quoted_substitution_never_reads_a_name_the_command_sets(self):
+        outside = self.make_outside_dir()
+        for name in ("TMPDIR", "HOME"):
+            reason = self.coder_denied(f'{name}={outside}; echo "$(echo hi > ${name}/a)"')
+            self.assertIn("[coder_unresolved_var]", reason, name)
+
+    def test_a_coder_target_never_trusts_a_name_hidden_by_an_option_letter_or_an_escape(self):
+        for hiding in ("printf -vS %s /home/brandon", "read -aS <<< /home/brandon", "print -vS /home/brandon",
+                       "E=S\\=7; [[ E -eq 7 ]]", "read <<< /home/brandon $(cat /tmp/claude-1000/n)"):
+            reason = self.coder_denied(f"S=/tmp/swg; {hiding}; echo hi > $S/a")
+            self.assertIn("[coder_unresolved_var]", reason, hiding)
+
+    def test_a_coder_target_never_trusts_a_name_set_inside_a_subscript_or_a_nameref_value(self):
+        for hiding in ("a[S=1]=y", "a[S=3]+=1", "a[S++]=1", "declare -n R='S[0]'; R=/home/brandon",
+                       "local -n R='S[0]'; R=/home/brandon"):
+            reason = self.coder_denied(f"S=/tmp/swg; {hiding}; echo hi > $S/a")
+            self.assertIn("[coder_unresolved_var]", reason, hiding)
+
+    def test_a_coder_may_redirect_through_a_variable_that_holds_dev_null(self):
+        self.coder_allowed("S=/dev/null; echo hi > $S")
+
+    def test_a_coder_literal_option_like_target_is_a_new_file_and_denied(self):
+        reason = self.coder_denied("echo hi > -foo")
+        self.assertIn("[coder_new_file]", reason)
+
+    def test_a_coder_may_redirect_to_dev_null_and_streams(self):
+        for command in ("echo hi > /dev/null", "ls 2>&1"):
+            self.coder_allowed(command)
+
+    def test_a_coder_proven_value_that_starts_with_a_dash_is_denied(self):
+        for command in ("S=-foo; echo hi > $S", "for t in -a -b; do echo hi > $t.log; done"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_new_file]", reason, command)
+
+    def test_a_coder_target_never_reads_a_temp_name_hidden_by_an_escape(self):
+        for command in ("unset \\TMPDIR; echo hi > $TMPDIR/a.log", "declare TMPDIR\\=/etc; echo hi > $TMPDIR/a.log"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_unproven_variable_target_after_a_cd_is_unresolved_not_relative(self):
+        for command in ("cd /nonexist && S=/tmp/claude-1000; echo > $S/a", "cd /nonexist; echo > $S/a"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+            self.assertNotIn("relative write target", reason, command)
+
+    def test_a_variable_target_after_a_cd_keeps_its_verdict_for_another_agent(self):
+        self.assert_allowed("cd /tmp && S=/tmp/claude-1000; echo > $S/a")
+        self.assertIn("[rel_target_unread_cd]", self.assert_denied('cd "$D" && echo > $S/a'))
+
+    def test_a_coder_proven_value_is_resolved_through_a_symlink_before_a_dot_dot_piece(self):
+        outside = self.make_outside_dir()
+        (outside / "sub").mkdir()
+        (outside / "f").write_text("x\n")
+        link = self.tmp / "link"
+        os.symlink(str(outside / "sub"), str(link))
+        reason = self.coder_denied(f"S={link}; echo hi > $S/../f")
+        self.assertIn("[coder_var_outside_temp]", reason)
+
+    def test_a_scratch_file_is_edited_in_place_with_a_sed_extended_regex_flag(self):
+        scratch = self.make_claude_scratch_file()
+        target = str(scratch / "probe.txt")
+        self.assert_allowed(f"sed -E -i 's/a/b/' {target}")
+        self.assert_allowed(f"sed -i -E 's/a/b/' {target}")
+        reason = self.assert_denied("sed -E -i 's/a/b/' tracked.txt")
+        self.assertIn("in-place editing of tracked.txt ", reason)
+
+    # deny tags
+
+    def interpreter_script(self, text):
+        script = self.tmp / "writes.py"
+        script.write_text(text)
+        return script
+
+    def test_every_deny_carries_one_listed_tag(self):
+        outside = str(self.make_outside_dir())
+        script = self.interpreter_script("open('tracked.txt', 'w').write('x')\n")
+        cases = {
+            "script_write_rel_cd": (f"cd {self.repo} && python3 {script}", None, outside),
+            "script_write": (f"python3 {script}", None, None),
+            "inplace_edit": ("sed -i s/a/b/ tracked.txt", None, None),
+            "tracked_target": ("echo hi > tracked.txt", None, None),
+            "rel_target_unread_cd": ('cd "$D" && echo hi > new.txt', None, None),
+            "coder_rel_target_cd": ("cd sub && echo hi > new.txt", "coder", outside),
+            "coder_unresolved_var": ("echo hi > $UNSET/a.log", "coder", outside),
+            "coder_new_file": ("echo hi > helper.py", "coder", outside),
+            "coder_var_outside_temp": ("S=/etc; echo hi > $S/passwd", "coder", outside),
+        }
+        seen = set()
+        for tag, (command, agent, cwd) in cases.items():
+            reason = self.assert_denied(command, agent=agent, cwd=cwd)
+            self.assertTrue(reason.startswith(f"[shell-write-gate] [{tag}] "), (tag, reason))
+            seen.add(tag)
+        seen.add(self.denial_tag(self.denied(self.run_hook("not json"))))
+        self.assertEqual(seen | {"internal_error"}, set(shell_write_denial.TAGS))
+
+    def denial_tag(self, reason):
+        match = re.match(r"\[shell-write-gate\] \[(\w+)\] ", reason)
+        self.assertIsNotNone(match, reason)
+        self.assertIn(match.group(1), shell_write_denial.TAGS)
+        return match.group(1)
+
+    def test_an_internal_error_denies_with_its_tag(self):
+        finished = self.run_hook(json.dumps({"tool_input": {"command": "echo hi > x"}, "cwd": "/tmp"}),
+                                 env_extra={"PATH": ""}, script=self.crashing_gate())
+        reason = self.denied(finished)
+        self.assertEqual(self.denial_tag(reason), "internal_error")
+
+    def crashing_gate(self):
+        # A copy of the gate whose run() raises, beside the lib folder it imports.
+        gate = self.tmp / "gates" / "shell_write_gate.py"
+        gate.parent.mkdir()
+        (self.tmp / "lib").symlink_to(toolkit_paths.LIB_DIR)
+        source = SCRIPT.read_text()
+        crashing = source.replace("def run(raw):", "def run(raw):\n    raise OSError('boom')")
+        self.assertNotEqual(crashing, source, "the gate has no `def run(raw):` line to make crash")
+        gate.write_text(crashing)
+        return gate
+
+    def test_no_deny_text_is_built_outside_the_denial_module(self):
+        scripts = SCRIPT.parent.parent
+        for source in list((scripts / "gates").glob("*.py")) + list((scripts / "lib").glob("*.py")):
+            if source.name == "shell_write_denial.py":
+                continue
+            text = source.read_text()
+            if source.name == "shell_write_gate.py":
+                self.assertEqual(self.unbuilt_denials(text), [], source.name)
+            self.assertNotIn("[shell-write-gate]", text.replace("`[shell-write-gate] [<tag>] <message>`", ""),
+                             source.name)
+
+    def unbuilt_denials(self, text):
+        # The argument of each DenyError( and emit_decision( call that neither calls the denial module's builders nor
+        # passes on a denial already built.
+        stray = []
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            position = {"DenyError": 0, "emit_decision": 1}.get(name)
+            if position is None:
+                continue
+            if len(node.args) > position:
+                argument = node.args[position]
+            else:
+                argument = ast.Tuple(elts=[keyword.value for keyword in node.keywords])
+            used = {getattr(part, "id", None) for part in ast.walk(argument)}
+            if not used & {"deny_text", "tagged_message", "denial", "denied"}:
+                stray.append(ast.dump(argument)[:80])
+        return stray
+
+    # in-place editor operands
+
+    def test_an_in_place_deny_names_the_file_operands_not_the_script(self):
+        cases = {
+            "sed -i 's/a/b/' tracked.txt": "tracked.txt",
+            "sed -i -e 's/a/b/' -e 's/c/d/' tracked.txt untracked.txt": "tracked.txt, untracked.txt",
+            "sed -i.bak -E 's/a/b/' tracked.txt": "tracked.txt",
+            "sed --in-place=.bak --expression='s/a/b/' tracked.txt": "tracked.txt",
+            "perl -pi -e 's/a/b/' tracked.txt": "tracked.txt",
+            "perl -spi -e 's/a\\nb/c/' tracked.txt": "tracked.txt",
+            "f=tracked.txt && perl -pi -e 's/a/b/' $f": "$f",
+            "awk -i inplace '{print}' tracked.txt": "tracked.txt",
+            "sed -i 's/a/b/' tracked.txt 2>&1 | head": "tracked.txt",
+            "sed -ni 's/a/b/p' tracked.txt": "tracked.txt",
+        }
+        for command, operands in cases.items():
+            reason = self.assert_denied(command)
+            self.assertTrue(reason.startswith(f"[shell-write-gate] [inplace_edit] in-place editing of {operands} "),
+                            (command, reason))
+
+    def test_an_in_place_deny_with_no_file_operand_says_so_without_quoting_the_script(self):
+        for command in ("perl -pi -e 's/secret-pattern/b/'", "sed -i 's/secret-pattern/b/'"):
+            reason = self.assert_denied(command)
+            self.assertIn("found no file operand it can read", reason, command)
+            self.assertNotIn("secret-pattern", reason)
+
+    def test_an_in_place_deny_of_a_cut_off_command_names_no_word_of_its_script(self):
+        # Real shapes: a stored command cut off inside the sed script, so a quote never closes.
+        cut_off = (
+            "RF=$(git rev-parse --git-path code-phase); sed -i 's/^plan_impact:.*/plan_impact: RESOLVED: deferred "
+            "to phase end by the session, 2026-11-09: tick",
+            "sed -i \\\n -e 's|`Kind::Token` arm (`src/registry.rs:456-463`)|`Kind::Token` arm|' \\\n"
+            " -e 's|(`src/registry.rs:553-555`)|(`src/registry.rs:546-549`)|",
+            "sed -i 's/appends ` peak_rss_kib=<n>` last when `Some`/appends a tab-separated field/; s/emits ` peak",
+        )
+        for command in cut_off:
+            reason = self.assert_denied(command)
+            self.assertIn("found no file operand it can read", reason, command)
+            self.assertNotIn("RESOLVED", reason)
+            self.assertNotIn("Kind::Token", reason)
+
+    def test_an_in_place_deny_leaves_a_redirection_out_of_the_file_operands(self):
+        for command in ("sed -i 's/a/b/' src/cache_stage.rs 2>&1; rg -n x src/cache_stage.rs",
+                        "sed -i 's/f(&c, \"r\")/g(\\&c, \"r\")/' src/cache_stage.rs 2>&1; rg -n x src/cache_stage.rs",
+                        "sed -i 's/a/b/' src/cache_stage.rs 2> /dev/null",
+                        "sed -i 's/a/b/' src/cache_stage.rs &>/dev/null",
+                        "sed -i 's/a/b/' src/cache_stage.rs >out.log"):
+            reason = self.assert_denied(command)
+            self.assertTrue(reason.startswith("[shell-write-gate] [inplace_edit] in-place editing of "
+                                              "src/cache_stage.rs bypasses"), (command, reason))
+
+    def test_an_in_place_edit_names_every_operand_and_each_must_be_scratch(self):
+        scratch = self.make_claude_scratch_file()
+        inside = str(scratch / "probe.txt")
+        self.assert_allowed(f"sed -i s/a/b/ {inside} {inside}")
+        reason = self.assert_denied(f"sed -i s/a/b/ {inside} tracked.txt")
+        self.assertIn(f"in-place editing of {inside}, tracked.txt ", reason)
+        self.assert_denied(f"sed -i s/a/b/ tracked.txt {inside}")
+
+    def test_only_awk_reads_a_name_value_operand_as_an_assignment(self):
+        inside = str(self.make_claude_scratch_file() / "probe.txt")
+        reason = self.assert_denied(f"sed -i s/a/b/ {inside} FOO=bar")
+        self.assertIn("FOO=bar", reason)
+        self.assert_denied(f"perl -pi -e s/a/b/ {inside} a=b")
+        self.assert_allowed(f"awk -i inplace '{{print}}' {inside} v=1")
+
+    def test_a_scratch_sed_script_written_by_heredoc_does_not_hide_a_later_in_place_edit(self):
+        command = "cat > /tmp/swg.sed <<'EOF'\ns/a/b/\nEOF\nsed -i -f /tmp/swg.sed tracked.txt"
+        reason = self.assert_denied(command)
+        self.assertIn("in-place editing of tracked.txt ", reason)
+        self.assert_allowed("cat > /tmp/swg.sed <<'EOF'\ns/a/b/\nEOF\nsed -f /tmp/swg.sed tracked.txt")
+
+    def test_a_bsd_sed_empty_backup_suffix_is_no_file_operand(self):
+        inside = str(self.make_claude_scratch_file() / "probe.txt")
+        self.assert_allowed(f"sed -i '' 's/a/b/' {inside}")
+        self.assert_allowed(f"sed -i '' -e 's/a/b/' {inside}")
+        self.assert_allowed(f'sed -i "" s/a/b/ {inside}')
+        reason = self.assert_denied("sed -i '' s/a/b/ tracked.txt")
+        self.assertTrue(reason.startswith("[shell-write-gate] [inplace_edit] in-place editing of tracked.txt "), reason)
+
+    def test_a_gawk_source_option_gives_the_script_so_only_the_file_is_named(self):
+        reason = self.assert_denied("gawk -i inplace -e a -e b tracked.txt")
+        self.assertTrue(reason.startswith("[shell-write-gate] [inplace_edit] in-place editing of tracked.txt "), reason)
+        reason = self.assert_denied("gawk -i inplace --source a --source b tracked.txt")
+        self.assertTrue(reason.startswith("[shell-write-gate] [inplace_edit] in-place editing of tracked.txt "), reason)
+
+    def test_a_coder_loop_name_is_never_read_from_the_environment_even_when_the_command_is_unreadable(self):
+        outside = self.make_outside_dir()
+        for name in ("TMPDIR", "HOME"):
+            command = f"for {name} in {outside}; do echo x > ${name}/newfile; done; let n=1"
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_dot_command_after_a_keyword_or_wrapper_leaves_a_variable_unproven(self):
+        for command in ("S=/tmp/claude-1000; if true; then . ./env.sh; fi; echo x > $S/a",
+                        "S=/tmp/claude-1000; command . ./env.sh; echo x > $S/a",
+                        "S=/tmp/claude-1000; builtin . ./env.sh; echo x > $S/a"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_cannot_prove_a_name_the_shell_sets_itself(self):
+        for command in ("RANDOM=/tmp/claude-1000/a; echo x > $RANDOM",
+                        "S=/tmp/claude-1000/x; IFS=/; echo hi | tee $S",
+                        "pipestatus=/tmp/claude-1000/x; echo hi > $pipestatus",
+                        "CDPATH=/tmp/claude-1000/x; cdpath=/home/q; echo hi > $CDPATH/a"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+
+    def test_a_coder_target_variable_with_a_non_ascii_name_is_denied(self):
+        reason = self.coder_denied("é=/tmp/x; echo x > $é/a")
+        self.assertIn("[coder_unresolved_var]", reason)
 
 
 if __name__ == "__main__":

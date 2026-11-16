@@ -36,6 +36,8 @@ Fix items rose about 75%, and tokens rose 9%.
 
 `reviewer-reachable-sweep-escapes`: escapes per review run fall.
 
+Reading, 2026-11-15: `reviewer-reachable-sweep-escapes` BETTER, closed, kept. Review escapes per code-reviewer run: 0.11 median before (range 0.02-0.32), 0.02 after (9 of 460, 7 days). Separate from the rate: 26 review escapes reached the PR bot on 4 work branches on 2026-11-04 and 2026-11-05, 13 of them medium severity; eight review edits overlap those days, so no one edit carries them. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Delete both rules from `claude/.claude/agents/code-reviewer.md`.

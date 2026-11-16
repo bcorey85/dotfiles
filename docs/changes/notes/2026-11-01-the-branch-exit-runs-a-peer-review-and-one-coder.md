@@ -47,6 +47,8 @@ review plus one coder with nits included, both on the same seeded branch.
   misses what the loop caught at work.
 - `branch-exit-peer-review-opus-tokens` (Opus main-session cache-read tokens per verify-branch turn, down).
 
+Reading, 2026-11-15: `branch-exit-peer-review-escapes` NO CHANGE, closed, kept. Review escapes per code-reviewer run: 0.11 median before (range 0.02-0.33), 0.02 after (14 of 660, 8 days), at the low end of the before range. Separate from the rate: 26 review escapes reached the PR bot on 4 work branches on 2026-11-04 and 2026-11-05, 13 of them medium severity; eight review edits overlap those days, so no one edit carries them. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Revert this commit: Step 1, verify-prep's printed steps and verify-log's outcome check return to the blocker-routed

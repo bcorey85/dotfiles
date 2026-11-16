@@ -39,5 +39,5 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 
 - Never swallow an exception in a hook. Report it on stderr or in the hook's deny or stop message, and name the gate.
 - A gate picks fail-open or fail-closed on purpose, and says which in a comment.
-- A command writes its state in one atomic step (`write_text_atomically`), once per run.
+- A command writes its state in one atomic step (`write_text_atomically`), once per run. The review loop's `approval-asks.json` is the exception: it is saved at the start of a run that holds saved asks and each time a fix pass files an ask, so a crash keeps an ask that waits on the user.
 - Put tests for a script under `tests/scripts/`, with paths from `tests/scripts/toolkit_paths.py`.

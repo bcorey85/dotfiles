@@ -4,6 +4,12 @@ Toolkit scripts import it after putting scripts/lib on sys.path."""
 import re
 
 SP = " \t\n\r\f\v"
+# A blank that is no newline.
+SPC = r"[ \t\r\f\v]"
+
+
+def trim(text):
+    return text.strip(SP)
 
 
 def top_level_positions(code, start=0):

@@ -5,16 +5,13 @@
      (/tmp/claude-<uid>, symlinks and `..` resolved): those are throwaway, and a read-only agent has no Write/Edit.
   2. Redirection (>, >>) and tee onto a git-tracked file.
   3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee that creates a new file
-     outside a temp dir, or whose target still holds a `$` after `$TMPDIR` and `$HOME` are expanded; also any
-     relative target after any `cd`, `pushd` or `popd`.
+     outside a temp dir, or whose target holds a `$` after `$TMPDIR` and `$HOME` are expanded, unless the command
+     proves every value the variable can take (shell_variables: a bare assignment that surely ran before, or a `for`
+     over literal words) and each resulting path is under a temp dir, symlinks resolved and a tracked file still
+     denied; also any relative target after any `cd`, `pushd` or `popd`.
   4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
-     a file for writing and names a git-tracked file: as a string literal, through a name bound to one, or passed as
-     an argument unless the trace finds that no write target comes from argv (a script that only reads its argument,
-     or writes files of its own, passes). A literal joined onto a base that cannot be the cwd (a home folder or new
-     temp folder call, or a name bound only to one) names no file of the cwd and does not deny. A write is an open
-     for writing, a delete, move or truncate, or a child process whose text runs a program that writes the file
-     (e.g. `sed -i`, `tee`, `cp`, `mv`).
+     a file for writing and names a git-tracked file (interpreter_writes holds the trace).
   5. Any agent: a relative target after a `cd`, `pushd` or `popd` whose folder is not a literal (`cd "$D"`, `popd`,
      `cd -`), because the gate cannot tell where the write lands.
 Only a `>` outside quotes is a redirect (a `>` inside a double-quoted `$(...)` is code and is read as one), and the
@@ -27,35 +24,23 @@ each folder a literal `cd` or `pushd` in command position moved to before it, cu
 of them denies. A script (rule 4) run after such a cd that writes a relative path denies naming the last cd folder;
 an absolute path in it resolves as written. A relative target after a `cd`, `pushd` or `popd` whose folder is not
 a literal is denied (rule 5), and in a coder a relative target after any of them is denied (rule 3).
+Every deny reads `[shell-write-gate] [<tag>] <message>`; shell_write_denial builds it and holds the tag list.
 Escape for rules 1, 2, 4 and 5 in the main session: a trailing `#skip-shell-write-gate` comment. A subagent (agent_id in
-the hook input) or a coder cannot use it. Fails closed on internal error.
+the hook input) or a coder cannot use it. Fails closed on internal error and on input that does not parse; the
+variable reader fails closed too: a variable it cannot prove is a deny.
 """
 import json
 import os
 import re
 import shlex
-import subprocess
 import sys
-from collections import Counter, namedtuple
+from collections import namedtuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
 import shell_command
-from code_text import (
-    SP,
-    STRING_LITERAL,
-    STRING_PREFIX_BEFORE_QUOTE,
-    code_outside_strings,
-    imported_names,
-    receiver_text,
-    split_arguments,
-    statement_around,
-    sub_outside_strings,
-    top_level_positions,
-    tuple_fields,
-    without_comments,
-)
+from code_text import SP, SPC, trim
 from hook_input import (
     JqError,
     claude_temp_root,
@@ -65,175 +50,49 @@ from hook_input import (
     jq_get,
     jq_str,
 )
-from hook_input import bash_basename as shell_basename
-from hook_input import bash_dirname as shell_dirname
+from inplace_edit import file_operands, find_editor_word, has_unseen_files, is_inplace
+from interpreter_writes import interpreter_written_target
 from shell_statements import strip_comments, strip_heredocs
+from shell_variables import ShellVariables
+from shell_write_denial import (
+    CODER_NEW_FILE,
+    CODER_REL_TARGET_CD,
+    CODER_UNRESOLVED_VAR,
+    CODER_VAR_OUTSIDE_TEMP,
+    DIRECTORY_CHANGE_HINT,
+    INPLACE_EDIT,
+    INPUT_PARSE_FAIL,
+    INTERNAL_ERROR,
+    REL_TARGET_UNREAD_CD,
+    RESTORE_HINT,
+    SCRIPT_WRITE,
+    SCRIPT_WRITE_REL_CD,
+    TRACKED_TARGET,
+    DenyError,
+    deny_text,
+    tagged_message,
+)
+from shell_write_paths import is_git_tracked, is_stream_or_device, resolve_target
 
-SPC = r"[ \t\r\f\v]"
 TARGET = r"[^ \t\r\f\v|&;<>()]+"
 REDIRECT = re.compile(r">[>|&]?" + SPC + "*" + TARGET)
 REDIRECT_PREFIX = re.compile(r"^>[>|&]?" + SPC + "*")
 TEE = re.compile(r"(^|" + SPC + r")tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+" + TARGET)
 TEE_PREFIX = re.compile(r"^" + SPC + r"*tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+")
-GIT_SUBCOMMANDS = re.compile(r"(rm|mv|checkout|restore|apply)")
-SED_INPLACE = re.compile(r"(^|" + SPC + r")(-[a-zA-Z]*i|--in-place(" + SPC + r"|=|$))")
-PERL_I = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*i")
-PERL_PN = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*[pn]")
-AWK_INPLACE = re.compile(r"(^|" + SPC + r")-i" + SPC + "*inplace")
 PRECHECK = re.compile(r"(-[a-zA-Z]*i|inplace|>|tee)")
-INTERPRETER = re.compile(r"python[\d.]*|pypy[\d.]*|node|nodejs|ruby|perl|tsx|ts-node|bun|deno")
-# The shell_command.INTERPRETER_FAMILIES entry that holds the flags of a program the gate reads.
-PROGRAM_FAMILIES = (
-    (re.compile(r"python[\d.]*|pypy[\d.]*"), "python"),
-    (re.compile(r"node|nodejs|tsx|ts-node|bun|deno"), "node"),
-    (re.compile(r"ruby"), "ruby"),
-    (re.compile(r"perl"), "perl"),
-)
-# Deno takes its config file after these flags.
-DENO_VALUE_FLAGS = ("-c", "--config")
-# Package runner flags that take the next word as their value.
-PACKAGE_RUNNER_VALUE_FLAGS = ("-p", "--package")
-# A call that writes, deletes, moves or truncates a file, or runs a child process (the `whole` group, whose text is its
-# own target). An `open(` is a write only when write_target_text finds a write mode.
-FILE_WRITE = re.compile(r"""\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*['"]\+?>|\bopen\s*\("""
-                        r"""|\.write_(?:text|bytes)\s*\("""
-                        r"""|\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream)\s*\("""
-                        r"""|\bDeno\.write(?:Text)?File(?:Sync)?\s*\(|\bBun\.write\s*\(|\b(?:File|IO)\.write\b"""
-                        r"""|\bshutil\.(?:copy\w*|move|rmtree)\s*\("""
-                        r"""|\bos\.(?:replace|rename|remove|unlink|rmdir|truncate)\s*\("""
-                        r"""|\bFile\.(?:delete|unlink|rename)\b|\bFileUtils\.\w+|\b(?:unlink|rename)\b(?=\s*[($@'"])"""
-                        r"""|\.(?:unlink|touch|truncate|rename|rmdir|rm|copyFile)(?:Sync)?\s*\(|\.replace\s*\("""
-                        r"""|(?P<whole>\bfileinput\.input\s*\([^)]*inplace\s*=\s*True|\bsubprocess\.\w+"""
-                        r"""|\bos\.(?:system|popen)\b|\b(?:execSync|spawnSync|exec|spawn|execFile\w*)\s*\(|\bsystem\b(?=\s*[('"])"""
-                        r"""|`)""")
-# A write whose target is its call's last argument: a `shutil` copy, a ruby `FileUtils.cp`, or perl's
-# `open(my $f, '>', $path)`. A move or rename changes its source too, so all its arguments are targets.
-LAST_ARGUMENT_WRITE = re.compile(r"""\bshutil\.copy|\bFileUtils\.cp\b"""
-                                 r"""|\bopen\s*\(?\s*(?:my\s+)?[$\w]+\s*,\s*['"]\+?>""")
-# A node copy, whose target is its second argument: a callback or a mode may follow it.
-SECOND_ARGUMENT_WRITE = re.compile(r"\.copyFile")
-# The head of a call written with parentheses: its name, then the open parenthesis.
-CALL_HEAD = re.compile(r"[\w.]*\s*\(")
-# A keyword argument (`ignore_errors=True`).
-KEYWORD_ARGUMENT = re.compile(r"\s*\w+\s*=(?!=)")
-# A write whose first argument is the path and whose later arguments are content or options.
-FIRST_ARGUMENT_WRITE = re.compile(r"(?:writeFile|appendFile|createWriteStream|(?:Bun|Deno|File|IO)\.write)")
-# The mode argument of an `open` that writes: a literal, or (for `open(path, mode)`) a name that may hold one.
-WRITE_MODE = re.compile(r"""['"][rbt]*[wax+][rbt+]*['"]""")
-NAMED_MODE = re.compile(r"\s*(?:mode\s*=\s*)?[A-Za-z_][\w.:]*\s*$")
-# The interpreter families in which a backtick span runs a command.
-BACKTICK_FAMILIES = ("perl", "ruby")
-# Programs a child process runs that write the file they name; sed, perl and awk write only in place.
-WRITER_PROGRAMS = ("tee", "cp", "mv", "rm", "install")
-FUNCTION_DEFINITION = re.compile(r"\b(?:def|function)\s+(\w+)\s*\(([^)]*)\)")
-# A name the code uses, not an attribute after a `.`.
-CODE_NAME = re.compile(r"(?<![\w.$])\$?[A-Za-z_]\w*")
-MAX_NAME_HOPS = 4
-# Text through which a write target reads the command line: argv itself, perl's `shift`, an argument parser's
-# result, or fileinput's in-place mode, which rewrites the files argv names.
-ARGV_SOURCE = re.compile(r"\b(\w*argv|ARGV|ARGF|shift|opts|docopt|parse_args|parse_known_args|parseArgs)\b"
-                         r"|\bDeno\.args\b|\bfileinput\b|\$\*")
-# A perl file test (`-e "x"`), whose letter is no variable.
-PERL_FILE_TEST = re.compile(r"(?<!\S)-[a-zA-Z](?=\s|$)")
-# A newline after a comma or an opening bracket: it continues an argument list.
-ARGUMENT_LIST_NEWLINE = re.compile(r"([,\[(])[ \t]*\n")
-# The `args=` keyword of a child process call.
-KEYWORD_ARGS = re.compile(r"(?<![\w.])args\s*=(?!=)")
-# Names a language supplies; one the code binds is traced like any other name.
-LANGUAGE_NAMES = frozenset(("true", "false", "null", "undefined", "nil", "process",
-                            "__file__", "__dirname", "if", "else", "not", "and", "or", "in", "is", "lambda",
-                            "await", "new", "my", "die", "unless", "__dir__", "__FILE__", "__filename", "$ENV"))
-# A name and what follows it: a call, an attribute, a scope, or a keyword argument or option key (`ok=`, `ok:`).
-NAME_USE = re.compile(r"(?<![\w.$])(\$?[A-Za-z_]\w*)(\s*\(|\s*\.|\s*::|\s*->|\s*=(?!=)|\s*:(?!:))?")
-# What may stand before a keyword argument or option key.
-KEY_PRECEDERS = ("(", "{", ",")
-# The call heads that return their argument's path, changed in form: the trace follows their arguments.
-PATH_FUNCTIONS = frozenset(("str", "String", "Path", "PurePath", "Pathname", "abspath", "realpath", "normpath",
-                            "expanduser", "expandvars", "expand_path", "join", "resolve", "fspath", "format",
-                            "absolute", "strip", "rstrip", "lstrip", "joinpath", "as_posix"))
-CALL_RESULT = re.compile(r"\s*(?:new\s+|await\s+)?([A-Za-z_][\w.]*)\s*\(.*\)\s*$", re.S)
-# The call heads that make a root off the cwd: the home folder or a new temp folder.
-NEW_ROOT_FUNCTIONS = frozenset(("home", "gettempdir", "mkdtemp", "TemporaryDirectory"))
-# The call heads that return the cwd.
-CWD_FUNCTIONS = frozenset(("cwd", "getcwd", "getcwdb", "pwd"))
-# The call heads that join their later arguments onto their first (`os.path.join(B, 'a')`, `Path(B, 'a')`).
-JOIN_FUNCTIONS = frozenset(("join", "Path", "PurePath"))
-# The value a text opens with: a name, dotted or not, and the `(` of a call when one follows. A name glued to a quote
-# is a string prefix (`f"..."`), not a value.
-LEADING_VALUE = re.compile(r"""[\s(]*(?:new\s+|await\s+)?(\$?[A-Za-z_][\w.$]*)(?![\w.$'"])\s*(\()?""")
-# What may follow a call before a join operator: attributes and empty calls (`Path(x).parent`, `.resolve()`).
-CALL_TAIL = re.compile(r"(?:\s*\.\s*\w+(?:\s*\(\s*\))?)*")
-JOIN_OPERATOR = re.compile(r"\s*\)?\s*[/+]")
-RETURN_VALUE = re.compile(r"\breturn\b[ \t]*([^\n;]*)")
-# An assignment that unpacks into two or more names: (targets, right side).
-UNPACKING = re.compile(r"^[ \t]*(?:(?:const|let|var|my)\s+)?([\[(]?[\w$*]+(?:[ \t]*,[ \t]*[\w$*]+)+[\])]?)[ \t]*"
-                       r"=(?![=>])[ \t]*([^\n]+)", re.M)
-MAX_BASE_HOPS = 8
-# The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
-LOOP_TARGETS = r"[\w\s,()\[\]]*?"
-MAX_SCRIPT_BYTES = 1_000_000
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
-DIRECTORY_CHANGE_HINT = ("This gate checks a relative path against the session cwd and each cd folder before it; "
-                         "use an absolute path for the file you mean.")
-ESCAPE_HINT = (" If this deny is wrong (for example a command wrapper this gate does not recognize), re-run the "
-               "command with a trailing #skip-shell-write-gate comment — it disarms this gate for that one command.")
+# The variables a redirect or tee target takes from the environment.
+ENV_NAMES = ("TMPDIR", "HOME")
 
-
-class DenyError(Exception):
-    pass
-
-
-# The code an interpreter step runs, the arguments passed to it, and its family name.
-InterpreterCode = namedtuple("InterpreterCode", "code arguments family")
-# What scan_interpreter_arguments found: the code when no script file is run, else the script word and the arguments
-# after it.
-ArgumentScan = namedtuple("ArgumentScan", "code script_word rest")
 # The request of one hook event: the command, the session cwd, whether the agent is barred from the skip comment
-# (a subagent or a coder), and whether it is a coder.
-HookRequest = namedtuple("HookRequest", "command cwd cannot_skip coder")
-
-
-def words_of(text):
-    return [w for w in re.split("[ \t\n]+", text) if w]
-
-
-def trim(text):
-    return text.strip(SP)
-
-
-def is_inplace(program, segment):
-    if program in ("sed", "gsed"):
-        return bool(SED_INPLACE.search(segment))
-    if program == "perl":
-        return bool(PERL_I.search(segment)) and bool(PERL_PN.search(segment))
-    if program in ("awk", "gawk"):
-        return bool(AWK_INPLACE.search(segment))
-    return False
-
-
-def find_editor_word(segment):
-    # The in-place editor a step runs: its command word once the wrappers are dropped, or an editor named after an
-    # invoker (`xargs sed -i`, `find -exec sed -i`, `sh -c`).
-    # A docker, podman, kubectl or ssh call runs its editor elsewhere: its wrapper words are not peeled.
-    command_words = shell_command.command_after_wrappers(words_of(segment), peel_containers=False)
-    invoked = False
-    for index, word in enumerate(command_words):
-        base = word.rsplit("/", 1)[-1]
-        if base in ("sed", "gsed", "perl", "awk", "gawk") and (index == 0 or invoked):
-            return base
-        if base in ("xargs", "-exec", "-execdir", "sh", "bash", "zsh", "-c", "parallel"):
-            invoked = True
-    return None
-
-
-def resolve_target(raw, cwd):
-    path = shell_command.path_word(trim(raw))
-    if not path or path.startswith("-") or path.startswith("&") or path.startswith("/dev/"):
-        return None
-    if not shell_command.path_word_is_absolute(raw):
-        path = cwd + "/" + path
-    return path
+# (a subagent or a coder), whether it is a coder, and the ShellVariables of the whole command (None until run builds
+# it, and for a request that is no coder's).
+HookRequest = namedtuple("HookRequest", "command cwd cannot_skip coder variables", defaults=(None,))
+# A redirect or tee target: its word, the folders step_folders gives its step (the session cwd first), whether an
+# earlier step moved to a folder that is not a literal, and the index of its step in the top-level command (None for
+# text inside a `$(...)` span, whose values the reader does not prove).
+WrittenTarget = namedtuple("WrittenTarget", "raw folders unread_change step")
 
 
 def written_targets(core):
@@ -267,13 +126,6 @@ def regex_written_targets(core, skip_quoted):
     return targets
 
 
-def deny_text(subject, cannot_skip):
-    if cannot_skip:
-        return (f"[shell-write-gate] {subject} Use the Edit tool for an in-place change, or the Write tool for a new "
-                "file. This agent has no way to skip this gate.")
-    return f"[shell-write-gate] {subject} Use the Write or Edit tool." + ESCAPE_HINT
-
-
 def simple_command_texts(step):
     """The text of each simple command in a step, so a command inside a `( )` group or `$( )` is judged on its own.
     A step the parser cannot read is one text: the step without the `(` groups around it."""
@@ -303,7 +155,7 @@ def directory_changes(step):
     for words, _redirections, _piped in commands:
         words = shell_command.command_after_wrappers(words)
         if words and words[0] in DIRECTORY_COMMANDS:
-            expanded_words = [expand_env_names(word, ("TMPDIR", "HOME")) for word in words]
+            expanded_words = [expand_env_names(word, ENV_NAMES) for word in words]
             folders.append(shell_command.cd_folder(expanded_words))
     return folders
 
@@ -335,13 +187,14 @@ def folders_after_step(folders, step):
     return folders, unread_change
 
 
-def step_targets(code, cwd):
-    """(raw target, folders, unread_change) for every redirect and tee target of the command text, in order, with
-    the folders step_folders gives its step."""
+def step_targets(code, cwd, in_span):
+    """A WrittenTarget for every redirect and tee target of the command text, in order. in_span is True for the
+    text of a `$(...)` or backtick span."""
     targets = []
-    for step, folders, unread_change in step_folders(code, cwd):
+    for index, (step, folders, unread_change) in enumerate(step_folders(code, cwd)):
+        step_index = None if in_span else index
         for raw in written_targets(step):
-            targets.append((raw, folders, unread_change))
+            targets.append(WrittenTarget(raw, folders, unread_change, step_index))
     return targets
 
 
@@ -352,19 +205,6 @@ def code_texts(code):
     for text in texts:
         texts += shell_command.substitution_spans(text)
     return texts
-
-
-def git_path_check(path, *git_command):
-    try:
-        finished = subprocess.run(["git", "-C", shell_dirname(path), *git_command, "--", shell_basename(path)],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except OSError:
-        return False
-    return finished.returncode == 0
-
-
-def is_git_tracked(path):
-    return git_path_check(path, "ls-files", "--error-unmatch")
 
 
 def text_segments(text, cwd):
@@ -384,9 +224,8 @@ def read_request(raw):
         payload = json.loads(raw)
         command = jq_str(jq_get(payload, "tool_input", "command"))
     except (ValueError, JqError):
-        raise DenyError(
-            "[shell-write-gate] hook input did not parse — failing closed. Report this to the user."
-        ) from None
+        raise DenyError(tagged_message(INPUT_PARSE_FAIL, "hook input did not parse — failing closed. "
+                                                         "Report this to the user.")) from None
     agent = jq_str(jq_get(payload, "agent_type"))
     agent_id = jq_str(jq_get(payload, "agent_id"))
     coder = bool(script_utils.CODERS.match(agent))
@@ -406,19 +245,20 @@ def run(raw):
     command = request.command
     code = strip_comments(strip_heredocs(command))
     texts = code_texts(code)
+    request = request._replace(variables=ShellVariables(code) if request.coder else None)
     segment_folders = []
     targets = []
     text_targets = []
-    for text in texts:
+    for position, text in enumerate(texts):
         segment_folders += text_segments(text, request.cwd)
-        targets += step_targets(text, request.cwd)
+        targets += step_targets(text, request.cwd, in_span=position > 0)
         if shell_command.names_code_runner(text):
             text_targets += regex_written_targets(text, skip_quoted=False)
 
     if "#skip-shell-write-gate" in command and not request.cannot_skip:
         return
 
-    written_paths = {resolve_target(raw_target, request.cwd) for raw_target, _folders, _unread in targets} - {None}
+    written_paths = {resolve_target(target.raw, request.cwd) for target in targets} - {None}
     for segment, folders in segment_folders:
         check_script_writes(segment, folders, written_paths, request)
 
@@ -438,10 +278,11 @@ def run(raw):
 
 def check_redirect_targets(targets, text_targets, request):
     """Check each redirect and tee target: step_targets rows, then the targets of text read only by regex."""
-    for raw_target, folders, unread_change in targets:
-        check_written_target(raw_target, folders, unread_change, request.cannot_skip, request.coder)
+    for target in targets:
+        check_written_target(target, request)
+    text_request = request._replace(coder=False, variables=None)
     for raw_target in text_targets:
-        check_written_target(raw_target, [request.cwd], False, request.cannot_skip, False)
+        check_written_target(WrittenTarget(raw_target, [request.cwd], False, None), text_request)
 
 
 def check_script_writes(segment, folders, written_paths, request):
@@ -453,32 +294,36 @@ def check_script_writes(segment, folders, written_paths, request):
     raw_target, target = written
     cannot_skip = request.cannot_skip
     if len(folders) > 1 and not shell_command.path_word_is_absolute(raw_target):
-        raise DenyError(deny_text("a script run after a cd to " + folders[-1] + " writes the relative path "
+        raise DenyError(deny_text(SCRIPT_WRITE_REL_CD,
+                                  "a script run after a cd to " + folders[-1] + " writes the relative path "
                                   + raw_target + ", which is git-tracked under the session cwd or a cd folder. "
                                   + DIRECTORY_CHANGE_HINT,
                                   cannot_skip))
-    raise DenyError(deny_text("a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
+    raise DenyError(deny_text(SCRIPT_WRITE,
+                              "a script that writes " + target + " bypasses the Write/Edit hook pipeline. "
                               "Keep any scratch script in the scratchpad, never in the repo tree.",
                               cannot_skip))
 
 
 def check_in_place_edit(segment, folders, cannot_skip):
-    """Deny an in-place editor step whose target is not a file under the session temp root."""
-    word = find_editor_word(segment)
-    if word is None or not is_inplace(word, segment):
+    """Deny an in-place editor step unless every file it names is under the session temp root."""
+    editor = find_editor_word(segment)
+    if editor is None or not is_inplace(editor, segment):
         return
-    target = in_place_target(segment, word)
-    resolved = resolve_target(target, folders[-1])
-    if resolved is not None and is_under_claude_temp_root(resolved):
+    operands = file_operands(segment, editor)
+    resolved = [resolve_target(operand, folders[-1]) for operand in operands]
+    all_scratch = all(path is not None and is_under_claude_temp_root(path) for path in resolved)
+    if operands and not has_unseen_files(operands) and all_scratch:
         return
-    subject = "in-place editing of " + target + " bypasses the Write/Edit hook pipeline."
+    if operands:
+        subject = "in-place editing of " + ", ".join(operands) + " bypasses the Write/Edit hook pipeline."
+    else:
+        subject = (f"in-place editing by {editor} found no file operand it can read, so the file it edits is "
+                   "unknown, and it bypasses the Write/Edit hook pipeline.")
     # An agent with no Write or Edit can follow this; a tracked file gets no copy route.
-    if resolved is None or not is_git_tracked(resolved):
+    if not any(path is not None and is_git_tracked(path) for path in resolved):
         subject += f" An in-place edit of a scratch file under {claude_temp_root()} passes."
-    raise DenyError(deny_text(subject, cannot_skip))
-
-
-RESTORE_HINT = "Restore a tracked file from a revision with `git restore --source=<rev> -- <path>`."
+    raise DenyError(deny_text(INPLACE_EDIT, subject, cannot_skip))
 
 
 def reads_file_from_revision(text):
@@ -501,620 +346,13 @@ def reads_file_from_revision(text):
     return False
 
 
-def in_place_target(segment, editor):
-    """The file an in-place editor step names: its last word once redirections are dropped, or the whole segment
-    when that word is an option or the editor itself."""
-    words = shell_command.segment_words(segment)
-    target = words[-1] if words else ""
-    if not target or target.startswith("-") or target == editor:
-        return segment
-    return target
-
-
-def peel_package_runner(words):
-    """The words after an `npx` or `pnpm exec` call and its flags, so the program it runs is the command word."""
-    if not words:
-        return words
-
-    name = os.path.basename(words[0])
-    if name == "npx":
-        rest = words[1:]
-    elif name == "pnpm" and words[1:2] == ["exec"]:
-        rest = words[2:]
-    else:
-        return words
-
-    while rest and rest[0].startswith("-"):
-        takes_value = rest[0] in PACKAGE_RUNNER_VALUE_FLAGS
-        rest = rest[2:] if takes_value else rest[1:]
-    return rest
-
-
-def program_family(program):
-    """The family name ("python", "node", "ruby" or "perl") of an interpreter program."""
-    for pattern, family in PROGRAM_FAMILIES:
-        if pattern.fullmatch(program):
-            return family
-    return None
-
-
-def interpreter_code(segment, cwd, written_paths, command):
-    """(code, arguments, family name) an interpreter step runs: the `-c`/`-e` code, or the text of an untracked script
-    file. A script the same command writes first (`cat > x.py <<EOF ... && python3 x.py`) does not exist yet, so its
-    code is the whole command, heredoc bodies included. None for any other step, a module run, or a git-tracked or
-    git-ignored script: tracked code is reviewed, and an ignored file is a build output or dependency rather than an
-    ad hoc edit."""
-    words = shell_command.command_after_wrappers(shell_command.segment_words(segment), peel_containers=False)
-    words = peel_package_runner(words)
-    if not words or not INTERPRETER.fullmatch(os.path.basename(words[0])):
-        return None
-
-    program = os.path.basename(words[0])
-    family_name = program_family(program)
-    family = shell_command.INTERPRETER_FAMILIES[family_name]
-    arguments = words[1:]
-    if program == "deno" and arguments[:1] == ["eval"]:
-        return deno_eval_code(arguments[1:], family_name)
-    if program in ("deno", "bun") and arguments[:1] == ["run"]:
-        arguments = arguments[1:]
-
-    scan = scan_interpreter_arguments(program, family, family_name, arguments)
-    if scan.script_word is None:
-        return scan.code
-
-    script = resolve_target(scan.script_word, cwd)
-    if script in written_paths:
-        return InterpreterCode(command, scan.rest, family_name)
-    script_text = untracked_script_text(script)
-    if script_text is None:
-        return None
-    return InterpreterCode(script_text, scan.rest, family_name)
-
-
-def deno_eval_code(arguments, family_name):
-    """The code of a `deno eval` call, whose flags come before it; None when it has none."""
-    code_arguments = arguments
-    while code_arguments and code_arguments[0].startswith("-"):
-        code_arguments = code_arguments[1:]
-    if not code_arguments:
-        return None
-    return InterpreterCode(code_arguments[0], code_arguments[1:], family_name)
-
-
-def inline_code_after(arguments, index, family_name):
-    """The inline code at arguments[index], with the arguments after it; None when the flag ends the line."""
-    if index >= len(arguments):
-        return None
-    return InterpreterCode(arguments[index], arguments[index + 1:], family_name)
-
-
-def scan_interpreter_arguments(program, family, family_name, arguments):
-    """Walk an interpreter's arguments to the first thing that settles what code it runs: inline code or a flag that
-    reads none (the `code` field, set with `script_word` None), or the script file word and the arguments after it."""
-    value_options = set(family["value_options"])
-    if program == "deno":
-        value_options.update(DENO_VALUE_FLAGS)
-    inline_code = re.compile(r"-[a-zA-Z]*[" + family["inline_code_letters"] + "]")
-    index = 0
-    while index < len(arguments):
-        word = arguments[index]
-        index += 1
-        if inline_code.fullmatch(word) or word in family["inline_code_flags"]:
-            return ArgumentScan(inline_code_after(arguments, index, family_name), None, None)
-        if word in family["no_stdin_code_flags"]:
-            return ArgumentScan(None, None, None)
-        if word in value_options:
-            index += 1
-            continue
-        if word.startswith("-"):
-            continue
-        return ArgumentScan(None, word, arguments[index:])
-    return ArgumentScan(None, None, None)
-
-
-def untracked_script_text(script):
-    """The text of a script file that exists, is no larger than MAX_SCRIPT_BYTES and is neither git-tracked nor
-    git-ignored; None for any other path (None included) or a file that cannot be read."""
-    if script is None or not os.path.isfile(script):
-        return None
-    if is_git_tracked(script) or script_utils.is_git_ignored(script):
-        return None
-    try:
-        if os.path.getsize(script) > MAX_SCRIPT_BYTES:
-            return None
-        with open(script, encoding="utf-8", errors="replace") as script_file:
-            return script_file.read()
-    except OSError:
-        return None
-
-
-def write_statements(code, family):
-    """(statement, target) for each file write in code of the interpreter family ("python", "node", "ruby" or "perl").
-    The statement is the `;`-separated part of the write's line, extended through the close of any bracket the write
-    opens, so a tracked file the code only reads elsewhere does not count. The target is the part of it that names the
-    written file. A backtick runs a command only in perl and ruby."""
-    writes = []
-    for match in FILE_WRITE.finditer(code):
-        if match.group(0) == "`" and family not in BACKTICK_FAMILIES:
-            continue
-
-        statement, statement_start = statement_around(code, match)
-        whole_call = bool(match.group("whole"))
-        target = write_target_text(statement, match.start() - statement_start, whole_call)
-        if target is not None:
-            writes.append((statement, target))
-    return writes
-
-
-def runs_editor(call):
-    """Whether a child process call's text names a program that writes a file: `tee`, `cp`, `mv`, `rm`, `install`,
-    or `sed -i`, `perl -pi` and `awk -i inplace`. Quotes, commas and brackets are read as spaces, so an argument list
-    (`['sed', '-i', ...]`) reads like a command line. A program counts only in program position: the word after the
-    call's name (the first word of a backtick span), or the word after a shell separator (`;`, `&&`, `||`, `|`, a lone
-    `&`, or a newline) or an `args=` keyword. A newline after a comma or an opening bracket continues an argument
-    list and is no separator, except inside a string, where a newline always separates shell lines."""
-    call = sub_outside_strings(ARGUMENT_LIST_NEWLINE, r"\1 ", call)
-    call = sub_outside_strings(KEYWORD_ARGS, " ; ", STRING_PREFIX_BEFORE_QUOTE.sub("", call))
-    command_line = re.sub(r"""[\[\](){}'",`]""", " ", call)
-    steps = [step for _operator, step in shell_command.split_command_steps(command_line)]
-    for step_index, step in enumerate(steps):
-        words = words_of(step)
-        program_index = 0 if step_index > 0 or call.startswith("`") else 1
-        if program_index >= len(words):
-            continue
-
-        program = words[program_index].rsplit("/", 1)[-1]
-        arguments_text = " ".join(words[program_index + 1:])
-        if program in WRITER_PROGRAMS or is_inplace(program, arguments_text):
-            return True
-    return False
-
-
-def last_argument_target(arguments):
-    """The target text of a write whose path is its last positional argument, plus its keyword arguments' values."""
-    # A trailing comma leaves an empty last part. A keyword argument is an option, but its value still counts.
-    filled_arguments = [argument for argument in arguments if trim(argument)]
-    keyword_arguments = [argument for argument in filled_arguments if KEYWORD_ARGUMENT.match(argument)]
-    positional_arguments = [argument for argument in filled_arguments if argument not in keyword_arguments]
-    return ",".join(positional_arguments[-1:] + keyword_arguments)
-
-
-def write_target_text(statement, write_start, whole_call):
-    """The text that names what a write call writes, or None for a call that writes nothing: an `open` with no write
-    mode, a `str.replace`, or a child process that runs no editor. The target is the call itself for a child process
-    and fileinput's in-place mode; the receiver of `.write_text(`; the receiver and first argument of a method `.open(`;
-    the receiver and arguments of a method that moves or deletes; the last argument of a `shutil` copy or perl open;
-    the first argument of a call that writes content; else all the arguments (a delete, move or rename)."""
-    call = statement[write_start:]
-    if whole_call:
-        return call if call.startswith("fileinput") or runs_editor(call) else None
-
-    if statement.startswith(".write_", write_start):
-        return receiver_text(statement[:write_start])
-
-    # A call with no parenthesis after its name (`unlink $x or die(...)`) has its arguments up to the end of the line,
-    # whatever parenthesis follows.
-    call_head = CALL_HEAD.match(call)
-    if call_head is None:
-        write_word = call.split(None, 1)[0]
-        arguments_start = write_start + len(write_word)
-    else:
-        arguments_start = write_start + call_head.end()
-    arguments = split_arguments(statement, arguments_start, multiline=call_head is not None)
-    if LAST_ARGUMENT_WRITE.match(statement, write_start):
-        return last_argument_target(arguments)
-    if SECOND_ARGUMENT_WRITE.match(statement, write_start):
-        return arguments[1] if len(arguments) > 1 else ",".join(arguments)
-    if statement.startswith(".", write_start):
-        if call.startswith(".replace") and len(arguments) != 1:
-            return None
-        return receiver_text(statement[:write_start]) + "," + ",".join(arguments)
-    if statement.startswith("open", write_start):
-        return open_target(statement, write_start, arguments)
-    if FIRST_ARGUMENT_WRITE.match(statement, write_start):
-        return arguments[0]
-    return ",".join(arguments)
-
-
-def open_target(statement, write_start, arguments):
-    """The target text of an `open` call, or None when it has no write mode."""
-    is_method = statement[write_start - 1:write_start] == "."
-    modes = arguments if is_method else arguments[1:]
-    if not any(WRITE_MODE.search(mode) or (not is_method and NAMED_MODE.match(mode)) for mode in modes):
-        return None
-
-    # `p.open('w')` writes its receiver; `io.open(path, 'w')` and `codecs.open(...)` write their first argument.
-    return receiver_text(statement[:write_start - 1]) + "," + arguments[0] if is_method else arguments[0]
-
-
-def binding_texts(code, name):
-    """The text that binds `name`: an assignment's right side, a for loop's iterable (the element at the name's
-    position in a multi-name target), and for a function parameter, the argument at its position in each call."""
-    word = re.escape(name.lstrip("$"))
-    texts = assigned_texts(code, word)
-    texts += loop_binding_texts(code, name, word)
-    texts += parameter_binding_texts(code, word)
-    return texts
-
-
-def loop_binding_texts(code, name, word):
-    """The iterable of each for loop whose target list holds `name` (`word` is its regex-escaped form)."""
-    loop = re.compile(rf"\bfor\s*\(?\s*(?:(?:const|let|var|my)\s+)?(?P<targets>{LOOP_TARGETS}\b{word}\b{LOOP_TARGETS})"
-                      r"\s(?:in|of)\s")
-    texts = []
-    for match in loop.finditer(code):
-        texts += one_loop_texts(code, name, match)
-    return texts
-
-
-def one_loop_texts(code, name, match):
-    """The text a for loop binds to `name`: its whole iterable, or the element at the name's position in a
-    multi-name target."""
-    iterable_start = match.end()
-    iterable = ",".join(split_arguments(code, iterable_start))
-    targets = [target.strip(" \t\n()[]$") for target in match.group("targets").split(",")]
-    bare_name = name.lstrip("$")
-    position = targets.index(bare_name) if bare_name in targets else None
-    if len(targets) == 1 or position is None:
-        return [iterable]
-    if iterable.lstrip().startswith("zip("):
-        zip_arguments = split_arguments(iterable, iterable.index("(") + 1)
-        if position < len(zip_arguments):
-            return [zip_arguments[position]]
-        return [iterable]
-    iterable_name = trim(iterable).rstrip(":{").strip(SP).removesuffix(".items()")
-    sources = assigned_texts(code, re.escape(iterable_name)) if iterable_name.isidentifier() else []
-    fields = []
-    for source in sources or [iterable]:
-        fields += tuple_fields(source, position)
-    return [field for field in fields if field.strip()] or [iterable]
-
-
-def parameter_binding_texts(code, word):
-    """The argument at the parameter's position in each call of each function that has a parameter named `word`
-    (regex-escaped)."""
-    parameter = re.compile(rf"(?<![\w$]){word}\b")
-    texts = []
-    for function in FUNCTION_DEFINITION.finditer(code):
-        parameters = [part.strip(SP) for part in function.group(2).split(",")]
-        positions = [index for index, part in enumerate(parameters) if parameter.match(part)]
-        if not positions:
-            continue
-        texts += call_argument_texts(code, function, positions[0])
-    return texts
-
-
-def call_argument_texts(code, function, position):
-    """The argument at `position` in each call of a function the code defines (`function` is its definition match)."""
-    function_name = re.escape(function.group(1))
-    call_pattern = rf"(?<![\w.]){function_name}\s*\("
-    texts = []
-    for call in re.finditer(call_pattern, code):
-        if call.start() == function.start(1):
-            continue
-        arguments = split_arguments(code, call.end(), multiline=True)
-        if position < len(arguments) and trim(arguments[position]):
-            texts.append(arguments[position])
-    return texts
-
-
-def assigned_texts(code, word):
-    """The right side of each assignment, augmented assignment and unpacking (`src, dst = ...`, `my ($out) = ...`,
-    `const [, out] = ...`) included, to the (regex-escaped) name `word`."""
-    assignment = re.compile(rf"(?:^|[;{{:])[ \t]*(?:(?:const|let|var|my|our)\s+)?[\[(]?\s*(?:[\w$*.]*\s*,\s*)*"
-                            rf"\*?\$?{word}\s*(?::[^=\n]*)?(?:\s*,\s*[\w$*.]*)*\s*[\])]?\s*[-+*/%|&^]*=(?![=>])", re.M)
-    texts = []
-    for match in assignment.finditer(code):
-        right_side = split_arguments(code, match.end())
-        texts.append(",".join(right_side))
-    return texts
-
-
-def named_texts(code, text):
-    """`text` plus the text that binds each name it uses, followed through MAX_NAME_HOPS bindings."""
-    texts = [text]
-    frontier = [text]
-    seen = set()
-    for _hop in range(MAX_NAME_HOPS):
-        names = set()
-        for part in frontier:
-            names.update(CODE_NAME.findall(part))
-        names -= seen
-        seen |= names
-        frontier = []
-        for name in sorted(names):
-            frontier += binding_texts(code, name)
-        texts += frontier
-    return texts
-
-
-def writes_reach_argv(code, family):
-    """Whether any write's target can come from the command line, so a tracked file passed as an argument may be the
-    file written. A name that no assignment, loop or call argument binds counts as reaching argv (an unpacking of a
-    parsed result, a callback parameter, a name the code does not set), except a name the code imports or the
-    language supplies, and a capitalized name (`open(OUT, 'w')`), read as a class or module. Each name is traced
-    once across all the writes."""
-    supplied_names = imported_names(code) | LANGUAGE_NAMES
-    traced = {}
-    targets = [target for _statement, target in write_statements(code, family)]
-    return any(text_reaches_argv(code, target, traced, supplied_names) for target in targets)
-
-
-def text_reaches_argv(code, text, traced, supplied_names):
-    """Whether `text` names argv or a name that reaches it. A string literal counts only for what it interpolates; the
-    name before a call is a function, a name before `=` or `:` after a `(`, `{` or `,` is a keyword argument or option
-    key, and a capitalized name that nothing binds is a class or module (`File.join`, `File.open`), not a variable."""
-    text = PERL_FILE_TEST.sub(" ", code_outside_strings(text))
-    if ARGV_SOURCE.search(text):
-        return True
-
-    for found in NAME_USE.finditer(text):
-        name = found.group(1)
-        follower = (found.group(2) or "").strip()
-        before = text[:found.start(1)].rstrip()[-1:]
-        if follower == "(" or (follower in ("=", ":") and before in KEY_PRECEDERS):
-            continue
-        if name[0].isupper() and name not in traced and not binding_texts(code, name):
-            traced[name] = False
-        if name_reaches_argv(code, name, traced, supplied_names):
-            return True
-    return False
-
-
-def name_reaches_argv(code, name, traced, supplied_names):
-    """Whether `name`, traced through the text that binds it, reaches argv; traced holds each name's answer. A name
-    bound through itself adds nothing. The result of a call to a function that is not a PATH_FUNCTIONS member is a new
-    value: only argv written in the call itself reaches it."""
-    if name in traced:
-        return traced[name]
-
-    traced[name] = False
-    bindings = binding_texts(code, name)
-    unbound = not bindings and name not in supplied_names
-    traced[name] = unbound or any(binding_reaches_argv(code, text, traced, supplied_names) for text in bindings)
-    return traced[name]
-
-
-def binding_reaches_argv(code, text, traced, supplied_names):
-    call = CALL_RESULT.fullmatch(text)
-    if call and call.group(1).rsplit(".", 1)[-1] not in PATH_FUNCTIONS:
-        argument_code = code_outside_strings(text)
-        return bool(ARGV_SOURCE.search(argument_code))
-
-    return text_reaches_argv(code, text, traced, supplied_names)
-
-
-def path_candidates(text):
-    """Each string literal in text, and all of them joined with `/` (`ROOT / "docs" / "a.md"`)."""
-    literals = literals_in(text)
-    joined = ["/".join(literals)] if len(literals) > 1 else []
-    return literals + joined
-
-
-def literals_in(text):
-    """The contents of each string literal in text."""
-    return [match.group(2) for match in STRING_LITERAL.finditer(text)]
-
-
-def absolute_root(code, target):
-    """The absolute folder a write target joins onto (`R / 'a'`, `T + f`, `os.path.join(R, 'a')`), else None. The
-    root is the target's first name that is not called or followed by a `.`, followed by a join operator, and whose
-    every binding (an assignment, an augmented assignment, a loop or a call argument) is only one string
-    literal (a call head or attribute may surround it, no other name), an absolute path, the same one in all of
-    them. A name bound to different paths, to a relative one, or to a join with another name is no root. The name
-    scan does not skip quoted text, so a target whose first name sits inside a leading string literal
-    (`Path('/tmp/x') / 'a'`, `'/tmp/x/' + R`, `'sub/' + R`) has no root."""
-    for match in CODE_NAME.finditer(target):
-        if re.match(r"\s*[(.]", target[match.end():]):
-            continue
-        if not re.match(r"\s*\)?\s*[/+,]", target[match.end():]):
-            return None
-        bindings = binding_texts(code, match.group())
-        literals = [literals_in(text) for text in bindings]
-        if not literals or any(len(found) != 1 or not found[0].startswith("/") for found in literals):
-            return None
-        if len({found[0] for found in literals}) != 1:
-            return None
-        if any(reads_other_name(text) for text in bindings):
-            return None
-        return literals[0][0]
-    return None
-
-
-def reads_other_name(text):
-    """Whether text, its string literals removed, holds a name that is neither called nor followed by a `.`."""
-    rest = STRING_LITERAL.sub("", text)
-    return any(not re.match(r"\s*[(.]", rest[name.end():]) for name in CODE_NAME.finditer(rest))
-
-
-def joined_off_cwd(code, text):
-    """Whether text is one value that joins its literals onto a base that cannot be the cwd: the base `B` of
-    `B / 'a'`, `B + 'a'`, `join(B, 'a')` or `Path(B, 'a')` opens text, and base_may_be_cwd finds it cannot be. The
-    literals then name files under that base, not under the cwd."""
-    if split_arguments(text, 0, multiline=True) != [text]:
-        return False
-    leading = LEADING_VALUE.match(text)
-    if leading is None:
-        return False
-
-    base_end = leading.end()
-    if leading.group(2):
-        arguments = split_arguments(text, leading.end(), multiline=True)
-        if leading.group(1).rsplit(".", 1)[-1] in JOIN_FUNCTIONS and len(arguments) > 1:
-            return not base_may_be_cwd(code, arguments[0], frozenset())
-        call_close = next((index for index, char in top_level_positions(text, leading.end()) if char in ")]}"),
-                          len(text))
-        base_end = CALL_TAIL.match(text, call_close + 1).end() if call_close < len(text) else len(text)
-    if not JOIN_OPERATOR.match(text, base_end):
-        return False
-    return not base_may_be_cwd(code, text, frozenset())
-
-
-def base_may_be_cwd(code, text, seen, position=None):
-    """Whether the value text opens with may be the cwd or a folder under it. A string literal, a cwd call, argv, a
-    name with no binding and a trace past MAX_BASE_HOPS steps may be. A call in PATH_FUNCTIONS is its first argument; a
-    call in NEW_ROOT_FUNCTIONS makes a root off the cwd; a call to a function the code defines is what it returns;
-    any other call, and a function with no return found, may be. A name may be when any binding may be; a binding
-    through itself adds nothing. position is the part of a returned tuple a name is unpacked from."""
-    leading = LEADING_VALUE.match(text)
-    if leading is None:
-        return True
-    name = leading.group(1)
-    head = name.rsplit(".", 1)[-1]
-    if head in CWD_FUNCTIONS or ARGV_SOURCE.search(name):
-        return True
-
-    key = name + "()" if leading.group(2) else name
-    if key in seen:
-        return False
-    if len(seen) >= MAX_BASE_HOPS:
-        return True
-    seen = seen | {key}
-
-    if leading.group(2):
-        if head in PATH_FUNCTIONS:
-            arguments = [argument for argument in split_arguments(text, leading.end(), multiline=True)
-                         if trim(argument)]
-            return not arguments or base_may_be_cwd(code, arguments[0], seen)
-        returned = returned_texts(code, head, position)
-        if not returned and head in NEW_ROOT_FUNCTIONS and not defines_function(code, head):
-            return False
-        return not returned or any(base_may_be_cwd(code, value, seen) for value in returned)
-
-    bindings = binding_texts(code, name)
-    return not bindings or any(base_may_be_cwd(code, binding, seen, unpacked_position(code, name, binding))
-                               for binding in bindings)
-
-
-def unpacked_position(code, name, binding):
-    """The position of name among the targets of an unpacking (`tree, sha = build()`) whose right side is binding,
-    else None."""
-    for unpacking in UNPACKING.finditer(code):
-        targets = [target.strip(SP + "()[]$*") for target in unpacking.group(1).split(",")]
-        if name.lstrip("$") in targets and trim(unpacking.group(2)).startswith(trim(binding)):
-            return targets.index(name.lstrip("$"))
-    return None
-
-
-def defines_function(code, function_name):
-    """Whether the code binds this name: a function definition, an assignment (a lambda or an alias), or an import
-    alias."""
-    if any(definition.group(1) == function_name for definition in FUNCTION_DEFINITION.finditer(code)):
-        return True
-    if re.search(rf"\bimport\b[^\n]*\bas\s+{re.escape(function_name)}\b", code):
-        return True
-    return bool(binding_texts(code, function_name))
-
-
-def returned_texts(code, function_name, position=None):
-    """Each value a function the code defines returns, a returned tuple split into its parts, or only the part at
-    position when the tuple has one there. A function's body runs to the next function definition. Empty for a
-    function the code does not define."""
-    definitions = list(FUNCTION_DEFINITION.finditer(code))
-    values = []
-    for index, definition in enumerate(definitions):
-        if definition.group(1) != function_name:
-            continue
-        body_end = definitions[index + 1].start() if index + 1 < len(definitions) else len(code)
-        for returned in RETURN_VALUE.finditer(code, definition.end(), body_end):
-            parts = [part for part in split_arguments(returned.group(1), 0) if trim(part)]
-            values += parts[position:position + 1] if position is not None and position < len(parts) else parts
-    return values
-
-
-def written_candidates(code, family):
-    """The path texts code's file writes name: each literal in a write statement, and each literal its target is
-    bound to. When a write's target joins onto an absolute_root, the target's own literals and the names it reads are
-    joined onto that root; other literals of the statement stay relative. A text joined_off_cwd names no candidate."""
-    candidates = []
-    for statement, target in write_statements(code, family):
-        root = absolute_root(code, target)
-        if root is None:
-            candidates += candidates_off_root(code, statement, target)
-        else:
-            candidates += candidates_on_root(code, statement, target, root)
-    return candidates
-
-
-def candidates_off_root(code, statement, target):
-    """The path texts of one write whose target joins onto no absolute root."""
-    literals = literals_in(statement)
-    own = literals_in(target)
-    if joined_off_cwd(code, target):
-        literals = list((Counter(literals) - Counter(own)).elements())
-    named = []
-    for text in named_texts(code, target):
-        if joined_off_cwd(code, text):
-            continue
-        named += path_candidates(text)
-    return literals + named
-
-
-def candidates_on_root(code, statement, target, root):
-    """The path texts of one write whose target joins onto an absolute root: its own literals and the names it reads
-    are joined onto the root; the other literals of the statement stay relative."""
-    literals = literals_in(statement)
-    own = literals_in(target)
-    named = []
-    for text in named_texts(code, target):
-        named += path_candidates(text)
-    other = list((Counter(literals) - Counter(own)).elements())
-    return other + [literal if literal.startswith("/") else root.rstrip("/") + "/" + literal
-                    for literal in own + named]
-
-
-def interpreter_written_target(segment, folders, written_paths, command):
-    """(raw path, path) of the git-tracked file an interpreter step opens for writing, else None: code with a file
-    write whose statement names a tracked file as a string literal, whose target is a name bound (through
-    assignments, for loops and function calls) to a tracked file's literal or to literals that join into one, or a
-    tracked file passed as an argument unless the trace finds that no write target comes from argv. folders holds the
-    session cwd, then each literal cd folder before the step, and a relative path counts when it names a tracked
-    file under any of them. A path the code builds any other way is not seen."""
-    cwd = folders[0]
-    found = interpreter_code(segment, cwd, written_paths, command)
-    if found is None:
-        return None
-
-    raw_code, arguments, family = found
-
-    # A bracket or quote inside a comment cuts a literal, and a `#` that starts no comment (a JS regex, perl's
-    # `s/a #b/`) cuts real code, so trace the code both with and without comments.
-    codes = dict.fromkeys((raw_code, without_comments(raw_code)))
-    if not any(write_statements(code, family) for code in codes):
-        return None
-
-    candidates = []
-    for code in codes:
-        candidates += written_candidates(code, family)
-
-    # A tracked file passed to code whose writes all name files of their own is read, not written.
-    if arguments and any(writes_reach_argv(code, family) for code in codes):
-        candidates += arguments
-    for candidate in candidates:
-        tracked_path = tracked_candidate_path(candidate, folders)
-        if tracked_path:
-            return candidate, tracked_path
-    return None
-
-
-def tracked_candidate_path(candidate, folders):
-    """The git-tracked file a candidate path names under the session cwd (folders[0]) or, when relative, any folder."""
-    candidate_folders = [folders[0]] if shell_command.path_word_is_absolute(candidate) else folders
-    for folder in candidate_folders:
-        path = resolve_target(candidate, folder)
-        path = os.path.normpath(path) if path else path
-        if path and os.path.isfile(path) and is_git_tracked(path):
-            return path
-    return None
-
-
 def check_tracked_target(raw_target, folder, cannot_skip, after_directory_change):
     path = resolve_target(raw_target, folder)
     if path is None:
         return
     if os.path.islink(path):
         resolved = os.path.realpath(path)
-        if resolved and os.path.exists(shell_dirname(resolved)):
+        if resolved and os.path.exists(hook_input.bash_dirname(resolved)):
             path = resolved
     if not is_git_tracked(path):
         return
@@ -1123,39 +361,99 @@ def check_tracked_target(raw_target, folder, cannot_skip, after_directory_change
                "(comment/prose/budget gates).")
     if after_directory_change:
         subject += " " + DIRECTORY_CHANGE_HINT
-    raise DenyError(deny_text(subject, cannot_skip))
+    raise DenyError(deny_text(TRACKED_TARGET, subject, cannot_skip))
 
 
-def check_written_target(raw_target, folders, unread_change, cannot_skip, coder):
+def env_expanded(target, request):
+    """The target with `$TMPDIR` and `$HOME` replaced from the environment, except a name the command may set."""
+    variables = request.variables
+    assigned = variables.assigned_names if variables else frozenset()
+    names = [name for name in ENV_NAMES if name not in assigned]
+    return expand_env_names(target.raw, names)
+
+
+def check_written_target(target, request):
+    """Check one redirect or tee target. A coder's target that holds a variable is checked once for each value the
+    command proves the variable can take, and each value must lie under a temp dir."""
+    literals = proven_literals(target, request)
+    if literals is None:
+        check_literal_target(target, request)
+        deny_option_like_new_file(env_expanded(target, request), target.folders[0], request)
+        return
+    for literal in literals:
+        check_literal_target(target._replace(raw=literal), request)
+        deny_option_like_new_file(literal, target.folders[0], request)
+        check_under_temp(target, literal, request)
+
+
+def proven_literals(target, request):
+    """The literal texts a coder's target with a variable expands to, or None for a target with no variable left (or
+    a request that is no coder's) and for one whose variable is not proven, which check_literal_target denies. A
+    target inside a `$(...)` span has no step, so none of its variables is proven."""
+    if not request.coder or request.variables is None or target.step is None:
+        return None
+    expanded = env_expanded(target, request)
+    if "$" not in expanded:
+        return None
+    return request.variables.literal_values(expanded, target.step)
+
+
+def check_under_temp(target, literal, request):
+    """Deny a proven value that leaves every temp dir once resolved. is_under_temp_dir follows symlinks before it
+    collapses `..`, so no text collapse of `..` may come first."""
+    path = resolve_target(literal, target.folders[0])
+    # No path: a stream, a /dev file, an empty word, or an option-like value that deny_option_like_new_file decides.
+    if path is None or is_under_temp_dir(path):
+        return
+    raise DenyError(deny_text(CODER_VAR_OUTSIDE_TEMP,
+                              f"{target.raw} expands to {path}, outside every temp dir, so this redirect or tee may "
+                              "create a new file there. Write to an explicit path.", request.cannot_skip))
+
+
+def deny_option_like_new_file(expanded, cwd, request):
+    """Deny a coder's option-like target (`-foo`): resolve_target gives it no path, yet the shell creates a file of
+    that name in the cwd. A stream (`&1`) or a /dev file is no file."""
+    if not request.coder or resolve_target(expanded, cwd) is not None:
+        return
+    word = trim(expanded)
+    if not word or is_stream_or_device(word):
+        return
+    raise DenyError(deny_text(CODER_NEW_FILE, cwd + "/" + word + " would be a new file created from the shell, "
+                              "outside a temp dir. A new file bypasses the Write/Edit hook pipeline.", True))
+
+
+def check_literal_target(target, request):
     """Deny a write to a git-tracked file, a relative target after a folder change the gate cannot read, and for a
     coder a relative target after any folder change or a new file outside a temp dir. folders holds the session cwd
     first, then each folder a literal `cd` or `pushd` moved to before the write."""
+    cannot_skip = request.cannot_skip
+    folders = target.folders
+    raw_target = target.raw
     cwd = folders[0]
-    expanded = expand_env_names(raw_target, ("TMPDIR", "HOME"))
+    expanded = env_expanded(target, request)
     relative = not shell_command.path_word_is_absolute(expanded)
-    after_directory_change = relative and (unread_change or len(folders) > 1)
+    after_directory_change = relative and (target.unread_change or len(folders) > 1)
 
     for folder in folders if relative else [cwd]:
-        check_tracked_target(raw_target, folder, cannot_skip, after_directory_change)
+        check_tracked_target(expanded, folder, cannot_skip, after_directory_change)
 
+    coder_path = resolve_target(expanded, cwd) if request.coder else None
+    if coder_path is not None and "$" in coder_path:
+        raise DenyError(deny_text(CODER_UNRESOLVED_VAR, raw_target + " is a redirect or tee target this gate cannot "
+                                  "resolve, so it may create a new file outside a temp dir. Write to an explicit "
+                                  "path.", True))
     if relative:
-        if unread_change:
-            raise DenyError(deny_text(raw_target + " is a relative write target after a cd to a folder this gate "
-                                      "cannot read. " + DIRECTORY_CHANGE_HINT, cannot_skip))
-        if coder and after_directory_change:
-            raise DenyError(deny_text(raw_target + " is a relative write target after a cd. " + DIRECTORY_CHANGE_HINT,
-                                      True))
-    if not coder:
-        return
-    coder_path = resolve_target(expanded, cwd)
+        if target.unread_change:
+            raise DenyError(deny_text(REL_TARGET_UNREAD_CD, raw_target + " is a relative write target after a cd to "
+                                      "a folder this gate cannot read. " + DIRECTORY_CHANGE_HINT, cannot_skip))
+        if request.coder and after_directory_change:
+            raise DenyError(deny_text(CODER_REL_TARGET_CD, raw_target + " is a relative write target after a cd. "
+                                      + DIRECTORY_CHANGE_HINT, True))
     if coder_path is None:
         return
-    if "$" in coder_path:
-        raise DenyError(deny_text(raw_target + " is a redirect or tee target this gate cannot resolve, so it may "
-                                  "create a new file outside a temp dir. Write to an explicit path.", True))
     if not os.path.exists(coder_path) and not is_under_temp_dir(coder_path):
-        raise DenyError(deny_text(coder_path + " would be a new file created from the shell, outside a temp dir. "
-                                  "A new file bypasses the Write/Edit hook pipeline.", True))
+        raise DenyError(deny_text(CODER_NEW_FILE, coder_path + " would be a new file created from the shell, outside "
+                                  "a temp dir. A new file bypasses the Write/Edit hook pipeline.", True))
 
 
 def main():
@@ -1171,8 +469,8 @@ def main():
     except Exception:
         internal = 1
     if internal is not None:
-        hook_input.emit_decision("deny", f"[shell-write-gate] internal error (exit {internal}) — failing closed. "
-                                         "Report this to the user.")
+        hook_input.emit_decision("deny", tagged_message(INTERNAL_ERROR, f"internal error (exit {internal}) — failing "
+                                                                         "closed. Report this to the user."))
     return 0
 
 

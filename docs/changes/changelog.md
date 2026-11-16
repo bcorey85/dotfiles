@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-979 changes
+980 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -42,6 +42,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [shell write gate proves a temp target that holds a variable, and tags every deny](notes/2026-11-15-shell-write-gate-proves-a-temp-target-that-holds-a.md) [script/shell-write-gate, script/shell-command, agent/coder] A coder may now redirect into a temp file whose name holds a variable the gate can prove, such as a `for` name over literal words. Every deny carries a fixed tag, so each deny branch can be counted.
 * [An approval ask survives a resume, only the user rules it, and a keep ruling is not asked again](notes/2026-11-15-an-approval-ask-survives-a-resume-and-only-the-user.md) [script/review-loop, script/phase-asks, script/review-fix-asks, script/review-asks] A coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md stays an open ask across a run that died, a session is refused unless it records a user ruling with --by user, and a resumed run does not file again an ask the session rejected.
 * [Register the ledger MCP server under the name sessions call](notes/2026-11-15-register-the-ledger-mcp-server-under-the-name.md) [script/mcp-ledger] scripts/mcp_ledger registers ledger mcp as the user-scope server ledger (the name behind mcp__ledger__*), counts a bare or full-path command as registered, and removes an old agent-memory entry for the same command.
 * [a review-loop coder edit to a CLAUDE.md file becomes an ask for the user](notes/2026-11-15-a-review-loop-coder-edit-to-a-claude-md-file.md) [script/review-loop] A fix coder that changes a file named CLAUDE.md, CLAUDE.local.md or AGENTS.md, unless a finding the user ruled on names it, or a session ruled on the approval ask itself, leaves an open ask in the packet, so the edit never rides out as a silent fix.

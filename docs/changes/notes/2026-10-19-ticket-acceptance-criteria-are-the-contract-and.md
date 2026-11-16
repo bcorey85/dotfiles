@@ -45,6 +45,8 @@ No measurement. The rule came from the user's own decision on the work machine.
 
 The share of escapes past plan review that the user catches, from 2026-10-19. A criterion that the plan dropped now fails at `/verify` instead of reaching the user.
 
+Reading, 2026-11-15: `ticket-acs-are-the-contract` BETTER, closed, kept. User-caught share of escapes past plan review: 0.61 median before (range 0.45-0.64), 0.04 after (2 of 55). One review edit of the same week shares the reading. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Revert the `CLAUDE.md`, `plan-verifier.md` and `verify/SKILL.md` hunks of dotfiles commit `88b5f73d`.

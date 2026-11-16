@@ -8,6 +8,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import approval_asks_store
 import review_fix_asks
 import review_fix_names
 import script_utils
@@ -74,6 +75,42 @@ class AskRulerTest(unittest.TestCase):
         self.answered(ONE_ASK, "--by", "session", "modified:cap at 5")
         self.assertEqual(self.findings_lines(),
                          ["- one.ts:1 [smell] Proposed change: c1 " + SESSION_SENTENCE + "cap at 5"])
+
+    def test_a_session_ruling_on_a_user_only_ask_is_refused_and_logs_nothing(self):
+        user_only_ask = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_ask]))
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "session", "rejected:keep it"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 1 are user_only: only the user rules them, never the session", output)
+        self.assertIn("record the user's outcome with `--by user`: `asks-done --by user ...`", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.asks_done("--by", "user", "rejected:keep it")
+
+    def test_the_printed_asks_mark_a_user_only_ask(self):
+        user_only_ask = {**FIRST_ASK, "user_only": True}
+
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_ask, SECOND_ASK]))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("1. one.ts:1  [code-reviewer/smell] [user only]", output)
+        self.assertNotIn("2. two.ts:2  [code-reviewer/smell] [user only]", output)
+
+    def test_a_session_correction_of_a_user_only_ask_is_refused_and_changes_nothing(self):
+        user_only_ask = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_ask]))
+        self.asks_done("--by", "user", "accepted:keep it")
+        state_before = self.state_file().read_bytes()
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "rejected:drop it"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("only the user rules them", output)
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
 
     def test_a_converted_ask_names_its_ruler_in_both_branches(self):
         converted = {"question": "Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
@@ -181,6 +218,58 @@ class AskRulerTest(unittest.TestCase):
     def test_an_accepted_ask_ruled_by_the_session_carries_no_ruler_sentence(self):
         self.answered(ONE_ASK, "--by", "session", "accepted")
         self.assertEqual(self.findings_lines(), ["- one.ts:1 [smell] Proposed change: c1"])
+
+
+class ApprovalPathsRulingTest(unittest.TestCase):
+    """A rejection of a user-only approval ask removes its path from the saved approval paths."""
+    setUp = fixture.ReviewFixScriptTest.setUp
+    stop_launched_loops = fixture.ReviewFixScriptTest.stop_launched_loops
+    fake_command = fixture.ReviewFixScriptTest.fake_command
+    environment = fixture.ReviewFixScriptTest.environment
+    git = fixture.ReviewFixScriptTest.git
+    run_script = fixture.ReviewFixScriptTest.run_script
+    packet = fixture.ReviewFixScriptTest.packet
+
+    PATH = "docs dir/CLAUDE.md"
+
+    def approval_packet(self):
+        change = approval_asks_store.approval_change(self.PATH)
+        entry = ask_entry("edit", f"{self.PATH}:1", finding_id="a1b2c3d4e5f60041", question="approve?", change=change)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[{**entry, "user_only": True}]))
+
+    def save_paths(self):
+        approval_asks_store.write_approval_paths(self.repo, {self.PATH: None, "AGENTS.md": None})
+
+    def test_a_user_rejection_drops_the_path_even_with_a_space_in_a_folder_name(self):
+        self.approval_packet()
+        self.save_paths()
+
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected:keep the edit"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo)), ["AGENTS.md"])
+
+    def test_a_correction_to_rejected_drops_the_path(self):
+        self.approval_packet()
+        self.save_paths()
+        self.run_script(["asks-done", "--by", "user", "accepted"])
+        self.assertIn(self.PATH, approval_asks_store.read_approval_paths(self.repo))
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "rejected:keep the edit"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo)), ["AGENTS.md"])
+
+    def test_a_damaged_saved_file_stops_a_rejection_with_nothing_logged(self):
+        self.approval_packet()
+        approval_asks_store.approval_paths_file(self.repo).parent.mkdir(parents=True, exist_ok=True)
+        approval_asks_store.approval_paths_file(self.repo).write_text("{")
+
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected:keep the edit"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("approval-asks.json", output)
+        self.assertIn("Nothing was logged", output)
 
 
 if __name__ == "__main__":

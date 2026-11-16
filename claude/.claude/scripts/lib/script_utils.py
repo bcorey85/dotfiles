@@ -295,6 +295,24 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def work_tree_blob(repo, path):
+    """The blob id of the work-tree content of `path` in `repo`, or None when the file is absent or git cannot hash
+    it."""
+    if not (pathlib.Path(repo) / path).is_file():
+        return None
+    return git_output(repo, "hash-object", "--", path)
+
+
+def content_changed_since(repo, path, blob):
+    """Whether the work-tree content of `path` differs from `blob` (a blob id; None means the file was absent), so a
+    committed edit still counts and a revert to `blob`'s content does not. Fails closed: when git cannot hash an
+    existing file, it counts as changed."""
+    if not (pathlib.Path(repo) / path).is_file():
+        return blob is not None
+    current = work_tree_blob(repo, path)
+    return current is None or current != blob
+
+
 def process_stderr_text(finished):
     """What a finished subprocess wrote to stderr, as text for a failure message."""
     return os.fsdecode(finished.stderr).strip()

@@ -1,13 +1,17 @@
 import json
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import approval_asks_store
 import review_loop_findings
 import review_loop_packet
 import review_loop_prompts
@@ -31,6 +35,7 @@ def broken_entry(finding, path):
 class Host(review_loop_ruled.RuledFindings):
     def __init__(self):
         self.repo = "/repo"
+        self.change = None
         self.init_ruled_state()
 
 
@@ -104,6 +109,255 @@ class ApprovalRulingTest(unittest.TestCase):
     def test_a_session_ruling_that_modifies_the_approval_ask_still_files_the_ask(self):
         finding = parse_finding(accepted_approval_ask_text("CLAUDE.md", "keep the edit and reword line 3", "session"))
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
+
+
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+
+
+class ApprovalAskUserOnlyTest(unittest.TestCase):
+    def test_the_filed_ask_is_user_only_and_the_packet_entry_carries_the_flag(self):
+        host = approval_host()
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+        outcome = {"status": "converged", "asks": host.asks, "ask_gates": host.ask_gates,
+                   "user_only_asks": host.user_only_asks}
+
+        entries = review_loop_packet.ask_entries({**review_loop_packet.EMPTY_OUTCOME, **outcome})
+
+        self.assertEqual([entry.get("user_only") for entry in entries], [True])
+
+    def test_a_reviewer_ask_has_no_flag(self):
+        ask = parse_finding("`a/b.py:3` [bug] Should it log? Change: add a log line.")
+        entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
+        self.assertNotIn("user_only", entry)
+
+
+class ApprovalAskResumeTest(unittest.TestCase):
+    """A coder's edit to CLAUDE.md survives a run that died after it."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = str(pathlib.Path(folder.name).resolve())
+        (pathlib.Path(self.repo) / "CLAUDE.md").write_text("rules\n")
+        for argv in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "init"]):
+            self.git(*argv)
+        before_coder = approval_host()
+        before_coder.repo = self.repo
+        before_coder.snapshot_approval_blobs()
+        self.blobs_before_coder = before_coder.approval_blobs
+
+    def git(self, *argv):
+        subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+
+    def host(self, rejected=()):
+        host = approval_host()
+        host.repo = self.repo
+        host.rejected_asks = list(rejected)
+        host.approval_blobs = dict(self.blobs_before_coder)
+        return host
+
+    def edit_claude_md(self):
+        (pathlib.Path(self.repo) / "CLAUDE.md").write_text("rules\nnew rule\n")
+
+    def saved_paths(self):
+        return list(approval_asks_store.read_approval_paths(self.repo))
+
+    def test_a_rejected_approval_ask_leaves_the_saved_paths_and_an_accepted_one_stays(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
+               "change": approval_asks_store.approval_change("CLAUDE.md")}
+
+        approval_asks_store.forget_rejected_approval_paths(self.repo, [ask], ["accepted"])
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an accepted ask stays saved")
+
+        approval_asks_store.forget_rejected_approval_paths(self.repo, [ask], ["rejected"])
+        self.assertEqual(self.saved_paths(), [], "a rejected ask leaves the saved paths")
+
+    def test_a_resumed_run_holds_the_ask_when_the_coder_committed_the_edit_before_the_crash(self):
+        self.edit_claude_md()
+        self.git("commit", "-q", "-am", "the coder's commit")
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"])
+
+    def test_a_revert_to_a_phase_edit_the_coder_built_on_clears_the_ask_after_the_commit(self):
+        phase_text = "rules\nthe phase's own rule\n"
+        claude_md = pathlib.Path(self.repo) / "CLAUDE.md"
+        claude_md.write_text(phase_text)
+        filing = approval_host()
+        filing.repo = self.repo
+        filing.rejected_asks = []
+        filing.snapshot_approval_blobs()
+        claude_md.write_text(phase_text + "the coder's rule\n")
+        filing.ask_for_approval_only_edits(["CLAUDE.md"], [])
+        claude_md.write_text(phase_text)
+        self.git("commit", "-q", "-am", "the phase")
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_file_the_tree_lacked_before_the_coder_is_asked_about_while_it_exists(self):
+        agents_md = pathlib.Path(self.repo) / "AGENTS.md"
+        agents_md.write_text("new\n")
+        self.host().ask_for_approval_only_edits(["AGENTS.md"], [])
+        self.assertEqual(self.saved_paths(), ["AGENTS.md"])
+
+        agents_md.unlink()
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_run_with_nothing_saved_writes_no_file(self):
+        self.host().resume_approval_asks([])
+
+        self.assertFalse(approval_asks_store.approval_paths_file(self.repo).exists())
+
+    def test_a_resumed_run_holds_the_ask_an_earlier_run_filed(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
+        outcome = {**review_loop_packet.EMPTY_OUTCOME, "asks": resumed.asks, "ask_gates": resumed.ask_gates,
+                   "user_only_asks": resumed.user_only_asks}
+        entries = review_loop_packet.ask_entries(outcome)
+        self.assertEqual([(entry["file_line"], entry.get("user_only")) for entry in entries], [("CLAUDE.md:1", True)])
+
+    def test_a_path_with_a_space_in_its_folder_is_saved_whole_and_resumed(self):
+        folder = pathlib.Path(self.repo) / "my dir"
+        folder.mkdir()
+        (folder / "CLAUDE.local.md").write_text("rules\n")
+        self.host().ask_for_approval_only_edits(["my dir/CLAUDE.local.md"], [])
+
+        self.assertEqual(self.saved_paths(), ["my dir/CLAUDE.local.md"])
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(self.saved_paths(), ["my dir/CLAUDE.local.md"])
+        self.assertEqual(len(resumed.asks), 1)
+
+    def test_a_resumed_run_drops_an_ask_whose_edit_is_gone(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        (pathlib.Path(self.repo) / "CLAUDE.md").write_text("rules\n")
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [])
+
+    def test_a_rejected_approval_ask_is_not_resumed_and_leaves_the_saved_file(self):
+        self.edit_claude_md()
+        # asks-done stores the file:line and the question, the text before the ask's change
+        question, _change = review_loop_findings.ask_parts(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        rejected = [parse_finding(question)]
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        later = self.host(rejected)
+        later.resume_approval_asks([])
+
+        self.assertEqual(later.asks, [])
+        self.assertEqual(later.user_only_asks, [])
+        self.assertEqual(self.saved_paths(), [])
+        self.assertEqual([reason for _ask, reason in later.dropped_asks],
+                         [review_loop_ruled.REJECTED_ASK_REASON])
+
+    def test_a_rejected_approval_ask_is_still_filed_for_a_coders_new_edit(self):
+        self.edit_claude_md()
+        question, _change = review_loop_findings.ask_parts(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        host = self.host([parse_finding(question)])
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+
+    def test_a_user_ruled_approval_ask_is_not_filed_again_on_resume(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        ruling = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
+
+        resumed = approval_host(user_ruled=[ruling.text])
+        resumed.repo = self.repo
+        resumed.rejected_asks = []
+        resumed.resume_approval_asks([ruling])
+
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_ruled_path_committed_since_it_was_saved_is_not_asked_again_after_a_later_edit(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        self.git("commit", "-q", "-am", "keep the edit")
+        ruling = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
+        resumed = approval_host(user_ruled=[ruling.text])
+        resumed.repo = self.repo
+        resumed.rejected_asks = []
+        resumed.resume_approval_asks([ruling])
+        (pathlib.Path(self.repo) / "CLAUDE.md").write_text("rules\nnew rule\nuser's own edit\n")
+
+        later = self.host()
+        later.resume_approval_asks([])
+
+        self.assertEqual(later.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_damaged_saved_file_stops_the_run_naming_the_file(self):
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        saved = approval_asks_store.approval_paths_file(self.repo)
+        for damaged in ("{", "[1]"):
+            saved.write_text(damaged)
+            with self.assertRaises(approval_asks_store.ApprovalAsksFileError) as caught:
+                self.host().resume_approval_asks([])
+            self.assertIn("approval-asks.json", str(caught.exception))
+
+    def test_an_untracked_approval_file_is_resumed(self):
+        (pathlib.Path(self.repo) / "AGENTS.md").write_text("new\n")
+        self.host().ask_for_approval_only_edits(["AGENTS.md"], [])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual([ask.path for ask in resumed.asks], ["AGENTS.md"])
+
+    def test_a_git_failure_keeps_the_ask_resumed(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        resumed = self.host()
+
+        real_git_output = review_loop_ruled.script_utils.git_output
+
+        def hash_fails(repo, *args):
+            return None if args[0] == "hash-object" else real_git_output(repo, *args)
+
+        with mock.patch.object(review_loop_ruled.script_utils, "git_output", side_effect=hash_fails):
+            resumed.resume_approval_asks([])
+
+        self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
+
+    def test_every_filed_path_is_saved_and_resumed(self):
+        self.edit_claude_md()
+        (pathlib.Path(self.repo) / "AGENTS.md").write_text("new\n")
+        self.host().ask_for_approval_only_edits(["CLAUDE.md", "AGENTS.md"], [])
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md", "AGENTS.md"])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md", "AGENTS.md"])
 
 
 class ApprovalAskTextTest(unittest.TestCase):

@@ -13,6 +13,11 @@ import plan_format
 import review_asks
 import review_launch
 import script_utils
+from approval_asks_store import (
+    ApprovalAsksFileError,
+    check_approval_paths_readable,
+    forget_rejected_approval_paths,
+)
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
 from review_asks import (
     ACCEPT_MEANS,
@@ -316,12 +321,23 @@ def record_accepted_plan_impacts(asks, outcomes, repo):
                                            finding_text=ask_finding_text(item))
 
 
+def refuse_damaged_approval_paths(repo, asks, outcomes):
+    """Stops with nothing written when a rejected user-only ask needs the saved approval paths and the file is
+    damaged: a rerun would log every outcome row again."""
+    try:
+        check_approval_paths_readable(repo, asks, outcomes)
+    except ApprovalAsksFileError as error:
+        raise UsageError(f"{error}. Nothing was logged.") from error
+
+
 def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
     correction undoes is withdrawn."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if new_outcome == REJECTED:
         handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
+        # A corrected rejection leaves the saved paths too, so a resumed review loop does not file it again.
+        forget_rejected_approval_paths(repo, [item], [REJECTED])
     elif old_outcome == REJECTED:
         handback_store.record_rejection_withdrawn(session_id, rejected_ask_text(item), repo)
 
@@ -332,6 +348,8 @@ def record_unrecorded_rejections(target, asks, outcomes, repo):
         return
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     review_asks.record_rejected_asks([session_id], repo, asks, outcomes)
+    # A rejected approval ask leaves the saved paths, so a resumed review loop does not file it again.
+    forget_rejected_approval_paths(repo, asks, outcomes)
     target["asks_rejections_recorded"] = True
 
 
@@ -568,6 +586,8 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
     failures = []
     touches_rejection = any(REJECTED in (state["ask_outcomes"][index], outcomes[index]) for index in indexes)
     repo = required_packet_repo(state.get("relaunch_args") or []) if touches_rejection else None
+    refuse_damaged_approval_paths(repo, [state["asks"][index] for index in indexes],
+                                  [outcomes[index] for index in indexes])
     for index in indexes:
         item = state["asks"][index]
         outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcomes[index], decided_by)
@@ -642,6 +662,13 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
+def refuse_session_on_user_only(asks, decided_by):
+    """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, f"asks-done --by {plan_format.USER_RULING} ...")
+    if refusal:
+        raise UsageError(refusal)
+
+
 def command_correct_asks(options):
     """`asks-done --correct <outcome>...`: re-answers the asks of a fix run that printed and has not launched. Each
     new row is logged under the ask's earlier finding_id and supersedes the old row, the findings file is rewritten
@@ -652,6 +679,7 @@ def command_correct_asks(options):
     ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
+    refuse_session_on_user_only(asks, options.decided_by)
     outcomes, notes = read_outcomes(options.outcome_words, asks)
     refuse_conditional_changes(asks, outcomes)
     indexes = corrected_ask_indexes(state, asks, outcomes, notes)
@@ -739,7 +767,9 @@ def command_asks_done(argv):
 
     target, outcomes, notes, decided_by = read_answers(state, options, waiting)
     asks = target["asks"]
+    refuse_session_on_user_only(asks, decided_by)
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
+    refuse_damaged_approval_paths(repo, asks, outcomes)
     finding_lines = ask_finding_lines(asks, outcomes, notes, uniform_deciders(asks, decided_by))
     findings_file = write_unprinted_fix_run(state, target, finding_lines, decided_by)
 

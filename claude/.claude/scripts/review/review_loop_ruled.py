@@ -6,6 +6,8 @@ from pathlib import PurePosixPath
 import coder_report
 import handback_store
 import plan_format
+import script_utils
+from approval_asks_store import approval_change, read_approval_paths, write_approval_paths
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
 from review_loop_findings import (
@@ -33,12 +35,6 @@ def approval_only_paths(changed):
     """The paths in `changed` whose basename is one of `PROMPT_MARKDOWN_NAMES` (CLAUDE.md, CLAUDE.local.md,
     AGENTS.md). A coder never changes these without the user's approval, so each edit becomes an ask."""
     return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
-
-
-def approval_change(path):
-    """The change the approval ask proposes for `path`. An accepted ask reaches the next fix run as
-    `<file_line> [<class>] Proposed change: <change>`, so the change is the part that names the ask there."""
-    return f"revert the fix coder's edit to `{path}`."
 
 
 def approval_ask_text(path):
@@ -92,6 +88,11 @@ class RuledFindings:
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
         self.dropped_asks = []
+        self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
+        self.user_only_paths = []  # the repo-relative path each approval ask was filed for
+        # path -> the blob id its edit is measured against, so a coder's own commit of the edit still shows on resume
+        self.user_only_bases = {}
+        self.approval_blobs = {}  # path -> blob id of each approval-only file before the latest coder pass
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
@@ -212,12 +213,63 @@ class RuledFindings:
         about.
         A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
         again."""
-        ruling_findings = [finding for finding in findings if self.is_approval_ruling(finding)]
+        ruled_paths = self.approval_ruled_paths(findings)
+        filed = False
         for path in approval_only_paths(changed):
-            if any(held_path_in_repo(finding.path, self.repo) == path for finding in ruling_findings):
+            if path in ruled_paths:
                 continue
-            text = approval_ask_text(path)
-            self.add_ask(CODER_GATE, parse_finding(text))
+            self.file_approval_ask(path, self.approval_blobs.get(path))
+            filed = True
+        if filed:
+            self.save_approval_paths()
+
+    def snapshot_approval_blobs(self):
+        """Before a coder pass: saves the blob id of each approval-only file's work-tree content (None for a file the
+        tree lacks), so the pass's edit is measured against what the file held before it, a phase's own uncommitted
+        edit included. A coder's commit of the edit cannot hide it, and a revert to this content clears it."""
+        listing = script_utils.git_output(self.repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+        if not listing:
+            return
+        for path in approval_only_paths(listing.split("\0")):
+            self.approval_blobs[path] = script_utils.work_tree_blob(self.repo, path)
+
+    def approval_ruled_paths(self, findings):
+        """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""
+        ruling_findings = [finding for finding in findings if self.is_approval_ruling(finding)]
+        return {held_path_in_repo(finding.path, self.repo) for finding in ruling_findings}
+
+    def file_approval_ask(self, path, base):
+        """Files the user-only ask for approval-only file `path`, whose edit is measured against blob id `base`."""
+        ask = parse_finding(approval_ask_text(path))
+        self.add_ask(CODER_GATE, ask)
+        if ask not in self.user_only_asks:
+            self.user_only_asks.append(ask)
+        # The filed path itself: parsing it back out of the ask text drops a folder name that holds a space.
+        if path not in self.user_only_paths:
+            self.user_only_paths.append(path)
+        self.user_only_bases.setdefault(path, base)
+
+    def save_approval_paths(self):
+        """Saves the paths of the user-only asks on the list, so a run that dies before its packet leaves them for the
+        resumed run."""
+        write_approval_paths(self.repo, {path: self.user_only_bases[path] for path in self.user_only_paths})
+
+    def resume_approval_asks(self, findings):
+        """At the start of a run: files again each approval ask an earlier run saved whose content still differs
+        from its saved base blob (committed or not), that no ruling in `findings` settles, and that the session has
+        not rejected. Reads only the saved paths, never the change. Rewrites the saved paths with the ones filed
+        again, so a settled path leaves the file; with nothing saved, writes nothing."""
+        saved = read_approval_paths(self.repo)
+        if not saved:
+            return
+        ruled_paths = self.approval_ruled_paths(findings)
+        for path, base in saved.items():
+            if path in ruled_paths or not script_utils.content_changed_since(self.repo, path, base):
+                continue
+            ask = parse_finding(approval_ask_text(path))
+            if self.without_rejected([ask]):
+                self.file_approval_ask(path, base)
+        self.save_approval_paths()
 
     def is_approval_ruling(self, finding):
         """True when the user ruled on `finding`, or a session accepted the approval ask for its path

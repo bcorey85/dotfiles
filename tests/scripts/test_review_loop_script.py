@@ -1613,11 +1613,11 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def loop_main_module(self):
         return self.load_script_module(SCRIPT.parent / "review_loop_main.py")
 
-    def gate_command_request(self, command, gates_every_run):
+    def gate_command_request(self, command, gates_every_run, header_extra=""):
         """The review_loop_main module and a LoopRequest that gates on `command`."""
         loop_main = self.loop_main_module()
         prompt = self.scratch / "prompt.txt"
-        prompt.write_text(self.prompt_file_text())
+        prompt.write_text(self.prompt_file_text(header_extra))
         header, handoff = loop_main.read_prompt(str(prompt))
         request = loop_main.LoopRequest(str(self.repo), self.scratch, SESSION, header, handoff,
                                         {"fixed": [], "files_touched": set()}, [command],
@@ -2468,6 +2468,33 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(outcome["status"], "critical-blocker")
         self.assertEqual(outcome["scoped_tests"],
                          loop_main.full_check.SCOPED_NOT_RUN_STOPPED.format(status="critical-blocker"))
+
+    def test_run_loop_resumes_the_approval_asks_with_the_runs_findings_before_the_first_pass(self):
+        findings_file = self.scratch / "findings.json"
+        finding_text = "`CLAUDE.md:1` [bug] Should the rule stay? Proposed change: keep it."
+        findings_file.write_text(json.dumps([finding_text]))
+        loop_main, request = self.gate_command_request("echo ran", True, f"findings: {findings_file}")
+        calls = []
+        with mock.patch.object(loop_main.LoopRun, "resume_approval_asks",
+                               side_effect=lambda findings: calls.append("resume")) as resume, \
+                mock.patch.object(loop_main, "first_pass", side_effect=lambda *args: calls.append("first_pass")), \
+                mock.patch.object(loop_main, "walk"), \
+                mock.patch.object(loop_main, "write_telemetry", return_value=([], [])):
+            loop_main.run_loop(request)
+
+        self.assertEqual(calls, ["resume", "first_pass"])
+        resume.assert_called_once()
+        resumed_texts = [finding.text for finding in resume.call_args.args[0]]
+        self.assertEqual(resumed_texts, [finding_text])
+
+    def test_the_outcome_keeps_the_user_only_asks(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.user_only_asks = ["the approval ask"]
+
+        outcome = loop.outcome([], [])
+
+        self.assertEqual(outcome["user_only_asks"], ["the approval ask"])
 
     def test_a_post_fix_run_with_an_unrun_command_does_not_stop_the_loop(self):
         loop_script = self.load_script_module()

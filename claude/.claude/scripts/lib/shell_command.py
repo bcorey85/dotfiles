@@ -162,12 +162,12 @@ def redirection_writes_file(operator, target):
 
 
 def is_redirect_word(word):
-    """True when the quote-removed word starts a redirect."""
+    """True when the word starts with a redirect operator; one that starts with a quote or backslash never does."""
     return bool(REDIRECT_WORD.match(word))
 
 
 def redirect_takes_next_word(word):
-    """True when the quote-removed redirect word has no target of its own, so the next word is its target."""
+    """True when the redirect word has no target of its own, so the next word is its target."""
     return bool(BARE_REDIRECT_WORD.match(word))
 
 
@@ -577,8 +577,8 @@ def words_without_redirections(text):
         if skip_target:
             skip_target = False
             continue
-        if REDIRECT_WORD.match(raw_word):
-            skip_target = bool(BARE_REDIRECT_WORD.match(raw_word))
+        if is_redirect_word(raw_word):
+            skip_target = redirect_takes_next_word(raw_word)
             continue
         piece = closed_segment_words(raw_word)
         if piece is None:
@@ -982,9 +982,7 @@ def closes_brace_group(step):
 def group_depth_change(step):
     """How many `( ... )` and `{ ...; }` groups the step text opens, minus how many it closes. A quoted parenthesis
     opens and closes nothing."""
-    quoted = quoted_positions(step, unclosed_is_quoted=False)
-    unquoted = [char for index, char in enumerate(step) if index not in quoted]
-    change = unquoted.count("(") - unquoted.count(")")
+    change = paren_depth_change(step)
     change += LEADING_BRACES.match(step).group().count("{")
     trailing = TRAILING_BRACES.search(step)
     return change - (trailing.group().count("}") if trailing else 0)

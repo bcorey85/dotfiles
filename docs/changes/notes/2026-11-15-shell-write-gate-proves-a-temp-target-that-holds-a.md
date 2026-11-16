@@ -120,14 +120,14 @@ A bare word equal to a variable's name anywhere in the command makes that name u
 
 A second replay took 7,500 distinct Bash commands from the local transcripts, newest first (6,000 with a redirect,
 `tee`, `sed`, `perl`, `awk`, a loop or a `$`, and 1,500 plain ones), and ran each through both gates in the folder
-it ran in. It ran on the current tree, after the stricter reader. As a coder, 74 changed from deny to allow, each one
+it ran in. It ran on the current tree, after the stricter reader. As a coder, 75 changed from deny to allow, each one
 a write under `/tmp/` through a variable assigned once or a `for` name over literal words; none changed from allow
-to deny; 7,265 stayed allowed and 161 stayed denied. As the main session, no verdict changed (7,458 allowed, 42
+to deny; 7,264 stayed allowed and 161 stayed denied. As the main session, no verdict changed (7,460 allowed, 40
 denied). An earlier sample held one main-session change from allow to deny, which still stands:
 `printf '%s' 'ls | parallel sed -i s/a/b/' > cases5.txt`, a probe command of this change's own review. Both gates
 read the quoted text as an in-place edit; the new one denies it because the file list behind `parallel` is unseen.
 The new gate gave no error. Over the 30,000 hook runs the median time is 35.0 ms (35.9 ms before) and the 95th
-percentile 40.8 ms (41.6 ms before), with four runs at a time.
+percentile 39.6 ms (40.2 ms before), with four runs at a time.
 
 A probe of 24 hostile commands (21 that must be denied, 3 that must pass) gives 0 wrong verdicts.
 

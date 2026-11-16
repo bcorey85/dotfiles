@@ -86,13 +86,13 @@ DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)]
 ENV_NAMES = ("TMPDIR", "HOME")
 
 # The request of one hook event: the command, the session cwd, whether the agent is barred from the skip comment
-# (a subagent or a coder), and whether it is a coder.
-HookRequest = namedtuple("HookRequest", "command cwd cannot_skip coder")
+# (a subagent or a coder), whether it is a coder, and the ShellVariables of the whole command (None until run builds
+# it, and for a request that is no coder's).
+HookRequest = namedtuple("HookRequest", "command cwd cannot_skip coder variables", defaults=(None,))
 # A redirect or tee target: its word, the folders step_folders gives its step (the session cwd first), whether an
-# earlier step moved to a folder that is not a literal, the variables of the whole command (None for a request that
-# is no coder's) and the index of its step in the top-level command (None for text inside a `$(...)` span, whose
-# values the reader does not prove).
-WrittenTarget = namedtuple("WrittenTarget", "raw folders unread_change variables step")
+# earlier step moved to a folder that is not a literal, and the index of its step in the top-level command (None for
+# text inside a `$(...)` span, whose values the reader does not prove).
+WrittenTarget = namedtuple("WrittenTarget", "raw folders unread_change step")
 
 
 def written_targets(core):
@@ -187,14 +187,14 @@ def folders_after_step(folders, step):
     return folders, unread_change
 
 
-def step_targets(code, cwd, variables, in_span):
-    """A WrittenTarget for every redirect and tee target of the command text, in order. variables is the
-    ShellVariables of the whole command, or None; in_span is True for the text of a `$(...)` or backtick span."""
+def step_targets(code, cwd, in_span):
+    """A WrittenTarget for every redirect and tee target of the command text, in order. in_span is True for the
+    text of a `$(...)` or backtick span."""
     targets = []
     for index, (step, folders, unread_change) in enumerate(step_folders(code, cwd)):
         step_index = None if in_span else index
         for raw in written_targets(step):
-            targets.append(WrittenTarget(raw, folders, unread_change, variables, step_index))
+            targets.append(WrittenTarget(raw, folders, unread_change, step_index))
     return targets
 
 
@@ -245,13 +245,13 @@ def run(raw):
     command = request.command
     code = strip_comments(strip_heredocs(command))
     texts = code_texts(code)
-    variables = ShellVariables(code) if request.coder else None
+    request = request._replace(variables=ShellVariables(code) if request.coder else None)
     segment_folders = []
     targets = []
     text_targets = []
     for position, text in enumerate(texts):
         segment_folders += text_segments(text, request.cwd)
-        targets += step_targets(text, request.cwd, variables, in_span=position > 0)
+        targets += step_targets(text, request.cwd, in_span=position > 0)
         if shell_command.names_code_runner(text):
             text_targets += regex_written_targets(text, skip_quoted=False)
 
@@ -280,9 +280,9 @@ def check_redirect_targets(targets, text_targets, request):
     """Check each redirect and tee target: step_targets rows, then the targets of text read only by regex."""
     for target in targets:
         check_written_target(target, request)
-    text_request = request._replace(coder=False)
+    text_request = request._replace(coder=False, variables=None)
     for raw_target in text_targets:
-        check_written_target(WrittenTarget(raw_target, [request.cwd], False, None, None), text_request)
+        check_written_target(WrittenTarget(raw_target, [request.cwd], False, None), text_request)
 
 
 def check_script_writes(segment, folders, written_paths, request):
@@ -364,9 +364,9 @@ def check_tracked_target(raw_target, folder, cannot_skip, after_directory_change
     raise DenyError(deny_text(TRACKED_TARGET, subject, cannot_skip))
 
 
-def env_expanded(target):
+def env_expanded(target, request):
     """The target with `$TMPDIR` and `$HOME` replaced from the environment, except a name the command may set."""
-    variables = target.variables
+    variables = request.variables
     assigned = variables.assigned_names if variables else frozenset()
     names = [name for name in ENV_NAMES if name not in assigned]
     return expand_env_names(target.raw, names)
@@ -378,7 +378,7 @@ def check_written_target(target, request):
     literals = proven_literals(target, request)
     if literals is None:
         check_literal_target(target, request)
-        deny_option_like_new_file(env_expanded(target), target.folders[0], request)
+        deny_option_like_new_file(env_expanded(target, request), target.folders[0], request)
         return
     for literal in literals:
         check_literal_target(target._replace(raw=literal), request)
@@ -390,12 +390,12 @@ def proven_literals(target, request):
     """The literal texts a coder's target with a variable expands to, or None for a target with no variable left (or
     a request that is no coder's) and for one whose variable is not proven, which check_literal_target denies. A
     target inside a `$(...)` span has no step, so none of its variables is proven."""
-    if not request.coder or target.variables is None or target.step is None:
+    if not request.coder or request.variables is None or target.step is None:
         return None
-    expanded = env_expanded(target)
+    expanded = env_expanded(target, request)
     if "$" not in expanded:
         return None
-    return target.variables.literal_values(expanded, target.step)
+    return request.variables.literal_values(expanded, target.step)
 
 
 def check_under_temp(target, literal, request):
@@ -430,7 +430,7 @@ def check_literal_target(target, request):
     folders = target.folders
     raw_target = target.raw
     cwd = folders[0]
-    expanded = env_expanded(target)
+    expanded = env_expanded(target, request)
     relative = not shell_command.path_word_is_absolute(expanded)
     after_directory_change = relative and (target.unread_change or len(folders) > 1)
 

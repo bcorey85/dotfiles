@@ -36,6 +36,8 @@ The repeat passes also found 4 real defects (2 medium, 2 low) that the first pas
 
 `asks-coder-own-diff-review`: review escapes per code-reviewer run, expected flat. Fewer re-review runs push this ratio up with no change in escapes, so read the raw escape count next to it.
 
+Reading, 2026-11-15: `asks-coder-own-diff-review` MOVED, closed, kept. Review escapes per code-reviewer run: 0.16 median before (range 0.09-0.45), 0.02 after (24 of 1,060). The move is down, so the narrower re-review let no more defects through. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Restore the installed `code-step.py` from git. The change is the `asks_coder_changed_files` helper and the block after the no-change stop in `command_after_coder`.

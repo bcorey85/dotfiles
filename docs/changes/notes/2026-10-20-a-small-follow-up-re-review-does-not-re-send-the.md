@@ -32,6 +32,8 @@ Installed 2026-10-20. The review-loop line and the code-step header are both liv
 
 `structure-pass-skip-escapes`: review escapes per review run, expected flat.
 
+Reading, 2026-11-15: `structure-pass-skip-escapes` MOVED, closed, kept. Review escapes per code-reviewer run: 0.16 median before (range 0.09-0.45), 0.02 after (24 of 1,060). The move is down, so the skipped structure pass let no more defects through. Rows counted: work repos and agent-ledger-dev only.
+
 ## Back-out
 
 Remove the `structure-pass: skip` clause from Step 3a and the header line from code-step's review dispatch.

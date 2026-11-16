@@ -6,7 +6,7 @@ description: "A coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md stays an
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-15T16:00:00-06:00"}
 seq: 7
 kind: "fix"
-components: ["script/review-loop", "script/phase-asks", "script/review-fix-asks", "script/review-asks", "script/review-commit-gate"]
+components: ["script/review-loop", "script/phase-asks", "script/review-fix-asks", "script/review-asks"]
 evidence: ["review-loop-approval-ask-is-lost-on-resume-and-a"]
 watches: []
 test: "tests/scripts/test_review_loop_ruled.py::ApprovalAskResumeTest::test_a_resumed_run_holds_the_ask_an_earlier_run_filed"
@@ -22,7 +22,6 @@ unmeasured: ""
 - `phase_asks.py list` marks each `user_only` ask and prints the `--by user` line; the open message `code_wait.py review` prints does the same.
 - The loop saves the open approval asks in `<git dir>/review-fix/approval-asks.json` (`lib/review_fix_names.py` `APPROVAL_ASKS_NAME`) when it files them, once per coder pass: a JSON object of each path to the blob id of the file's content before the coder pass. A run reloads them at its start (`resume_approval_asks`), files again each path whose content differs from that blob (a coder's own commit of the edit included), and that no ruling finding of the run names, then rewrites the file with the paths it filed again. A run with nothing saved writes nothing. It reads the saved paths and no diff.
 - A `rejected` ruling on a user-only ask removes its path from the file at the ruling (`forget_rejected_approval_paths`, called from `phase_asks.py rule`, `asks-done` and `asks-done --correct`). A damaged file stops the ruling with nothing logged.
-- The commit gate's unruled-asks deny marks each `user_only` ask `[user only]` and hands it to the user with the `rule --by user` line, so it never prints a line `phase_asks.py rule` refuses.
 - On resume only, as a fallback, a path whose ask repeats an ask the session rejected is not filed again (the drop is listed in the packet's dropped asks). A coder's edit in a normal run is always asked about.
 
 ## Evidence
@@ -40,10 +39,10 @@ Known exception: `approval-asks.json` is written once per coder pass that files 
 Rulings (this change ran with no plan folder, so its decision log is here), all by agent-evals-5e (the orchestrating session), 2026-11-15:
 
 - Prompt text the review loop added (`code/SKILL.md`, `_shared/review-fork-run.md`, `docs/rule-anchors.md`) reverted to master: out of scope; skill text needs rule-meter runs. Twice: after phase 1 and after the second review pass. The branch review's ask to add a `[user only]` clause to those two skill lines: left out, the refusal message carries the rule.
-- Branch review ask, commit-gate deny prints a `rule` line `phase_asks.py rule` refuses: fix it; script output with a test is in scope.
+- Branch review ask, commit-gate deny prints a `rule` line `phase_asks.py rule` refuses: first fixed, then reverted so AC4 (no commit-gate text) holds; the `phase_asks.py rule` refusal already sends a user-only ask to the user.
 - Branch review ask, `asks-done --by user` credits every ask of the batch to the user, not only `user_only` asks: keep today's behavior, older than this change; agent-evals-5e queues it separately. This change makes `--by user` mandatory for a first `asks-done` whose batch holds a `user_only` ask, so every ask of that batch is credited to the user.
 - Branch review ask, `approval-asks.json` written once per coder pass against the once-per-run rule: accepted as an exception (see Result); agent-evals-5e takes the `scripts/CLAUDE.md` wording to the user.
-- Size: the fix rounds after the first commit grew the branch past its 24-file limit; the code was cut back to that commit plus the commit-gate fix. The branch-keyed saved file, the damaged-file stop in the loop and the batched hashing went with it. The ask that a read on another checkout deletes the saved asks: accepted only as "delete nothing", moot after the cut (the file has no branch key). The ask to keep a detached HEAD's asks across a commit: rejected, a detached HEAD runs only on benches.
+- Size: the fix rounds after the first commit grew the branch past its 24-file limit; the code was cut back to that commit. The branch-keyed saved file, the damaged-file stop in the loop and the batched hashing went with it. The ask that a read on another checkout deletes the saved asks: accepted only as "delete nothing", moot after the cut (the file has no branch key). The ask to keep a detached HEAD's asks across a commit: rejected, a detached HEAD runs only on benches.
 - Review ask at `review_loop_ruled.py:292` accepted: a user `rejected` ruling on a user-only ask drops its path from `approval-asks.json`.
 - Review ask at `review_loop_ruled.py:152` (a per-path base for a coder's own commit) rejected as asked. The second review pass's fixes still adopted a per-path blob base, taken before each coder pass (`snapshot_approval_blobs`, read by `user_only_bases`), and that base ships.
 - `approval_asks_store.py` kept as the one owner of the saved approval paths.

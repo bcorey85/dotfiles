@@ -17,7 +17,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/review-fix | 59 | 11 |
 | script/review-loop-script | 58 | 8 |
 | script/handback | 54 | 4 |
-| script/review-commit-gate | 39 | 5 |
+| script/review-commit-gate | 38 | 4 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 24 | 3 |
 | script/coder-gate | 22 | 2 |

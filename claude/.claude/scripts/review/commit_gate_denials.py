@@ -100,22 +100,12 @@ def unruled_phase_asks_denial(repo_dirs, git_timeout):
         if open_row is None:
             continue
         asks = open_row["asks"]
-        user_only = ask_outcome_words.user_only_numbers(asks)
-        listed_asks = []
-        for number, item in enumerate(asks, 1):
-            mark = f"{ask_outcome_words.USER_ONLY_MARK} " if number in user_only else ""
-            listed_asks.append(f"{number}. {mark}{script_utils.one_line(script_utils.ask_text(item), 200)}")
-        listed = "; ".join(listed_asks)
-        repo_quoted = shlex.quote(str(repo_top))
-        if user_only:
-            # The session's own rule line is refused for a user-only ask, so the deny hands those asks to the user.
-            rule_step = f": {ask_outcome_words.rule_instruction(asks)}, run from `cd {repo_quoted}`"
-        else:
-            rule_step = f", with `cd {repo_quoted} && {ask_outcome_words.rule_command(len(asks))}`"
+        listed = "; ".join(f"{number}. {script_utils.one_line(script_utils.ask_text(item), 200)}"
+                           for number, item in enumerate(asks, 1))
         return (
             f"[review-commit-gate] A phase review of {repo_top} handed back {len(asks)} ask(s) that you have "
-            f"not ruled on: {listed}. Do not run /review again: rule on them first"
-            f"{rule_step} "
+            f"not ruled on: {listed}. Do not run /review again: rule on them first, with "
+            f"`cd {shlex.quote(str(repo_top))} && {ask_outcome_words.rule_command(len(asks))}` "
             f"(`{ask_outcome_words.LIST_COMMAND}` shows each ask's change, also from there). "
             "Then commit the tree the review covered."
         )

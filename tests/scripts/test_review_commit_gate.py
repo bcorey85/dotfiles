@@ -1009,20 +1009,6 @@ class ReviewedWorkCommitTest(GateCase):
         self.assertIn("Do not run /review again", reason)
         self.assertIn(f"cd {self.repo.resolve()} && python3", reason)
 
-    def test_a_user_only_ask_is_marked_and_handed_to_the_user_in_place_of_the_session_rule_line(self):
-        row = self.phase_asks_open_row()
-        row["asks"][0]["user_only"] = True
-        self.append_store_rows(row)
-
-        finished = self.commit("git commit -a -m x")
-
-        self.assert_denies(finished, "1 ask(s) that you have not ruled on")
-        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("[user only]", reason)
-        self.assertIn("hand ask(s) 1 to the user", reason)
-        self.assertIn("rule --by user", reason)
-        self.assertNotIn("&& python3", reason)
-
     def test_a_notes_only_commit_passes_while_phase_asks_are_open(self):
         self.converged_with_open_phase_asks()
         (self.repo / "docs").mkdir()

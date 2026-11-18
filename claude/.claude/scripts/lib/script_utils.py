@@ -413,14 +413,16 @@ def run_command(command, cwd=None, stdin=None, timeout=None):
     return result.code, result.output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False,
+                env=None):
     """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation (with
-    as_bytes, stdin is bytes and stdout stays raw bytes). Raise error_type when argv cannot start or runs past
-    `timeout` seconds and, with check, when its exit code is not in ok_codes, naming the command and its stderr, or
-    its stdout when stderr is empty."""
+    as_bytes, stdin is bytes and stdout stays raw bytes). env, when given, is the child's whole environment. Raise
+    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
+    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
     stdin_bytes = stdin if as_bytes or stdin is None else stdin.encode()
     try:
-        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
+        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout,
+                                  env=env)
     except OSError as error:
         raise error_type(f"cannot run {argv[0]}: {error}") from error
     except subprocess.TimeoutExpired as error:

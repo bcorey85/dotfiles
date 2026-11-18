@@ -157,6 +157,16 @@ class CodeReviewStartTest(unittest.TestCase):
         loop_dir_file = self.repo / ".git/code-phase/loop-dir"
         self.assertEqual(loop_dir_file.read_text().strip(), str(prompt_folder))
 
+    def test_a_missing_handoff_file_stops_with_its_path_and_no_traceback(self):
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               str(self.repo / ".git/code-phase/handoff.txt"), "--base", "HEAD", "--detach"],
+                              cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(f"no hand-off file at {self.repo / '.git/code-phase/handoff.txt'}", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+
     def test_a_handoff_an_earlier_phase_review_read_stops_the_next_phase_review(self):
         code_review_start = self.load_module()
         handoff_text = (self.repo / "handoff.txt").read_text()

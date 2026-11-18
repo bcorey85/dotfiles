@@ -10,7 +10,7 @@
 
 - An instruction to present something and wait for the user, for direction or for a reply, or to end the turn, is a STOP.
 - A launch line the packet prints runs with `--detach`, in the foreground, then waits as above.
-- On `show-plan-impacts`, or an ACTION that says to add lines under `## Plan Deviations`: dispatch one `coder` to add them under `## Plan Deviations` in the plan, then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>`, again while it prints `Still working`.
+- On `show-plan-impacts`, or an ACTION that says to add lines under `## Plan Deviations`: dispatch one `coder` to add them under `## Plan Deviations` in the plan, then run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>`, again while it prints `Still working`. When it also says an earlier wait printed the agent's last report and you sent that agent no SendMessage since, read the transcript it names instead of waiting again.
 - On `redispatch` or `launch-fix-run`: run its launch line and wait as above. When the same output also prints deviation lines, add them first and wait for that coder before you run the launch line.
 - An ask you may decide yourself: decide it and run asks-done with `--by session`.
 

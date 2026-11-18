@@ -534,16 +534,16 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
         bg="#1c1c1c"; panel="#161616"; panelAlt="#292929"; border="#454545"; note="#161616"
-        accent="#5ab9b0"; accentMuted="#454545"; text="#c0c0c0"; muted="#a1a1a1"; lnFg="#707070"
+        accent="#51a49c"; accentMuted="#454545"; text="#c0c0c0"; muted="#a1a1a1"; lnFg="#707070"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
         addWord="#213d38"; remWord="#46252b"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#1d2724"; removedBg="#2b1e1f"; ctxBg="#1c1c1c"
-        sAdd="#5ab9b0"; sRem="#d887ae"; badgeNeu="#eed286"
-        kw="#949494"; punct="#a1a1a1"; str="#5ab9b0"; num="#f38ba5"; fn="#9ca4f1"; cmt="#c5a769"
-        type_fg="#9eb34a"; builtin_fg="#5bb2e7"; param_fg="#f0925f"; attr_fg="#f78d83"
+        sAdd="#51a49c"; sRem="#d887ae"; badgeNeu="#eed286"
+        kw="#949494"; punct="#a1a1a1"; str="#51a49c"; num="#d97d94"; fn="#8b92d6"; cmt="#af955f"
+        type_fg="#8d9f43"; builtin_fg="#529ecd"; param_fg="#d68356"; attr_fg="#dc7f76"
         bright="#d1d1d1"; quote="#b1b1b1"; bullet="#a1a1a1"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
@@ -565,8 +565,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
         kw="#4c5158"; cmt="#6d4a00"
       else
-        bind="#9ca4f1"; act="#5ab9b0"; exit_fg="#f38ba5"; lit="#9eb34a"; desc="#5bb2e7"
-        cmt="#c5a769"
+        bind="#8b92d6"; act="#51a49c"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#529ecd"
+        cmt="#af955f"
       fi
       # Binds: names where they are introduced. Acts: calls, decorators, builtins.
       fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
@@ -1661,12 +1661,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#5ab9b0" panel_bg="#161616" surface_dim="#292929"
+      accent="#51a49c" panel_bg="#161616" surface_dim="#292929"
       surface0="#383838" surface1="#454545"
       overlay0="#9a9a9a" overlay1="#a1a1a1"
       text="#c0c0c0" subtext0="#a1a1a1"
-      green="#5ab9b0" yellow="#eed286" red="#f54b43"
-      blue="#9ca4f1" teal="#5ab9b0" peach="#f38ba5"
+      green="#51a49c" yellow="#eed286" red="#f54b43"
+      blue="#8b92d6" teal="#51a49c" peach="#d97d94"
       ;;
     kanagawa:light)
       # kanagawa lotus (#f2ecbc).

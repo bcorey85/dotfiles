@@ -560,19 +560,20 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="$sAdd"; badgeRem="$sRem"
       fRename="$sAdd"; fMod="$sAdd"; fUntracked="$sAdd"
       # Roles replace the token-kind colours above.
-      local heading1 role_extra bind act exit_fg lit desc
+      local heading1 role_extra bind grey exit_fg lit desc
       if [ "$2" = light ]; then
-        bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
-        kw="#4c5158"; cmt="#6d4a00"
+        bind="#433fa8"; grey="#4c5158"; exit_fg="#a80e62"; lit="#2a7000"; desc="#006c66"
+        cmt="#6d4a00"
       else
-        bind="#8b92d6"; act="#51a49c"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#529ecd"
+        bind="#8b92d6"; grey="#949494"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#51a49c"
         cmt="#af955f"
       fi
-      # Names are plain. Declaring keywords take the violet, operators and brackets the teal.
+      # Names are plain. Declaring keywords take the violet, flow keywords and types the teal,
+      # operators and brackets the grey.
       # fn stays violet for the markup lines below; function names go plain after them.
       fn="$bind"; cls="$text"; param="$text"; var="$text"
       call="$text"; bfn="$text"; mac="$text"; attr="$text"; pre="$bind"
-      kw="$bind"; punct="$act"; op="$act"
+      kw="$bind"; punct="$grey"; op="$grey"
       num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"; str="$lit"
       typ="$desc"; prim="$desc"; tag="$kw"; imp="$kw"; heading1="$exit_fg"
       vbi="$text"; ns="$text"; use="$text"; mem="$text"

@@ -568,25 +568,33 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         bind="#8b92d6"; act="#51a49c"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#529ecd"
         cmt="#af955f"
       fi
-      # Binds: names where they are introduced. Acts: calls, decorators, builtins.
-      fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
-      call="$act"; bfn="$act"; mac="$act"; attr="$act"; pre="$act"
+      # Names are plain. Declaring keywords take the violet, operators and brackets the teal.
+      # fn stays violet for the markup lines below; function names go plain after them.
+      fn="$bind"; cls="$text"; param="$text"; var="$text"
+      call="$text"; bfn="$text"; mac="$text"; attr="$text"; pre="$bind"
+      kw="$bind"; punct="$act"; op="$act"
       num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"; str="$lit"
       typ="$desc"; prim="$desc"; tag="$kw"; imp="$kw"; heading1="$exit_fg"
       vbi="$text"; ns="$text"; use="$text"; mem="$text"
       role_extra=$(cat <<EOF
 "entity.other.inherited-class"      = "$desc"
 "support.class"                     = "$desc"
-"meta.function-call entity.name.function" = "$act"
-"new.expr entity.name.type"         = "$act"
-"new.expr entity.name.function"     = "$act"
-"meta.function.decorator.python"    = "$act"
-"meta.object-literal.key"           = "$bind"
+"meta.function-call entity.name.function" = "$text"
+"new.expr entity.name.type"         = "$text"
+"new.expr entity.name.function"     = "$text"
+"meta.function.decorator.python"    = "$text"
+"meta.object-literal.key"           = "$text"
+"entity.name.type.enum"             = "$text"
+"entity.other.attribute-name.tsx"   = "$lit"
+"entity.other.attribute-name.jsx"   = "$lit"
+"entity.other.attribute-name.html"  = "$lit"
+"keyword.control.conditional"       = "$desc"
+"keyword.control.loop"              = "$desc"
 "keyword.control.return.shell"      = "$exit_fg"
 "keyword.control.flow.ts"           = "$exit_fg"
 "keyword.control.flow.tsx"          = "$exit_fg"
 "keyword.control.flow.js"           = "$exit_fg"
-"keyword.control.trycatch.ts"       = "$kw"
+"keyword.control.trycatch.ts"       = "$desc"
 "storage.type.sql"                  = "$desc"
 "heading.1.markdown entity.name.section.markdown" = "$heading1"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$heading1"
@@ -759,6 +767,7 @@ EOF
         ROLES="$role_extra" awk 'BEGIN { n = split(ENVIRON["ROLES"], r, "\n"); for (i = 1; i <= n; i++) { split(r[i], kv, " *= "); skip[kv[1]] = 1 } }
           { split($0, kv, " *= ") } !(kv[1] in skip)')"
       extra="$extra"$'\n'"$role_extra"
+      fn="$text"
       ;;
     # flexoki (kepano/flexoki-neovim): roles are the resolved fg of nvim's
     # groups. Rows are the green/red 15% into the ground, words 30%; the

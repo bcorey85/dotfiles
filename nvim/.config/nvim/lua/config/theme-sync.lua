@@ -88,9 +88,11 @@ local FAMILIES = {
     -- Comments are tuned in APCA and mirrored in hunk; the WCAG floor would
     -- split them from docstrings and from hunk.
     own_comment_contrast = true,
+    -- Comments are mustard; the theme sets its own grey for picker paths.
+    own_picker_dir = true,
     accents = {
       -- H1 takes the exit magenta; H2-H6 the bind violet.
-      dark = { heading1 = "#f38ba5", heading = "#9ca4f1", bullet = "#a5a9b0" },
+      dark = { heading1 = "#f38ba5", heading = "#9ca4f1", bullet = "#a1a1a1" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },
@@ -208,6 +210,38 @@ local FAMILIES = {
     accents = {
       dark = { heading1 = "#4d9375", heading = "#4d9375" },
       light = { heading1 = "#1c6b48", heading = "#1c6b48" },
+    },
+  },
+  ["min"] = {
+    -- dybdeskarphet/min.nvim, kanagawa flavor, low contrast. One colorscheme
+    -- "min" takes dark or light from its own `theme` option, not from
+    -- vim.o.background, hence `pre`. Headings are its Title yellow.
+    schemes = { dark = "min", light = "min" },
+    colors_name = "min",
+    pre = function(mode)
+      require("min").setup({ flavor = "kanagawa", contrast = "low", theme = mode })
+    end,
+    accents = {
+      dark = { heading1 = "#e6c384", heading = "#e6c384" },
+      light = { heading1 = "#836f4a", heading = "#836f4a" },
+    },
+  },
+  ["kanagawa-paper"] = {
+    -- thesimonho/kanagawa-paper: ink dark / canvas light. Each sets its own
+    -- colors_name, the scheme's name. Headings are its H1 red and H2 pink.
+    schemes = { dark = "kanagawa-paper-ink", light = "kanagawa-paper-canvas" },
+    accents = {
+      dark = { heading1 = "#c4746e", heading = "#a292a3" },
+      light = { heading1 = "#a36360", heading = "#947992" },
+    },
+  },
+  ["monoglow"] = {
+    -- wnkz/monoglow.nvim: void dark / light. Each sets its own colors_name,
+    -- the scheme's name. Headings are its Title grey.
+    schemes = { dark = "monoglow-void", light = "monoglow-light" },
+    accents = {
+      dark = { heading1 = "#a1a1a1", heading = "#a1a1a1" },
+      light = { heading1 = "#707070", heading = "#707070" },
     },
   },
   ["hybrid"] = {
@@ -387,6 +421,23 @@ local function set_word_diff()
   hl(0, "GitSignsDeleteLnInline", { fg = fg, bg = bg_of("DiffDelete"), bold = true })
 end
 
+-- A theme that paints diff rows as solid blocks with ground-coloured text
+-- hides the row's syntax. Such a row becomes a wash of its own block colour.
+local function set_diff_washes()
+  local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
+  if not normal.bg then
+    return
+  end
+  local ground = string.format("#%06x", normal.bg)
+  for _, group in ipairs({ "DiffAdd", "DiffDelete", "DiffChange" }) do
+    local row = vim.api.nvim_get_hl(0, { name = group, link = false })
+    if row.bg and row.fg == normal.bg then
+      local block = string.format("#%06x", row.bg)
+      vim.api.nvim_set_hl(0, group, { bg = blend(block, ground, 0.2) })
+    end
+  end
+end
+
 local function luminance(c)
   local l = {}
   for i = 2, 6, 2 do
@@ -479,10 +530,29 @@ end
 
 -- Snacks picker links a path's directory part, hidden and ignored paths and the
 -- match count to NonText, which most themes draw near the ground. They take the
--- comment grey, which set_comment_floor keeps readable.
+-- comment grey, which set_comment_floor keeps readable. A family whose comments
+-- carry a colour sets own_picker_dir: its own SnacksPickerDir stays, and the
+-- other three follow it.
+-- True when the loaded colorscheme belongs to a family that sets own_picker_dir.
+-- Asked of the loaded scheme, not the active family, so an audition gets it too.
+local function scheme_owns_picker_dir()
+  for _, fam in pairs(FAMILIES) do
+    if fam.own_picker_dir and fam.colors_name == vim.g.colors_name then
+      return true
+    end
+  end
+  return false
+end
+
 local function set_picker()
-  for _, group in ipairs({ "Dir", "PathHidden", "PathIgnored", "Totals" }) do
-    vim.api.nvim_set_hl(0, "SnacksPicker" .. group, { link = "Comment" })
+  local target = "Comment"
+  local groups = { "Dir", "PathHidden", "PathIgnored", "Totals" }
+  if scheme_owns_picker_dir() then
+    target = "SnacksPickerDir"
+    groups = { "PathHidden", "PathIgnored", "Totals" }
+  end
+  for _, group in ipairs(groups) do
+    vim.api.nvim_set_hl(0, "SnacksPicker" .. group, { link = target })
   end
 end
 
@@ -515,6 +585,7 @@ local function apply_overrides()
   if own_scheme and fam.post then
     fam.post(mode) -- groups the theme leaves at nvim's defaults
   end
+  set_diff_washes()
   set_word_diff()
   if not (own_scheme and fam.own_comment_contrast) then
     set_comment_floor()

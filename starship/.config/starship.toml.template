@@ -235,15 +235,15 @@ grey = "#837a72"
 [palettes.dredge-dark]
 red = "#f78d83"
 orange = "#f0925f"
-yellow = "#c9a65a"
+yellow = "#c5a769"
 green = "#9eb34a"
 blue = "#5bb2e7"
 branch = "#9ca4f1"
 teal = "#5ab9b0"
 purple = "#f38ba5"
-fg = "#c1cfdc"
-bg = "#191f25"
-grey = "#a5a9b0"
+fg = "#c0c0c0"
+bg = "#1c1c1c"
+grey = "#a1a1a1"
 
 [palettes.dredge-light]
 red = "#951816"
@@ -449,6 +449,90 @@ purple = "#a13865"
 fg = "#393a34"
 bg = "#ffffff"
 grey = "#8f908c"
+
+# min (dybdeskarphet/min.nvim, kanagawa flavor, low contrast). The grey is its
+# base_09.
+[palettes.min-dark]
+red = "#e46876"
+orange = "#ffa066"
+yellow = "#e6c384"
+green = "#98bb6c"
+blue = "#7e9cd8"
+branch = "#7e9cd8"
+teal = "#7aa89f"
+purple = "#957fb8"
+fg = "#eeeada"
+bg = "#181616"
+grey = "#8e8c84"
+
+[palettes.min-light]
+red = "#c84053"
+orange = "#cc6d00"
+yellow = "#836f4a"
+green = "#6f894e"
+blue = "#4d699b"
+branch = "#4d699b"
+teal = "#597b75"
+purple = "#766b90"
+fg = "#2e2e3d"
+bg = "#f2ecbc"
+grey = "#636262"
+
+# kanagawa-paper (thesimonho/kanagawa-paper): ink, canvas. Green is its string
+# green and blue its function blue; the grey is its dim text.
+[palettes.kanagawa-paper-dark]
+red = "#c4746e"
+orange = "#b6927b"
+yellow = "#c4b28a"
+green = "#8a9a7b"
+blue = "#859fac"
+branch = "#859fac"
+teal = "#8ea49e"
+purple = "#a292a3"
+fg = "#dcd7ba"
+bg = "#1f1f28"
+grey = "#9e9b93"
+
+[palettes.kanagawa-paper-light]
+red = "#a36360"
+orange = "#a1805e"
+yellow = "#91825e"
+green = "#6a7d66"
+blue = "#6c828c"
+branch = "#6c828c"
+teal = "#5c8388"
+purple = "#947992"
+fg = "#616569"
+bg = "#e1e1de"
+grey = "#77746c"
+
+# monoglow (wnkz/monoglow.nvim): void, light. Mostly grey; the colours are its
+# diagnostics, and the branch is the teal glow.
+[palettes.monoglow-dark]
+red = "#ffc0b9"
+orange = "#fce094"
+yellow = "#fce094"
+green = "#b3f6c0"
+blue = "#a6dbff"
+branch = "#33e6c6"
+teal = "#33e6c6"
+purple = "#ffcaff"
+fg = "#c0c0c0"
+bg = "#1c1c1c"
+grey = "#a1a1a1"
+
+[palettes.monoglow-light]
+red = "#c04040"
+orange = "#9a7a20"
+yellow = "#9a7a20"
+green = "#2a7a40"
+blue = "#1a6e99"
+branch = "#2e8a8a"
+teal = "#2e8a8a"
+purple = "#8a3a8a"
+fg = "#3a3a3a"
+bg = "#f0f0f0"
+grey = "#707070"
 
 # aura dark soft = the dimmed variant (bg #15141b, soft-text accents).
 # DARK-ONLY, so the light palette below is a verbatim copy; the family name

@@ -1,0 +1,23 @@
+# monoglow light (wnkz/monoglow.nvim). The repo's extras/ghostty/monoglow_light
+# with the green slots (2, 10) in its teal, as the nvim spec's on_colors sets them.
+background = #f0f0f0
+foreground = #3a3a3a
+selection-background = #d9d9d9
+selection-foreground = #252525
+cursor-color = #3a3a3a
+palette = 0=#3a3a3a
+palette = 1=#ba0959
+palette = 2=#2e8a8a
+palette = 3=#4e4e4e
+palette = 4=#707070
+palette = 5=#3b4855
+palette = 6=#2e8a8a
+palette = 7=#d0d0d0
+palette = 8=#555555
+palette = 9=#fd1b7c
+palette = 10=#2e8a8a
+palette = 11=#252525
+palette = 12=#555555
+palette = 13=#506070
+palette = 14=#009a9a
+palette = 15=#f0f0f0

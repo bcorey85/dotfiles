@@ -131,6 +131,7 @@ class LoopTranscript:
         self.path = str(path)
         self.died = {}  # agent id -> whether its own transcript ends on an API error
         self.prompt, self.last_text = None, ""
+        self.last_text_line = None  # the transcript line of last_text, None before any text
         self.kinds = {}  # dispatch tool_use_id -> subagent_type, in dispatch order
         self.dispatched_at = {}  # dispatch tool_use_id -> transcript line
         self.results = {}  # dispatch tool_use_id -> the text of its tool_result
@@ -198,6 +199,7 @@ class LoopTranscript:
     def read_block(self, n, record_type, block):
         if block.get("type") == "text" and record_type == "assistant" and block.get("text", "").strip():
             self.last_text = block["text"]
+            self.last_text_line = n
         elif block.get("type") == "tool_use":
             self.read_tool_use(n, block)
         elif block.get("type") == "tool_result" and block.get("tool_use_id") in self.handback_ids:
@@ -374,23 +376,23 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
-def has_delivered_handback(transcript_path):
-    """Whether the transcript holds a SubagentHandback whose result is not an error: a denied hand-back returns an
-    error result and the agent goes on working."""
-    return bool(LoopTranscript(transcript_path).handback_lines)
+def finished_by_meta(transcript_path):
+    """Whether the transcript's meta file says the subagent finished."""
+    meta_path = pathlib.Path(transcript_path).with_suffix(".meta.json")
+    return meta_path.exists() and bool(json.loads(meta_path.read_text()).get("finished"))
 
 
 def agent_finished(transcript_path):
-    """Whether the subagent whose transcript this is has ended: its meta file says finished, or it delivered a
-    hand-back. False for a transcript that is not written yet."""
+    """Whether the subagent whose transcript this is has ended: its meta file says finished, or its transcript holds
+    a SubagentHandback whose result is not an error (a denied hand-back returns an error result and the agent goes
+    on working). False for a transcript that is not written yet. The transcript is parsed only when the meta file
+    does not say finished."""
     transcript_path = pathlib.Path(transcript_path)
     if not transcript_path.exists():
         return False
-    meta_path = transcript_path.with_suffix(".meta.json")
-    if meta_path.exists() and json.loads(meta_path.read_text()).get("finished"):
+    if finished_by_meta(transcript_path):
         return True
-
-    return has_delivered_handback(transcript_path)
+    return bool(LoopTranscript(transcript_path).handback_lines)
 
 
 def last_coder_step(transcript):

@@ -110,6 +110,39 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual((run_folder / "stop.prev.md").read_text(), "the stale stop\n")
         self.assertEqual((run_folder / "review-stop.md").read_text(), "a review stop\n")
 
+    def test_the_last_handoff_is_moved_to_handoff_prev_replacing_an_older_one(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "handoff.txt").write_text("the last phase's hand-off\n")
+        (run_folder / "handoff.prev.txt").write_text("an older hand-off\n")
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((run_folder / "handoff.txt").exists())
+        self.assertEqual((run_folder / "handoff.prev.txt").read_text(), "the last phase's hand-off\n")
+
+    def test_a_first_phase_with_no_handoff_creates_no_handoff_prev(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((run_folder / "handoff.prev.txt").exists())
+
+    def test_a_failed_handoff_rename_names_phase_start_on_stderr_and_the_script_goes_on(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "handoff.txt").write_text("the last hand-off\n")
+        (run_folder / "handoff.prev.txt").mkdir()
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("phase_start: could not move", done.stderr)
+        self.assertEqual(done.stdout.strip(), git(self.repo, "rev-parse", "HEAD"))
+
     def test_a_failed_stop_rename_names_phase_start_on_stderr_and_the_script_goes_on(self):
         run_folder = self.repo / ".git/code-phase"
         run_folder.mkdir()

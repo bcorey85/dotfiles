@@ -42,6 +42,9 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import import_guard
+
+import_guard.guard("quality-check-cap", __name__)
 import check_output
 import check_scope
 import hook_input

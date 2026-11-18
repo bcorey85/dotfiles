@@ -234,19 +234,24 @@ class RunGateTest(HookRunTest):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\n\n\ndef main():\n    raise RuntimeError('boom')\n\n\n"
                           "hook_input.run_gate(main)\n")
         finished = subprocess.run([sys.executable, str(driver)], input=b"{}", capture_output=True)
         self.assertEqual(finished.returncode, 2)
         self.assertEqual(finished.stdout, b"")
         self.assertEqual(
-            finished.stderr.decode("utf-8"), "crashing-gate: crashed (RuntimeError: boom) - blocking the call\n"
+            finished.stderr.decode("utf-8"),
+            "[crashing-gate] crashed while judging the call (RuntimeError: boom) - exit 2 (a call that has not run yet "
+            "is blocked). Recovery: fix the file the error names with the Edit tool, or ask the user to run "
+            "`git restore <file>`.\n"
         )
 
     def test_run_gate_passes_the_exit_code_of_main_through(self):
         driver = pathlib.Path(self.tmp.name) / "quiet-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\nhook_input.run_gate(lambda: 3)\n")
         self.assertEqual(subprocess.run([sys.executable, str(driver)]).returncode, 3)
 
@@ -259,7 +264,8 @@ class RunGateTest(HookRunTest):
                                    cwd=str(self.work), preexec_fn=lambda: os.close(1))
         _, stderr = process.communicate(payload)
         self.assertEqual(process.returncode, 2)
-        self.assertTrue(stderr.decode("utf-8").startswith("git-discipline-gate: crashed ("), stderr)
+        message = stderr.decode("utf-8")
+        self.assertTrue(message.startswith("[git-discipline-gate] crashed while judging the call ("), stderr)
 
     def test_every_gate_imports_run_gate_and_is_executable(self):
         for name in self.GATES:

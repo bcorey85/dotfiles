@@ -7,53 +7,53 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-598 fix notes
+601 fix notes
 
-Recent: the 7 days up to 2026-11-15, the newest note.
+Recent: the 7 days up to 2026-11-17, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 59 | 11 |
-| script/review-loop-script | 58 | 8 |
-| script/handback | 54 | 4 |
-| script/review-commit-gate | 38 | 4 |
+| script/review-fix | 59 | 9 |
+| script/review-loop-script | 58 | 4 |
+| script/handback | 55 | 4 |
+| script/review-commit-gate | 40 | 6 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 24 | 3 |
-| script/coder-gate | 22 | 2 |
-| script/script-utils | 21 | 6 |
+| script/full-check | 24 | 2 |
+| script/coder-gate | 23 | 2 |
+| script/script-utils | 21 | 5 |
 | agent/review-loop | 20 | 0 |
 | script/plan-format | 20 | 3 |
-| script/quality-check-cap | 17 | 0 |
-| skill/code | 17 | 3 |
-| skill/review | 17 | 11 |
-| script/review-loop | 16 | 9 |
-| script/shell-write-gate | 15 | 1 |
+| script/quality-check-cap | 18 | 1 |
+| skill/code | 17 | 0 |
+| skill/review | 17 | 5 |
+| script/review-loop | 16 | 8 |
+| script/shell-write-gate | 16 | 2 |
 | script/verify-prep | 14 | 4 |
 | script/verify-log | 13 | 6 |
 | script/log-review-finding | 12 | 1 |
 | script/staged-claim-gate | 12 | 1 |
-| script/pull-keep-index | 11 | 8 |
+| script/git-discipline-gate | 11 | 3 |
+| script/pull-keep-index | 11 | 3 |
 | script/verify-common | 10 | 5 |
-| script/git-discipline-gate | 9 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 0 |
 | script/refactor-flow | 8 | 3 |
-| script/shell-command | 8 | 4 |
-| script/code-review-start | 7 | 3 |
+| script/shell-command | 8 | 3 |
+| script/code-review-start | 7 | 2 |
 | script/code-wait | 7 | 2 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/handback-store | 6 | 4 |
-| script/herdr-worktree | 6 | 2 |
-| script/pipe-shell-check | 6 | 3 |
+| script/herdr-worktree | 6 | 1 |
+| script/pipe-shell-check | 6 | 1 |
 | skill/refactor | 6 | 1 |
 | script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 1 |
-| script/review-launch | 5 | 5 |
+| script/review-launch | 5 | 4 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/test-run-output | 5 | 1 |
 | (no component) | 4 | 0 |
@@ -75,10 +75,10 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/log-spec-run | 3 | 0 |
 | script/phase-asks | 3 | 3 |
 | script/review-fix-asks | 3 | 3 |
-| script/review-loop-packet | 3 | 1 |
+| script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
-| script/wait-loop-gate | 3 | 1 |
-| agent/code-fork | 2 | 1 |
+| script/wait-loop-gate | 3 | 0 |
+| agent/code-fork | 2 | 0 |
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
@@ -89,6 +89,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/coder-packet | 2 | 0 |
 | script/criteria-verdict | 2 | 1 |
 | script/emit-orchestration | 2 | 0 |
+| script/fork-write-scope | 2 | 2 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -115,11 +116,10 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/block-credential-read | 1 | 0 |
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
-| script/detach | 1 | 1 |
+| script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 1 |
-| script/fork-write-scope | 1 | 1 |
 | script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-commands | 1 | 0 |
@@ -127,7 +127,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
 | script/herdr-worktree-prune | 1 | 1 |
-| script/herdr-worktree-watch | 1 | 1 |
+| script/herdr-worktree-watch | 1 | 0 |
 | script/hook-input | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/install-stow | 1 | 0 |
@@ -143,12 +143,12 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
-| script/reply-json | 1 | 1 |
+| script/reply-json | 1 | 0 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 1 |
 | script/review-loop-docs-kind | 1 | 1 |
-| script/review-loop-findings | 1 | 1 |
-| script/review-loop-fix-induced | 1 | 1 |
+| script/review-loop-findings | 1 | 0 |
+| script/review-loop-fix-induced | 1 | 0 |
 | script/rule-anchors | 1 | 0 |
 | script/ruled-change-text | 1 | 1 |
 | script/source-text | 1 | 0 |

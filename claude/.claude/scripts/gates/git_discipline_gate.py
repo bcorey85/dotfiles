@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PreToolUse hook on Bash: enforce git rules the generic bash safety gate does not cover.
+"""PreToolUse hook on Bash: enforce git rules on a git call spelled with `-C`, `-c`, `--no-pager`, `--git-dir`,
+`--work-tree` and option clusters; aliases are not read.
 
   1. git stash in every form but list and show, and autostash on pull, rebase or merge (`--autostash`, or the
      rebase.autoStash / merge.autoStash config turned on through `-c` or `git config`); the one pass is a
@@ -15,6 +16,13 @@
      cherry-pick, revert, am, merge, pull, rebase; switch or checkout of a branch with -m/--merge/--conflict or
      -f/--force (switch also --discard-changes and --orphan); restore --staged; apply --cached, --index, --3way or
      --intent-to-add (-3, -N); checkout <tree-ish> [--] <paths>, and checkout -p <tree-ish>
+  7. in a main checkout: a forced push (-f, --force*, +refspec, --mirror), a push naming main or master (or --all,
+     --mirror), reset --hard, clean -f (or -c clean.requireForce=false, a --config-env clean.requireForce key, a
+     GIT_CONFIG_* variable), a discard of the whole work tree (checkout -f, switch -f or --discard-changes, checkout
+     -- ., restore .) and --no-verify (or -c core.hooksPath=..., a --config-env core.hooksPath key, a GIT_CONFIG_*
+     variable) on commit, push or merge; the rules are in git_destructive_calls.py and read past -C, -c,
+     --no-pager, --git-dir and --work-tree. Rule 7 passes a linked worktree; bash-safety-gate.sh still denies the
+     plain spellings (`git push --force`, `git reset --hard`, ...) everywhere, linked worktrees included
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -28,12 +36,28 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import import_guard
+
+import_guard.guard("git-discipline-gate", __name__)
 import hook_input
 import script_utils
 import shell_command
 import shell_statements
 import user_prompts
-from git_calls import git_calls
+from git_calls import REPO_ENVIRONMENT_NAMES, git_calls, is_linked_worktree
+from git_destructive_calls import (
+    CONFLICT_SHORTEST,
+    GIT_FALSE_VALUES,
+    PROTECTED_BRANCHES,
+    SWITCH_VALUE_LETTERS,
+    config_trigger_note,
+    destructive_reason,
+    discards_on_switch,
+    is_force_push,
+    is_orphan_option,
+    restore_stages,
+    takes_separate_value,
+)
 from hook_input import JqError, jq_get, jq_str
 from shell_command import (
     flags_before_value,
@@ -55,11 +79,7 @@ MERGE_WITH_WORK_UNCOMMITTED = ("To bring a base into unfinished work, run `git m
                                "it stops, commit the work once /review hands back converged or deferred, then merge.")
 REPO_OPTIONS = {"-C", "--git-dir", "--work-tree"}
 REPO_OPTION_PREFIXES = ("--git-dir=", "--work-tree=")
-REPO_ENV_PREFIXES = ("GIT_DIR=", "GIT_WORK_TREE=")
-# git accepts `--c` as `--conflict` on checkout; on switch `--c` is ambiguous and git refuses it, so the wider match
-# only denies calls git would reject.
-CONFLICT_SHORTEST = "--c"
-FALSE_VALUES = {"false", "no", "off", "0"}
+REPO_ENV_PREFIXES = tuple(name + "=" for name in REPO_ENVIRONMENT_NAMES)
 # Code the user quotes, which names a command rather than asking for one.
 QUOTED_CODE = re.compile(r"`[^`]*`")
 # Splits after a run of end marks, so each sentence keeps its own end mark.
@@ -101,7 +121,7 @@ def is_autostash(call):
     flags = [argument for argument in call.arguments if argument in ("--autostash", "--no-autostash")]
     if flags:
         return flags[-1] == "--autostash"
-    return any(call.config[key] not in FALSE_VALUES for key in AUTOSTASH_KEYS if key in call.config)
+    return any(call.config[key] not in GIT_FALSE_VALUES for key in AUTOSTASH_KEYS if key in call.config)
 
 
 def count_pull_push_pairs(command):
@@ -146,7 +166,8 @@ def count_pull_push_pairs(command):
 
 def literal_dir_targets(step):
     """The repo-selecting text, as written, of the git call that opens the step: its `-C`, `--git-dir` and
-    `--work-tree` options (spaced or `=` form) and the GIT_DIR and GIT_WORK_TREE assignments before it."""
+    `--work-tree` options (spaced or `=` form) and the repo environment assignments (`REPO_ENVIRONMENT_NAMES`)
+    before it."""
     all_words = shell_command.segment_words(step)
     words = shell_command.command_after_wrappers(all_words)
     wrapper_words = all_words[:len(all_words) - len(words)]
@@ -161,8 +182,8 @@ def literal_dir_targets(step):
 
 
 def dir_targets_differ(pull_step, push_step):
-    """True when the two calls' repo-selecting text (`-C`, `--git-dir`, `--work-tree`, GIT_DIR, GIT_WORK_TREE)
-    differs. A target with a mark the directory reader skips (`$`, quote, glob)
+    """True when the two calls' repo-selecting text (`-C`, `--git-dir`, `--work-tree`, the repo environment names
+    of `REPO_ENVIRONMENT_NAMES`) differs. A target with a mark the directory reader skips (`$`, quote, glob)
     resolves to the caller's cwd, so equal directories prove nothing. Fails closed on harmless spellings like `/r`
     vs `/r/`."""
     pull_targets = literal_dir_targets(pull_step)
@@ -177,24 +198,12 @@ def turns_on_autostash_config(arguments):
             continue
         if index + 1 == len(arguments):
             return False
-        return arguments[index + 1].lower() not in FALSE_VALUES
+        return arguments[index + 1].lower() not in GIT_FALSE_VALUES
     return False
 
 
 def is_amend(call):
     return call.subcommand == "commit" and "--amend" in call.arguments
-
-
-def is_force_push(call):
-    if call.subcommand != "push":
-        return False
-    for argument in call.arguments:
-        is_long_flag = argument.startswith("--force")
-        is_plus_refspec = argument.startswith("+")
-        is_short_flag_cluster = is_short_cluster(argument) and "f" in argument
-        if is_long_flag or is_plus_refspec or is_short_flag_cluster:
-            return True
-    return False
 
 
 # Fails closed: a missing or unreadable transcript, or no typed prompt, means no approval and the amend stays denied.
@@ -214,13 +223,6 @@ def user_approved_amend(transcript_path):
     return any(ORDERS_AMEND.search(sentence) and not NEGATION.search(sentence) for sentence in statements)
 
 
-def restore_stages(argument):
-    if is_short_cluster(argument):
-        # `-s<tree>` and `-U<n>` take a value, which is not the `-S` flag.
-        return "S" in flags_before_value(argument, "sU")
-    return is_long_prefix(argument, "--staged", "--st")
-
-
 def apply_writes_index(argument):
     if is_short_cluster(argument):
         # `-p<n>` and `-C<n>` take a number, which is not the `-3` or `-N` flag.
@@ -229,12 +231,6 @@ def apply_writes_index(argument):
     return (is_long_prefix(argument, "--3way", "--3") or is_long_prefix(argument, "--cached", "--ca")
             or is_long_prefix(argument, "--index", "--ind")
             or is_long_prefix(argument, "--intent-to-add", "--int"))
-
-
-def is_orphan_option(argument):
-    """True for `--orphan`, its abbreviations, and `--orphan=<branch>`."""
-    option_name = argument.split("=")[0]
-    return is_long_prefix(option_name, "--orphan", "--or")
 
 
 def checkout_makes_branch(argument):
@@ -246,25 +242,11 @@ def checkout_makes_branch(argument):
 
 def checkout_patches(argument):
     if is_short_cluster(argument):
-        return "p" in flags_before_value(argument, "bB")
+        return "p" in flags_before_value(argument, SWITCH_VALUE_LETTERS["checkout"])
     if is_long_prefix(argument, "--patch", "--patc"):
         return True
     option_name = argument.split("=")[0]
     return is_long_prefix(option_name, "--pathspec-from-file", "--pathspec-fr")
-
-
-def takes_separate_value(argument):
-    # `--conflict <style>`, `--pathspec-from-file <file>`, `--unified <n>`, `--inter-hunk-context <n>` and a short
-    # cluster ending in `U` (`-U <n>`, `-pU <n>`) carry their value in the next word.
-    if is_short_cluster(argument):
-        return argument.endswith("U")
-    if is_long_prefix(argument, "--conflict", CONFLICT_SHORTEST):
-        return True
-    if is_long_prefix(argument, "--unified", "--u"):
-        return True
-    if is_long_prefix(argument, "--inter-hunk-context", "--in"):
-        return True
-    return is_long_prefix(argument, "--pathspec-from-file", "--pathspec-fr")
 
 
 def checkout_writes_index(arguments):
@@ -277,7 +259,7 @@ def checkout_writes_index(arguments):
     """
     options = options_before_separator(arguments)
     has_paths_after_separator = len(arguments) - len(options) > 1
-    if not has_paths_after_separator and switch_writes_index(options, "bB"):
+    if not has_paths_after_separator and switch_writes_index(options, SWITCH_VALUE_LETTERS["checkout"]):
         # A forced or merging checkout acts on HEAD or the target branch, with or without `-b`.
         return True
     if any(checkout_makes_branch(argument) for argument in options):
@@ -302,13 +284,6 @@ def merges_on_switch(argument, value_letters):
     return is_long_prefix(argument, "--merge", "--m") or is_long_prefix(option_name, "--conflict", CONFLICT_SHORTEST)
 
 
-def discards_on_switch(argument, value_letters):
-    """True for `-f`, `--force` and `--discard-changes`, which reset the index to the target branch."""
-    if is_short_cluster(argument):
-        return "f" in flags_before_value(argument, value_letters)
-    return is_long_prefix(argument, "--force", "--f") or is_long_prefix(argument, "--discard-changes", "--di")
-
-
 def switch_writes_index(options, value_letters):
     """True when any option merges local changes into the target or discards them (`-m`, `--merge`, `--conflict`,
     `-f`, `--force`, `--discard-changes`)."""
@@ -327,7 +302,7 @@ def writes_index(call):
         # `-c` and `-C` take the branch name, so a letter after them is part of it.
         # `--orphan` removes every tracked file, which empties the index.
         makes_orphan = any(is_orphan_option(argument) for argument in options)
-        return makes_orphan or switch_writes_index(options, "cC")
+        return makes_orphan or switch_writes_index(options, SWITCH_VALUE_LETTERS["switch"])
     if call.subcommand == "restore":
         return any(restore_stages(argument) for argument in options)
     if call.subcommand == "apply":
@@ -397,7 +372,8 @@ def run(raw):
     if not command:
         return
 
-    calls = git_calls(command)
+    payload_cwd = jq_str(jq_get(payload, "cwd")) or "."
+    calls = git_calls(command, payload_cwd)
 
     check_coder_index(payload, calls)
 
@@ -420,7 +396,26 @@ def run(raw):
                    "it and retry.")
 
     for call in calls:
+        check_destructive(call)
         check_branch(call)
+
+
+def check_destructive(call):
+    """Rule 7: deny a forced push, a push that names main or master, `reset --hard`, `clean -f`, a discard of the whole
+    work tree and `--no-verify` in a main checkout. A linked worktree is a lane's own tree, so it passes. A repo the
+    gate cannot find reads as a main checkout."""
+    reason = destructive_reason(call)
+    if reason is None or is_linked_worktree(call):
+        return
+    notes = []
+    config_note = config_trigger_note(call, reason)
+    if config_note:
+        notes.append(config_note)
+    if not call.placed:
+        notes.append("this call runs in a repo the gate cannot place, so it reads as a main checkout")
+    detail = f" ({'; '.join(notes)})" if notes else ""
+    raise DenyError(f"[git-discipline-gate] {reason} is blocked in a main checkout{detail}: it destroys work or skips "
+                    "a check that other sessions rely on. Ask the user to run it themselves.")
 
 
 def check_branch(call):
@@ -433,7 +428,7 @@ def check_branch(call):
         raise DenyError("[git-discipline-gate] branch '" + branch + "' still carries the auto-generated worktree- "
                    "prefix. Rename it to the plain TICKET-NUM-desc form and push it with -u first, then retry.")
 
-    if call.subcommand == "commit" and branch in ("main", "master") and not is_direct_edit_repo(call.directory):
+    if call.subcommand == "commit" and branch in PROTECTED_BRANCHES and not is_direct_edit_repo(call.directory):
         raise DenyError("[git-discipline-gate] git commit on " + branch + " is blocked: create a feature branch "
                    "first (global rule). If committing here is genuinely intended, the user can run it "
                    "themselves.")

@@ -54,9 +54,10 @@ The session stays dirty; a later commit that ships code is denied again.
 A git call that makes a commit (`git commit` or another call of git_commit_calls.py), or an alias of one, is judged
 as a commit and is never notes-only. A command with a program beside git reads as a plain-text
 commit for `git commit` only, unless the program is a shell or `eval`, whose text counts every committing call, so
-a PR body that names `git merge` is no commit. A commit through
-a `!` shell alias earns no credit (it may land in any repo) and is read in the cwd repo for asks; where the repo it
-runs in is placed by git_commit_calls.git_commit_dirs, through commit_placement.py.
+a PR body that names `git merge` is no commit. The heredoc body of an interpreter running a script file is data; a
+commit named in its arguments, bare or quoted, still counts, since the script may run it. A
+commit through a `!` shell alias earns no credit (it may land in any repo) and is read in the cwd repo for asks;
+the repo a commit runs in is placed by git_commit_calls.git_commit_dirs, through commit_placement.py.
 
 A dirty session still commits in five more cases. The first four are each checked against something a subagent
 cannot write; the fifth trusts the record verify-log writes, the same record verify-prep trusts, so a session or
@@ -118,6 +119,9 @@ import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [_SCRIPT_DIR, os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+import import_guard
+
+import_guard.guard("review-commit-gate", __name__)
 import commit_gate_denials
 import commit_placement
 import hook_input
@@ -127,7 +131,14 @@ import script_utils
 import shell_statements
 import user_prompts
 import verify_common
-from git_commit_calls import COMMITTING_CALL, NO_COMMIT_FLAGS, runs_commit_call
+from git_calls import REPO_ENVIRONMENT_NAMES
+from git_commit_calls import (
+    COMMIT_VALUE_LETTERS,
+    COMMIT_VALUE_OPTIONS,
+    COMMITTING_CALL,
+    NO_COMMIT_FLAGS,
+    runs_commit_call,
+)
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
     GIT_VALUE_OPTIONS,
@@ -152,7 +163,7 @@ AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 # A command that changes folder or repo (cd, pushd, popd, eval, source, or a git dir or work-tree option or variable;
 # `.` is read from the command words). The gate never parses where the chain leads.
 CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source)(?![\w./-])"
-                            r"|--git-dir|--work-tree|GIT_DIR|GIT_WORK_TREE")
+                            r"|--git-dir|--work-tree|" + "|".join(REPO_ENVIRONMENT_NAMES))
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
 FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
 # Subcommands whose words after the subcommand are paths, flags or a message: none of them moves the commit.
@@ -212,9 +223,6 @@ COMMIT_FLAGS = {"-q", "-v", "-s", "-n", "-e", "-o", "--quiet", "--verbose", "--s
                 "--no-edit", "--allow-empty", "--allow-empty-message", "--no-gpg-sign", "--no-post-rewrite",
                 "--only", "--status", "--no-status"}
 COMMIT_ONLY_FLAGS = {"-o", "--only"}
-COMMIT_VALUE_OPTIONS = {"--message", "--file", "--author", "--date", "--trailer", "--template", "--cleanup",
-                        "--reuse-message", "--reedit-message"}
-COMMIT_VALUE_LETTERS = "mFCct"
 NO_REVIEW_DENIED = (
     "[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
     "the user: invoke the /review skill now on the coder work, then commit after it converges. If the "
@@ -358,8 +366,8 @@ def commit_follows_git(words, git_index):
 
 def is_commit_command(command):
     """True when the command commits, as the module docstring defines it. Line continuations are removed and each
-    substitution span is read both as written and shrunk. The body of a quoted heredoc that only stores text is not
-    read."""
+    substitution span is read both as written and shrunk. The body of a heredoc (quoted or not) that only stores text
+    is not read, except the substitution spans of an unquoted body."""
     unstored = shell_statements.strip_stored_heredocs(command)
     joined = LINE_CONTINUATION.sub("", unstored)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
@@ -393,8 +401,10 @@ def reads_as_commit(reading):
         return True
 
     if unsafe_commands:
-        # A shell or `eval` runs the words it is given, so any committing call in its text counts. Any other program
-        # (`gh pr create --body "run git merge"`) only carries the text, so there `git commit` alone counts.
+        # A script file may run its argument (`python3 tools/retry.py 'git commit -m x'`), so a quoted commit counts;
+        # the body of a heredoc that only stores text is already dropped. A shell or `eval` runs the words it is
+        # given, so any committing call in its text counts. Any other program (`gh pr create --body "run git merge"`)
+        # only carries the text, so there `git commit` alone counts.
         if any(runs_text_as_shell(words) for words in unsafe_commands):
             return text_holds_commit(texts, (COMMITTING, GIT_THEN_COMMITTING))
         return text_holds_commit(texts, (COMMIT, GIT_THEN_COMMIT))

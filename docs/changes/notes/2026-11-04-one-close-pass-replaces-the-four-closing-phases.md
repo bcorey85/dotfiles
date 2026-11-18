@@ -13,7 +13,7 @@ test: "tests/scripts/test_plan_format.py"
 asked: "ship now then watch (2026-11-04); kept on three branches: \"the savings outweight the quality on this one. 2 defects and 2 tests is fine for 30-60% savings\" (2026-11-07)"
 proof: ["2026-11-07-one-close-pass-cuts-closing-tokens-36-but-fixes"]
 unmeasured: ""
-overlap: "none"
+overlap: "close-pass-escapes reads escapes per review run, the metric that review-lens-split-escapes (the round-one lens split) also reads, and that earlier open watch is still running, so a move in escapes after this edit is read against both."
 ---
 
 ## Change

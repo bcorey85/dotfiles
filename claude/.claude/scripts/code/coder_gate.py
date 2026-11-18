@@ -56,7 +56,13 @@ import time
 from collections import namedtuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
+import import_guard
+
+# Fail-closed on a broken import (exit 2, the call does not run). After the imports the hook verbs run inside
+# hook_input.run_gate, which blocks on a judging crash; the `set`, `summary` and `clear` CLI verbs keep their traceback.
+release_import_guard = import_guard.guard("coder-gate", __name__)
 import check_output
+import hook_input
 import script_utils
 import shell_command
 import test_run_output
@@ -737,13 +743,12 @@ def main():
         clear_gate()
         return
     if verb == "hook":
-        run_hook()
-        return
+        hook_input.run_gate(run_hook)
     if verb == "bash-hook":
-        run_bash_hook()
-        return
+        hook_input.run_gate(run_bash_hook)
     sys.exit(USAGE)
 
 
 if __name__ == "__main__":
+    release_import_guard()
     main()

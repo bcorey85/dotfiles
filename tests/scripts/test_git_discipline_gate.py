@@ -17,7 +17,9 @@ COMMIT_ON_MAIN = "[git-discipline-gate] git commit on main"
 DIRECT_EDIT = "This is a direct-edit repo.\n"
 
 
-class GitDisciplineGateTest(unittest.TestCase):
+class GateCaseBase(unittest.TestCase):
+    """The helpers that run the gate. It holds no test, so a subclass does not rerun another subclass's tests."""
+
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -71,6 +73,8 @@ class GitDisciplineGateTest(unittest.TestCase):
         finished = self.run_command(command, **options)
         self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
 
+
+class GitDisciplineGateTest(GateCaseBase):
     def test_stash_denied_but_list_and_show_pass(self):
         for command in ("git stash", "git stash pop", "git  stash push -m x", "cd x && git stash", "GIT STASH",
                         "git stash push -u -m tag-1", "git stash apply --index 0123abc", "git stash drop 'stash@{0}'",
@@ -98,7 +102,8 @@ class GitDisciplineGateTest(unittest.TestCase):
                         "git merge --autostash topic", "git -C repo pull --autostash",
                         "git pull --no-autostash --autostash", "git -c rebase.autoStash=true pull --rebase",
                         "git -c merge.autostash=yes merge topic", "git config rebase.autoStash true",
-                        "git config --global merge.autoStash on", "bash -c 'git pull --autostash'"):
+                        "git config --global merge.autoStash on", "bash -c 'git pull --autostash'",
+                        "git -c rebase.autoStash pull --rebase"):
             with self.subTest(command=command):
                 reason = self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
                 self.assertEqual(reason, "[git-discipline-gate] git autostash is blocked: it runs a git stash, which "
@@ -493,6 +498,435 @@ class GitDisciplineGateTest(unittest.TestCase):
             reason = self.reason_of(self.run_raw(stdin, self.tmp))
             self.assertEqual(reason, "[git-discipline-gate] hook input did not parse — failing closed. "
                                      "Report this to the user.")
+
+
+DESTRUCTIVE_DENIED = "[git-discipline-gate] "
+# The commands the gate must refuse in a main checkout, each with the rule name its deny carries.
+DESTRUCTIVE_COMMANDS = {
+    "push --force origin feature": "a forced push",
+    "push --force-with-lease origin feature": "a forced push",
+    "push -f origin feature": "a forced push",
+    "reset --hard HEAD~1": "git reset --hard",
+    "reset -q --hard HEAD~1": "git reset --hard",
+    "reset $'\\x2d\\x2dhard'": "git reset --hard",
+    "reset $'\\055\\055hard'": "git reset --hard",
+    "clean -fd": "git clean -f",
+    "push --force=x origin feature": "a forced push",
+    "push origin +feature": "a forced push",
+    "reset --hard": "git reset --hard",
+    "clean --force -d": "git clean -f",
+    "-c clean.requireForce=false clean -d": "git clean -f",
+    "-c clean.requireForce=no clean -d": "git clean -f",
+    "-c clean.requireForce=0 clean -d": "git clean -f",
+    "push origin master": "a push that names main or master",
+    "push origin MAIN": "a push that names main or master",
+    "push origin main:feature": "a push that names main or master",
+    "push origin refs/heads/main": "a push that names main or master",
+    "-c core.hooksPath=/dev/null commit -m x": "--no-verify",
+    "-c core.hooksPath=/dev/null push origin feature": "--no-verify",
+    "restore --staged --worktree .": "a discard of the whole work tree",
+    "push origin HEAD:refs/heads/main": "a push that names main or master",
+    "commit --no-verify -m x": "--no-verify",
+    "commit -nm x": "--no-verify",
+    "push --no-verify origin feature": "--no-verify",
+    "checkout -- .": "a discard of the whole work tree",
+    "checkout -q -- .": "a discard of the whole work tree",
+    "checkout HEAD -- .": "a discard of the whole work tree",
+    "restore .": "a discard of the whole work tree",
+    "restore -sStable .": "a discard of the whole work tree",
+    "clean -fdx -enode_modules": "git clean -f",
+    "restore --source=HEAD~1 -- .": "a discard of the whole work tree",
+    "clean --f -d": "git clean -f",
+    "checkout -f": "a discard of the whole work tree",
+    "switch -f topic": "a discard of the whole work tree",
+    "switch --discard-changes topic": "a discard of the whole work tree",
+    "restore --staged --w .": "a discard of the whole work tree",
+    "restore --wo .": "a discard of the whole work tree",
+    "restore --worktree .": "a discard of the whole work tree",
+    "restore -W .": "a discard of the whole work tree",
+    "push --mirror origin": "a forced push",
+    "push --mi origin": "a forced push",
+    "push --all origin": "a push that names main or master",
+    "push --al origin": "a push that names main or master",
+    "checkout -- '*'": "a discard of the whole work tree",
+    'restore "."': "a discard of the whole work tree",
+    "push origin 'main'": "a push that names main or master",
+    "push origin 'HEAD:main'": "a push that names main or master",
+    "clean '-fd'": "git clean -f",
+    'reset "--hard"': "git reset --hard",
+    "push '--force' origin feature": "a forced push",
+    "commit '--no-verify' -m x": "--no-verify",
+    "reset --h\\ard": "git reset --hard",
+    "reset \\--hard": "git reset --hard",
+    "reset $'--hard'": "git reset --hard",
+    "'reset' --hard": "git reset --hard",
+    "r'eset' --ha'rd'": "git reset --hard",
+    "'clean' -fd": "git clean -f",
+    "-c 'core.hooksPath=x' push origin x": "--no-verify",
+    "-c 'clean.requireForce=false' clean -d": "git clean -f",
+    "checkout -f -b topic": "a discard of the whole work tree",
+    "checkout -fb topic": "a discard of the whole work tree",
+    "checkout -f --orphan new main": "a discard of the whole work tree",
+    "checkout --orphan new main --force": "a discard of the whole work tree",
+    "checkout -f --conflict merge feature": "a discard of the whole work tree",
+    "-c clean.requireForce= clean -d": "git clean -f",
+}
+HARMLESS_COMMANDS = ("push -u origin HEAD", "push origin feature", "status", "restore --stag .", "restore --st .",
+                     "reset --soft HEAD~1", "reset -q HEAD f", "clean -nfd", "clean -n", "restore --staged .",
+                     "restore f", "checkout -- f", "checkout -f -- f", "checkout --force -- f", "checkout -b topic",
+                     "commit -m x", "commit -m --no-verify", "commit -m x -F msg", "commit -mn",
+                     "checkout -f feature file.txt", "commit -m 'a b'", "checkout -b topic file",
+                     "merge -m 'set GIT_CONFIG_COUNT=1 in the gate' feature",
+                     "commit -m \"GIT_CONFIG_COUNT=1\"",
+                     "checkout -f --pathspec-from-file list.txt main",
+                     "-c clean.requireForce clean -d", "push -oci.skip origin feature",
+                     "push origin feature > main", "push origin feature 2> master", "restore src > .",
+                     "push origin feature 2>&1")
+
+
+class DestructiveGitCallsTest(GateCaseBase):
+    """Rule 7: a main checkout refuses the destructive calls in every spelling; a linked worktree passes them."""
+
+    def setUp(self):
+        super().setUp()
+        self.main = self.repo_on("feature")
+        subprocess.run(["git", "-C", str(self.main), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "base"], check=True)
+        self.linked = self.tmp / "linked"
+        subprocess.run(["git", "-C", str(self.main), "worktree", "add", "-q", "-b", "lane", str(self.linked)],
+                       check=True)
+
+    def spellings(self, call, repo):
+        """The call behind each global option git accepts, as (label, command, cwd to run it from)."""
+        return [("plain", f"git {call}", repo),
+                ("-C", f"git -C {repo} {call}", self.tmp),
+                ("-c", f"git -c core.pager=cat {call}", repo),
+                ("--no-pager", f"git --no-pager {call}", repo),
+                ("--git-dir", f"git --git-dir={repo}/.git {call}", repo),
+                ("--work-tree", f"git --work-tree={repo} {call}", repo)]
+
+    def test_each_destructive_call_is_denied_in_a_main_checkout_in_every_spelling(self):
+        for call, rule in DESTRUCTIVE_COMMANDS.items():
+            for label, command, cwd in self.spellings(call, self.main):
+                with self.subTest(call=call, spelling=label):
+                    reason = self.reason_of(self.run_command(command, cwd=cwd))
+                    self.assertTrue(reason.startswith(f"{DESTRUCTIVE_DENIED}{rule} is blocked in a main checkout"),
+                                    reason)
+
+    def test_each_destructive_call_passes_in_a_linked_worktree_in_every_spelling(self):
+        git_dir = subprocess.run(["git", "-C", str(self.linked), "rev-parse", "--absolute-git-dir"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+        for call in DESTRUCTIVE_COMMANDS:
+            spellings = [(command, cwd) for label, command, cwd in self.spellings(call, self.linked)
+                         if label != "--git-dir"]
+            spellings.append((f"git --git-dir={git_dir} {call}", self.linked))
+            for command, cwd in spellings:
+                with self.subTest(command=command):
+                    self.assert_allowed(command, cwd=cwd)
+
+    def test_harmless_calls_pass_in_a_main_checkout_in_every_spelling(self):
+        for call in HARMLESS_COMMANDS:
+            for label, command, cwd in self.spellings(call, self.main):
+                with self.subTest(call=call, spelling=label):
+                    self.assert_allowed(command, cwd=cwd)
+
+    def test_a_quoted_command_word_wrapper_or_git_option_is_denied_in_a_main_checkout(self):
+        commands = ("'git' reset --hard", "g'it' reset --hard", "git '--no-pager' reset --hard",
+                    "env 'X=1' git reset --hard")
+        for command in commands:
+            with self.subTest(command=command):
+                reason = self.reason_of(self.run_command(command, cwd=self.main))
+                self.assertTrue(reason.startswith(f"{DESTRUCTIVE_DENIED}git reset --hard is blocked"), reason)
+
+    def test_a_quoted_or_escaped_directory_option_or_cd_from_a_linked_worktree_is_denied_on_the_main_checkout(self):
+        main = self.main
+        commands = (f'git "-C" {main} reset -q --hard', f"git -\\C {main} reset -q --hard",
+                    f"git \\-C {main} reset -q --hard", f'git "--git-dir={main}/.git" reset -q --hard',
+                    f'git "--git-dir" {main}/.git reset -q --hard', f"git '--work-tree={main}' reset -q --hard",
+                    f'"cd" {main} && git reset -q --hard', f"\\cd {main}; git reset -q --hard",
+                    f"c\\d {main} && git reset -q --hard", f'builtin "cd" {main}; git reset -q --hard',
+                    f"command \\cd {main} && git reset -q --hard", f'{{ "cd" {main}; git reset -q --hard; }}',
+                    f'while "cd" {main}; do git reset -q --hard; done',
+                    f"until \\cd {main}; do git reset -q --hard; done",
+                    f"builtin pu\\shd {main}; git reset -q --hard", f'"pushd" {main} && git reset -q --hard',
+                    "\\popd; git reset -q --hard", f'false || "cd" {main}; git reset -q --hard')
+        for command in commands:
+            with self.subTest(command=command):
+                reason = self.reason_of(self.run_command(command, cwd=self.linked))
+                self.assertTrue(reason.startswith(f"{DESTRUCTIVE_DENIED}git reset --hard is blocked"), reason)
+
+    def test_an_escaped_tilde_or_a_dash_directory_is_not_read_as_a_linked_worktree(self):
+        for command in (r"git -C \~/x reset -q --hard", 'git -C "-m" reset -q --hard',
+                        "git -C -x reset -q --hard"):
+            with self.subTest(command=command):
+                self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                                   cwd=self.main)
+
+    def test_a_quoted_option_name_with_a_readable_linked_path_passes(self):
+        self.assert_allowed(f'git "-C" {self.linked} reset -q --hard', cwd=self.main)
+
+    def test_a_restore_cluster_reads_value_letters_the_same_for_rule_6_and_rule_7(self):
+        # `-U` takes the rest of the cluster (`3S`) as its value, so there is no `-S`: the call discards the tree.
+        command = "git restore -U3S ."
+        rule_7_text = "a discard of the whole work tree is blocked in a main checkout"
+        self.assert_denied(command, DESTRUCTIVE_DENIED + rule_7_text, cwd=self.main)
+        # Rule 6 reads the same cluster as no `-S`, so a coder gets the rule 7 deny, not the index deny.
+        reason = self.assert_denied(command, DESTRUCTIVE_DENIED + rule_7_text, cwd=self.main, agent_type="coder")
+        self.assertNotIn("may not write the index", reason)
+        self.assert_denied("git restore -S .", "[git-discipline-gate] a coder may not write the index", cwd=self.main,
+                           agent_type="coder")
+
+    def test_the_push_line_for_the_user_and_a_status_in_another_folder_pass(self):
+        self.assert_allowed(f"git -C {self.main} push -u origin HEAD", cwd=self.tmp)
+        self.assert_allowed(f"git -C {self.main} status", cwd=self.tmp)
+
+    def test_a_destructive_call_in_a_later_statement_or_substitution_is_denied(self):
+        for command, rule in (("echo hi && git reset --hard", "git reset --hard"),
+                              ("x=$(git push -f origin feature)", "a forced push"),
+                              (f"cd {self.main} && git clean -fd", "git clean -f")):
+            with self.subTest(command=command):
+                self.assert_denied(command, f"{DESTRUCTIVE_DENIED}{rule} is blocked in a main checkout", cwd=self.main)
+
+    def test_a_repo_the_gate_cannot_find_reads_as_a_main_checkout(self):
+        self.assert_denied('git -C "$REPO" reset --hard',
+                           DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout", cwd=self.tmp)
+
+    def test_a_repo_that_does_not_exist_is_denied(self):
+        self.assert_denied("git -C /nonexistent reset --hard",
+                           DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout", cwd=self.tmp)
+
+    def test_a_literal_git_dir_assignment_is_denied_from_a_linked_worktree(self):
+        command = f"GIT_DIR={self.main}/.git git reset --hard"
+        self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                           cwd=self.linked)
+
+    def test_quoted_text_naming_an_environment_variable_does_not_unplace_a_call_in_a_linked_worktree(self):
+        for command in ('echo "see GIT_CONFIG_COUNT=2 docs" ; git checkout -f', 'echo "HOME=x" ; git checkout -f',
+                        'echo "GIT_DIR=x" ; git checkout -f'):
+            with self.subTest(command=command):
+                self.assert_allowed(command, cwd=self.linked)
+
+    def test_a_quoted_git_dir_assignment_before_git_is_denied_from_a_linked_worktree(self):
+        self.assert_denied(f'env "GIT_DIR={self.main}/.git" git reset --hard',
+                           DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout", cwd=self.linked)
+
+    def test_a_lane_git_dir_run_from_a_main_checkout_is_denied(self):
+        git_dir = subprocess.run(["git", "-C", str(self.linked), "rev-parse", "--absolute-git-dir"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+        self.assert_denied(f"git --git-dir={git_dir} reset --hard",
+                           DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout", cwd=self.main)
+
+    def test_a_code_runner_call_is_denied_from_a_linked_worktree(self):
+        for command in (f"parallel git -C {{}} reset -q --hard ::: {self.main}",
+                        f"xargs -I{{}} git -C {{}} reset -q --hard <<< {self.main}"):
+            with self.subTest(command=command):
+                self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                                   cwd=self.linked)
+
+    def test_the_payload_cwd_places_a_call_not_the_hook_process_cwd(self):
+        payload = {"tool_input": {"command": "git reset --hard"}, "cwd": str(self.linked)}
+        self.assertEqual(self.run_raw(json.dumps(payload), self.main).stdout, "")
+        payload["cwd"] = str(self.main)
+        reason = self.reason_of(self.run_raw(json.dumps(payload), self.linked))
+        self.assertTrue(reason.startswith(DESTRUCTIVE_DENIED), reason)
+
+    def test_a_work_tree_in_a_linked_worktree_does_not_move_the_repo_found_from_a_main_cwd(self):
+        command = f"git --work-tree={self.linked} reset -q --hard"
+        self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                           cwd=self.main)
+
+    def test_a_path_the_gate_cannot_read_is_denied_even_from_a_linked_worktree(self):
+        reset = "git reset --hard"
+        for command, rule in (('git -C "$X" reset -q --hard', reset),
+                              ('cd "$X" && git checkout HEAD -- .', "a discard of the whole work tree"),
+                              ('git -C "$X" commit --no-verify -m x', "--no-verify"),
+                              ('git --work-tree=$X reset --hard', reset),
+                              ("GIT_DIR=$X git reset --hard", reset),
+                              ("env GIT_WORK_TREE=x git reset --hard", reset),
+                              ("git --git-dir=$X reset --hard", reset),
+                              ("GIT_COMMON_DIR=$X git reset --hard", reset)):
+            with self.subTest(command=command):
+                self.assert_denied(command, f"{DESTRUCTIVE_DENIED}{rule} is blocked in a main checkout",
+                                   cwd=self.linked)
+
+    def test_a_cd_search_path_or_home_assignment_is_denied_from_a_linked_worktree(self):
+        denied = DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout"
+        main = self.main
+        for command in (f"CDPATH={main.parent} cd {main.name} && git reset -q --hard",
+                        f"export CDPATH={main.parent}; cd {main.name} && git reset -q --hard",
+                        f"HOME={main} cd && git reset -q --hard",
+                        f"export HOME={main}; cd && git reset -q --hard"):
+            with self.subTest(command=command):
+                self.assert_denied(command, denied, cwd=self.linked)
+
+    def test_config_that_moves_the_work_tree_is_denied_from_a_linked_worktree(self):
+        denied = DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout"
+        for command in (f"git -c core.worktree={self.main} reset -q --hard",
+                        "git --config-env core.worktree=WT reset -q --hard",
+                        "git --config-env=core.worktree=WT reset -q --hard",
+                        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.worktree GIT_CONFIG_VALUE_0=/x git reset -q --hard"):
+            with self.subTest(command=command):
+                self.assert_denied(command, denied, cwd=self.linked)
+
+    def test_a_hooks_path_given_by_config_env_is_denied_in_a_main_checkout(self):
+        self.assert_denied("git --config-env core.hooksPath=H commit -m x",
+                           DESTRUCTIVE_DENIED + "--no-verify is blocked in a main checkout", cwd=self.main)
+
+    def test_a_config_env_variable_named_like_a_false_value_still_counts_as_autostash_set(self):
+        # `--config-env key=VAR` reads VAR at run time, so the name `NO` says nothing about the value.
+        self.assert_denied("git --config-env=rebase.autoStash=NO rebase origin/master",
+                           "[git-discipline-gate] git autostash is blocked", cwd=self.main)
+
+    def test_config_the_gate_cannot_read_forces_a_clean_or_skips_hooks_in_a_main_checkout(self):
+        clean = DESTRUCTIVE_DENIED + "git clean -f is blocked in a main checkout"
+        hooks = DESTRUCTIVE_DENIED + "--no-verify is blocked in a main checkout"
+        for command, denied in (("git --config-env=clean.requireForce=V clean -d", clean),
+                                ("git --config-env clean.requireForce=V clean -d", clean),
+                                ("GIT_CONFIG_PARAMETERS=\"'clean.requireForce=false'\" git clean -d", clean),
+                                ("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null "
+                                 "git commit -m x", hooks),
+                                ('env "GIT_CONFIG_COUNT=1" GIT_CONFIG_KEY_0=core.hooksPath '
+                                 'GIT_CONFIG_VALUE_0=/dev/null git commit -m x', hooks),
+                                ("env 'GIT_CONFIG_PARAMETERS=\"clean.requireForce=false\"' git clean -d", clean),
+                                ("GIT_CONFIG_GLOBAL=/tmp/c git clean -d", clean),
+                                ("GIT_CONFIG_SYSTEM=/tmp/c git commit -m x", hooks),
+                                ("GIT_CONFIG=/tmp/c git commit -m x", hooks)):
+            with self.subTest(command=command):
+                self.assert_denied(command, denied, cwd=self.main)
+
+    def test_a_config_override_names_itself_as_the_trigger_and_a_flag_does_not(self):
+        hooks_note = "a git config override (-c core.hooksPath, --config-env or a GIT_CONFIG_* variable)"
+        clean_note = "a git config override (-c clean.requireForce, --config-env or a GIT_CONFIG_* variable)"
+        for command, note in (("git -c core.hooksPath=/dev/null commit -m x", hooks_note),
+                              ("git --config-env core.hooksPath=H commit -m x", hooks_note),
+                              ("GIT_CONFIG_GLOBAL=/dev/null git commit -m x", hooks_note),
+                              ("git -c clean.requireForce=false clean -d", clean_note)):
+            with self.subTest(command=command):
+                self.assertIn(note, self.reason_of(self.run_command(command, cwd=self.main)))
+        for command in ("git commit --no-verify -m x", "git clean -fd"):
+            with self.subTest(command=command):
+                self.assertNotIn("git config override", self.reason_of(self.run_command(command, cwd=self.main)))
+
+    def test_a_call_the_gate_cannot_place_says_so_instead_of_naming_a_main_checkout_alone(self):
+        # In a lane worktree an unplaced call is denied: the reason names the missing placement and the config trigger,
+        # not --no-verify.
+        reason = self.reason_of(self.run_command("GIT_CONFIG_GLOBAL=/dev/null git commit -m x", cwd=self.linked))
+        self.assertIn("a repo the gate cannot place", reason)
+        self.assertIn("can set core.hooksPath", reason)
+        placed = self.reason_of(self.run_command("git reset --hard", cwd=self.main))
+        self.assertNotIn("cannot place", placed)
+
+    def test_a_negated_cd_condition_does_not_place_the_call_in_the_cd_target(self):
+        denied = DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout"
+        for command in (f"if ! cd {self.linked}; then git reset -q --hard; fi",
+                        f"while ! cd {self.linked}; do git reset -q --hard; done"):
+            with self.subTest(command=command):
+                self.assert_denied(command, denied, cwd=self.main)
+
+    def test_a_call_from_a_subdirectory_is_placed_by_the_repo_that_holds_it(self):
+        linked_sub = self.linked / "sub"
+        main_sub = self.main / "sub"
+        linked_sub.mkdir()
+        main_sub.mkdir()
+        self.assert_allowed("git reset --hard", cwd=linked_sub)
+        self.assert_denied("git reset --hard", DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                           cwd=main_sub)
+
+    def test_a_background_operator_or_redirection_ampersand_does_not_misplace_a_cd(self):
+        self.assert_allowed(f"git status &\ncd {self.linked}\ngit -C . reset -q --hard", cwd=self.main)
+        self.assert_allowed(f"cd {self.linked} &>/dev/null; git reset -q --hard", cwd=self.main)
+        self.assert_allowed(f"cd {self.linked} 2>&1; git reset -q --hard", cwd=self.main)
+
+    def test_a_directory_move_the_gate_does_not_follow_is_denied_from_a_linked_worktree(self):
+        main = self.main
+        for command in (f"export GIT_DIR={main}/.git; echo $(git reset --hard)",
+                        f"pushd {main} && git reset -q --hard", f"env -C {main} git reset -q --hard",
+                        f"env -C{main} git reset -q --hard", f"sudo -D {main} git reset -q --hard",
+                        f"env -vC {main} git reset -q --hard", f"env -iC {main} /usr/bin/git reset -q --hard",
+                        f"timeout 5 env -vC{main} git reset -q --hard",
+                        f"sudo -D{main} git reset -q --hard",
+                        f"(cd {main} && git reset -q --hard)", f"builtin cd {main} && git reset -q --hard",
+                        f"command cd {main} && git reset -q --hard", f"{{ cd {main}; }} && git reset -q --hard",
+                        f"eval 'cd {main} && git reset -q --hard'", "cd - && git reset -q --hard",
+                        f"while cd {main}; do git reset -q --hard; done",
+                        f"until cd {main}; do git reset -q --hard; done",
+                        f"cd {self.linked} && pushd {main} && git reset -q --hard",
+                        f"cd {self.linked}; pushd {main}; git reset -q --hard",
+                        f"cd {self.linked} && builtin cd {main} && git reset -q --hard",
+                        f"cd {self.linked} && command cd {main} && git reset -q --hard",
+                        f"cd {self.linked} && {{ cd {main}; }} && git reset -q --hard",
+                        f"pushd {main} && cd {self.linked} && popd && git reset -q --hard"):
+            with self.subTest(command=command):
+                self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard", cwd=self.linked)
+
+    def test_a_cd_that_may_not_run_does_not_place_a_call_in_the_linked_worktree(self):
+        linked = self.linked
+        for command in (f"false && cd {linked}; git --no-pager reset --hard",
+                        f"true || cd {linked} && git --no-pager reset --hard",
+                        f"git status && cd {linked} && git --no-pager reset --hard",
+                        f"if cd {linked}; then git --no-pager reset --hard; fi",
+                        f"for d in {linked}; do cd $d; done; git --no-pager reset --hard",
+                        f"case x in x) cd {linked};; esac; git --no-pager reset --hard",
+                        f"echo x | cd {linked}; git --no-pager reset --hard",
+                        f"cd {linked} | true; git --no-pager reset --hard",
+                        f"cd {linked} & git --no-pager reset --hard",
+                        f"true ||\ncd {linked}\ngit --no-pager reset --hard",
+                        f"false &&\ncd {linked}\ngit --no-pager reset --hard",
+                        f"false || X=1 cd {linked}; git --no-pager reset --hard",
+                        f"false && X=1 cd {linked}; git --no-pager reset --hard",
+                        f"true || X=1 cd {linked} && git --no-pager reset --hard",
+                        f"select d in a; do cd {linked}; break; done; git --no-pager reset --hard"):
+            with self.subTest(command=command):
+                self.assert_denied(command, DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                                   cwd=self.main)
+        self.assert_denied(f"if false; then cd {linked}; fi; git -C . push -f", DESTRUCTIVE_DENIED + "a forced push",
+                           cwd=self.main)
+
+    def test_a_cd_that_always_runs_still_places_a_call_in_the_linked_worktree(self):
+        self.assert_allowed(f"cd {self.linked} && git --no-pager reset --hard", cwd=self.main)
+        self.assert_allowed(f"cd {self.tmp} && cd {self.linked} && git reset -q --hard", cwd=self.main)
+
+    def test_a_push_option_value_is_no_refspec_and_no_force(self):
+        for call in ("push -o main origin feature", "push --push-option master origin x", "push -o +x origin feature",
+                     "push --repo main origin feature"):
+            with self.subTest(call=call):
+                self.assert_allowed(f"git {call}", cwd=self.main)
+
+    def test_a_push_option_value_is_dropped_but_the_real_refspec_and_force_still_deny(self):
+        self.assert_denied("git push -o x origin main", DESTRUCTIVE_DENIED + "a push that names main or master",
+                           cwd=self.main)
+        self.assert_denied("git push -o x -f origin feature", DESTRUCTIVE_DENIED + "a forced push", cwd=self.main)
+        self.assert_denied("git push --receive-pack=x -f origin feature", DESTRUCTIVE_DENIED + "a forced push",
+                           cwd=self.main)
+
+    def test_merge_no_verify_is_denied_but_merge_n_is_not(self):
+        self.assert_denied("git --no-pager merge --no-verify topic", DESTRUCTIVE_DENIED + "--no-verify", cwd=self.main)
+        self.assert_allowed("git merge -n topic", cwd=self.main)
+
+    def test_a_restore_cluster_with_a_worktree_letter_after_a_flag_discards_the_tree(self):
+        self.assert_denied("git restore -SW .", DESTRUCTIVE_DENIED + "a discard of the whole work tree", cwd=self.main)
+        self.assert_allowed("git restore -S .", cwd=self.main)
+
+    def test_a_main_checkout_under_a_worktrees_folder_is_not_a_linked_worktree(self):
+        separate = self.tmp / "worktrees" / "app.git"
+        separate.parent.mkdir()
+        project = self.tmp / "project"
+        subprocess.run(["git", "init", "-q", f"--separate-git-dir={separate}", str(project)], check=True)
+        self.assert_denied("git reset --hard", DESTRUCTIVE_DENIED + "git reset --hard is blocked in a main checkout",
+                           cwd=project)
+
+
+class NamesProtectedBranchTest(unittest.TestCase):
+    def test_all_and_mirror_pushes_name_a_protected_branch(self):
+        sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+        import git_calls
+        import git_destructive_calls
+        for command in ("push --all origin", "push --mirror origin", "push --mi origin"):
+            with self.subTest(command=command):
+                call = git_calls.git_call(["git", *command.split()])
+                self.assertTrue(git_destructive_calls.names_protected_branch(call), command)
+        feature = git_calls.git_call(["git", "push", "origin", "feature"])
+        self.assertFalse(git_destructive_calls.names_protected_branch(feature))
 
 
 if __name__ == "__main__":

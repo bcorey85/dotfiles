@@ -2,6 +2,7 @@
 is code, and the `$(...)` and backtick spans of an unquoted one, which the shell runs), quoted strings and comments."""
 import os
 import re
+from typing import NamedTuple
 
 import shell_command
 
@@ -11,10 +12,24 @@ HEREDOC = re.compile(r"""(?<!<)<<(?!<)-?[ \t]*((?:[^\s|&;()<>'"\\]|\\.|'[^']*'|"
 DELIMITER_PART = re.compile(r"""\\(.)|'([^']*)'|"((?:[^"\\]|\\.)*)"|([^'"\\]+)""")
 ARITHMETIC = re.compile(r"\$?\(\(.*?\)\)")
 QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+QUOTE_MARK = re.compile("\x01(\\d+)\x01")
 COMMENT_START = re.compile(r"(^|[\s;&|()])#")
 COMMENT = re.compile(r"(^|\s)#[^\n]*")
 COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
-SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||&|\(|\)")
+# A `&` inside a redirection (`2>&1`, `&>file`) is no separator.
+SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||(?<![<>])&(?!>)|\(|\)")
+STATEMENT_SPLIT = re.compile("(" + SEPARATORS.pattern + ")")
+LINE_CONTINUING_OPERATORS = {"&&", "||", "|", "|&"}
+ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
+
+
+def substitution_pieces(body):
+    """The `$(...)` and backtick spans of a heredoc body's lines, each wrapped in parentheses as its own command."""
+    body_text = "\n".join(body)
+    pieces = []
+    for _start, _end, span in code_spans(body_text):
+        pieces += ["(", span, ")"]
+    return pieces
 
 
 def strip_heredocs(command):
@@ -35,25 +50,30 @@ def strip_heredocs(command):
             if shell_body:
                 added += ["(", *body, ")"]
             elif not quoted:
-                added += [piece for _start, _end, span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
+                added += substitution_pieces(body)
         return added, sum(len(body) + 1 for body in bodies)
 
     return rewrite_heredoc_lines(command, keep_bodies)
 
 
 def strip_stored_heredocs(command):
-    """The command with the body and terminator line of each heredoc cut out where every heredoc its line opens is
-    quoted and only stores text: cat or tee writing a file, or an interpreter given a script file. Every other
-    heredoc stays as written."""
+    """The command with the body and terminator line of each heredoc cut out where the heredocs its line opens only
+    store text: cat or tee writing a file, or an interpreter given a script file. The `$(...)` and backtick spans of an
+    unquoted body stay, wrapped in `(` and `)` lines, because the shell runs them. Every other heredoc stays as
+    written."""
     def cut_stored(line, lines, index, heredocs):
-        if not heredocs or not all(quoted for _delimiter, quoted in heredocs):
+        if not heredocs:
             return None
 
         bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
         if bodies is None or not stores_heredoc_text(line):
             return None
 
-        return [], sum(len(body) + 1 for body in bodies)
+        added = []
+        for (_delimiter, quoted), body in zip(heredocs, bodies, strict=True):
+            if not quoted:
+                added += substitution_pieces(body)
+        return added, sum(len(body) + 1 for body in bodies)
 
     return rewrite_heredoc_lines(command, cut_stored)
 
@@ -232,20 +252,121 @@ def strip_comments(command):
     return command
 
 
-def clean(command):
+def clean(command, quotes=None):
+    """The command with heredoc bodies, quoted strings and comments blanked. When `quotes` is a list, each quoted
+    string is replaced by a QUOTE_MARK word part holding its index in `quotes`, and the string is appended there."""
     without_heredocs = strip_heredocs(command)
-    without_quotes = QUOTED.sub('""', without_heredocs)
+    if quotes is None:
+        without_quotes = QUOTED.sub('""', without_heredocs)
+    else:
+        without_quotes = QUOTED.sub(lambda found: marked_quote(found.group(), quotes), without_heredocs)
     without_comments = COMMENT.sub(r"\1", without_quotes)
     return COMMAND_SUBSTITUTION.sub(lambda match: "$<" + match.group(1).replace(" ", "\x00") + ">", without_comments)
 
 
-def statements(command):
-    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
+def marked_quote(quoted, quotes):
+    # The quoted string's content (quotes removed, escapes in double quotes resolved) goes into quotes; the mark
+    # that stands for it has no space, separator or quote character.
+    inner = quoted[1:-1]
+    if quoted[0] == '"':
+        inner = re.sub(r'\\(["\\$`])', r"\1", inner)
+    quotes.append(inner)
+    return f"\x01{len(quotes) - 1}\x01"
+
+
+class Statement(NamedTuple):
+    operator_before: str
+    words: list
+    # The separator right after the statement; "" when the command ends there.
+    operator_after: str
+
+
+def statements_with_operators(command, kept_words=(), quotes=None):
+    """Each statement as a Statement. `operator_before` is the separator right before the statement ("" for the
+    first); `operator_after` is the one right after it. A newline after `&&`, `||`, `|` or `|&` leaves that operator
+    in place as the next statement's `operator_before`, since the statement still hangs on it. A `&` ends its command,
+    so a newline after it continues nothing. Leading do/then/else and env assignments are dropped from the words,
+    except the words in `kept_words`. A list in `quotes` is filled as clean() describes, and the words then hold
+    quote marks."""
     parsed = []
-    for part in SEPARATORS.split(clean(command)):
-        words = part.split()
-        while words and (words[0] in SKIP_WORDS or re.match(r"^[A-Za-z_]\w*=", words[0])):
+    operator = ""
+    after_is_open = False
+    for index, piece in enumerate(STATEMENT_SPLIT.split(clean(command, quotes))):
+        if index % 2 == 1:
+            if after_is_open:
+                parsed[-1] = parsed[-1]._replace(operator_after=piece)
+                after_is_open = False
+            if piece != "\n" or operator not in LINE_CONTINUING_OPERATORS:
+                operator = piece
+            continue
+        words = piece.split()
+        while words and words[0] not in kept_words and (words[0] in SKIP_WORDS or ASSIGNMENT.match(words[0])):
             words = words[1:]
         if words:
-            parsed.append(words)
+            parsed.append(Statement(operator, words, ""))
+            operator = ""
+            after_is_open = True
     return parsed
+
+
+def statements(command):
+    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
+    return [statement.words for statement in statements_with_operators(command)]
+
+
+class WordPair(NamedTuple):
+    # The statement's words with each quoted string blanked to `""`, and the same words with the quotes removed.
+    blanked: list
+    resolved: list
+
+
+def statement_word_pairs(command):
+    # Each statement of the command as a WordPair; the two lists have the same length.
+    quotes = []
+    pairs = []
+    for statement in statements_with_operators(command, quotes=quotes):
+        blanked = [QUOTE_MARK.sub('""', word) for word in statement.words]
+        resolved = [resolved_word(word, quotes) for word in statement.words]
+        pairs.append(WordPair(blanked, resolved))
+    return pairs
+
+
+ANSI_C_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|.)", re.DOTALL)
+MAX_CODE_POINT = 0x10FFFF
+ANSI_C_SINGLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
+                 "v": "\v"}
+
+
+def decode_ansi_c_escape(found):
+    body = found.group(1)
+    if body[0] in "xuU" and len(body) > 1:
+        code_point = int(body[1:], 16)
+        if code_point > MAX_CODE_POINT:
+            return found.group(0)
+        return chr(code_point)
+    if body[0] in "01234567":
+        return chr(int(body, 8) & 0xFF)
+    return ANSI_C_SINGLE.get(body, body)
+
+
+def decode_ansi_c(content):
+    # The text of a `$'...'` string as bash reads it: \xHH, \NNN, \uHHHH, \n and the like become their characters.
+    return ANSI_C_ESCAPE.sub(decode_ansi_c_escape, content)
+
+
+def resolved_word(word, quotes):
+    """The word as the shell reads it: each quoted string put back without its quotes, a `$` before a quote
+    (`$'--hard'`) dropped with its escapes decoded, and each backslash outside quotes removed from the character
+    it escapes."""
+    parts = []
+    position = 0
+    for mark in QUOTE_MARK.finditer(word):
+        before = re.sub(r"\\(.)", r"\1", word[position:mark.start()])
+        position = mark.end()
+        content = quotes[int(mark.group(1))]
+        if before.endswith("$"):
+            content = decode_ansi_c(content)
+        parts.append(before.removesuffix("$"))
+        parts.append(content)
+    parts.append(re.sub(r"\\(.)", r"\1", word[position:]))
+    return "".join(parts)

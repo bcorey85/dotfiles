@@ -1,6 +1,13 @@
 """Runs herdr-wake-limited against a stub herdr-api that plays a few Claude panes.
 
 Checks that only a pane showing both usage-limit-reset phrases gets Enter.
+Also covers login-expired notices and the noticed-state file:
+- one notice per stuck pane, with no keys sent;
+- the noticed-state file: kept on a herdr outage or failed read, a cleared
+  pane notifies again, a corrupt file is rewritten;
+- the login line must be a whole line within the bottom ten lines;
+- tuios panes are not notified;
+- a line led by the corner glyph is matched and named in the notice.
 """
 import json
 import os
@@ -35,7 +42,10 @@ PY
         python3 -I - "$state/panes.json" "$3" <<'PY'
 import json, sys
 panes = json.load(open(sys.argv[1]))
-print(panes[sys.argv[2]]["text"])
+pane = panes[sys.argv[2]]
+if pane.get("fail_read"):
+    sys.exit(1)
+print(pane["text"])
 PY
         ;;
     "agent send-keys")
@@ -50,11 +60,19 @@ PY
         echo "$3 $4" >> "$state/keys"
         echo '{"result":{}}'
         ;;
+    "notification show")
+        [ -f "$state/no-notify" ] && exit 1
+        echo "$*" >> "$state/notifications"
+        echo '{"result":{}}'
+        ;;
 esac
 """
 
 RESET_PROMPT = "Your usage limit has reset\nPress enter to continue"
 NORMAL_WAIT = "Usage limit reached · limit resets 3:45pm\nContinuing automatically at 3:45pm · Esc to cancel"
+
+LOGIN_EXPIRED_TAIL = ("● Login expired · Please run /login\n\n✻ Sautéed for 0s\n"
+                      "╭──────────╮\n│ >        │\n╰──────────╯")
 
 
 DEFAULT_STATE_HOME = object()
@@ -75,12 +93,16 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.state_dir.mkdir()
         self.keys = self.state_dir / "keys"
         self.log_file = self.root / "xdg-state" / "herdr-wake-limited.log"
+        self.noticed_file = self.root / "xdg-state" / "herdr-wake-limited.noticed"
 
     def set_panes(self, panes):
         (self.state_dir / "panes.json").write_text(json.dumps(panes))
 
-    def run_wake(self, *args, state_home=DEFAULT_STATE_HOME):
+    def run_wake(self, *args, state_home=DEFAULT_STATE_HOME, tuios=False):
         env = dict(os.environ)
+        env.pop("TUIOS_SOCKET", None)
+        if tuios:
+            env["TUIOS_SOCKET"] = str(self.root / "tuios.sock")
         env["HOME"] = str(self.root)
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["STATE_DIR"] = str(self.state_dir)
@@ -214,6 +236,245 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0)
         self.assertEqual(finished.stdout, "")
         self.assertEqual(self.sent_keys(), [])
+
+    def notifications(self):
+        notified = self.state_dir / "notifications"
+        if not notified.exists():
+            return []
+        return notified.read_text().splitlines()
+
+    def test_a_login_expired_tail_notifies_once_and_sends_no_keys(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL, "status": "done"}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), [])
+        notices = self.notifications()
+        self.assertEqual(len(notices), 1)
+        self.assertIn("herdr-wake-limited: login expired", notices[0])
+        self.assertIn("wS:p1 in /work/a stopped on ● Login expired · Please run /login", notices[0])
+        self.assertIn("--sound request", notices[0])
+        self.assertEqual(finished.stdout, "login expired wS:p1 /work/a\n")
+        log_lines = self.log_file.read_text().splitlines()
+        self.assertEqual(len(log_lines), 1)
+        self.assertTrue(log_lines[0].endswith(" wS:p1 /work/a login-expired"), log_lines[0])
+
+    def test_a_corner_glyph_login_line_notifies_and_names_the_line(self):
+        corner_line = "⎿ Not logged in · Please run /login"
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": corner_line, "status": "done"}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), [])
+        notices = self.notifications()
+        self.assertEqual(len(notices), 1)
+        self.assertIn(f"stopped on {corner_line}", notices[0])
+
+    def test_the_second_run_does_not_notify_again(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        self.run_wake()
+        second = self.run_wake()
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(second.stdout, "")
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_an_unwritable_noticed_file_notifies_on_each_run(self):
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("")
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        first = self.run_wake(state_home=blocker)
+        second = self.run_wake(state_home=blocker)
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(len(self.notifications()), 2)
+
+    def test_a_pane_that_clears_and_expires_again_notifies_again(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": "all done"}})
+        self.run_wake()
+        self.assertEqual(len(self.notifications()), 1)
+        self.assertEqual(json.loads(self.noticed_file.read_text()), [])
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": "Not logged in · Please run /login"}})
+
+        self.run_wake()
+
+        self.assertEqual(len(self.notifications()), 2)
+
+    def test_a_pane_that_leaves_idle_is_dropped_even_with_the_login_line_on_screen(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL,
+                                  "status": "working"}})
+
+        self.run_wake()
+
+        self.assertEqual(json.loads(self.noticed_file.read_text()), [])
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.assertEqual(len(self.notifications()), 2)
+
+    def test_a_pane_that_disappears_is_dropped_from_the_noticed_list(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.set_panes({"wS:p2": {"cwd": "/work/b", "text": "all done"}})
+
+        self.run_wake()
+
+        self.assertEqual(json.loads(self.noticed_file.read_text()), [])
+
+    def test_a_normal_done_pane_does_not_notify(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": "all done\n>", "status": "done"}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.notifications(), [])
+
+    def test_a_quoted_login_phrase_does_not_notify(self):
+        quoted = 'The pane said "Login expired · Please run /login" earlier\n> next'
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": quoted}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.notifications(), [])
+
+    def test_a_login_expired_pane_under_tuios_is_not_notified(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        finished = self.run_wake(tuios=True)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.notifications(), [])
+        self.assertEqual(finished.stdout, "")
+        self.assertFalse(self.noticed_file.exists())
+        self.run_wake()
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_a_tuios_run_leaves_the_herdr_noticed_list_alone(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.set_panes({"tuios:1": {"cwd": "/work/t", "text": "all done"}})
+
+        self.run_wake(tuios=True)
+
+        self.assertEqual(json.loads(self.noticed_file.read_text()), ["wS:p1"])
+
+    def test_a_herdr_outage_keeps_the_noticed_list(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        (self.state_dir / "no-answer").write_text("")
+
+        outage = self.run_wake()
+
+        self.assertEqual(outage.returncode, 0)
+        self.assertEqual(json.loads(self.noticed_file.read_text()), ["wS:p1"])
+        (self.state_dir / "no-answer").unlink()
+        self.run_wake()
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_a_failed_read_of_an_announced_pane_does_not_renotify(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        self.run_wake()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL, "fail_read": True}})
+        self.run_wake()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        self.run_wake()
+
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_a_failed_notification_is_named_and_retried_next_run(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+        (self.state_dir / "no-notify").write_text("")
+
+        failed = self.run_wake()
+
+        self.assertEqual(failed.returncode, 0, failed.stderr)
+        self.assertEqual(failed.stdout, "")
+        self.assertFalse(self.log_file.exists())
+        self.assertIn("wS:p1", failed.stderr)
+        (self.state_dir / "no-notify").unlink()
+        retried = self.run_wake()
+        self.assertEqual(retried.stdout, "login expired wS:p1 /work/a\n")
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_a_cleared_pane_renotifies_while_a_still_stuck_pane_does_not(self):
+        stuck = {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}
+        self.set_panes({"wS:p1": stuck, "wS:p2": dict(stuck, cwd="/work/b")})
+        self.run_wake()
+        self.assertEqual(len(self.notifications()), 2)
+        self.set_panes({"wS:p1": dict(stuck, text="all done"), "wS:p2": dict(stuck, cwd="/work/b")})
+        self.run_wake()
+        self.assertEqual(json.loads(self.noticed_file.read_text()), ["wS:p2"])
+        self.assertEqual(len(self.notifications()), 2)
+        self.set_panes({"wS:p1": stuck, "wS:p2": dict(stuck, cwd="/work/b")})
+
+        self.run_wake()
+
+        notices = self.notifications()
+        self.assertEqual(len(notices), 3)
+        self.assertIn("wS:p1", notices[2])
+
+    def test_the_login_line_must_be_whole_and_within_the_bottom_ten_lines(self):
+        def lines_below(count):
+            return "\n".join(f"line {n}" for n in range(count))
+
+        cases = [
+            ("exactly tenth from the bottom", "Login expired · Please run /login\n" + lines_below(9), 1),
+            ("eleventh from the bottom", "Login expired · Please run /login\n" + lines_below(10), 0),
+            ("leading corner glyph", "⎿ Not logged in · Please run /login", 1),
+            ("trailing text", "Login expired · Please run /login now", 0),
+        ]
+        for label, text, expected in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.state_dir)
+                self.state_dir.mkdir()
+                self.noticed_file.unlink(missing_ok=True)
+                self.set_panes({"wS:p1": {"cwd": "/work/a", "text": text}})
+
+                self.run_wake()
+
+                self.assertEqual(len(self.notifications()), expected, label)
+
+    def test_a_corrupt_noticed_file_notifies_once_and_is_rewritten(self):
+        self.noticed_file.parent.mkdir(parents=True)
+        self.noticed_file.write_text("not json")
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(len(self.notifications()), 1)
+        self.assertEqual(json.loads(self.noticed_file.read_text()), ["wS:p1"])
+
+    def test_a_pane_with_both_a_login_line_and_the_reset_prompt_gets_no_keys(self):
+        both = RESET_PROMPT + "\nLogin expired · Please run /login"
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": both}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), [])
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_an_unwritable_noticed_file_is_named_and_the_pane_is_still_notified(self):
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("")
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": LOGIN_EXPIRED_TAIL}})
+
+        finished = self.run_wake(state_home=blocker)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(len(self.notifications()), 1)
+        self.assertIn(str(blocker / "herdr-wake-limited.noticed"), finished.stderr)
 
     def test_help_prints_usage_and_sends_nothing(self):
         self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})

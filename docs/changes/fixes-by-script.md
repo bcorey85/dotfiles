@@ -7,53 +7,53 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-598 fix notes
+602 fix notes
 
-Recent: the 7 days up to 2026-11-15, the newest note.
+Recent: the 7 days up to 2026-11-18, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 59 | 11 |
-| script/review-loop-script | 58 | 8 |
-| script/handback | 54 | 4 |
-| script/review-commit-gate | 38 | 4 |
+| script/review-fix | 59 | 8 |
+| script/review-loop-script | 58 | 4 |
+| script/handback | 54 | 3 |
+| script/review-commit-gate | 38 | 3 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 24 | 3 |
-| script/coder-gate | 22 | 2 |
-| script/script-utils | 21 | 6 |
+| script/full-check | 24 | 2 |
+| script/coder-gate | 22 | 1 |
+| script/script-utils | 22 | 4 |
 | agent/review-loop | 20 | 0 |
-| script/plan-format | 20 | 3 |
+| script/plan-format | 20 | 2 |
+| skill/code | 18 | 1 |
 | script/quality-check-cap | 17 | 0 |
-| skill/code | 17 | 3 |
-| skill/review | 17 | 11 |
-| script/review-loop | 16 | 9 |
+| skill/review | 17 | 0 |
+| script/review-loop | 16 | 8 |
 | script/shell-write-gate | 15 | 1 |
-| script/verify-prep | 14 | 4 |
-| script/verify-log | 13 | 6 |
+| script/verify-prep | 14 | 2 |
+| script/verify-log | 13 | 4 |
 | script/log-review-finding | 12 | 1 |
 | script/staged-claim-gate | 12 | 1 |
-| script/pull-keep-index | 11 | 8 |
-| script/verify-common | 10 | 5 |
+| script/pull-keep-index | 11 | 2 |
+| script/verify-common | 10 | 3 |
+| script/code-wait | 9 | 4 |
 | script/git-discipline-gate | 9 | 1 |
+| script/code-review-start | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/log-escape | 8 | 0 |
-| script/refactor-flow | 8 | 3 |
-| script/shell-command | 8 | 4 |
-| script/code-review-start | 7 | 3 |
-| script/code-wait | 7 | 2 |
+| script/refactor-flow | 8 | 2 |
+| script/shell-command | 8 | 3 |
 | script/criteria-dry-run | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/handback-store | 6 | 4 |
-| script/herdr-worktree | 6 | 2 |
-| script/pipe-shell-check | 6 | 3 |
+| script/herdr-worktree | 6 | 1 |
+| script/pipe-shell-check | 6 | 0 |
 | skill/refactor | 6 | 1 |
 | script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 1 |
-| script/review-launch | 5 | 5 |
+| script/review-launch | 5 | 4 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/test-run-output | 5 | 1 |
 | (no component) | 4 | 0 |
@@ -73,12 +73,14 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/code | 3 | 0 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
+| script/loop-transcript | 3 | 1 |
 | script/phase-asks | 3 | 3 |
 | script/review-fix-asks | 3 | 3 |
-| script/review-loop-packet | 3 | 1 |
+| script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
-| script/wait-loop-gate | 3 | 1 |
-| agent/code-fork | 2 | 1 |
+| script/wait-loop-gate | 3 | 0 |
+| script/worktree-snapshot | 3 | 1 |
+| agent/code-fork | 2 | 0 |
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
@@ -93,13 +95,12 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-review-check | 2 | 0 |
-| script/loop-transcript | 2 | 0 |
+| script/phase-start | 2 | 2 |
 | script/plan-review-shards | 2 | 1 |
-| script/reviewed-tree | 2 | 1 |
+| script/reviewed-tree | 2 | 0 |
 | script/rg-path-gate | 2 | 0 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
-| script/worktree-snapshot | 2 | 0 |
 | skill/branch-recap | 2 | 0 |
 | agent/code-reviewer | 1 | 0 |
 | agent/mutation-tester | 1 | 0 |
@@ -115,10 +116,11 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/block-credential-read | 1 | 0 |
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
-| script/detach | 1 | 1 |
+| script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 1 |
+| script/fix-diff | 1 | 1 |
 | script/fork-write-scope | 1 | 1 |
 | script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
@@ -127,7 +129,7 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
 | script/herdr-worktree-prune | 1 | 1 |
-| script/herdr-worktree-watch | 1 | 1 |
+| script/herdr-worktree-watch | 1 | 0 |
 | script/hook-input | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/install-stow | 1 | 0 |
@@ -138,17 +140,16 @@ Recent: the 7 days up to 2026-11-15, the newest note.
 | script/mcp-ledger | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/permission-question | 1 | 0 |
-| script/phase-start | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
-| script/reply-json | 1 | 1 |
+| script/reply-json | 1 | 0 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 1 |
 | script/review-loop-docs-kind | 1 | 1 |
-| script/review-loop-findings | 1 | 1 |
-| script/review-loop-fix-induced | 1 | 1 |
+| script/review-loop-findings | 1 | 0 |
+| script/review-loop-fix-induced | 1 | 0 |
 | script/rule-anchors | 1 | 0 |
 | script/ruled-change-text | 1 | 1 |
 | script/source-text | 1 | 0 |

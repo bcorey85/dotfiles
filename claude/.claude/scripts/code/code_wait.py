@@ -6,7 +6,8 @@
     python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> [<agent id> <report file>]...
 
 Nested Agent calls in a fork return at once, and a fork that ends its turn hands back, so the fork waits here instead.
-`agent` waits for the subagent's transcript to finish and prints its hand-back report.
+`agent` waits for the subagent's transcript to finish and prints its hand-back report, only a report no earlier wait
+printed: a resumed agent's old report is not printed again.
 `review` waits for the code_review_start.py process that `code_review_start.py --detach` left. Each `<agent id>
 <report file>` pair names a reviewer the fork dispatched for an open request (see reviewer_dispatch.py): the wait
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
@@ -22,6 +23,7 @@ Each call waits at most WAIT_SECONDS, then says to run the same command again.
 """
 
 import dataclasses
+import datetime
 import json
 import os
 import pathlib
@@ -56,7 +58,12 @@ LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the s
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 AGENT_ID_FORM = "the agentId an Agent call returned: `a` and 16 hex digits"
 PHASE_DIR_NAME = "code-phase"
+# One JSON file per agent id: the report line an agent wait printed last. Agent ids are global and the fork's cwd is
+# not fixed, so the record sits outside any repo.
+AGENT_REPORTS_DIR = pathlib.Path.home() / ".claude" / "state" / "agent-reports"
 PID_FILE = "pid"
+HANDOFF_FILE = "handoff.txt"  # the phase's hand-off block, in the run folder
+PREVIOUS_HANDOFF_FILE = "handoff.prev.txt"  # where phase_start.py moves the last phase's hand-off
 REVIEW_OUTPUT = "review.out"
 PHASE_RUN_FILE = "run.json"  # the lane and phase of the last started phase review
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
@@ -84,8 +91,8 @@ def finished_transcript(agent_id):
     return transcript
 
 
-def agent_report(transcript):
-    """The message of a finished agent's last hand-back call a hook did not deny, else its last text, else "".
+def settled_agent_read(transcript):
+    """The LoopTranscript of a finished agent's transcript.
     The harness marks the agent finished before its last transcript line (the hand-back's result) is on disk, so a
     read with a hand-back call and no result yet, or with no report, is retried for SETTLE_SECONDS."""
     reads = []
@@ -93,12 +100,50 @@ def agent_report(transcript):
     def settled_read():
         read = loop_transcript.LoopTranscript(transcript)
         reads.append(read)
-        report = read.handback_message or read.last_text or ""
-        return not read.handback_pending and bool(report.strip())
+        return not read.handback_pending and bool(report_of(read).strip())
 
     script_utils.wait_for(settled_read, SETTLE_SECONDS, SETTLE_POLL_SECONDS)
-    last_read = reads[-1]
-    return last_read.handback_message or last_read.last_text or ""
+    return reads[-1]
+
+
+def report_of(read):
+    """The message of the last hand-back call a hook did not deny, else the last text, else ""."""
+    return read.handback_message or read.last_text or ""
+
+
+def report_line(read):
+    """The transcript line of the report `report_of` returns, -1 when the transcript holds none."""
+    if read.handback_message:
+        return read.handback_lines[-1]
+    if read.last_text_line is None:
+        return -1
+    return read.last_text_line
+
+
+def printed_report_file(agent_id):
+    return script_utils.state_file_path(AGENT_REPORTS_DIR, agent_id, ".json")
+
+
+def printed_report(agent_id):
+    """{"agent_id", "line", "time"} of the report an earlier wait printed for this agent, {} when none."""
+    record_file = printed_report_file(agent_id)
+    if not record_file.is_file():
+        return {}
+    try:
+        record = json.loads(record_file.read_text())
+        record["line"] = int(record["line"])
+        record["time"] = str(record["time"])
+    except (ValueError, KeyError, TypeError) as error:
+        sys.exit(f"code_wait: {record_file} is not the {{\"agent_id\", \"line\", \"time\"}} JSON object this wait "
+                 f"writes ({error!r}); delete it and run this wait again")
+    return record
+
+
+def record_printed_report(agent_id, line):
+    record_file = printed_report_file(agent_id)
+    record_file.parent.mkdir(parents=True, exist_ok=True)
+    record = {"agent_id": agent_id, "line": line, "time": datetime.datetime.now().isoformat(timespec="seconds")}
+    script_utils.write_text_atomically(record_file, json.dumps(record) + "\n")
 
 
 def checked_agent_id(word):
@@ -283,17 +328,43 @@ def open_reviewer_requests(run):
     return reviewer_dispatch.pending_requests(folder)
 
 
+def new_finished_transcript(agent_id, printed):
+    # Each poll parses the transcript once; that parse decides both "finished" and "newer than the printed report".
+    transcript = agent_transcript(agent_id)
+    if transcript is None:
+        return None
+    read = loop_transcript.LoopTranscript(transcript)
+    if not (loop_transcript.finished_by_meta(transcript) or read.handback_lines):
+        return None
+    if printed and report_line(read) <= printed["line"]:
+        return None
+    return transcript
+
+
+def print_still_working(agent_id, printed):
+    print(STILL_WORKING)
+    transcript = agent_transcript(agent_id)
+    if transcript is None or not printed:
+        return
+    # The stored line is 0-based; editors and Read offsets count from 1.
+    print(f"The agent's last report (line {printed['line'] + 1}) was printed by an earlier wait at {printed['time']}. "
+          f"This wait prints only a newer report. When the agent was not resumed, read {transcript}.")
+
+
 def wait_agent(agent_id):
-    if not script_utils.wait_for(lambda: finished_transcript(agent_id), WAIT_SECONDS, POLL_SECONDS):
-        print(STILL_WORKING)
+    printed = printed_report(agent_id)
+    transcript = script_utils.wait_for(lambda: new_finished_transcript(agent_id, printed), WAIT_SECONDS, POLL_SECONDS)
+    if not transcript:
+        print_still_working(agent_id, printed)
         return 0
 
-    transcript = agent_transcript(agent_id)
-    report = agent_report(transcript)
+    read = settled_agent_read(transcript)
+    report = report_of(read)
     if not report.strip():
         print(f"{NO_REPORT} Transcript: {transcript}")
         return 0
     print(report)
+    record_printed_report(agent_id, report_line(read))
     return 0
 
 
@@ -325,7 +396,8 @@ def write_finished_reports(pairs):
         transcript = finished_transcript(agent_id)
         if transcript is None:
             continue
-        report = agent_report(transcript)
+        read = settled_agent_read(transcript)
+        report = report_of(read)
         if not report.strip():
             empty.append(f"- agent {agent_id}; report {report_file}; transcript {transcript}")
             continue

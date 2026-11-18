@@ -14,7 +14,8 @@ each round's reviewers as its own subagents, and <git dir>/code-phase/loop-dir n
 requests. Prints the hand-back packet when the loop ends, then the defer ACTION when the packet holds a plan impact
 that waits for a ruling.
 A live run stops when the handoff file holds the same text an earlier phase's review read: the fork wrote this phase's
-handoff somewhere else.
+handoff somewhere else. A missing handoff file stops the run with its path: phase_start.py moved the last phase's
+handoff aside, so write this phase's there first.
 """
 
 import hashlib
@@ -41,7 +42,7 @@ import plan_format
 import review_fix
 import reviewer_dispatch
 import script_utils
-from code_wait import LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
+from code_wait import HANDOFF_FILE, LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
 from review_fix_state import REVIEW_FIX_COMMAND
 from review_loop_prompt_file import (
     HELD_FILES_KEY,
@@ -56,7 +57,6 @@ WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 DEFER_COMMAND = f"{REVIEW_FIX_COMMAND} defer"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
-HANDOFF_FILE = "handoff.txt"
 HANDOFF_PHASES_FILE = "handoff-phases.json"
 
 
@@ -258,7 +258,11 @@ def main(argv):
     lane, plan, phase, handoff_file = argv[1:5]
     base = base_option(argv)
     repo = pathlib.Path.cwd().resolve()
-    coder_handoff = pathlib.Path(handoff_file).read_text()
+    handoff_path = pathlib.Path(handoff_file)
+    if not handoff_path.is_file():
+        sys.exit(f"code_review_start: no hand-off file at {handoff_path.resolve()}. Write this phase's hand-off block "
+                 "there with Write, then run this step again.")
+    coder_handoff = handoff_path.read_text()
     held, handoff, phase_changed = review_scope(repo, base, coder_handoff)
     prompt = review_prompt(repo, lane, plan, phase, handoff, phase_changed, held)
     if "--dry-run" in argv:

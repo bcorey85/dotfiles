@@ -11,7 +11,8 @@ so the review loop never reviews or edits it.
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
 whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own. A
 missing record, or one for another HEAD, is replaced either way. Prints the HEAD sha.
-An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays).
+An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays), and an existing
+handoff.txt to handoff.prev.txt, so a review start never reads an earlier phase's hand-off as this phase's.
 """
 import json
 import os
@@ -21,10 +22,10 @@ import sys
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
+import code_wait
 import script_utils
 import stop_file_names
 import worktree_snapshot
-from code_wait import phase_dir
 
 START_FILE = "start.json"
 COMMAND = "python3 ~/.claude/scripts/code/phase_start.py"
@@ -49,7 +50,7 @@ def start_record(repo):
 def read_start_record(repo):
     """The start record on disk as {"head", "dirty"}; None when there is no file. A record that does not parse raises
     StartRecordError."""
-    record_file = phase_dir(repo) / START_FILE
+    record_file = code_wait.phase_dir(repo) / START_FILE
     if not record_file.is_file():
         return None
 
@@ -70,7 +71,7 @@ def unchanged_dirty_files(repo, base_commit):
         return None
 
     head, dirty = record["head"], record["dirty"]
-    record_file = phase_dir(repo) / START_FILE
+    record_file = code_wait.phase_dir(repo) / START_FILE
     if head != base_commit:
         raise StartRecordError(f"{record_file} records phase base {head}, not {base_commit}: phase_start.py did not "
                                f"run before this phase's coder. Run `{COMMAND}` before each phase's coder dispatch "
@@ -80,18 +81,19 @@ def unchanged_dirty_files(repo, base_commit):
     return sorted(path for path, saved in dirty.items() if worktree_snapshot.file_hash(root, path) == saved)
 
 
-def move_stale_stop_aside(folder):
-    """Rename <folder>/stop.md to stop.prev.md, replacing an older one, so the fork's next stop is a new file: the
-    Write tool refuses an existing file the fork has not read. A failed rename is reported and the script goes on."""
-    stop_file = folder / stop_file_names.STOP_FILE
-    if not stop_file.is_file():
+def move_aside(folder, name, previous_name):
+    """Rename <folder>/<name> to <previous_name>, replacing an older one, so the fork's next file of that name is new:
+    the Write tool refuses an existing file the fork has not read. A failed rename is reported and the script goes
+    on."""
+    current_file = folder / name
+    if not current_file.is_file():
         return
 
-    previous_file = folder / stop_file_names.PREVIOUS_STOP_FILE
+    previous_file = folder / previous_name
     try:
-        os.replace(stop_file, previous_file)
+        os.replace(current_file, previous_file)
     except OSError as error:
-        print(f"phase_start: could not move {stop_file} to {previous_file}: {error}", file=sys.stderr)
+        print(f"phase_start: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
 
 
 def main():
@@ -103,7 +105,9 @@ def main():
     if repo is None:
         sys.exit(f"phase_start: {pathlib.Path.cwd()} is not inside a git work tree")
 
-    move_stale_stop_aside(phase_dir(repo))
+    run_folder = code_wait.phase_dir(repo)
+    move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
+    move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
 
     try:
         record = start_record(repo)
@@ -119,7 +123,7 @@ def main():
         print(record["head"])
         return 0
 
-    folder = phase_dir(repo)
+    folder = code_wait.phase_dir(repo)
     folder.mkdir(exist_ok=True)
     script_utils.write_text_atomically(folder / START_FILE, json.dumps(record, indent=2) + "\n")
     print(record["head"])

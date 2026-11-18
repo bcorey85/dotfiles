@@ -1663,7 +1663,7 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       base_name="one-dark"
       accent="#51a49c" panel_bg="#161616" surface_dim="#292929"
       surface0="#383838" surface1="#454545"
-      overlay0="#9a9a9a" overlay1="#a1a1a1"
+      overlay0="#585858" overlay1="#a1a1a1"
       text="#c0c0c0" subtext0="#a1a1a1"
       green="#51a49c" yellow="#eed286" red="#f54b43"
       blue="#8b92d6" teal="#51a49c" peach="#d97d94"

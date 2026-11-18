@@ -92,7 +92,7 @@ local FAMILIES = {
     own_picker_dir = true,
     accents = {
       -- H1 takes the exit magenta; H2-H6 the bind violet.
-      dark = { heading1 = "#f38ba5", heading = "#9ca4f1", bullet = "#a1a1a1" },
+      dark = { heading1 = "#d97d94", heading = "#8b92d6", bullet = "#a1a1a1" },
       light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
     },
   },

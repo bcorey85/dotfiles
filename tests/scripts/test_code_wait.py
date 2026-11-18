@@ -21,9 +21,9 @@ AGENT_ID = "a1817e9d1060d81ea"
 REPORT = "Phase 0 is implemented."
 
 
-def handback_records(report):
-    call = {"type": "tool_use", "id": "toolu_1", "name": "SubagentHandback", "input": {"message": report}}
-    result = {"type": "tool_result", "tool_use_id": "toolu_1",
+def handback_records(report, call_id="toolu_1"):
+    call = {"type": "tool_use", "id": call_id, "name": "SubagentHandback", "input": {"message": report}}
+    result = {"type": "tool_result", "tool_use_id": call_id,
               "content": [{"type": "text", "text": '{"success":true,"message":"Report delivered to your caller."}'}]}
     return [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}, call]}},
             {"type": "user", "message": {"content": [result]}}]
@@ -49,10 +49,16 @@ def printed(call, *args):
 class WaitAgentTest(unittest.TestCase):
     def setUp(self):
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
+        for name, value in (("PROJECTS", self.projects), ("AGENT_REPORTS_DIR", temp_dir(self) / "agent-reports"),
+                            ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
             patcher = mock.patch.object(code_wait, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.repo = temp_dir(self)
+        init_repo(self.repo)
+        cwd_patcher = mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=self.repo)
+        cwd_patcher.start()
+        self.addCleanup(cwd_patcher.stop)
 
     def write_transcript(self, records, finished=None):
         subagents = self.projects / "proj/session/subagents"
@@ -62,31 +68,144 @@ class WaitAgentTest(unittest.TestCase):
         if finished is not None:
             transcript.with_suffix(".meta.json").write_text(json.dumps({"finished": finished}))
 
+    def append_records(self, records):
+        transcript = self.projects / f"proj/session/subagents/agent-{AGENT_ID}.jsonl"
+        with transcript.open("a") as handle:
+            handle.write("".join(json.dumps(record) + "\n" for record in records))
+
+    def wait(self):
+        return printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID])
+
+    def test_a_second_wait_does_not_print_the_report_an_earlier_wait_printed(self):
+        self.write_transcript(handback_records(REPORT))
+
+        first = self.wait()
+        second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        lines = second.strip().splitlines()
+        self.assertEqual(lines[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+        record_file = code_wait.printed_report_file(AGENT_ID)
+        printed_line = json.loads(record_file.read_text())["line"]
+        self.assertIn(f"line {printed_line + 1}", lines[1])
+        self.assertIn(f"agent-{AGENT_ID}.jsonl", lines[1])
+
+    def test_the_printed_report_record_does_not_depend_on_the_cwd(self):
+        self.write_transcript(handback_records(REPORT))
+        outside_a_checkout = temp_dir(self)
+        elsewhere = temp_dir(self)
+        init_repo(elsewhere)
+
+        with mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=outside_a_checkout):
+            first = self.wait()
+        with mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=elsewhere):
+            second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        self.assertEqual(second.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+
+    def test_a_record_file_the_wait_cannot_read_stops_loudly(self):
+        self.write_transcript(handback_records(REPORT))
+        record_file = code_wait.printed_report_file(AGENT_ID)
+        record_file.parent.mkdir(parents=True)
+        bad_contents = {"not json": "not json", "no line": '{"time": "t"}', "no time": '{"line": 1}',
+                        "line not a number": '{"line": "abc", "time": "t"}'}
+        for name, contents in bad_contents.items():
+            with self.subTest(name):
+                record_file.write_text(contents)
+
+                with self.assertRaises(SystemExit) as stop:
+                    self.wait()
+
+                self.assertIn(str(record_file), str(stop.exception))
+
+    def test_a_finished_agent_with_no_report_records_nothing_printed(self):
+        self.write_transcript([{"type": "assistant", "message": {"content": []}}], finished=True)
+
+        output = self.wait()
+
+        self.assertIn(code_wait.NO_REPORT, output)
+        self.assertFalse(code_wait.printed_report_file(AGENT_ID).exists())
+
+    def test_a_resumed_agent_s_second_hand_back_prints_as_the_next_report(self):
+        self.write_transcript(handback_records(REPORT))
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        self.append_records([resume, *handback_records("Phase 1 is implemented.", "toolu_2")])
+
+        self.assertEqual(self.wait().strip(), "Phase 1 is implemented.")
+
+    def test_a_resumed_agent_whose_meta_still_says_finished_keeps_working_without_a_new_hand_back(self):
+        self.write_transcript(handback_records(REPORT), finished=True)
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        more_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Working."}]}}
+        self.append_records([resume, more_text])
+
+        output = self.wait()
+
+        self.assertEqual(output.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, output)
+
+    def test_a_resumed_agent_with_no_new_hand_back_keeps_working(self):
+        self.write_transcript(handback_records(REPORT))
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        self.append_records([resume])
+
+        output = self.wait()
+
+        self.assertEqual(output.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, output)
+
+    def test_a_last_text_with_no_hand_back_prints_once(self):
+        self.write_transcript([{"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}],
+                              finished=True)
+
+        first = self.wait()
+        second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        self.assertEqual(second.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+
+    def test_a_resumed_agent_s_new_text_after_a_last_text_report_prints_as_the_next_report(self):
+        first_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}
+        self.write_transcript([first_text], finished=True)
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        more_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Working."}]}}
+        self.append_records([resume, more_text])
+
+        self.assertEqual(self.wait().strip(), "Working.")
+
     def test_a_delivered_hand_back_prints_its_report(self):
         self.write_transcript(handback_records(REPORT))
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), REPORT)
+        self.assertEqual(self.wait().strip(), REPORT)
 
     def test_an_agent_still_at_work_says_to_run_again(self):
         self.write_transcript([handback_records(REPORT)[0]], finished=False)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_an_agent_not_yet_written_says_to_run_again(self):
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_a_finished_meta_without_a_hand_back_prints_the_last_text(self):
         self.write_transcript([{"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}],
                               finished=True)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), REPORT)
+        self.assertEqual(self.wait().strip(), REPORT)
 
     def test_a_denied_hand_back_is_not_a_finish(self):
         records = handback_records(REPORT)
         records[1]["message"]["content"][0]["is_error"] = True
         self.write_transcript(records)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_a_denied_hand_back_message_is_not_the_report_of_a_finished_agent(self):
         later_text = "The real report."
@@ -95,7 +214,7 @@ class WaitAgentTest(unittest.TestCase):
         records.append({"type": "assistant", "message": {"content": [{"type": "text", "text": later_text}]}})
         self.write_transcript(records, finished=True)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), later_text)
+        self.assertEqual(self.wait().strip(), later_text)
 
 
 class WaitReviewTest(unittest.TestCase):

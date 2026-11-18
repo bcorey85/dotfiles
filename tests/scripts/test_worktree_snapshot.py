@@ -90,6 +90,56 @@ class WorktreeSnapshotTest(unittest.TestCase):
 
         self.assertEqual(([], ["new.py"], []), worktree_snapshot.changes_since(before))
 
+    def test_work_tree_tree_raises_outside_a_git_work_tree(self):
+        with (
+            tempfile.TemporaryDirectory() as bare_folder,
+            self.assertRaises(worktree_snapshot.WorkTreeTreeError),
+        ):
+            worktree_snapshot.work_tree_tree(bare_folder)
+
+    def test_work_tree_tree_names_the_git_call_that_failed(self):
+        (self.repo / ".git" / "index").write_bytes(b"not an index")
+
+        with self.assertRaises(worktree_snapshot.WorkTreeTreeError) as raised:
+            worktree_snapshot.work_tree_tree(self.repo)
+
+        self.assertIn("git add -A", str(raised.exception))
+
+    def test_work_tree_tree_works_in_a_repo_with_no_index_file_yet(self):
+        with tempfile.TemporaryDirectory() as fresh_folder:
+            fresh = pathlib.Path(fresh_folder)
+            git(fresh, "init", "-q", "-b", "main")
+            (fresh / "a.txt").write_text("a\n")
+
+            tree = worktree_snapshot.work_tree_tree(fresh)
+
+            self.assertEqual(["a.txt"], git(fresh, "ls-tree", "-r", "--name-only", tree).splitlines())
+
+    def test_work_tree_tree_leaves_out_a_tracked_file_deleted_in_the_work_tree(self):
+        (self.repo / "app.py").unlink()
+
+        tree = worktree_snapshot.work_tree_tree(self.repo)
+
+        listed = git(self.repo, "ls-tree", "-r", "--name-only", tree).splitlines()
+        self.assertNotIn("app.py", listed)
+        self.assertIn("generated.ts", listed)
+
+    def test_work_tree_tree_holds_an_untracked_file_and_leaves_the_real_index_bytes_alone(self):
+        (self.repo / "app.py").write_text("app staged\n")
+        git(self.repo, "add", "app.py")
+        (self.repo / "fresh.py").write_text("fresh\n")
+        (self.repo / ".gitignore").write_text("skipped.log\n")
+        (self.repo / "skipped.log").write_text("noise\n")
+        index_file = self.repo / ".git" / "index"
+        index_before = index_file.read_bytes()
+
+        tree = worktree_snapshot.work_tree_tree(self.repo)
+
+        self.assertEqual(index_before, index_file.read_bytes())
+        listed = git(self.repo, "ls-tree", "-r", "--name-only", tree).splitlines()
+        self.assertIn("fresh.py", listed)
+        self.assertNotIn("skipped.log", listed)
+
     def test_a_folder_that_is_no_git_work_tree_is_left_alone(self):
         with tempfile.TemporaryDirectory() as bare_folder:
             before = worktree_snapshot.take(bare_folder)

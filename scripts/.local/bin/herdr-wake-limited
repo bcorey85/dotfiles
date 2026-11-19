@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Press Enter in Claude panes stuck at the usage-limit "press enter" prompt.
+"""Press Enter in Claude panes stuck at the usage-limit "press enter" prompt, and
+announce panes stopped on an expired login.
 
 Usage: herdr-wake-limited [-h|--help]
 
@@ -12,19 +13,36 @@ This reads the visible screen of every claude agent that `herdr-api agent list`
 names as idle or done. A pane whose last six non-empty lines hold both phrases gets one Enter, one line on
 stdout (pane id and cwd) and one line in
 ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.log (ISO time, pane id,
-cwd); when the log cannot be written, only a stderr line names the pane. Any other pane gets nothing. When herdr does not answer it exits 0 and
+cwd); when the log cannot be written, only a stderr line names the pane. Any other pane gets nothing, except a pane on an expired login (below). When herdr does not answer it exits 0 and
 prints nothing, so a timer can run it every few minutes.
+
+A pane that stopped on an expired login (`Login expired · Please run /login`,
+`Not logged in · Please run /login`; a whole line among the bottom ten
+non-empty lines, after an optional leading glyph) gets no keys: only /login in
+that pane fixes it. It gets one `herdr notification show`, one line on stdout
+(`login expired <pane> <cwd>`) and one log line, once per stuck spell. The ids
+already announced are kept in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.noticed
+(a JSON list, written atomically); an id is dropped once its pane no longer
+shows the line or is no longer an idle or done claude agent, so a later expiry
+announces again. Under tuios (TUIOS_SOCKET
+set) there is no notification command, so nothing is announced and the
+noticed file is neither read nor written.
 """
 import datetime
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
 PHRASES = ("your usage limit has reset", "press enter to continue")
 VISIBLE_LINES = "15"
 BOTTOM_LINES = 6
+LOGIN_BOTTOM_LINES = 10
+# A whole line: plain words, then the hint. Quotes, prompts or other text around
+# the phrase mean a pane is discussing it, not showing it.
+LOGIN_LINE = re.compile(r"^(?:[●⎿]\s*)?[A-Za-z][A-Za-z ]* · Please run /login$")
 
 
 def herdr_api(*args):
@@ -42,13 +60,14 @@ def herdr_api(*args):
 
 
 def claude_agents():
+    """Idle or done claude agents, or None when herdr gives no usable answer."""
     listing = herdr_api("agent", "list")
     if listing is None:
-        return []
+        return None
     try:
         agents = json.loads(listing)["result"]["agents"]
     except (ValueError, KeyError, TypeError):
-        return []
+        return None
     return [agent for agent in agents
             if agent.get("agent") == "claude" and agent.get("pane_id")
             and agent.get("agent_status") in ("idle", "done")]
@@ -62,16 +81,105 @@ def holds_limit_reset_prompt(text):
     return all(phrase in bottom for phrase in PHRASES)
 
 
-def log_wake(pane_id, cwd):
+def login_expired_line(text):
+    """The first whole login-expired line among the bottom lines of the screen, else None."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in lines[-LOGIN_BOTTOM_LINES:]:
+        if LOGIN_LINE.match(line):
+            return line
+    return None
+
+
+def state_dir():
     state_home = os.environ.get("XDG_STATE_HOME") or str(pathlib.Path.home() / ".local" / "state")
-    log_file = pathlib.Path(state_home) / "herdr-wake-limited.log"
+    return pathlib.Path(state_home)
+
+
+def read_noticed(noticed_file):
+    """Pane ids already announced. A missing or unreadable file reads as none, so a pane is announced again, never missed."""
+    try:
+        return set(json.loads(noticed_file.read_text()))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def write_noticed(noticed_file, pane_ids):
+    temp_file = noticed_file.with_name(f"{noticed_file.name}.{os.getpid()}.tmp")
+    try:
+        noticed_file.parent.mkdir(parents=True, exist_ok=True)
+        temp_file.write_text(json.dumps(sorted(pane_ids)))
+        os.replace(temp_file, noticed_file)
+    except OSError as error:
+        # unlink raises ENOTDIR when the state folder is a file, so test first.
+        if temp_file.exists():
+            temp_file.unlink()
+        print(f"herdr-wake-limited: could not write {noticed_file}: {error}", file=sys.stderr)
+
+
+def announce_login_expired(pane_id, cwd, line):
+    """Show the notification; True when herdr took it."""
+    body = f"{pane_id} in {cwd} stopped on {line}; run /login there"
+    shown = herdr_api("notification", "show", "herdr-wake-limited: login expired",
+                      "--body", body, "--sound", "request")
+    if shown is None:
+        print(f"herdr-wake-limited: could not notify about {pane_id}", file=sys.stderr)
+        return False
+    return True
+
+
+def log_event(pane_id, cwd, note=""):
+    log_file = state_dir() / "herdr-wake-limited.log"
     stamp = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     try:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with log_file.open("a") as log:
-            log.write(f"{stamp} {pane_id} {cwd}\n")
+            suffix = f" {note}" if note else ""
+            log.write(f"{stamp} {pane_id} {cwd}{suffix}\n")
     except OSError as error:
         print(f"herdr-wake-limited: could not write {log_file}: {error}", file=sys.stderr)
+
+
+def handle_login_expired(agent, login_line, noticed):
+    """Announce a stuck pane once.
+
+    Returns True when the pane is announced, on this run or an earlier one
+    (the caller keeps it noticed). Returns False when the notification failed,
+    so the next run retries.
+    """
+    pane_id = agent["pane_id"]
+    if pane_id in noticed:
+        return True
+    cwd = agent.get("cwd", "")
+    if not announce_login_expired(pane_id, cwd, login_line):
+        return False
+    log_event(pane_id, cwd, "login-expired")
+    print(f"login expired {pane_id} {cwd}")
+    return True
+
+
+def wake_pane(agent):
+    pane_id = agent["pane_id"]
+    if herdr_api("agent", "send-keys", pane_id, "enter") is None:
+        print(f"herdr-wake-limited: could not send Enter to {pane_id}", file=sys.stderr)
+        return
+    cwd = agent.get("cwd", "")
+    log_event(pane_id, cwd)
+    print(f"woke {pane_id} {cwd}")
+
+
+def handle_pane(agent, noticed, under_tuios):
+    """Act on one pane; True when its id stays in the noticed set."""
+    pane_id = agent["pane_id"]
+    screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES)
+    if screen is None:
+        # A failed read says nothing about the pane: keep its announced state.
+        return pane_id in noticed
+    login_line = login_expired_line(screen)
+    if login_line:
+        return not under_tuios and handle_login_expired(agent, login_line, noticed)
+    if holds_limit_reset_prompt(screen):
+        wake_pane(agent)
+    return False
 
 
 def main():
@@ -82,17 +190,18 @@ def main():
         print(f"herdr-wake-limited: unknown argument: {sys.argv[1]}", file=sys.stderr)
         return 1
 
-    for agent in claude_agents():
-        pane_id = agent["pane_id"]
-        screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES) or ""
-        if not holds_limit_reset_prompt(screen):
-            continue
-        if herdr_api("agent", "send-keys", pane_id, "enter") is None:
-            print(f"herdr-wake-limited: could not send Enter to {pane_id}", file=sys.stderr)
-            continue
-        cwd = agent.get("cwd", "")
-        log_wake(pane_id, cwd)
-        print(f"woke {pane_id} {cwd}")
+    agents = claude_agents()
+    if agents is None:
+        return 0
+    # tuios shares the noticed file with herdr but lists other pane ids, so a
+    # tuios run must not read or rewrite it.
+    under_tuios = bool(os.environ.get("TUIOS_SOCKET"))
+    noticed_file = state_dir() / "herdr-wake-limited.noticed"
+    noticed = set() if under_tuios else read_noticed(noticed_file)
+    still_stuck = {agent["pane_id"] for agent in agents
+                   if handle_pane(agent, noticed, under_tuios)}
+    if not under_tuios and still_stuck != noticed:
+        write_noticed(noticed_file, still_stuck)
     return 0
 
 

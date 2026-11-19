@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-984 changes
+985 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -18,6 +18,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [the code stop blocks name the commit subject and write no git command](notes/2026-11-18-the-code-stop-blocks-name-the-commit-subject-and.md) [skill/code] /code stop blocks B and C and the phase-boundary sentence give `Commit subject: <subject>` in place of a `! git commit` line, so a fork no longer hands the user a command.
 * [close-branch records the reviewed tree in a scratch index and leaves the user's index alone](notes/2026-11-18-close-branch-records-the-reviewed-tree-in-a.md) [script/worktree-snapshot, script/fix-diff, skill/close-branch] close-branch no longer runs `git add -A`: `fix_diff.py mark` records the reviewed tree from a scratch index, and `fix_diff.py show` prints the fix diff command and its files.
 * [a code phase start moves the last hand-off aside and a review start with no hand-off stops loudly](notes/2026-11-18-a-code-phase-start-moves-the-last-hand-off-aside.md) [script/phase-start, script/code-review-start, script/code-wait, skill/code] `phase_start.py` moves `handoff.txt` to `handoff.prev.txt`, so a phase review can no longer start on an earlier phase's hand-off text; `code_review_start.py` stops with the path when the file is missing.
+* [log-escape keeps the catch text in a local escape-text file](notes/2026-11-18-log-escape-keeps-the-catch-text-in-a-local-escape.md) [script/log-escape, script/ledger-write] A logged escape now keeps its one-line catch text on the machine that caught it, so a hand catch can be read back by cause.
 * [code-wait agent prints only a report no earlier wait printed](notes/2026-11-18-code-wait-agent-prints-only-a-report-no-earlier.md) [script/code-wait, script/loop-transcript, script/script-utils] `code_wait.py agent` records each report it prints and prints a report again only when the agent wrote a newer one, so a wait on a resumed agent no longer returns its last phase's report.
 
 ## Week of 2026-11-09

@@ -67,6 +67,11 @@ still judges.
                                          unlogged asks, and for a packet other than the current one.
                                          --by is required: user when the user gave the answer, session when the
                                          session ruled on the asks itself. A call without it exits 2 and logs nothing.
+                                         A user ruling given to another live session: add to --by user
+                                         `{relay_usage}`
+                                         The script needs a real user turn of that session's transcript whose whole
+                                         text is the quote, typed after the asks were filed, and exits 2 with
+                                         nothing logged when any lookup fails.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
@@ -93,6 +98,7 @@ import os
 import pathlib
 import shlex
 import sys
+import time
 
 SIBLING_FOLDERS = (".", "../lib", "../code", "../telemetry")
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
@@ -105,6 +111,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
+from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_fix_asks import (
@@ -284,6 +291,7 @@ def save_packet_asks(packet, state):
     asks = packet["ask"]
     if "jumped" not in state:
         state["jumped"] = review_asks.run_nvim_jump(os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump"), asks)
+    review_asks.stamp_filed_at(asks, time.time())
     state.update({"stage": "asks", "asks": asks})
     save_fix_state(state)
     return asks
@@ -934,7 +942,8 @@ def main():
     if not arguments or arguments[0] not in handlers:
         outcomes = " | ".join(review_asks.ASK_OUTCOMES)
         print(__doc__.format(outcomes=outcomes, modified=review_asks.MODIFIED,
-                             accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS))
+                             accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS,
+                             relay_usage=RELAY_USAGE))
         return 2
     command = arguments[0]
     try:

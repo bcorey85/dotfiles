@@ -14,6 +14,13 @@ LIST_COMMAND = f"python3 {PHASE_ASKS_PATH} list"
 OUTCOME_PLACEHOLDER = f"{ACCEPTED}|{REJECTED}:<one-line reason>"
 
 
+# The options that relay a user ruling given to another session, as the ruling parsers accept them and as the
+# refusals and usage lines print them.
+RELAYED_BY_FLAG = "--relayed-by"
+QUOTE_FLAG = "--quote"
+RELAY_USAGE = f'{RELAYED_BY_FLAG} <session name> {QUOTE_FLAG} "<the user\'s exact words>"'
+
+
 def rule_command(count, by_user=False):
     """The `rule` command line for `count` asks, one placeholder word per ask. `by_user` adds `--by user`, the form
     that records the user's own ruling."""

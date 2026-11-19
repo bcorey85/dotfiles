@@ -21,6 +21,7 @@ import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 from hook_input import parse_documents_partial, raw_text
+from process_group import pid_is_alive
 
 # A mutation or calibration run longer than this has been abandoned, whatever its owner process says.
 MUTATION_RUN_TIMEOUT_SECONDS = 60 * 60
@@ -56,22 +57,6 @@ def parse_stamp(stamp):
         return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
     except ValueError:
         return None
-
-
-def pid_is_alive(owner_pid):
-    try:
-        pid = int(owner_pid)
-    except ValueError:
-        return False
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def session_pid_argument(arguments):

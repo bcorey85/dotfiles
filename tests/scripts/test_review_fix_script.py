@@ -32,7 +32,7 @@ import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
 import script_utils
-from review_asks import REJECT_MEANS, REJECTED
+from review_asks import PLAIN_OUTCOMES_TEXT, REJECT_MEANS, REJECTED
 from review_fix_asks import LAUNCH_COMMAND
 
 LOGGED_MARK = "LOGGED / POSTED"
@@ -1019,7 +1019,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                    "--scope", "branch-exit")
         self.assertEqual(code, 0, output)
         self.assertIn("Answer ask 2 with 'modified:<change with no condition>': "
-                      "accepted or rejected is refused on a conditional change", output)
+                      f"{PLAIN_OUTCOMES_TEXT} is refused on a conditional change", output)
 
     def test_the_ask_presentation_lists_every_conditional_ask_number(self):
         first = ask_entry("one", "src/a.ts:1", question="Confirm?", change="If not confirmed, revert X")

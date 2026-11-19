@@ -11,28 +11,43 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback
 import handback_store
 import plan_format
-from ask_outcome_words import ACCEPTED, REJECTED, RELAY_USAGE, USER_ONLY_KEY, USER_ONLY_MARK, user_only_numbers
-from script_utils import ask_text, hanging_indent_lines, one_line, run_command
+from ask_outcome_words import (
+    ACCEPTED,
+    APPLIED,
+    REJECTED,
+    RELAY_USAGE,
+    USER_ONLY_KEY,
+    USER_ONLY_MARK,
+    user_only_numbers,
+)
+from review_fix_names import FILED_AT_KEY
+from review_loop_findings import CHANGE_IF_LABEL_PATTERN
+from script_utils import ask_text, hanging_indent_lines, one_line, or_list, run_command
 
 MODIFIED = "modified"
-ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED)
+ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED, APPLIED)
+# The outcomes that carry no change of their own: each is refused on a conditional change, which only `modified`
+# answers.
+PLAIN_OUTCOMES_TEXT = or_list([word for word in ASK_OUTCOMES if word != MODIFIED])
 ACCEPT_MEANS = "make this change"
+APPLIED_MEANS = "the change is already in the tree: nothing to change"
 REJECT_MEANS = "leave the code as it is"
 JUMP_NOTE_LIMIT = 160
 # The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
 # line, so the conditional-change check skips it.
 USER_RULED_KEY = "user_ruled"
-# The ask field that holds the epoch time the ask was filed in the saved asks of a review-fix packet.
-FILED_AT_KEY = "filed_at"
 # A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`,
 # `Otherwise` or `If the user`, or it holds anywhere `if yes`, `if no,`, `if (not) confirmed/
 # approved` or `if the user confirms/approves/accepts/agrees/says`. An accepted answer to it applies the branch the
 # user never chose. A condition inside ordinary code, such as "Return 202 if accepted by the queue" or "Show the banner
-# if the user is an admin", is not one. Nor is `If accepted, X`: it means X once accepted.
+# if the user is an admin", is not one. Nor is `If accepted, X`: it means X once accepted. A `Change if <answer>:`
+# label inside a change marks a second branch of an ask (`Change if yes: A. Change if no: B`): an ask with two such
+# labels splits at the first, so the labels left in its change are its branches.
 CONDITIONAL_CHANGE = re.compile(
     r"^\s*(if not|if no(?!-)|unless|otherwise|if the user)\b"
     r"|\bif yes\b|\bif no,|\bif (not )?(confirmed|approved)\b"
-    r"|\bif the user (confirms|approves|accepts|agrees|says)\b",
+    r"|\bif the user (confirms|approves|accepts|agrees|says)\b"
+    r"|" + CHANGE_IF_LABEL_PATTERN,
     re.IGNORECASE)
 # One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
 JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
@@ -187,8 +202,11 @@ def log_ask_outcome(logger, context, item, outcome, decided_by, cwd=None, stall=
         return None
 
     finding_id, new_finding_id_note = handback.ask_outcome_finding_id(item)
+    # The log knows three outcomes; an applied ask is one the ruler accepted.
+    logged_outcome = ACCEPTED if outcome == APPLIED else outcome
     command = ["bash", str(logger), "kind=finding", f"finding_id={finding_id}",
-               *handback.ask_row_fields(context, item), f"ask_outcome={outcome}", f"ask_decided_by={decided_by}"]
+               *handback.ask_row_fields(context, item), f"ask_outcome={logged_outcome}",
+               f"ask_decided_by={decided_by}"]
     result = handback.run_logger(command, cwd, stall)
     return OutcomeRow(finding_id, result.code, result.output, new_finding_id_note, command)
 

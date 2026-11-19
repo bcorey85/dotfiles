@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-987 changes
+992 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) [shared/review-fork-run] The review fork's stop footer asks a session that passes on the user's ruling to add a `user said: "<words>"` line, and the Resume step maps that line to `asks-done --by user --relayed-by <session> --quote "<words>"`, so a user-only ask closes through the fork.
+* [An ask the user accepted that is already in the tree is logged as accepted](notes/2026-11-19-an-ask-the-user-accepted-that-is-already-in-the.md) [script/review-asks, script/review-fix-asks, script/review-fix] asks-done takes a new outcome word, applied, for an accepted ask whose change is already in the tree. It logs as accepted and writes no finding, so the ruling log no longer shows such an ask as rejected.
+* [Asks-done removes a stale run-folder fix-findings file](notes/2026-11-19-asks-done-removes-a-stale-run-folder-fix-findings.md) [script/review-fix, script/review-launch] The fix run that asks-done prints now deletes a fix-findings.md an earlier run left in the run folder, so a failed new Write cannot make the launch read old findings.
+* [Accepted asks drop the question and the Change if label from their change text](notes/2026-11-19-accepted-asks-drop-the-question-and-the-change-if.md) [script/review-loop-findings, script/review-asks] An ask written as `Change if not accepted:`, `Change if yes:` and the other `Change if <condition>:` forms now splits its question from its change, and an ask with two such branches is refused as conditional.
+* [Relayed asks-done rules asks saved without a filed time](notes/2026-11-19-relayed-asks-done-rules-asks-saved-without-a-filed.md) [script/review-fix, script/ruling-relay] A relayed user ruling on user-only asks saved before filed times were stamped is now bounded by the review-fix state file's modification time instead of refused.
 * [the code stop blocks name the commit subject and write no git command](notes/2026-11-18-the-code-stop-blocks-name-the-commit-subject-and.md) [skill/code] /code stop blocks B and C and the phase-boundary sentence give `Commit subject: <subject>` in place of a `! git commit` line, so a fork no longer hands the user a command.
 * [close-branch records the reviewed tree in a scratch index and leaves the user's index alone](notes/2026-11-18-close-branch-records-the-reviewed-tree-in-a.md) [script/worktree-snapshot, script/fix-diff, skill/close-branch] close-branch no longer runs `git add -A`: `fix_diff.py mark` records the reviewed tree from a scratch index, and `fix_diff.py show` prints the fix diff command and its files.
 * [a code phase start moves the last hand-off aside and a review start with no hand-off stops loudly](notes/2026-11-18-a-code-phase-start-moves-the-last-hand-off-aside.md) [script/phase-start, script/code-review-start, script/code-wait, skill/code] `phase_start.py` moves `handoff.txt` to `handoff.prev.txt`, so a phase review can no longer start on an earlier phase's hand-off text; `code_review_start.py` stops with the path when the file is missing.
@@ -1166,6 +1171,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) - No intake number counts relayed user rulings refused by a user-only ask.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) - No intake number counts session rulings logged as the user's.
 * [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) - No intake number reads it: the work logs do not tag a test-reviewer finding as a fixture finding. Measured on a TypeScript billing app, a small TypeScript case and a small Django case; the Django case shows no gain because the reviewer already reports it there. No run on any other stack or on a frontend test.
 * [The coder writes its scripts in the scratchpad, never in the repo tree](notes/2026-11-10-the-coder-writes-its-scripts-in-the-scratchpad.md) - No intake number counts scripts a coder leaves in the repo tree.

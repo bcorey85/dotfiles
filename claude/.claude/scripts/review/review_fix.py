@@ -35,18 +35,20 @@ still judges.
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
-                                         one outcome per ask, in order: {outcomes}, optional
-                                         ":<one line note>" after it; modified needs the note, the ruler's change.
-                                         accepted: {accept_means}; rejected: {reject_means}.
+                                         one outcome per ask, in order: {outcomes},
+                                         optional ":<one line note>" after it; modified needs the note, the
+                                         ruler's change.
+                                         accepted: {accept_means}; rejected: {reject_means};
+                                         applied: {applied_means}.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
-                                         all are rejected, when only plan-impact asks were accepted (they write no
-                                         findings), and on a retry after the launch line printed (it prints the
-                                         stored launch line again). A retry with outcomes that differ from the ones
-                                         already logged is refused (exit 2); --correct changes an answer while the
-                                         printed fix run of the current packet has not launched and every ask of the
-                                         first asks-done has logged.
+                                         all are rejected or applied, when only plan-impact asks were accepted
+                                         (they write no findings), and on a retry after the launch line printed
+                                         (it prints the stored launch line again). A retry with outcomes that
+                                         differ from the ones already logged is refused (exit 2); --correct
+                                         changes an answer while the printed fix run of the current packet has not
+                                         launched and every ask of the first asks-done has logged.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
                                          `review_fix.py launch --fix <file> [--user-ruled <N>]... --iter <n>
@@ -56,8 +58,9 @@ still judges.
                                          answered carries `--session-ruled <N>` instead (the coder's re-ask of it is
                                          a skip), and a session correction that changes a
                                          user-ruled ask's answer drops its `--user-ruled <N>`.
-                                         An accepted or rejected outcome on an ask whose proposed change is conditional
-                                         ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
+                                         An {plain_outcomes} outcome on an ask whose proposed
+                                         change is conditional ("if not confirmed, revert X") is refused with
+                                         exit 2 and nothing logged:
                                          answer it with '{modified}:<the change to make, with no condition>'.
                                          --correct <outcome>... re-answers the asks while the printed fix run has
                                          not launched: it logs a row for each changed ask (an unchanged ask keeps
@@ -309,15 +312,17 @@ def asks_done_line(asks, state):
     line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
             f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
+            f"applied: {review_asks.APPLIED_MEANS} | "
             f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
-            "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
+            f"word: make that change instead; an optional ':<one line note>' after {review_asks.PLAIN_OUTCOMES_TEXT} "
+            "is not stored)")
     conditional = conditional_ask_numbers(asks)
     if not conditional:
         return line
     numbers = ", ".join(str(number) for number in conditional)
     noun = "ask" if len(conditional) == 1 else "asks"
     return (f"{line}. Answer {noun} {numbers} with '{review_asks.MODIFIED}:<change with no condition>': "
-            "accepted or rejected is refused on a conditional change")
+            f"{review_asks.PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
 
 
 def present_packet_asks(packet, state):
@@ -943,6 +948,8 @@ def main():
         outcomes = " | ".join(review_asks.ASK_OUTCOMES)
         print(__doc__.format(outcomes=outcomes, modified=review_asks.MODIFIED,
                              accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS,
+                             applied_means=review_asks.APPLIED_MEANS,
+                             plain_outcomes=review_asks.PLAIN_OUTCOMES_TEXT,
                              relay_usage=RELAY_USAGE))
         return 2
     command = arguments[0]

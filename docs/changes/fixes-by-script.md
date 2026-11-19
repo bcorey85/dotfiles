@@ -7,15 +7,15 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-605 fix notes
+609 fix notes
 
-Recent: the 7 days up to 2026-11-18, the newest note.
+Recent: the 7 days up to 2026-11-19, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 59 | 8 |
-| script/review-loop-script | 58 | 4 |
+| script/review-fix | 62 | 11 |
+| script/review-loop-script | 58 | 3 |
 | script/handback | 54 | 3 |
 | script/review-commit-gate | 38 | 3 |
 | script/review-loop-gate | 35 | 0 |
@@ -30,24 +30,26 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | skill/review | 17 | 0 |
 | script/shell-write-gate | 15 | 1 |
 | script/verify-prep | 14 | 2 |
-| script/verify-log | 13 | 4 |
+| script/verify-log | 13 | 3 |
 | script/log-review-finding | 12 | 1 |
 | script/staged-claim-gate | 12 | 1 |
-| script/pull-keep-index | 11 | 2 |
+| script/pull-keep-index | 11 | 0 |
 | script/verify-common | 10 | 3 |
-| script/code-wait | 9 | 4 |
+| script/code-wait | 9 | 3 |
 | script/git-discipline-gate | 9 | 1 |
 | script/log-escape | 9 | 1 |
-| script/code-review-start | 8 | 3 |
+| script/code-review-start | 8 | 2 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/refactor-flow | 8 | 2 |
+| script/review-asks | 8 | 8 |
 | script/shell-command | 8 | 3 |
-| script/criteria-dry-run | 7 | 1 |
+| script/criteria-dry-run | 7 | 0 |
 | script/log-review-metrics | 7 | 0 |
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
-| script/review-asks | 6 | 6 |
+| script/review-fix-asks | 6 | 6 |
+| script/review-launch | 6 | 5 |
 | skill/refactor | 6 | 1 |
 | script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
@@ -56,13 +58,11 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 1 |
 | script/phase-asks | 5 | 5 |
-| script/review-fix-asks | 5 | 5 |
-| script/review-launch | 5 | 4 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/test-run-output | 5 | 1 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
-| script/format-changed | 4 | 1 |
+| script/format-changed | 4 | 0 |
 | script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
@@ -89,7 +89,7 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/check-discovery | 2 | 0 |
 | script/code-relay | 2 | 1 |
 | script/coder-packet | 2 | 0 |
-| script/criteria-verdict | 2 | 1 |
+| script/criteria-verdict | 2 | 0 |
 | script/emit-orchestration | 2 | 0 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
@@ -97,6 +97,7 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/log-review-check | 2 | 0 |
 | script/phase-start | 2 | 2 |
 | script/plan-review-shards | 2 | 1 |
+| script/review-loop-findings | 2 | 1 |
 | script/reviewed-tree | 2 | 0 |
 | script/rg-path-gate | 2 | 0 |
 | script/sweep-scratchpads | 2 | 0 |
@@ -125,7 +126,7 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-commands | 1 | 0 |
-| script/gate-replay | 1 | 1 |
+| script/gate-replay | 1 | 0 |
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
 | script/herdr-worktree-prune | 1 | 1 |
@@ -148,10 +149,10 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 1 |
 | script/review-loop-docs-kind | 1 | 1 |
-| script/review-loop-findings | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
 | script/rule-anchors | 1 | 0 |
 | script/ruled-change-text | 1 | 1 |
+| script/ruling-relay | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/telemetry-enabled | 1 | 0 |

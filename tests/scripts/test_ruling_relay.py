@@ -15,11 +15,13 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
 import handback_store
 import human_turn_lookup
-import review_asks
+import review_fix_names
 import ruling_relay
+import script_utils
 import test_phase_asks as phase_fixture  # the module, never its class: a class imported by name reruns its tests
 import test_review_fix_script as fix_fixture
 from human_turn_lookup import HumanTurnRefusedError
+from review_fix_names import FILED_AT_KEY
 
 RELAY_NAME = "relay-session"
 RELAY_SESSION_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -81,13 +83,13 @@ class RelayOptionsTest(unittest.TestCase):
         ruling_relay.refuse_relay_without_user(request, "user")
 
     def test_the_latest_filed_time_is_taken_from_the_user_only_asks_alone(self):
-        asks = [{"user_only": True, review_asks.FILED_AT_KEY: 5}, {review_asks.FILED_AT_KEY: 99},
-                {"user_only": True, review_asks.FILED_AT_KEY: 7}]
+        asks = [{"user_only": True, FILED_AT_KEY: 5}, {FILED_AT_KEY: 99},
+                {"user_only": True, FILED_AT_KEY: 7}]
         self.assertEqual(ruling_relay.latest_filed_at(asks), 7)
 
     def test_a_batch_with_no_user_only_ask_or_a_user_only_ask_without_a_filed_time_is_refused(self):
         with self.assertRaises(HumanTurnRefusedError):
-            ruling_relay.latest_filed_at([{review_asks.FILED_AT_KEY: 1}])
+            ruling_relay.latest_filed_at([{FILED_AT_KEY: 1}])
         with self.assertRaises(HumanTurnRefusedError):
             ruling_relay.latest_filed_at([{"user_only": True}])
 
@@ -320,6 +322,38 @@ class AsksDoneOrdinaryBatchTest(AsksDoneRelayCase):
         self.assertIn("no ask of this batch is user_only", output)
         self.assertEqual(self.logged_outcome_rows(), [])
         self.assertEqual(self.relay_rows(), [])
+
+
+class AsksDoneUnstampedAskTest(AsksDoneRelayCase):
+    """Asks saved before filed times were stamped: the bound is the saved state's modification time."""
+
+    def save_state_without_filed_times(self):
+        review_fix_folder = script_utils.git_path(self.repo, review_fix_names.REVIEW_FIX_FOLDER)
+        state_file = review_fix_folder / review_fix_names.STATE_FILE_NAME
+        saved = json.loads(state_file.read_text())
+        for item in saved["asks"]:
+            item.pop(FILED_AT_KEY, None)
+        state_file.write_text(json.dumps(saved))
+        self.assertNotIn(FILED_AT_KEY, state_file.read_text())
+        return state_file
+
+    def test_a_turn_after_the_state_was_written_rules_an_ask_with_no_filed_time(self):
+        state_file = self.save_state_without_filed_times()
+        os.utime(state_file, (time.time() - 7200, time.time() - 7200))
+        self.say(QUOTE, HUMAN, when=time.time() - 3600)
+
+        code, output = self.relay("accepted")
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(len(self.relay_rows()), 1)
+
+    def test_a_turn_before_the_state_was_written_is_refused_as_older_than_the_ask(self):
+        self.save_state_without_filed_times()
+        self.say(QUOTE, HUMAN, when=time.time() - 3600)
+
+        code, output = self.relay("accepted")
+
+        self.assert_refused_with_nothing_changed(code, output, "older than the ask")
 
 
 class AsksDoneRelayTest(AsksDoneRelayCase):

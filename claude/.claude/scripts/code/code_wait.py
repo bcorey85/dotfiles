@@ -154,9 +154,13 @@ def checked_agent_id(word):
     return word
 
 
+def phase_dir_or_none(repo):
+    """<git dir>/code-phase, which stays right in a linked worktree, where .git is a file; None when git cannot say."""
+    return script_utils.git_path(repo, PHASE_DIR_NAME)
+
+
 def phase_dir(repo):
-    # <git dir>/code-phase, which stays right in a linked worktree, where .git is a file.
-    folder = script_utils.git_path(repo, PHASE_DIR_NAME)
+    folder = phase_dir_or_none(repo)
     if folder is None:
         sys.exit(f"code_wait: {repo} is not inside a git checkout")
     return folder

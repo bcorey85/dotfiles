@@ -210,6 +210,13 @@ def text_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
+def or_list(words):
+    """An English list of plain strings: "a", "a or b", "a, b or c". An empty list gives an empty string."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" or {words[-1]}"
+
+
 class ItemNumberError(ValueError):
     """A 1-based item number that names no item."""
 

@@ -25,6 +25,8 @@ from human_turn_lookup import HumanTurnRefusedError
 from review_asks import (
     ACCEPT_MEANS,
     ACCEPTED,
+    APPLIED,
+    APPLIED_MEANS,
     ASK_OUTCOMES,
     MODIFIED,
     REJECT_MEANS,
@@ -58,6 +60,9 @@ NEW_FINDING_ID = "new-finding-id"
 CORRECT_FLAG = "--correct"
 LAUNCH_COMMAND = f"{REVIEW_FIX_COMMAND} launch"
 NO_LAUNCH_RECORD_ACTION = "launch-fix-run"
+STALE_RUN_FOLDER_FINDINGS_REMOVED = (
+    f"An older {RUN_FOLDER_FINDINGS_NAME} in the run folder was removed; write a new one only if findings were "
+    "deferred to this run.")
 PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless it already ran."
 
 
@@ -73,7 +78,8 @@ def read_outcomes(argv, asks):
             raise UsageError(
                 f"outcome {error.word!r} is not one of {'|'.join(ASK_OUTCOMES)}. {ACCEPTED}: {ACCEPT_MEANS}; "
                 f"{REJECTED}: {REJECT_MEANS} (the outcome for a 'leave it' or 'accept the gap' "
-                f"option); {MODIFIED}:<change>: make that change instead") from error
+                f"option); {APPLIED}: {APPLIED_MEANS}; "
+                f"{MODIFIED}:<change>: make that change instead") from error
         raise UsageError(f"outcome {error.number} is modified with no note; "
                          f"write '{MODIFIED}:<the change>' quoted as one shell word") from error
 
@@ -190,7 +196,8 @@ def asks_done_options(argv):
 def verified_fix_relay(options, asks):
     """The RelayedRuling of the call's relay options, or None when the call has none. Refuses the call (nothing is
     logged) when the quote is not in a real user turn, typed after the user-only asks of `asks` were filed, of the
-    relaying session."""
+    relaying session. A user-only ask with no filed time is refused;
+    `read_state` stamps one saved before filed times existed."""
     if options.relay is None:
         return None
     try:
@@ -219,9 +226,10 @@ def record_unrecorded_relay(target, relayed, repo, new_indexes):
 
 
 def finding_ask_indexes(asks, outcomes):
-    """The indexes of the asks that go to the findings file: accepted or modified, and not a plan impact."""
+    """The indexes of the asks that go to the findings file: accepted or modified, and not a plan impact. A rejected
+    ask and an applied one (already in the tree) have no change to make."""
     return [index for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True))
-            if outcome != REJECTED and not is_plan_impact_ask(item)]
+            if outcome not in (REJECTED, APPLIED) and not is_plan_impact_ask(item)]
 
 
 def ruler_clause(decided_by):
@@ -585,7 +593,7 @@ def conditional_ask_numbers(asks):
 
 
 def refuse_conditional_changes(asks, outcomes):
-    """Refuses an accepted or rejected outcome on an ask whose proposed change is conditional: neither word says
+    """Refuses any outcome but modified on an ask whose proposed change is conditional: no other word says
     which branch the ruler chose. A modified outcome carries the ruler's own change and is never refused."""
     problems = []
     conditional = conditional_ask_numbers(asks)
@@ -662,8 +670,9 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=
     if not failures:
         return
     findings_file = sync_pending_fix_run(state)
-    # The sync drops the pending launch when every ask now reads rejected; the retry must still be allowed. With a
-    # pending launch the guard on that launch covers the retry, and a launched run must refuse it.
+    # The sync drops the pending launch when no ask has a change left to apply (every ask rejected or applied); the
+    # retry must still be allowed. With a pending launch the guard on that launch covers the retry, and a launched
+    # run must refuse it.
     if findings_file is None:
         state[CORRECT_OPEN_KEY] = True
     else:
@@ -701,7 +710,7 @@ def correct_blocker(state):
     if not pending_line and not state.get(CORRECT_OPEN_KEY):
         return ("--correct needs a fix run that asks-done printed and that has not launched. None is "
                 "pending: the printed fix run already launched, or asks-done printed none (every ask "
-                "rejected or plan-impact), or an earlier --correct left no ask to apply.")
+                "rejected, applied or plan-impact), or an earlier --correct left no ask to apply.")
     if state.get("asks_launch_line") != pending_line:
         return ("the pending fix run belongs to an earlier packet whose answers are no longer kept, so "
                 "--correct cannot change them.")
@@ -756,7 +765,7 @@ def command_correct_asks(options):
     state.pop(CORRECT_OPEN_KEY, None)
     save_fix_state(state)
     if not findings_file:
-        return print_action("done", summary, "No accepted or modified ask is left, so no fix run is pending. "
+        return print_action("done", summary, "No ask is left with a change to make, so no fix run is pending. "
                             "Run nothing more.")
     return print_fix_run(state, findings_file, [summary])
 
@@ -850,6 +859,14 @@ def command_asks_done(argv):
     if deviation_lines:
         record_accepted_plan_impacts(asks, outcomes, repo)
         summary_lines += [ADD_DEVIATIONS_LINE, *deviation_lines]
+
+    if findings_file:
+        # Only the first print removes a fix-findings.md an earlier run left, so the launch cannot read it; a later
+        # --correct print must keep the one the session wrote for this run. It runs before the save that latches
+        # the print, so a crash between the two lets the retry remove it.
+        run_repo = packet_repo(target.get("relaunch_args") or [])
+        if run_repo is not None and review_launch.remove_stale_run_folder_findings(run_repo):
+            summary_lines += [STALE_RUN_FOLDER_FINDINGS_REMOVED]
 
     if not failures:
         mark_packet_answered(state, target)

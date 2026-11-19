@@ -170,12 +170,15 @@ def phase_gate_commands(repo, plan, phase, base, handoff=""):
     # The plan phase names the files and Automated Verification commands; a plan with no entry for the phase gives
     # the whole plan. The stale-prose pass runs only for a phase the plan has an entry for.
     # With no plan, the files come from the handoff block.
+    # The checks run with the gate assignments, so the runner is picked from that same environment.
+    assignments = gate_env.repo_gate_env(repo, None if plan == NO_PLAN else plan)
+    check_environment = {**os.environ, **script_utils.environment_from_assignments(assignments)}
     if plan == NO_PLAN:
         handoff_files = HANDOFF_FILE_PATH.findall(handoff)
         handoff_text = "\n".join(f"`{path}`" for path in handoff_files)
-        return gate_commands.derive_gate_commands(repo, handoff_text)
+        return gate_commands.derive_gate_commands(repo, handoff_text, check_environment)
 
-    commands, has_section = gate_commands.plan_gate_commands(repo, plan, phase)
+    commands, has_section = gate_commands.plan_gate_commands(repo, plan, phase, check_environment)
     if not has_section:
         return commands
 

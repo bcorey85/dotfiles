@@ -134,6 +134,10 @@ NEXTEST_IGNORED_ONLY_VALUES = {"only", "ignored-only"}
 SUBCOMMAND_RUNNERS = ("cargo", "go", "dotnet")
 NEXTEST_SUBCOMMAND = ["nextest", "run"]
 RUNNER_LAUNCHERS = (["npx"], ["bunx"], ["bundle", "exec"])
+# The flag with which each package manager runs a command in another folder.
+PACKAGE_FOLDER_FLAGS = {"npm": "--prefix", "pnpm": "-C", "yarn": "--cwd"}
+# The words with which each package manager runs a dependency's binary as the next word.
+PACKAGE_BINARY_LAUNCHERS = {"npm": ["exec", "--"], "pnpm": ["exec"], "yarn": ["run"]}
 WHOLE_GO_MODULE = "./..."
 SCRIPT_VARIANT_WORDS = ("test", "lint", "build")
 SCOPE_RANK = {"none": 0, "targeted": 1, "unresolved": 2, "whole": 3}
@@ -192,8 +196,9 @@ PACKAGE_VERBS_AND_LOOKUPS = PACKAGE_VERBS | {"show", "list", "ls", "info", "view
 # switch (pnpm `--workspace-root`).
 PACKAGE_VALUE_FLAGS = {"--prefix", "--filter", "-F", "--dir", "-w", "--workspace", "--cwd", "-C"}
 LOOKUP_PROGRAMS = {"which", "whereis", "type"}
-# A package runner's argument that runs the next word as a program (`npm exec jest`, `bun x vitest`).
-PACKAGE_EXEC_WORDS = (["exec"], ["x"], ["dlx"])
+# The words besides the PACKAGE_BINARY_LAUNCHERS word with which a package manager runs the next word as a program
+# (`bun x vitest`, `pnpm dlx vitest`).
+PACKAGE_EXTRA_EXEC_WORDS = {"npm": ["x"], "pnpm": ["dlx"], "yarn": ["dlx", "exec"], "bun": ["exec", "x"]}
 CHECK_SCRIPTS = {"test", "lint", "typecheck", "type-check", "check", "build"}
 # A `cargo test` run of a whole workspace or of every target kind is no named target.
 CARGO_WHOLE_TREE_FLAGS = {"--workspace", "--all", "--all-targets"}
@@ -249,6 +254,12 @@ def direct_check_scope(words, cwd=None):
     # After a pytest prefix, path words that name every test root of cwd between them are no scope; naming only some
     # is a scope.
     # The caller has peeled the runner wrappers. A python program is judged by its basename.
+    _, words = package_folder_split(words)
+    exec_runner = package_exec_runner(words)
+    if exec_runner:
+        # A package manager's exec step runs the binary as `npx` would.
+        words = ["npx", *exec_runner]
+
     if words and PYTHON_PROGRAM.fullmatch(os.path.basename(words[0])):
         words = ["python", *words[1:]]
     elif words and os.path.basename(words[0]) == "manage.py":
@@ -314,8 +325,51 @@ def names_unittest_module(words):
     return len(discover_positionals) > 1
 
 
+def package_folder_split(words):
+    # (the folder a package manager's own folder flag names, the words without that flag): `pnpm -C pkg exec x` gives
+    # ("pkg", ["pnpm", "exec", "x"]). (None, words) when the command has no such leading flag.
+    program = os.path.basename(words[0]) if words else ""
+    folder_flag = PACKAGE_FOLDER_FLAGS.get(program)
+    if folder_flag is None or words[1:2] != [folder_flag] or len(words) < 3:
+        return None, words
+    return words[2], [words[0], *words[3:]]
+
+
+def package_command_folder(words):
+    # (the folder a package manager's folder flag moves the command to, the words without that flag). The folder is
+    # None for an `npm --prefix <dir> exec` step: npm runs the binary in the caller's cwd.
+    flag_folder, bare_words = package_folder_split(words)
+    is_npm = bool(words) and os.path.basename(words[0]) == "npm"
+    if flag_folder and is_npm and package_exec_runner(bare_words) is not None:
+        return None, bare_words
+    return flag_folder, bare_words
+
+
+def package_exec_runner(bare_words):
+    # The words a package manager's exec step runs (`pnpm exec vitest run x`, bare of any folder flag, gives
+    # `vitest run x`; yarn runs a binary through `run`, which also runs a package script, so a yarn step counts only
+    # when it names a program of CHECK_PROGRAMS), else None when the words are no such step.
+    program = os.path.basename(bare_words[0]) if bare_words else ""
+    exec_words = [*PACKAGE_BINARY_LAUNCHERS.get(program, [])[:1], *PACKAGE_EXTRA_EXEC_WORDS.get(program, [])]
+    arguments = bare_words[1:]
+    if not arguments or arguments[0] not in exec_words:
+        return None
+
+    binary_words = arguments[1:]
+    if binary_words[:1] == ["--"]:
+        binary_words = binary_words[1:]
+    if program == "yarn" and (not binary_words or os.path.basename(binary_words[0]) not in CHECK_PROGRAMS):
+        return None
+    return binary_words
+
+
 def launched_runner(words):
-    # The words of the runner that a launcher such as npx or bundle exec runs, else the words as they are.
+    # The words of the runner that a launcher such as npx, bundle exec or a package manager's exec runs, else the words
+    # as they are.
+    exec_runner = package_exec_runner(words)
+    if exec_runner is not None:
+        return exec_runner
+
     for launcher in RUNNER_LAUNCHERS:
         if words[:len(launcher)] == launcher:
             return words[len(launcher):]
@@ -410,7 +464,11 @@ def scan_command(command, cwd, scan, depth=0, recipe=None):
         if moved_cwd is not None:
             cwd = moved_cwd
             continue
-        simple_command = SimpleCommand(words, written_command, cwd, depth, recipe)
+        flag_folder, bare_words = package_command_folder(words)
+        command_cwd = cwd
+        if flag_folder:
+            command_cwd = pathlib.Path(cwd) / flag_folder
+        simple_command = SimpleCommand(bare_words, written_command, command_cwd, depth, recipe)
         scan_words(simple_command, scan, assigned_names)
 
 
@@ -731,6 +789,7 @@ def names_test_filter(command):
 def words_run_a_check(words):
     # True when the step is a test, lint, typecheck or build run: a program of CHECK_PROGRAMS, a subcommand of
     # CHECK_SUBCOMMANDS, a package script of CHECK_SCRIPTS, or anything direct_check_scope reads as a check.
+    _, words = package_folder_split(words)
     words = launched_runner(words)
     if not words:
         return False
@@ -747,8 +806,6 @@ def words_run_a_check(words):
         script_words = arguments[1:] if arguments[:1] == ["run"] else arguments
         if script_words[:1] and script_words[0] in CHECK_SCRIPTS:
             return True
-        if arguments[:1] in PACKAGE_EXEC_WORDS:
-            return words_run_a_check(arguments[1:])
     return direct_check_scope(words) != "none"
 
 

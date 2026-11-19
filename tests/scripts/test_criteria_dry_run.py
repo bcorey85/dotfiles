@@ -162,6 +162,51 @@ class EnvironmentFailureTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
 
 
+class DryRunMissingToolTest(unittest.TestCase):
+    def test_a_command_that_exits_127_on_a_missing_tool_reads_env_with_the_fix_not_broken(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = pathlib.Path(temp)
+            probe = repo / "probe.sh"
+            probe.write_text("#!/bin/sh\necho 'bash: no-such-tool-for-the-dry-run: command not found' >&2\nexit 127\n")
+            probe.chmod(0o755)
+            (repo / "plan.md").write_text("# Plan\n\n## Phase 1: Tool\n\n#### Automated Verification:\n\n"
+                                          "- [ ] `./probe.sh` exits 0\n")
+            finished = subprocess.run([sys.executable, str(SCRIPT), str(repo / "plan.md"), "--repo", temp],
+                                      capture_output=True, text=True)
+
+        self.assertIn("CHECK 1.1 ENV rc=127", finished.stdout)
+        self.assertIn("fix: install no-such-tool-for-the-dry-run or add the pyenv shims to PATH", finished.stdout)
+        self.assertNotIn("BROKEN", finished.stdout)
+        self.assertEqual(finished.returncode, 1)
+
+
+class PinnedInterpreterTest(unittest.TestCase):
+    def test_a_linked_worktree_runs_a_tool_only_the_shims_hold_when_the_main_checkout_pins_a_version(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            main_checkout = root / "main"
+            linked = root / "linked"
+            subprocess.run(["git", "init", "-q", str(main_checkout)], check=True)
+            subprocess.run(["git", "-C", str(main_checkout), "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                            "-q", "--allow-empty", "-m", "base"], check=True)
+            subprocess.run(["git", "-C", str(main_checkout), "worktree", "add", "-q", str(linked)], check=True)
+            (main_checkout / ".python-version").write_text("3.12.4\n")
+            shim = root / "pyenv" / "shims" / "pinned-dry-run-tool"
+            shim.parent.mkdir(parents=True)
+            shim.write_text('#!/bin/sh\n[ "$PYENV_VERSION" = 3.12.4 ] && echo pinned && exit 0\nexit 1\n')
+            shim.chmod(0o755)
+            probe = linked / "probe.sh"
+            probe.write_text("#!/bin/sh\npinned-dry-run-tool\n")
+            probe.chmod(0o755)
+            (linked / "plan.md").write_text("# Plan\n\n## Phase 1: Pin\n\n#### Automated Verification:\n\n"
+                                            "- [ ] `./probe.sh` exits 0\n")
+            env = dict(os.environ, PYENV_ROOT=str(root / "pyenv"))
+            finished = subprocess.run([sys.executable, str(SCRIPT), str(linked / "plan.md"), "--repo", str(linked)],
+                                      capture_output=True, text=True, env=env)
+
+        self.assertIn("CHECK 1.1 GREEN rc=0 ./probe.sh", finished.stdout)
+
+
 class StatedCountTest(unittest.TestCase):
     def test_a_number_inside_another_backticked_span_is_not_the_stated_count(self):
         item = "`grep -c foo a` counts the lines, unlike `echo returns 9`"

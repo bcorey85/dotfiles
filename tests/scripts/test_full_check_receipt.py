@@ -131,6 +131,25 @@ class ReceiptValidityTest(ReceiptTestCase):
                 self.assertEqual(problem, f"the latest full check run was scoped: `{named_step}`")
                 self.assertIsNone(full_check_receipt.valid_receipt(self.repo))
 
+    def test_an_overriding_run_with_a_targeted_test_step_is_valid_and_an_ordinary_one_is_not(self):
+        command = "pytest tests/test_a.py"
+        for source, expects_valid in (("overridden", True), ("discovered", False), (None, False)):
+            with self.subTest(source=source):
+                run_id = full_check_receipt.write_started_row(self.repo, command, command, source=source)
+                full_check.write_step_rows(self.repo, run_id, command)
+                tree = full_check_receipt.current_tree(self.repo)
+                full_check_receipt.write_finished_row(self.repo, run_id, full_check.PASSED, 0, False, False, True,
+                                                      tree, "")
+
+                self.assertIs(expects_valid, full_check_receipt.valid_receipt(self.repo) is not None,
+                              full_check_receipt.receipt_problem(self.repo))
+
+    def test_run_records_the_source_it_is_given_in_the_started_row(self):
+        full_check.run(pathlib.Path(self.repo), "echo hi", self.log, 60, source="overridden")
+
+        [started] = self.rows_of("started")
+        self.assertEqual("overridden", started["source"])
+
     def test_a_run_of_the_repos_test_root_folder_is_valid_and_a_subfolder_voids_it(self):
         pathlib.Path(self.repo, "tests", "unit").mkdir(parents=True)
         for command in ("pytest tests/", "pytest tests", "npm run build && pytest tests/"):

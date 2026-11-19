@@ -952,20 +952,6 @@ def preloaded_skills_prompt(agent, claude_home=None):
     return "\n\n".join(skill_texts)
 
 
-def session_display_name(session_id):
-    """The name ListAgents shows for a live Claude Code session, read from its ~/.claude/sessions/<pid>.json entry.
-    None when no readable entry holds that session id with a non-empty name."""
-    sessions = pathlib.Path.home() / ".claude" / "sessions"
-    for entry_path in sessions.glob("*.json"):
-        try:
-            entry = json.loads(entry_path.read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(entry, dict) and entry.get("sessionId") == session_id and entry.get("name"):
-            return entry["name"]
-    return None
-
-
 def telemetry_switch_on():
     """The toolkit metrics switch from telemetry/telemetry_enabled.py. A missing helper counts as off."""
     try:

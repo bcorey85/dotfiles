@@ -37,11 +37,12 @@ import handback
 import handback_store
 import loop_transcript
 import phase_asks
+import process_group
 import reviewer_dispatch
 import script_utils
+import session_registry
 import stop_file_names
 
-PROJECTS = pathlib.Path.home() / ".claude" / "projects"
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
 WAIT_SECONDS = 150
 POLL_SECONDS = 5
@@ -77,7 +78,8 @@ class UsageError(Exception):
 
 def agent_transcript(agent_id):
     # The newest transcript of this agent id under any session's subagents folder, or None before it is written.
-    transcripts = list(PROJECTS.glob(f"*/*/subagents/{script_utils.subagent_transcript_name(agent_id)}"))
+    transcript_name = script_utils.subagent_transcript_name(agent_id)
+    transcripts = list(session_registry.projects_dir().glob(f"*/*/subagents/{transcript_name}"))
     if not transcripts:
         return None
     return max(transcripts, key=lambda transcript: transcript.stat().st_mtime)
@@ -165,10 +167,9 @@ def running_review_pid(repo):
     pid_file = phase_dir(repo) / PID_FILE
     try:
         pid = int(pid_file.read_text().strip())
-        os.kill(pid, 0)
     except (OSError, ValueError):
         return None
-    return pid
+    return pid if process_group.pid_is_alive(pid) else None
 
 
 def loop_dir(repo):
@@ -294,7 +295,7 @@ def phase_stop_line(repo):
 
 def launched_loop_running(folder):
     pid = reviewer_dispatch.loop_pid(folder)
-    return pid is not None and reviewer_dispatch.pid_is_running(pid)
+    return pid is not None and process_group.pid_is_alive(pid)
 
 
 def launched_review_command(folder):

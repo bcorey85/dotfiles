@@ -40,6 +40,17 @@ class ProcessGroupTest(unittest.TestCase):
         process.wait()
         self.assertEqual(process_group.command_line(process.pid), "")
 
+    def test_pid_is_alive_for_a_running_pid_and_not_for_a_gone_unusable_or_oversized_one(self):
+        self.assertTrue(process_group.pid_is_alive(os.getpid()))
+        self.assertTrue(process_group.pid_is_alive(str(os.getpid())))
+        for pid in (0, -1, None, "abc", 10**30):
+            with self.subTest(pid=pid):
+                self.assertFalse(process_group.pid_is_alive(pid))
+
+    def test_pid_is_alive_for_a_process_this_user_may_not_signal(self):
+        with unittest.mock.patch.object(process_group.os, "kill", side_effect=PermissionError):
+            self.assertTrue(process_group.pid_is_alive(1))
+
     def test_terminate_group_stops_the_whole_group_once_and_reports_a_gone_process(self):
         parent = subprocess.Popen([sys.executable, "-c", GROUP_PARENT_CODE], stdout=subprocess.PIPE, text=True,
                                   start_new_session=True)

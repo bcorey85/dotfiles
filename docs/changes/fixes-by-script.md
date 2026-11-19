@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-602 fix notes
+604 fix notes
 
 Recent: the 7 days up to 2026-11-18, the newest note.
 
@@ -26,8 +26,8 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/plan-format | 20 | 2 |
 | skill/code | 18 | 1 |
 | script/quality-check-cap | 17 | 0 |
+| script/review-loop | 17 | 9 |
 | skill/review | 17 | 0 |
-| script/review-loop | 16 | 8 |
 | script/shell-write-gate | 15 | 1 |
 | script/verify-prep | 14 | 2 |
 | script/verify-log | 13 | 4 |
@@ -47,12 +47,15 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/handback-store | 6 | 4 |
 | script/herdr-worktree | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
+| script/review-asks | 6 | 6 |
 | skill/refactor | 6 | 1 |
 | script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 1 |
+| script/phase-asks | 5 | 5 |
+| script/review-fix-asks | 5 | 5 |
 | script/review-launch | 5 | 4 |
 | script/reviewer-dispatch | 5 | 0 |
 | script/test-run-output | 5 | 1 |
@@ -63,7 +66,6 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/herdr-phase-change | 4 | 0 |
 | script/ledger-write | 4 | 1 |
 | script/log-scan | 4 | 0 |
-| script/review-asks | 4 | 4 |
 | script/run-sh | 4 | 1 |
 | script/source-paths | 4 | 2 |
 | skill/eng-spec | 4 | 0 |
@@ -74,8 +76,6 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/inline-interpreter-hint | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
-| script/phase-asks | 3 | 3 |
-| script/review-fix-asks | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/wait-loop-gate | 3 | 0 |

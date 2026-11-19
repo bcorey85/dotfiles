@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
 asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo,
-phase-asks-open, phase-asks-ruled) and the reads of it that decide whether a hand-back is current and the
-open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
+phase-asks-open, phase-asks-ruled, ask-ruling-relayed) and the reads of it that decide whether a hand-back is current
+and the open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
 these names from handback_store directly; handback.py imports only the ones it uses itself.
 The store is one append-only JSON-lines file per session under
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
@@ -41,6 +41,9 @@ ASK_REJECTED = "ask-rejected"
 # A correction that turned a rejected ask into an accepted one: it cancels the ASK_REJECTED row of the same text.
 ASK_REJECTION_WITHDRAWN = "ask-rejection-withdrawn"
 ASKS_LOGGED_ROW = "asks-logged"
+# One user ruling on user-only asks that another session relayed: who relayed it, the user's quoted words and the
+# timestamp of the user turn that holds them. No other transcript text is stored.
+ASK_RULING_RELAYED = "ask-ruling-relayed"
 # A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
 DISPATCH_REPO_KIND = "dispatch-repo"
 
@@ -117,6 +120,13 @@ def record_rejected_ask(session_id, text, repo):
     if text in rejected_ask_texts(session_id, repo):
         return None
     return record(session_id, ASK_REJECTED, text=text, repo=repo)
+
+
+def record_relayed_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, finding_ids):
+    """Records that `ruler` (the user) ruled the asks `finding_ids` in `repo` through the session `relayed_by`:
+    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them."""
+    return record(session_id, ASK_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+                  turn_ts=turn_timestamp, finding_ids=finding_ids)
 
 
 def record_rejection_withdrawn(session_id, text, repo):

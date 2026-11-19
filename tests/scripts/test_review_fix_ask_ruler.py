@@ -3,6 +3,7 @@
 import json
 import sys
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -26,6 +27,7 @@ FIRST_ASK = ask_entry("first", "one.ts:1", finding_id="a1b2c3d4e5f60031", questi
 SECOND_ASK = ask_entry("second", "two.ts:2", finding_id="a1b2c3d4e5f60032", question="second?", change="c2")
 ONE_ASK = packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK])
 TWO_ASKS = packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, SECOND_ASK])
+USER_ONLY_FIRST_ASK = {**FIRST_ASK, "user_only": True}
 
 
 class AskRulerTest(unittest.TestCase):
@@ -70,6 +72,17 @@ class AskRulerTest(unittest.TestCase):
         self.answered(ONE_ASK, "--by", "user", "modified:cap at 5")
         self.assertEqual(self.findings_lines(),
                          ["- one.ts:1 [smell] Proposed change: c1 " + USER_SENTENCE + "cap at 5"])
+
+    def test_by_user_credits_every_ask_of_a_mixed_batch_to_the_user(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[USER_ONLY_FIRST_ASK, SECOND_ASK]))
+        self.asks_done("--by", "user", "modified:one", "modified:two")
+        lines = self.findings_lines()
+        self.assertTrue(lines[0].endswith(USER_SENTENCE + "one"), lines[0])
+        self.assertTrue(lines[1].endswith(USER_SENTENCE + "two"), lines[1])
+        state = json.loads(self.state_file().read_text())
+        self.assertEqual(state[review_fix_asks.ASKS_DECIDED_BY_KEY], ["user", "user"])
+        rulers = [row["ask_decided_by"] for row in self.ledger_writes() if "ask_decided_by" in row]
+        self.assertEqual(rulers, ["user", "user"])
 
     def test_a_modified_ask_ruled_by_the_session_names_the_session_not_the_user(self):
         self.answered(ONE_ASK, "--by", "session", "modified:cap at 5")
@@ -256,6 +269,22 @@ class AskRulerTest(unittest.TestCase):
         self.assertEqual(self.findings_lines(), ["- one.ts:1 [smell] Proposed change: c1"])
 
 
+class DeviationLineOwnerTest(unittest.TestCase):
+    """Under `--by user` the deviation line of every accepted ask is signed by the user."""
+
+    def test_every_accepted_ask_is_signed_by_the_user_under_by_user(self):
+        user_only = {"question": "PLAN-IMPACT: one", "change": "c1", "user_only": True}
+        ordinary = {"question": "PLAN-IMPACT: two", "change": "c2"}
+        with unittest.mock.patch.object(review_fix_asks.plan_format.script_utils, "git_output",
+                                        return_value="Test User"):
+            lines = review_fix_asks.accepted_ask_deviation_lines([user_only, ordinary], ["accepted", "accepted"],
+                                                                 ["", ""], "user")
+        signed = [line for line in lines if "Ruled by" in line]
+        self.assertEqual(len(signed), 2)
+        for line in signed:
+            self.assertIn("Ruled by Test User at", line)
+
+
 class ApprovalPathsRulingTest(unittest.TestCase):
     """A rejection of a user-only approval ask removes its path from the saved approval paths."""
     setUp = fixture.ReviewFixScriptTest.setUp
@@ -276,20 +305,25 @@ class ApprovalPathsRulingTest(unittest.TestCase):
     def save_paths(self):
         approval_asks_store.write_approval_paths(self.repo, {self.PATH: None, "AGENTS.md": None})
 
-    def test_a_user_rejection_drops_the_path_even_with_a_space_in_a_folder_name(self):
+    def assert_user_ruling_drops_the_path(self, outcome):
         self.approval_packet()
         self.save_paths()
 
-        code, output = self.run_script(["asks-done", "--by", "user", "rejected:keep the edit"])
+        code, output = self.run_script(["asks-done", "--by", "user", outcome])
 
         self.assertEqual(code, 0, output)
         self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo)), ["AGENTS.md"])
 
-    def test_a_correction_to_rejected_drops_the_path(self):
+    def test_a_user_rejection_drops_the_path_even_with_a_space_in_a_folder_name(self):
+        self.assert_user_ruling_drops_the_path("rejected:keep the edit")
+
+    def test_an_accepted_user_ruling_drops_the_path(self):
+        self.assert_user_ruling_drops_the_path("accepted")
+
+    def test_a_correction_after_an_accepted_ruling_leaves_the_path_dropped(self):
         self.approval_packet()
         self.save_paths()
         self.run_script(["asks-done", "--by", "user", "accepted"])
-        self.assertIn(self.PATH, approval_asks_store.read_approval_paths(self.repo))
 
         code, output = self.run_script(["asks-done", "--correct", "--by", "user", "rejected:keep the edit"])
 

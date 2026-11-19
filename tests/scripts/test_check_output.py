@@ -334,6 +334,40 @@ class CheckOutputTest(unittest.TestCase):
                     "FAIL  src/a.test.ts > suite > case", f"{CROSS} case 2"]
         self.assertEqual(expected, check_output.failing_test_lines(output))
 
+    def test_logger_lines_beside_a_real_failure_are_not_failing_tests(self):
+        output = "\n".join([
+            "ERROR django.request Internal Server Error: /api/export",
+            "ERROR: some message from a logger",
+            "ERROR something went wrong",
+            "FAIL: test_x (a.B)",
+            "FAILED tests/x.py::t - assert 1 == 2",
+            "FAILED tests/y.py - collection error",
+            "ERROR tests/z.py - ImportError",
+            "ERROR: tests.test_broken (unittest.loader._FailedTest.tests.test_broken)",
+            "ERROR: test_x (app.tests.T.test_x) (i=1)",
+            "ERROR tests/test_a.py::test_b[param one] - x",
+            "ERROR tests/x.py::T::t[x y]",
+            "ERROR tests/a.py::t[a][b]",
+        ])
+
+        expected = ["FAIL: test_x (a.B)", "FAILED tests/x.py::t - assert 1 == 2",
+                    "FAILED tests/y.py - collection error", "ERROR tests/z.py - ImportError",
+                    "ERROR: tests.test_broken (unittest.loader._FailedTest.tests.test_broken)",
+                    "ERROR: test_x (app.tests.T.test_x) (i=1)",
+                    "ERROR tests/test_a.py::test_b[param one] - x",
+                    "ERROR tests/x.py::T::t[x y]",
+                    "ERROR tests/a.py::t[a][b]"]
+        self.assertEqual(expected, check_output.failing_test_lines(output))
+
+    def test_a_traceback_frame_line_number_is_not_part_of_the_normalized_line(self):
+        first = '  File "/repo/api/tests/test_api.py", line 3405, in test_export'
+        second = '  File "/repo/api/tests/test_api.py", line 3397, in test_export'
+        other_function = '  File "/repo/api/tests/test_api.py", line 3397, in test_import'
+
+        self.assertEqual(check_output.normalized_log_line(first), check_output.normalized_log_line(second))
+        self.assertNotEqual(check_output.normalized_log_line(first),
+                            check_output.normalized_log_line(other_function))
+
     def test_the_failing_test_lines_are_capped_and_sit_above_a_tail_that_lacks_them(self):
         output = "\n".join(f"FAILED tests/test_a.py::test_{number}" for number in range(30)) + "\n" + "x\n" * 50
         tail = "x\n" * 5
@@ -805,7 +839,7 @@ class CommandClassificationTest(unittest.TestCase):
                   "yarn jest", "pnpm vitest", "docker exec c pytest", "npm exec jest", "bun x vitest", "vim pytest",
                   "python -c jest",
                   "yarn test list", "bun test add", "pnpm test update", "npm test list", "npm test update",
-                  "bun test list", "pnpm test add", "yarn test info")
+                  "bun test list", "pnpm test add", "yarn test info", "yarn exec tsc", "yarn exec eslint")
         not_checks = ("git status", "cargo fmt", "npm install", "make deploy", "cargo build", "ls tests",
                       "npm install jest", "npm i -D vitest", "pip install pytest", "uv add pytest", "which pytest",
                       "python -m pip install pytest", "python3 -m pip show pytest", "uv pip install pytest",
@@ -843,6 +877,115 @@ class CommandClassificationTest(unittest.TestCase):
         for command in full:
             with self.subTest(full=command):
                 self.assertFalse(check_scope.names_cargo_test_target(command))
+
+
+class CheckOutputMissingToolTest(unittest.TestCase):
+    def test_the_tool_a_shell_or_shim_could_not_find_is_named(self):
+        cases = [
+            ("bash", "bash: pipenv: command not found", "pipenv"),
+            ("sh", "/bin/sh: line 1: uv: command not found", "uv"),
+            ("dash", "sh: 1: poetry: not found", "poetry"),
+            ("zsh", "zsh: command not found: pdm", "pdm"),
+            ("pyenv", "pyenv: pipenv: command not found", "pipenv"),
+            ("after other output", "collecting\nbash: ruff: command not found\n", "ruff"),
+            ("ansi colored", "\x1b[31mbash: ruff: command not found\x1b[0m", "ruff"),
+        ]
+        for message, output, tool in cases:
+            with self.subTest(message):
+                self.assertEqual(tool, check_output.missing_tool(127, output))
+
+    def test_output_that_names_no_missing_tool_gives_none(self):
+        cases = [
+            ("empty", ""),
+            ("bash with a line number", "bash: line 1: pipenv: command not found"),
+            ("dash with a script path", "sh: 1: ./scripts/foo.sh: not found"),
+            ("an absolute script path", "/bin/sh: 1: /opt/run/foo.sh: not found"),
+            ("a quoted assertion", "AssertionError: uv: command not found"),
+            ("a missing file", "bash: ./run.sh: No such file or directory"),
+            ("bash with a script path", "bash: ./scripts/foo.sh: command not found"),
+            ("a pyenv version fault", "pyenv: version `3.12.4' is not installed"),
+        ]
+        for message, output in cases:
+            with self.subTest(message):
+                self.assertIsNone(check_output.missing_tool(127, output))
+
+    def test_a_failed_run_without_a_result_is_one_that_printed_no_summary_and_never_ran(self):
+        cases = [
+            ("a summary is present", 1, "bash: ruff: command not found\n1 failed, 2 passed in 0.1s", False),
+            ("a missing tool with no summary", 127, "bash: ruff: command not found", True),
+            ("a setup fault with no summary", 5, "collected 0 items", True),
+            ("a plain failure with no summary", 1, "AssertionError: x != y", False),
+        ]
+        for message, code, output, wanted in cases:
+            with self.subTest(message):
+                self.assertEqual(wanted, check_output.failed_without_a_result(code, output, pathlib.Path(".")), message)
+
+    def test_a_missing_module_counts_as_outside_only_when_the_repo_does_not_hold_it(self):
+        repo = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (repo / "localpkg").mkdir()
+        cases = [
+            ("a module the repo holds", "localpkg.core", False),
+            ("a module the repo lacks", "absentpkg.core", True),
+        ]
+        for message, module, wanted in cases:
+            with self.subTest(message):
+                output = f"ModuleNotFoundError: No module named '{module}'"
+                self.assertEqual(wanted, check_output.failed_without_a_result(2, output, repo), message)
+
+    def test_a_missing_tool_line_names_no_tool_unless_the_exit_is_127(self):
+        self.assertIsNone(check_output.missing_tool(1, "bash: pipenv: command not found"))
+        self.assertEqual("pipenv not found on PATH",
+                         check_output.missing_tool_text(127, "bash: pipenv: command not found"))
+        self.assertIsNone(check_output.missing_tool_text(1, "bash: pipenv: command not found"))
+
+    def test_a_dash_script_path_that_was_not_found_still_reads_as_a_cannot_start_line(self):
+        output = "sh: 1: ./scripts/foo.sh: not found"
+        self.assertEqual(output, check_output.cannot_start_line(127, output))
+
+
+class TestDbCollisionTest(unittest.TestCase):
+    def test_each_known_collision_shape_matches(self):
+        cases = [
+            ("django recreate error",
+             "Got an error recreating the test database: database \"test_app\" already exists"),
+            ("in use at teardown",
+             'django.db.utils.OperationalError: database "test_app" is being accessed by other users\n'
+             "DETAIL:  There is 1 other session using the database."),
+            ("dropped mid-run", 'psycopg2.OperationalError: database "test_app" does not exist'),
+            ("catalog error", "psycopg2.errors.InvalidCatalogName: database \"test_app\" does not exist"),
+            ("coloured", 'database "\x1b[1mtest_app\x1b[0m" is being accessed by other users'),
+            ("unittest errors that all hold the collision text",
+             "======================================================================\n"
+             "ERROR: setUpClass (app.tests.T)\n"
+             "----------------------------------------------------------------------\n"
+             "Traceback (most recent call last):\n"
+             'django.db.utils.OperationalError: database "test_app" does not exist\n'
+             "\n"
+             "----------------------------------------------------------------------\n"
+             "Ran 0 tests in 0.001s\n\n"
+             "FAILED (errors=1)"),
+        ]
+        for name, output in cases:
+            with self.subTest(name):
+                self.assertTrue(check_output.is_test_db_collision(output))
+
+    def test_a_failing_test_that_mentions_a_database_is_no_collision(self):
+        cases = [
+            ("assertion", "FAIL: test_database_query (app.tests.T)\nAssertionError: 1 != 2"),
+            ("non-test db", 'psycopg2.OperationalError: database "prod" does not exist'),
+            ("pytest line", "FAILED tests/test_db.py::test_database_rows - assert 0 == 1"),
+            ("non-test catalog error", 'psycopg2.errors.InvalidCatalogName: database "prod" does not exist'),
+            ("bare catalog name", "django.db.utils.InvalidCatalogName"),
+            ("stale db recovered, real failure",
+             'Got an error creating the test database: database "test_app" already exists\n'
+             "Destroying old test database for alias 'default'...\nFAILED (failures=1)"),
+            ("real failure, then in-use error at teardown",
+             "FAIL: test_x (app.tests.T)\nFAILED (failures=1)\n"
+             'django.db.utils.OperationalError: database "test_app" is being accessed by other users'),
+        ]
+        for name, output in cases:
+            with self.subTest(name):
+                self.assertFalse(check_output.is_test_db_collision(output))
 
 
 class HookStartImportTest(unittest.TestCase):

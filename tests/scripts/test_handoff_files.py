@@ -49,6 +49,11 @@ class ChangedFilesTest(unittest.TestCase):
         (self.repo / "gone.py").unlink()
         self.assertEqual(script_utils.changed_files(self.repo), ["edited.py", "src/new.py"])
 
+    def test_changed_files_with_deleted_keeps_deletions(self):
+        self.write("src/new.py", "n\n")
+        (self.repo / "gone.py").unlink()
+        self.assertEqual(script_utils.changed_files(self.repo, with_deleted=True), ["gone.py", "src/new.py"])
+
     def test_changed_files_against_an_earlier_commit_includes_committed_changes(self):
         base = script_utils.git_output(self.repo, "rev-parse", "HEAD")
         self.write("edited.py", "b\n")

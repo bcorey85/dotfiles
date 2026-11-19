@@ -191,11 +191,32 @@ class QualityCheckCapTest(unittest.TestCase):
 
     def test_wrappers_redirects_and_spacing_do_not_change_the_key(self):
         self.post("pytest   tests/a.py")
-        for command in ("time pytest tests/a.py", "env FOO=1 pytest tests/a.py", "npx pytest tests/a.py",
-                        "FOO=1 BAR=2 pytest tests/a.py", "pytest tests/a.py > /tmp/check.log 2>&1",
+        for command in ("time pytest tests/a.py", "npx pytest tests/a.py",
+                        "pytest tests/a.py > /tmp/check.log 2>&1",
                         "pytest tests/a.py 2>&1", "pytest tests/a.py | tail -5", "pytest tests/a.py;"):
             self.assert_denied(self.pre(command))
         self.assert_allowed(self.pre("pytest tests/b.py"))
+
+    def test_a_rerun_that_adds_or_changes_a_leading_env_prefix_is_allowed(self):
+        self.post("pytest x")
+        for command in ("FOO=1 pytest x", "env FOO=1 pytest x", "FOO=1 BAR=2 pytest x"):
+            with self.subTest(command=command):
+                self.assert_allowed(self.pre(command))
+        self.post("FOO=1 pytest x")
+        self.assert_allowed(self.pre("FOO=2 pytest x"))
+        self.assert_denied(self.pre("FOO=1 pytest x"))
+        self.assert_denied(self.pre("env FOO=1 pytest x"))
+
+    def test_a_rerun_that_drops_the_env_prefix_is_allowed(self):
+        self.post("FOO=1 pytest x")
+        self.assert_allowed(self.pre("pytest x"))
+
+    def test_an_env_prefix_inside_a_cd_chain_is_part_of_the_key(self):
+        self.post("pytest x")
+        self.assert_allowed(self.pre(f"cd {self.work} && FOO=1 pytest x"))
+        self.post(f"cd {self.work} && FOO=1 pytest x")
+        self.assert_denied(self.pre(f"cd {self.work} && FOO=1 pytest x"))
+        self.assert_allowed(self.pre(f"cd {self.work} && FOO=2 pytest x"))
 
     def test_keyed_by_cwd_and_cd_prefix(self):
         other = self.tmp / "other"
@@ -370,6 +391,53 @@ class QualityCheckCapTest(unittest.TestCase):
                 records = [name for name in self.state_files() if not name.endswith(".start")]
                 self.assertEqual(records, [])
                 self.assert_allowed(self.pre("ruff check src"))
+
+    def test_a_missing_tool_line_without_an_exit_code_line_records_nothing(self):
+        self.fire("PostToolUseFailure", command="ruff check src", is_interrupt=False,
+                  error="zsh: command not found: ruff")
+        records = [name for name in self.state_files() if not name.endswith(".start")]
+        self.assertEqual(records, [])
+        self.assert_allowed(self.pre("ruff check src"))
+
+    def test_an_exit_127_with_no_missing_tool_line_records_nothing(self):
+        self.fire("PostToolUseFailure", command="ruff check src", is_interrupt=False, error="Exit code 127\n")
+        records = [name for name in self.state_files() if not name.endswith(".start")]
+        self.assertEqual(records, [])
+        self.assert_allowed(self.pre("ruff check src"))
+
+    def test_a_failed_run_with_only_an_import_traceback_and_no_runner_summary_records_nothing(self):
+        error = ("Exit code 2\nTraceback (most recent call last):\n  File \"tests/test_x.py\", line 1, in <module>\n"
+                 "    import requests_missing_dep\nModuleNotFoundError: No module named 'requests_missing_dep'")
+        self.fire("PostToolUseFailure", command="pytest tests/test_x.py", error=error)
+        self.assertEqual(self.run_records(), [])
+        self.assert_allowed(self.pre("pytest tests/test_x.py"))
+
+    def test_a_failed_run_missing_a_repo_module_is_recorded_from_a_subfolder_of_the_repo(self):
+        repo = self.make_repo()
+        (repo / "localpkg").mkdir()
+        (repo / "sub").mkdir()
+        error = ("Exit code 2\nTraceback (most recent call last):\n  File \"tests/test_x.py\", line 1, in <module>\n"
+                 "    import localpkg.core\nModuleNotFoundError: No module named 'localpkg.core'")
+        self.fire("PostToolUseFailure", command="pytest tests/test_x.py", cwd=repo / "sub", error=error)
+        self.assertEqual(len(self.run_records()), 1)
+        self.assert_denied(self.pre("pytest tests/test_x.py", cwd=repo / "sub"))
+
+    def test_a_failed_lint_run_with_findings_and_no_runner_summary_is_recorded(self):
+        error = "Exit code 1\nsrc/a.py:3:80: E501 Line too long (120 > 100)\nFound 1 error."
+        self.fire("PostToolUseFailure", command="ruff check src", error=error)
+        self.assert_denied(self.pre("ruff check src"))
+
+    def test_a_passing_summary_beside_a_cannot_start_line_is_recorded(self):
+        error = "Exit code 2\n== 3 passed in 0.10s ==\nerror: Failed to spawn: `mypy`"
+        self.fire("PostToolUseFailure", command="pytest tests && uv run mypy", error=error)
+        self.assertEqual(len(self.run_records()), 1)
+        self.assert_denied(self.pre("pytest tests"))
+
+    def test_a_failed_run_with_a_runner_summary_is_recorded_beside_an_import_traceback_line(self):
+        error = ("Exit code 1\nModuleNotFoundError: No module named 'requests_missing_dep'\n"
+                 "FAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s ==")
+        self.fire("PostToolUseFailure", command="pytest tests/test_x.py", error=error)
+        self.assert_denied(self.pre("pytest tests/test_x.py"))
 
     def test_an_interrupted_run_records_nothing(self):
         payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",

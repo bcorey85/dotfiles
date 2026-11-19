@@ -139,6 +139,49 @@ echo '{CREATED_WORKSPACE}'""")
             f"{worktree}/frontend pnpm install --frozen-lockfile",
         ])
 
+    def pin_main_checkout_python(self, ignored):
+        """The main checkout holds an untracked `.python-version`, ignored by a committed rule when `ignored`."""
+        if ignored:
+            (self.main_checkout / ".gitignore").write_text(".python-version\n")
+            git(self.main_checkout, "add", ".gitignore")
+            git(self.main_checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ignore pin")
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+
+    def test_an_ignored_python_version_is_linked_into_the_new_worktree_and_git_status_stays_clean(self):
+        self.pin_main_checkout_python(ignored=True)
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        linked_pin = self.root / "repo-new-thing" / ".python-version"
+        self.assertTrue(linked_pin.is_symlink())
+        self.assertEqual(linked_pin.resolve(), (self.main_checkout / ".python-version").resolve())
+        self.assertIn(".python-version", finished.stderr)
+        status = subprocess.run(["git", "-C", str(self.root / "repo-new-thing"), "status", "--porcelain"],
+                                check=True, capture_output=True, text=True).stdout
+        self.assertEqual("", status)
+
+    def test_a_python_version_that_git_does_not_ignore_is_not_linked(self):
+        self.pin_main_checkout_python(ignored=False)
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertFalse((self.root / "repo-new-thing" / ".python-version").exists())
+
+    def test_a_tracked_python_version_stays_a_regular_file_in_the_new_worktree(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        (self.main_checkout / ".gitignore").write_text(".python-version\n")
+        git(self.main_checkout, "add", "-f", ".python-version", ".gitignore")
+        git(self.main_checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "track pin")
+
+        finished = self.run_herdr_worktree(self.main_checkout, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        worktree_pin = self.root / "repo-new-thing" / ".python-version"
+        self.assertTrue(worktree_pin.is_file())
+        self.assertFalse(worktree_pin.is_symlink())
+
     def test_a_failed_install_warns_with_the_command_and_the_run_goes_on(self):
         self.stub_installers(npm_status=1)
         self.commit_lockfiles("package-lock.json")

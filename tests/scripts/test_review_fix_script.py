@@ -22,6 +22,7 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import process_group
 import review_fix
 import review_fix_asks
 import review_fix_names
@@ -202,9 +203,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         loop_root = state_dir / reviewer_dispatch.LOOP_FOLDER
         deadline = time.monotonic() + 10
         for _loop_dir, pid in list(reviewer_dispatch.live_loops(loop_root)):
-            while reviewer_dispatch.pid_is_running(pid) and time.monotonic() < deadline:
+            while process_group.pid_is_alive(pid) and time.monotonic() < deadline:
                 time.sleep(0.05)
-            if reviewer_dispatch.pid_is_running(pid):
+            if process_group.pid_is_alive(pid):
                 os.killpg(pid, signal.SIGKILL)
 
     def fake_command(self, name, body):
@@ -788,6 +789,13 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]',
                       output)
         self.assertIn(f"{REJECTED}: {REJECT_MEANS}", output)
+
+    def test_the_script_usage_has_no_line_over_120_characters(self):
+        code, output = self.run_script([])
+
+        self.assertEqual(2, code)
+        for line in output.splitlines():
+            self.assertLessEqual(len(line), 120, line)
 
     def test_plan_impact_modal_names_the_by_form(self):
         _code, output = self.packet(PLAN_IMPACT)
@@ -4281,8 +4289,8 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir),
                                                    "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
-            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
+            review_fix_asks.record_ruled_asks_once(target, asks, [REJECTED], repo)
+            review_fix_asks.record_ruled_asks_once(target, asks, [REJECTED], repo)
 
         self.assertEqual(self.rejected_texts(), ["src/a.ts:5 pin the window?"])
 

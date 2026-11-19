@@ -46,14 +46,23 @@ def printed(call, *args):
     return output.getvalue()
 
 
+def patch_projects_and_waits(test):
+    """Points the transcript folder at `test.projects` and zeroes the waits for the test's lifetime."""
+    patchers = [mock.patch.object(code_wait.session_registry, "projects_dir", return_value=test.projects),
+                mock.patch.object(code_wait, "WAIT_SECONDS", 0),
+                mock.patch.object(code_wait, "SETTLE_SECONDS", 0)]
+    for patcher in patchers:
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
 class WaitAgentTest(unittest.TestCase):
     def setUp(self):
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("AGENT_REPORTS_DIR", temp_dir(self) / "agent-reports"),
-                            ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
-            patcher = mock.patch.object(code_wait, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patch_projects_and_waits(self)
+        reports_patcher = mock.patch.object(code_wait, "AGENT_REPORTS_DIR", temp_dir(self) / "agent-reports")
+        reports_patcher.start()
+        self.addCleanup(reports_patcher.stop)
         self.repo = temp_dir(self)
         init_repo(self.repo)
         cwd_patcher = mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=self.repo)
@@ -341,10 +350,7 @@ class ReviewerRequestTest(unittest.TestCase):
         self.entries = code_wait.reviewer_dispatch.write_round(
             self.loop_dir, 1, [("review1-code-reviewer", "code-reviewer", "Review app.py.")])
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
-            patcher = mock.patch.object(code_wait, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patch_projects_and_waits(self)
 
     def write_finished_reviewer(self, records):
         subagents = self.projects / "proj/session/subagents"

@@ -7,11 +7,11 @@ import shutil
 import sys
 from typing import NamedTuple
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
 import handback_store
 import plan_format
-from ask_outcome_words import ACCEPTED, REJECTED, USER_ONLY_KEY, USER_ONLY_MARK, user_only_numbers
+from ask_outcome_words import ACCEPTED, REJECTED, RELAY_USAGE, USER_ONLY_KEY, USER_ONLY_MARK, user_only_numbers
 from script_utils import ask_text, hanging_indent_lines, one_line, run_command
 
 MODIFIED = "modified"
@@ -22,6 +22,8 @@ JUMP_NOTE_LIMIT = 160
 # The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
 # line, so the conditional-change check skips it.
 USER_RULED_KEY = "user_ruled"
+# The ask field that holds the epoch time the ask was filed in the saved asks of a review-fix packet.
+FILED_AT_KEY = "filed_at"
 # A proposed change that hangs on the answer to the ask: it starts with `If not`, `If no` (not `If no-op`), `Unless`,
 # `Otherwise` or `If the user`, or it holds anywhere `if yes`, `if no,`, `if (not) confirmed/
 # approved` or `if the user confirms/approves/accepts/agrees/says`. An accepted answer to it applies the branch the
@@ -121,7 +123,23 @@ def user_only_refusal(asks, ruler, user_command):
         return None
     return (f"ask(s) {', '.join(numbers)} are user_only: only the user rules them, never the session (a fix coder "
             "edited an approval-only file). Hand them to the user, and when the user has ruled, record the user's "
-            f"outcome with `--by user`: `{user_command}` with the user's outcome")
+            f"outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to another "
+            f"session is recorded with `{RELAY_USAGE}` added to that call")
+
+
+def ruler_of_ask(item, call_ruler):
+    """Who decided one ask. A `--by user` call is the user's ruling on a user-only ask only; the session rules the
+    other asks of the batch."""
+    if call_ruler == plan_format.USER_RULING and item.get(USER_ONLY_KEY):
+        return plan_format.USER_RULING
+    return plan_format.SESSION_RULING
+
+
+def stamp_filed_at(asks, now):
+    """Gives each ask in `asks` with no filed time the time `now` (epoch seconds) under FILED_AT_KEY: a relayed
+    ruling must come from a user turn after it. An ask that has one keeps it."""
+    for item in asks:
+        item.setdefault(FILED_AT_KEY, now)
 
 
 def numbered_ask_lines(asks, detail=False):

@@ -326,7 +326,7 @@ class SwitchTest(unittest.TestCase):
 
     ESCAPE_ARGS: ClassVar[list[str]] = [
         "gate_missed=code-reviewer",
-        "stage_found=human-pr",
+        "stage_found=pr-human",
         "severity=high",
         "class=bug",
         "guard=none",

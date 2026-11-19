@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-980 changes
+981 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-16
+
+### Fixed
+
+* [log-escape keeps the catch text in a local escape-text file](notes/2026-11-18-log-escape-keeps-the-catch-text-in-a-local-escape.md) [script/log-escape, script/ledger-write] A logged escape now keeps its one-line catch text on the machine that caught it, so a hand catch can be read back by cause.
 
 ## Week of 2026-11-09
 

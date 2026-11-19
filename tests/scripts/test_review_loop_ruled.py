@@ -164,17 +164,37 @@ class ApprovalAskResumeTest(unittest.TestCase):
     def saved_paths(self):
         return list(approval_asks_store.read_approval_paths(self.repo))
 
-    def test_a_rejected_approval_ask_leaves_the_saved_paths_and_an_accepted_one_stays(self):
+    def test_a_ruled_user_only_ask_leaves_the_saved_paths_whatever_the_outcome(self):
         self.edit_claude_md()
         self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
         ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
                "change": approval_asks_store.approval_change("CLAUDE.md")}
+        other = {"question": "q", "file_line": "a.py:1", "change": approval_asks_store.approval_change("CLAUDE.md")}
 
-        approval_asks_store.forget_rejected_approval_paths(self.repo, [ask], ["accepted"])
-        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an accepted ask stays saved")
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [other])
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an ask that is not user-only leaves the file alone")
 
-        approval_asks_store.forget_rejected_approval_paths(self.repo, [ask], ["rejected"])
-        self.assertEqual(self.saved_paths(), [], "a rejected ask leaves the saved paths")
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [ask])
+        self.assertEqual(self.saved_paths(), [], "a ruled user-only ask leaves the saved paths")
+
+    def test_a_second_loop_after_an_accepted_user_ruling_files_no_ask_for_the_edit(self):
+        self.edit_claude_md()
+        first_loop = self.host()
+        first_loop.ask_for_approval_only_edits(["CLAUDE.md"], [])
+        self.assertEqual([ask.path for ask in first_loop.asks], ["CLAUDE.md"])
+        accepted_ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
+                        "change": approval_asks_store.approval_change("CLAUDE.md")}
+        before_forgetting = self.host()
+        before_forgetting.resume_approval_asks([])
+        self.assertEqual([ask.path for ask in before_forgetting.asks], ["CLAUDE.md"],
+                         "without the forgetting, a second loop files the ask")
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [accepted_ask])
+
+        second_loop = self.host()
+        second_loop.resume_approval_asks([])
+
+        self.assertEqual(second_loop.asks, [], "the ruled ask is not filed again")
+        self.assertEqual(self.saved_paths(), [])
 
     def test_a_resumed_run_holds_the_ask_when_the_coder_committed_the_edit_before_the_crash(self):
         self.edit_claude_md()

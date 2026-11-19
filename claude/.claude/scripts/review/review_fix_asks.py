@@ -12,13 +12,16 @@ import handback_store
 import plan_format
 import review_asks
 import review_launch
+import ruling_relay
 import script_utils
 from approval_asks_store import (
     ApprovalAsksFileError,
     check_approval_paths_readable,
-    forget_rejected_approval_paths,
+    forget_ruled_approval_paths,
 )
+from ask_outcome_words import USER_ONLY_KEY
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
+from human_turn_lookup import HumanTurnRefusedError
 from review_asks import (
     ACCEPT_MEANS,
     ACCEPTED,
@@ -81,12 +84,21 @@ def outcome_failure_line(item, outcome_row):
     return f"{path}:{line}: {one_line(outcome_row.output, 160)}"
 
 
+class LoggedOutcomes(NamedTuple):
+    """What one asks-done call logged: the ask counts (plan-impact asks skipped, outcomes logged under a new
+    finding_id), the failure lines, and the indexes of the asks this call added to asks_logged."""
+    ask_counts: dict
+    failures: list
+    new_indexes: list
+
+
 def log_fix_ask_outcomes(state, asks, outcomes, decided_by):
-    """(ask counts of this call: plan-impact asks skipped, outcomes logged under a new finding_id; failure lines). An
-    ask that is logged or skipped joins asks_logged and is never tried again."""
+    """The LoggedOutcomes of this call. An ask that is logged or skipped joins asks_logged and is never tried
+    again."""
     logged = state.setdefault("asks_logged", [])
     ask_counts = {PLAN_IMPACT_STATUS: 0, NEW_FINDING_ID: 0}
     failures = []
+    new_indexes = []
     for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True)):
         if index in logged:
             continue
@@ -95,9 +107,11 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by):
         if outcome_row is None:
             ask_counts[PLAN_IMPACT_STATUS] += 1
             logged.append(index)
+            new_indexes.append(index)
             continue
         if outcome_row.code == 0:
             logged.append(index)
+            new_indexes.append(index)
             # A minted id is kept so a later `--correct` row supersedes this one.
             item["finding_id"] = outcome_row.finding_id
             if outcome_row.new_finding_id_note:
@@ -105,7 +119,7 @@ def log_fix_ask_outcomes(state, asks, outcomes, decided_by):
                 ask_counts[NEW_FINDING_ID] += 1
             continue
         failures.append(outcome_failure_line(item, outcome_row))
-    return ask_counts, failures
+    return LoggedOutcomes(ask_counts, failures, new_indexes)
 
 
 def waiting_ask_packets(state):
@@ -148,6 +162,7 @@ class AsksDoneOptions(NamedTuple):
     decided_by: str
     packet_id: str | None
     correct: bool
+    relay: ruling_relay.RelayRequest | None
 
 
 def asks_done_options(argv):
@@ -158,13 +173,49 @@ def asks_done_options(argv):
                          "the session ruled on the asks itself.")
     if not plan_format.is_ruling_by(decided_by):
         raise UsageError(f"asks-done --by needs user or session, not {decided_by!r}")
+    try:
+        outcome_words, relay = ruling_relay.pop_relay_options(outcome_words)
+        ruling_relay.refuse_relay_without_user(relay, decided_by)
+    except ruling_relay.RelayRefusedError as error:
+        raise UsageError(f"{ruling_relay.relay_refusal_line(error)}. Nothing was logged.") from error
 
     outcome_words, packet_id = script_utils.pop_option(outcome_words, "--packet")
     if packet_id == "":
         raise UsageError("asks-done --packet needs a packet_id")
     correct = CORRECT_FLAG in outcome_words
     outcome_words = [word for word in outcome_words if word != CORRECT_FLAG]
-    return AsksDoneOptions(outcome_words, decided_by, packet_id, correct)
+    return AsksDoneOptions(outcome_words, decided_by, packet_id, correct, relay)
+
+
+def verified_fix_relay(options, asks):
+    """The RelayedRuling of the call's relay options, or None when the call has none. Refuses the call (nothing is
+    logged) when the quote is not in a real user turn, typed after the user-only asks of `asks` were filed, of the
+    relaying session."""
+    if options.relay is None:
+        return None
+    try:
+        filed_at = ruling_relay.latest_filed_at(asks)
+        return ruling_relay.verify_relay(options.relay, filed_at)
+    except HumanTurnRefusedError as error:
+        raise UsageError(f"{ruling_relay.relay_refusal_line(error)}. Nothing was logged.") from error
+
+
+def record_unrecorded_relay(target, relayed, repo, new_indexes):
+    """Stores the relayed ruling for the user-only asks of the packet `target` that this call logged (`new_indexes`)
+    and that no earlier call recorded: an ask an earlier call logged with no relay is never credited to a later
+    relay, a retry after a logging failure adds each finding once, and a failed ordinary ask does not hold the
+    logged user-only asks back."""
+    if relayed is None:
+        return
+    recorded = target.setdefault("asks_relay_recorded", [])
+    logged_asks = [target["asks"][index] for index in new_indexes]
+    fresh_asks = [item for item in logged_asks
+                  if item.get(USER_ONLY_KEY) and item.get("finding_id") not in recorded]
+    if not fresh_asks:
+        return
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    ruling_relay.record_relay(session_id, repo, relayed, fresh_asks)
+    recorded.extend(item.get("finding_id") for item in fresh_asks)
 
 
 def finding_ask_indexes(asks, outcomes):
@@ -298,10 +349,11 @@ def missing_packet_repo_reason(relaunch_args):
 
 
 def repo_for_outcomes(relaunch_args, asks, outcomes):
-    """`required_packet_repo` when an outcome writes a row under the repo (a rejection or an accepted plan-impact
-    ask), else None: an answer that writes no row needs no repo."""
+    """`required_packet_repo` when an outcome writes under the repo (a rejection, an accepted plan-impact ask, or a
+    ruling on a user-only ask, which leaves the saved approval paths), else None: an answer that writes nothing
+    there needs no repo."""
     for item, outcome in zip(asks, outcomes, strict=True):
-        if outcome == REJECTED or is_accepted_plan_impact(item, outcome):
+        if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or item.get(USER_ONLY_KEY):
             return required_packet_repo(relaunch_args)
     return None
 
@@ -321,35 +373,36 @@ def record_accepted_plan_impacts(asks, outcomes, repo):
                                            finding_text=ask_finding_text(item))
 
 
-def refuse_damaged_approval_paths(repo, asks, outcomes):
-    """Stops with nothing written when a rejected user-only ask needs the saved approval paths and the file is
+def refuse_damaged_approval_paths(repo, asks):
+    """Stops with nothing written when a ruled user-only ask needs the saved approval paths and the file is
     damaged: a rerun would log every outcome row again."""
     try:
-        check_approval_paths_readable(repo, asks, outcomes)
+        check_approval_paths_readable(repo, asks)
     except ApprovalAsksFileError as error:
         raise UsageError(f"{error}. Nothing was logged.") from error
 
 
 def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
-    correction undoes is withdrawn."""
+    correction undoes is withdrawn. A corrected user-only ask leaves the saved approval paths, whatever the new
+    outcome."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    forget_ruled_approval_paths(repo, [item])
     if new_outcome == REJECTED:
         handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
-        # A corrected rejection leaves the saved paths too, so a resumed review loop does not file it again.
-        forget_rejected_approval_paths(repo, [item], [REJECTED])
     elif old_outcome == REJECTED:
         handback_store.record_rejection_withdrawn(session_id, rejected_ask_text(item), repo)
 
 
-def record_unrecorded_rejections(target, asks, outcomes, repo):
-    """Records the packet's rejected asks once: a retry after a logging failure adds none."""
+def record_ruled_asks_once(target, asks, outcomes, repo):
+    """Records the packet's rejected asks once, and drops its ruled user-only asks from the saved approval paths: a
+    retry after a logging failure does neither again."""
     if target.get("asks_rejections_recorded"):
         return
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     review_asks.record_rejected_asks([session_id], repo, asks, outcomes)
-    # A rejected approval ask leaves the saved paths, so a resumed review loop does not file it again.
-    forget_rejected_approval_paths(repo, asks, outcomes)
+    # A ruled approval ask leaves the saved paths, so a resumed review loop does not file it again.
+    forget_ruled_approval_paths(repo, asks)
     target["asks_rejections_recorded"] = True
 
 
@@ -578,16 +631,19 @@ def corrected_ask_indexes(state, asks, outcomes, notes):
     return indexes
 
 
-def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
-    """Logs a new outcome row for each corrected ask, under the finding_id the ask was first logged with. A row that
-    logged joins the stored answers and is saved, so a retry logs only the rows that failed. A failed row stops the
-    correction after the findings file and the pending launch are rebuilt from the stored answers, so the printed run
-    never applies an ask whose logged answer is rejected."""
+def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=None):
+    """Logs a new outcome row for each corrected ask, under the finding_id the ask was first logged with. A row
+    that logged joins the stored answers and is saved, so a retry logs only the rows that failed. The relayed ruling
+    (when given) is stored for the user-only asks that logged, even when another row failed, because a retry no
+    longer lists them. A failed row stops the correction after the findings file and the pending launch are rebuilt
+    from the stored answers, so the printed run never applies an ask whose logged answer is rejected."""
     failures = []
+    logged_asks = []
+    corrected_asks = [state["asks"][index] for index in indexes]
     touches_rejection = any(REJECTED in (state["ask_outcomes"][index], outcomes[index]) for index in indexes)
-    repo = required_packet_repo(state.get("relaunch_args") or []) if touches_rejection else None
-    refuse_damaged_approval_paths(repo, [state["asks"][index] for index in indexes],
-                                  [outcomes[index] for index in indexes])
+    needs_repo = touches_rejection or any(item.get(USER_ONLY_KEY) for item in corrected_asks)
+    repo = required_packet_repo(state.get("relaunch_args") or []) if needs_repo else None
+    refuse_damaged_approval_paths(repo, corrected_asks)
     for index in indexes:
         item = state["asks"][index]
         outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcomes[index], decided_by)
@@ -599,6 +655,10 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by):
         state["ask_outcomes"][index] = outcomes[index]
         state["ask_notes"][index] = notes[index]
         set_ask_decider(state, index, decided_by)
+        logged_asks.append(item)
+    if relayed is not None:
+        session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+        ruling_relay.record_relay(session_id, repo, relayed, logged_asks)
     if not failures:
         return
     findings_file = sync_pending_fix_run(state)
@@ -688,7 +748,8 @@ def command_correct_asks(options):
     corrected_asks = [item if index in indexes else {} for index, item in enumerate(asks)]
     user_command = f"asks-done --correct --by {plan_format.USER_RULING} ..."
     refuse_session_on_user_only(corrected_asks, options.decided_by, user_command)
-    log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by)
+    relayed = verified_fix_relay(options, corrected_asks)
+    log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by, relayed)
 
     summary = f"Corrected {len(indexes)} ask outcome row(s)."
     findings_file = sync_pending_fix_run(state)
@@ -773,16 +834,19 @@ def command_asks_done(argv):
     target, outcomes, notes, decided_by = read_answers(state, options, waiting)
     asks = target["asks"]
     refuse_session_on_user_only(asks, decided_by, f"asks-done --by {plan_format.USER_RULING} ...")
+    relayed = verified_fix_relay(options, asks)
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
-    refuse_damaged_approval_paths(repo, asks, outcomes)
+    refuse_damaged_approval_paths(repo, asks)
     finding_lines = ask_finding_lines(asks, outcomes, notes, uniform_deciders(asks, decided_by))
     findings_file = write_unprinted_fix_run(state, target, finding_lines, decided_by)
 
-    ask_counts, failures = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
+    logged_now = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
+    ask_counts, failures = logged_now.ask_counts, logged_now.failures
     summary_lines = [summary_line(target, asks, ask_counts, decided_by, failures),
                      *["- " + failure for failure in failures]]
     deviation_lines = unprinted_deviation_lines(target, asks, outcomes, notes, decided_by)
-    record_unrecorded_rejections(target, asks, outcomes, repo)
+    record_ruled_asks_once(target, asks, outcomes, repo)
+    record_unrecorded_relay(target, relayed, repo, logged_now.new_indexes)
     if deviation_lines:
         record_accepted_plan_impacts(asks, outcomes, repo)
         summary_lines += [ADD_DEVIATIONS_LINE, *deviation_lines]

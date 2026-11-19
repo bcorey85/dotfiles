@@ -18,8 +18,8 @@ unmeasured: "Whether a worker that sees a `child of` peer still stops to ask who
 ## Change
 
 - `review_loop_script.py`: every model step runs `claude -p ... --name "child of <parent> (<role>)"`. The parent is
-  the ListAgents name of the session that ran the loop, read from its `~/.claude/sessions/<pid>.json` entry by
-  `script_utils.session_display_name`. When no entry holds that session id, the label is `session <id>`.
+  the ListAgents name of the session that ran the loop, read from its live registry row
+  (`session_registry.session_display_name`). When no live row holds that session id, the label is `session <id>`.
 - `orchestration.md`: a ListAgents peer named `child of <name>` is a headless step of that session's run, not a rival
   worker: never message it, and go on with your work.
 

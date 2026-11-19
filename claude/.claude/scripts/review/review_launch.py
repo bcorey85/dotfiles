@@ -341,7 +341,7 @@ def wait_for_exit(pid):
     """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
     the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
     deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while reviewer_dispatch.pid_is_running(pid):
+    while process_group.pid_is_alive(pid):
         if time.monotonic() >= deadline:
             print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
                   file=sys.stderr)

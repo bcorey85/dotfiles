@@ -6,7 +6,7 @@ STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
 # The paths of the approval-only files with an open user-only ask, a JSON object of each path to the blob id its edit
 # is measured against, which the next review loop run of the repo reloads and rewrites with the paths it files again,
-# and each ruling that rejects a user-only ask removes its path. Kept beside the state file.
+# and each ruling on a user-only ask, accepted or rejected, removes its path. Kept beside the state file.
 APPROVAL_ASKS_NAME = "approval-asks.json"
 # The run folder's findings file: `/fix` passes it to `--fix`, and a fork writes it for `launch --also-fix` to add
 # findings to the fix run asks-done printed. The run folder is the one place the fork may write.

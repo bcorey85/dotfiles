@@ -7,11 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-985 changes
+987 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
 ## Week of 2026-11-16
+
+### Added
+
+* [A user ruling given to another session is relayed with --relayed-by and --quote and checked against that session's transcript](notes/2026-11-17-a-user-ruling-given-to-another-session-is-relayed.md) [script/review-fix-asks, script/phase-asks, script/review-asks] asks-done and phase_asks.py rule take --by user --relayed-by <session name> --quote <words>; the script needs a real user turn of that live session whose whole text is the quote, typed after the asks were filed, and refuses otherwise.
 
 ### Fixed
 
@@ -20,6 +24,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [a code phase start moves the last hand-off aside and a review start with no hand-off stops loudly](notes/2026-11-18-a-code-phase-start-moves-the-last-hand-off-aside.md) [script/phase-start, script/code-review-start, script/code-wait, skill/code] `phase_start.py` moves `handoff.txt` to `handoff.prev.txt`, so a phase review can no longer start on an earlier phase's hand-off text; `code_review_start.py` stops with the path when the file is missing.
 * [log-escape keeps the catch text in a local escape-text file](notes/2026-11-18-log-escape-keeps-the-catch-text-in-a-local-escape.md) [script/log-escape, script/ledger-write] A logged escape now keeps its one-line catch text on the machine that caught it, so a hand catch can be read back by cause.
 * [code-wait agent prints only a report no earlier wait printed](notes/2026-11-18-code-wait-agent-prints-only-a-report-no-earlier.md) [script/code-wait, script/loop-transcript, script/script-utils] `code_wait.py agent` records each report it prints and prints a report again only when the agent wrote a newer one, so a wait on a resumed agent no longer returns its last phase's report.
+* [An accepted user-only ruling clears its path from the saved approval asks](notes/2026-11-17-an-accepted-user-only-ruling-clears-its-path-from.md) [script/review-loop, script/phase-asks, script/review-fix-asks, script/review-asks] A user-only approval ask ruled accepted, modified or rejected drops its path from approval-asks.json, so the next loop does not file the same edit again.
 
 ## Week of 2026-11-09
 

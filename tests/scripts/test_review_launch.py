@@ -371,7 +371,7 @@ class StopLoopTest(unittest.TestCase):
     def stop(self, running_answers, wait_seconds=5):
         with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
                 mock.patch.object(review_launch.process_group, "terminate_group", return_value=True), \
-                mock.patch.object(review_launch.reviewer_dispatch, "pid_is_running", side_effect=running_answers), \
+                mock.patch.object(review_launch.process_group, "pid_is_alive", side_effect=running_answers), \
                 mock.patch.object(review_launch, "STOP_WAIT_SECONDS", wait_seconds), \
                 mock.patch.object(review_launch, "STOP_POLL_SECONDS", 0.01), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):

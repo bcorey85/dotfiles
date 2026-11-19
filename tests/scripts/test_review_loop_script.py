@@ -4769,7 +4769,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_each_child_session_is_named_as_a_child_of_the_session_that_ran_the_loop(self):
         sessions = self.scratch / "home" / ".claude" / "sessions"
         sessions.mkdir(parents=True)
-        (sessions / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": SESSION, "name": "app-abc-12-e6"}))
+        live_row = {"pid": os.getpid(), "sessionId": SESSION, "name": "app-abc-12-e6"}
+        (sessions / "4242.json").write_text(json.dumps(live_row))
         (sessions / "4343.json").write_text(json.dumps({"pid": 4343, "sessionId": "other", "name": "app-abc-12-9f"}))
 
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
@@ -4812,7 +4813,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_every_headless_role_is_named_as_a_child_of_a_parent_that_has_a_display_name(self):
         sessions = self.scratch / "home" / ".claude" / "sessions"
         sessions.mkdir(parents=True)
-        (sessions / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": SESSION, "name": "app-abc-12-e6"}))
+        live_row = {"pid": os.getpid(), "sessionId": SESSION, "name": "app-abc-12-e6"}
+        (sessions / "4242.json").write_text(json.dumps(live_row))
 
         self.assert_every_headless_role_is_named_as_a_child_of("app-abc-12-e6")
 

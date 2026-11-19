@@ -42,6 +42,7 @@ SAME_RUN_STATE_KEYS = (
     "last_ask_notes",
     "asks_deviations_printed",
     "asks_rejections_recorded",
+    "asks_relay_recorded",
     "plan_impact",
     "plan_impact_held",
     "plan_impact_applied",

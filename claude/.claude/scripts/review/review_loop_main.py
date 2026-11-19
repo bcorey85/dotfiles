@@ -16,6 +16,7 @@ import plan_format
 import review_loop_held
 import review_loop_script
 import script_utils
+import session_registry
 from finding_record import parse_finding
 from review_loop_calls import CALLS, LIVE_CHILDREN, PARENT_SESSION, now
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
@@ -182,7 +183,7 @@ def parse_review_loop_arguments(argv):
 def main(argv=None):
     args = parse_review_loop_arguments(argv)
     signal.signal(signal.SIGTERM, stop_on_sigterm)
-    PARENT_SESSION["label"] = script_utils.session_display_name(args.session) or f"session {args.session}"
+    PARENT_SESSION["label"] = session_registry.session_display_name(args.session) or f"session {args.session}"
     repo = str(pathlib.Path(args.repo).resolve())
     out = pathlib.Path(args.state_dir) / "loop-script" / args.agent_id
     out.mkdir(parents=True, exist_ok=True)

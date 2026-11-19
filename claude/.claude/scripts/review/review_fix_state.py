@@ -8,10 +8,12 @@ import sys
 
 import handback_store
 import script_utils
+from ask_outcome_words import USER_ONLY_KEY
 from review_fix_names import (
     ASK_FINDINGS_NAME,
     ASKS_DECIDED_BY_KEY,
     CORRECT_OPEN_KEY,
+    FILED_AT_KEY,
     PENDING_LAUNCH_KEY,
     REVIEW_FIX_FOLDER,
     STATE_FILE_NAME,
@@ -96,14 +98,29 @@ def clear_asks_launch_pending(findings_file):
 
 
 def read_state(state_file=None):
-    """The saved state, or None when there is none or it is unreadable. state_file defaults to this repo's."""
+    """The saved state, or None when there is none or it is unreadable. state_file defaults to this repo's. Each
+    user-only ask saved with no filed time (current and waiting) is stamped with the file's modification time, read
+    before any caller saves: the time is no earlier than the save that filed the ask, so a relayed quote typed before it
+    is refused, and the stamp keeps a later save from moving it."""
     path = state_file or review_fix_state_file()
     if not path.exists():
         return None
+    state_written_at = path.stat().st_mtime
     try:
-        return json.loads(path.read_text())
+        state = json.loads(path.read_text())
     except ValueError:
         return None
+    stamp_legacy_filed_at(state.get("asks") or [], state_written_at)
+    for kept in state.get("waiting_packets") or []:
+        stamp_legacy_filed_at(kept.get("asks") or [], state_written_at)
+    return state
+
+
+def stamp_legacy_filed_at(asks, state_written_at):
+    """Stamps each user-only ask in `asks` that has no filed time with `state_written_at`."""
+    for item in asks:
+        if item.get(USER_ONLY_KEY):
+            item.setdefault(FILED_AT_KEY, state_written_at)
 
 
 def load_fix_state():

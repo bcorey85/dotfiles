@@ -1,7 +1,10 @@
 """The ask-findings file names who changed a modified ask: the user for `asks-done --by user`, the session for
 `--by session`, and no one when the state does not say."""
 import json
+import os
+import pathlib
 import sys
+import tempfile
 import unittest
 import unittest.mock
 
@@ -9,9 +12,15 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import approval_asks_store
+import code_wait
+import review_asks
+import review_fix
 import review_fix_asks
 import review_fix_names
+import review_fix_state
+import review_loop_findings
 import script_utils
 import test_review_fix_script as fixture  # the module, never its class: a class imported by name reruns its tests
 
@@ -30,6 +39,24 @@ TWO_ASKS = packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, SECOND_ASK])
 USER_ONLY_FIRST_ASK = {**FIRST_ASK, "user_only": True}
 
 
+class LegacyFiledTimeTest(unittest.TestCase):
+    def test_a_waiting_packet_ask_keeps_the_original_save_time_through_the_carry_and_a_resave(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_file = pathlib.Path(folder) / "state.json"
+            legacy_ask = {"user_only": True}
+            state_file.write_text(json.dumps({"packet_id": "old", "asks": [dict(legacy_ask)],
+                                              "waiting_packets": [{"asks": [legacy_ask]}]}))
+            os.utime(state_file, (1000, 1000))
+
+            previous = review_fix_state.read_state(state_file)
+            carried = review_fix.carried_waiting_packets(previous)
+            review_fix_state.save_fix_state({"packet_id": "new", "waiting_packets": carried}, state_file)
+            saved = json.loads(state_file.read_text())
+
+        stamped = [ask[review_fix_names.FILED_AT_KEY] for packet in saved["waiting_packets"] for ask in packet["asks"]]
+        self.assertEqual(stamped, [1000, 1000])
+
+
 class AskRulerTest(unittest.TestCase):
     # The real asks-done runs against a temp repo, set up as the review-fix script tests set it up.
     setUp = fixture.ReviewFixScriptTest.setUp
@@ -46,6 +73,9 @@ class AskRulerTest(unittest.TestCase):
         code, output = self.run_script(["asks-done", *words])
         self.assertEqual(code, 0, output)
         return output
+
+    def logged_outcomes(self):
+        return [row["ask_outcome"] for row in self.ledger_writes() if "ask_outcome" in row]
 
     def findings_lines(self):
         return self.findings_file().read_text().splitlines()
@@ -161,6 +191,42 @@ class AskRulerTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ask(s) 2 are user_only", output)
 
+    def test_an_accepted_ask_whose_change_follows_a_change_if_not_accepted_mark_carries_only_the_change(self):
+        text = ("A script-file run given a quoted argument no longer counts as a commit. Is it acceptable that a "
+                "commit run through a script given a quoted argument no longer counts? Change if not accepted: "
+                "remove the quoted-argument exemption, so that a script-file run counts.")
+        question, change = review_loop_findings.ask_parts(text)
+        item = {"question": question, "change": change, "file_line": "gates/x.py:12", "class": "security"}
+
+        self.assertEqual(review_fix_asks.conditional_ask_numbers([item]), [])
+        finding = review_fix_asks.ask_finding_text(item)
+
+        self.assertEqual(finding, "gates/x.py:12 [security] Proposed change: remove the quoted-argument exemption, "
+                                  "so that a script-file run counts.")
+
+    def test_an_ask_with_two_change_if_branches_is_refused_as_conditional(self):
+        question, change = review_loop_findings.ask_parts(
+            "Drop the cache? Change if yes: drop it. Change if no: keep it.")
+        item = {"question": question, "change": change, "file_line": "a.py:1", "class": "bug"}
+
+        self.assertEqual(review_fix_asks.conditional_ask_numbers([item]), [1])
+        with self.assertRaises(review_fix_asks.UsageError):
+            review_fix_asks.refuse_conditional_changes([item], [review_fix_asks.ACCEPTED])
+
+    def test_every_outcome_but_modified_is_refused_on_a_conditional_change(self):
+        item = {"question": "Drop the cache?", "change": "If not confirmed, revert the cache", "file_line": "a.py:1"}
+        for outcome in (review_fix_asks.ACCEPTED, review_fix_asks.APPLIED, review_fix_asks.REJECTED):
+            with self.subTest(outcome=outcome), self.assertRaises(review_fix_asks.UsageError):
+                review_fix_asks.refuse_conditional_changes([item], [outcome])
+        review_fix_asks.refuse_conditional_changes([item], [review_fix_asks.MODIFIED])
+
+    def test_a_plain_change_mark_in_the_question_keeps_a_single_change_if_label_as_the_split(self):
+        parts = review_loop_findings.ask_parts(
+            "a.py:3 — Should the default change: 10 or 20? — Change if accepted: set it to 20")
+
+        self.assertEqual(parts.change, "set it to 20")
+        self.assertFalse(review_asks.is_conditional_change(parts.change))
+
     def test_a_converted_ask_names_its_ruler_in_both_branches(self):
         converted = {"question": "Apply it anyway?", "change": "src/a.py:3 [bug] cap it",
                      "file_line": "src/a.py:3", "class": "bug", review_fix_asks.USER_RULED_KEY: True}
@@ -213,6 +279,137 @@ class AskRulerTest(unittest.TestCase):
         self.edit_state(asks_decided_by=["user"])
         output = self.assert_correction_stops_with_no_change("modified:one", "modified:three")
         self.assertIn(review_fix_asks.ASKS_DECIDED_BY_KEY, output)
+
+    def test_an_applied_ask_logs_as_accepted_and_prints_no_fix_run(self):
+        self.packet(TWO_ASKS)
+        code, output = self.run_script(["asks-done", "--by", "user", "applied", "rejected:keep it"])
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("ACTION: redispatch", output)
+        self.assertFalse(self.findings_file().exists())
+        self.assertEqual(self.logged_outcomes(), ["accepted", "rejected"])
+        deciders = [row["ask_decided_by"] for row in self.ledger_writes() if "ask_decided_by" in row]
+        self.assertEqual(deciders, ["user", "user"])
+
+    def test_an_applied_ask_stays_out_of_the_findings_file_beside_an_accepted_one(self):
+        self.packet(TWO_ASKS)
+        self.asks_done("--by", "user", "applied", "accepted")
+        lines = self.findings_lines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("two.ts:2", lines[0])
+
+    def test_an_unknown_outcome_error_lists_applied(self):
+        self.packet(ONE_ASK)
+        code, output = self.run_script(["asks-done", "--by", "user", "done"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("|".join(review_asks.ASK_OUTCOMES), output)
+        self.assertIn("applied", output)
+        self.assertIn(review_asks.APPLIED_MEANS, output)
+
+    def test_a_correction_from_applied_to_accepted_is_refused_because_no_fix_run_is_pending(self):
+        self.packet(ONE_ASK)
+        self.asks_done("--by", "user", "applied")
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("None is pending", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before, "an outcome row was logged")
+        self.assertFalse(self.findings_file().exists())
+
+    def test_a_correction_to_applied_logs_accepted_and_writes_no_findings_line(self):
+        self.packet(ONE_ASK)
+        self.asks_done("--by", "user", "accepted")
+        self.assertEqual(len(self.findings_lines()), 1)
+
+        outcomes_before = self.logged_outcomes()
+
+        self.asks_done("--correct", "--by", "user", "applied")
+
+        self.assertFalse(self.findings_file().exists())
+        self.assertEqual(self.logged_outcomes()[len(outcomes_before):], ["accepted"])
+
+    def test_a_change_that_only_mentions_if_is_not_conditional(self):
+        not_split = [
+            "Rename the helper; change if needed at call sites",
+            "Change if branch at foo.py:12 to return early",
+            "Change if-statement in parse: use match",
+        ]
+        for change in not_split:
+            with self.subTest(change=change):
+                self.assertFalse(review_asks.is_conditional_change(change))
+                parts = review_loop_findings.ask_parts("Q? " + change)
+                self.assertEqual(parts.question, parts.change, "the ask parser must not split it either")
+
+    def test_a_leading_change_if_label_is_not_a_second_branch_once_the_ask_is_split(self):
+        for text in ["Q? Change if guard: drop it", "Q? Change if the user " + "x" * 50 + ": drop it"]:
+            with self.subTest(text=text):
+                parts = review_loop_findings.ask_parts(text)
+                self.assertFalse(review_asks.is_conditional_change(parts.change))
+
+    def test_a_change_if_answer_label_is_conditional(self):
+        for change in ["Do A. Change if yes: B", "Do A. Change if not accepted: B",
+                       "A. Change if moved: B", "A. **Change if no**: B", "A. Change if *no*: B",
+                       "A. Change if `no`: B"]:
+            with self.subTest(change=change):
+                self.assertTrue(review_asks.is_conditional_change(change))
+
+    def test_a_second_branch_with_a_non_answer_label_is_refused_after_the_ask_split(self):
+        for text in ["Q? Change if yes: A. Change if moved: B", "Q? Change if yes: A. Change if *no*: B",
+                     "Q? Change if yes: A. Change if `no`: B"]:
+            with self.subTest(text=text):
+                parts = review_loop_findings.ask_parts(text)
+                self.assertTrue(review_asks.is_conditional_change(parts.change))
+
+    def test_the_state_time_is_stamped_once_into_each_legacy_user_only_ask(self):
+        asks = [{"user_only": True}, {"user_only": False}]
+        options = unittest.mock.Mock(relay=object())
+
+        with unittest.mock.patch.object(review_fix_asks.ruling_relay, "verify_relay") as verify:
+            review_fix_state.stamp_legacy_filed_at(asks, 1000.0)
+            review_fix_state.stamp_legacy_filed_at(asks, 2000.0)
+            review_fix_asks.verified_fix_relay(options, asks)
+
+        self.assertEqual(asks[0][review_fix_names.FILED_AT_KEY], 1000.0)
+        self.assertNotIn(review_fix_names.FILED_AT_KEY, asks[1])
+        self.assertEqual(verify.call_args.args[1], 1000.0)
+
+    def test_a_relayed_ruling_on_an_unstamped_user_only_ask_is_refused_with_nothing_logged(self):
+        options = unittest.mock.Mock(relay=object())
+
+        with self.assertRaises(review_fix_asks.UsageError) as raised:
+            review_fix_asks.verified_fix_relay(options, [{"user_only": True}])
+
+        self.assertIn("Nothing was logged", str(raised.exception))
+
+    def test_a_correction_keeps_the_run_folder_findings_file_the_session_wrote(self):
+        self.packet(ONE_ASK)
+        self.asks_done("--by", "user", "accepted")
+        written_file = self.run_folder_findings_file()
+        written_file.parent.mkdir(parents=True, exist_ok=True)
+        written_file.write_text("- one.ts:1 [smell] written for this run\n")
+
+        output = self.asks_done("--correct", "--by", "user", "modified:x")
+
+        self.assertTrue(written_file.exists())
+        self.assertNotIn(review_fix_asks.STALE_RUN_FOLDER_FINDINGS_REMOVED, output)
+
+    def test_an_all_applied_packet_leaves_a_stale_run_folder_findings_file_alone(self):
+        self.packet(ONE_ASK)
+        stale_file = self.run_folder_findings_file()
+        stale_file.parent.mkdir(parents=True, exist_ok=True)
+        stale_file.write_text("- old.ts:9 [smell] an earlier run's finding\n")
+
+        output = self.asks_done("--by", "user", "applied")
+
+        self.assertTrue(stale_file.exists())
+        self.assertNotIn(review_fix_asks.STALE_RUN_FOLDER_FINDINGS_REMOVED, output)
+
+    def test_an_applied_plan_impact_ask_writes_no_findings_line(self):
+        plan_impact = {"question": "PLAN-IMPACT: one", "change": "c1"}
+
+        self.assertEqual(review_fix_asks.finding_ask_indexes([plan_impact], ["applied"]), [])
 
     def test_an_unknown_by_word_is_a_usage_error(self):
         self.packet(ONE_ASK)
@@ -267,6 +464,48 @@ class AskRulerTest(unittest.TestCase):
     def test_an_accepted_ask_ruled_by_the_session_carries_no_ruler_sentence(self):
         self.answered(ONE_ASK, "--by", "session", "accepted")
         self.assertEqual(self.findings_lines(), ["- one.ts:1 [smell] Proposed change: c1"])
+
+    def run_folder_findings_file(self):
+        return code_wait.phase_dir(self.repo) / review_fix_names.RUN_FOLDER_FINDINGS_NAME
+
+    def test_asks_done_removes_a_stale_run_folder_findings_file_and_says_so(self):
+        self.packet(ONE_ASK)
+        stale_file = self.run_folder_findings_file()
+        stale_file.parent.mkdir(parents=True, exist_ok=True)
+        stale_file.write_text("- old.ts:9 [smell] an earlier run's finding\n")
+
+        output = self.asks_done("--by", "user", "accepted:ok")
+
+        self.assertFalse(stale_file.exists())
+        self.assertIn(review_fix_asks.STALE_RUN_FOLDER_FINDINGS_REMOVED, output)
+        self.assertTrue(self.findings_file().exists())
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores the folder mode that makes the removal fail")
+    def test_a_failed_stale_file_removal_latches_nothing_and_the_retry_removes_it(self):
+        self.packet(ONE_ASK)
+        stale_file = self.run_folder_findings_file()
+        stale_file.parent.mkdir(parents=True, exist_ok=True)
+        stale_file.write_text("- old.ts:9 [smell] an earlier run's finding\n")
+        stale_file.parent.chmod(0o500)
+        try:
+            code, output = self.run_script(["asks-done", "--by", "user", "accepted:ok"])
+        finally:
+            stale_file.parent.chmod(0o700)
+
+        self.assertNotEqual(code, 0, output)
+        self.assertTrue(stale_file.exists())
+        state = json.loads(self.state_file().read_text())
+        self.assertFalse(state.get("asks_redispatched"), "the print latched before the removal")
+
+        retry_output = self.asks_done("--by", "user", "accepted:ok")
+
+        self.assertFalse(stale_file.exists())
+        self.assertIn(review_fix_asks.STALE_RUN_FOLDER_FINDINGS_REMOVED, retry_output)
+
+    def test_asks_done_with_no_stale_run_folder_findings_file_names_no_removal(self):
+        output = self.answered(ONE_ASK, "--by", "user", "accepted:ok")
+
+        self.assertNotIn(review_fix_asks.STALE_RUN_FOLDER_FINDINGS_REMOVED, output)
 
 
 class DeviationLineOwnerTest(unittest.TestCase):

@@ -8,6 +8,9 @@ USER_ONLY_KEY = "user_only"
 # The mark a listing prints in front of or after a `user_only` ask.
 USER_ONLY_MARK = "[user only]"
 REJECTED = "rejected"
+# A review-fix outcome: the ruler accepted the ask and its change is already in the tree. It logs as ACCEPTED and
+# writes no finding.
+APPLIED = "applied"
 PHASE_ASKS_PATH = pathlib.Path(__file__).resolve().parent.parent / "review" / "phase_asks.py"
 LIST_COMMAND = f"python3 {PHASE_ASKS_PATH} list"
 # The word `rule_command` prints for each ask. A session that types it as it stands is refused with a pointer to it.

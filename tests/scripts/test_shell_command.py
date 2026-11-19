@@ -23,8 +23,10 @@ from git_commit_calls import (
     stopping_flags,
 )
 from shell_command import (
+    INTERPRETER_FAMILIES,
     and_steps,
     and_steps_or_whole,
+    attached_inline_code,
     cd_folder,
     command_after_wrappers,
     contains_word_run,
@@ -34,6 +36,7 @@ from shell_command import (
     git_c_directory,
     interpreter_family,
     is_git_word,
+    is_inline_code_option,
     is_long_prefix,
     is_redirect_word,
     is_short_cluster,
@@ -82,6 +85,49 @@ class InterpreterFamilyTest(unittest.TestCase):
         for word, family in cases.items():
             with self.subTest(word=word):
                 self.assertEqual(family, interpreter_family(word))
+
+
+class InlineCodeOptionTest(unittest.TestCase):
+    def test_a_cluster_ending_in_a_code_letter_or_a_long_code_flag_is_inline_code(self):
+        cases = (
+            ("python", "-c"), ("python", "-Bc"), ("python", "-cprint(1)"), ("perl", "-le"), ("perl", "-eprint"),
+            ("ruby", "-e"), ("node", "-e"), ("node", "-p"), ("node", "--eval"), ("php", "-r"),
+            ("php", "-rsystem(1);"),
+        )
+        for family, word in cases:
+            with self.subTest(word=word):
+                self.assertTrue(is_inline_code_option(word, INTERPRETER_FAMILIES[family]))
+
+    def test_a_value_option_with_its_value_attached_is_not_inline_code(self):
+        cases = (
+            ("python", "-Xtracemalloc"), ("python", "-Xpycache_prefix=/tmp"), ("python", "-i"),
+            ("php", "-dmemory_limit=-1"), ("python", "-Xc"), ("perl", "-Ie"),
+            ("node", "-rdotenv/config"), ("ruby", "-rset"), ("perl", "-MFile::Temp"), ("node", "script.js"),
+            ("python", "-mcProfile"), ("php", "-fw.php"), ("perl", "-xe"), ("ruby", "-Fe"),
+        )
+        for family, word in cases:
+            with self.subTest(word=word):
+                self.assertFalse(is_inline_code_option(word, INTERPRETER_FAMILIES[family]))
+
+
+class AttachedInlineCodeTest(unittest.TestCase):
+    def test_the_code_after_the_code_letter_is_returned(self):
+        cases = (
+            ("python", "-cprint(1)", "print(1)"), ("perl", "-eprint", "print"), ("ruby", "-eputs(1)", "puts(1)"),
+            ("node", "-pprocess.pid", "process.pid"), ("php", "-rsystem(1);", "system(1);"),
+        )
+        for family, word, code in cases:
+            with self.subTest(family=family, word=word):
+                self.assertEqual(code, attached_inline_code(word, INTERPRETER_FAMILIES[family]))
+
+    def test_no_code_is_attached_when_it_is_the_next_word_or_the_option_is_not_inline_code(self):
+        cases = (
+            ("python", "-c"), ("python", "-Bc"), ("node", "--eval"), ("php", "-r"), ("python", "-i"),
+            ("python", "-mcProfile"),
+        )
+        for family, word in cases:
+            with self.subTest(family=family, word=word):
+                self.assertEqual("", attached_inline_code(word, INTERPRETER_FAMILIES[family]))
 
 
 class RedirectWordTest(unittest.TestCase):

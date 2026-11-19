@@ -29,10 +29,12 @@ scripted-loop hand-back (agent_id, ask_rows); `latest` keeps the last one after 
 packet's fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook
 event's session_id, which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
+import os
 import pathlib
 import re
 import secrets
 import sys
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import reviewed_tree
@@ -59,6 +61,8 @@ PLAN_IMPACT_STATUS = "plan-impact"
 STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, "setup-fault",
             FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", DEFERRED)
+# The words after the count in the lines that say plan impacts hold the commit gate.
+PLAN_IMPACTS_WAIT_TEXT = "plan impact(s) wait for a ruling"
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
@@ -669,15 +673,6 @@ def stored_packet(message):
         return None, str(error)
 
 
-def stored_held_plan_impacts(message):
-    """(the held plan impacts of a stored hand-back, the parse error or None). A message that is not a JSON packet has
-    none."""
-    packet, parse_error = stored_packet(message)
-    if packet is None:
-        return [], parse_error
-    return held_plan_impacts(packet), None
-
-
 def false_clean_reason(session_id):
     """Why the session's review earns no commit credit, or None when its latest review-loop hand-back is current and
     converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash call. An
@@ -723,13 +718,62 @@ def clean_handback_since(session, repo_top, since):
 def unruled_plan_impacts(seen):
     """The held plan impacts of the hand-back in a `latest` or `latest_for_repo` result that no ruling since settles:
     none when there is no hand-back, its packet does not parse, or a ruling came after it."""
+    return unruled_impacts_and_packet(seen)[0]
+
+
+def unruled_impacts_and_packet(seen):
+    """(unruled held plan impacts, packet) of the hand-back in a `latest` or `latest_for_repo` result, from one parse
+    of the stored message. The impacts are those unruled_plan_impacts describes; the packet is None with no
+    hand-back or a message that holds no readable packet."""
     row = seen["handback"]
     if row is None:
-        return []
-    held, _parse_error = stored_held_plan_impacts(row.get("message", ""))
+        return [], None
+    packet, _parse_error = stored_packet(row.get("message", ""))
+    if packet is None:
+        return [], None
+    held = held_plan_impacts(packet)
     if held and plan_ruled_since(row["session_id"], row):
+        return [], packet
+    return held, packet
+
+
+def session_unruled_plan_impacts(session_id, repo):
+    """The unruled held plan impacts of this session's latest hand-back in `repo`: none with no session id or no work
+    tree."""
+    if not session_id or not repo:
         return []
-    return held
+    return unruled_plan_impacts(latest_for_repo(session_id, repo))
+
+
+class HeldImpactHandBack(NamedTuple):
+    """The unruled held plan impacts and packet of a session's latest hand-back, and the hand-back's stored time
+    (None with no hand-back or no numeric time)."""
+    held: list
+    packet: dict | None
+    handed_back_at: float | None
+
+
+def current_session_held_impact_hand_back(directory):
+    """The HeldImpactHandBack of the session in CLAUDE_CODE_SESSION_ID and the work tree that holds `directory`: the
+    one place that reads the session id for a plan-impact lookup."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    repo = script_utils.work_tree_top(directory)
+    if not session_id or not repo:
+        return HeldImpactHandBack([], None, None)
+    seen = latest_for_repo(session_id, repo)
+    held, packet = unruled_impacts_and_packet(seen)
+    stored_at = (seen["handback"] or {}).get("ts")
+    handed_back_at = stored_at if isinstance(stored_at, (int, float)) else None
+    return HeldImpactHandBack(held, packet, handed_back_at)
+
+
+def adopt_settles(packet, held):
+    """True when an adopt ruling on the held plan impacts needs no re-dispatch: every impact's fix is already in the
+    tree and the packet leaves nothing else open (no blocker, remaining finding or closing note). A packet that is
+    None, or no held impact, never settles."""
+    if packet is None or not held:
+        return False
+    return all(impact["applied"] for impact in held) and not carried_findings(packet)
 
 
 def record_clean_review(session_id, committing_session=None):

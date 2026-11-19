@@ -7,42 +7,42 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-609 fix notes
+615 fix notes
 
 Recent: the 7 days up to 2026-11-19, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
-| script/review-fix | 62 | 11 |
+| script/review-fix | 66 | 15 |
 | script/review-loop-script | 58 | 3 |
-| script/handback | 54 | 3 |
-| script/review-commit-gate | 38 | 3 |
+| script/handback | 55 | 4 |
+| script/review-commit-gate | 40 | 5 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 24 | 2 |
 | script/coder-gate | 22 | 1 |
+| script/plan-format | 22 | 4 |
 | script/script-utils | 22 | 4 |
 | agent/review-loop | 20 | 0 |
-| script/plan-format | 20 | 2 |
 | skill/code | 18 | 1 |
 | script/quality-check-cap | 17 | 0 |
 | script/review-loop | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/shell-write-gate | 15 | 1 |
 | script/verify-prep | 14 | 2 |
+| script/staged-claim-gate | 13 | 2 |
 | script/verify-log | 13 | 3 |
 | script/log-review-finding | 12 | 1 |
-| script/staged-claim-gate | 12 | 1 |
 | script/pull-keep-index | 11 | 0 |
+| script/code-wait | 10 | 4 |
 | script/verify-common | 10 | 3 |
-| script/code-wait | 9 | 3 |
 | script/git-discipline-gate | 9 | 1 |
 | script/log-escape | 9 | 1 |
+| script/shell-command | 9 | 4 |
 | script/code-review-start | 8 | 2 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/refactor-flow | 8 | 2 |
 | script/review-asks | 8 | 8 |
-| script/shell-command | 8 | 3 |
 | script/criteria-dry-run | 7 | 0 |
 | script/log-review-metrics | 7 | 0 |
 | script/handback-store | 6 | 4 |
@@ -95,6 +95,7 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-review-check | 2 | 0 |
+| script/permission-question | 2 | 1 |
 | script/phase-start | 2 | 2 |
 | script/plan-review-shards | 2 | 1 |
 | script/review-loop-findings | 2 | 1 |
@@ -140,7 +141,6 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/log-skill-use | 1 | 0 |
 | script/mcp-ledger | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
-| script/permission-question | 1 | 0 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |
@@ -153,6 +153,7 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/rule-anchors | 1 | 0 |
 | script/ruled-change-text | 1 | 1 |
 | script/ruling-relay | 1 | 1 |
+| script/shell-statements | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/telemetry-enabled | 1 | 0 |

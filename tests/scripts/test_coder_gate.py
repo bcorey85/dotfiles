@@ -384,6 +384,19 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("Failing tests:\nFAIL: test_x (app.tests.T)", reason)
 
+    def test_a_missing_tool_stamp_names_the_tool_and_stays_uncounted(self):
+        command = ("echo 'bash: no-such-runner-for-the-gate: command not found'; exit 127; "
+                   "pytest tests/test_one.py")
+        self.gate_set(command)
+
+        hook = self.gate_hook()
+
+        coder = self.stored_gate()["coders"]["a1"]
+        self.assertEqual("setup-fault", coder["result"])
+        self.assertEqual(0, coder["denies"])
+        message = json.loads(hook.stdout)["hookSpecificOutput"]["updatedInput"]["message"]
+        self.assertIn(f"`{command}` (no-such-runner-for-the-gate not found on PATH)", message)
+
     def test_a_django_settings_error_under_pytest_is_a_setup_fault(self):
         commands = {
             "improperly configured": """echo "django.core.exceptions.ImproperlyConfigured: bad"; echo pytest; exit 1""",
@@ -592,6 +605,82 @@ class RunCommandsTests(unittest.TestCase):
         gate = {"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}}
         return self.gate.run_commands(gate, collect_summaries=collect_summaries)
 
+    COLLISION_TEXT = 'django.db.utils.OperationalError: database "test_app" is being accessed by other users'
+
+    def collide_times(self, collisions):
+        # A command that prints a test-database collision and exits 1 for its first `collisions` runs, then passes.
+        counter = self.repo / "runs"
+        script = (f'echo x >> "{counter}"; if [ "$(wc -l < "{counter}")" -le {collisions} ]; '
+                  f"then echo '{self.COLLISION_TEXT}'; exit 1; fi; echo '2 passed in 0.1s'")
+        return script
+
+    def test_a_collision_that_passes_on_the_retry_is_a_pass_after_one_wait(self):
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision") as wait:
+            run = self.run_gate_commands(self.collide_times(1))
+
+        self.assertEqual([], run.failures)
+        wait.assert_called_once_with()
+
+    def test_a_second_collision_is_a_setup_fault_naming_the_fix_and_no_real_failure(self):
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision") as wait:
+            run = self.run_gate_commands(self.collide_times(5))
+
+        wait.assert_called_once_with()
+        self.assertEqual(2, len((self.repo / "runs").read_text().splitlines()))
+        sorted_failures = self.gate.sort_failures(run.failures, str(self.repo))
+        self.assertEqual([], sorted_failures.real_failures)
+        fault, = sorted_failures.setup_faults
+        self.assertIn("test database collision", self.gate.setup_fault_note(fault))
+        self.assertIn("gate-env.json", self.gate.setup_fault_note(fault))
+
+    def test_a_collided_run_that_exits_zero_gets_no_wait_and_no_retry(self):
+        script = f'echo x >> "{self.repo / "runs"}"; echo \'{self.COLLISION_TEXT}\'; echo \'2 passed in 0.1s\''
+
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision") as wait:
+            run = self.run_gate_commands(script)
+
+        wait.assert_not_called()
+        self.assertEqual([], run.failures)
+        self.assertEqual(1, len((self.repo / "runs").read_text().splitlines()))
+
+    def test_a_collision_with_too_little_budget_left_for_a_retry_is_not_waited_for_or_retried(self):
+        gate = {"repoRoot": str(self.repo), "commands": [self.collide_times(5)], "env": {}}
+        budget = self.gate.MIN_COMMAND_SECONDS + 5
+
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision") as wait:
+            run = self.gate.run_commands(gate, budget)
+
+        wait.assert_not_called()
+        self.assertEqual(1, len((self.repo / "runs").read_text().splitlines()))
+        sorted_failures = self.gate.sort_failures(run.failures, str(self.repo))
+        self.assertEqual([], sorted_failures.real_failures)
+        self.assertEqual(1, len(sorted_failures.setup_faults))
+
+    def test_a_retry_that_times_out_is_stored_with_the_retry_timeout(self):
+        timeouts = []
+        results = [(1, "", self.COLLISION_TEXT), (None, "partial output", "")]
+
+        def fake_run_process(_command, _repo_root, env=None, timeout=None):
+            timeouts.append(timeout)
+            return results[len(timeouts) - 1]
+
+        gate = {"repoRoot": str(self.repo), "commands": ["any command"], "env": {}}
+        budget = self.gate.MIN_COMMAND_SECONDS + self.gate.collision_retry.TEST_DB_COLLISION_WAIT_SECONDS + 40
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision"), \
+                mock.patch.object(self.gate.script_utils, "run_process", side_effect=fake_run_process):
+            run = self.gate.run_commands(gate, budget)
+
+        self.assertEqual(2, len(timeouts))
+        timed_out_command, = run.timed_out
+        self.assertEqual(timeouts[1], timed_out_command[2])
+
+    def test_an_ordinary_failure_is_not_retried(self):
+        with mock.patch.object(self.gate.collision_retry, "wait_out_collision") as wait:
+            run = self.run_gate_commands("echo 'FAIL: test_x (a.T)'; exit 1")
+
+        wait.assert_not_called()
+        self.assertEqual(1, len(run.failures))
+
     def test_a_failing_command_reports_its_exit_code_and_both_streams(self):
         failures, skipped, _, _, _ = self.run_gate_commands("echo to-stdout; echo to-stderr >&2; exit 3")
 
@@ -690,6 +779,21 @@ class RunCommandsTests(unittest.TestCase):
         self.assertEqual([], run.unnamed_lines)
         self.assertTrue(run.gave_no_result)
 
+    def test_a_setup_fault_from_a_missing_tool_names_the_tool_in_the_scoped_lines(self):
+        failure = self.gate.GateFailure("env", "exit 127", "bash: pipenv: command not found")
+
+        run = self.scoped_run_of([failure], [], [], ["env"])
+
+        self.assertIn("env (pipenv not found on PATH)", run.result)
+
+    def test_a_scoped_failure_lists_a_missing_tool_setup_fault_with_the_tool(self):
+        failures = [self.gate.GateFailure("real", "exit 1", "FAILED tests/test_a.py::test_x - assert 0"),
+                    self.gate.GateFailure("env", "exit 127", "bash: pipenv: command not found")]
+
+        run = self.scoped_run_of(failures, [], [], ["real", "env"])
+
+        self.assertEqual(["setup fault: env (pipenv not found on PATH)"], run.unnamed_lines)
+
     def test_a_scoped_run_lists_a_timed_out_command_as_unrun_even_when_a_command_error_hides_it(self):
         log_path = self.repo / "scoped-tests.log"
         error_output = "ERROR: file or directory not found: missing/test_x.py"
@@ -775,6 +879,55 @@ def load_gate_module():
     return gate_module
 
 
+class PinnedInterpreterTests(unittest.TestCase):
+    """A linked worktree has no `.python-version` while the main checkout pins one: every gate run still gets the
+    pyenv shims first and the pinned version."""
+
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        root = pathlib.Path(temp_directory.name)
+        main_checkout = root / "main"
+        self.linked = root / "linked"
+        subprocess.run(["git", "init", "-q", str(main_checkout)], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "base"], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "worktree", "add", "-q", str(self.linked)], check=True)
+        (main_checkout / ".python-version").write_text("3.12.4\n")
+        shim = root / "pyenv" / "shims" / "pinned-gate-tool"
+        shim.parent.mkdir(parents=True)
+        shim.write_text('#!/bin/sh\n[ "$PYENV_VERSION" = 3.12.4 ]\n')
+        shim.chmod(0o755)
+        environment = mock.patch.dict(os.environ, {"PYENV_ROOT": str(root / "pyenv")})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.gate = load_gate_module()
+
+    def test_run_commands_runs_a_tool_only_the_shims_hold(self):
+        gate = {"repoRoot": str(self.linked), "commands": ["pinned-gate-tool"], "env": {}}
+
+        run = self.gate.run_commands(gate)
+
+        self.assertEqual([], run.failures)
+
+    def test_the_gates_own_variables_go_on_top_of_the_check_env(self):
+        gate = {"repoRoot": str(self.linked), "commands": ['test "$PYENV_VERSION" = 9.9'],
+                "env": {"PYENV_VERSION": "9.9"}}
+
+        run = self.gate.run_commands(gate)
+
+        self.assertEqual([], run.failures)
+
+    def test_the_scoped_run_and_the_stale_prose_check_run_with_the_check_env(self):
+        log_path = self.linked / "scoped.log"
+
+        scoped = self.gate.scoped_run(str(self.linked), ["pinned-gate-tool"], (), log_path)
+        hit = self.gate.run_hit_check(str(self.linked), ["pinned-gate-tool"], (), log_path)
+
+        self.assertEqual("passed", scoped.result)
+        self.assertEqual("passed", hit.result)
+
+
 class CommandCheckScopeTests(unittest.TestCase):
     def setUp(self):
         temp_directory = tempfile.TemporaryDirectory()
@@ -789,6 +942,19 @@ class CommandCheckScopeTests(unittest.TestCase):
 
     def scope(self, command):
         return check_scope.command_check_scope(command, self.project)
+
+    def test_an_npm_prefix_exec_step_scopes_against_the_callers_folder(self):
+        scanned_cwds = {}
+
+        def record_cwd(simple_command, scan, assigned_names):
+            scanned_cwds[simple_command.written_command] = simple_command.cwd
+
+        with mock.patch.object(check_scope, "scan_words", record_cwd):
+            check_scope.scan_command("npm --prefix pkg exec -- vitest run x", self.project, check_scope.CheckScan())
+            check_scope.scan_command("pnpm -C pkg exec vitest run x", self.project, check_scope.CheckScan())
+
+        self.assertEqual(self.project, scanned_cwds["npm --prefix pkg exec -- vitest run x"])
+        self.assertEqual(self.project / "pkg", scanned_cwds["pnpm -C pkg exec vitest run x"])
 
     def test_a_directory_only_test_path_is_whole_only_when_it_is_the_repos_test_root(self):
         (self.project / "tests/unit").mkdir(parents=True)
@@ -862,6 +1028,43 @@ class CommandCheckScopeTests(unittest.TestCase):
         for command, expected in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(expected, self.scope(command))
+
+    def test_a_flagged_command_is_scanned_in_its_flag_folder_with_the_bare_words(self):
+        scanned = []
+        scan = check_scope.CheckScan()
+        with mock.patch.object(check_scope, "scan_words", side_effect=lambda command, *_: scanned.append(command)):
+            check_scope.scan_command("pnpm -C pkg exec vitest run a.test.ts", str(self.project), scan)
+            check_scope.scan_command("cd pkg && pnpm exec vitest run a.test.ts", str(self.project), scan)
+
+        flagged, changed_directory = scanned
+        self.assertEqual(self.project / "pkg", pathlib.Path(flagged.cwd))
+        self.assertEqual(["pnpm", "exec", "vitest", "run", "a.test.ts"], flagged.words)
+        self.assertEqual(changed_directory.words, flagged.words)
+        self.assertEqual(pathlib.Path(changed_directory.cwd), pathlib.Path(flagged.cwd))
+
+    def test_a_flagged_command_naming_every_test_root_of_its_flag_folder_reads_as_whole(self):
+        package = self.project / "pkg"
+        (package / "spec").mkdir(parents=True)
+        (package / "integration").mkdir()
+        (package / "pytest.ini").write_text("[pytest]\ntestpaths = spec integration\n")
+        # Only a pytest run reads test roots, and no folder-flag package manager runs pytest, so the scope is read at
+        # the scan: the flagged form hands the scope reader the same folder and words as the `cd` form, and
+        # that folder holds the test roots the words name.
+        scanned = []
+        for path_words in ("spec integration", "spec"):
+            scanned.clear()
+            scan = check_scope.CheckScan()
+            with mock.patch.object(check_scope, "scan_words",
+                                   side_effect=lambda command, *_: scanned.append(command)):
+                check_scope.scan_command(f"pnpm -C pkg exec pytest {path_words}", str(self.project), scan)
+                check_scope.scan_command(f"cd pkg && pnpm exec pytest {path_words}", str(self.project), scan)
+
+            flagged, changed_directory = scanned
+            self.assertEqual(changed_directory.words, flagged.words, path_words)
+            self.assertEqual(pathlib.Path(changed_directory.cwd), pathlib.Path(flagged.cwd), path_words)
+            self.assertEqual({"spec", "integration"}, check_scope.test_root_directories(flagged.cwd), path_words)
+            self.assertEqual(check_scope.direct_check_scope(changed_directory.words, changed_directory.cwd),
+                             check_scope.direct_check_scope(flagged.words, flagged.cwd), path_words)
 
     def test_a_tests_folder_beside_the_testpaths_is_not_a_test_root(self):
         (self.project / "tests").mkdir()
@@ -1280,6 +1483,127 @@ class StaleProseCheckTests(unittest.TestCase):
                 self.assertTrue(result.startswith(result_start), result)
                 self.assertEqual(hit_outputs, hits)
                 self.assertEqual(log_written, log_path.exists())
+
+
+class PackageFolderFlagTests(unittest.TestCase):
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.repo = pathlib.Path(temp_directory.name).resolve()
+        self.env = {**os.environ, **GIT_IDENTITY}
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, env=self.env)
+        (self.repo / "pkg" / "src").mkdir(parents=True)
+        (self.repo / "pkg" / "src" / "a.ts").write_text("export {}\n")
+        (self.repo / "other.ts").write_text("export {}\n")
+        gate_spec = importlib.util.spec_from_file_location("coder_gate_folder", GATE_SCRIPT)
+        self.gate = importlib.util.module_from_spec(gate_spec)
+        gate_spec.loader.exec_module(self.gate)
+
+    def test_files_resolve_against_the_folder_a_package_manager_flag_names(self):
+        commands = {
+            "pnpm": "pnpm -C pkg exec eslint {files:.ts}",
+            "npm": "npm --prefix pkg exec -- eslint {files:.ts}",
+            "yarn": "yarn --cwd pkg run eslint {files:.ts}",
+        }
+        for manager, command in commands.items():
+            with self.subTest(manager=manager):
+                filled = self.gate.fill_files(command, str(self.repo))
+                if manager == "npm":
+                    # npm exec runs in the caller's folder, so the paths stay repo-relative.
+                    self.assertEqual(command.replace("{files:.ts}", "other.ts pkg/src/a.ts"), filled)
+                    continue
+
+                self.assertEqual(command.replace("{files:.ts}", "src/a.ts"), filled)
+
+    def test_an_npm_prefix_exec_step_runs_in_the_repo_folder(self):
+        command = "npm --prefix pkg exec -- vitest run {files}"
+
+        self.assertEqual(str(self.repo), self.gate.command_directory(command, str(self.repo)))
+
+    def test_command_directory_reads_the_folder_flag_a_cd_and_an_env_prefix(self):
+        cases = {
+            "pnpm -C": "pnpm -C pkg exec eslint x.ts",
+            "npm --prefix": "npm --prefix pkg run lint",
+            "yarn --cwd": "yarn --cwd pkg run eslint x.ts",
+            "env prefix": "CI=1 pnpm -C pkg exec eslint x.ts",
+            "cd wins over a flag": "cd pkg && pnpm -C other exec eslint x.ts",
+        }
+        for label, command in cases.items():
+            with self.subTest(label):
+                self.assertEqual(str(self.repo / "pkg"), self.gate.command_directory(command, str(self.repo)), label)
+        self.assertEqual(str(self.repo), self.gate.command_directory("pnpm exec eslint x.ts", str(self.repo)))
+
+    def test_package_folder_split(self):
+        cases = [
+            (["pnpm", "-C", "pkg", "exec", "x"], "pkg", ["pnpm", "exec", "x"]),
+            (["pnpm", "-C"], None, ["pnpm", "-C"]),
+            (["pnpm", "exec", "-C", "x"], None, ["pnpm", "exec", "-C", "x"]),
+            (["npm", "-C", "pkg", "test"], None, ["npm", "-C", "pkg", "test"]),
+            ([], None, []),
+        ]
+        for words, folder, bare in cases:
+            with self.subTest(words=words):
+                self.assertEqual((folder, bare), check_scope.package_folder_split(words))
+
+    def test_package_exec_runner_reads_binary_runs_only(self):
+        cases = [
+            ("npm --prefix pkg exec -- vitest run x", ["vitest", "run", "x"]),
+            ("npm exec vitest", ["vitest"]),
+            ("pnpm -C pkg exec tsc --noEmit", ["tsc", "--noEmit"]),
+            ("yarn --cwd pkg run eslint x.ts", ["eslint", "x.ts"]),
+            ("yarn --cwd pkg run typecheck", None),
+            ("yarn run lint", None),
+            ("npm run lint", None),
+            ("pnpm -C pkg test", None),
+        ]
+        for command, wanted in cases:
+            with self.subTest(command=command):
+                _, bare_words = check_scope.package_folder_split(command.split())
+                self.assertEqual(wanted, check_scope.package_exec_runner(bare_words))
+
+    def test_yarn_run_scripts_stay_checks(self):
+        for script in ("lint", "build", "typecheck", "test"):
+            with self.subTest(script=script):
+                self.assertTrue(check_scope.is_check(f"yarn run {script}"))
+        self.assertEqual("whole", check_scope.command_check_scope("yarn run test", str(self.repo)))
+        self.assertEqual("whole", check_scope.command_check_scope("yarn run build", str(self.repo)))
+        self.assertEqual("targeted", check_scope.command_check_scope("yarn run test a.test.ts", str(self.repo)))
+
+    def test_a_script_run_with_a_folder_flag_scores_as_without_it(self):
+        pairs = [
+            ("npm --prefix pkg test -- src/a.test.ts", "npm test -- src/a.test.ts"),
+            ("pnpm -C pkg test -- src/a.test.ts", "pnpm test -- src/a.test.ts"),
+            ("yarn --cwd pkg test -- src/a.test.ts", "yarn test -- src/a.test.ts"),
+            ("npm --prefix pkg run build", "npm run build"),
+            ("pnpm -C pkg run build", "pnpm run build"),
+            ("yarn --cwd pkg run build", "yarn run build"),
+        ]
+        for flagged, plain in pairs:
+            with self.subTest(flagged=flagged):
+                self.assertEqual(check_scope.command_check_scope(plain, str(self.repo)),
+                                 check_scope.command_check_scope(flagged, str(self.repo)))
+                self.assertNotEqual("none", check_scope.command_check_scope(flagged, str(self.repo)))
+        for command in ("npm --prefix pkg run typecheck", "pnpm -C pkg run typecheck", "yarn --cwd pkg run typecheck"):
+            with self.subTest(command=command):
+                self.assertTrue(check_scope.is_check(command))
+
+    def test_a_binary_run_with_a_folder_flag_scores_as_the_bare_binary(self):
+        plain = "npx tsc --noEmit"
+        flagged_commands = ("npm --prefix pkg exec -- tsc --noEmit", "pnpm -C pkg exec tsc --noEmit",
+                            "yarn --cwd pkg run tsc --noEmit")
+        for flagged in flagged_commands:
+            with self.subTest(flagged=flagged):
+                self.assertEqual(check_scope.command_check_scope(plain, str(self.repo)),
+                                 check_scope.command_check_scope(flagged, str(self.repo)))
+                self.assertTrue(check_scope.is_check(flagged))
+
+    def test_a_folder_flag_command_with_a_targeted_test_file_is_no_whole_check(self):
+        commands = ("pnpm -C pkg exec vitest run src/a.test.ts", "npm --prefix pkg exec -- vitest run src/a.test.ts",
+                    "yarn --cwd pkg run vitest run src/a.test.ts")
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertFalse(check_scope.runs_whole_check(command, str(self.repo)))
+                self.assertEqual("targeted", check_scope.command_check_scope(command, str(self.repo)))
 
 
 if __name__ == "__main__":

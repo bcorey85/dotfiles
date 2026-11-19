@@ -25,6 +25,8 @@
 # pnpm-lock.yaml at the worktree root or one folder down, before the panes
 # start. Their output goes to herdr-worktree-install.log in the worktree's git
 # dir; a failed install names the command and that log.
+# A gitignored .python-version in the main checkout is linked into the new
+# worktree when the worktree has none, so the gates find the pin there.
 #
 # With --fork, the run fails when the new claude pane shows no claude agent
 # within HERDR_WORKTREE_FORK_TIMEOUT seconds (default 30). The error names the
@@ -209,6 +211,15 @@ ws=$(jq -r '.result.workspace.workspace_id // empty' <<<"$created")
 if [ -z "$ws" ]; then
     echo "herdr-worktree: create reply has no workspace id: $created" >&2
     exit 1
+fi
+
+# A gitignored .python-version is missing from a new worktree, and the gates need
+# the main checkout's pin there. A tracked file is checked out already and git
+# does not call it ignored, so only an untracked ignored pin gets the link.
+if [ ! -e "$worktree/.python-version" ] && [ ! -L "$worktree/.python-version" ] \
+    && [ -f "$main_checkout/.python-version" ] && git -C "$worktree" check-ignore -q .python-version; then
+    ln -s "$main_checkout/.python-version" "$worktree/.python-version"
+    echo "herdr-worktree: linked .python-version from $main_checkout" >&2
 fi
 
 # A new worktree has no node_modules, so install node dependencies for each

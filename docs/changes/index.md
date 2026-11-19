@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-992 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1001 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-19, [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md).
+Latest change: 2026-11-19, [verify-prep tells the verifier to keep the default TMPDIR](notes/2026-11-19-verify-prep-tells-the-verifier-to-keep-the-default.md).
 
 ## Top gains
 

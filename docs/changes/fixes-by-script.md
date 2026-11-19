@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-615 fix notes
+624 fix notes
 
 Recent: the 7 days up to 2026-11-19, the newest note.
 
@@ -15,44 +15,44 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | --- | --- | --- |
 | script/code-step | 166 | 0 |
 | script/review-fix | 66 | 15 |
-| script/review-loop-script | 58 | 3 |
+| script/review-loop-script | 59 | 4 |
 | script/handback | 55 | 4 |
 | script/review-commit-gate | 40 | 5 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 24 | 2 |
-| script/coder-gate | 22 | 1 |
+| script/full-check | 28 | 6 |
+| script/coder-gate | 26 | 5 |
 | script/plan-format | 22 | 4 |
 | script/script-utils | 22 | 4 |
 | agent/review-loop | 20 | 0 |
+| script/quality-check-cap | 18 | 1 |
 | skill/code | 18 | 1 |
-| script/quality-check-cap | 17 | 0 |
 | script/review-loop | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/shell-write-gate | 15 | 1 |
-| script/verify-prep | 14 | 2 |
+| script/verify-prep | 15 | 3 |
 | script/staged-claim-gate | 13 | 2 |
 | script/verify-log | 13 | 3 |
 | script/log-review-finding | 12 | 1 |
 | script/pull-keep-index | 11 | 0 |
 | script/code-wait | 10 | 4 |
 | script/verify-common | 10 | 3 |
+| script/criteria-dry-run | 9 | 2 |
 | script/git-discipline-gate | 9 | 1 |
 | script/log-escape | 9 | 1 |
 | script/shell-command | 9 | 4 |
+| script/check-output | 8 | 4 |
 | script/code-review-start | 8 | 2 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/refactor-flow | 8 | 2 |
 | script/review-asks | 8 | 8 |
-| script/criteria-dry-run | 7 | 0 |
+| script/herdr-worktree | 7 | 2 |
 | script/log-review-metrics | 7 | 0 |
+| script/check-scope | 6 | 1 |
 | script/handback-store | 6 | 4 |
-| script/herdr-worktree | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
 | script/review-fix-asks | 6 | 6 |
 | script/review-launch | 6 | 5 |
 | skill/refactor | 6 | 1 |
-| script/check-output | 5 | 1 |
-| script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/ledger-write | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
@@ -72,7 +72,11 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
 | script/adr-flow | 3 | 0 |
+| script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
+| script/criteria-verdict | 3 | 1 |
+| script/full-check-gate | 3 | 2 |
+| script/gate-commands | 3 | 2 |
 | script/inline-interpreter-hint | 3 | 0 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
@@ -86,10 +90,8 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/agent-cost | 2 | 0 |
 | script/agent-model-guard | 2 | 0 |
 | script/calibration-guard | 2 | 0 |
-| script/check-discovery | 2 | 0 |
 | script/code-relay | 2 | 1 |
 | script/coder-packet | 2 | 0 |
-| script/criteria-verdict | 2 | 0 |
 | script/emit-orchestration | 2 | 0 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
@@ -124,9 +126,7 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/file-lock | 1 | 1 |
 | script/fix-diff | 1 | 1 |
 | script/fork-write-scope | 1 | 1 |
-| script/full-check-gate | 1 | 0 |
 | script/full-check-receipt | 1 | 0 |
-| script/gate-commands | 1 | 0 |
 | script/gate-replay | 1 | 0 |
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |

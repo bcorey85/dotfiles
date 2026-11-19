@@ -58,7 +58,9 @@ LOGGER_TIMEOUT_SECONDS = 30
 # The status for a loop that stopped because the fix passes removed the change under review.
 FIX_REMOVED_CHANGE = "fix-removed-change"
 PLAN_IMPACT_STATUS = "plan-impact"
-STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, "setup-fault",
+SETUP_FAULT_STATUS = "setup-fault"
+INVALID_STATUS = "invalid"
+STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, SETUP_FAULT_STATUS,
             FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", DEFERRED)
 # The words after the count in the lines that say plan impacts hold the commit gate.
@@ -69,7 +71,9 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
-SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
+SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "check_overridden"]
+# The `check_overridden` value of a run whose full check was the launch's `--test` commands.
+CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
              "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
              "plan_impacts", "no_code_ruling_broken"]
@@ -82,7 +86,7 @@ ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "findings_rem
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {PLAN_IMPACT_STATUS: ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
+                   SETUP_FAULT_STATUS: ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
                    CAP_REACHED: ("findings_remaining", "empty"),
                    DEFERRED: ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
@@ -346,6 +350,7 @@ def read_header(raw):
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "scoped_tests": raw.get("scoped_tests", "").strip(),
+              "check_overridden": raw.get("check_overridden", "").strip() == CHECK_OVERRIDDEN,
               "unrun_reviewer": raw.get("unrun_reviewer", "").strip(),
               "plan_impact": plan_impact, "plan_impact_cause": cause}
     return header, problems

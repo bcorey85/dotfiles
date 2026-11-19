@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-998 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1007 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-19, [decide takes a relayed user ruling on a plan the user owns](notes/2026-11-19-decide-takes-a-relayed-user-ruling-on-a-plan.md).
+Latest change: 2026-11-19, [verify-prep tells the verifier to keep the default TMPDIR](notes/2026-11-19-verify-prep-tells-the-verifier-to-keep-the-default.md).
 
 ## Top gains
 

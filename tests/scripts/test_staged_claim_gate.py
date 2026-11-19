@@ -467,6 +467,50 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_naming_a_worktree_passes_on_the_first_try(self):
+        transcript = self.write_prompts("go")
+        for message in ("Fixed the gate. Want me to make a worktree for this?",
+                        "The change is big. Should I create worktrees for each part?",
+                        "Want me to add a worktree for this?", "Want me to open a worktree for the lane?",
+                        "Should I start a new worktree for it?", "Want me to use a worktree for this?",
+                        "Want me to set up a lane worktree?", "Want me to spin up a fresh worktree?",
+                        "Shall I create a git worktree for this?", "Want me to make two worktrees?",
+                        "Should I do this in a separate worktree?", "Want me to run git worktree add?",
+                        "Want me to do this in its own worktree?",
+                        "Want me to do this in a worktree?", "Want me to move this into a worktree?",
+                        "Should I remove the worktree?", "Want me to spin up a worktree per phase?"):
+            with self.subTest(message=message):
+                self.assert_passes(message, transcript_path=transcript)
+
+    def test_a_go_in_a_repo_with_uncommitted_work_passes_a_worktree_question_on_the_first_try(self):
+        (self.repo / "untracked.txt").write_text("new\n")
+        transcript = self.write_prompts("go")
+
+        self.assert_passes("The branch has uncommitted work. Should I make a worktree for this?",
+                           cwd=self.repo, transcript_path=transcript)
+
+    def test_a_question_that_only_mentions_a_worktree_is_sent_back(self):
+        for message in ("Fixed the gate. Want me to run the tests in this worktree?",
+                        "Fixed the gate. Want me to list the worktrees?",
+                        "Should I use the existing worktree?",
+                        "Want me to open the worktree in nvim?",
+                        "Should I make sure the worktree is clean?",
+                        "Want me to add the worktree path to .gitignore?",
+                        "Want me to add worktree support to the prune script?",
+                        "Should I make worktree-prune skip dirty trees?",
+                        "Want me to open worktree.py next?",
+                        "Should I fix this in a worktree.py?",
+                        "Should I fix this in a new worktree-prune?",
+                        "Should I use worktrees.md as the source?",
+                        "Want me to add a worktree to the docs?",
+                        "Should I refactor the git worktree add call?",
+                        "Want me to switch to the new worktree?",
+                        "Want me to cd into the new worktree?",
+                        "Should I use worktrees in the tests?",
+                        "Want me to run the tests in the new worktree?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
     def test_a_question_naming_an_outside_destination_passes_but_a_local_step_is_sent_back(self):
         for message in ("Fixed the driver. Want me to add your data to vkd3d-proton #3304?",
                         "The name is in the commit log. Do you want that name off GitHub?",

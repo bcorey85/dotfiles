@@ -13,6 +13,9 @@ APPROVAL_ASKS_NAME = "approval-asks.json"
 RUN_FOLDER_FINDINGS_NAME = "fix-findings.md"
 # The ask field that holds the epoch time the ask was filed in the saved asks of a review-fix packet.
 FILED_AT_KEY = "filed_at"
+# The state key that holds the epoch time the packet's held plan impact was filed: a relayed `decide` needs a user
+# turn typed after it.
+PLAN_IMPACT_FILED_AT_KEY = "plan_impact_filed_at"
 # Set by asks-done when it prints a fix run, cleared when that run launches. The fork-write gate reads it.
 PENDING_LAUNCH_KEY = "asks_launch_pending"
 # Set when a --correct call had a row fail and the stored answers leave no ask to apply (the pending launch was

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-602 fix notes
+603 fix notes
 
 Recent: the 7 days up to 2026-11-18, the newest note.
 
@@ -37,9 +37,9 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/verify-common | 10 | 3 |
 | script/code-wait | 9 | 4 |
 | script/git-discipline-gate | 9 | 1 |
+| script/log-escape | 9 | 1 |
 | script/code-review-start | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
-| script/log-escape | 8 | 0 |
 | script/refactor-flow | 8 | 2 |
 | script/shell-command | 8 | 3 |
 | script/criteria-dry-run | 7 | 1 |
@@ -51,6 +51,7 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/check-output | 5 | 1 |
 | script/check-scope | 5 | 0 |
 | script/deferred-push-check | 5 | 0 |
+| script/ledger-write | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 1 |
 | script/review-launch | 5 | 4 |
@@ -61,7 +62,6 @@ Recent: the 7 days up to 2026-11-18, the newest note.
 | script/format-changed | 4 | 1 |
 | script/format-files | 4 | 1 |
 | script/herdr-phase-change | 4 | 0 |
-| script/ledger-write | 4 | 1 |
 | script/log-scan | 4 | 0 |
 | script/review-asks | 4 | 4 |
 | script/run-sh | 4 | 1 |

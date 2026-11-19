@@ -254,6 +254,45 @@ class LedgerWriteTest(unittest.TestCase):
         self.assertEqual(appended_row["snapshot"], "12e45")
         self.assertEqual(appended_row["iter"], 3)
 
+    def test_a_ticket_with_a_leading_zero_stays_a_string(self):
+        row_fields = {"ticket": "0123", "iter": "3"}
+        done = self.run_script(LEDGER_WRITE, ["review_escape"], stdin=json.dumps(row_fields))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        appended_row = self.logged_rows("review-escapes.jsonl")[-1]
+        self.assertEqual(appended_row["ticket"], "0123")
+        self.assertEqual(appended_row["iter"], 3)
+
+    def test_file_commit_branch_and_desc_stay_strings_in_a_review_escape_row(self):
+        row_fields = {"file": "123", "commit": "1234e56", "branch": "2026", "desc": "404", "iter": "3"}
+        done = self.run_script(LEDGER_WRITE, ["review_escape"], stdin=json.dumps(row_fields))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        appended_row = self.logged_rows("review-escapes.jsonl")[-1]
+        self.assertEqual(appended_row["file"], "123")
+        self.assertEqual(appended_row["commit"], "1234e56")
+        self.assertEqual(appended_row["branch"], "2026")
+        self.assertEqual(appended_row["desc"], "404")
+        self.assertEqual(appended_row["iter"], 3)
+
+    def test_local_escape_text_row_types_line_and_keeps_text_fields_as_strings(self):
+        row_fields = {
+            "desc": "404",
+            "line": "12",
+            "file": "123",
+            "commit": "1234e56",
+            "ticket": "77",
+            "branch_key": "2026",
+        }
+        done = self.run_script(LEDGER_WRITE, ["--local", "escape_text"], with_ledger=True, stdin=json.dumps(row_fields))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        appended_row = self.logged_rows("escape-text.jsonl")[-1]
+        self.assertEqual(appended_row["line"], 12)
+        self.assertEqual(appended_row["desc"], "404")
+        self.assertEqual(appended_row["file"], "123")
+        self.assertEqual(appended_row["commit"], "1234e56")
+        self.assertEqual(appended_row["ticket"], "77")
+        self.assertEqual(appended_row["branch"], "2026")
+        self.assertEqual(appended_row["schema_version"], 2)
+
     def test_numbers_inside_object_values_are_typed_and_dirty_and_a_dash_stay_strings(self):
         row_text = json.dumps(
             {

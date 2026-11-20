@@ -16,6 +16,7 @@ import approval_asks_store
 import handback
 import handback_store
 import plan_format
+import review_fix_asks
 import review_loop_findings
 import review_loop_packet
 import review_loop_prompts
@@ -59,8 +60,12 @@ class ApprovalOnlyPathsTest(unittest.TestCase):
         self.assertEqual(review_loop_ruled.approval_only_paths(changed), ["AGENTS.md", "x/CLAUDE.local.md"])
 
 
-def approval_host(user_ruled=(), session_ruled=()):
+def approval_host(user_ruled=(), session_ruled=(), reverts=False):
+    """A loop host. Unless `reverts`, a coder's approval-only edit cannot be reverted, so it is filed as an ask:
+    the tests of the ask path and its resume read the ask that way."""
     host = Host()
+    if not reverts:
+        host.revert_approval_edit = lambda path: False
     host.asks, host.ask_gates = [], {}
     host.user_ruled, host.session_ruled = list(user_ruled), list(session_ruled)
     host.add_ask = lambda agent, item: review_loop_script.LoopRun.add_ask(host, agent, item)
@@ -161,11 +166,12 @@ class ApprovalAskResumeTest(unittest.TestCase):
         subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
                        capture_output=True)
 
-    def host(self, rejected=()):
-        host = approval_host()
+    def host(self, rejected=(), reverts=False):
+        host = approval_host(reverts=reverts)
         host.repo = self.repo
         host.rejected_asks = list(rejected)
         host.approval_blobs = dict(self.blobs_before_coder)
+        host.approval_snapshot_ok = True
         return host
 
     def edit_claude_md(self):
@@ -206,7 +212,34 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertEqual(second_loop.asks, [], "the ruled ask is not filed again")
         self.assertEqual(self.saved_paths(), [])
 
-    def test_a_resumed_run_holds_the_ask_when_the_coder_committed_the_edit_before_the_crash(self):
+    def hold_the_approval_ask(self):
+        """Keeps the ask for CLAUDE.md in a held packet of a session whose own repo is another one, so the fix state
+        is not saved under this repo; returns the held ask. Only the packet repo's approval store can tell the loop."""
+        held_ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
+                    "change": approval_asks_store.approval_change("CLAUDE.md")}
+        state = {"packet_id": "p1", "asks": []}
+        parent = {"packet_id": "p1", "relaunch_args": ["--repo", str(self.repo)]}
+        held_changes = review_fix_asks.held_approval_changes(parent, [held_ask])
+        review_fix_asks.keep_held_packet(state, parent, [held_ask])
+        approval_asks_store.write_held_changes(held_changes.repo, held_changes.changes)
+        return held_ask
+
+    def test_a_fix_run_loop_resume_files_no_ask_for_a_path_a_kept_packet_holds(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        held_ask = self.hold_the_approval_ask()
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [], "the kept packet owns the ask, so the loop files none")
+
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [held_ask])
+        self.assertEqual(self.saved_paths(), [], "the user's ruling on the kept packet drops the path")
+        self.assertEqual(approval_asks_store.read_held_changes(self.repo), set(),
+                         "the user's ruling on the kept packet clears the held record")
+
+    def test_a_resumed_run_files_no_ask_for_a_saved_path_that_matches_head(self):
         self.edit_claude_md()
         self.git("commit", "-q", "-am", "the coder's commit")
         self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
@@ -214,8 +247,44 @@ class ApprovalAskResumeTest(unittest.TestCase):
         resumed = self.host()
         resumed.resume_approval_asks([])
 
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_resumed_run_holds_the_ask_for_a_saved_path_that_differs_from_head(self):
+        self.edit_claude_md()
+        self.git("commit", "-q", "-am", "the coder's commit")
+        (pathlib.Path(self.repo) / "CLAUDE.md").write_text("rules\nnew rule\nand one more\n")
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
         self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
         self.assertEqual(self.saved_paths(), ["CLAUDE.md"])
+
+    def test_a_resumed_run_files_no_ask_for_a_reverted_edit(self):
+        self.edit_claude_md()
+        reverting = self.host(reverts=True)
+        reverting.ask_for_approval_only_edits(["CLAUDE.md"], [])
+        self.assertEqual(reverting.asks, [])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
+
+    def test_a_saved_path_whose_file_was_reverted_to_head_by_a_session_files_no_ask(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"])
+        self.git("checkout", "-q", "--", "CLAUDE.md")
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(resumed.asks, [])
+        self.assertEqual(self.saved_paths(), [])
 
     def test_a_revert_to_a_phase_edit_the_coder_built_on_clears_the_ask_after_the_commit(self):
         phase_text = "rules\nthe phase's own rule\n"
@@ -486,6 +555,196 @@ class RewordFlagTest(unittest.TestCase):
         message = review_loop_packet.packet_message({"status": "converged", "plan_impacts": host.plan_impacts})
 
         self.assertTrue(handback.load(message)["plan_impacts"][0]["reword"])
+
+class ApprovalEditRevertTest(unittest.TestCase):
+    """A fix coder's edit to an approval-only file is put back and reported, never filed as an ask."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name).resolve()
+        self.claude_md = self.repo / "CLAUDE.md"
+        self.claude_md.write_text("rules\n")
+        for argv in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "init"]):
+            subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
+                           capture_output=True)
+
+    def coder_pass(self, edit, changed):
+        """Runs `edit` between the snapshot and the ask step, as a coder pass does. Returns the host."""
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.files_touched = set()
+        host.snapshot_approval_blobs()
+        edit()
+        host.ask_for_approval_only_edits(changed, [])
+        return host
+
+    def git_run(self, *argv):
+        subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+
+    def staged_names(self):
+        done = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.repo, capture_output=True,
+                              text=True, check=True)
+        return done.stdout.split()
+
+    def test_an_edit_the_coder_staged_is_unstaged_with_the_work_tree_revert(self):
+        def stage_edit():
+            self.claude_md.write_text("rules\nnew rule\n")
+            self.git_run("add", "CLAUDE.md")
+
+        host = self.coder_pass(stage_edit, ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\n")
+        self.assertEqual(self.staged_names(), [])
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_an_edit_staged_before_the_pass_stays_staged_as_it_was(self):
+        self.claude_md.write_text("rules\nthe phase's rule\n")
+        self.git_run("add", "CLAUDE.md")
+
+        def stage_coder_edit():
+            self.claude_md.write_text("rules\nthe coder's rule\n")
+            self.git_run("add", "CLAUDE.md")
+
+        self.coder_pass(stage_coder_edit, ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\nthe phase's rule\n")
+        self.assertEqual(self.staged_names(), ["CLAUDE.md"])
+        shown = subprocess.run(["git", "show", ":CLAUDE.md"], cwd=self.repo, capture_output=True, text=True,
+                               check=True)
+        self.assertEqual(shown.stdout, "rules\nthe phase's rule\n")
+
+    def test_a_created_and_staged_agents_md_leaves_the_index_too(self):
+        agents_md = self.repo / "AGENTS.md"
+
+        def create_and_stage():
+            agents_md.write_text("new\n")
+            self.git_run("add", "AGENTS.md")
+
+        self.coder_pass(create_and_stage, ["AGENTS.md"])
+
+        self.assertFalse(agents_md.exists())
+        self.assertEqual(self.staged_names(), [])
+
+    def test_an_edit_the_coder_committed_is_reverted_and_named_for_the_session_to_commit(self):
+        def commit_edit():
+            self.claude_md.write_text("rules\ncommitted\n")
+            self.git_run("commit", "-q", "-am", "coder")
+
+        host = self.coder_pass(commit_edit, ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\n")
+        self.assertEqual(host.files_touched, {"CLAUDE.md"})
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual([(ask.path, reason) for ask, reason in host.dropped_asks],
+                         [("CLAUDE.md", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
+
+    def test_an_edit_to_claude_md_is_reverted_reported_and_files_no_ask(self):
+        host = self.coder_pass(lambda: self.claude_md.write_text("rules\nnew rule\n"), ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\n")
+        self.assertEqual(host.asks, [])
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual([(ask.path, reason) for ask, reason in host.dropped_asks],
+                         [("CLAUDE.md", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
+        self.assertFalse(approval_asks_store.approval_paths_file(str(self.repo)).exists())
+
+    def test_the_packet_names_the_reverted_file_in_its_dropped_asks(self):
+        host = self.coder_pass(lambda: self.claude_md.write_text("rules\nnew rule\n"), ["CLAUDE.md"])
+
+        outcome = {**review_loop_packet.EMPTY_OUTCOME, "dropped_asks": host.dropped_asks}
+        entries = review_loop_packet.ask_entries(outcome)
+
+        self.assertEqual([(entry["file_line"], entry["drop_reason"]) for entry in entries],
+                         [("CLAUDE.md:1", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
+
+    def test_a_created_agents_md_is_removed(self):
+        agents_md = self.repo / "AGENTS.md"
+        host = self.coder_pass(lambda: agents_md.write_text("new\n"), ["AGENTS.md"])
+
+        self.assertFalse(agents_md.exists())
+        self.assertEqual(host.asks, [])
+        self.assertEqual([ask.path for ask, _reason in host.dropped_asks], ["AGENTS.md"])
+
+    def test_a_phase_edit_made_before_the_pass_is_restored_not_lost(self):
+        self.claude_md.write_text("rules\nthe phase's rule\n")
+        self.coder_pass(lambda: self.claude_md.write_text("rules\nthe coder's rule\n"), ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\nthe phase's rule\n")
+
+    def test_a_pass_that_leaves_the_content_alone_reports_nothing(self):
+        host = self.coder_pass(lambda: self.claude_md.write_text("rules\n"), ["CLAUDE.md"])
+
+        self.assertEqual(host.dropped_asks, [])
+        self.assertEqual(host.asks, [])
+
+    def test_an_edit_to_a_nested_claude_local_md_is_restored_and_reported(self):
+        nested = self.repo / "sub dir" / "CLAUDE.local.md"
+        nested.parent.mkdir()
+        nested.write_text("mine\n")
+
+        host = self.coder_pass(lambda: nested.write_text("coder\n"), ["sub dir/CLAUDE.local.md"])
+
+        self.assertEqual(nested.read_text(), "mine\n")
+        self.assertEqual(host.asks, [])
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_an_edit_the_coder_committed_is_still_reverted(self):
+        def commit_edit():
+            self.claude_md.write_text("rules\ncommitted\n")
+            for argv in (["add", "."], ["commit", "-q", "-m", "coder"]):
+                subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
+                               capture_output=True)
+
+        host = self.coder_pass(commit_edit, ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\n")
+        self.assertEqual(host.asks, [])
+
+    def test_a_tracked_file_the_coder_deleted_is_restored(self):
+        host = self.coder_pass(self.claude_md.unlink, ["CLAUDE.md"])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\n")
+        self.assertEqual([ask.path for ask, _reason in host.dropped_asks], ["CLAUDE.md"])
+
+    def test_a_file_that_cannot_be_hashed_survives_and_is_filed_as_an_ask(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        with mock.patch.object(review_loop_ruled.script_utils, "work_tree_blob", return_value=None):
+            host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\nnew rule\n")
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+
+    def test_a_snapshot_that_could_not_list_files_deletes_nothing_and_files_an_ask(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        with mock.patch.object(review_loop_ruled.script_utils, "git_output", return_value=None):
+            host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        self.assertEqual(self.claude_md.read_text(), "rules\nnew rule\n")
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+
+    def test_an_edit_that_cannot_be_restored_is_filed_as_an_ask(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+
+        with mock.patch.object(review_loop_ruled.script_utils, "restore_blob", return_value=False):
+            host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+        self.assertEqual(host.dropped_asks, [])
 
 
 class ApprovalAskTextTest(unittest.TestCase):

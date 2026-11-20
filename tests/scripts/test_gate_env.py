@@ -176,5 +176,110 @@ class RepoGateEnvTest(unittest.TestCase):
         self.assertEqual(["B=9"], gate_env.repo_gate_env(self.root, "docs/plans/gone/spec.md"))
 
 
+class CheckEnvTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name)
+        self.main_checkout = self.root / "main"
+        self.linked = self.root / "linked"
+        subprocess.run(["git", "init", "-q", str(self.main_checkout)], check=True)
+        subprocess.run(["git", "-C", str(self.main_checkout), "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True)
+        subprocess.run(["git", "-C", str(self.main_checkout), "worktree", "add", "-q", str(self.linked)], check=True)
+        self.shims = self.root / "pyenv" / "shims"
+        self.shims.mkdir(parents=True)
+        self.base_env = {"PATH": "/usr/bin", "PYENV_ROOT": str(self.root / "pyenv")}
+
+    def test_a_worktree_with_the_pin_only_in_the_main_checkout_gets_its_version_and_the_shims_first(self):
+        (self.main_checkout / ".python-version").write_text("\n3.12.4\n3.11.9\n")
+
+        result = gate_env.check_env(self.linked, self.base_env)
+
+        self.assertEqual("3.12.4", result["PYENV_VERSION"])
+        self.assertEqual(f"{self.shims}{os.pathsep}/usr/bin", result["PATH"])
+
+    def test_a_pyenv_version_already_in_the_env_wins_over_the_main_checkout_pin(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        caller_env = dict(self.base_env, PYENV_VERSION="3.9.0")
+
+        result = gate_env.check_env(self.linked, caller_env)
+
+        self.assertEqual("3.9.0", result["PYENV_VERSION"])
+
+    def test_a_worktree_with_its_own_pin_gets_the_shims_and_no_version(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        (self.linked / ".python-version").write_text("3.10.1\n")
+
+        result = gate_env.check_env(self.linked, self.base_env)
+
+        self.assertNotIn("PYENV_VERSION", result)
+        self.assertTrue(result["PATH"].startswith(str(self.shims)), result["PATH"])
+
+    def test_a_subfolder_of_a_worktree_with_its_own_pin_gets_no_version(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        (self.linked / ".python-version").write_text("3.10.1\n")
+        subfolder = self.linked / "pkg"
+        subfolder.mkdir()
+
+        result = gate_env.check_env(subfolder, self.base_env)
+
+        self.assertNotIn("PYENV_VERSION", result)
+        self.assertTrue(result["PATH"].startswith(str(self.shims)), result["PATH"])
+
+    def test_a_subfolder_pin_alone_beats_the_main_checkout_pin(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        subfolder = self.linked / "pkg"
+        subfolder.mkdir()
+        (subfolder / ".python-version").write_text("3.10.1\n")
+
+        result = gate_env.check_env(subfolder, self.base_env)
+
+        self.assertNotIn("PYENV_VERSION", result)
+        self.assertTrue(result["PATH"].startswith(str(self.shims)), result["PATH"])
+
+    def test_an_empty_main_checkout_pin_sets_no_version_and_still_adds_the_shims(self):
+        (self.main_checkout / ".python-version").write_text("\n\n")
+
+        result = gate_env.check_env(self.linked, self.base_env)
+
+        self.assertNotIn("PYENV_VERSION", result)
+        self.assertEqual(f"{self.shims}{os.pathsep}/usr/bin", result["PATH"])
+
+    def test_no_pin_anywhere_leaves_the_env_as_it_is(self):
+        self.assertEqual(self.base_env, gate_env.check_env(self.linked, self.base_env))
+
+    def test_a_worktree_of_a_bare_repo_takes_no_pin_from_the_git_dir(self):
+        bare = self.root / "bare.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(self.main_checkout), str(bare)], check=True)
+        (bare / ".python-version").write_text("3.12.4\n")
+        bare_linked = self.root / "bare-linked"
+        subprocess.run(["git", "-C", str(bare), "worktree", "add", "-q", "--detach", str(bare_linked)], check=True)
+
+        self.assertIsNone(gate_env.main_checkout_pin(bare_linked))
+
+    def test_a_pin_with_no_shims_folder_sets_no_path_entry(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        self.shims.rmdir()
+
+        result = gate_env.check_env(self.linked, self.base_env)
+
+        self.assertEqual("/usr/bin", result["PATH"])
+
+    def test_a_folder_that_is_not_a_git_repo_with_no_pin_leaves_the_env_as_it_is(self):
+        plain = self.root / "plain"
+        plain.mkdir()
+
+        self.assertEqual(self.base_env, gate_env.check_env(plain, self.base_env))
+
+    def test_the_given_env_is_not_changed(self):
+        (self.main_checkout / ".python-version").write_text("3.12.4\n")
+        given = dict(self.base_env)
+
+        gate_env.check_env(self.linked, given)
+
+        self.assertEqual(self.base_env, given)
+
+
 if __name__ == "__main__":
     unittest.main()

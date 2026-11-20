@@ -5,13 +5,23 @@ words (env, timeout), and inside `$(...)` and backticks. Heredoc bodies, comment
 calls, except that a `$(...)` or backtick span is still read as a call inside quotes, single or double (the shell
 runs it only inside double quotes; the gate deliberately over-reads the single-quoted form). A call's
 directory is its `-C` directory, taken relative to the target of an earlier `cd` in the same command, else to the
-starting directory. A command with a `cd` after a `(` not preceded by `$` follows no `cd`, and a quoted, variable or
-substituted target is not read: those calls run from the directory the earlier calls resolved to, with the `-C`
-directory joined to it. SUBSHELL_CD matches such a `(` before a `cd`, quoted or not. A command that names a code runner
+starting directory. A command with a `cd` after a `(` not preceded by `$` (SUBSHELL_CD matches such a `(` before a
+`cd`, quoted or not) follows no `cd`, and a quoted, variable or
+substituted target is not read: the call is marked unplaced (`placed` False), as is one that follows a `cd` the gate
+does not follow (subshell, `pushd`, `popd`, `builtin cd`, `command cd`, `{ cd`, a `cd` that runs only on a
+condition or in a pipeline or background, a `cd` in code-runner text), one run through an `env -C`, `env --chdir`,
+`sudo -D` or `sudo --chdir` wrapper, one read from code-runner or launcher text, one with `-c core.worktree` or a
+`--config-env` option, and one with a GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, CDPATH, HOME, GIT_CONFIG_COUNT,
+GIT_CONFIG_PARAMETERS, GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM or GIT_CONFIG assignment anywhere in the command
+(calls inside `$(...)` included).
+`is_linked_worktree` reads an unplaced call as a main checkout and asks git (`rev-parse`) about a placed one.
+A command that names a code runner
 (`bash -c`, eval, xargs, ssh) is read as text: every `git` word in it starts a call.
 """
 import os
 import re
+import subprocess
+import sys
 from typing import NamedTuple
 
 import shell_command
@@ -20,10 +30,50 @@ import shell_statements
 # The text of one git call inside code the gate cannot parse: from the `git` word to a separator or a quote.
 GIT_CALL_TEXT = re.compile(r"\bgit\b[^\n;&|'\"`()]*", re.I)
 SUBSHELL_CD = re.compile(r"(?<!\$)\(.*\bcd\b", re.S)
+PUSHD_OR_POPD = re.compile(r"\b(?:" + "|".join(w for w in shell_command.DIRECTORY_MOVE_WORDS if w != "cd") + r")\b")
+CD_WORD = re.compile(r"\bcd\b")
+# Words in front of a statement's real command: a `cd` behind one of them is not followed.
+DIRECTORY_MOVE_PREFIXES = ("{", "builtin", "command", "while", "until", "!")
 LINE_CONTINUATION = re.compile(r"\\\n")
 CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
 # A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
 UNREAD_PATH_MARKS = ('"', "'", "$", "`", "*", "?")
+# An assignment that moves the repo (`GIT_DIR=x git ...`, `env GIT_WORK_TREE=x git ...`, `export GIT_DIR=x`).
+REPO_ENVIRONMENT_NAMES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
+# An assignment that moves where a `cd` lands (CDPATH, HOME) or sets git config the gate does not read (a
+# GIT_CONFIG_COUNT or GIT_CONFIG_PARAMETERS pair can set core.worktree; GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM and
+# GIT_CONFIG name a file the command can write first): the call is unplaced, like REPO_ENVIRONMENT_NAMES.
+CONFIG_ENVIRONMENT_NAMES = ("GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+                            "GIT_CONFIG")
+PLACEMENT_ENVIRONMENT_NAMES = (*REPO_ENVIRONMENT_NAMES, "CDPATH", "HOME", *CONFIG_ENVIRONMENT_NAMES)
+PLACEMENT_ENVIRONMENT = re.compile(r"\b(?:" + "|".join(PLACEMENT_ENVIRONMENT_NAMES) + ")=")
+CONFIG_ENVIRONMENT = re.compile(r"\b(?:" + "|".join(CONFIG_ENVIRONMENT_NAMES) + ")=")
+# Statement heads that open and close a compound command whose body runs only on a condition or in a loop.
+BLOCK_OPENERS = {"if", "case", "for", "select", "while", "until"}
+BLOCK_CLOSERS = {"fi", "esac", "done"}
+# A statement next to one of these runs in a subshell, so a `cd` there does not move the shell.
+SUBSHELL_OPERATORS = {"|", "|&", "&"}
+# The path component that stands for a `-C` or `cd` target the gate cannot read.
+UNREAD_DIRECTORY = "<unread>"
+REV_PARSE_TIMEOUT_SECONDS = 10
+# The config value of a key set by `--config-env key=VAR`: only the key is known, the value is read from the
+# environment at run time. It is in no false set, so every value reader counts the key as set.
+CONFIG_FROM_ENVIRONMENT = "<from-env>"
+
+
+class CommandContext(NamedTuple):
+    """What the command around a git call does. `environment_moves_placement` is True when it assigns a name in
+    PLACEMENT_ENVIRONMENT_NAMES. `environment_sets_config` is True when it assigns a name in
+    CONFIG_ENVIRONMENT_NAMES. `from_code_text` is True for words cut out of code-runner or launcher text, whose
+    directory and arguments the runner may rewrite: the call is unplaced. `unfollowed_move` is True when it moves
+    its directory in a way the gate does not follow (see `has_unfollowed_directory_move`): the call is unplaced."""
+    environment_moves_placement: bool = False
+    unfollowed_move: bool = False
+    environment_sets_config: bool = False
+    from_code_text: bool = False
+
+
+NO_CONTEXT = CommandContext()
 
 
 class GitCall(NamedTuple):
@@ -31,45 +81,272 @@ class GitCall(NamedTuple):
     arguments: list
     config: dict
     directory: str
+    # The `--git-dir` and `--work-tree` option values, joined to the directory; None when the call has none.
+    git_dir: str | None = None
+    work_tree: str | None = None
+    # False when the gate cannot tell which repo the call acts on: a `-C`, `cd`, `--git-dir` or `--work-tree` value it
+    # cannot read, a `cd` it does not follow, an `env -C` or `sudo -D` wrapper, text read from a code runner or
+    # launcher, a `cd -`, `-c core.worktree`, `--config-env`, or an assignment named in
+    # PLACEMENT_ENVIRONMENT_NAMES.
+    placed: bool = True
+    # True when the command assigns GIT_CONFIG_COUNT, GIT_CONFIG_PARAMETERS, GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM or
+    # GIT_CONFIG, which can set any config key.
+    environment_sets_config: bool = False
+
+
+def has_unread_mark(path):
+    return any(mark in path for mark in UNREAD_PATH_MARKS)
+
+
+def readable_directory(directory):
+    """The directory with everything from the first UNREAD_DIRECTORY component on dropped: the last folder the gate
+    could read, where a call with an unread target is judged for branch and commit rules."""
+    parts = directory.split(os.sep)
+    if UNREAD_DIRECTORY not in parts:
+        return directory
+    readable = os.sep.join(parts[:parts.index(UNREAD_DIRECTORY)])
+    if readable:
+        return readable
+    return os.sep if directory.startswith(os.sep) else "."
+
+
+def option_path(options, name, directory):
+    """The path the last `name` option of git's own options gives, in `--name value` or `--name=value` form, joined to
+    `directory`; None when there is none."""
+    values = list(shell_command.git_option_values(options, name))
+    if not values:
+        return None
+    return os.path.join(directory, os.path.expanduser(values[-1]))
 
 
 def joined_directory(directory, target):
-    """The directory `cd <target>` or `git -C <target>` moves to from `directory`; `directory` when the gate cannot
-    read the target or the target is an option (`cd -`, `cd -P <dir>`)."""
-    if not target or target.startswith("-") or any(mark in target for mark in UNREAD_PATH_MARKS):
+    """The directory `cd <target>` or `git -C <target>` moves to from `directory`; `directory` when the target is empty.
+    A target the gate cannot read, or that starts with `-`, adds the UNREAD_DIRECTORY component, which
+    every later join keeps, so `git_call` can tell that the repo is not placed."""
+    if not target:
         return directory
+    # `cd` options are stripped before this call, so a target that starts with `-` is a folder named so.
+    if target.startswith("-") or has_unread_mark(target):
+        return os.path.join(directory, UNREAD_DIRECTORY)
     expanded_target = os.path.expanduser(target)
     return os.path.join(directory, expanded_target)
 
 
-def git_call(words, directory="."):
+def readable_option_words(resolved_words, blanked_words):
+    """The resolved words, with each word that held a quote or an escape cut down to what the gate can read: a word
+    that is not an option name becomes `""` (unread), and a quoted `--name=value` keeps its name with the value `""`."""
+    words = []
+    for resolved, blanked in zip(resolved_words, blanked_words, strict=True):
+        if blanked == resolved:
+            words.append(resolved)
+            continue
+        name, equals, _value = resolved.partition("=")
+        if resolved.startswith("-") and equals:
+            words.append(name + '=""')
+        elif resolved.startswith("-"):
+            words.append(resolved)
+        else:
+            words.append('""')
+    return words
+
+
+def config_env_pairs(options):
+    """{lowercased key: lowercased variable name} for each `--config-env key=VAR` or `--config-env=key=VAR` option."""
+    pairs = {}
+    for setting in shell_command.git_option_values(options, "--config-env"):
+        key, _equals, variable = setting.partition("=")
+        pairs[key.lower()] = variable.lower()
+    return pairs
+
+
+def call_is_placed(context, wrapper_moves, directory_is_unread, option_paths, config, config_env_settings):
+    """True when the gate knows which folder the call runs in: nothing around it, in its wrapper words or in its
+    `--git-dir`/`--work-tree` values (`option_paths`) moves or hides the folder."""
+    option_values_are_unread = any(has_unread_mark(option_path or "") for option_path in option_paths)
+    moves_work_tree_by_config = "core.worktree" in config or bool(config_env_settings)
+    return not (context.environment_moves_placement or wrapper_moves or directory_is_unread
+                or option_values_are_unread or context.from_code_text or context.unfollowed_move
+                or moves_work_tree_by_config)
+
+
+def git_call(words, directory=".", context=NO_CONTEXT, resolved_words=None):
     """The GitCall the words run from `directory`, once wrapper words and git's own options are dropped; None when
-    they run no git subcommand."""
-    words = shell_command.command_after_wrappers(words)
-    if not words or os.path.basename(words[0]).lower() != "git":
+    they run no git subcommand. `context` is what the command around the words does (see `CommandContext`).
+    `resolved_words` are the same words with the quotes and escapes removed: the wrapper, the `git`
+    word, git's options, the subcommand and the arguments are read from them, so a quoted word counts; the
+    `-C`, `--git-dir` and `--work-tree` values are read only when unquoted, so a quoted target stays unread."""
+    if resolved_words is None:
+        resolved_words = words
+    wrapper_moves = shell_command.wrapper_moves_directory(resolved_words)
+    argument_words = shell_command.command_after_wrappers(resolved_words)
+    if not argument_words or os.path.basename(argument_words[0]).lower() != "git":
         return None
+    # The wrappers drop leading words only, so the tail of the blanked words lines up with the resolved ones.
+    words = words[len(words) - len(argument_words):]
 
     config = {}
-    options, index = shell_command.git_options(words)
+    options, index = shell_command.git_options(argument_words)
     for key, setting in shell_command.git_c_settings(options).items():
         config[key] = setting.lower()
-    for option, value in options:
+    config_env_settings = config_env_pairs(options)
+    for key in config_env_settings:
+        config[key] = CONFIG_FROM_ENVIRONMENT
+    # The option names are read from the resolved words, so a quoted or escaped `-C` counts; a quoted value stays
+    # unread.
+    option_words = readable_option_words(argument_words, words)
+    directory_options, _directory_index = shell_command.git_options(option_words)
+    for option, value in directory_options:
         if option == "-C" and value is not None:
             directory = joined_directory(directory, value)
-    if index == len(words):
+    if index == len(argument_words):
         return None
-    return GitCall(words[index].lower(), words[index + 1:], config, directory)
+    directory_is_unread = UNREAD_DIRECTORY in directory.split(os.sep)
+    directory = readable_directory(directory)
+    git_dir = option_path(directory_options, "--git-dir", directory)
+    work_tree = option_path(directory_options, "--work-tree", directory)
+    placed = call_is_placed(context, wrapper_moves, directory_is_unread, (git_dir, work_tree), config,
+                            config_env_settings)
+    # A redirection (`> main`, `2>&1`) is no argument of the subcommand; a quoted word is never one.
+    arguments = shell_command.without_redirection_words(argument_words[index + 1:], words[index + 1:])
+    return GitCall(argument_words[index].lower(), arguments, config, directory, git_dir, work_tree, placed,
+                   context.environment_sets_config)
 
 
-def git_calls(command, directory="."):
+def is_linked_git_folder(directory, git_dir=None):
+    """True when `git -C <directory> [--git-dir <git_dir>]` acts on a linked worktree's git folder: its own folder and
+    the common folder differ. Fails closed: a call git cannot answer (no repo, no git, a timeout) reads as a main
+    checkout, and a failure to run git is named on stderr."""
+    # Not script_utils.git_output: a failure to spawn git is named on stderr, and the gate reads it as a main checkout.
+    command = ["git", "-C", directory]
+    if git_dir:
+        command.append(f"--git-dir={git_dir}")
+    command += ["rev-parse", "--absolute-git-dir", "--git-common-dir"]
+    try:
+        finished = subprocess.run(command, capture_output=True, text=True, timeout=REV_PARSE_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError) as error:
+        sys.stderr.write(f"[git_calls] {' '.join(command)} failed ({error}); reading the call as a main checkout\n")
+        return False
+    lines = finished.stdout.splitlines()
+    if finished.returncode != 0 or len(lines) != 2:
+        return False
+    git_folder, common_folder = (os.path.realpath(os.path.join(directory, line)) for line in lines)
+    return git_folder != common_folder
+
+
+def is_linked_worktree(call):
+    """True when the repo the call acts on is a linked worktree. Git finds the repo from `--git-dir`, else from the
+    call's directory. `--work-tree` moves the checkout: when the call names one, its folder must itself be in a linked
+    worktree as well. With `--git-dir` and no `--work-tree`, git takes the call's directory as the work tree, so that
+    directory must be in a linked worktree too. Fails closed: a call the gate cannot place, and a repo it cannot
+    find, read as a main checkout."""
+    if not call.placed:
+        return False
+    if not is_linked_git_folder(call.directory, call.git_dir):
+        return False
+    if call.work_tree:
+        return is_linked_git_folder(call.work_tree)
+    if call.git_dir:
+        return is_linked_git_folder(call.directory)
+    return True
+
+
+def has_unfollowed_directory_move(code, follows_cds):
+    """True when the code may run a call in a folder the gate does not follow: a `cd` it skips (subshell, code
+    runner text), a `pushd` or `popd`, a `cd` that runs only on a condition (after `||`, after a left side that is not
+    a `cd`, or inside an `if`, `case`, `for`, `select`, `while` or `until` body), or a `cd` behind `builtin`,
+    `command`, `{`, `while` or `until`, or a `cd`, `pushd` or `popd` spelled with quotes or escapes (`"cd"`, `\\cd`,
+    `builtin "cd"`). Every call in such a command is unplaced."""
+    if not follows_cds or PUSHD_OR_POPD.search(code):
+        return True
+    if has_conditional_cd(code):
+        return True
+    if shell_command.names_code_runner(code) and CD_WORD.search(code):
+        return True
+    return has_hidden_directory_move(code)
+
+
+def has_hidden_directory_move(code):
+    """True when a statement runs `cd`, `pushd` or `popd` in a spelling the gate does not follow. The gate follows a
+    `cd` only as the plain first word of the blanked statement; the resolved words (quotes and escapes removed), with
+    the prefix words dropped, show the command the shell runs."""
+    for pair in shell_statements.statement_word_pairs(code):
+        head = pair.resolved
+        while head and head[0] in DIRECTORY_MOVE_PREFIXES:
+            head = head[1:]
+        if not head or head[0] not in shell_command.DIRECTORY_MOVE_WORDS:
+            continue
+        if pair.blanked[0] != "cd":
+            return True
+    return False
+
+
+def has_conditional_cd(code):
+    """True when a `cd` statement may not run: it follows `||`, follows `&&` after a statement that is not a `cd`, or
+    sits in an `if`, `case`, `for`, `select`, `while` or `until` body or condition, or sits next to `|`, `|&` or `&`."""
+    block_depth = 0
+    previous_is_cd = False
+    statements = shell_statements.statements_with_operators(code, kept_words=("if",))
+    for statement in statements:
+        previous_operator = statement.operator_before
+        words = statement.words
+        if words[0] in BLOCK_OPENERS:
+            block_depth += 1
+        if words[0] in BLOCK_CLOSERS:
+            block_depth = max(block_depth - 1, 0)
+        while words and words[0] in ("if", "!"):
+            words = words[1:]
+        is_cd = bool(words) and words[0] == "cd"
+        runs_in_subshell = previous_operator in SUBSHELL_OPERATORS or statement.operator_after in SUBSHELL_OPERATORS
+        runs_on_condition = block_depth > 0 or previous_operator == "||"
+        runs_after_other = previous_operator == "&&" and not previous_is_cd
+        if is_cd and (runs_in_subshell or runs_on_condition or runs_after_other):
+            return True
+        previous_is_cd = is_cd
+    return False
+
+
+def quoted_environment_sets(code, names):
+    """True when a word before a statement's `git` word, once its quotes are removed, assigns a name in `names`
+    (`env "GIT_CONFIG_COUNT=1" git ...`). A statement with no `git` word and the words after `git` do not count, so
+    `echo "HOME=x"` and a commit message that names the variable are no assignment."""
+    for pair in shell_statements.statement_word_pairs(code):
+        git_positions = [index for index, word in enumerate(pair.resolved) if os.path.basename(word) == "git"]
+        if not git_positions:
+            continue
+        for word in pair.resolved[:git_positions[0]]:
+            assignment = shell_statements.ASSIGNMENT.match(word)
+            if assignment and assignment.group()[:-1] in names:
+                return True
+    return False
+
+
+def command_context(code, follows_cds, context):
+    """`context` with what the code's own text adds: the placement-moving environment, the config-setting
+    environment and the unfollowed directory move."""
+    # Searched with quoted text blanked, so a message that names GIT_CONFIG_COUNT= is no assignment.
+    unquoted_code = shell_statements.clean(code)
+    environment_moves_placement = (context.environment_moves_placement
+                                   or PLACEMENT_ENVIRONMENT.search(unquoted_code) is not None
+                                   or quoted_environment_sets(code, PLACEMENT_ENVIRONMENT_NAMES))
+    environment_sets_config = (context.environment_sets_config
+                               or CONFIG_ENVIRONMENT.search(unquoted_code) is not None
+                               or quoted_environment_sets(code, CONFIG_ENVIRONMENT_NAMES))
+    unfollowed_move = context.unfollowed_move or has_unfollowed_directory_move(code, follows_cds)
+    return context._replace(environment_moves_placement=environment_moves_placement,
+                            unfollowed_move=unfollowed_move, environment_sets_config=environment_sets_config)
+
+
+def git_calls(command, directory=".", context=NO_CONTEXT):
     """Every GitCall the command makes in command position, those inside `$(...)` and backticks included. A call
     runs in the directory an earlier `cd` of the command moved to, else in `directory`. In code that names a code
-    runner, each `git` word starts a call, quoted or not."""
+    runner, each `git` word starts a call, quoted or not. `context` holds what the code around the command
+    already does; the command's own text adds to it."""
     without_heredocs = shell_statements.strip_heredocs(command)
     joined = LINE_CONTINUATION.sub(" ", without_heredocs)
     code = shell_statements.strip_comments(joined)
     # A `cd` after a `(` may run in a subshell, whose directory does not carry on, so none is followed.
     follows_cds = SUBSHELL_CD.search(code) is None
+    context = command_context(code, follows_cds, context)
 
     def directory_at(offset):
         if not follows_cds:
@@ -77,7 +354,8 @@ def git_calls(command, directory="."):
         return resolved_directory(code[:offset], directory)
 
     if shell_command.names_code_runner(code):
-        text_calls = [git_call(found.group().split(), directory_at(found.start()))
+        text_context = context._replace(from_code_text=True)
+        text_calls = [git_call(found.group().split(), directory_at(found.start()), text_context)
                       for found in GIT_CALL_TEXT.finditer(code)]
         return [call for call in text_calls if call]
 
@@ -88,17 +366,18 @@ def git_calls(command, directory="."):
 
     calls = []
     statement_directory = directory
-    for words in shell_statements.statements(outer_code):
+    for pair in shell_statements.statement_word_pairs(outer_code):
+        words = pair.blanked
         if words[0] == "cd":
             if follows_cds:
                 statement_directory = cd_directory(words, statement_directory)
             continue
-        call = git_call(words, statement_directory)
+        call = git_call(words, statement_directory, context, resolved_words=pair.resolved)
         if call:
             calls.append(call)
 
     for span_start, _span_end, span in spans:
-        calls += git_calls(span, directory_at(span_start))
+        calls += git_calls(span, directory_at(span_start), context)
     return calls
 
 
@@ -112,10 +391,12 @@ def resolved_directory(code, directory):
 
 def cd_directory(words, directory):
     """The directory the `cd` statement `words` moves to from `directory`: `cd -L|-P|-e|-@|-- <dir>` follows `<dir>`,
-    a bare `cd` goes home and `cd -` stays (OLDPWD is not known)."""
+    a bare `cd` goes home and `cd -` goes to OLDPWD, which is not known, so the call reads as unplaced."""
     arguments = words[1:]
     while arguments and arguments[0] in CD_OPTIONS:
         arguments = arguments[1:]
     if not arguments:
         return joined_directory(directory, os.path.expanduser("~"))
+    if arguments[0] == "-":
+        return os.path.join(directory, UNREAD_DIRECTORY)
     return joined_directory(directory, arguments[0])

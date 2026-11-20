@@ -1,20 +1,53 @@
 """Read a shell command as statements of words, ignoring heredoc bodies (except one fed to a shell interpreter, which
 is code, and the `$(...)` and backtick spans of an unquoted one, which the shell runs), quoted strings and comments."""
 import os
+import pathlib
 import re
+from typing import NamedTuple
 
 import shell_command
 
 SKIP_WORDS = {"do", "then", "else", "elif", "if", "!", "time"}
+# More programs that run their argument or stdin as code, or are git itself, so a path to one is no script run.
+OTHER_CODE_RUNNING_PROGRAMS = ("git", "find", "fish", "busybox", "csh", "tcsh", "mksh", "nu", "pwsh", "awk", "gawk",
+                               "sed", "expect", "runuser", "sg", "tmux", "nix-shell")
+# A path to one of these runs its argument or stdin as commands (or is git), so it is no script run.
+NOT_SCRIPT_PROGRAMS = (
+    shell_command.SHELL_INTERPRETERS
+    | set(shell_command.LAUNCHER_PROGRAMS)
+    | set(shell_command.ARGUMENT_RUNNER_PROGRAMS)
+    | set(shell_command.CONTAINER_PROGRAMS)
+    | set(OTHER_CODE_RUNNING_PROGRAMS)
+)
+# Scripts in the trusted toolkit folders that run `exec <interpreter> "$@"`: each is read as that interpreter.
+INTERPRETER_LAUNCHER_SCRIPTS = {"hook-python": "python3"}
+# A later word of these flags, alone or as `<flag>=<value>`, makes a run no script run: `review_fix.py launch --test`
+# and `review_loop_script.py --gate-command` run the value as a command, and a test runner runs files as code.
+COMMAND_VALUE_FLAGS = ("--test", "--gate-command")
 # The delimiter is the whole shell word after `<<`: unquoted characters, quoted strings and escapes.
 HEREDOC = re.compile(r"""(?<!<)<<(?!<)-?[ \t]*((?:[^\s|&;()<>'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)""")
 DELIMITER_PART = re.compile(r"""\\(.)|'([^']*)'|"((?:[^"\\]|\\.)*)"|([^'"\\]+)""")
 ARITHMETIC = re.compile(r"\$?\(\(.*?\)\)")
 QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+QUOTE_MARK = re.compile("\x01(\\d+)\x01")
 COMMENT_START = re.compile(r"(^|[\s;&|()])#")
 COMMENT = re.compile(r"(^|\s)#[^\n]*")
 COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
-SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||&|\(|\)")
+COMPOUND_OPENER = re.compile(r"[{(]|(?<![\w.-])(?:do|then|else)(?![\w.-])")
+# A `&` inside a redirection (`2>&1`, `&>file`) is no separator.
+SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||(?<![<>])&(?!>)|\(|\)")
+STATEMENT_SPLIT = re.compile("(" + SEPARATORS.pattern + ")")
+LINE_CONTINUING_OPERATORS = {"&&", "||", "|", "|&"}
+ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
+
+
+def substitution_pieces(body):
+    """The `$(...)` and backtick spans of a heredoc body's lines, each wrapped in parentheses as its own command."""
+    body_text = "\n".join(body)
+    pieces = []
+    for _start, _end, span in code_spans(body_text):
+        pieces += ["(", span, ")"]
+    return pieces
 
 
 def strip_heredocs(command):
@@ -35,25 +68,34 @@ def strip_heredocs(command):
             if shell_body:
                 added += ["(", *body, ")"]
             elif not quoted:
-                added += [piece for _start, _end, span in code_spans("\n".join(body)) for piece in ("(", span, ")")]
+                added += substitution_pieces(body)
         return added, sum(len(body) + 1 for body in bodies)
 
     return rewrite_heredoc_lines(command, keep_bodies)
 
 
 def strip_stored_heredocs(command):
-    """The command with the body and terminator line of each heredoc cut out where every heredoc its line opens is
-    quoted and only stores text: cat or tee writing a file, or an interpreter given a script file. Every other
-    heredoc stays as written."""
+    """The command with the body and terminator line of each heredoc cut out where the heredocs its line opens only
+    store text: cat or tee writing a file, or a script run (`runs_script_file`). The `$(...)` and backtick spans of an
+    unquoted body stay, wrapped in `(` and `)` lines, because the shell runs them. Every other heredoc stays as
+    written, and so does every heredoc of a command that pipes out of a compound group (see pipes_out_of_compound):
+    the group's output may feed a shell."""
+    if pipes_out_of_compound(command):
+        return command
+
     def cut_stored(line, lines, index, heredocs):
-        if not heredocs or not all(quoted for _delimiter, quoted in heredocs):
+        if not heredocs:
             return None
 
         bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
         if bodies is None or not stores_heredoc_text(line):
             return None
 
-        return [], sum(len(body) + 1 for body in bodies)
+        added = []
+        for (_delimiter, quoted), body in zip(heredocs, bodies, strict=True):
+            if not quoted:
+                added += substitution_pieces(body)
+        return added, sum(len(body) + 1 for body in bodies)
 
     return rewrite_heredoc_lines(command, cut_stored)
 
@@ -107,33 +149,174 @@ def stores_heredoc_text(line):
 
 
 def reads_heredoc_as_data(words, redirections):
-    # cat or tee that writes a file, or an interpreter given a script file: stdin is text it stores or reads.
+    # cat or tee that writes a file, or a script run (`runs_script_file`): stdin is text it stores or reads.
     words = shell_command.command_after_wrappers(words)
     if not words:
         return False
 
+    words = launcher_as_interpreter(words)
     program = os.path.basename(words[0])
     if program in {"cat", "tee"}:
         writes_file = any(shell_command.redirection_writes_file(operator, target) for operator, target in redirections)
         tee_file = program == "tee" and any(not word.startswith("-") for word in words[1:])
         return writes_file or tee_file
-    if not shell_command.INTERPRETER.fullmatch(program):
+    is_interpreter = shell_command.INTERPRETER.fullmatch(program)
+    if is_interpreter and shell_command.reads_code_from_stdin(words, redirections, False):
         return False
-    if shell_command.reads_code_from_stdin(words, redirections, False):
+    return runs_script_file(words)
+
+
+def names_command_value_flag(word):
+    """True when the word is a flag of COMMAND_VALUE_FLAGS, alone or with its value attached by `=`."""
+    flag = word.split("=", 1)[0]
+    return flag in COMMAND_VALUE_FLAGS
+
+
+def runs_script_file(words):
+    """True when the simple command runs a script file, so its arguments and stdin are data for that script: an
+    interpreter given a script file after value-taking options only, or a first word that is a path to a program in
+    the installed toolkit's scripts folder, the toolkit this module is loaded from, or a skill's scripts folder (see
+    trusted_script_path), when no later word names a program of NOT_SCRIPT_PROGRAMS or an interpreter (`mise exec --
+    bash` runs that shell), and no later word is a flag of COMMAND_VALUE_FLAGS (names_command_value_flag: the value
+    may run as a command). An interpreter
+    that reads its code from stdin is no script run: reads_heredoc_as_data checks that before it calls this. A trusted
+    program's argv and stdin are trusted as data, except a launcher of INTERPRETER_LAUNCHER_SCRIPTS, which is read as
+    the interpreter it runs (see launcher_as_interpreter). Any other wrapper in those folders that runs its argument
+    as code is not detected."""
+    words = shell_command.command_after_wrappers(words)
+    if not words:
         return False
-    return given_script_file_after_value_options(words)
+
+    words = launcher_as_interpreter(words)
+    passes_command_value = any(names_command_value_flag(word) for word in words[1:])
+    if passes_command_value:
+        return False
+
+    program = os.path.basename(words[0])
+    later_programs = [os.path.basename(word) for word in words[1:]]
+    names_code_runner = any(
+        later in NOT_SCRIPT_PROGRAMS or shell_command.INTERPRETER.fullmatch(later) for later in later_programs
+    )
+    if shell_command.INTERPRETER.fullmatch(program):
+        return given_script_file_after_value_options(words) and not names_code_runner
+    if "/" not in words[0]:
+        return False
+    return trusted_script_path(words[0]) and not names_code_runner
+
+
+def launcher_as_interpreter(words):
+    """The words with a trusted toolkit launcher of INTERPRETER_LAUNCHER_SCRIPTS replaced by the interpreter it runs,
+    so the interpreter rules apply: a script file after options is a script run, inline code or stdin is not. Any
+    other words are returned as they are."""
+    if not words or os.path.basename(words[0]) not in INTERPRETER_LAUNCHER_SCRIPTS:
+        return words
+    if not trusted_script_path(words[0]):
+        return words
+    return [INTERPRETER_LAUNCHER_SCRIPTS[os.path.basename(words[0])], *words[1:]]
+
+
+def trusted_script_path(word):
+    """True when the real path of the absolute path-form word (the home mark expanded, links and `..` resolved) lies
+    in the scripts folder of the installed toolkit or of the toolkit this module is loaded from, or in
+    `skills/<skill>/scripts/` beside either, all read by real path. A
+    word with `$` or a backtick, a relative word, and a path elsewhere (the work tree, a plugin, a downloaded tool, a
+    bin folder) are not trusted: they may run their arguments as code."""
+    if "$" in word or "`" in word:
+        return False
+    expanded = os.path.expanduser(word)
+    if not os.path.isabs(expanded):
+        return False
+
+    resolved = os.path.realpath(expanded)
+    for toolkit_dir in toolkit_dirs():
+        scripts_dir = os.path.realpath(os.path.join(toolkit_dir, "scripts")) + os.sep
+        if resolved.startswith(scripts_dir):
+            return True
+        skills_dir = os.path.realpath(os.path.join(toolkit_dir, "skills")) + os.sep
+        if in_skill_scripts(resolved, skills_dir):
+            return True
+    return False
+
+
+def toolkit_dirs():
+    """The toolkit folders whose scripts are trusted: the installed one under the home folder and the one this module
+    sits in. The second root keeps a script path trusted when stow links each skill on its own, so the real path of
+    a skill script no longer lies under the real path of the installed skills folder."""
+    toolkit_dir = os.path.join(os.path.expanduser("~"), ".claude")
+    own_dir = str(pathlib.Path(__file__).resolve().parents[2])
+    return [toolkit_dir, own_dir]
+
+
+def in_skill_scripts(resolved, skills_dir):
+    """True when the resolved path lies in `<skills_dir><skill>/scripts/` (skills_dir ends with a separator)."""
+    if not resolved.startswith(skills_dir):
+        return False
+
+    below_skills = resolved[len(skills_dir):].split(os.sep)
+    return len(below_skills) > 2 and below_skills[1] == "scripts"
+
+
+def blank_script_run_quotes(command):
+    """The command with each quoted string emptied to `""` in each step that is one script run (see runs_script_file):
+    its quoted arguments are data. Every other step stays as written, so does a step that a `|` follows (its output
+    may feed a shell), a step this reading cannot parse, and every step of a command that pipes out of a compound
+    group (see pipes_out_of_compound): the group's steps are not read one by one."""
+    if pipes_out_of_compound(command):
+        return command
+
+    steps = shell_command.split_command_steps(command)
+    pieces = []
+    for position, (operator, step) in enumerate(steps):
+        following_operator = steps[position + 1][0] if position + 1 < len(steps) else ""
+        # split_command_steps keeps `|&` inside its step, so that step is not one simple command and
+        # blank_if_script_run leaves it as written.
+        if following_operator == "|":
+            pieces.append(operator + step)
+            continue
+        pieces.append(operator + blank_if_script_run(step))
+    return "".join(pieces)
+
+
+def pipes_out_of_compound(command):
+    """True when the command has a `|` step operator and an unquoted compound opener (`{`, `(`, `do`, `then`,
+    `else`): a `{ ...; } | sh` group or a loop's output may feed a shell, and the steps inside it are not split
+    per group, so the caller reads the command as written. Quoted text and the body of a heredoc that
+    strip_heredocs cuts do not count: JSON text in a heredoc body holds `{`, and quoted prose holds `do`."""
+    unheredoced = strip_heredocs(command)
+    if not any(operator == "|" for operator, _step in shell_command.split_command_steps(unheredoced)):
+        return False
+
+    quoted = shell_command.quoted_positions(unheredoced)
+    return any(match.start() not in quoted for match in COMPOUND_OPENER.finditer(unheredoced))
+
+
+def blank_if_script_run(step):
+    try:
+        simple_commands = shell_command.split_simple_commands(step)
+    except ValueError:
+        return step
+
+    if len(simple_commands) != 1 or not runs_script_file(simple_commands[0]):
+        return step
+
+    return QUOTED.sub('""', step)
 
 
 def given_script_file_after_value_options(words):
     # True when the interpreter's options are all value-taking ones and a script file follows them. Any other option
-    # (-i, -d, -m, --interactive) may read stdin as code, so the body stays readable.
+    # (-i, -d, -m, --interactive) may read stdin as code, so the body stays readable. An inline-code option takes
+    # code as its value (`php -r 'system(...)' x`): the word after it is no script file, even when the family also
+    # lists the option as value-taking.
     family = shell_command.interpreter_family(words[0])
-    value_options = shell_command.INTERPRETER_FAMILIES[family]["value_options"]
+    rules = shell_command.INTERPRETER_FAMILIES[family]
+    value_options = rules["value_options"]
     index = 1
     while index < len(words):
         word = words[index]
         if not word.startswith("-"):
             return True
+        if shell_command.is_inline_code_option(word, rules):
+            return False
         if word not in value_options:
             return False
         index += 2
@@ -232,20 +415,121 @@ def strip_comments(command):
     return command
 
 
-def clean(command):
+def clean(command, quotes=None):
+    """The command with heredoc bodies, quoted strings and comments blanked. When `quotes` is a list, each quoted
+    string is replaced by a QUOTE_MARK word part holding its index in `quotes`, and the string is appended there."""
     without_heredocs = strip_heredocs(command)
-    without_quotes = QUOTED.sub('""', without_heredocs)
+    if quotes is None:
+        without_quotes = QUOTED.sub('""', without_heredocs)
+    else:
+        without_quotes = QUOTED.sub(lambda found: marked_quote(found.group(), quotes), without_heredocs)
     without_comments = COMMENT.sub(r"\1", without_quotes)
     return COMMAND_SUBSTITUTION.sub(lambda match: "$<" + match.group(1).replace(" ", "\x00") + ">", without_comments)
 
 
-def statements(command):
-    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
+def marked_quote(quoted, quotes):
+    # The quoted string's content (quotes removed, escapes in double quotes resolved) goes into quotes; the mark
+    # that stands for it has no space, separator or quote character.
+    inner = quoted[1:-1]
+    if quoted[0] == '"':
+        inner = re.sub(r'\\(["\\$`])', r"\1", inner)
+    quotes.append(inner)
+    return f"\x01{len(quotes) - 1}\x01"
+
+
+class Statement(NamedTuple):
+    operator_before: str
+    words: list
+    # The separator right after the statement; "" when the command ends there.
+    operator_after: str
+
+
+def statements_with_operators(command, kept_words=(), quotes=None):
+    """Each statement as a Statement. `operator_before` is the separator right before the statement ("" for the
+    first); `operator_after` is the one right after it. A newline after `&&`, `||`, `|` or `|&` leaves that operator
+    in place as the next statement's `operator_before`, since the statement still hangs on it. A `&` ends its command,
+    so a newline after it continues nothing. Leading do/then/else and env assignments are dropped from the words,
+    except the words in `kept_words`. A list in `quotes` is filled as clean() describes, and the words then hold
+    quote marks."""
     parsed = []
-    for part in SEPARATORS.split(clean(command)):
-        words = part.split()
-        while words and (words[0] in SKIP_WORDS or re.match(r"^[A-Za-z_]\w*=", words[0])):
+    operator = ""
+    after_is_open = False
+    for index, piece in enumerate(STATEMENT_SPLIT.split(clean(command, quotes))):
+        if index % 2 == 1:
+            if after_is_open:
+                parsed[-1] = parsed[-1]._replace(operator_after=piece)
+                after_is_open = False
+            if piece != "\n" or operator not in LINE_CONTINUING_OPERATORS:
+                operator = piece
+            continue
+        words = piece.split()
+        while words and words[0] not in kept_words and (words[0] in SKIP_WORDS or ASSIGNMENT.match(words[0])):
             words = words[1:]
         if words:
-            parsed.append(words)
+            parsed.append(Statement(operator, words, ""))
+            operator = ""
+            after_is_open = True
     return parsed
+
+
+def statements(command):
+    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
+    return [statement.words for statement in statements_with_operators(command)]
+
+
+class WordPair(NamedTuple):
+    # The statement's words with each quoted string blanked to `""`, and the same words with the quotes removed.
+    blanked: list
+    resolved: list
+
+
+def statement_word_pairs(command):
+    # Each statement of the command as a WordPair; the two lists have the same length.
+    quotes = []
+    pairs = []
+    for statement in statements_with_operators(command, quotes=quotes):
+        blanked = [QUOTE_MARK.sub('""', word) for word in statement.words]
+        resolved = [resolved_word(word, quotes) for word in statement.words]
+        pairs.append(WordPair(blanked, resolved))
+    return pairs
+
+
+ANSI_C_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|.)", re.DOTALL)
+MAX_CODE_POINT = 0x10FFFF
+ANSI_C_SINGLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
+                 "v": "\v"}
+
+
+def decode_ansi_c_escape(found):
+    body = found.group(1)
+    if body[0] in "xuU" and len(body) > 1:
+        code_point = int(body[1:], 16)
+        if code_point > MAX_CODE_POINT:
+            return found.group(0)
+        return chr(code_point)
+    if body[0] in "01234567":
+        return chr(int(body, 8) & 0xFF)
+    return ANSI_C_SINGLE.get(body, body)
+
+
+def decode_ansi_c(content):
+    # The text of a `$'...'` string as bash reads it: \xHH, \NNN, \uHHHH, \n and the like become their characters.
+    return ANSI_C_ESCAPE.sub(decode_ansi_c_escape, content)
+
+
+def resolved_word(word, quotes):
+    """The word as the shell reads it: each quoted string put back without its quotes, a `$` before a quote
+    (`$'--hard'`) dropped with its escapes decoded, and each backslash outside quotes removed from the character
+    it escapes."""
+    parts = []
+    position = 0
+    for mark in QUOTE_MARK.finditer(word):
+        before = re.sub(r"\\(.)", r"\1", word[position:mark.start()])
+        position = mark.end()
+        content = quotes[int(mark.group(1))]
+        if before.endswith("$"):
+            content = decode_ansi_c(content)
+        parts.append(before.removesuffix("$"))
+        parts.append(content)
+    parts.append(re.sub(r"\\(.)", r"\1", word[position:]))
+    return "".join(parts)

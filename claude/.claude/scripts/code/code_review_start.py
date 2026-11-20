@@ -19,8 +19,7 @@ gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
 looks, so the session can end its turn while the loop runs. The loop runs with `--reviewers main`: the fork dispatches
 each round's reviewers as its own subagents, and <git dir>/code-phase/loop-dir names the folder that holds the
-requests. Prints the hand-back packet when the loop ends, then the defer ACTION when the packet holds a plan impact
-that waits for a ruling.
+requests. Prints the hand-back packet when the loop ends.
 A live run stops when the handoff file holds the same text an earlier phase's review read: the fork wrote this phase's
 handoff somewhere else. A missing handoff file stops the run with its path: phase_start.py moved the last phase's
 handoff aside, so write this phase's there first.
@@ -43,18 +42,15 @@ import coder_gate
 import expected_red
 import gate_commands
 import gate_env
-import handback
 import handback_hook
 import handoff_files
 import merge_free_base
 import phase_start
 import plan_format
-import review_fix
 import reviewer_dispatch
 import script_utils
 import session_registry
 from code_wait import HANDOFF_FILE, LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
-from review_fix_state import REVIEW_FIX_COMMAND
 from review_loop_prompt_file import (
     BASE_KEY,
     HELD_BY_KEY,
@@ -68,7 +64,6 @@ from review_loop_prompt_file import (
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
 WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
-DEFER_COMMAND = f"{REVIEW_FIX_COMMAND} defer"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_PHASES_FILE = "handoff-phases.json"
@@ -261,12 +256,15 @@ def phase_gate_commands(repo, plan, phase, base, handoff=""):
     # The plan phase names the files and Automated Verification commands; a plan with no entry for the phase gives
     # the whole plan. The stale-prose pass runs only for a phase the plan has an entry for.
     # With no plan, the files come from the handoff block.
+    # The checks run with the gate assignments, so the runner is picked from that same environment.
+    assignments = gate_env.repo_gate_env(repo, None if plan == NO_PLAN else plan)
+    check_environment = {**os.environ, **script_utils.environment_from_assignments(assignments)}
     if plan == NO_PLAN:
         handoff_files = HANDOFF_FILE_PATH.findall(handoff)
         handoff_text = "\n".join(f"`{path}`" for path in handoff_files)
-        return gate_commands.derive_gate_commands(repo, handoff_text)
+        return gate_commands.derive_gate_commands(repo, handoff_text, check_environment)
 
-    commands, has_section = gate_commands.plan_gate_commands(repo, plan, phase)
+    commands, has_section = gate_commands.plan_gate_commands(repo, plan, phase, check_environment)
     if not has_section:
         return commands
 
@@ -418,25 +416,7 @@ def main(argv):
 
     packet_text = packet_file.read_text()
     print(packet_text)
-    print("\n".join(held_impact_lines(packet_text, handoff_file)))
     return 0
-
-
-def held_impact_lines(packet_text, handoff_file):
-    """The ACTION lines for the packet's held plan impacts: the commit gate counts the review as dirty until the
-    session defers them, whatever the packet's status says. [] when none is held."""
-    try:
-        packet = handback.load(packet_text)
-    except handback.PacketError as error:
-        return [f"code_review_start: the packet does not parse, so its held plan impacts are unknown: {error}"]
-
-    held = handback.held_plan_impacts(packet)
-    if not held:
-        return []
-    return [f"ACTION: defer-plan-impacts. {len(held)} plan impact(s) wait for a ruling, so the commit gate counts this "
-            f"review as dirty. Before any commit, set `plan_impact` in {handoff_file} to the one line "
-            f"`{review_fix.DEFER_LINE.removeprefix('plan_impact: ')}` and run "
-            f"`{DEFER_COMMAND} {handoff_file}`."]
 
 
 if __name__ == "__main__":

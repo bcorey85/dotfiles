@@ -319,28 +319,6 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertIn("status: converged", printed)
         self.assertEqual(loop_folder, prompt_folder, "the loop writes its packet where the run looks for it")
 
-    def test_a_converged_packet_with_a_held_plan_impact_prints_the_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: AC2 now names the archived orders too", "gate": "code-reviewer",
-                    "ac_change": True, "cause": "plan", "adopted": False}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        handoff = self.repo / "handoff.txt"
-        self.assertIn("ACTION: defer-plan-impacts. 1 plan impact(s) wait for a ruling", printed)
-        self.assertIn(f"review_fix.py defer {handoff}", printed)
-
-    def test_a_converged_packet_with_only_an_adopted_plan_impact_prints_no_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: the helper lives in lib", "gate": "code-reviewer", "ac_change": False,
-                    "cause": "plan", "adopted": True}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        self.assertNotIn("defer-plan-impacts", printed)
-
     def test_the_live_run_names_the_log_when_the_loop_wrote_no_packet(self):
         printed, folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)
 

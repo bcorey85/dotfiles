@@ -209,12 +209,14 @@ def scan_interpreter_arguments(program, family, family_name, arguments):
     value_options = set(family["value_options"])
     if program == "deno":
         value_options.update(DENO_VALUE_FLAGS)
-    inline_code = re.compile(r"-[a-zA-Z]*[" + family["inline_code_letters"] + "]")
     index = 0
     while index < len(arguments):
         word = arguments[index]
         index += 1
-        if inline_code.fullmatch(word) or word in family["inline_code_flags"]:
+        if shell_command.is_inline_code_option(word, family):
+            attached = shell_command.attached_inline_code(word, family)
+            if attached:
+                return ArgumentScan(InterpreterCode(attached, arguments[index:], family_name), None, None)
             return ArgumentScan(inline_code_after(arguments, index, family_name), None, None)
         if word in family["no_stdin_code_flags"]:
             return ArgumentScan(None, None, None)

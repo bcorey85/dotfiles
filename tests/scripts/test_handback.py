@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import unittest.mock
 
@@ -106,6 +107,46 @@ class HandbackTestBase(unittest.TestCase):
         capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
                              full_check="passed", full_check_tree=tree)
         return repo, capped
+
+
+class SessionUnruledImpactsTest(HandbackTestBase):
+    HELD = types.MappingProxyType({
+        "text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer", "ac_change": True,
+        "cause": "plan", "adopted": False})
+
+    def plant_held_hand_back(self):
+        message = json_packet(ask=[], class_closure="n/a - fixed[] empty", plan_impacts=[dict(self.HELD)])
+        handback_store.record(SESSION, "dispatch", repo=str(self.tmp))
+        handback_store.record(SESSION, "handback", status="converged", message=message)
+
+    def test_a_held_impact_is_listed_until_a_plan_ruling_follows_the_hand_back(self):
+        self.plant_held_hand_back()
+
+        held = handback.session_unruled_plan_impacts(SESSION, str(self.tmp))
+        self.assertEqual([impact["text"] for impact in held], [self.HELD["text"]])
+
+        handback_store.record(SESSION, handback_store.PLAN_RULING, decision="keep")
+
+        self.assertEqual(handback.session_unruled_plan_impacts(SESSION, str(self.tmp)), [])
+
+    def test_no_session_id_or_no_repo_lists_nothing(self):
+        self.plant_held_hand_back()
+
+        self.assertEqual(handback.session_unruled_plan_impacts("", str(self.tmp)), [])
+        self.assertEqual(handback.session_unruled_plan_impacts(SESSION, ""), [])
+
+    def test_impacts_and_packet_come_from_one_hand_back_and_a_ruling_clears_only_the_impacts(self):
+        self.plant_held_hand_back()
+
+        held, packet = handback.unruled_impacts_and_packet(handback.latest_for_repo(SESSION, str(self.tmp)))
+        self.assertEqual([impact["text"] for impact in held], [self.HELD["text"]])
+        self.assertIsNotNone(packet)
+
+        handback_store.record(SESSION, handback_store.PLAN_RULING, decision="keep")
+
+        held, packet = handback.unruled_impacts_and_packet(handback.latest_for_repo(SESSION, str(self.tmp)))
+        self.assertEqual(held, [])
+        self.assertIsNotNone(packet)
 
 
 class RuledImpactStoreTest(HandbackTestBase):

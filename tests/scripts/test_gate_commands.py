@@ -1,15 +1,20 @@
 """Tests for gate_commands.py: the commands derived from the files and Automated Verification items of a phase."""
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
+import check_discovery
+import check_scope
 import test_run_output
 
 module_spec = importlib.util.spec_from_file_location("gate_commands", toolkit_paths.CODE_DIR / "gate_commands.py")
@@ -22,6 +27,8 @@ coder_gate_spec.loader.exec_module(coder_gate)
 RUFF_CONFIG = "[tool.ruff]\n"
 BACKEND_FILES = "**File**: `backend/app/models.py`\n**File**: `backend/app/tests/test_models.py`\n"
 CLIPPY = "cargo clippy --all-targets -- -D warnings"
+CRATE_MANIFEST = "--manifest-path crate/Cargo.toml"
+CRATE_CLIPPY = f"cargo clippy --all-targets {CRATE_MANIFEST} -- -D warnings"
 
 
 def django_phase(verification=""):
@@ -82,7 +89,8 @@ class PythonCommandsTest(GateCommandsTestCase):
             ("a manage.py in the subfolder above the phase files runs manage.py test from there",
              {"backend/manage.py": ""},
              BACKEND_FILES,
-             ["cd backend && npm run typecheck", "python3 backend/manage.py test app.tests.test_models --noinput"]),
+             ["npm --prefix backend run typecheck",
+              "python3 backend/manage.py test app.tests.test_models --noinput"]),
             ("a listed system python runner keeps ruff as its own program",
              {"pyproject.toml": RUFF_CONFIG},
              "**File**: `tests/test_models.py`\n\n#### Automated Verification:\n\n"
@@ -113,11 +121,13 @@ class PythonCommandsTest(GateCommandsTestCase):
                 self.assertEqual(["python3 -m pytest app/tests/test_models.py"], commands)
 
     def test_a_listed_test_command_the_gate_would_refuse_is_not_taken(self):
-        repo = self.new_repo({"pkg/package.json": '{"devDependencies": {"vitest": "1"}}', "pkg/src/.keep": ""})
+        repo = self.new_repo({"pnpm-lock.yaml": "", "pkg/package.json": '{"devDependencies": {"vitest": "1"}}',
+                              "pkg/src/.keep": ""})
         phase = ("**File**: `pkg/src/a.test.ts`\n\n#### Automated Verification:\n\n"
                  "- [ ] **Tests**: all pass - `npm test`\n")
 
-        self.assertEqual(["cd pkg && npx vitest run src/a.test.ts"], gate_commands.derive_gate_commands(repo, phase))
+        self.assertEqual(["pnpm -C pkg exec vitest run src/a.test.ts"],
+                         gate_commands.derive_gate_commands(repo, phase))
 
     def test_a_listed_make_target_replaces_the_derived_vitest_command(self):
         repo = self.new_repo({"pkg/package.json": '{"devDependencies": {"vitest": "1"}}', "pkg/src/.keep": ""})
@@ -142,7 +152,7 @@ class CargoCommandsTest(GateCommandsTestCase):
         }
         for path, expected in cases.items():
             with self.subTest(path=path):
-                wanted = [f"cd crate && {CLIPPY}"] + ([f"cd crate && {expected}"] if expected else [])
+                wanted = [CRATE_CLIPPY] + ([f"{expected} {CRATE_MANIFEST}"] if expected else [])
 
                 self.assertEqual(wanted, gate_commands.cargo_commands(repo, [path], derives_tests=True))
 
@@ -164,12 +174,13 @@ class CargoCommandsTest(GateCommandsTestCase):
     def test_listed_cargo_commands_behind_wrappers_and_after_a_cd_are_taken(self):
         nextest = "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(orders_total)'"
         check = "taskset -c 0-5 nice -n 19 env CARGO_BUILD_JOBS=4 cargo check --all-targets"
+        # A `cd` the phase's author wrote: the gate itself derives no `cd`.
         after_cd = "cd crate && cargo test --test orders"
         cases = [
             ("wrappers", f"- [ ] Orders total passes: `{nextest}`\n- [ ] Crate builds: `{check}`",
-             ["cd crate && cargo clippy --tests -- -D warnings", nextest, check]),
+             [f"cargo clippy --tests {CRATE_MANIFEST} -- -D warnings", nextest, check]),
             ("cd", f"- [ ] Orders test passes: `{after_cd}`",
-             ["cd crate && cargo clippy --tests -- -D warnings", after_cd]),
+             [f"cargo clippy --tests {CRATE_MANIFEST} -- -D warnings", after_cd]),
         ]
         for label, verification_line, expected in cases:
             with self.subTest(label):
@@ -186,8 +197,8 @@ class CargoCommandsTest(GateCommandsTestCase):
             with self.subTest(label):
                 commands = self.helper_phase_commands(f"- [ ] No stray text: `{command}`")
 
-                self.assertIn("cd crate && cargo test --tests", commands)
-                self.assertIn("cd crate && cargo clippy --all-targets -- -D warnings", commands)
+                self.assertIn(f"cargo test --tests {CRATE_MANIFEST}", commands)
+                self.assertIn(CRATE_CLIPPY, commands)
 
     def test_cargo_commands_are_merged_per_crate_without_duplicates_and_never_run_a_whole_crate(self):
         repo_files = {}
@@ -199,8 +210,9 @@ class CargoCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.cargo_commands(repo, paths, derives_tests=True)
 
-        self.assertEqual([f"cd one && {CLIPPY}", "cd one && cargo test --lib --bins",
-                          f"cd two && {CLIPPY}", "cd two && cargo test --lib --bins"], commands)
+        clippy = "cargo clippy --all-targets --manifest-path {}/Cargo.toml -- -D warnings"
+        self.assertEqual([clippy.format("one"), "cargo test --lib --bins --manifest-path one/Cargo.toml",
+                          clippy.format("two"), "cargo test --lib --bins --manifest-path two/Cargo.toml"], commands)
 
     def test_a_shared_test_helper_change_runs_only_clippy_and_the_all_targets_test(self):
         repo = self.new_repo({"crate/Cargo.toml": '[package]\nname = "crate"\n', "crate/src/lib.rs": "",
@@ -210,7 +222,7 @@ class CargoCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.cargo_commands(repo, paths, derives_tests=True)
 
-        self.assertEqual([f"cd crate && {CLIPPY}", "cd crate && cargo test --tests"], commands)
+        self.assertEqual([CRATE_CLIPPY, f"cargo test --tests {CRATE_MANIFEST}"], commands)
 
     def test_a_crate_with_no_library_runs_every_file_under_src_with_bins_once(self):
         repo = self.new_repo({"tool/src/store/.keep": "", "tool/src/main.rs": "",
@@ -219,7 +231,8 @@ class CargoCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.cargo_commands(repo, paths, derives_tests=True)
 
-        self.assertEqual([f"cd tool && {CLIPPY}", "cd tool && cargo test --bins"], commands)
+        self.assertEqual(["cargo clippy --all-targets --manifest-path tool/Cargo.toml -- -D warnings",
+                          "cargo test --bins --manifest-path tool/Cargo.toml"], commands)
 
     def test_a_manifest_alone_or_a_file_outside_src_and_tests_gives_clippy_and_no_test(self):
         repo = self.new_repo({"Cargo.toml": '[package]\nname = "root-crate"\n', "src/.keep": ""})
@@ -234,11 +247,12 @@ class CargoCommandsTest(GateCommandsTestCase):
         cases = [
             ("a changed example and an example folder",
              ["crate/examples/demo.rs", "crate/examples/wide/main.rs"],
-             "cd crate && cargo clippy --example demo --example wide -- -D warnings"),
+             f"cargo clippy --example demo --example wide {CRATE_MANIFEST} -- -D warnings"),
             ("a helper folder of examples and benches",
              ["crate/examples/common/helpers.rs", "crate/benches/common/helpers.rs"],
-             "cd crate && cargo clippy --examples --benches -- -D warnings"),
-            ("a build script", ["crate/build.rs"], "cd crate && cargo clippy --lib --bins --tests -- -D warnings"),
+             f"cargo clippy --examples --benches {CRATE_MANIFEST} -- -D warnings"),
+            ("a build script", ["crate/build.rs"],
+             f"cargo clippy --lib --bins --tests {CRATE_MANIFEST} -- -D warnings"),
         ]
         for name, paths, expected in cases:
             with self.subTest(name):
@@ -252,9 +266,9 @@ class CargoCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.scoped_clippy_commands(repo, paths)
 
-        self.assertEqual(["cd crate && cargo clippy --test orders --lib --bins --tests --test side_streams --bin tool"
-                          " -- -D warnings",
-                          "cd tool && cargo clippy --bins --tests -- -D warnings"], commands)
+        self.assertEqual(["cargo clippy --test orders --lib --bins --tests --test side_streams --bin tool"
+                          f" {CRATE_MANIFEST} -- -D warnings",
+                          "cargo clippy --bins --tests --manifest-path tool/Cargo.toml -- -D warnings"], commands)
 
     def test_a_phase_that_lists_its_own_clippy_gets_no_derived_clippy(self):
         repo = self.new_repo({"crate/Cargo.toml": '[package]\nname = "crate"\n', "crate/src/lib.rs": ""})
@@ -273,12 +287,13 @@ class CargoCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.derive_gate_commands(repo, phase)
 
-        self.assertIn("cd crate && cargo clippy --test orders -- -D warnings", commands)
+        self.assertIn(f"cargo clippy --test orders {CRATE_MANIFEST} -- -D warnings", commands)
 
 
 class ScriptPackageCommandsTest(GateCommandsTestCase):
     def test_a_tsconfig_with_no_typecheck_script_runs_tsc_and_a_lint_script_runs_eslint(self):
         repo = self.new_repo({
+            "pnpm-lock.yaml": "",
             "pkg/package.json": json.dumps({"scripts": {"lint": "eslint ."}, "devDependencies": {"vitest": "1"}}),
             "pkg/tsconfig.json": "{}",
         })
@@ -286,7 +301,116 @@ class ScriptPackageCommandsTest(GateCommandsTestCase):
 
         commands = gate_commands.derive_gate_commands(repo, phase)
 
-        self.assertEqual(["cd pkg && npx tsc --noEmit", "cd pkg && npx eslint {files:.ts}"], commands[:2])
+        self.assertEqual(["pnpm -C pkg exec tsc --noEmit", "pnpm -C pkg exec eslint {files:.ts}"],
+                         commands[:2])
+
+
+class PackageBinaryCommandTest(GateCommandsTestCase):
+    def test_an_npm_package_in_a_subfolder_has_no_binary_command_but_pnpm_and_yarn_do(self):
+        # `npm --prefix <dir> exec` runs the binary in the caller's folder, not <dir>.
+        self.assertIsNone(gate_commands.package_binary_command("npm", "pkg", "tsc --noEmit"))
+        self.assertEqual("pnpm -C pkg exec tsc --noEmit",
+                         gate_commands.package_binary_command("pnpm", "pkg", "tsc --noEmit"))
+        self.assertEqual("yarn --cwd pkg run tsc --noEmit",
+                         gate_commands.package_binary_command("yarn", "pkg", "tsc --noEmit"))
+        self.assertEqual("npm exec -- tsc --noEmit", gate_commands.package_binary_command("npm", "", "tsc --noEmit"))
+
+    def test_an_npm_subfolder_package_runs_only_through_its_scripts(self):
+        package_json = json.dumps({"scripts": {"lint": "eslint .", "test": "vitest"},
+                                   "devDependencies": {"vitest": "1"}})
+        repo = self.new_repo({"pkg/package.json": package_json, "pkg/tsconfig.json": "{}", "pkg/src/a.ts": ""})
+
+        commands = gate_commands.derive_gate_commands(repo, "**File**: `pkg/src/a.ts`\n")
+
+        self.assertEqual([], [command for command in commands if " exec " in command])
+
+
+class RootBinaryCommandsTest(GateCommandsTestCase):
+    def test_a_root_package_runs_its_binaries_through_a_launcher_the_scope_reader_knows(self):
+        package_json = json.dumps({"devDependencies": {"eslint": "9"}})
+        cases = {
+            "npm": ({}, ["npm exec -- tsc --noEmit", "npm exec -- eslint {files:.ts}"]),
+            "pnpm": ({"pnpm-lock.yaml": ""}, ["pnpm exec tsc --noEmit", "pnpm exec eslint {files:.ts}"]),
+            "yarn": ({"yarn.lock": ""}, ["yarn run tsc --noEmit", "yarn run eslint {files:.ts}"]),
+        }
+        for manager, (lock_files, wanted) in cases.items():
+            with self.subTest(manager=manager):
+                repo = self.new_repo({**lock_files, "package.json": package_json, "tsconfig.json": "{}",
+                                      "src/a.ts": ""})
+
+                commands = gate_commands.derive_gate_commands(repo, "**File**: `src/a.ts`\n")
+
+                self.assertEqual(wanted, commands)
+                for command in commands:
+                    self.assertTrue(check_scope.is_check(command), command)
+
+
+class FolderFlagCommandsTest(GateCommandsTestCase):
+    def test_a_pnpm_package_gets_its_folder_through_pnpm_dash_c(self):
+        repo = self.new_repo({
+            "pnpm-lock.yaml": "",
+            "pkg/package.json": json.dumps({"scripts": {"typecheck": "tsc"}, "devDependencies": {"eslint": "9"}}),
+            "pkg/src/a.ts": "",
+        })
+
+        commands = gate_commands.derive_gate_commands(repo, "**File**: `pkg/src/a.ts`\n")
+
+        self.assertEqual(["pnpm -C pkg run typecheck", "pnpm -C pkg exec eslint {files:.ts}"], commands)
+
+    def test_an_npm_or_yarn_package_gets_its_own_folder_flag(self):
+        package_json = json.dumps({"scripts": {"typecheck": "tsc"}, "devDependencies": {"eslint": "9"}})
+        cases = {
+            "npm": ({}, ["npm --prefix pkg run typecheck"]),
+            "yarn": ({"yarn.lock": ""}, ["yarn --cwd pkg run typecheck", "yarn --cwd pkg run eslint {files:.ts}"]),
+        }
+        for manager, (lock_files, wanted) in cases.items():
+            with self.subTest(manager=manager):
+                repo = self.new_repo({**lock_files, "pkg/package.json": package_json, "pkg/src/a.ts": ""})
+
+                commands = gate_commands.derive_gate_commands(repo, "**File**: `pkg/src/a.ts`\n")
+
+                self.assertEqual(wanted, commands)
+
+    def test_no_derived_command_changes_directory_or_chains(self):
+        repo = self.new_repo({
+            "pkg/package.json": json.dumps({"scripts": {"typecheck": "tsc"}, "devDependencies": {"vitest": "1"}}),
+            "pkg/tsconfig.json": "{}", "pkg/src/a.ts": "", "pkg/src/a.test.ts": "",
+            "crate/Cargo.toml": "", "crate/src/lib.rs": "",
+        })
+        phase = "**File**: `pkg/src/a.ts`\n**File**: `crate/src/lib.rs`\n"
+
+        commands = gate_commands.derive_gate_commands(repo, phase)
+
+        self.assertEqual([
+            "npm --prefix pkg run typecheck",
+            "cargo clippy --all-targets --manifest-path crate/Cargo.toml -- -D warnings",
+            "cargo test --lib --bins --manifest-path crate/Cargo.toml",
+        ], commands)
+        for command in commands:
+            self.assertNotRegex(command, r"\bcd\b|&&|;", command)
+
+    def test_cargo_commands_name_the_crate_with_a_manifest_path(self):
+        repo = self.new_repo({"crate/Cargo.toml": "", "crate/src/lib.rs": ""})
+
+        commands = gate_commands.cargo_commands(repo, ["crate/src/lib.rs"], derives_tests=True)
+
+        self.assertEqual(["cargo clippy --all-targets --manifest-path crate/Cargo.toml -- -D warnings",
+                          "cargo test --lib --bins --manifest-path crate/Cargo.toml"], commands)
+
+    def test_a_diff_of_only_non_rust_files_under_a_crate_gives_no_cargo_command(self):
+        repo = self.new_repo({"crate/Cargo.toml": "", "crate/scripts/tool.py": "", "crate/README.md": ""})
+
+        commands = gate_commands.cargo_commands(repo, ["crate/scripts/tool.py", "crate/README.md"],
+                                                derives_tests=True)
+
+        self.assertEqual([], commands)
+
+    def test_a_manifest_change_still_gives_the_crate_clippy(self):
+        repo = self.new_repo({"crate/Cargo.toml": ""})
+
+        commands = gate_commands.cargo_commands(repo, ["crate/Cargo.toml"], derives_tests=True)
+
+        self.assertEqual(["cargo clippy --all-targets --manifest-path crate/Cargo.toml -- -D warnings"], commands)
 
 
 ROOT_AND_NESTED_FILES = {"pyproject.toml": RUFF_CONFIG, "app.py": "", "test_app.py": "", "pkg/b.py": "",
@@ -415,6 +539,51 @@ class PythonRunnerTest(GateCommandsTestCase):
         self.assertIn("python3 manage.py test app.tests app.tests_views --noinput", commands)
 
 
+class LockFileRunnerFallbackTest(GateCommandsTestCase):
+    def runner_with_path(self, repo, path_folders):
+        with mock.patch.dict(os.environ, {"PATH": os.pathsep.join(str(folder) for folder in path_folders)}):
+            return gate_commands.project_python_runner(repo)
+
+    def new_tool_folder(self, tool_names):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        for tool_name in tool_names:
+            tool = pathlib.Path(folder.name) / tool_name
+            tool.write_text("#!/bin/sh\n")
+            tool.chmod(0o755)
+        return pathlib.Path(folder.name)
+
+    def test_a_lock_file_runner_that_is_not_installed_falls_back_to_the_project_venv(self):
+        repo = self.new_repo({"Pipfile.lock": "{}", ".venv/bin/python": ""})
+        (repo / ".venv/bin/python").chmod(0o755)
+
+        runner = self.runner_with_path(repo, [self.new_tool_folder([])])
+
+        self.assertEqual([".venv/bin/python", "-m"], runner)
+
+    def test_an_installed_lock_file_runner_is_kept(self):
+        repo = self.new_repo({"Pipfile.lock": "{}", ".venv/bin/python": ""})
+
+        runner = self.runner_with_path(repo, [self.new_tool_folder(["pipenv"])])
+
+        self.assertEqual(["pipenv", "run"], runner)
+
+    def test_a_missing_lock_file_runner_with_no_venv_is_kept_so_the_run_names_the_tool(self):
+        repo = self.new_repo({"Pipfile.lock": "{}"})
+
+        runner = self.runner_with_path(repo, [self.new_tool_folder([])])
+
+        self.assertEqual(["pipenv", "run"], runner)
+
+    def test_the_discovered_check_uses_the_venv_when_the_lock_file_runner_is_not_installed(self):
+        repo = self.new_repo({"Pipfile.lock": "{}", ".venv/bin/python": "", "tests/test_a.py": ""})
+
+        with mock.patch.dict(os.environ, {"PATH": str(self.new_tool_folder([]))}):
+            command = check_discovery.discovered_check_command(repo)
+
+        self.assertEqual(".venv/bin/python -m pytest", command)
+
+
 class CoderTestFilesTest(GateCommandsTestCase):
     # A phase that names no test file gets a command with a {tests:...} placeholder; the gate fills it with the test
     # files the coder created.
@@ -429,25 +598,27 @@ class CoderTestFilesTest(GateCommandsTestCase):
         names = ("src/existing.ts", "src/foo.spec.js", "src/foo.test.mts", "src/__tests__/foo.jsx", "src/helper.js")
         repo_files = {f"backend/{name}": "export {}\n" for name in names}
         repo_files["backend/package.json"] = '{"devDependencies": {"vitest": "1"}}'
+        repo_files["pnpm-lock.yaml"] = ""
 
         filled = self.filled_command(repo_files, "**File**: `backend/src/existing.ts`\n", "vitest")
 
-        self.assertEqual("cd backend && npx vitest run src/foo.spec.js src/foo.test.mts", filled)
+        self.assertEqual("pnpm -C backend exec vitest run src/foo.spec.js src/foo.test.mts", filled)
 
     def test_a_jest_phase_naming_no_test_file_also_runs_the_script_files_under_tests(self):
         names = ("src/a.ts", "src/foo.spec.js", "src/__tests__/foo.jsx", "src/helper.js")
         repo_files = {f"pkg/{name}": "export {}\n" for name in names}
         repo_files["pkg/package.json"] = '{"devDependencies": {"jest": "29"}}'
+        repo_files["pnpm-lock.yaml"] = ""
 
         filled = self.filled_command(repo_files, "**File**: `pkg/src/a.ts`\n", "jest")
 
-        self.assertEqual("cd pkg && npx jest src/__tests__/foo.jsx src/foo.spec.js", filled)
+        self.assertEqual("pnpm -C pkg exec jest src/__tests__/foo.jsx src/foo.spec.js", filled)
 
     def test_an_npm_test_script_that_wraps_jest_also_runs_the_script_files_under_tests(self):
         expected = {
-            "react-scripts test": "cd pkg && npm test -- src/__tests__/foo.js src/foo.spec.js",
-            "jest --ci": "cd pkg && npm test -- src/__tests__/foo.js src/foo.spec.js",
-            "mocha": "cd pkg && npm test -- src/foo.spec.js",
+            "react-scripts test": "npm --prefix pkg test -- src/__tests__/foo.js src/foo.spec.js",
+            "jest --ci": "npm --prefix pkg test -- src/__tests__/foo.js src/foo.spec.js",
+            "mocha": "npm --prefix pkg test -- src/foo.spec.js",
         }
         for test_script, wanted in expected.items():
             with self.subTest(test_script=test_script):
@@ -455,9 +626,27 @@ class CoderTestFilesTest(GateCommandsTestCase):
                                                                           "src/__tests__/foo.js")}
                 repo_files["pkg/package.json"] = json.dumps({"scripts": {"test": test_script}})
 
-                filled = self.filled_command(repo_files, "**File**: `pkg/src/a.js`\n", "npm test")
+                filled = self.filled_command(repo_files, "**File**: `pkg/src/a.js`\n", "pkg test")
 
                 self.assertEqual(wanted, filled)
+
+    def test_a_pnpm_test_script_gets_the_test_files_without_a_double_dash(self):
+        repo_files = {f"pkg/{name}": "export {}\n" for name in ("src/a.js", "src/foo.spec.js")}
+        repo_files["pkg/package.json"] = json.dumps({"scripts": {"test": "mocha"}})
+        repo_files["pnpm-lock.yaml"] = ""
+
+        filled = self.filled_command(repo_files, "**File**: `pkg/src/a.js`\n", "pkg test")
+
+        self.assertEqual("pnpm -C pkg test src/foo.spec.js", filled)
+
+    def test_a_yarn_test_script_gets_the_test_files_after_a_double_dash(self):
+        repo_files = {f"pkg/{name}": "export {}\n" for name in ("src/a.js", "src/foo.spec.js")}
+        repo_files["pkg/package.json"] = json.dumps({"scripts": {"test": "mocha"}})
+        repo_files["yarn.lock"] = ""
+
+        filled = self.filled_command(repo_files, "**File**: `pkg/src/a.js`\n", "pkg test")
+
+        self.assertEqual("yarn --cwd pkg test -- src/foo.spec.js", filled)
 
     def test_a_python_phase_naming_no_test_file_runs_every_test_file_the_coder_creates(self):
         names = ("app/models.py", "app/test_models.py", "app/orders_test.py", "app/conf.py", "tests/__init__.py",

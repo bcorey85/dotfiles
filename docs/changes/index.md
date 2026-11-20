@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-983 changes, 22 with a measured gain, 269 behavior changes that no intake metric reads.
+1010 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-17, [The review commit gate skips the heredoc text of a script-file run](notes/2026-11-17-the-review-commit-gate-skips-heredoc-text-and.md).
+Latest change: 2026-11-19, [verify-prep tells the verifier to keep the default TMPDIR](notes/2026-11-19-verify-prep-tells-the-verifier-to-keep-the-default.md).
 
 ## Top gains
 

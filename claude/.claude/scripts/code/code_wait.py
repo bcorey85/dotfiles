@@ -6,7 +6,8 @@
     python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> [<agent id> <report file>]...
 
 Nested Agent calls in a fork return at once, and a fork that ends its turn hands back, so the fork waits here instead.
-`agent` waits for the subagent's transcript to finish and prints its hand-back report.
+`agent` waits for the subagent's transcript to finish and prints its hand-back report, only a report no earlier wait
+printed: a resumed agent's old report is not printed again.
 `review` waits for the code_review_start.py process that `code_review_start.py --detach` left. Each `<agent id>
 <report file>` pair names a reviewer the fork dispatched for an open request (see reviewer_dispatch.py): the wait
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
@@ -15,13 +16,17 @@ when a named reviewer finished with no report (exit 1), or once the loop ends: i
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
 exits 1 with the reason and the restart step. When that packet is clean (converged, or capped and read as deferred)
 and holds finding asks, it also opens a `phase-asks-open` row in the hand-back store and prints the
-`phase_asks.py rule` line the session runs to rule on them.
+`phase_asks.py rule` line the session runs to rule on them. When this session's latest hand-back for the repo still
+holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
+is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
+sentence that defers them to phase end (`review_fix.py defer`).
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
 or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
 """
 
 import dataclasses
+import datetime
 import json
 import os
 import pathlib
@@ -35,11 +40,14 @@ import handback
 import handback_store
 import loop_transcript
 import phase_asks
+import process_group
 import reviewer_dispatch
 import script_utils
+import session_registry
 import stop_file_names
+from capped_review import effective_status
+from review_fix_state import defer_instruction
 
-PROJECTS = pathlib.Path.home() / ".claude" / "projects"
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
 WAIT_SECONDS = 150
 POLL_SECONDS = 5
@@ -56,7 +64,12 @@ LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the s
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 AGENT_ID_FORM = "the agentId an Agent call returned: `a` and 16 hex digits"
 PHASE_DIR_NAME = "code-phase"
+# One JSON file per agent id: the report line an agent wait printed last. Agent ids are global and the fork's cwd is
+# not fixed, so the record sits outside any repo.
+AGENT_REPORTS_DIR = pathlib.Path.home() / ".claude" / "state" / "agent-reports"
 PID_FILE = "pid"
+HANDOFF_FILE = "handoff.txt"  # the phase's hand-off block, in the run folder
+PREVIOUS_HANDOFF_FILE = "handoff.prev.txt"  # where phase_start.py moves the last phase's hand-off
 REVIEW_OUTPUT = "review.out"
 PHASE_RUN_FILE = "run.json"  # the lane and phase of the last started phase review
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
@@ -70,7 +83,8 @@ class UsageError(Exception):
 
 def agent_transcript(agent_id):
     # The newest transcript of this agent id under any session's subagents folder, or None before it is written.
-    transcripts = list(PROJECTS.glob(f"*/*/subagents/{script_utils.subagent_transcript_name(agent_id)}"))
+    transcript_name = script_utils.subagent_transcript_name(agent_id)
+    transcripts = list(session_registry.projects_dir().glob(f"*/*/subagents/{transcript_name}"))
     if not transcripts:
         return None
     return max(transcripts, key=lambda transcript: transcript.stat().st_mtime)
@@ -84,8 +98,8 @@ def finished_transcript(agent_id):
     return transcript
 
 
-def agent_report(transcript):
-    """The message of a finished agent's last hand-back call a hook did not deny, else its last text, else "".
+def settled_agent_read(transcript):
+    """The LoopTranscript of a finished agent's transcript.
     The harness marks the agent finished before its last transcript line (the hand-back's result) is on disk, so a
     read with a hand-back call and no result yet, or with no report, is retried for SETTLE_SECONDS."""
     reads = []
@@ -93,12 +107,50 @@ def agent_report(transcript):
     def settled_read():
         read = loop_transcript.LoopTranscript(transcript)
         reads.append(read)
-        report = read.handback_message or read.last_text or ""
-        return not read.handback_pending and bool(report.strip())
+        return not read.handback_pending and bool(report_of(read).strip())
 
     script_utils.wait_for(settled_read, SETTLE_SECONDS, SETTLE_POLL_SECONDS)
-    last_read = reads[-1]
-    return last_read.handback_message or last_read.last_text or ""
+    return reads[-1]
+
+
+def report_of(read):
+    """The message of the last hand-back call a hook did not deny, else the last text, else ""."""
+    return read.handback_message or read.last_text or ""
+
+
+def report_line(read):
+    """The transcript line of the report `report_of` returns, -1 when the transcript holds none."""
+    if read.handback_message:
+        return read.handback_lines[-1]
+    if read.last_text_line is None:
+        return -1
+    return read.last_text_line
+
+
+def printed_report_file(agent_id):
+    return script_utils.state_file_path(AGENT_REPORTS_DIR, agent_id, ".json")
+
+
+def printed_report(agent_id):
+    """{"agent_id", "line", "time"} of the report an earlier wait printed for this agent, {} when none."""
+    record_file = printed_report_file(agent_id)
+    if not record_file.is_file():
+        return {}
+    try:
+        record = json.loads(record_file.read_text())
+        record["line"] = int(record["line"])
+        record["time"] = str(record["time"])
+    except (ValueError, KeyError, TypeError) as error:
+        sys.exit(f"code_wait: {record_file} is not the {{\"agent_id\", \"line\", \"time\"}} JSON object this wait "
+                 f"writes ({error!r}); delete it and run this wait again")
+    return record
+
+
+def record_printed_report(agent_id, line):
+    record_file = printed_report_file(agent_id)
+    record_file.parent.mkdir(parents=True, exist_ok=True)
+    record = {"agent_id": agent_id, "line": line, "time": datetime.datetime.now().isoformat(timespec="seconds")}
+    script_utils.write_text_atomically(record_file, json.dumps(record) + "\n")
 
 
 def checked_agent_id(word):
@@ -107,9 +159,13 @@ def checked_agent_id(word):
     return word
 
 
+def phase_dir_or_none(repo):
+    """<git dir>/code-phase, which stays right in a linked worktree, where .git is a file; None when git cannot say."""
+    return script_utils.git_path(repo, PHASE_DIR_NAME)
+
+
 def phase_dir(repo):
-    # <git dir>/code-phase, which stays right in a linked worktree, where .git is a file.
-    folder = script_utils.git_path(repo, PHASE_DIR_NAME)
+    folder = phase_dir_or_none(repo)
     if folder is None:
         sys.exit(f"code_wait: {repo} is not inside a git checkout")
     return folder
@@ -120,10 +176,9 @@ def running_review_pid(repo):
     pid_file = phase_dir(repo) / PID_FILE
     try:
         pid = int(pid_file.read_text().strip())
-        os.kill(pid, 0)
     except (OSError, ValueError):
         return None
-    return pid
+    return pid if process_group.pid_is_alive(pid) else None
 
 
 def loop_dir(repo):
@@ -156,6 +211,27 @@ def read_phase_run(repo):
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
                  f"(found {type(run_info).__name__}); delete it and run this wait again")
     return run_info
+
+
+def plan_impact_notice(repo):
+    """The lines that list each plan impact the commit gate still holds for this session's latest hand-back and tell
+    /code to defer them to phase end (the defer sentence), before any commit. Empty when no plan impact waits for a
+    ruling, and for a packet that is not clean (`defer` on such a packet records the ruling, but
+    `record_clean_review` refuses the commit credit)."""
+    hand_back = handback.current_session_held_impact_hand_back(str(repo))
+    held = hand_back.held
+    if not held:
+        return []
+
+    repo_top = script_utils.work_tree_top(str(repo))
+    if effective_status(hand_back.packet, repo_top) not in handback.CLEAN_STATUSES:
+        return []
+
+    handoff_file = phase_dir(repo) / HANDOFF_FILE
+    return [f"{len(held)} {handback.PLAN_IMPACTS_WAIT_TEXT}:",
+            *[f"- {script_utils.one_line(impact['text'], None)}" for impact in held],
+            "The run does not stop on them mid-phase. Defer them to phase end now, so the commit gate clears: "
+            + defer_instruction(handoff_file)]
 
 
 def phase_asks_notice(repo):
@@ -249,7 +325,7 @@ def phase_stop_line(repo):
 
 def launched_loop_running(folder):
     pid = reviewer_dispatch.loop_pid(folder)
-    return pid is not None and reviewer_dispatch.pid_is_running(pid)
+    return pid is not None and process_group.pid_is_alive(pid)
 
 
 def launched_review_command(folder):
@@ -283,17 +359,43 @@ def open_reviewer_requests(run):
     return reviewer_dispatch.pending_requests(folder)
 
 
+def new_finished_transcript(agent_id, printed):
+    # Each poll parses the transcript once; that parse decides both "finished" and "newer than the printed report".
+    transcript = agent_transcript(agent_id)
+    if transcript is None:
+        return None
+    read = loop_transcript.LoopTranscript(transcript)
+    if not (loop_transcript.finished_by_meta(transcript) or read.handback_lines):
+        return None
+    if printed and report_line(read) <= printed["line"]:
+        return None
+    return transcript
+
+
+def print_still_working(agent_id, printed):
+    print(STILL_WORKING)
+    transcript = agent_transcript(agent_id)
+    if transcript is None or not printed:
+        return
+    # The stored line is 0-based; editors and Read offsets count from 1.
+    print(f"The agent's last report (line {printed['line'] + 1}) was printed by an earlier wait at {printed['time']}. "
+          f"This wait prints only a newer report. When the agent was not resumed, read {transcript}.")
+
+
 def wait_agent(agent_id):
-    if not script_utils.wait_for(lambda: finished_transcript(agent_id), WAIT_SECONDS, POLL_SECONDS):
-        print(STILL_WORKING)
+    printed = printed_report(agent_id)
+    transcript = script_utils.wait_for(lambda: new_finished_transcript(agent_id, printed), WAIT_SECONDS, POLL_SECONDS)
+    if not transcript:
+        print_still_working(agent_id, printed)
         return 0
 
-    transcript = agent_transcript(agent_id)
-    report = agent_report(transcript)
+    read = settled_agent_read(transcript)
+    report = report_of(read)
     if not report.strip():
         print(f"{NO_REPORT} Transcript: {transcript}")
         return 0
     print(report)
+    record_printed_report(agent_id, report_line(read))
     return 0
 
 
@@ -325,7 +427,8 @@ def write_finished_reports(pairs):
         transcript = finished_transcript(agent_id)
         if transcript is None:
             continue
-        report = agent_report(transcript)
+        read = settled_agent_read(transcript)
+        report = report_of(read)
         if not report.strip():
             empty.append(f"- agent {agent_id}; report {report_file}; transcript {transcript}")
             continue
@@ -374,6 +477,9 @@ def wait_review(repo, words=(), launched_folder=None):
             return 1
         if notice:
             print("\n".join(notice))
+        impact_notice = plan_impact_notice(repo)
+        if impact_notice:
+            print("\n".join(impact_notice))
         return code
 
     pending = unanswered_requests(run, pairs)

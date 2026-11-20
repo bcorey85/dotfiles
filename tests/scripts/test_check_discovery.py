@@ -11,6 +11,13 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_discovery
 
 
+def assert_lint_and_make_test_are_separate_parts(test, command):
+    # A failing lint step must not skip the repo's own tests.
+    test.assertNotIn("npm run lint && make test", command)
+    test.assertIn("PART package exit", command)
+    test.assertIn("PART tests exit", command)
+
+
 class CheckDiscoveryTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -49,7 +56,7 @@ class CheckDiscoveryTest(unittest.TestCase):
         self.write("Makefile", "test:\n\t@echo ok\n")
         self.write_package(scripts={"lint": "eslint .", "test": "vitest"}, devDependencies={"vitest": "^2"})
 
-        self.assertEqual("npm run lint && make test", self.discovered())
+        assert_lint_and_make_test_are_separate_parts(self, self.discovered())
 
     def test_a_package_test_script_wins_over_a_pytest_guess(self):
         self.write_package(scripts={"test": "node --test"})
@@ -109,6 +116,69 @@ class CheckDiscoveryTest(unittest.TestCase):
         self.write("README.md", "# hi\n")
 
         self.assertIsNone(self.discovered())
+
+
+class ChangedPathPartsTest(unittest.TestCase):
+    # A repo with a package part (lint script) and a Python part (pytest).
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.write("package.json", json.dumps({"scripts": {"lint": "eslint ."}}))
+        self.write("pytest.ini", "[pytest]\naddopts = -q\n")
+
+    def write(self, name, text):
+        (self.repo / name).write_text(text)
+
+    def discovered(self):
+        return check_discovery.discovered_check_command(self.repo)
+
+    def discovered_for(self, changed_paths):
+        return check_discovery.discovered_check_command(self.repo, changed_paths)
+
+    def assert_runs_each_part_alone(self, command):
+        self.assertIn("npm run lint", command)
+        self.assertIn("python3 -m pytest", command)
+        self.assertIn("FAILED PARTS:", command)
+
+    def test_a_frontend_only_change_gives_only_the_package_part(self):
+        paths = ["src/App.tsx", "src/app.css", "package.json"]
+        self.assertEqual("npm run lint", self.discovered_for(paths))
+
+    def test_a_backend_only_change_gives_only_the_python_part(self):
+        paths = ["app/views.py", "pytest.ini", "requirements.txt"]
+        self.assertEqual("python3 -m pytest", self.discovered_for(paths))
+
+    def test_a_template_or_fixture_change_runs_both_parts(self):
+        for paths in (["app/templates/page.html"], ["app/fixtures/seed.json"], ["app/templates/page.html", "a.py"]):
+            with self.subTest(paths=paths):
+                self.assert_runs_each_part_alone(self.discovered_for(paths))
+
+    def test_a_root_config_change_runs_both_parts(self):
+        for paths in (["Makefile.local"], ["pnpm-lock.yaml"], [".github/workflows/ci.yml"],
+                      ["src/App.tsx", "docs/notes.md"]):
+            with self.subTest(paths=paths):
+                self.assert_runs_each_part_alone(self.discovered_for(paths))
+
+    def test_no_changed_paths_given_runs_both_parts(self):
+        self.assert_runs_each_part_alone(self.discovered_for(None))
+        self.assert_runs_each_part_alone(self.discovered_for([]))
+        self.assert_runs_each_part_alone(self.discovered())
+
+    def test_frontend_and_backend_changes_run_both_parts(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["src/a.ts", "app/b.py"]))
+
+    def test_a_change_that_touches_no_existing_part_runs_the_parts_there_are(self):
+        pathlib.Path(self.repo / "package.json").unlink()
+
+        self.assertEqual("python3 -m pytest", self.discovered_for(["src/App.tsx"]))
+
+    def test_the_repos_own_test_command_is_a_part_of_its_own(self):
+        self.write("Makefile", "test:\n\t@echo ok\n")
+
+        command = self.discovered_for(["src/App.tsx"])
+
+        assert_lint_and_make_test_are_separate_parts(self, command)
 
 
 if __name__ == "__main__":

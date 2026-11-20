@@ -5,8 +5,9 @@ Store: append-only JSON lines at `git rev-parse --git-path full-check/receipts.j
 Every row carries the `run_id` of one run and a `kind`:
 
   started   before the check starts: ts, configured (the resolved check command), source (where it came from: local,
-            repo or discovered; null when none), command (the command run), left_out
-            (the Expected red steps it left out: [{"command", "until"}]).
+            repo or discovered; null when none; overridden when the review loop ran its `--test` commands in place
+            of a default check that hit a setup fault or an environment gap, or was itself overridden), command (the
+            command run), left_out (the Expected red steps it left out: [{"command", "until"}]).
   step      one per && step of the command run, written from the parsed command before it starts: index, step (its
             text), runs_tests, scope (its lib/check_scope.py scope; a test step with scope "targeted"
             voids the receipt).
@@ -18,8 +19,8 @@ Every row carries the `run_id` of one run and a `kind`:
             left out of the fingerprint).
 
 A receipt is valid for the current tree when the latest started run has a finished row that is satisfied, none of its
-test steps has scope "targeted", HEAD still names the commit in its head, and its tree fingerprint
-equals the current tree's, taken with the same log left out.
+test steps has scope "targeted" (an overridden run is let through), HEAD still names the commit in its head, and
+its tree fingerprint equals the current tree's, taken with the same log left out.
 A later started run with no finished row (a killed run) leaves no older receipt valid.
 """
 import datetime
@@ -31,6 +32,10 @@ import script_utils
 
 RECEIPTS_GIT_PATH = "full-check/receipts.jsonl"
 STARTED, STEP, FINISHED = "started", "step", "finished"
+# The started row's source for a run whose command the review loop took from `--test` arguments after a setup fault in
+# the default check, or an environment gap in it, or an earlier overridden run: its test steps are targeted by design,
+# so they do not void the receipt.
+SOURCE_OVERRIDDEN = "overridden"
 
 
 def receipts_path(repo):
@@ -121,7 +126,7 @@ def latest_receipt(repo):
     # unittest discover) is let through.
     scoped = next((row for row in rows if row.get("kind") == STEP and row.get("runs_tests")
                    and row.get("scope") == "targeted"), None)
-    if scoped is not None:
+    if scoped is not None and started.get("source") != SOURCE_OVERRIDDEN:
         return f"the latest full check run was scoped: `{scoped.get('step')}`", finished
 
     ran_on = finished.get("tree")

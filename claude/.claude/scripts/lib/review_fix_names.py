@@ -6,11 +6,16 @@ STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
 # The paths of the approval-only files with an open user-only ask, a JSON object of each path to the blob id its edit
 # is measured against, which the next review loop run of the repo reloads and rewrites with the paths it files again,
-# and each ruling that rejects a user-only ask removes its path. Kept beside the state file.
+# and each ruling on a user-only ask, accepted or rejected, removes its path. Kept beside the state file.
 APPROVAL_ASKS_NAME = "approval-asks.json"
 # The run folder's findings file: `/fix` passes it to `--fix`, and a fork writes it for `launch --also-fix` to add
 # findings to the fix run asks-done printed. The run folder is the one place the fork may write.
 RUN_FOLDER_FINDINGS_NAME = "fix-findings.md"
+# The ask field that holds the epoch time the ask was filed in the saved asks of a review-fix packet.
+FILED_AT_KEY = "filed_at"
+# The state key that holds the epoch time the packet's held plan impact was filed: a relayed `decide` needs a user
+# turn typed after it.
+PLAN_IMPACT_FILED_AT_KEY = "plan_impact_filed_at"
 # Set by asks-done when it prints a fix run, cleared when that run launches. The fork-write gate reads it.
 PENDING_LAUNCH_KEY = "asks_launch_pending"
 # Set when a --correct call had a row fail and the stored answers leave no ask to apply (the pending launch was

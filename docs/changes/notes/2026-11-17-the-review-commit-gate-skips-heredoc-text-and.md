@@ -18,7 +18,7 @@ unmeasured: ""
 ## Change
 
 - `lib/shell_statements.py`: `strip_stored_heredocs` also cuts an unquoted stored heredoc, keeping its `$(...)` and backtick spans because the shell runs them.
-- `review/review_commit_gate.py`: only the heredoc body of a script-file run is data: a script-file run whose arguments name a commit, bare or quoted (`python3 tools/retry.py 'git commit -m x'`), is a commit, since a wrapper script may run it.
+- `review/review_commit_gate.py`: the heredoc body of a script-file run is data, quoted or not; a script-file run whose arguments hold a bare commit (`python3 tools/retry.py git commit -m x`) is a commit. Quoted arguments of a script run follow master's script-run rule (`shell_statements.blank_script_run_quotes`): they are data.
 - `review/review_commit_gate.py`: its folder-changing command words come from `shell_command.DIRECTORY_MOVE_WORDS` plus `eval`, `source` and `.`, not a second list.
 - `lib/git_commit_calls.py`: names the `git commit` options that take a value (`COMMIT_VALUE_OPTIONS`, `COMMIT_VALUE_LETTERS`).
 
@@ -28,7 +28,7 @@ The 2026-11-15 sighting: the gate blocked `build_queue.py` whose heredoc quoted 
 
 ## Result
 
-Eight `ReviewCommitGateTest` cases. They pass: a script-file run with a commit named in its heredoc, and a file write beside a probe that names a commit. They are denied: a script-file run with a commit in a quoted argument (also with output to /dev/null or a file), a script-file run whose arguments hold a bare `git commit`, and a real commit beside a script-file run.
+Four `ReviewCommitGateTest` cases. They pass: a script-file run with a commit named in its heredoc, and a file write beside a probe that names a commit. They are denied: a script-file run whose arguments hold a bare `git commit`, and a real commit beside a script-file run.
 
 Median time on matched calls, 15 runs of 4 calls: branch 53.8 ms, master 53.1 ms; bare Python start 7.7 ms.
 

@@ -16,6 +16,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
                       or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "script_utils.py")
 sys.path.insert(0, str(SCRIPT.parent.parent / "telemetry"))
+sys.path.insert(0, str(SCRIPT.parent))
 module_spec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
 script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)

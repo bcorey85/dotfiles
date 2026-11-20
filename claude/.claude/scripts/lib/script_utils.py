@@ -210,6 +210,13 @@ def text_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
+def or_list(words):
+    """An English list of plain strings: "a", "a or b", "a, b or c". An empty list gives an empty string."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" or {words[-1]}"
+
+
 class ItemNumberError(ValueError):
     """A 1-based item number that names no item."""
 
@@ -295,6 +302,32 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+# What main_checkout_dir returns: the folder, and whether it is a bare common dir rather than a checkout folder.
+MainCheckout = namedtuple("MainCheckout", ["folder", "is_bare"])
+
+
+def main_checkout_dir(repo):
+    """The MainCheckout of the repo that holds `repo` (that of a linked worktree too): the parent of the git common
+    dir when it is named `.git`, else the common dir itself with is_bare set (a bare repo; a submodule's common dir
+    under `.git/modules/` reads the same way, so its folder is not a checkout). None when git cannot answer."""
+    common_dir = git_output(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common_dir:
+        return None
+
+    common_path = pathlib.Path(common_dir)
+    if common_path.name == ".git":
+        return MainCheckout(common_path.parent, False)
+    return MainCheckout(common_path, True)
+
+
+def first_nonempty_line(text_file):
+    """The first line of the file that holds text, stripped, or "" when it holds none."""
+    for line in text_file.read_text(errors="replace").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def work_tree_blob(repo, path):
     """The blob id of the work-tree content of `path` in `repo`, or None when the file is absent or git cannot hash
     it."""
@@ -359,10 +392,13 @@ def read_text_lines(path):
     return list(enumerate(lines, start=1))
 
 
-def changed_files(directory, base="HEAD"):
-    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
-    untracked files that .gitignore does not hide."""
-    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", base) or ""
+def changed_files(directory, base="HEAD", with_deleted=False):
+    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded unless
+    `with_deleted`) plus untracked files that .gitignore does not hide."""
+    diff_args = ["diff", "--name-only", "--relative"]
+    if not with_deleted:
+        diff_args.append("--diff-filter=d")
+    tracked_files = git_output(directory, *diff_args, base) or ""
     untracked = untracked_paths(directory) or []
     names = [name for name in tracked_files.split("\n") if name]
     return sorted(set(names + untracked))
@@ -389,13 +425,14 @@ def details_with_outcome(outcomes, outcome):
 CommandResult = namedtuple("CommandResult", "code output timed_out")
 
 
-def run_command_result(command, cwd=None, stdin=None, timeout=None):
+def run_command_result(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_process does and return a CommandResult: the exit code, stdout and stderr joined and
     stripped, and whether the run passed `timeout`. A program that is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a
     run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note after what it printed. timed_out is True only for
-    that run, never for a program that exits with the same code itself."""
+    that run, never for a program that exits with the same code itself. `env`, when given, is the command's whole
+    environment."""
     try:
-        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout)
+        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout, env=env)
     except FileNotFoundError:
         program = command if isinstance(command, str) else command[0]
         return CommandResult(COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found", False)
@@ -407,20 +444,22 @@ def run_command_result(command, cwd=None, stdin=None, timeout=None):
     return CommandResult(code, output, False)
 
 
-def run_command(command, cwd=None, stdin=None, timeout=None):
+def run_command(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_command_result does and return (exit code, output)."""
-    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout)
+    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout, env=env)
     return result.code, result.output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False,
+                env=None):
     """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation (with
-    as_bytes, stdin is bytes and stdout stays raw bytes). Raise error_type when argv cannot start or runs past
-    `timeout` seconds and, with check, when its exit code is not in ok_codes, naming the command and its stderr, or
-    its stdout when stderr is empty."""
+    as_bytes, stdin is bytes and stdout stays raw bytes). env, when given, is the child's whole environment. Raise
+    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
+    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
     stdin_bytes = stdin if as_bytes or stdin is None else stdin.encode()
     try:
-        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
+        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout,
+                                  env=env)
     except OSError as error:
         raise error_type(f"cannot run {argv[0]}: {error}") from error
     except subprocess.TimeoutExpired as error:
@@ -948,20 +987,6 @@ def preloaded_skills_prompt(agent, claude_home=None):
         skill_body = FRONTMATTER.sub("", skill_text, count=1).strip()
         skill_texts.append(f"Base directory for this skill: {skill_dir}\n\n{skill_body}")
     return "\n\n".join(skill_texts)
-
-
-def session_display_name(session_id):
-    """The name ListAgents shows for a live Claude Code session, read from its ~/.claude/sessions/<pid>.json entry.
-    None when no readable entry holds that session id with a non-empty name."""
-    sessions = pathlib.Path.home() / ".claude" / "sessions"
-    for entry_path in sessions.glob("*.json"):
-        try:
-            entry = json.loads(entry_path.read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(entry, dict) and entry.get("sessionId") == session_id and entry.get("name"):
-            return entry["name"]
-    return None
 
 
 def telemetry_switch_on():

@@ -29,7 +29,8 @@ if [ "$untracked_count" -gt "$untracked_limit" ]; then
 fi
 
 # --sidebar first so it is the default, but a caller's --no-sidebar still wins.
-hunk diff --sidebar --no-hunk-headers "${untracked_flag[@]}" "$@" || exit $?
+# The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
+hunk diff --sidebar --no-hunk-headers ${untracked_flag[@]+"${untracked_flag[@]}"} "$@" || exit $?
 
 # Absent or empty file: hunk was quit normally, nothing to hand off to.
 [ -s "$handoff" ] || exit 0

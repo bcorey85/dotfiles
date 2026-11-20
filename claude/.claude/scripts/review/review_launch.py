@@ -31,6 +31,7 @@ import review_fix_state
 import review_user_ruled
 import reviewer_dispatch
 import script_utils
+from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_loop_plan import review_files
 from review_loop_prompt_file import (
     BASE_KEY,
@@ -309,16 +310,29 @@ def read_user_ruled(launch_file):
     raise LaunchError(f"--launch {launch_file}: {USER_RULED_RECORD_KEY} is not a list of finding texts")
 
 
+def remove_stale_run_folder_findings(repo):
+    """Deletes the run folder's fix-findings.md, the file a session writes for `--also-fix`, and returns True when one
+    was there. A launch reads only a file written after this call, never one an earlier run left."""
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
+        return False
+    stale = folder / RUN_FOLDER_FINDINGS_NAME
+    if not stale.is_file():
+        return False
+    stale.unlink()
+    return True
+
+
 def consume_run_folder_inputs(repo, options):
     """Deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such
     as the asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
     cannot leave this launch's file in place for the next one to read."""
-    run_folder = script_utils.git_path(repo, code_wait.PHASE_DIR_NAME)
-    if run_folder is None:
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
         return
     inputs = [pathlib.Path(given).resolve() for given in (options.fix, options.also_fix, options.handoff)
               if given]
-    consumed = [input_file for input_file in inputs if input_file.parent == run_folder.resolve()]
+    consumed = [input_file for input_file in inputs if input_file.parent == folder.resolve()]
     if not consumed:
         return
     for stale in consumed:
@@ -341,7 +355,7 @@ def wait_for_exit(pid):
     """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
     the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
     deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while reviewer_dispatch.pid_is_running(pid):
+    while process_group.pid_is_alive(pid):
         if time.monotonic() >= deadline:
             print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
                   file=sys.stderr)

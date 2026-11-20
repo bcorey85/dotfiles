@@ -1,21 +1,28 @@
 """Checks for shell_statements.py: heredoc bodies are cut out of a command, and only a real heredoc starts one."""
+import os
+import pathlib
 import sys
+import tempfile
 import time
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
 from shell_statements import (
+    blank_script_run_quotes,
     clean,
     decode_ansi_c,
     opens_shell_heredoc,
     resolved_word,
+    runs_script_file,
     statement_word_pairs,
     statements_with_operators,
     strip_comments,
     strip_heredocs,
+    strip_stored_heredocs,
 )
 
 
@@ -189,6 +196,147 @@ class StripHeredocsTest(unittest.TestCase):
 
         self.assertEqual(command, strip_heredocs(command))
         self.assertLess(time.monotonic() - started, 1)
+
+
+class ScriptRunTest(unittest.TestCase):
+    def test_an_interpreter_with_a_script_file_is_a_script_run_anywhere(self):
+        for words in (["python3", "x.py", "a"], ["python3", "-W", "ignore", "x.py"],
+                      ["env", "FOO=1", "python3", "x.py"]):
+            with self.subTest(words=words):
+                self.assertTrue(runs_script_file(words))
+
+    def test_a_path_in_the_toolkit_scripts_or_a_skill_scripts_folder_is_a_script_run(self):
+        for words in (["~/.claude/scripts/review/verify-log", "review"],
+                      [os.path.expanduser("~/.claude/skills/review/scripts/tool"), "a"]):
+            with self.subTest(words=words):
+                self.assertTrue(runs_script_file(words))
+
+    def test_a_toolkit_interpreter_launcher_is_read_as_the_interpreter_it_runs(self):
+        launcher = "~/.claude/scripts/tools/hook-python"
+        self.assertTrue(runs_script_file([launcher, "x.py", "a"]))
+        self.assertTrue(runs_script_file([launcher, "-W", "ignore", "x.py"]))
+        self.assertFalse(runs_script_file([launcher, "-c", "import os"]))
+        self.assertFalse(runs_script_file([launcher, "-"]))
+        self.assertEqual('~/.claude/scripts/tools/hook-python x.py ""',
+                         blank_script_run_quotes(f'{launcher} x.py "a git commit"'))
+        self.assertEqual(f'{launcher} -c "import os"', blank_script_run_quotes(f'{launcher} -c "import os"'))
+        self.assertEqual(f"{launcher} - <<'EOF'\nos.system('git commit')\nEOF",
+                         strip_stored_heredocs(f"{launcher} - <<'EOF'\nos.system('git commit')\nEOF"))
+
+    def test_a_skill_script_stays_trusted_when_each_skill_is_linked_on_its_own(self):
+        own_skills = toolkit_paths.CLAUDE_DIR / "skills"
+        skill_name = next(folder.parent.name for folder in sorted(own_skills.glob("*/scripts")))
+        with tempfile.TemporaryDirectory() as home:
+            skills_link_dir = pathlib.Path(home) / ".claude" / "skills"
+            skills_link_dir.mkdir(parents=True)
+            (skills_link_dir / skill_name).symlink_to(own_skills / skill_name)
+            words = [str(skills_link_dir / skill_name / "scripts" / "tool"), "a"]
+            with mock.patch.dict(os.environ, {"HOME": home}):
+                self.assertTrue(runs_script_file(words))
+                self.assertFalse(runs_script_file([str(skills_link_dir / skill_name / "tool"), "a"]))
+
+    def test_a_path_anywhere_else_is_no_script_run(self):
+        for words in (["~/bin/tool", "--rows", "-"], ["../other/tool"], ["./$X/tool"], ["./run.sh"], ["tools/run.sh"],
+                      ["~/.claude/plugins/x/run", "git commit -m x"], ["./node_modules/.bin/concurrently", "x"],
+                      ["~/.claude/skills/review/tool"], ["~/.claude/hooks/tool"],
+                      ["/Applications/Tool.app/tool", "x"], ["/Library/tool", "x"], ["/System/tool", "x"],
+                      ["~/.claude/../bin/tool"]):
+            with self.subTest(words=words):
+                self.assertFalse(runs_script_file(words))
+
+    def test_a_program_whose_later_word_names_a_shell_or_launcher_is_no_script_run(self):
+        for words in (["~/.claude/scripts/bin/mise", "exec", "--", "bash", "-c", "git commit -am x"],
+                      ["~/.claude/scripts/cross-env", "A=1", "sh", "-c", "git commit -am x"],
+                      ["node", "some/tool.js", "sh", "-c", "git commit"],
+                      ["~/.claude/scripts/tools/notify", "python3", "-c", "git commit"],
+                      ["~/.claude/scripts/tools/notify", "node", "-e", "git commit"],
+                      ["~/.claude/scripts/x", "docker", "exec", "c", "git commit -am x"]):
+            with self.subTest(words=words):
+                self.assertFalse(runs_script_file(words))
+
+    def test_a_later_test_flag_makes_no_script_run(self):
+        for words in (["node", "--test", "x.js", "a"],
+                      ["~/.claude/scripts/tools/notify", "--test", "a"],
+                      ["~/.claude/scripts/tools/notify", "--test=git commit -am x"],
+                      ["~/.claude/scripts/review/review_loop_script.py", ".", "--gate-command", "git commit"],
+                      ["~/.claude/scripts/review/review_loop_script.py", ".", "--gate-command=git commit"]):
+            with self.subTest(words=words):
+                self.assertFalse(runs_script_file(words))
+
+    def test_a_review_launch_keeps_the_quoted_text_of_its_test_command(self):
+        for command in ("python3 ~/.claude/scripts/review/review_fix.py launch --test 'git commit -am x'",
+                        "python3 ~/.claude/scripts/review/review_fix.py launch '--test=git commit -am x'"):
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_launcher_wrapped_commit_keeps_its_quoted_text(self):
+        for command in ('~/.claude/scripts/bin/mise exec -- bash -c "git commit -am x"',
+                        '~/.claude/scripts/cross-env A=1 sh -c "git commit -am x"',
+                        'node some/tool.js sh -c "git commit"'):
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_shell_eval_git_a_bare_program_and_inline_code_are_no_script_run(self):
+        for words in (["bash", "x.sh"], ["/bin/bash", "x.sh"], ["/usr/bin/git", "commit"], ["eval", "x"],
+                      ["gh", "pr", "create"], ["python3", "-c", "x"], ["python3", "-i", "x.py"], [],
+                      ["php", "-r", 'system("git commit -am x");', "x"], ["php", "-rsystem(1);", "x"],
+                      ["/usr/bin/xargs", "-I{}", "sh"], ["/usr/bin/find", ".", "-exec", "sh"],
+                      ["/usr/bin/flock", "/tmp/l", "-c", "x"], ["/usr/bin/watch", "x"], ["/usr/bin/script", "-c", "x"],
+                      ["/usr/bin/su", "-c", "x"], ["/usr/bin/ssh", "host", "x"], ["/usr/bin/fish", "-c", "x"],
+                      ["/usr/bin/busybox", "sh"], ["/usr/bin/parallel", "x"], ["/usr/bin/awk", "x"],
+                      ["/usr/bin/tmux", "new", "x"], ["/usr/bin/sg", "grp", "-c", "x"],
+                      ["/usr/bin/expect", "-c", "x"], ["/usr/bin/tcsh", "-c", "x"],
+                      ["~/.local/bin/tcsh", "-c", "x"], ["~/.cargo/bin/nu", "-c", "x"],
+                      ["/snap/bin/pwsh", "-c", "x"], ["/home/linuxbrew/.linuxbrew/bin/bash", "-c", "x"],
+                      ["/opt/local/bin/gawk", "x"]):
+            with self.subTest(words=words):
+                self.assertFalse(runs_script_file(words))
+
+    def test_only_the_steps_that_are_script_runs_lose_their_quoted_text(self):
+        command = 'python3 x.py "a b" && gh pr create --body "c" ; ~/.claude/scripts/t \'d\''
+
+        self.assertEqual('python3 x.py "" && gh pr create --body "c" ; ~/.claude/scripts/t ""',
+                         blank_script_run_quotes(command))
+
+    def test_a_script_step_is_blanked_and_the_commit_step_after_it_stays_as_written(self):
+        command = 'python3 x.py "a" && git commit -m "x"'
+
+        self.assertEqual('python3 x.py "" && git commit -m "x"', blank_script_run_quotes(command))
+
+    def test_a_script_step_that_a_pipe_follows_stays_as_written(self):
+        for command in ('python3 x.py "git commit -am x" | fish', 'python3 x.py "git commit -am x" | nu',
+                        'python3 x.py "git commit -am x" |& fish', 'a | python3 x.py "git commit -am x" | nu'):
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_script_step_with_a_process_substitution_stays_as_written(self):
+        for command in ('python3 x.py "git commit -am x" > >(fish)', 'cat <(python3 x.py "git commit -am x")'):
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_compound_group_piped_onward_stays_as_written(self):
+        for command in ('{ ~/.claude/scripts/tools/x.py "git commit -m y"; } | python3',
+                        '(python3 x.py "git commit -am x"; true) | python3',
+                        'if true; then python3 x.py "git commit -am x"; fi | python3',
+                        'for i in 1; do ~/.claude/scripts/tools/x.py "git commit -m y"; done | python3'):
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_heredoc_in_a_brace_group_piped_onward_is_not_cut(self):
+        command = "{ ~/.claude/scripts/x <<'EOF'\ngit commit -m y\nEOF\n} | python3"
+
+        self.assertEqual(command, strip_stored_heredocs(command))
+
+    def test_the_last_step_of_a_pipe_is_still_blanked(self):
+        self.assertEqual('echo a | python3 x.py ""', blank_script_run_quotes('echo a | python3 x.py "b"'))
+
+    def test_a_step_with_a_substitution_holds_more_than_one_command_so_it_stays_as_written(self):
+        command = 'python3 x.py "a" $(git commit -m "x")'
+
+        self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_step_that_cannot_be_parsed_stays_as_written(self):
+        self.assertEqual("python3 x.py 'unclosed", blank_script_run_quotes("python3 x.py 'unclosed"))
 
 
 if __name__ == "__main__":

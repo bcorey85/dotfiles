@@ -11,6 +11,7 @@ import script_utils
 from capped_review import CAP_REACHED, effective_status
 from handback import (
     CLEAN_STATUSES,
+    INVALID_STATUS,
     PLAN_IMPACT_STATUS,
     REVIEW_LOOP,
     PacketError,
@@ -274,7 +275,7 @@ def handle_hook(event, kind):
         packet = load(message)
         status, problems = packet["status"], []
     except PacketError as error:
-        packet, status, problems = None, "invalid", error.problems
+        packet, status, problems = None, INVALID_STATUS, error.problems
     if problems and not was_recorded(session_id, agent_id, "rejected"):
         record(session_id, "rejected", agent_id=agent_id, problems=problems)
         return ("The review-loop packet does not parse: " + "; ".join(problems) +

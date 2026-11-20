@@ -1087,8 +1087,24 @@ class ShellWriteGateTest(unittest.TestCase):
             "npx -p tsx tsx -e \"require('fs').writeFileSync('tracked.txt', 'y')\"",
             "npx tsx -e \"require('fs').createWriteStream('tracked.txt')\"",
             "pypy3 -c \"open('tracked.txt','w')\"",
+            "python3 -c\"open('tracked.txt','w')\"",
+            "perl -e\"open(F,'>','tracked.txt')\"",
+            "node -e\"require('fs').writeFileSync('tracked.txt','y')\"",
+            "ruby -e\"File.write('tracked.txt','y')\"",
             "node -e \"const s = \\`a #b\\`; fs.writeFileSync('tracked.txt', s)\"",
             "node -e \"const s = 'a'.replace(/ #x/g, ''); fs.writeFileSync('tracked.txt', s)\"",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_denied(command)
+
+    def test_untracked_script_run_with_an_attached_value_option_is_still_read_and_denied(self):
+        (self.repo / "w.py").write_text("open('tracked.txt', 'w')\n")
+        (self.repo / "w.js").write_text("require('fs').writeFileSync('tracked.txt', 'y')\n")
+        commands = (
+            "python3 -Xtracemalloc w.py",
+            "python3 -Xpycache_prefix=/tmp w.py",
+            "node -rdotenv/config w.js",
         )
         for command in commands:
             with self.subTest(command=command):

@@ -1558,9 +1558,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
 
-    def run_clean_review_with_gates(self, gate_commands, every_run):
+    def run_clean_review_with_gates(self, gate_commands, every_run, quality_check=None):
         self.gates_every_run = every_run
-        return self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+        return self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                               quality_check=quality_check)
 
     def test_gate_commands_run_on_a_converged_run_with_no_fix_when_the_loop_gates_every_run(self):
         marker = self.scratch / "ran.txt"
@@ -1628,6 +1629,42 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop_main, request = self.gate_command_request(command, gates_every_run)
         loop, _check_command = loop_main.build_loop(request)
         return loop
+
+    @staticmethod
+    def fake_check_run(_repo, _check_command, log, _timeout, _env, _on_start):
+        """A check run that exits 0 and leaves an empty log, so no real command starts."""
+        pathlib.Path(log).write_text("")
+        return 0
+
+    def test_the_loop_narrows_a_discovered_full_check_to_the_parts_the_diff_touches(self):
+        self.commit_files({"CLAUDE.md": "", "package.json": '{"scripts": {"lint": "eslint ."}}',
+                           "pytest.ini": "[pytest]\naddopts = -q\n"})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        (self.repo / "app.js").write_text("1\n")
+        loop_main, request = self.gate_command_request("echo scoped", False)
+
+        loop, check_command = loop_main.build_loop(request)
+        with mock.patch.object(loop_main.full_check, "run_check_command_retrying_collision",
+                               side_effect=self.fake_check_run):
+            loop.run_check(check_command)
+
+        self.assertEqual("npm run lint", loop.full_check_command)
+
+    def test_the_loop_runs_a_part_whose_files_the_diff_touches_after_the_loop_was_built(self):
+        self.commit_files({"CLAUDE.md": "", "package.json": '{"scripts": {"lint": "eslint ."}}',
+                           "pytest.ini": "[pytest]\naddopts = -q\n"})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        (self.repo / "app.js").write_text("1\n")
+        loop_main, request = self.gate_command_request("echo scoped", False)
+        loop, check_command = loop_main.build_loop(request)
+
+        (self.repo / "app.py").write_text(APP_BEFORE + "limit = 6\n")
+        with mock.patch.object(loop_main.full_check, "run_check_command_retrying_collision",
+                               side_effect=self.fake_check_run):
+            loop.run_check(check_command)
+
+        self.assertIn("npm run lint", loop.full_check_command)
+        self.assertIn("pytest", loop.full_check_command)
 
     def test_the_named_tests_budget_stops_a_command_that_cannot_start_when_the_loop_gates_every_run(self):
         marker = self.scratch / "ran.txt"
@@ -2706,7 +2743,25 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             runners[0]("repo", "check", "log", 1)
 
         self.assertIs(base_run.call_args.kwargs["live_trees"], loop_script.full_check_gate.LIVE_BASE_TREES)
-        self.assertEqual(base_run.call_args.kwargs["gate_env"], {"APP_DIR": "/x"})
+        self.assertEqual(base_run.call_args.kwargs["gate_assignments"], {"APP_DIR": "/x"})
+
+    def test_a_wider_check_command_gets_its_own_base_run_and_the_same_command_reuses_it(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.full_check = "failed (exit 1)"
+        commands = []
+
+        def record_command(repo, out, check_command, gate_env=(), runner=None, log_name=None):
+            commands.append(check_command)
+            return None
+
+        with mock.patch.object(loop_script.full_check_gate, "run_full_check", side_effect=record_command), \
+                mock.patch.object(loop_script.full_check, "is_pre_existing", return_value=True):
+            loop.fails_without_the_diff("narrow")
+            loop.fails_without_the_diff("narrow")
+            loop.fails_without_the_diff("wide")
+
+        self.assertEqual(commands, ["narrow", "wide"])
 
     def test_sigterm_during_the_base_run_removes_the_base_worktree(self):
         loop_main = self.loop_main_module()
@@ -2969,6 +3024,173 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND", blocker)
         self.assertNotIn("toolkit or environment fault", blocker)
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    SETUP_FAULT_CHECK = "echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND No package.json found'; exit 1"
+
+    def run_clean_review_after_a_dispatch(self, quality_check, gate_commands=(), every_run=None):
+        """One more clean review of the same session, after the dispatch row that a launch writes. A `quality_check`
+        of None keeps the repo's committed one. `every_run` None gates every run exactly when gate commands are given,
+        as a `--test` launch does; False is a launch whose gate commands are not `--test` commands."""
+        (self.fake_dir / "counters.json").unlink(missing_ok=True)
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+        self.save_gate_commands(list(gate_commands))
+        if every_run is None:
+            every_run = bool(gate_commands)
+        return self.run_clean_review_with_gates(self.gate_commands, every_run, quality_check=quality_check)
+
+    def last_stored_packet(self):
+        handbacks = [row for row in self.store_rows() if row["kind"] == "handback"]
+        return handback.load(handbacks[-1]["message"])
+
+    def test_a_test_command_on_a_resume_after_a_setup_fault_replaces_the_default_full_check(self):
+        first = self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault", first.stderr)
+
+        marker = self.scratch / "override-ran.txt"
+        command = f"echo ran >> {marker}"
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], command)
+        # `echo` shows no test result, so the check is `unverified` and the command also runs once more as a gate.
+        self.assertEqual(packet["full_check"], "unverified (exit 0, no test result shown)")
+        self.assertEqual(marker.read_text().splitlines(), ["ran", "ran"])
+        self.assertIs(packet["check_overridden"], True)
+
+    def test_a_test_command_on_a_resume_after_an_environment_gap_replaces_the_default_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo 'bash: pipenv: command not found'; exit 127")
+        gap_result = self.last_stored_packet()["full_check"]
+        self.assertTrue(gap_result.startswith("not run (environment gap"), gap_result)
+
+        command = "echo override"
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], command)
+        self.assertIs(packet["check_overridden"], True)
+
+    def test_an_earlier_hand_back_that_does_not_parse_keeps_the_configured_full_check_on_a_test_launch(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record(SESSION, "handback", status="converged", message="not a packet")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=True)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_several_test_commands_after_a_setup_fault_all_run_in_the_check_and_leave_out_stale_prose(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        marker = self.scratch / "second-ran.txt"
+        commands = ["echo 'FAILED: first'; exit 1", f"echo ran >> {marker}", self.stale_prose_command(0)]
+
+        resumed = self.run_clean_review_after_a_dispatch(None, commands)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertTrue(marker.is_file())
+        self.assertNotIn("stale_prose", packet["full_check_command"])
+        self.assertIn("test-1", packet["full_check_command"])
+        self.assertIn("test-2", packet["full_check_command"])
+
+    def test_an_invalid_earlier_hand_back_keeps_the_configured_full_check_on_a_test_launch(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record(SESSION, "handback", status="invalid", message="not a packet")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=True)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+
+    def test_a_setup_fault_hand_back_of_another_session_does_not_override_the_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record("another-session", "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record("another-session", "handback", status=handback.SETUP_FAULT_STATUS,
+                                  message=json.dumps({"status": handback.SETUP_FAULT_STATUS}))
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_a_test_command_on_a_launch_with_no_earlier_setup_fault_keeps_the_configured_full_check(self):
+        completed = self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK, ["echo scoped"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault")
+
+    def test_a_test_command_on_a_resume_after_a_run_with_no_setup_fault_keeps_the_configured_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        self.assertEqual(self.last_stored_packet()["status"], "converged")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertIn("echo scoped", packet["scoped_tests"])
+        self.assertFalse(packet["check_overridden"])
+
+    def test_gate_commands_that_are_not_a_test_launch_keep_the_configured_full_check_after_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=False)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_an_overriding_test_command_that_hits_a_setup_fault_stops_as_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+
+        resumed = self.run_clean_review_after_a_dispatch(None, [self.SETUP_FAULT_CHECK])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        self.assertTrue(packet["check_overridden"])
+
+    def test_a_test_command_keeps_overriding_after_an_overridden_run_that_did_not_stop_as_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        command = "echo override"
+        self.run_clean_review_after_a_dispatch(None, [command])
+        self.assertTrue(self.last_stored_packet()["check_overridden"])
+
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertEqual(self.last_stored_packet()["full_check_command"], command)
+
+    def test_a_setup_fault_hand_back_for_another_repo_does_not_override_the_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.scratch / "other-repo"))
+            handback_store.record(SESSION, "handback", status=handback.SETUP_FAULT_STATUS,
+                                  message=json.dumps({"status": handback.SETUP_FAULT_STATUS}))
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
 
     def test_a_full_check_that_misses_a_module_from_outside_the_repo_gets_one_coder_repair(self):
         completed = self.run_script({
@@ -4769,7 +4991,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_each_child_session_is_named_as_a_child_of_the_session_that_ran_the_loop(self):
         sessions = self.scratch / "home" / ".claude" / "sessions"
         sessions.mkdir(parents=True)
-        (sessions / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": SESSION, "name": "app-abc-12-e6"}))
+        live_row = {"pid": os.getpid(), "sessionId": SESSION, "name": "app-abc-12-e6"}
+        (sessions / "4242.json").write_text(json.dumps(live_row))
         (sessions / "4343.json").write_text(json.dumps({"pid": 4343, "sessionId": "other", "name": "app-abc-12-9f"}))
 
         completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
@@ -4812,7 +5035,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_every_headless_role_is_named_as_a_child_of_a_parent_that_has_a_display_name(self):
         sessions = self.scratch / "home" / ".claude" / "sessions"
         sessions.mkdir(parents=True)
-        (sessions / "4242.json").write_text(json.dumps({"pid": 4242, "sessionId": SESSION, "name": "app-abc-12-e6"}))
+        live_row = {"pid": os.getpid(), "sessionId": SESSION, "name": "app-abc-12-e6"}
+        (sessions / "4242.json").write_text(json.dumps(live_row))
 
         self.assert_every_headless_role_is_named_as_a_child_of("app-abc-12-e6")
 

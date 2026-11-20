@@ -1,10 +1,10 @@
 """approval_asks_store.py: the file of unsettled approval-only paths in the review-fix folder (`APPROVAL_ASKS_NAME`):
 each path mapped to the blob id its edit is measured against. The review loop writes it, a resumed loop reads it, and
-a ruling that rejects a user-only approval ask removes its path."""
+a ruling on a user-only approval ask, accepted or rejected, removes its path."""
 import json
 
 import script_utils
-from ask_outcome_words import REJECTED, USER_ONLY_KEY
+from ask_outcome_words import USER_ONLY_KEY
 from review_fix_names import APPROVAL_ASKS_NAME, REVIEW_FIX_FOLDER
 
 
@@ -55,28 +55,27 @@ def write_approval_paths(repo, paths):
     script_utils.write_text_atomically(saved, json.dumps(paths))
 
 
-def rejected_user_only_changes(asks, outcomes):
-    """The change text of each ask in `asks` that is user-only and whose outcome in `outcomes` is `rejected`."""
-    return [item.get("change") for item, outcome in zip(asks, outcomes, strict=True)
-            if outcome == REJECTED and item.get(USER_ONLY_KEY)]
+def user_only_changes(asks):
+    """The change text of each ask in `asks` that is user-only."""
+    return [item.get("change") for item in asks if item.get(USER_ONLY_KEY)]
 
 
-def check_approval_paths_readable(repo, asks, outcomes):
-    """Raises ApprovalAsksFileError when the saved file is damaged and a rejected user-only ask would need it. Call it
+def check_approval_paths_readable(repo, asks):
+    """Raises ApprovalAsksFileError when the saved file is damaged and a user-only ask in `asks` would need it. Call it
     before a ruling writes anything, so a damaged file stops the ruling with nothing written."""
-    if rejected_user_only_changes(asks, outcomes):
+    if user_only_changes(asks):
         read_approval_paths(repo)
 
 
-def forget_rejected_approval_paths(repo, asks, outcomes):
-    """Drops from the saved approval paths of `repo` each path whose user-only approval ask was ruled `rejected`, so a
-    resumed run never files it again. Leaves the file alone when no saved path is rejected."""
-    rejected_changes = rejected_user_only_changes(asks, outcomes)
-    if not rejected_changes:
+def forget_ruled_approval_paths(repo, asks):
+    """Drops from the saved approval paths of `repo` each path whose user-only approval ask is in `asks`, ruled with
+    any outcome, so a resumed run never files it again. Leaves the file alone when no saved path is ruled."""
+    ruled_changes = user_only_changes(asks)
+    if not ruled_changes:
         return
     saved = read_approval_paths(repo)
     # Matched on the change text, which is written from the exact filed path: parsing the path back out of the ask's
     # location drops a folder name that holds a space.
-    kept = {path: base for path, base in saved.items() if approval_change(path) not in rejected_changes}
+    kept = {path: base for path, base in saved.items() if approval_change(path) not in ruled_changes}
     if len(kept) != len(saved):
         write_approval_paths(repo, kept)

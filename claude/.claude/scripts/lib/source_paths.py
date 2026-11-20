@@ -1,7 +1,9 @@
 """Which file paths count as source: not a test, a lockfile or a generated file. The one owner of the two test-file
 rules every gate reads: `is_test_path` (the file belongs to the tests) and `is_runnable_test_file` (a test runner
 can take it alone as a target). It also owns `is_index_file` (a folder's re-export file) and `is_style_file` (a
-stylesheet), which simplify slicing leaves out of its counts."""
+stylesheet), which simplify slicing leaves out of its counts. It also owns the check-part path kinds
+`is_package_path` (JS/TS/CSS/HTML/JSON), `is_shared_path` (HTML and JSON, which both kinds of code read) and
+`is_python_path` (.py and Python project config), which check discovery narrows the full check by."""
 import notes_paths
 
 LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "Cargo.lock",
@@ -9,6 +11,9 @@ LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lo
 SCRIPT_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs")
 INDEX_NAMES = {"index.js", "index.jsx", "index.ts", "index.tsx", "index.mjs", "index.cjs", "__init__.py"}
 STYLE_SUFFIXES = (".css", ".scss", ".sass", ".less", ".styl", ".pcss")
+SHARED_SUFFIXES = (".html", ".json")
+PACKAGE_SUFFIXES = (*SCRIPT_SUFFIXES, ".cjs", ".cts", *SHARED_SUFFIXES)
+PYTHON_CONFIG_NAMES = {"pyproject.toml", "setup.py", "setup.cfg", "pytest.ini", "tox.ini", "Pipfile"}
 
 
 def is_index_file(path):
@@ -19,6 +24,27 @@ def is_index_file(path):
 def is_style_file(path):
     """Whether the file is a stylesheet, by suffix and ignoring case."""
     return path.lower().endswith(STYLE_SUFFIXES)
+
+
+def is_package_path(path):
+    """Whether a changed path belongs to a package part: JS/TS/CSS/HTML/JSON files, package.json included."""
+    return path.lower().endswith(PACKAGE_SUFFIXES) or is_style_file(path)
+
+
+def is_shared_path(path):
+    """Whether a changed path is read by both package code and Python code: an HTML template or a JSON file (a Django
+    template or fixture, say), package.json excepted."""
+    lowered = path.lower()
+    if lowered.rsplit("/", 1)[-1] == "package.json":
+        return False
+    return lowered.endswith(SHARED_SUFFIXES)
+
+
+def is_python_path(path):
+    """Whether a changed path belongs to a Python part: a .py file or a Python project config file."""
+    name = path.rsplit("/", 1)[-1]
+    return name.endswith(".py") or name in PYTHON_CONFIG_NAMES or (name.startswith("requirements")
+                                                                   and name.endswith(".txt"))
 
 
 def is_test_path(path):

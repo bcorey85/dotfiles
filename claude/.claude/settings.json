@@ -156,6 +156,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "skillOverrides": {
     "artifact-capabilities": "user-invocable-only",
     "artifact-design": "user-invocable-only",
@@ -800,7 +801,8 @@
     "frontend-design@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": false,
     "sonarqube-agent-plugins@claude-plugins-official": false,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "crit@crit": true
   },
   "extraKnownMarketplaces": {
     "ponytail": {
@@ -813,6 +815,12 @@
       "source": {
         "source": "github",
         "repo": "AminBlg/SimpleEnglish"
+      }
+    },
+    "crit": {
+      "source": {
+        "source": "github",
+        "repo": "tomasz-tomczyk/crit"
       }
     }
   },
@@ -835,6 +843,5 @@
   "editorMode": "normal",
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "model": "opus"
+  "skipAutoPermissionPrompt": true
 }

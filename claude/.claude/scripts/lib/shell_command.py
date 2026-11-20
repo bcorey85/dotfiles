@@ -39,15 +39,19 @@ SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
 # Programs that run the command named after their own words (`find -exec` is read apart:
 # git_commit_calls.runs_through_launcher).
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
+# Container programs: `exec` and `run` run the command named after them inside a container.
+CONTAINER_PROGRAMS = ("docker", "podman")
+# Other programs that run their arguments as commands, locally or on another host.
+ARGUMENT_RUNNER_PROGRAMS = ("eval", "su", "script", "ssh")
 # A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
 # `eval` argument, a command run through another program or on another host. A quoted mention counts, except a
 # shell name right after a `|` or a backslash: that is a regex alternative such as `(py|sh)`.
 CODE_RUNNERS = re.compile(
     r"(?<![|\\])\b(" + "|".join(sorted(SHELL_INTERPRETERS)) + r")(?![\w.-])"
-    r"|\b(eval|su|script|ssh|" + "|".join(LAUNCHER_PROGRAMS) + r")\b"
+    r"|\b(" + "|".join(ARGUMENT_RUNNER_PROGRAMS + LAUNCHER_PROGRAMS) + r")\b"
     r"|\bgit\b[^\n]*\brebase\b[^\n]*\s(--exec|-x)\b"
     r"|\bfind\b[^\n]*\s-exec(dir)?\b"
-    r"|\b(docker|podman)\b[^\n]*\b(exec|run)\b"
+    r"|\b(" + "|".join(CONTAINER_PROGRAMS) + r")\b[^\n]*\b(exec|run)\b"
     r"|\bkubectl\b[^\n]*\bexec\b"
 )
 SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file", "--init"}
@@ -87,20 +91,25 @@ RUNNER_WRAPPERS = {
 }
 # By interpreter family: the name pattern, the flags after which it runs no program from stdin or a script (a module,
 # a version, help), the options that take the next word as their value, the letters that end a short-flag cluster
-# whose next word is code (`-c`, `-Bc`, `-le`), and the long flags that take the next word as code. nodejs is the
+# whose next word is code (`-c`, `-Bc`, `-le`), the letters whose attached value ends the walk with no code
+# (`-mcProfile`; the next word is not consumed), and the long flags that take the next word as code. nodejs is the
 # node family.
 INTERPRETER_FAMILIES = {
     "python": {"name": r"python[\d.]*", "no_stdin_code_flags": {"-m", "-V", "-VV", "--version", "-h", "--help"},
-               "value_options": {"-W", "-X", "-Q"}, "inline_code_letters": "c", "inline_code_flags": set()},
+               "value_options": {"-W", "-X", "-Q"}, "inline_code_letters": "c", "attached_value_letters": "m",
+               "inline_code_flags": set()},
     "perl": {"name": r"perl", "no_stdin_code_flags": {"-v", "-V", "--version", "-h", "--help"},
-             "value_options": {"-I", "-M", "-C"}, "inline_code_letters": "eE", "inline_code_flags": set()},
+             "value_options": {"-I", "-M", "-C"}, "inline_code_letters": "eE", "attached_value_letters": "xF",
+             "inline_code_flags": set()},
     "ruby": {"name": r"ruby", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-             "value_options": {"-I", "-r", "-C", "-E"}, "inline_code_letters": "e", "inline_code_flags": set()},
+             "value_options": {"-I", "-r", "-C", "-E"}, "inline_code_letters": "e", "attached_value_letters": "xFK",
+             "inline_code_flags": set()},
     "node": {"name": r"node(?:js)?", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
              "value_options": {"-r", "--require", "--import", "-C", "--conditions"}, "inline_code_letters": "ep",
-             "inline_code_flags": {"--print", "--eval"}},
+             "attached_value_letters": "", "inline_code_flags": {"--print", "--eval"}},
     "php": {"name": r"php", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-            "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "inline_code_flags": set()},
+            "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "attached_value_letters": "f",
+            "inline_code_flags": set()},
 }
 INTERPRETER = re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
 MANAGE_SCRIPT = "manage.py"
@@ -109,6 +118,41 @@ STDIN_PROGRAM_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
 # Redirections that carry code inside the command: a heredoc or a here-string. A file read with `<` is a script file,
 # as in `python3 <file>`.
 STDIN_CODE_REDIRECTIONS = {"<<", "<<<"}
+
+
+def code_letter_position(word, family):
+    # The index in word of the code letter of a short-flag cluster of the INTERPRETER_FAMILIES entry `family` (`-c`,
+    # `-Bc`), or None. The cluster is read one letter at a time: a value option ends it, because the rest of the word
+    # is its value (`-rdotenv/config`, `-Xtracemalloc`).
+    if not re.match(r"-[a-zA-Z]", word):
+        return None
+    for position, letter in enumerate(word[1:], start=1):
+        if letter in family["inline_code_letters"]:
+            return position
+        if letter in family["attached_value_letters"]:
+            return None  # the rest of the word is this option's value, not a code letter (`-mcProfile`, `-fw.php`)
+        if not letter.isalpha() or "-" + letter in family["value_options"]:
+            return None
+    return None
+
+
+def is_inline_code_option(word, family):
+    # True when word is an option of the INTERPRETER_FAMILIES entry `family` that carries code: a short-flag cluster
+    # ending in a code letter, or a long code flag. Code attached to the cluster (`-cprint(1)`) counts.
+    if word in family["inline_code_flags"]:
+        return True
+    return code_letter_position(word, family) is not None
+
+
+def attached_inline_code(word, family):
+    # The code attached to the code letter of an option for which is_inline_code_option is True (`-cprint(1)` gives
+    # `print(1)`); "" when the code is the next word (`-c`, `-Bc`) or the option is a long flag.
+    if word in family["inline_code_flags"]:
+        return ""
+    position = code_letter_position(word, family)
+    if position is None:
+        return ""
+    return word[position + 1:]
 
 
 def interpreter_family(word):

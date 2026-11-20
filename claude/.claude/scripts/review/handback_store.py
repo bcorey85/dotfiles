@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
 asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo,
-phase-asks-open, phase-asks-ruled) and the reads of it that decide whether a hand-back is current and the
-open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
+phase-asks-open, phase-asks-ruled, ask-ruling-relayed) and the reads of it that decide whether a hand-back is current
+and the open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
 these names from handback_store directly; handback.py imports only the ones it uses itself.
 The store is one append-only JSON-lines file per session under
 $HANDBACK_STORE_DIR (default ~/.claude/state/handback)."""
@@ -41,6 +41,12 @@ ASK_REJECTED = "ask-rejected"
 # A correction that turned a rejected ask into an accepted one: it cancels the ASK_REJECTED row of the same text.
 ASK_REJECTION_WITHDRAWN = "ask-rejection-withdrawn"
 ASKS_LOGGED_ROW = "asks-logged"
+# One user ruling on user-only asks that another session relayed: who relayed it, the user's quoted words and the
+# timestamp of the user turn that holds them. No other transcript text is stored.
+ASK_RULING_RELAYED = "ask-ruling-relayed"
+# One user ruling on a held plan impact that another session relayed to `decide`, with the same fields and the
+# impact's text.
+PLAN_RULING_RELAYED = "plan-ruling-relayed"
 # A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
 DISPATCH_REPO_KIND = "dispatch-repo"
 
@@ -87,6 +93,16 @@ def record_ruled_impact(session_id, text, repo, finding_text=None):
     return record(session_id, PLAN_IMPACT_RULED, text=text, repo=repo, **{RULED_FINDING_TEXT_KEY: finding_text})
 
 
+def record_relayed_plan_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, text):
+    """Records that `ruler` (the user) ruled the plan impact `text` in `repo` through the session `relayed_by`:
+    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them. Does nothing
+    without a session id."""
+    if not session_id:
+        return None
+    return record(session_id, PLAN_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+                  turn_ts=turn_timestamp, text=text)
+
+
 class Rulings(NamedTuple):
     """What a session already ruled on in one repo: the texts of the plan impacts, and the full texts of the accepted
     findings those rulings came from. A `decide` run with no packet, or whose impact covers no accepted finding,
@@ -119,6 +135,13 @@ def record_rejected_ask(session_id, text, repo):
     return record(session_id, ASK_REJECTED, text=text, repo=repo)
 
 
+def record_relayed_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, finding_ids):
+    """Records that `ruler` (the user) ruled the asks `finding_ids` in `repo` through the session `relayed_by`:
+    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them."""
+    return record(session_id, ASK_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+                  turn_ts=turn_timestamp, finding_ids=finding_ids)
+
+
 def record_rejection_withdrawn(session_id, text, repo):
     """Records that the session now accepts the ask it rejected with this text in `repo`, so its repeat is no longer
     dropped. Does nothing without a session id."""
@@ -144,8 +167,8 @@ def rejected_ask_texts(session_id, repo):
 
 
 def plan_ruled_since(session_id, handback_row):
-    """True when the user ruled the held plan impacts after this hand-back and kept the plan as written: the impacts
-    are settled, not waiting."""
+    """True when a plan ruling (keep, applied adopt or defer, by the user or the session) was recorded after this
+    hand-back: the impacts are settled, not waiting."""
     rulings = session_rows(session_id, PLAN_RULING)
     return any(row["ts"] >= handback_row["ts"] for row in rulings)
 

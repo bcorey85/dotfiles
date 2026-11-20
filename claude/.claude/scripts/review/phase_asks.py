@@ -2,10 +2,17 @@
 """phase_asks.py: the ruling on the finding asks of a /code phase review's packet.
 
     python3 phase_asks.py list
-    python3 phase_asks.py rule [--by user] <accepted|rejected>:<one-line reason> ...
+    python3 phase_asks.py rule [--by user [{relay_usage}]]
+        <accepted|rejected>:<one-line reason> ...
 
 An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md) is refused (exit 2, nothing
-logged) unless the call carries `--by user`, which the session uses only to record the user's own ruling.
+logged) unless the call carries `--by user`, which the session uses only to record the user's own ruling. A user
+ruling the user gave to another live session is recorded with
+`--by user {relay_usage}`
+The script needs a real user turn of that session's transcript whose whole text is the quote, typed after the
+newest open row of the batch (it comes after every ask it holds, carried ones included), and refuses (exit 2) when
+any lookup fails. The relay is stored as an `ask-ruling-relayed` row (who relayed, the quote, the turn's time).
+Only a user_only ask is credited to the user; the session rules the rest.
 
 `code_wait.py review` opens the asks (one `phase-asks-open` row in the hand-back store) when it returns a clean
 phase packet (converged, or capped and read as deferred) that holds finding asks. `list` prints them. `rule` takes
@@ -24,28 +31,31 @@ import os
 import pathlib
 import shlex
 import sys
+from typing import NamedTuple
 
-sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import capped_review
 import handback
 import handback_store
 import plan_format
 import review_asks
+import ruling_relay
 import script_utils
 from approval_asks_store import (
     ApprovalAsksFileError,
     check_approval_paths_readable,
-    forget_rejected_approval_paths,
+    forget_ruled_approval_paths,
 )
 from ask_outcome_words import (
     ACCEPTED,
     LIST_COMMAND,
     OUTCOME_PLACEHOLDER,
     REJECTED,
-    USER_ONLY_KEY,
+    RELAY_USAGE,
     rule_command,
     rule_instruction,
 )
+from human_turn_lookup import HumanTurnRefusedError
 from review_fix_state import ASK_LOGGER
 
 RULABLE_OUTCOMES = (ACCEPTED, REJECTED)
@@ -152,58 +162,85 @@ def supply_ids_by_context(session_id, repo, asks, contexts, stall):
         review_asks.supply_finding_ask_ids(run_asks, session_id, ASK_LOGGER, context, repo, stall)
 
 
+class RuledCall(NamedTuple):
+    """The words of a `rule` call: who rules, the outcome words, and the relay request (None for no relay)."""
+    ruler: str
+    outcome_words: list
+    relay: ruling_relay.RelayRequest | None
+
+
 def split_ruler(words):
-    """(ruler, the outcome words, None), or (None, None, the refusal text). `--by user` marks the ruling as the
-    user's; no `--by` is the session's."""
+    """(RuledCall, None), or (None, the refusal text). `--by user` marks the ruling as the user's; no `--by` is the
+    session's. `--relayed-by` and `--quote` go with `--by user`."""
     outcome_words, ruler = script_utils.pop_option(words, "--by")
     if ruler is None:
-        return plan_format.SESSION_RULING, outcome_words, None
-    if ruler != plan_format.USER_RULING:
-        return None, None, f"--by takes only `{plan_format.USER_RULING}`, not {ruler!r}"
-    return ruler, outcome_words, None
+        ruler = plan_format.SESSION_RULING
+    elif ruler != plan_format.USER_RULING:
+        return None, f"--by takes only `{plan_format.USER_RULING}`, not {ruler!r}"
+    try:
+        outcome_words, relay = ruling_relay.pop_relay_options(outcome_words)
+        ruling_relay.refuse_relay_without_user(relay, ruler)
+    except ruling_relay.RelayRefusedError as error:
+        return None, ruling_relay.relay_refusal_line(error)
+    return RuledCall(ruler, outcome_words, relay), None
+
+
+def verified_phase_relay(call, asks, filed_at):
+    """(RelayedRuling or None, None), or (None, the refusal text). The relay of `call` is verified against the
+    relaying session's transcript for a turn after `filed_at`; a call with no relay gives (None, None)."""
+    if call.relay is None:
+        return None, None
+    try:
+        ruling_relay.refuse_relay_without_user_only(asks)
+        # The bound is the newest open row's time, which comes after every ask it holds, carried ones included: a
+        # turn typed before a carried batch's newest packet is refused.
+        return ruling_relay.verify_relay(call.relay, filed_at), None
+    except HumanTurnRefusedError as error:
+        return None, ruling_relay.relay_refusal_line(error)
 
 
 def ruler_of_call(words, asks):
-    """(ruler, the outcome words, None), or (None, None, the refusal text) when the `--by` word is unknown or a
-    session rules on a user-only ask."""
-    ruler, outcome_words, refusal = split_ruler(words)
+    """(RuledCall, None), or (None, the refusal text) when the `--by` word is unknown or a session rules on a user-only
+    ask."""
+    call, refusal = split_ruler(words)
     if refusal:
-        return None, None, refusal
+        return None, refusal
     user_command = f"rule --by {plan_format.USER_RULING} ..."
-    refusal = review_asks.user_only_refusal(asks, ruler, user_command)
+    refusal = review_asks.user_only_refusal(asks, call.ruler, user_command)
     if refusal:
-        return None, None, refusal
-    return ruler, outcome_words, None
+        return None, refusal
+    return call, None
 
 
-def ruler_of_ask(item, call_ruler):
-    """Who decided one ask. A `--by user` call is the user's ruling on a user-only ask only; the session rules the
-    other asks of the batch."""
-    if call_ruler == plan_format.USER_RULING and item.get(USER_ONLY_KEY):
-        return plan_format.USER_RULING
-    return plan_format.SESSION_RULING
+class OutcomeLog(NamedTuple):
+    failures: list[str]  # one line per row that did not log
+    logged_asks: list[dict]  # the asks whose row logged
 
 
 def log_outcomes(session_id, repo, asks, rulings, contexts, ruler=plan_format.SESSION_RULING):
     """Logs each ask's outcome row under the ask's own context (`contexts` is one per ask), one per ask. `ruler` is
     the call's: the row of a user-only ask is decided by the user under `--by user`, every other row by the session.
-    Returns one line per row that did not log; the ruling stands either way. After one log helper call times out, no
-    other call is made: a hung ledger costs one timeout, and each unlogged row still gets its line."""
+    Returns an OutcomeLog: a line per row that did not log, and the asks whose row did; the ruling stands either
+    way. After one log helper call times out, no other call is made: a hung ledger costs one timeout, and each
+    unlogged row still gets its line."""
     stall = handback.LoggerStall()
     supply_ids_by_context(session_id, repo, asks, contexts, stall)
     failures = []
+    logged_asks = []
     for number, (item, (outcome, _reason)) in enumerate(zip(asks, rulings, strict=True), 1):
         context = contexts[number - 1]
-        row = review_asks.log_ask_outcome(ASK_LOGGER, context, item, outcome, ruler_of_ask(item, ruler), repo, stall)
+        ask_ruler = review_asks.ruler_of_ask(item, ruler)
+        row = review_asks.log_ask_outcome(ASK_LOGGER, context, item, outcome, ask_ruler, repo, stall)
         if row.code != 0:
             failures.append(f"ask {number}: {script_utils.one_line(row.output, 160)}. "
                             f"Log it later with `{shlex.join(row.command)}`")
             continue
         # The id the row was logged under, so the ruled row names the same one.
         item["finding_id"] = row.finding_id
+        logged_asks.append(item)
         if row.new_finding_id_note:
             print(f"phase_asks: {row.new_finding_id_note}", file=sys.stderr)
-    return failures
+    return OutcomeLog(failures, logged_asks)
 
 
 def command_rule(words):
@@ -235,11 +272,16 @@ def rule_open_asks(words):
         return 2
 
     asks = state.open_row["asks"]
-    ruler, outcome_words, refusal = ruler_of_call(words, asks)
+    call, refusal = ruler_of_call(words, asks)
     if refusal:
         print(f"phase_asks: {refusal}. Nothing was logged.", file=sys.stderr)
         return 2
-    rulings, refusal = read_rulings(outcome_words, len(asks))
+    ruler = call.ruler
+    relayed, refusal = verified_phase_relay(call, asks, state.open_row["ts"])
+    if refusal:
+        print(f"phase_asks: {refusal}. Nothing was logged.", file=sys.stderr)
+        return 2
+    rulings, refusal = read_rulings(call.outcome_words, len(asks))
     if refusal:
         print(f"phase_asks: {refusal}. Run `{rule_command(len(asks), by_user=ruler == plan_format.USER_RULING)}`",
               file=sys.stderr)
@@ -263,7 +305,7 @@ def rule_open_asks(words):
     outcomes = [outcome for outcome, _reason in rulings]
     # Checked before any row is written: a damaged file must stop the ruling with nothing logged.
     try:
-        check_approval_paths_readable(rows_repo, asks, outcomes)
+        check_approval_paths_readable(rows_repo, asks)
     except ApprovalAsksFileError as error:
         print(f"phase_asks: {error}. Nothing was logged.", file=sys.stderr)
         return 1
@@ -271,11 +313,14 @@ def rule_open_asks(words):
     # Before the outcome rows: a hung or failed logger must not lose them. A rerun adds none (the store skips a text
     # already rejected). The key is the one the review loop reads them under.
     review_asks.record_rejected_asks(store_sessions, rows_repo, asks, outcomes)
-    # A rejected approval ask leaves the saved paths, so a resumed review loop does not file it again.
-    forget_rejected_approval_paths(rows_repo, asks, outcomes)
+    # A ruled approval ask leaves the saved paths, so a resumed review loop does not file it again.
+    forget_ruled_approval_paths(rows_repo, asks)
 
     contexts = state.open_row["contexts"]
-    failures = log_outcomes(session_id, repo, asks, rulings, contexts, ruler)
+    outcome_log = log_outcomes(session_id, repo, asks, rulings, contexts, ruler)
+    failures = outcome_log.failures
+    if relayed is not None:
+        ruling_relay.record_relay(session_id, rows_repo, relayed, outcome_log.logged_asks)
     # One row per answered open row, after the outcome rows: a logger failure must not leave the commit gate closed.
     # A row names the open row it answers, so an open row written while the outcomes were logging stays open.
     ruled_rulings = [{"outcome": outcome, "reason": reason, "finding_id": item.get("finding_id")}
@@ -304,7 +349,7 @@ def main(argv):
     except OSError as error:
         print(f"phase_asks: cannot read or write the hand-back store: {error}", file=sys.stderr)
         return 1
-    print(__doc__, file=sys.stderr)
+    print(__doc__.format(relay_usage=RELAY_USAGE), file=sys.stderr)
     return 2
 
 

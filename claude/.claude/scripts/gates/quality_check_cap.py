@@ -11,8 +11,11 @@ of 126 or 127 (the shell found no command to run), so the rerun is allowed. Exit
 behind `&&` or `||` may never have started, so it is not recorded; after a success, a check behind `||` is not.
 A check whose output redirection the shell could not open (a redirect into a missing folder, `> gone/x.log`)
 never started, so it is not recorded. Nor is a failed run whose output says it stopped on a path that does not
-exist (check_output.stopped_on_missing_path: a file list passed as one word). A run record keeps the run's start
-in a line, so an edit made while the
+exist (check_output.stopped_on_missing_path: a file list passed as one word), nor a failed run with no runner
+summary whose output shows the tool could not start or an environment fault
+(check_output.failed_without_a_result). The key keeps leading `NAME=value` words, so a rerun that
+changes them is allowed.
+A run record keeps the run's start in a line, so an edit made while the
 check ran allows the rerun; the record's own time is the run's end. A command with a formatter that rewrites files
 (`cargo fmt`, `prettier --write`, `ruff format`...) or a git call that rewrites the tree (`git merge`, `checkout`,
 `reset`...) is never denied when every check in it runs only after the formatter succeeded (joined to it by `&&`,
@@ -320,11 +323,21 @@ def ran_since_last_edit(run_file, edits_file):
     return started > edited
 
 
-def record_runs(checks, steps, succeeded, state_dir, has_formatter):
+def run_gave_no_result(error_text, cwd):
+    """True when a failed run produced no result (see check_output.failed_without_a_result)."""
+    exit_code = exit_code_in_error_text(error_text)
+    repo_root = script_utils.repo_root(cwd, timeout=GIT_TIMEOUT_SECONDS) or cwd
+    return check_output.failed_without_a_result(exit_code, error_text, repo_root)
+
+
+def record_runs(checks, steps, succeeded, state_dir, has_formatter, failure_text=None):
+    """Record each check that surely ran. `failure_text` is the error text of a failed run, None after a success."""
     for check in checks:
         if not step_surely_ran(steps, check.index, succeeded):
             continue
         if redirect_failed(check):
+            continue
+        if failure_text is not None and run_gave_no_result(failure_text, check.cwd):
             continue
 
         start_ns = take_run_start(check.run_file)
@@ -503,10 +516,15 @@ def run(raw, state):
                 loop_kinds.pop()
             continue
         segment = re.sub(r"^[({ \t]+", "", segment)
+        env_prefix = ""
         while True:
-            stripped = ASSIGNMENT.sub("", WRAPPER.sub("", segment, count=1), count=1)
+            unwrapped = WRAPPER.sub("", segment, count=1)
+            assignment = ASSIGNMENT.match(unwrapped)
+            stripped = unwrapped[assignment.end():] if assignment else unwrapped
             if stripped == segment:
                 break
+            if assignment:
+                env_prefix += assignment.group(0)
             segment = stripped
         if writes_files(segment):
             format_indexes.append(index)
@@ -517,10 +535,11 @@ def run(raw, state):
         if is_help_probe(segment):
             continue
 
-        norm = normalize(segment)
-        if check_scope.names_cargo_test_target(norm):
+        if check_scope.names_cargo_test_target(normalize(segment)):
             continue
 
+        # The key keeps the leading NAME=value words: a rerun under another environment is not unchanged.
+        norm = normalize(env_prefix + segment)
         key = str(cksum((norm + "\n" + cwd).encode("utf-8", "surrogateescape")))
         run_file = run_file_for(state_dir, key, agent_id)
         in_repeat_loop = bool(loop_kinds) and loop_kinds[-1] == "repeat"
@@ -533,7 +552,8 @@ def run(raw, state):
         if format_indexes:
             with contextlib.suppress(OSError):
                 touch(state_dir + "/edits")
-        record_runs(checks, steps, succeeded, state_dir, bool(format_indexes))
+        failure_text = None if succeeded else jq_field(root_json, "error")
+        record_runs(checks, steps, succeeded, state_dir, bool(format_indexes), failure_text)
         return
 
     if skipped:

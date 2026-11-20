@@ -9,13 +9,16 @@ import signal
 import sys
 import typing
 
+import check_parts
 import full_check
 import full_check_gate
 import handback
+import handback_store
 import plan_format
 import review_loop_held
 import review_loop_script
 import script_utils
+import session_registry
 from finding_record import parse_finding
 from review_loop_calls import CALLS, LIVE_CHILDREN, PARENT_SESSION, now
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
@@ -40,6 +43,7 @@ from review_loop_prompt_file import (
     reviewer_brief,
 )
 from review_loop_ruled import rejected_ask_records
+from review_loop_scoped_tests import test_commands_of
 from review_loop_script import (
     ROUND_BUDGET,
     SKILLS,
@@ -85,6 +89,24 @@ def later_phase_files(header):
     return set(filter(None, names))
 
 
+def default_check_could_not_run(session, repo):
+    """True when the session's last hand-back for this repo stopped as a setup fault, or its full check was an
+    environment gap or was itself an overridden run: the configured full check could not run here, so a `--test`
+    command given now stands in for it. A previous hand-back that does not parse is not one of these."""
+    previous = handback_store.latest_for_repo(session, repo)["handback"]
+    if not previous:
+        return False
+    if previous.get("status") == handback.SETUP_FAULT_STATUS:
+        return True
+    if previous.get("status") == handback.INVALID_STATUS:
+        return False
+    try:
+        packet = handback.load(previous["message"])
+    except handback.PacketError:
+        return False
+    return packet["check_overridden"] or full_check.is_environment_gap_result(packet["full_check"])
+
+
 def build_loop(request):
     """The LoopRun for one request, with the settings its prompt header gives. Returns (loop, check_command)."""
     header, handoff, repo = request.header, request.handoff, request.repo
@@ -100,9 +122,16 @@ def build_loop(request):
 
     log_call(repo, [str(SKILLS / "review-scope"), f"caller={header.get('caller', 'code')}"])
     found_command = full_check.configured_check_command(repo)
+    test_commands = test_commands_of(request.gate_commands)
+    loop.check_overridden = bool(test_commands) and request.gates_every_run and default_check_could_not_run(
+        request.session, repo)
+    if loop.check_overridden:
+        test_parts = [(f"test-{index}", [command]) for index, command in enumerate(test_commands, 1)]
+        found_command = check_parts.join_parts(test_parts)
     plan = header.get("plan")
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
-    check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, header.get("phase"))
+    loop.plan_on_disk, loop.phase = plan_on_disk, header.get("phase")
+    check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, loop.phase)
     if plan_on_disk:
         plan_lines = (pathlib.Path(repo) / plan_on_disk).read_text().splitlines()
         loop.test_strategy = plan_format.test_strategy_section(plan_lines)
@@ -182,7 +211,7 @@ def parse_review_loop_arguments(argv):
 def main(argv=None):
     args = parse_review_loop_arguments(argv)
     signal.signal(signal.SIGTERM, stop_on_sigterm)
-    PARENT_SESSION["label"] = script_utils.session_display_name(args.session) or f"session {args.session}"
+    PARENT_SESSION["label"] = session_registry.session_display_name(args.session) or f"session {args.session}"
     repo = str(pathlib.Path(args.repo).resolve())
     out = pathlib.Path(args.state_dir) / "loop-script" / args.agent_id
     out.mkdir(parents=True, exist_ok=True)

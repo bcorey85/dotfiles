@@ -287,7 +287,7 @@ class PhaseAsksCommandTest(ScriptRunCase):
             # A row written outside the lock (a producer waits for it): the ruling must still leave it open.
             handback_store.record(SESSION, handback_store.PHASE_ASKS_OPEN, repo=self.repo_top, asks=[newer_ask],
                                   contexts=[CONTEXT], packet_keys=["loop-b:5"])
-            return []
+            return phase_asks.OutcomeLog([], [])
 
         with unittest.mock.patch.object(phase_asks, "log_outcomes", open_while_logging), \
                 unittest.mock.patch("pathlib.Path.cwd", return_value=self.repo), \
@@ -460,6 +460,13 @@ class PhaseAsksCommandTest(ScriptRunCase):
 
         self.assertEqual(code, 2)
         self.assertIn("phase_asks.py rule", errors)
+
+    def test_the_printed_usage_has_no_line_over_120_characters(self):
+        code, _, errors = self.run_script("frobnicate")
+
+        self.assertEqual(code, 2)
+        for line in errors.splitlines():
+            self.assertLessEqual(len(line), 120, line)
 
 
 PRODUCER_CODE = """

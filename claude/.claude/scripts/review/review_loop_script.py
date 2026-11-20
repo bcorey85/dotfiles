@@ -12,13 +12,18 @@ The script walks a fixed graph: scope, first-round reviewers (code, plus smell a
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
 check, telemetry rows, and the hand-back packet.
-The full check runs through full_check.py and writes the full-check receipt. It runs only the `Quality check:` command
-of the repo's CLAUDE.md; it runs none in a repo with no such line. In a repo whose CLAUDE.md holds `Full suite: CI`,
+The full check runs through full_check.py and writes the full-check receipt. It runs the check
+full_check.resolved_check gives; it runs none in a repo with none. On a launch with `--gates-every-run` whose session's
+last hand-back for the repo stopped as `setup-fault`, held an environment-gap full check, or was itself an
+overridden run, the `--gate-command` test commands (stale-prose excluded) are the full check, each on its own;
+when it passes they do not run again as a gate.
+Their own setup fault stops the loop as `setup-fault`. In a repo whose CLAUDE.md holds `Full suite: CI`,
 where the coder calls run the changed files' tests, a run with no runner summary or that ran no test is
 `passed (check only; CI runs the full suite)`. A check past
 full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
-module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
+module the repo declares as a dependency, or that exits 127 on a shell line that names a missing program, is an
+environment gap. None is a failure: the packet's `full_check` says
 `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines
 leave out the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary, or
@@ -911,8 +916,14 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
+            "check_overridden": self.check_overridden,
             "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *coder_fault_notes()])),
         }
+
+
+def check_ran_gates(loop):
+    """True when the full check already ran the `--test` commands and passed, so they need no second run."""
+    return loop.check_overridden and loop.full_check == full_check.PASSED
 
 
 def walk(loop, check_command, gate_commands):
@@ -932,7 +943,7 @@ def walk(loop, check_command, gate_commands):
         loop.class_closure_pass(check_command)
     if loop.status == "converged" and loop.untested_fix:
         loop.scoped_tests_pass(check_command, list(gate_commands))
-    elif loop.status == "converged" and loop.gates_every_run:
+    elif loop.status == "converged" and loop.gates_every_run and not check_ran_gates(loop):
         loop.run_test_commands(test_commands_of(gate_commands), budgeted=True, stop_when_unrun=True)
 
 

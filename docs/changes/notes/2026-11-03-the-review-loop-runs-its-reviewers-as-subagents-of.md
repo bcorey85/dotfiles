@@ -13,7 +13,7 @@ test: "tests/scripts/test_reviewer_dispatch.py"
 asked: ""
 proof: ["2026-11-03-scripted-review-loop-s-reviewers-dispatched-as"]
 unmeasured: ""
-overlap: "none"
+overlap: "review-scripted-loop-cache-read is also named by the earlier change 2026-10-30-review-launches-the-scripted-review-loop, which launches the scripted review loop from /review, so its cache-read reading covers both edits and cannot be split between them."
 ---
 
 ## Change

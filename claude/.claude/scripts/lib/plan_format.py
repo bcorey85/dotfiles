@@ -30,6 +30,7 @@ import re
 
 import script_utils
 import source_text
+from ask_outcome_words import RELAY_USAGE
 
 # A `path/to/file.ext` or a repo-root `file.ext` in backticks, with an optional :line or :start-end suffix inside the
 # ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so most readers take a bare name only from
@@ -828,11 +829,18 @@ PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
 DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
 PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
 PLAN_OWNER_RULE_CONDITION = "the ticket's own words, or with no ticket the user's own request, stay met"
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling changes an acceptance criterion only when "
+DECIDE_BY_NOTE = ("If the user told you to make the call, pass `--by user` and quote that instruction in --ruling; "
+                  "pass `--by session` only when you rule without asking and "
                   f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while "
-                  f"{PLAN_OWNER_RULE_CONDITION}.")
-DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
+                  f"{PLAN_OWNER_RULE_CONDITION}. A user ruling another session relays: `--by user {RELAY_USAGE}`, "
+                  "verified against that session's transcript.")
+PLAN_ARG_STEM = "--plan <the plan path"
+PLAN_ARG_WHEN_NAMED = "when the handoff names one"
+PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}, {PLAN_ARG_WHEN_NAMED}>"  # a `--by user` line
+SESSION_PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}>"  # a `--by session` line: the criteria owner is read from the plan
+ANY_PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}: required with --by session, else {PLAN_ARG_WHEN_NAMED}>"
+DECIDE_USAGE = (f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" '
+                f"{ANY_PLAN_ARG_NOTE}")
 
 
 def is_ruling_by(by):

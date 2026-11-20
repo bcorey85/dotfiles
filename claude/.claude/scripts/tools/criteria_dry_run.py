@@ -8,11 +8,13 @@ under it for each problem the exit code cannot show:
 - a `pgrep -f` pattern that matches the shell running the check always finds that shell;
 - a count criterion whose stated number differs from the number the plan's own code blocks give;
 - an ENV verdict (the tool could not start, such as a version manager's missing version) carries
-  `environment failure: <the output line that shows it>`.
+  `environment failure: <the output line that shows it>`; an exit 127 that names a missing tool carries
+  `environment failure: <tool> not found on PATH; fix: install <tool> or add the pyenv shims to PATH`.
 Exit 0 when every command is RED and unflagged; exit 1 otherwise (GREEN, BROKEN, ENV or any flag need an answer before
 the plan is final). `--skip N` leaves out check N (every phase's checks are numbered in one sequence) for a command that
 writes."""
 import argparse
+import os
 import pathlib
 import re
 import shlex
@@ -20,6 +22,7 @@ import sys
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
+import gate_env
 import plan_format
 import plan_verification
 import script_utils
@@ -167,6 +170,10 @@ def dry_run(plan_path, repo_dir, skipped, timeout):
     """Run the plan's criteria and print the report. Returns the exit code."""
     lines = plan_path.read_text().splitlines()
     needs_answer = False
+    plan_rel = os.path.relpath(plan_path, repo_dir)
+    assignments = gate_env.repo_gate_env(repo_dir, plan_rel)
+    gate_environment = {**os.environ, **script_utils.environment_from_assignments(assignments)}
+    check_environment = gate_env.check_env(repo_dir, gate_environment)
     for label, line, command, code_lines in criteria_in_plan(lines, repo_dir):
         item_text = plan_format.automated_item_text(line)
         if command is None:
@@ -177,7 +184,7 @@ def dry_run(plan_path, repo_dir, skipped, timeout):
             print(f"CHECK {label} SKIPPED {command}")
             continue
 
-        code, output = script_utils.run_command(command, repo_dir, timeout=timeout)
+        code, output = script_utils.run_command(command, repo_dir, timeout=timeout, env=check_environment)
         judged = item_verdict(command, line, code, output)
         verdict = judged.outcome
         print(f"CHECK {label} {verdict} rc={code} {command}")

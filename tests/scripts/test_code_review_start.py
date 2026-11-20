@@ -157,6 +157,16 @@ class CodeReviewStartTest(unittest.TestCase):
         loop_dir_file = self.repo / ".git/code-phase/loop-dir"
         self.assertEqual(loop_dir_file.read_text().strip(), str(prompt_folder))
 
+    def test_a_missing_handoff_file_stops_with_its_path_and_no_traceback(self):
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               str(self.repo / ".git/code-phase/handoff.txt"), "--base", "HEAD", "--detach"],
+                              cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(f"no hand-off file at {self.repo / '.git/code-phase/handoff.txt'}", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+
     def test_a_handoff_an_earlier_phase_review_read_stops_the_next_phase_review(self):
         code_review_start = self.load_module()
         handoff_text = (self.repo / "handoff.txt").read_text()
@@ -242,28 +252,6 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertIn("status: converged", printed)
         self.assertEqual(loop_folder, prompt_folder, "the loop writes its packet where the run looks for it")
-
-    def test_a_converged_packet_with_a_held_plan_impact_prints_the_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: AC2 now names the archived orders too", "gate": "code-reviewer",
-                    "ac_change": True, "cause": "plan", "adopted": False}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        handoff = self.repo / "handoff.txt"
-        self.assertIn("ACTION: defer-plan-impacts. 1 plan impact(s) wait for a ruling", printed)
-        self.assertIn(f"review_fix.py defer {handoff}", printed)
-
-    def test_a_converged_packet_with_only_an_adopted_plan_impact_prints_no_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: the helper lives in lib", "gate": "code-reviewer", "ac_change": False,
-                    "cause": "plan", "adopted": True}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        self.assertNotIn("defer-plan-impacts", printed)
 
     def test_the_live_run_names_the_log_when_the_loop_wrote_no_packet(self):
         printed, folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)

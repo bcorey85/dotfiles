@@ -14,7 +14,9 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 # herdr-wake-limited — runs scripts/.local/bin/herdr-wake-limited every 2
 # minutes. It presses Enter in Claude panes stuck at "Your usage limit has
 # reset / Press enter to continue", which Claude shows when the computer slept
-# past the limit reset and which nothing else clears.
+# past the limit reset and which nothing else clears. It also sends a herdr
+# notification once per pane stuck on a "Please run /login" login-expired line
+# (no keys sent; herdr panes only, not tuios).
 #   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.herdr-wake-limited.plist)
 #          with StartInterval 120.
 #   Linux: systemd user timer, OnBootSec + OnUnitActiveSec=2min; fires every

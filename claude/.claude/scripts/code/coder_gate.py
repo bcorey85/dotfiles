@@ -11,7 +11,8 @@
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
 only test-named files; {jest-tests} also keeps the script files under __tests__/, which jest runs. At every hand-back
 the gate fills it with the files the coder changed: tracked changes against HEAD plus untracked files, relative to the
-directory of a leading `cd <dir> &&`, else the repo root. A command whose list is empty is skipped, never passed or
+directory of a leading `cd <dir> &&` or of a package manager's folder flag (`pnpm -C`, `npm --prefix`,
+`yarn --cwd`), else the repo root. A command whose list is empty is skipped, never passed or
 failed.
 
 set and bash-hook refuse a command that runs a whole test suite, lints a whole package or runs a build, also when
@@ -34,7 +35,8 @@ cannot start the program, no package manifest where it ran, a run that found no 
 command or from a command that names `manage.py test`, with `Ran 0 tests` or no tests ran output, a
 package-manager or engine version mismatch, a missing module
 from outside the repo with no failed test, or, under pytest, a Django settings error with no failed test unless the
-coder changed a settings module or an app config) is a setup fault: it never denies the call or counts toward the
+coder changed a settings module or an app config, or a test-database collision that repeats on its one retry 30 s
+later, or that the budget leaves no time to retry) is a setup fault: it never denies the call or counts toward the
 cap, a run with only setup faults has the result "setup-fault", and the stamp names each one with its output tail.
 Two exit-0 runs still deny: one whose runner summary counts failures, and a filtered run that matched no test. A
 denial lists the failing tests above the output tail. With no gate, a gate older than 6 hours, or another agent type,
@@ -56,7 +58,16 @@ import time
 from collections import namedtuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / folder) for folder in ("lib", "telemetry")]
+import import_guard
+
+# Fail-closed on a broken import (exit 2, the call does not run). After the imports the hook verbs run inside
+# hook_input.run_gate, which blocks on a judging crash; the `set`, `summary` and `clear` CLI verbs keep their traceback.
+release_import_guard = import_guard.guard("coder-gate", __name__)
 import check_output
+import check_scope
+import collision_retry
+import gate_env
+import hook_input
 import script_utils
 import shell_command
 import test_run_output
@@ -86,8 +97,7 @@ HOOK_TIMEOUT_SECONDS = 3600
 # output sort and the state write, so the hook finishes on its own. The age check runs before the lock and the
 # lock wait comes off the budget.
 GATE_BUDGET_SECONDS = HOOK_TIMEOUT_SECONDS - 600
-# A command is not started with less budget left than this: it could not give a result.
-MIN_COMMAND_SECONDS = 60
+MIN_COMMAND_SECONDS = collision_retry.MIN_COMMAND_SECONDS
 TAIL_CHARS = 6000
 TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
@@ -129,7 +139,8 @@ CLEAR_COMMAND_OUTCOMES = ((FAILED, "failed"), (TIMED_OUT, "timed out (no test re
                           (NOT_STARTED, "not started (time budget used up)"), (SKIPPED, "skipped"))
 # The stamp section of each kind of command that gave no test result: (outcome, heading, closing advice, line format
 # of one command). The heading fills {budget_seconds}; a line fills {command}, {detail} and, for a timeout,
-# {timeout_seconds}, the timeout that command got.
+# {timeout_seconds}, the timeout that command got, and, for a setup fault, {tool_note}, the missing program, the
+# test-database collision and its fix, or "".
 NO_RESULT_STAMP_SECTIONS = (
     (TIMED_OUT,
      "\nHAND-BACK GATE TIMEOUT: these commands timed out with no test result:",
@@ -142,7 +153,7 @@ NO_RESULT_STAMP_SECTIONS = (
      "repo's test runner or virtualenv, or a dependency is not installed, or no package manifest is where it ran, or "
      "it ran no test, or the package-manager or engine version does not match. Run the repo's own test command for "
      "these files.",
-     "\n  `{command}`, output tail:\n{detail}"),
+     "\n  `{command}`{tool_note}, output tail:\n{detail}"),
     (COMMAND_ERROR,
      "\nHAND-BACK GATE COMMAND ERROR: these commands name a path that does not exist where they ran:",
      "\nThe gate got no test result from these commands; they are not among the failures and spent no denial. The gate "
@@ -247,13 +258,18 @@ def clear_gate():
 
 
 def command_directory(command, repo_root):
-    # A leading `cd <dir> &&` or `cd <dir> ;` sets the directory that {files} or {tests} is relative to.
+    # A leading `cd <dir> &&` or `cd <dir> ;`, or a package manager's folder flag (`pnpm -C <dir>`,
+    # `npm --prefix <dir>`, `yarn --cwd <dir>`), sets the directory that {files} or {tests} is relative to.
     try:
         words = shlex.split(command)
     except ValueError:
         return repo_root
     if len(words) >= 3 and words[0] == "cd" and words[2] in ("&&", ";"):
         return str((pathlib.Path(repo_root) / words[1]).resolve())
+
+    flag_folder, _ = check_scope.package_command_folder(shell_command.without_assignments(words))
+    if flag_folder:
+        return str((pathlib.Path(repo_root) / flag_folder).resolve())
     return repo_root
 
 
@@ -311,13 +327,32 @@ def _failure_of(command, code, output, verdict):
     return None
 
 
+def _run_retrying_collision(command, repo_root, environment, command_timeout, budget_seconds, started):
+    # (exit code, output, the timeout the last run used) of the command. A run that collided on a shared test
+    # database waits and runs once more, in what the budget has left; when no time is left, or the retry collides
+    # too, the collided output stands and sort_failures reads it as a setup fault.
+    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=command_timeout)
+    output = stdout + stderr
+    seconds_left = float("inf")
+    if budget_seconds is not None:
+        seconds_left = budget_seconds - (time.monotonic() - started)
+    retry_seconds = collision_retry.collision_retry_seconds(code, output, seconds_left)
+    if retry_seconds is None:
+        return code, output, command_timeout
+
+    collision_retry.wait_out_collision()
+    retry_timeout = min(COMMAND_TIMEOUT_SECONDS, retry_seconds)
+    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=retry_timeout)
+    return code, stdout + stderr, retry_timeout
+
+
 def run_commands(gate, budget_seconds=None, collect_summaries=False):
     # Only a caller that reads `summaries` sets collect_summaries: finding the summary lines costs a pass over each
     # command's output. A command that hit the timeout gave no test result, so timed_out holds (command, output so
     # far, the timeout it got), never failures. With a budget, each command gets at most the budget left, and a
     # command that cannot start with MIN_COMMAND_SECONDS left is in not_started: no command runs past the budget.
     run = CommandRun([], [], [], [], [])
-    environment = {**os.environ, **gate.get("env", {})}
+    environment = gate_env.check_env(gate["repoRoot"], {**os.environ, **gate.get("env", {})})
     started = time.monotonic()
     for command in gate["commands"]:
         filled_command = fill_files(command, gate["repoRoot"])
@@ -330,12 +365,11 @@ def run_commands(gate, budget_seconds=None, collect_summaries=False):
             run.not_started.append(command)
             continue
 
-        code, stdout, stderr = script_utils.run_process(filled_command, gate["repoRoot"], env=environment,
-                                                        timeout=command_timeout)
-        output = stdout + stderr
+        code, output, used_timeout = _run_retrying_collision(filled_command, gate["repoRoot"], environment,
+                                                             command_timeout, budget_seconds, started)
         verdict = check_output.check_verdict(command, code, output)
         if verdict == check_output.NOT_RUN:
-            run.timed_out.append((command, output, command_timeout))
+            run.timed_out.append((command, output, used_timeout))
             continue
 
         if collect_summaries:
@@ -363,6 +397,21 @@ def missing_path_line(command, output, repo_root):
 SortedFailures = namedtuple("SortedFailures", ["real_failures", "setup_faults", "command_errors"])
 
 
+SetupFault = namedtuple("SetupFault", ["command", "code", "output"])
+
+
+def setup_fault_note(fault):
+    # " (<tool> not found on PATH)" when the setup fault is an exit 127 that names a missing program, else "".
+    # A test-database collision names the collision and the fix instead.
+    if check_output.is_test_db_collision(fault.output):
+        return f" ({check_output.TEST_DB_COLLISION_FAULT})"
+
+    text = check_output.missing_tool_text(fault.code, fault.output)
+    if text is None:
+        return ""
+    return f" ({text})"
+
+
 def sort_failures(failures, repo_root):
     # A command error names a path that does not exist: the command is wrong, not the code.
     real_failures = []
@@ -374,8 +423,9 @@ def sort_failures(failures, repo_root):
         error_line = missing_path_line(command, output, repo_root)
         if error_line:
             command_errors.append((command, error_line))
-        elif is_setup_fault(code, output, repo_root) or is_django_settings_fault(command, output, changed_file_list):
-            setup_faults.append((command, output))
+        elif (check_output.is_test_db_collision(output) or is_setup_fault(code, output, repo_root)
+              or is_django_settings_fault(command, output, changed_file_list)):
+            setup_faults.append(SetupFault(command, code, output))
         else:
             real_failures.append((command, outcome, output))
     return SortedFailures(real_failures, setup_faults, command_errors)
@@ -404,8 +454,9 @@ def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
     for command, output, command_timeout in timed_out:
         outcomes[command] = {"outcome": TIMED_OUT, "detail": output[-TIMEOUT_TAIL_CHARS:],
                              "timeout_seconds": round(command_timeout)}
-    for command, output in sorted_failures.setup_faults:
-        outcomes[command] = {"outcome": SETUP_FAULT, "detail": output[-TIMEOUT_TAIL_CHARS:]}
+    for fault in sorted_failures.setup_faults:
+        outcomes[fault.command] = {"outcome": SETUP_FAULT, "detail": fault.output[-TIMEOUT_TAIL_CHARS:],
+                                   "tool_note": setup_fault_note(fault)}
     for command, missing_line in sorted_failures.command_errors:
         outcomes[command] = {"outcome": COMMAND_ERROR, "detail": missing_line}
     for command in not_started:
@@ -431,18 +482,19 @@ def unnamed_result_lines(outcome, unrun, sorted_failures):
     if outcome == RESULT_FAILED:
         lines += [f"command error: {command}" for command, _line in sorted_failures.command_errors]
     if outcome in (RESULT_FAILED, RESULT_COMMAND_ERROR):
-        lines += [f"setup fault: {command}" for command, _output in sorted_failures.setup_faults]
+        lines += [f"setup fault: {fault.command}{setup_fault_note(fault)}"
+                  for fault in sorted_failures.setup_faults]
     return lines
 
 
-def scoped_run(repo_root, commands, gate_env, log_path, budget_seconds=None):
+def scoped_run(repo_root, commands, gate_assignments, log_path, budget_seconds=None):
     # The ScopedRun of the scoped commands. real_failures holds the (command, outcome, output) of each real failure the
     # tails quote: empty unless the result is a failure. A budget_seconds bounds the whole run, as run_commands does.
     if not commands:
         return ScopedRun("not run (no scoped test commands)", [], [], [], [], False)
 
     gate ={"commands": commands, "repoRoot": repo_root,
-            "env": script_utils.environment_from_assignments(gate_env)}
+            "env": script_utils.environment_from_assignments(gate_assignments)}
     # Without a budget no hook timeout bounds this run, so it starts every command.
     failures, skipped, timed_out, not_started, summaries = run_commands(gate, budget_seconds, collect_summaries=True)
     if failures or timed_out:
@@ -471,7 +523,8 @@ def scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_s
         command_error_text = "; ".join(f"{command} ({line})" for command, line in command_errors)
         return "command error: " + command_error_text + log_note, []
     if outcome == RESULT_SETUP_FAULT:
-        return "setup fault: " + "; ".join(command for command, _output in setup_faults) + log_note, []
+        fault_text = "; ".join(f"{fault.command}{setup_fault_note(fault)}" for fault in setup_faults)
+        return "setup fault: " + fault_text + log_note, []
     if outcome == RESULT_TIMEOUT and timed_out:
         timed_out_commands = "; ".join(command for command, _output, _timeout in timed_out)
         not_started_note = ""
@@ -488,12 +541,12 @@ def scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_s
 HitCheck = namedtuple("HitCheck", ["result", "hit_outputs", "script_failure_tails"])
 
 
-def run_hit_check(repo_root, commands, gate_env, log_path):
+def run_hit_check(repo_root, commands, gate_assignments, log_path):
     # The stale-prose commands' result, hit outputs and script failure tails. A hit is a command that
     # exited 1, its whole output kept: it goes to a coder pass, not a stop. The result and the tails come from every
     # other outcome, as scoped_run reports them.
     gate = {"commands": commands, "repoRoot": repo_root,
-            "env": script_utils.environment_from_assignments(gate_env)}
+            "env": script_utils.environment_from_assignments(gate_assignments)}
     failures, skipped, timed_out, _not_started, _summaries = run_commands(gate)
     if failures or timed_out:
         timed_out_outputs = [(command, "timeout", output) for command, output, _timeout in timed_out]
@@ -561,7 +614,9 @@ def stamped_handback(tool_input, coder):
         lines = ""
         for command, detail in no_result.items():
             command_timeout = stored_commands[command].get("timeout_seconds")
-            lines += line_format.format(command=command, detail=detail, timeout_seconds=command_timeout)
+            tool_note = stored_commands[command].get("tool_note", "")
+            lines += line_format.format(command=command, detail=detail, timeout_seconds=command_timeout,
+                                        tool_note=tool_note)
         stamp += heading.format(budget_seconds=GATE_BUDGET_SECONDS) + lines + advice
     stamped_input = dict(tool_input)
     stamped_input["message"] = str(tool_input.get("message", "")) + stamp
@@ -737,13 +792,12 @@ def main():
         clear_gate()
         return
     if verb == "hook":
-        run_hook()
-        return
+        hook_input.run_gate(run_hook)
     if verb == "bash-hook":
-        run_bash_hook()
-        return
+        hook_input.run_gate(run_bash_hook)
     sys.exit(USAGE)
 
 
 if __name__ == "__main__":
+    release_import_guard()
     main()

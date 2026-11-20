@@ -444,7 +444,14 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
         never = self.log("simplify", {**payload, "target": ["mod/ghost.py"]})
         self.assertEqual(never.returncode, 1, never.stdout)
-        self.assertIn("matches no tracked file", never.stderr)
+        self.assertIn("matches no file (tracked or untracked)", never.stderr)
+
+    def test_log_simplify_counts_the_lines_of_untracked_files(self):
+        self.write("mod/b.py", "y = 1\nz = 2\n")
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": [], "target": ["mod"]}
+        done = self.log("simplify", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
 
     def test_log_audit_diff_loc_ignores_relative_config(self):
         config = self.temp_root / "gitconfig"
@@ -457,6 +464,23 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         finding_rows = self.finding_rows()
         self.assertEqual(finding_rows[0]["diff_loc"], "6")
+
+    def test_log_audit_counts_untracked_files_outside_the_cwd(self):
+        self.write("pkg/mod/a.py", "a\nb\n")
+        self.write("top/u.py", "x\ny\nz\n")
+        payload = {"finder": "smell-reviewer", "lane": "code", "target": ["mod", "../top"], "findings": []}
+        done = self.log("audit", payload, cwd=self.repo / "pkg")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.finding_rows()[0]["diff_loc"], "5")
+
+    def test_log_simplify_adds_tracked_and_untracked_lines_of_one_target(self):
+        self.write("mod/a.py", "a = 1\n")
+        self.git("add", "mod/a.py")
+        self.write("mod/b.py", "y = 1\nz = 2\n")
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": [], "target": ["mod"]}
+        done = self.log("simplify", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.finding_rows()[0]["diff_loc"], "3")
 
     def test_bad_input_exits_1_and_writes_nothing(self):
         self.branch_with({"a.py": "x = 1\n"})
@@ -927,6 +951,52 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertNotIn("mod/f00.py", second.stdout)
         out_of_range = self.flow("simplify-prep", "mod", "--slice", "3")
         self.assertEqual(out_of_range.returncode, 1)
+
+    def test_simplify_prep_lists_tracked_and_untracked_files_of_a_target(self):
+        self.write("mod/a.py", "x = 1\n")
+        self.git("add", "-A")
+        self.write("mod/b.py", "y = 2\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- mod/a.py", done.stdout)
+        self.assertIn("- mod/b.py", done.stdout)
+
+    def test_simplify_prep_lists_a_tracked_file_changed_in_the_work_tree_once(self):
+        self.write("mod/a.py", "x = 1\n")
+        self.git("add", "-A")
+        self.write("mod/a.py", "x = 2\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.count("- mod/a.py"), 1)
+
+    def test_simplify_prep_leaves_ignored_files_out(self):
+        self.write(".gitignore", "*.log\n")
+        self.write("mod/x.log", "noise\n")
+        self.write("mod/a.py", "x = 1\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("mod/x.log", done.stdout)
+
+    def test_simplify_prep_on_only_untracked_files_does_not_stop(self):
+        self.write("mod/b.py", "y = 2\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("STOP:", done.stdout)
+        self.assertIn("- mod/b.py", done.stdout)
+
+    def test_log_input_path_defaults_to_the_repo_git_dir(self):
+        self.write("mod/a.py", "x = 1\n")
+        done = self.flow("simplify-prep", "mod", extra_env={"REFACTOR_LOG_INPUT_DIR": ""})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        named = pathlib.Path(re.search(r"--input (\S*refactor-flow-[0-9a-f]{12}\.json)", done.stdout).group(1))
+        git_dir = pathlib.Path(self.git("rev-parse", "--absolute-git-dir").strip())
+        self.assertEqual(named.parent.resolve(), (git_dir / "refactor-flow").resolve())
+        self.assertTrue(named.parent.is_dir())
+
+    def test_close_branch_step_five_names_the_branch_log_command(self):
+        skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "close-branch" / "SKILL.md").read_text()
+        self.assertIn("refactor_flow.py log", skill_text)
+        self.assertIn("--mode branch", skill_text)
 
     def test_simplify_prep_small_target_has_no_split_and_prompt_has_oracle(self):
         self.write("mod/a.py", "x = 1\n")

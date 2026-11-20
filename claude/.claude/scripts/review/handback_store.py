@@ -45,6 +45,9 @@ ASKS_LOGGED_ROW = "asks-logged"
 # One user ruling on user-only asks that another session relayed: who relayed it, the user's quoted words and the
 # timestamp of the user turn that holds them. No other transcript text is stored.
 ASK_RULING_RELAYED = "ask-ruling-relayed"
+# One user ruling on a held plan impact that another session relayed to `decide`, with the same fields and the
+# impact's text.
+PLAN_RULING_RELAYED = "plan-ruling-relayed"
 # A row that replaces the repo of the latest dispatch with the one its loop's ROOT= line named.
 DISPATCH_REPO_KIND = "dispatch-repo"
 
@@ -115,6 +118,16 @@ class AdoptedRuling(NamedTuple):
     finding_text: str | None
     owner: str
     ruled_at: str
+
+
+def record_relayed_plan_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, text):
+    """Records that `ruler` (the user) ruled the plan impact `text` in `repo` through the session `relayed_by`:
+    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them. Does nothing
+    without a session id."""
+    if not session_id:
+        return None
+    return record(session_id, PLAN_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+                  turn_ts=turn_timestamp, text=text)
 
 
 class Rulings(NamedTuple):
@@ -238,8 +251,8 @@ def rejected_ask_texts(session_id, repo):
 
 
 def plan_ruled_since(session_id, handback_row):
-    """True when the user ruled the held plan impacts after this hand-back and kept the plan as written: the impacts
-    are settled, not waiting."""
+    """True when a plan ruling (keep, applied adopt or defer, by the user or the session) was recorded after this
+    hand-back: the impacts are settled, not waiting."""
     rulings = session_rows(session_id, PLAN_RULING)
     return any(row["ts"] >= handback_row["ts"] for row in rulings)
 

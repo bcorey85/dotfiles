@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 
+import import_guard
 import script_utils
 
 JQ_WHITESPACE = " \t\r\n"
@@ -354,6 +355,6 @@ def run_gate(main):
         raise
     except Exception as error:
         with contextlib.suppress(Exception):
-            emit_stderr(f"{hook_name()}: crashed ({type(error).__name__}: {error}) - blocking the call\n")
+            emit_stderr(import_guard.crash_line(hook_name(), error, before_read=False))
         sys.exit(2)
     sys.exit(code or 0)

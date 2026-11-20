@@ -49,6 +49,8 @@ LIVE_AGENTS = "reads the user's own agent definitions for the live session; its 
 DATA_FILE = "data file under the home folder"
 LEDGER_DIR = "makes the folder that holds the ledger files"
 ALLOWED_HITS = [
+    ("scripts/lib/shell_statements.py", 'toolkit_dir = os.path.join(os.path.expanduser("~"), ".claude")',
+     "names the live install folders that scripts are run from: a command's path is judged against them"),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
     ("scripts/gates/emit_orchestration.py", "SessionStart hook: inject", "docstring text"),

@@ -3,6 +3,7 @@
 #
 # usage: ledger-write <type>   (the row is read from stdin)
 #        ledger-write --local <type>
+#        ledger-write --local-path <type>   (prints the local file of <type>; exit 1 with no file)
 #
 # --local skips the ledger and appends the row to its local file, as with no ledger. A writer uses
 # it to keep a row the ledger refused or failed on, or to write a local-only type (escape_text).
@@ -28,7 +29,7 @@
 #   review_finding_label        ~/.claude/review-finding-labels.jsonl  REVIEW_FINDING_LABELS_FILE
 #     (--local only: {finding_id, docs_kind} of a row whose label the ledger refused)
 #   escape_text                 ~/.claude/escape-text.jsonl      ESCAPE_TEXT_FILE
-#     (--local only: a review_escape row's catch text, written by log-escape)
+#     (--local only: a review_escape row's catch text and its miss_reason, written by log-escape)
 #   review_metrics              ~/.claude/review-metrics.jsonl   REVIEW_METRICS_FILE
 #   review_escape               ~/.claude/review-escapes.jsonl   REVIEW_ESCAPES_FILE
 #   spec_run                    ~/.claude/spec-runs.jsonl        SPEC_RUNS_FILE
@@ -54,6 +55,18 @@ if [ "${1:-}" = "--local" ]; then
   shift
 fi
 
+path_only=""
+if [ "${1:-}" = "--local-path" ]; then
+  path_only=1
+  force_local=1
+  shift
+fi
+
+if [ $# -lt 1 ]; then
+  echo "ledger-write: usage: ledger-write [--local | --local-path] <type>" >&2
+  exit 2
+fi
+
 if [ -z "$force_local" ] && ledger=$(ledger_bin); then
   session_args=()
   [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
@@ -68,6 +81,7 @@ fi
 
 row_type="$1"
 if [ -z "${HOME:-}" ]; then
+  [ -z "$path_only" ] || exit 1
   echo "ledger-write: $local_reason; HOME is unset, row dropped" >&2
   exit 0
 fi
@@ -83,9 +97,15 @@ case "$row_type" in
   scan_run) log_file="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
   review_scope) log_file="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"; schema_version=null; kind="" ;;
   *)
+    [ -z "$path_only" ] || exit 1
     echo "ledger-write: $local_reason; $row_type has no jsonl file, row dropped" >&2
     exit 0 ;;
 esac
+
+if [ -n "$path_only" ]; then
+  printf '%s\n' "$log_file"
+  exit 0
+fi
 
 # The checkout is not the repo: repo-name names a linked worktree by its main checkout.
 repo=$("$script_dir/../tools/repo-name" 2>/dev/null || true)

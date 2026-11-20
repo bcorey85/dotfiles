@@ -19,6 +19,7 @@ module_spec.loader.exec_module(code_wait)
 
 AGENT_ID = "a1817e9d1060d81ea"
 REPORT = "Phase 0 is implemented."
+STORE_SESSION = "sess-store"
 
 
 def handback_records(report, call_id="toolu_1"):
@@ -305,6 +306,101 @@ class WaitReviewTest(unittest.TestCase):
         code_wait.write_phase_run(repo, "lane-a", "2", loop_folder)
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
+
+    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=()):
+        """A repo whose review ended, with this session's dispatch and hand-back (holding `impacts`) in the real
+        store, keyed as the commit gate keys them."""
+        repo, phase_dir = self.repo_with_pid(999999999)
+        packet = json.dumps({"status": status, "iter": 1, "fixed": [], "ask": [], "blockers": list(blockers),
+                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts})
+        # code_review_start's real output: its exit line, then the packet.
+        (phase_dir / "review.out").write_text(f"The review loop script exited 0.\n{packet}\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
+        environment = mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(temp_dir(self)),
+                                                   "CLAUDE_CODE_SESSION_ID": STORE_SESSION})
+        environment.start()
+        self.addCleanup(environment.stop)
+        handback_store = code_wait.handback_store
+        handback_store.record(STORE_SESSION, "dispatch", repo=str(repo.resolve()))
+        handback_store.record(STORE_SESSION, "handback", status="converged", message=packet)
+        return repo, packet
+
+    def test_a_finished_review_lists_each_held_plan_impact_and_the_defer_sentence_and_not_an_adopted_one(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        adopted = {"text": "the cap moves into the config", "gate": "smell-reviewer", "ac_change": False,
+                   "cause": "plan", "adopted": True}
+        repo, packet = self.finished_review_in_a_store_repo([held, adopted])
+
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertIn(packet, output)
+        notice = output[len(packet):]
+        self.assertIn("the queue is at-most-once; AC-2 drops the retry", notice)
+        self.assertNotIn("ask the user", notice, "the /code skill defers held impacts and never stops on them")
+        self.assertNotIn("decide", notice)
+        handoff_file = code_wait.phase_dir(repo) / code_wait.HANDOFF_FILE
+        self.assertIn("1 plan impact(s) wait for a ruling:", notice)
+        self.assertIn(code_wait.defer_instruction(handoff_file), notice)
+        self.assertIn(f"python3 ~/.claude/scripts/review/review_fix.py defer {handoff_file}", notice)
+        self.assertNotIn("<run folder>", notice)
+        self.assertIn("`RESOLVED: deferred to phase end by the session, <date>: <summary>`", notice)
+        self.assertNotIn("ACTION line", notice)
+        self.assertNotIn("the cap moves into the config", notice)
+
+    def test_a_packet_that_is_not_clean_prints_no_defer_notice_for_its_held_impact(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held], status="cap-reached",
+                                                             blockers=["[critical] data loss"])
+
+        self.assertEqual(code_wait.plan_impact_notice(repo), [])
+
+    def test_the_notice_finds_the_hand_back_through_a_linked_path_to_the_repo(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        link = temp_dir(self) / "linked-repo"
+        link.symlink_to(repo.resolve(), target_is_directory=True)
+
+        notice = code_wait.plan_impact_notice(link)
+
+        self.assertIn("1 plan impact(s) wait for a ruling:", notice[0])
+
+    def test_the_review_wait_names_the_rulings_that_clear_the_gate_before_code_stops(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+        self.assertIsNotNone(code_wait.handback.false_clean_reason(STORE_SESSION), "the gate starts dirty")
+
+        handoff_file = code_wait.phase_dir(repo) / code_wait.HANDOFF_FILE
+        self.assertIn(f"review_fix.py defer {handoff_file}", output)
+        handoff_file.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-11-19: "
+                                "drop the retry\n", encoding="utf-8")
+
+        script = toolkit_paths.REVIEW_DIR / "review_fix.py"
+        finished = subprocess.run(["python3", "-I", str(script), "defer", str(handoff_file)], cwd=repo,
+                                  capture_output=True, text=True, env=dict(os.environ))
+
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.assertIsNone(code_wait.handback.false_clean_reason(STORE_SESSION), "the defer clears the gate")
+
+    def test_a_second_wait_after_a_plan_ruling_prints_no_notice(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            self.assertIn("1 plan impact(s) wait for a ruling:", printed(code_wait.wait_review, repo))
+
+            code_wait.handback_store.record(STORE_SESSION, code_wait.handback_store.PLAN_RULING, decision="keep")
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertNotIn("plan impact(s) wait for a ruling", output)
 
     def test_a_fix_removed_change_packet_prints_the_stop_step_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)

@@ -42,8 +42,10 @@
     {"id": "gdg-merge-base", "gate": "git-discipline-gate", "command": "git merge origin/master", "expect": "allow", "mustDeny": false, "redundant": false, "source": "queue/the-stash-gate-sends-a-mid-lane-base-merge-to-a"},
     {"id": "gdg-rg-names-stash", "gate": "git-discipline-gate", "command": "rg -n \"git stash\" docs", "expect": "allow", "mustDeny": false, "redundant": false, "source": "WORK-SECURITY-HOOKS.md: Rules still match words in a heredoc body or in a quoted argument"},
     {"id": "gdg-queue-heredoc-names-amend", "gate": "git-discipline-gate", "command": "python3 bin/build_queue.py new --body - <<'EOF'\nThe agent ran git stash pop and git commit --amend.\nEOF", "expect": "allow", "mustDeny": false, "redundant": false, "source": "queue/eng-spec-verification-commands-and-queue-heredocs"},
-    {"id": "gdg-force-push-out-of-scope", "gate": "git-discipline-gate", "command": "git push --force-with-lease origin fix/x", "expect": "allow", "mustDeny": false, "redundant": false, "source": "tag:git_force_push"},
-    {"id": "gdg-reset-hard-out-of-scope", "gate": "git-discipline-gate", "command": "git reset --hard HEAD~1", "expect": "allow", "mustDeny": false, "redundant": false, "source": "tag:git_reset_clean"},
+    {"id": "gdg-force-push-main-checkout", "gate": "git-discipline-gate", "command": "git push --force-with-lease origin fix/x", "expect": "deny", "mustDeny": true, "redundant": true, "source": "tag:git_force_push"},
+    {"id": "gdg-reset-hard-main-checkout", "gate": "git-discipline-gate", "command": "git reset --hard HEAD~1", "expect": "deny", "mustDeny": true, "redundant": true, "source": "tag:git_reset_clean"},
+    {"id": "gdg-reset-hard-with-c-dot", "gate": "git-discipline-gate", "command": "git -C . reset -q --hard", "expect": "deny", "mustDeny": true, "redundant": false, "source": "queue/the-git-discipline-gate-denies-destructive-git-in"},
+    {"id": "gdg-push-force-after-no-pager", "gate": "git-discipline-gate", "command": "git --no-pager push -f origin x", "expect": "deny", "mustDeny": true, "redundant": false, "source": "queue/the-git-discipline-gate-denies-destructive-git-in"},
 
     {"id": "iih-python-c", "gate": "inline-interpreter-hint", "command": "python3 -c 'print(1)'", "expect": "deny", "mustDeny": true, "redundant": true, "source": "tag:interpreter_inline"},
     {"id": "iih-timeout-python-c", "gate": "inline-interpreter-hint", "command": "timeout 5 python3 -c 'print(1)'", "expect": "deny", "mustDeny": true, "redundant": true, "source": "tag:interpreter_inline"},

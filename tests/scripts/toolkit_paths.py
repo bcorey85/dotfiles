@@ -21,14 +21,17 @@ FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
-# Installed by the work repo's CB Security Hooks package: never tested or patched here.
+# The hooks come from the work repo's CB Security Hooks package and are not tested here, except
+# agent-model-guard.sh: it carries a local fork pass, tested in test_agent_model_guard.py,
+# that the package must carry too.
 WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh", "scripts/write-edit-safety-gate.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
 # The lib modules a copied coder_gate.py imports.
 CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",
                           "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
                           "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py", "reviewed_tree.py",
-                          "pytest_config.py", "notes_paths.py", "ansi_text.py")
+                          "pytest_config.py", "notes_paths.py", "ansi_text.py", "gate_env.py", "plan_format.py",
+                          "source_text.py", "collision_retry.py", "ask_outcome_words.py", "import_guard.py")
 
 
 def first_python_that_starts(names):

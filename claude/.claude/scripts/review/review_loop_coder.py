@@ -38,9 +38,14 @@ def file_texts(repo, start=None):
 class CoderCallError(RuntimeError):
     """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
 
-    def __init__(self, message, changed):
+    def __init__(self, message, changed, cause=None):
         super().__init__(message)
         self.changed = changed
+        self.cause = message if cause is None else cause
+
+    def keeping_only(self, kept):
+        """This error as it reads when only the `kept` paths still hold the coder's edits."""
+        return failed_call_error(self.cause, kept)
 
 
 def changed_paths(before, after):
@@ -49,18 +54,40 @@ def changed_paths(before, after):
 
 
 class CoderResult(typing.NamedTuple):
-    """A fix coder's report, the diffs of what it changed, and the paths whose text differs."""
+    """A fix coder's report, the diffs of what it changed, the paths whose text differs, and the approval-only paths
+    whose edit the loop reverted (`without_reverted` took them out of the first three)."""
 
     report: str
     diffs: list
     changed: list
+    reverted: tuple = ()
+
+
+def without_reverted(result, reverted, stats_before):
+    """`result` without the `reverted` paths in its changed list and without their diffs, so a reverted edit counts
+    as no change. Also drops the FIX_DIFF_STATS entries of those paths that its own coder call appended (the ones
+    from index `stats_before` on) and deletes their diff files, so the class-closure check is not told about an edit
+    that is gone. An earlier round's entry for the same path stays: its edit was kept."""
+    this_call_stats = FIX_DIFF_STATS[stats_before:]
+    reverted_stats = [stat for stat in this_call_stats if stat["path"] in reverted]
+    for stat in reverted_stats:
+        pathlib.Path(stat["diff_file"]).unlink(missing_ok=True)
+    kept_stats = [stat for stat in this_call_stats if stat["path"] not in reverted]
+    FIX_DIFF_STATS[stats_before:] = kept_stats
+    reverted_headers = [f"--- {diff_old_label(path)}\n" for path in reverted]
+    kept_diffs = [diff for diff in result.diffs if not diff.startswith(tuple(reverted_headers))]
+    kept_changed = [path for path in result.changed if path not in reverted]
+    return result._replace(diffs=kept_diffs, changed=kept_changed, reverted=tuple(reverted))
 
 
 def failed_call_error(error, changed):
-    """The CoderCallError for a coder call that died after it changed `changed` paths."""
+    """The CoderCallError for a coder call that died after it changed `changed` paths. With none changed, the error
+    names only the cause."""
+    if not changed:
+        return CoderCallError(str(error), [])
     message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
                "that may fail its checks")
-    return CoderCallError(message, changed)
+    return CoderCallError(message, changed, str(error))
 
 
 def coder_call(role, prompt, repo, out, held, pass_guard):
@@ -82,8 +109,6 @@ def coder_call(role, prompt, repo, out, held, pass_guard):
         review_loop_untracked.record_loop_written(repo, held, untracked)
         after = after_call(role, repo, held, held_before, head_before)
         changed = changed_paths(before, after)
-        if not changed:
-            raise CoderCallError(str(error), []) from error
         raise failed_call_error(error, changed) from error
 
     pass_guard.undo()
@@ -102,6 +127,11 @@ def after_call(role, repo, held, held_before, head_before):
     return script_utils.without_paths(texts, held)
 
 
+def diff_old_label(path):
+    """The label that heads the old side of the unified diff of `path`."""
+    return f"a/{path}"
+
+
 def path_diff(repo, path, before, after, base):
     """The unified diff lines of one path between two file_texts snapshots; `base` is the commit HEAD named before
     the call, or None in a repo with no commit."""
@@ -118,12 +148,8 @@ def text_diff(path, old_text, new_text):
     """The unified diff lines of one path from `old_text` to `new_text`; [] when they are the same."""
     old_lines = old_text.splitlines()
     new_lines = new_text.splitlines()
-    return list(difflib.unified_diff(old_lines, new_lines, old_label(path), f"b/{path}", n=DIFF_CONTEXT, lineterm=""))
-
-
-def old_label(path):
-    """The label of the old side of a path's diff."""
-    return f"a/{path}"
+    return list(difflib.unified_diff(old_lines, new_lines, diff_old_label(path), f"b/{path}", n=DIFF_CONTEXT,
+                                     lineterm=""))
 
 
 def fix_diff_file(out, role, path):
@@ -133,7 +159,7 @@ def fix_diff_file(out, role, path):
 
 def result_without_paths(result, paths, out, role):
     """The coder result without `paths`: their changed entries, diff texts, diff files and FIX_DIFF_STATS rows."""
-    headers = {f"--- {old_label(path)}" for path in paths}
+    headers = {f"--- {diff_old_label(path)}" for path in paths}
     diffs = [diff for diff in result.diffs if diff.split("\n", 1)[0] not in headers]
     changed = script_utils.without_paths(result.changed, paths)
     diff_files = {str(fix_diff_file(out, role, path)) for path in paths}

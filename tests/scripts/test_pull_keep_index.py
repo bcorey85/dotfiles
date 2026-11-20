@@ -412,6 +412,58 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertNotIn("rewritten locally", finished.stdout)
         self.assertEqual((self.repo / "h").read_text(), "2\n")
 
+    def test_a_pushed_branch_with_the_integration_branch_merged_in_pulls_nothing_and_keeps_its_hashes(self):
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        self.commit_local("k", "1\n")
+        self.git(self.repo, "push", "-q", "-u", "origin", "feature")
+        self.push_from_other_machine("h", "2\n")
+        self.git(self.repo, "fetch", "-q")
+        self.git(self.repo, "merge", "-q", "--no-edit", "origin/master")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        head = self.git(self.repo, "rev-parse", "HEAD")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("already holds the upstream tip", finished.stdout)
+        self.assertNotIn("force-with-lease", finished.stdout)
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_fully_synced_branch_pulls_nothing_and_keeps_a_staged_file_staged(self):
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        self.git(self.repo, "push", "-q", "-u", "origin", "feature")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        head = self.git(self.repo, "rev-parse", "HEAD")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("already holds the upstream tip", finished.stdout)
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.status(), ["M  f"])
+
+    def test_a_branch_behind_its_upstream_still_pulls_and_keeps_a_staged_file_staged(self):
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        self.git(self.repo, "push", "-q", "-u", "origin", "feature")
+        other = self.clone("other-feature")
+        self.git(other, "checkout", "-q", "feature")
+        self.write(other, "h", "2\n")
+        self.git(other, "add", "h")
+        self.git(other, "commit", "-qm", "other h")
+        self.git(other, "push", "-q", "origin", "feature")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertNotIn("already holds", finished.stdout)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.status(), ["M  f"])
+
     def commit_local(self, name, text):
         self.write(self.repo, name, text)
         self.git(self.repo, "add", name)

@@ -37,18 +37,21 @@ still judges.
                                          review-first run with nothing to review.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
-                                         one outcome per ask, in order: {outcomes}, optional
-                                         ":<one line note>" after it; modified needs the note, the ruler's change.
-                                         accepted: {accept_means}; rejected: {reject_means}.
+                                         one outcome per ask, in order: {outcomes},
+                                         optional ":<one line note>" after it; modified needs the note, the
+                                         ruler's change.
+                                         accepted: {accept_means}; rejected: {reject_means};
+                                         applied: {applied_means}.
+                                         held: {held_means}.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
-                                         all are rejected, when only plan-impact asks were accepted (they write no
-                                         findings), and on a retry after the launch line printed (it prints the
-                                         stored launch line again). A retry with outcomes that differ from the ones
-                                         already logged is refused (exit 2); --correct changes an answer while the
-                                         printed fix run of the current packet has not launched and every ask of the
-                                         first asks-done has logged.
+                                         all are rejected or applied, when only plan-impact asks were accepted
+                                         (they write no findings), and on a retry after the launch line printed
+                                         (it prints the stored launch line again). A retry with outcomes that
+                                         differ from the ones already logged is refused (exit 2); --correct
+                                         changes an answer while the printed fix run of the current packet has not
+                                         launched and every ask of the first asks-done has logged.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
                                          `review_fix.py launch --fix <file> [--user-ruled <N>]... --iter <n>
@@ -58,8 +61,9 @@ still judges.
                                          answered carries `--session-ruled <N>` instead (the coder's re-ask of it is
                                          a skip), and a session correction that changes a
                                          user-ruled ask's answer drops its `--user-ruled <N>`.
-                                         An accepted or rejected outcome on an ask whose proposed change is conditional
-                                         ("if not confirmed, revert X") is refused with exit 2 and nothing logged:
+                                         An {plain_outcomes} outcome on an ask whose proposed
+                                         change is conditional ("if not confirmed, revert X") is refused with
+                                         exit 2 and nothing logged:
                                          answer it with '{modified}:<the change to make, with no condition>'.
                                          --correct <outcome>... re-answers the asks while the printed fix run has
                                          not launched: it logs a row for each changed ask (an unchanged ask keeps
@@ -78,14 +82,25 @@ still judges.
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
   review_fix.py decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" [--plan <path>]
-                                         Only --by user is the user's own word. adopt prints `ACTION: redispatch`;
-                                         when the run has launch flags on record, it writes the first handoff plus
-                                         the RESOLVED lines to <git dir>/review-fix/adopt-handoff.md and prints the
-                                         ready launch line (`launch --iter <n> <the first run's flags> --handoff
-                                         <that file> --detach`); otherwise it prints the lines to build it by hand.
-                                         With no saved state (no `packet` ran), it reads the held plan impacts from
-                                         this session's hand-back: keep records the ruling; adopt logs the deviation
-                                         and stops, since the caller must rerun its own review loop.
+                                         Only --by user is the user's own word. adopt prints `ACTION: redispatch`
+                                         unless every held impact is applied and nothing else is open (then `done`,
+                                         or `stop` when the gate cannot be credited); when the run has launch flags
+                                         on record, it writes the first handoff plus the RESOLVED lines to <git
+                                         dir>/review-fix/adopt-handoff.md and prints the ready launch line (`launch
+                                         --iter <n> <the first run's flags> --handoff <that file> --detach`);
+                                         otherwise it prints the lines to build it by hand.
+                                         With no saved state, a finished one, or one that waits on a different plan
+                                         impact than the hand-back holds, it reads the held plan impacts from this
+                                         session's hand-back: keep records the ruling; adopt with every impact
+                                         applied and nothing else open in the packet records it and clears the gate;
+                                         any other adopt logs the deviation and stops (the caller reruns its
+                                         review). --by session is refused with no --plan, an unreadable criteria
+                                         owner, or owner `user`. A user ruling given to another live session:
+                                         add to --by user
+                                         `{relay_usage}`
+                                         The quote must be the whole text of a user turn of that session typed
+                                         after the impact was filed; the entry and a plan-ruling-relayed row
+                                         record the relayer and the quote.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
   review_fix.py defer <handoff file>    /code's phase-end deferral of held plan impacts. The handoff file must hold
                                          `plan_impact: RESOLVED: deferred to phase end by the session, <date>:
@@ -113,7 +128,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
-from ask_outcome_words import RELAY_USAGE
+from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_blocker_text import blocker_text
@@ -126,18 +141,36 @@ from review_fix_asks import (
     relaunch_line,
     required_packet_repo,
 )
-from review_fix_plan_impacts import APPLIED_KEEP_LINE, PLAN_ARG_NOTE, present_plan_impacts
+from review_fix_names import PACKET_IDENTITY_KEYS
+from review_fix_plan_impacts import (
+    APPLIED_ADOPT_LINE,
+    APPLIED_KEEP_LINE,
+    PlanImpactSource,
+    pop_decide_relay,
+    present_plan_impacts,
+    print_settled,
+    record_ruling,
+    refuse_session_ruling,
+    settle_ruling,
+    settle_stage,
+    verified_decide_relay,
+    write_ruling_entry,
+)
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_LOGGER,
     CLAUDE_DIR,
+    DEFER_LINE,
+    DEFER_LINE_PREFIX,
     PENDING_LAUNCH_KEY,
+    PLAN_IMPACT_FILED_AT_KEY,
     REVIEW_FIX_COMMAND,
     SAME_RUN_STATE_KEYS,
     UsageError,
     argument_parser,
     has_unanswered_asks,
     load_fix_state,
+    missing_fix_state_error,
     print_action,
     print_user_block,
     read_state,
@@ -150,13 +183,10 @@ from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
 SOURCES = ["conversation", "cc", "handoff"]
-DECIDE_USAGE = f"{plan_format.DECIDE_USAGE_STEM} {PLAN_ARG_NOTE}"
 NOTHING_OUTSTANDING = "No issues found that warrant auto-fix. Ready for `/commit`."
 LOGGED_HEADING = "LOGGED / POSTED (mention failures, never block on them):"
 FINISHED_STAGES = ("done", "redispatch")
 ADOPT_HANDOFF_NAME = "adopt-handoff.md"
-DEFER_LINE_PREFIX = "plan_impact: RESOLVED: deferred to phase end"
-DEFER_LINE = f"{DEFER_LINE_PREFIX} by the session, <date>: <summary>"
 LOOP_SCRIPT = pathlib.Path(os.environ.get("REVIEW_FIX_LOOP_SCRIPT",
                                           pathlib.Path(__file__).resolve().parent / "review_loop_script.py"))
 
@@ -316,15 +346,22 @@ def asks_done_line(asks, state):
     line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
             f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
             f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
+            f"applied: {review_asks.APPLIED_MEANS} | "
             f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
-            "word: make that change instead; an optional ':<one line note>' after accepted or rejected is not stored)")
+            f"word: make that change instead; an optional ':<one line note>' after {review_asks.PLAIN_OUTCOMES_TEXT} "
+            "is not stored)")
+    user_only = user_only_numbers(asks)
+    if user_only:
+        listed = ", ".join(str(number) for number in user_only)
+        line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
+                 f"{review_asks.HELD_MEANS}")
     conditional = conditional_ask_numbers(asks)
     if not conditional:
         return line
     numbers = ", ".join(str(number) for number in conditional)
     noun = "ask" if len(conditional) == 1 else "asks"
     return (f"{line}. Answer {noun} {numbers} with '{review_asks.MODIFIED}:<change with no condition>': "
-            "accepted or rejected is refused on a conditional change")
+            f"{review_asks.PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
 
 
 def present_packet_asks(packet, state):
@@ -444,11 +481,13 @@ def new_state(options, packet, packet_id):
     same_run = previous.get("packet_id") == packet_id
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = handback.fixed_paths(packet)
-    state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
-             "review_round": packet["review_round"], "spec_iter": packet["spec_iter"], "status": packet["status"],
-             "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
-             "source": options.source, "fixed_paths": fixed_paths,
-             "files_touched": [str(path) for path in packet["files_touched"]]}
+    identity = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
+                "review_round": packet["review_round"], "spec_iter": packet["spec_iter"],
+                "status": packet["status"], "branch": script_utils.current_branch(".") or "-",
+                "source": options.source, "fixed_paths": fixed_paths,
+                "files_touched": [str(path) for path in packet["files_touched"]]}
+    state = {key: identity[key] for key in PACKET_IDENTITY_KEYS}
+    state["packet_id"] = packet_id
     if options.relaunch_args:
         state["relaunch_args"] = options.relaunch_args
     if same_run:
@@ -726,12 +765,12 @@ def fill_packet_ask_ids(packet, state):
 def discuss_commands():
     commands = []
     rulers = (
-        (plan_format.USER_RULING, "the decision in one line"),
-        (plan_format.SESSION_RULING, "your reason"),
+        (plan_format.USER_RULING, "the decision in one line", plan_format.PLAN_ARG_NOTE),
+        (plan_format.SESSION_RULING, "your reason", plan_format.SESSION_PLAN_ARG_NOTE),
     )
-    for by, words in rulers:
+    for by, words, plan_note in rulers:
         for decision in (plan_format.ADOPT_DECISION, plan_format.KEEP_DECISION):
-            commands.append(f'{REVIEW_FIX_COMMAND} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
+            commands.append(f'{REVIEW_FIX_COMMAND} decide {decision} --by {by} --ruling "<{words}>" {plan_note}')
     return commands
 
 
@@ -741,33 +780,58 @@ def command_decide(argv):
     parser.add_argument("--ruling", default="")
     parser.add_argument("--plan", default="")
     parser.add_argument("--by", nargs="?", const="", default=None)
+    argv, relay = pop_decide_relay(argv)
     options = parser.parse_args(argv)
-    state = read_state()
-    held_in_hand_back = []
-    if state is None and not review_fix_state_file().exists():
-        held_in_hand_back = hand_back_plan_impacts()
-    if state is None and not held_in_hand_back:
-        state = load_fix_state()
-    if state is not None and state.get("stage") != "plan-impact" and not state.get("plan_impact_held"):
-        raise UsageError("no plan-impact is waiting in this session's packet, so the commit gate is already clear "
-                         "(a `defer` clears it too). Add the ruling under the plan's decision log (`03-decisions.md` "
-                         "or `## Plan Deviations`) by hand. `decide` reads the packet state when `packet` ran, "
-                         "else this session's hand-back.")
+    source = waiting_plan_impact_source()
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
                             "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)
     if not plan_format.is_ruling_by(options.by):
-        raise UsageError(f"decide {options.decision} needs --by user or --by session. Usage: `{DECIDE_USAGE}`. "
+        raise UsageError(f"decide {options.decision} needs --by user or --by session. "
+                         f"Usage: `{plan_format.DECIDE_USAGE}`. "
                          f"{plan_format.DECIDE_BY_NOTE}")
-    if not options.ruling.strip():
-        raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{DECIDE_USAGE}`.")
     plan_path = pathlib.Path(options.plan) if options.plan else None
     if plan_path is not None and not plan_path.exists():
         raise UsageError(f"--plan {options.plan} does not exist")
+    if options.by == plan_format.SESSION_RULING:
+        refuse_session_ruling(options.decision, options.plan)
+    if not options.ruling.strip():
+        raise UsageError(f"decide {options.decision} needs --ruling. Usage: `{plan_format.DECIDE_USAGE}`.")
+    relayed = verified_decide_relay(relay, options.by, source)
 
+    if source.state is None:
+        return decide_from_hand_back(source, options.decision, options.by, options.ruling, plan_path, relayed)
+    record_plan_ruling(source.state, options.decision, options.by, options.ruling, plan_path, relayed)
+
+
+def waiting_plan_impact_source():
+    """The PlanImpactSource for `decide`: either its state or its held impacts are set. The packet state is used while
+    it waits and the latest hand-back's packet is missing, holds no impact (a fix round's hand-back) or holds the same
+    impact, ruled or not. When the packet holds another impact, the state is stale, because the packet state outlives
+    its packet: the unruled held impacts of the latest hand-back are used, as the commit gate reads them.
+    Raises UsageError when an existing state file is not readable, whatever the hand-back holds, and when neither
+    source holds an impact."""
+    state = read_state()
+    if state is None and review_fix_state_file().exists():
+        raise missing_fix_state_error()
+    hand_back = handback.current_session_held_impact_hand_back(".")
+    if state is not None and plan_impact_waits(state):
+        packet_held = [] if hand_back.packet is None else handback.held_plan_impacts(hand_back.packet)
+        if not packet_held or state["plan_impact"] == handback.held_plan_impact_text(packet_held):
+            return PlanImpactSource(state, [], None, state.get(PLAN_IMPACT_FILED_AT_KEY))
+    if hand_back.held:
+        return PlanImpactSource(None, hand_back.held, hand_back.packet, hand_back.handed_back_at)
     if state is None:
-        return decide_from_hand_back(held_in_hand_back, options.decision, options.by, options.ruling, plan_path)
-    record_plan_ruling(state, options.decision, options.by, options.ruling, plan_path)
+        raise missing_fix_state_error()  # no packet was processed
+    raise UsageError("no plan-impact is waiting in this session's packet or latest hand-back, so the commit gate is "
+                     "already clear (a `defer` clears it too). Add the ruling under the plan's decision log "
+                     "(`03-decisions.md` or `## Plan Deviations`) by hand. `decide` reads the packet state while it "
+                     "waits on the hand-back's impact, else this session's hand-back.")
+
+
+def plan_impact_waits(state):
+    """True when the packet state holds a plan impact that waits for a ruling."""
+    return state.get("stage") == "plan-impact" or bool(state.get("plan_impact_held"))
 
 
 NO_PLAN_LINE = f"No --plan was given. {ADD_DEVIATIONS_LINE}"
@@ -777,82 +841,48 @@ def ruling_logged_line(plan_path):
     return f"Recorded in {plan_path} under ## Plan Deviations." if plan_path is not None else NO_PLAN_LINE
 
 
-def hand_back_plan_impacts():
-    """The held plan impacts of this session's latest hand-back for this repo that no ruling settles, read the way the
-    commit gate reads them: [] with no session id, no work tree or nothing held."""
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    repo = script_utils.work_tree_top(".")
-    if not session_id or not repo:
-        return []
-    return handback.unruled_plan_impacts(handback_store.latest_for_repo(session_id, repo))
-
-
-def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=()):
-    """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one. The ruled
-    row goes under `ruled_repo`, the repo the packet answers: one row per accepted finding the ruling covers
-    (`finding_texts`), else one row with none."""
-    choice = plan_format.DECISION_WORDS[decision]
-    owner = plan_format.ruling_owner(".", by)
-    ruled_at = plan_format.ruled_at_now()
-    entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    for finding_text in finding_texts or [None]:
-        handback_store.record_ruled_impact(session_id, impact_text, ruled_repo, finding_text=finding_text,
-                                           decision=decision, owner=owner, ruled_at=ruled_at)
-    if plan_path is not None:
-        plan_format.append_deviation(plan_path, entry)
-    return entry
-
-
-def settle_kept_ruling():
-    """Record a `keep` ruling for this session and return the line that says whether the commit gate is clear."""
-    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not session_id:
-        return ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate still counts the "
-                "review as dirty.")
-    return record_ruling(session_id, plan_format.KEEP_DECISION,
-                          "The ruling settles the plan impact, so the commit gate counts the review as clean.")
-
-
-def decide_from_hand_back(held, decision, by, ruling, plan_path):
+def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None):
     """`decide` for a run whose packet never went through `packet` (the caller read it through code_wait.py): the
-    held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` has no launch state to
-    re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
-    impact_text = handback.held_plan_impact_text(held)
+    held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` records it too when
+    handback.adopt_settles says so (every fix is in the tree, nothing else open). Any other `adopt` has no launch
+    state to re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
+    impact_text = handback.held_plan_impact_text(source.held)
     rows_repo = handback_store.ruled_rows_repo(".")
-    entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo)
+    entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
-        return print_action("done", logged_line, *entry,
-                            "The plan stays as written: nothing is re-dispatched.", settle_kept_ruling())
+        return print_settled(settle_ruling("keep"), logged_line, *entry,
+                             "The plan stays as written: nothing is re-dispatched.")
+    if handback.adopt_settles(source.packet, source.held):
+        return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)
     return print_action("stop", logged_line, *entry,
                  "No review-fix launch state exists for this run, so `decide adopt` cannot re-dispatch. Run the review "
                  "again through your own loop (`/code resume`) now that the plan is changed. The commit gate stays "
                  "dirty until it hands back.")
 
 
-def record_plan_ruling(state, decision, by, ruling, plan_path):
-    """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds) and print the
-    re-dispatch."""
+def record_plan_ruling(state, decision, by, ruling, plan_path, relayed=None):
+    """Log a plan-impact ruling under ## Plan Deviations (in plan_path, else as lines the session adds). A held keep,
+    or an adopt whose settle flag is set, settles the gate: it prints done, or stop when the credit is refused, and
+    keeps the `asks` stage while asks wait. Every other adopt prints the re-dispatch."""
     choice = plan_format.DECISION_WORDS[decision]
     ruled_repo = required_packet_repo(state.get("relaunch_args") or [])
     covered = findings_covered_by_impact(state, state["plan_impact"])
-    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered)
+    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered, relayed)
 
-    if decision == plan_format.KEEP_DECISION and state.pop("plan_impact_held", False):
-        keep_line = (APPLIED_KEEP_LINE if state.pop("plan_impact_applied", False)
-                     else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
-        state["stage"] = "done"
+    held = state.pop("plan_impact_held", False)
+    adopt_settles = state.pop("plan_impact_adopt_settles", False)
+    applied = state.pop("plan_impact_applied", False)
+    settled_line = None
+    if decision == plan_format.KEEP_DECISION and held:
+        settled_line = (APPLIED_KEEP_LINE if applied
+                        else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
+    if decision == plan_format.ADOPT_DECISION and held and adopt_settles:
+        settled_line = APPLIED_ADOPT_LINE
+    if settled_line:
+        settled_line = settle_stage(state, settled_line)
         save_fix_state(state)
-        mark_line = settle_kept_ruling()
-        return print_action(
-            "done",
-            ruling_logged_line(plan_path),
-            *entry,
-            keep_line,
-            mark_line,
-        )
-    state.pop("plan_impact_held", None)
+        return print_settled(settle_ruling(decision), ruling_logged_line(plan_path), *entry, settled_line)
 
     spec = state.get("spec_iter")
     session_note = " The session ruled, not the user." if by == plan_format.SESSION_RULING else ""
@@ -914,19 +944,9 @@ def command_defer(argv):
     if not session_id:
         raise UsageError("defer: CLAUDE_CODE_SESSION_ID is not set, so the deferral cannot be recorded")
 
-    print_action("done", record_ruling(
-        session_id, "defer", "The plan impacts wait for phase end, so the commit gate counts the review as clean."))
-
-
-def record_ruling(session_id, decision, settled_line):
-    """Record a plan-impact ruling and credit the tree the ruled hand-back covered, so a commit of that tree passes
-    the commit gate however many coders ran since. Returns settled_line, or why the gate still counts the review as
-    dirty."""
-    handback_store.record(session_id, handback_store.PLAN_RULING, decision=decision)
-    refusal, _repo = handback.record_clean_review(session_id)
-    if refusal:
-        return f"The ruling is recorded, but the commit gate still counts the review as dirty: {refusal}."
-    return settled_line
+    settled = record_ruling(
+        session_id, "defer", "The plan impacts wait for phase end, so the commit gate counts the review as clean.")
+    print_settled(settled)
 
 
 def mark_parse_failed():
@@ -951,6 +971,9 @@ def main():
         outcomes = " | ".join(review_asks.ASK_OUTCOMES)
         print(__doc__.format(outcomes=outcomes, modified=review_asks.MODIFIED,
                              accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS,
+                             applied_means=review_asks.APPLIED_MEANS,
+                             held_means=review_asks.HELD_MEANS,
+                             plain_outcomes=review_asks.PLAIN_OUTCOMES_TEXT,
                              relay_usage=RELAY_USAGE))
         return 2
     command = arguments[0]

@@ -34,6 +34,7 @@ import plan_format
 import review_asks
 import review_loop_calls
 import review_loop_closure
+import review_loop_coder
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
@@ -570,6 +571,46 @@ class SkipLabelsTest(unittest.TestCase):
         self.assertEqual([entry["actioned"] for entry in host.round_fixes], ["skipped_fp", "skipped_fp"])
 
 
+class WithoutRevertedTest(unittest.TestCase):
+    def test_a_mixed_pass_loses_only_the_reverted_path_and_its_fix_diff_stat(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        diff_files = {}
+        for name in ("app.py", "CLAUDE.md"):
+            diff_files[name] = pathlib.Path(folder.name) / f"{name}.diff"
+            diff_files[name].write_text("diff")
+            review_loop_closure.FIX_DIFF_STATS.append(
+                {"path": name, "added": 1, "removed": 0, "diff_file": str(diff_files[name])})
+        self.addCleanup(review_loop_closure.FIX_DIFF_STATS.clear)
+        result = review_loop_coder.CoderResult(
+            "Fixed 1.", ["--- a/app.py\n+++ b/app.py", "--- a/CLAUDE.md\n+++ b/CLAUDE.md"], ["app.py", "CLAUDE.md"])
+
+        kept = review_loop_coder.without_reverted(result, ["CLAUDE.md"], 0)
+
+        self.assertEqual(kept.changed, ["app.py"])
+        self.assertEqual(kept.diffs, ["--- a/app.py\n+++ b/app.py"])
+        self.assertEqual([stat["path"] for stat in review_loop_closure.FIX_DIFF_STATS], ["app.py"])
+        self.assertTrue(diff_files["app.py"].exists())
+        self.assertFalse(diff_files["CLAUDE.md"].exists())
+
+    def test_an_earlier_rounds_kept_stat_for_a_reverted_path_stays(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(review_loop_closure.FIX_DIFF_STATS.clear)
+        diff_files = [pathlib.Path(folder.name) / "kept.diff", pathlib.Path(folder.name) / "reverted.diff"]
+        for diff_file in diff_files:
+            diff_file.write_text("diff")
+            review_loop_closure.FIX_DIFF_STATS.append(
+                {"path": "CLAUDE.md", "added": 1, "removed": 0, "diff_file": str(diff_file)})
+        result = review_loop_coder.CoderResult("Fixed 1.", ["--- a/CLAUDE.md\n+++ b/CLAUDE.md"], ["CLAUDE.md"])
+
+        review_loop_coder.without_reverted(result, ["CLAUDE.md"], 1)
+
+        self.assertEqual([stat["diff_file"] for stat in review_loop_closure.FIX_DIFF_STATS], [str(diff_files[0])])
+        self.assertTrue(diff_files[0].exists())
+        self.assertFalse(diff_files[1].exists())
+
+
 class ReviewLoopHarness:
     """Mixin with no tests: the scratch repo, the stand-in `claude` and the readers of what a run stored."""
 
@@ -840,7 +881,13 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
         self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
-    def test_a_coder_edit_to_a_claude_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+    def assert_reverted_and_reported(self, packet, path):
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, packet["dropped_asks"][0])
+        self.assertIn(path, packet["dropped_asks"][0])
+
+    def test_a_coder_edit_to_a_claude_md_file_is_reverted_and_reported_as_a_dropped_ask(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
@@ -849,10 +896,53 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
-        self.assertIn("needs the user's approval", packet["ask"][0]["question"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+        self.assertEqual(len(packet["fixed"]), 1)
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
 
-    def test_a_coder_edit_to_an_agents_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+    def test_a_finding_whose_only_edit_was_a_reverted_claude_md_is_skipped_not_fixed(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]],
+                         ["the coder made no change"])
+
+    CLAUDE_MD_FIX_REVIEW = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
+                                              "`CLAUDE.md:1` the rule is wrong for `limit`")
+
+    def test_a_finding_on_a_reverted_claude_md_stays_open_when_the_coder_also_changed_another_file(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [], "the finding's fix was the reverted edit")
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+
+    def test_a_finding_on_a_reverted_claude_md_is_open_not_skipped_when_it_was_the_only_edit(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(len(packet["findings_remaining"]), 1, packet["findings_remaining"])
+
+    def test_a_coder_created_agents_md_file_is_removed_and_reported_as_a_dropped_ask(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "AGENTS.md": "# Rules\n"}}],
@@ -861,9 +951,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["AGENTS.md:1"])
+        self.assert_reverted_and_reported(packet, "AGENTS.md")
 
-    def test_a_coder_that_dies_after_editing_a_claude_md_file_still_files_the_ask(self):
+    def test_a_coder_that_dies_after_editing_a_claude_md_file_still_reports_the_reverted_edit(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],
             "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
@@ -872,9 +962,21 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+        self.assertNotIn("CLAUDE.md", packet["files_touched"])
 
-    def test_a_claude_md_file_edited_in_two_rounds_stays_one_ask(self):
+    def test_the_blocker_of_a_failed_coder_call_names_no_path_that_was_reverted(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertNotIn("CLAUDE.md", packet["blockers"][0])
+        self.assertIn("Prompt is too long", packet["blockers"][0])
+
+    def test_a_claude_md_file_edited_in_two_rounds_is_reported_once(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}},
@@ -884,7 +986,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
 
     def test_a_coder_edit_to_a_claude_md_file_the_user_accepted_the_ask_for_files_no_new_ask(self):
         ask_text = accepted_approval_ask_text("CLAUDE.md")
@@ -1438,6 +1540,136 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertTrue(
             packet["class_closure"].startswith("class members still open, the class repair changed nothing"))
 
+    def test_a_class_member_whose_repair_was_a_reverted_claude_md_edit_stays_open_never_fixed(self):
+        member = "`CLAUDE.md:1` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "one member still open", "open": [member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [member])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(len(packet["fixed"]), 1, "only the app.py finding is fixed")
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
+
+    def test_a_class_repair_that_changes_other_files_but_reverts_every_member_claims_no_fix(self):
+        member = "`CLAUDE.md:1` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "one member still open", "open": [member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED + "# again\n", "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [member])
+        self.assertTrue(packet["class_closure"].startswith("the class repair fixed none of the class members"),
+                        packet["class_closure"])
+        self.assertIn("still open, their fix was an approval-only edit the loop reverted: " + member,
+                      packet["class_closure"])
+        self.assertNotIn("fixed these class members", packet["class_closure"])
+
+    def test_a_gate_or_lint_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+        on_code = finding_record.parse_finding("`app.py:2` the limit is wrong")
+
+        loop.mark_repaired([on_claude_md, on_code], ["app.py"], ["CLAUDE.md"])
+        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"])
+
+        self.assertEqual(loop.open_fixes, [on_claude_md], "open once, never twice")
+        self.assertEqual(loop.fixed, [on_code])
+        self.assertEqual(loop.skipped_fp, [])
+
+    def test_a_class_repair_that_changes_one_member_and_reverts_another_names_both_outcomes(self):
+        reverted_member = "`CLAUDE.md:1` the same limit is wrong here too"
+        fixed_member = "`app.py:4` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "two members open", "open": [fixed_member, reverted_member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_FIXED + "# again\n", "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [reverted_member])
+        self.assertTrue(packet["class_closure"].endswith(
+            "still open, their fix was an approval-only edit the loop reverted: " + reverted_member),
+            packet["class_closure"])
+        fixed_lines = [item["file_line"] for item in packet["fixed"]]
+        self.assertNotIn("CLAUDE.md:1", fixed_lines)
+        self.assertEqual(fixed_lines, ["app.py:2", "app.py:4"])
+
+    def test_a_prose_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+
+        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"], records_skip=False)
+
+        self.assertEqual(loop.open_fixes, [on_claude_md])
+        self.assertEqual(loop.fixed, [])
+        self.assertEqual(loop.skipped_fp, [])
+
+    def test_the_gate_and_lint_repairs_pass_the_reverted_paths_to_mark_repaired(self):
+        reverted_result = review_loop_coder.CoderResult("", [], ["c.py"], ["CLAUDE.md"])
+        loop_script = self.load_script_module()
+        gate = loop_script.full_check_gate
+        problem = [("ruff check app.py", "app.py:1:1: N802 bad name")]
+
+        lint_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        with mock.patch.object(gate.format_files, "lint_problems", side_effect=[problem, []]), \
+                mock.patch.object(loop_script.format_files, "run_formatters", return_value=[]), \
+                mock.patch.object(lint_loop, "review_scope", return_value=["a.py"]), \
+                mock.patch.object(lint_loop, "repair", return_value=reverted_result), \
+                mock.patch.object(lint_loop, "mark_repaired") as lint_marked, \
+                mock.patch.object(lint_loop, "run_check", return_value=""):
+            lint_loop.full_check_pass("true")
+        self.assertEqual(lint_marked.call_args.args[2:], (["CLAUDE.md"],), "the lint repair")
+
+        gate_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+
+        def failing_check(_command):
+            gate_loop.full_check = "failed (exit 1)"
+            return "boom"
+
+        with mock.patch.object(gate.format_files, "lint_problems", return_value=[]), \
+                mock.patch.object(gate_loop, "review_scope", return_value=["a.py"]), \
+                mock.patch.object(gate_loop, "repair", return_value=reverted_result), \
+                mock.patch.object(gate_loop, "mark_repaired") as gate_marked, \
+                mock.patch.object(gate_loop, "recheck_full_check"), \
+                mock.patch.object(gate_loop, "run_check", side_effect=failing_check):
+            gate_loop.full_check_pass("true")
+        self.assertEqual(gate_marked.call_args.args[2:], (["CLAUDE.md"],), "the gate repair")
+
+    def test_a_finding_on_a_reverted_claude_md_over_two_rounds_stays_one_open_finding(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": self.CLAUDE_MD_FIX_REVIEW},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}},
+                      {"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules two\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
+        reviewer_calls = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        second_round_prompt = reviewer_calls[1]["prompt"]
+        self.assertIn("status: skipped", second_round_prompt)
+        self.assertNotIn("status: fixed", second_round_prompt)
+        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, second_round_prompt)
+
     def test_a_nit_on_a_held_file_never_reaches_the_fix_coder(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
         nit_review = FIX_REVIEW.replace("## Nit\nNone", "## Nit\n- `notes.py:1` rename the value")
@@ -1799,9 +2031,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["scoped_tests"], f"failed: grep -q 'limit = 99' app.py; full output: {log_path}")
         self.assertIn("grep -q 'limit = 99' app.py", packet["blockers"][0])
 
-    def run_clean_review_with_gates(self, gate_commands, every_run):
+    def run_clean_review_with_gates(self, gate_commands, every_run, quality_check=None):
         self.gates_every_run = every_run
-        return self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+        return self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                               quality_check=quality_check)
 
     def test_gate_commands_run_on_a_converged_run_with_no_fix_when_the_loop_gates_every_run(self):
         marker = self.scratch / "ran.txt"
@@ -1869,6 +2102,42 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop_main, request = self.gate_command_request(command, gates_every_run)
         loop, _check_command = loop_main.build_loop(request)
         return loop
+
+    @staticmethod
+    def fake_check_run(_repo, _check_command, log, _timeout, _env, _on_start):
+        """A check run that exits 0 and leaves an empty log, so no real command starts."""
+        pathlib.Path(log).write_text("")
+        return 0
+
+    def test_the_loop_narrows_a_discovered_full_check_to_the_parts_the_diff_touches(self):
+        self.commit_files({"CLAUDE.md": "", "package.json": '{"scripts": {"lint": "eslint ."}}',
+                           "pytest.ini": "[pytest]\naddopts = -q\n"})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        (self.repo / "app.js").write_text("1\n")
+        loop_main, request = self.gate_command_request("echo scoped", False)
+
+        loop, check_command = loop_main.build_loop(request)
+        with mock.patch.object(loop_main.full_check, "run_check_command_retrying_collision",
+                               side_effect=self.fake_check_run):
+            loop.run_check(check_command)
+
+        self.assertEqual("npm run lint", loop.full_check_command)
+
+    def test_the_loop_runs_a_part_whose_files_the_diff_touches_after_the_loop_was_built(self):
+        self.commit_files({"CLAUDE.md": "", "package.json": '{"scripts": {"lint": "eslint ."}}',
+                           "pytest.ini": "[pytest]\naddopts = -q\n"})
+        (self.repo / "app.py").write_text(APP_BEFORE)
+        (self.repo / "app.js").write_text("1\n")
+        loop_main, request = self.gate_command_request("echo scoped", False)
+        loop, check_command = loop_main.build_loop(request)
+
+        (self.repo / "app.py").write_text(APP_BEFORE + "limit = 6\n")
+        with mock.patch.object(loop_main.full_check, "run_check_command_retrying_collision",
+                               side_effect=self.fake_check_run):
+            loop.run_check(check_command)
+
+        self.assertIn("npm run lint", loop.full_check_command)
+        self.assertIn("pytest", loop.full_check_command)
 
     def test_the_named_tests_budget_stops_a_command_that_cannot_start_when_the_loop_gates_every_run(self):
         marker = self.scratch / "ran.txt"
@@ -2627,7 +2896,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
                 mock.patch.object(loop_script.format_files, "run_formatters",
                                   return_value=list(formatted)) as formatters, \
                 mock.patch.object(loop, "review_scope", return_value=["a.py"]), \
-                mock.patch.object(loop, "repair", return_value=("", [], ["c.py"])) as repair, \
+                mock.patch.object(loop, "repair",
+                                  return_value=review_loop_coder.CoderResult("", [], ["c.py"])) as repair, \
                 mock.patch.object(loop, "mark_repaired") as mark_repaired, \
                 mock.patch.object(loop, "run_check", return_value="") as run_check:
             getattr(loop, step)(*self.LINT_STEPS[step])
@@ -2977,7 +3247,25 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             runners[0]("repo", "check", "log", 1)
 
         self.assertIs(base_run.call_args.kwargs["live_trees"], loop_script.full_check_gate.LIVE_BASE_TREES)
-        self.assertEqual(base_run.call_args.kwargs["gate_env"], {"APP_DIR": "/x"})
+        self.assertEqual(base_run.call_args.kwargs["gate_assignments"], {"APP_DIR": "/x"})
+
+    def test_a_wider_check_command_gets_its_own_base_run_and_the_same_command_reuses_it(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        loop.full_check = "failed (exit 1)"
+        commands = []
+
+        def record_command(repo, out, check_command, gate_env=(), runner=None, log_name=None):
+            commands.append(check_command)
+            return None
+
+        with mock.patch.object(loop_script.full_check_gate, "run_full_check", side_effect=record_command), \
+                mock.patch.object(loop_script.full_check, "is_pre_existing", return_value=True):
+            loop.fails_without_the_diff("narrow")
+            loop.fails_without_the_diff("narrow")
+            loop.fails_without_the_diff("wide")
+
+        self.assertEqual(commands, ["narrow", "wide"])
 
     def test_sigterm_during_the_base_run_removes_the_base_worktree(self):
         loop_main = self.loop_main_module()
@@ -3240,6 +3528,173 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND", blocker)
         self.assertNotIn("toolkit or environment fault", blocker)
         self.assertNotIn("coder", [call["key"] for call in self.fake_calls()])
+
+    SETUP_FAULT_CHECK = "echo 'ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND No package.json found'; exit 1"
+
+    def run_clean_review_after_a_dispatch(self, quality_check, gate_commands=(), every_run=None):
+        """One more clean review of the same session, after the dispatch row that a launch writes. A `quality_check`
+        of None keeps the repo's committed one. `every_run` None gates every run exactly when gate commands are given,
+        as a `--test` launch does; False is a launch whose gate commands are not `--test` commands."""
+        (self.fake_dir / "counters.json").unlink(missing_ok=True)
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+        self.save_gate_commands(list(gate_commands))
+        if every_run is None:
+            every_run = bool(gate_commands)
+        return self.run_clean_review_with_gates(self.gate_commands, every_run, quality_check=quality_check)
+
+    def last_stored_packet(self):
+        handbacks = [row for row in self.store_rows() if row["kind"] == "handback"]
+        return handback.load(handbacks[-1]["message"])
+
+    def test_a_test_command_on_a_resume_after_a_setup_fault_replaces_the_default_full_check(self):
+        first = self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault", first.stderr)
+
+        marker = self.scratch / "override-ran.txt"
+        command = f"echo ran >> {marker}"
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], command)
+        # `echo` shows no test result, so the check is `unverified` and the command also runs once more as a gate.
+        self.assertEqual(packet["full_check"], "unverified (exit 0, no test result shown)")
+        self.assertEqual(marker.read_text().splitlines(), ["ran", "ran"])
+        self.assertIs(packet["check_overridden"], True)
+
+    def test_a_test_command_on_a_resume_after_an_environment_gap_replaces_the_default_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo 'bash: pipenv: command not found'; exit 127")
+        gap_result = self.last_stored_packet()["full_check"]
+        self.assertTrue(gap_result.startswith("not run (environment gap"), gap_result)
+
+        command = "echo override"
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], command)
+        self.assertIs(packet["check_overridden"], True)
+
+    def test_an_earlier_hand_back_that_does_not_parse_keeps_the_configured_full_check_on_a_test_launch(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record(SESSION, "handback", status="converged", message="not a packet")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=True)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_several_test_commands_after_a_setup_fault_all_run_in_the_check_and_leave_out_stale_prose(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        marker = self.scratch / "second-ran.txt"
+        commands = ["echo 'FAILED: first'; exit 1", f"echo ran >> {marker}", self.stale_prose_command(0)]
+
+        resumed = self.run_clean_review_after_a_dispatch(None, commands)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertTrue(marker.is_file())
+        self.assertNotIn("stale_prose", packet["full_check_command"])
+        self.assertIn("test-1", packet["full_check_command"])
+        self.assertIn("test-2", packet["full_check_command"])
+
+    def test_an_invalid_earlier_hand_back_keeps_the_configured_full_check_on_a_test_launch(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record(SESSION, "handback", status="invalid", message="not a packet")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=True)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+
+    def test_a_setup_fault_hand_back_of_another_session_does_not_override_the_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record("another-session", "dispatch", repo=str(self.repo.resolve()))
+            handback_store.record("another-session", "handback", status=handback.SETUP_FAULT_STATUS,
+                                  message=json.dumps({"status": handback.SETUP_FAULT_STATUS}))
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_a_test_command_on_a_launch_with_no_earlier_setup_fault_keeps_the_configured_full_check(self):
+        completed = self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK, ["echo scoped"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault")
+
+    def test_a_test_command_on_a_resume_after_a_run_with_no_setup_fault_keeps_the_configured_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        self.assertEqual(self.last_stored_packet()["status"], "converged")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertIn("echo scoped", packet["scoped_tests"])
+        self.assertFalse(packet["check_overridden"])
+
+    def test_gate_commands_that_are_not_a_test_launch_keep_the_configured_full_check_after_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        self.assertEqual(self.last_stored_packet()["status"], "setup-fault")
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"], every_run=False)
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        self.assertFalse(packet["check_overridden"])
+
+    def test_an_overriding_test_command_that_hits_a_setup_fault_stops_as_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+
+        resumed = self.run_clean_review_after_a_dispatch(None, [self.SETUP_FAULT_CHECK])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["status"], "setup-fault")
+        self.assertTrue(packet["check_overridden"])
+
+    def test_a_test_command_keeps_overriding_after_an_overridden_run_that_did_not_stop_as_a_setup_fault(self):
+        self.run_clean_review_after_a_dispatch(self.SETUP_FAULT_CHECK)
+        command = "echo override"
+        self.run_clean_review_after_a_dispatch(None, [command])
+        self.assertTrue(self.last_stored_packet()["check_overridden"])
+
+        resumed = self.run_clean_review_after_a_dispatch(None, [command])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertEqual(self.last_stored_packet()["full_check_command"], command)
+
+    def test_a_setup_fault_hand_back_for_another_repo_does_not_override_the_full_check(self):
+        self.run_clean_review_after_a_dispatch("echo '2 tests, 0 failed'")
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record(SESSION, "dispatch", repo=str(self.scratch / "other-repo"))
+            handback_store.record(SESSION, "handback", status=handback.SETUP_FAULT_STATUS,
+                                  message=json.dumps({"status": handback.SETUP_FAULT_STATUS}))
+
+        resumed = self.run_clean_review_after_a_dispatch(None, ["echo scoped"])
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        packet = self.last_stored_packet()
+        self.assertEqual(packet["full_check_command"], "echo '2 tests, 0 failed'")
+        self.assertFalse(packet["check_overridden"])
 
     def test_a_full_check_that_misses_a_module_from_outside_the_repo_gets_one_coder_repair(self):
         completed = self.run_script({

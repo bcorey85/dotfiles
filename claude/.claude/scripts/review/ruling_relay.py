@@ -11,10 +11,10 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback_store
 import human_turn_lookup
 import plan_format
-import review_asks
 import script_utils
 from ask_outcome_words import QUOTE_FLAG, RELAY_USAGE, RELAYED_BY_FLAG, USER_ONLY_KEY
 from human_turn_lookup import HumanTurnRefusedError
+from review_fix_names import FILED_AT_KEY
 
 REFUSAL_PREFIX = "relayed ruling refused: "
 
@@ -67,14 +67,14 @@ def refuse_relay_without_user_only(asks):
 
 
 def latest_filed_at(asks):
-    """The latest filed time among the user-only asks in `asks`. Raises RelayRefusedError when none is user-only
+    """The latest filed time among the user-only asks in `asks`. Raises RelayRefusedError when none is user-only,
     or one has no filed time: the turn must come after every ask it rules."""
     refuse_relay_without_user_only(asks)
     filed_times = []
     for number, item in enumerate(asks, 1):
         if not item.get(USER_ONLY_KEY):
             continue
-        filed_at = item.get(review_asks.FILED_AT_KEY)
+        filed_at = item.get(FILED_AT_KEY)
         if not isinstance(filed_at, (int, float)):
             raise RelayRefusedError(f"user_only ask {number} has no filed time, so no user turn can be shown to "
                                     "come after it. Rule it with --by user from the user's own session, with no "

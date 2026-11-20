@@ -20,7 +20,7 @@ unmeasured: ""
 - `review/review_launch.py`: `launch --also-fix <file>` reads the file through `read_findings_file` and appends its findings after the `--fix` findings, so `--user-ruled` and `--session-ruled` numbers keep their meaning. A run-folder file is consumed like the other inputs; `relaunch_args` leaves it out. `--also-fix` without `--fix` stops the launch.
 - `gates/fork_write_scope.py`: a code-fork Write under `<git dir>/review-fix/` is still denied (fail-closed), and the deny text names `<run folder>/fix-findings.md` and `--also-fix`. The file name lives in `lib/review_fix_names.py`.
 - asks-done's printed launch output names the same route.
-- `gates/fork_write_scope.py`: the deny text now starts with `fork_write_scope: `, so every deny names the gate.
+- `gates/fork_write_scope.py`: the deny text now starts with `fork-write-scope: `, so every deny names the gate.
 
 ## Evidence
 

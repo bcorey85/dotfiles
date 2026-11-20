@@ -12,13 +12,18 @@ The script walks a fixed graph: scope, first-round reviewers (code, plus smell a
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
 check, telemetry rows, and the hand-back packet.
-The full check runs through full_check.py and writes the full-check receipt. It runs only the `Quality check:` command
-of the repo's CLAUDE.md; it runs none in a repo with no such line. In a repo whose CLAUDE.md holds `Full suite: CI`,
+The full check runs through full_check.py and writes the full-check receipt. It runs the check
+full_check.resolved_check gives; it runs none in a repo with none. On a launch with `--gates-every-run` whose session's
+last hand-back for the repo stopped as `setup-fault`, held an environment-gap full check, or was itself an
+overridden run, the `--gate-command` test commands (stale-prose excluded) are the full check, each on its own;
+when it passes they do not run again as a gate.
+Their own setup fault stops the loop as `setup-fault`. In a repo whose CLAUDE.md holds `Full suite: CI`,
 where the coder calls run the changed files' tests, a run with no runner summary or that ran no test is
 `passed (check only; CI runs the full suite)`. A check past
 full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
-module the repo declares as a dependency is an environment gap. None is a failure: the packet's `full_check` says
+module the repo declares as a dependency, or that exits 127 on a shell line that names a missing program, is an
+environment gap. None is a failure: the packet's `full_check` says
 `not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines
 leave out the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary, or
@@ -80,14 +85,15 @@ from review_loop_calls import (
     record_main_dispatch,
 )
 from review_loop_closure import (
+    FIX_DIFF_STATS,
     ClosureState,
     closure_check,
     receipt_after_class_repair,
     receipt_all_held,
     receipt_still_open,
 )
-from review_loop_coder import CoderCallError, coder_call, coder_fault_notes
-from review_loop_docs_kind import change_added_ranges, docs_kind
+from review_loop_coder import CoderCallError, coder_call, coder_fault_notes, without_reverted
+from review_loop_docs_kind import change_added_ranges
 from review_loop_final_read import FinalRead
 from review_loop_findings import (
     PLAN_CHANGE_YES,
@@ -96,7 +102,6 @@ from review_loop_findings import (
     absent_file_split,
     finding_records,
     merge_findings,
-    near_title,
     parse_review,
     pointer_ask_split,
     reply_with_one_retry,
@@ -222,16 +227,6 @@ def stable_finding_id(session, lane, scope_fields, gate, spot):
     return hashlib.sha256(key.encode()).hexdigest()[:loop_transcript.FINDING_ID_HEX_LEN]
 
 
-def new_spot(path, title, entries):
-    """The spot of a new finding: the file and title with the lowest `#n` ordinal no entry holds. A refile rewrites an
-    earlier entry's title but keeps its spot, so the ordinal is checked against spots, not titles."""
-    taken = {entry["spot"] for entry in entries}
-    number = 1
-    while f"{path}\0{title}#{number}" in taken:
-        number += 1
-    return f"{path}\0{title}#{number}"
-
-
 class TelemetryRun(typing.NamedTuple):
     """What the telemetry rows of one loop run carry. With `out`, a finding of round two or later gets `fix_induced`
     from the fix diff that the round before it wrote there."""
@@ -317,21 +312,6 @@ def log_row_findings(repo, run, row, fix_ranges):
 
 
 # ---------- the loop ----------
-
-def tally_review(tallies, findings, assessment):
-    """Adds one review's new findings ({disposition: [finding records]}) to the metrics tallies, so a finding refiled
-    in a later round counts once."""
-    tallies["fix"] += len(findings["fix"])
-    tallies["ask"] += len(findings["ask"])
-    tallies["nit"] += len(findings["nit"])
-    tallies["blocker"] += sum("[blocker]" in item.text.lower() for item in findings["fix"])
-    every_finding = findings["fix"] + findings["ask"] + findings["nit"]
-    tallies["smells"] += sum(item.finding_class == "smell" for item in every_finding)
-    if assessment == "NEEDS CHANGES":
-        tallies["result"] = "NEEDS CHANGES"
-    elif assessment and tallies["result"] == "PASS":
-        tallies["result"] = assessment
-
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindings, FinalRead, ReviewIntake,
               full_check_gate.FullCheckSteps):
@@ -486,82 +466,6 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
             removal = guard.restore()
             review_loop_untracked.note_removal(f"review{self.iter_count}-reviewers({roles})", removal)
 
-    def earlier_filing(self, entries, finding):
-        """The entry from an earlier round that this finding refiles: not yet claimed this round, with the same
-        disposition and a near title. None when it is new."""
-        return next((entry for entry in entries if id(entry) not in self.round_claimed
-                     and entry["disposition"] == finding["disposition"]
-                     and near_title(entry["title"], finding["title"])), None)
-
-    def ask_already_filed(self, ask):
-        """Whether another reviewer already asked this text, so it stays one ask and files no second finding."""
-        if ask in self.asks:
-            return True
-        for entries in self.filed.values():
-            if any(entry["disposition"] == "ask" and entry["finding"] == ask for entry in entries):
-                return True
-        return False
-
-    def filing_row(self, agent, owned, parsed, fixes, design):
-        """The run row of one review. A fix starts `actioned: none`; fix_round sets it once the coder returns. A
-        finding this reviewer filed in an earlier round, in the same file with the same disposition and the same or
-        near title, updates that round's entry and stays off this row, wherever its line moved."""
-        reported = [{"finding": item, "disposition": "fix", "actioned": "none", "source": "round"} for item in fixes]
-        reported += [{"finding": item, "disposition": "ask", "actioned": "ask", "source": ""}
-                     for item in parsed["ask"] + design]
-        reported += [{"finding": item, "disposition": "nit", "actioned": "none", "source": ""}
-                     for item in parsed["nit"]]
-
-        findings = []
-        for finding in reported:
-            self.file_finding(agent, finding, findings)
-
-        loc = sum(self.files[path][0] for path in owned if path in self.files)
-        return {"iter": self.iter_count, "gate": agent, "loc": loc, "result": parsed["assessment"] or "PASS",
-                "findings": findings}
-
-    def file_finding(self, agent, finding, findings):
-        """Files one reported finding. A refiling updates its earlier entry; a new finding gets a spot and joins
-        `findings`, the run row's list; an ask another reviewer already filed is dropped."""
-        path = finding["finding"].path or UNLOCATED
-        finding["title"] = finding["finding"].title
-        entries = self.filed.setdefault((agent, path), [])
-        earlier = self.earlier_filing(entries, finding)
-        if earlier:
-            self.refile(earlier, finding)
-            filed = earlier
-        elif finding["disposition"] == "ask" and self.ask_already_filed(finding["finding"]):
-            return
-        else:
-            finding["spot"] = new_spot(path, finding["title"], entries)
-            finding["docs_kind"] = docs_kind(self.repo, self.docs_added, finding["finding"])
-            entries.append(finding)
-            findings.append(finding)
-            filed = finding
-        self.round_claimed.add(id(filed))
-        if filed["disposition"] == "fix":
-            self.round_fixes.append(filed)
-
-    def refile(self, earlier, finding):
-        """Updates an earlier round's entry from the same finding filed again, keeping its spot. The label is set
-        again from this round's diff, class and line."""
-        finding["spot"] = earlier["spot"]
-        if finding["disposition"] == "ask":
-            finding["finding"] = earlier["finding"]
-        finding["docs_kind"] = docs_kind(self.repo, self.docs_added, finding["finding"])
-        earlier.update(finding)
-
-    def record_review(self, agent, owned, parsed, fixes, design):
-        """Files one review's row, tallies its new findings and returns them by disposition."""
-        row = self.filing_row(agent, owned, parsed, fixes, design)
-        new_findings = {}
-        for disposition in ("fix", "ask", "nit"):
-            new_findings[disposition] = [finding["finding"] for finding in row["findings"]
-                                         if finding["disposition"] == disposition]
-        tally_review(self.tallies, new_findings, parsed["assessment"])
-        self.run_rows.append(row)
-        return new_findings
-
     def owned_files(self):
         """The files the run owns, for telling a held file's tail from an owned file's tail. It needs no git call,
         and it is empty when no file is held."""
@@ -643,12 +547,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         return round_fix, round_nits
 
     def repair(self, call_name, findings, nits=(), restore_named=True):
-        """One coder pass on the findings. Returns a CoderResult (report, diffs, changed files). Raises
-        LaterPhaseEditError when the pass edited a later-phase file, ChangeRemovedError when the passes so far
-        removed half or more of the lines the change under review adds, NamedTestRemovedError when the pass removed
-        a test the plan runs by name and one restore pass did not bring it back (`restore_named` False skips that
-        check, for the restore pass), and CoderFailedError when the coder call fails, with the findings kept in
-        open_fixes."""
+        """One coder pass on the findings. Returns a CoderResult (report, diffs, changed files, reverted
+        approval-only paths). Raises LaterPhaseEditError when the pass edited a later-phase file, ChangeRemovedError
+        when the passes so far removed half or more of the lines the change under review adds,
+        NamedTestRemovedError when the pass removed a test the plan runs by name and one restore pass did not bring
+        it back (`restore_named` False skips that check, for the restore pass), and CoderFailedError when the coder
+        call fails, with the findings kept in open_fixes."""
         finding_paths = [finding.path for finding in findings if finding.path]
         diff_files = self.review_scope()
         files_in_scope = list(dict.fromkeys([*diff_files, *finding_paths]))
@@ -661,6 +565,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         self.untested_fix = True
         self.snapshot_approval_blobs()
         signoffs = snapshot_signoffs(self.repo, files_in_scope)
+        stats_before = len(FIX_DIFF_STATS)
         if restore_named:
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
             self.put_back_findings = []
@@ -669,17 +574,19 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         except CoderCallError as error:
             put_back = self.undo_signoff_pass(signoffs, findings, self.coder_held_files())
             changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]
-            self.files_touched.update(changed)
             self.flag_broken_no_code_rulings(findings, changed, nits)
-            self.ask_for_approval_only_edits(changed, findings)
+            reverted = self.ask_for_approval_only_edits(changed, findings)
+            kept = [path for path in changed if path not in reverted]
+            self.files_touched.update(kept)
             self.keep_coder_commit_in_scope()
             self.keep_open(findings)
-            raise CoderFailedError(coder_failure_blocker(call_name, error)) from error
+            raise CoderFailedError(coder_failure_blocker(call_name, error.keeping_only(kept))) from error
         put_back = self.undo_signoff_pass(signoffs, findings, self.coder_held_files())
         result = self.without_put_back(call_name, result, put_back, findings)
         self.keep_coder_commit_in_scope()
         self.flag_broken_no_code_rulings(findings, result.changed, nits)
-        self.ask_for_approval_only_edits(result.changed, findings)
+        reverted = self.ask_for_approval_only_edits(result.changed, findings)
+        result = without_reverted(result, reverted, stats_before)
         self.check_pass_result(call_name, result)
         return self.restore_named_tests(call_name, named, result)
 
@@ -707,14 +614,16 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         plan_reported = PLAN_CHANGE_YES.search(result.report.strip()) is not None
         plan_held = plan_reported and self.record_coder_plan_impact(result.report, changed)
 
-        skipped_findings, round_open_fixes = self.record_skips(round_findings, skips, changed, plan_held)
+        reverted_findings = self.findings_on_reverted_paths(round_findings, result.reverted)
+        skipped_findings, round_open_fixes = self.record_skips(round_findings, skips, changed, plan_held,
+                                                               reverted_findings)
         round_open_fixes += [item for item in self.put_back_findings if item not in round_open_fixes]
         self.keep_open(round_open_fixes)
         self.mark_round_fixes(round_open_fixes, skipped_findings)
         applied = self.not_put_back(item for item in round_findings if item not in skipped_findings)
         self.fixed += applied
         self.open_fixes = [item for item in self.open_fixes if not matches_any_finding(item, applied)]
-        self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings)
+        self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
@@ -724,17 +633,21 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
 
-    def record_skips(self, round_findings, skips, changed, plan_held):
+    def record_skips(self, round_findings, skips, changed, plan_held, reverted_findings):
         """Sorts the round's findings the coder did not fix. Returns (skipped findings, findings still open). With a
-        plan impact held, they stay open; otherwise they join skipped_fp."""
+        plan impact held, they stay open; otherwise they join skipped_fp. A finding in `reverted_findings` (filed on
+        an approval-only path that the loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) stays open and
+        is never fixed or skipped, whatever the coder reported."""
         skipped_entries = [{"item": round_findings[number - 1], "reason": line}
-                           for number, line in sorted(skips.items())]
-        round_open_fixes = []
+                           for number, line in sorted(skips.items())
+                           if round_findings[number - 1] not in reverted_findings]
+        round_open_fixes = list(reverted_findings)
         if plan_held:
             round_open_fixes += [entry["item"] for entry in skipped_entries]
         else:
             self.skipped_fp += skipped_entries
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
+        skipped_findings += [item for item in reverted_findings if item not in skipped_findings]
         if changed:
             return skipped_findings, round_open_fixes
 
@@ -780,9 +693,11 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         if not findings:
             return
 
-        report, _diffs, changed = self.repair("coder0", findings)
+        report, _diffs, changed, reverted = self.repair("coder0", findings)
         self.files_touched.update(changed)
         self.mark_standing_rewords_applied(changed)
+        # A finding filed on a reverted approval-only path is open, never fixed or skipped.
+        reverted_findings = self.keep_reverted_open(findings, reverted)
         if PLAN_CHANGE_YES.search(report.strip()):
             self.record_coder_plan_impact(report, changed)
 
@@ -792,8 +707,10 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed)
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
+        skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]
         kept = self.not_put_back(item for number, item in enumerate(findings, 1)
-                                 if number not in skips and number not in unapplied_numbers)
+                                 if number not in skips and number not in unapplied_numbers
+                                 and item not in reverted_findings)
         if not changed:
             skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept]
             kept = []
@@ -801,21 +718,26 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         self.given_skipped += len(skipped)
         self.fixed += kept
         self.check_fixed += len(kept)
-        self.prior_issues = prior_issue_entries(findings, skips, self.put_back_findings)
+        self.prior_issues = prior_issue_entries(findings, skips, self.put_back_findings, reverted_findings)
         self.stop_on_unapplied(unapplied)
 
-    def mark_repaired(self, findings, changed, records_skip=True):
-        """A repair's findings go to fixed when it changed a file, else to skipped_fp. With `records_skip` False, a
+    def mark_repaired(self, findings, changed, reverted, records_skip=True):
+        """A repair's findings go to fixed when it changed a file, else to skipped_fp. A finding on one of the
+        `reverted` approval-only paths stays in open_fixes and is never fixed or skipped. With `records_skip` False, a
         repair that changed nothing records nothing: the findings are a gate's prompt, not a reviewer's claim. A
-        finding whose file the sign-off put-back restored is not fixed and stays open."""
+        finding whose file the sign-off put-back restored is not fixed and stays open. Returns the findings on
+        reverted paths."""
+        reverted_findings = self.keep_reverted_open(findings, reverted)
+        findings = [item for item in findings if item not in reverted_findings]
         findings = self.not_put_back(findings)
         if not changed:
             if records_skip:
                 self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
-            return
+            return reverted_findings
         self.fixed += findings
         self.check_fixed += len(findings)
         self.files_touched.update(changed)
+        return reverted_findings
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open. When
@@ -839,11 +761,15 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
             self.closure.receipt = receipt_all_held(held_texts, ruled_texts)
             return
 
-        _report, _diffs, class_changed = self.repair("coder-class", open_findings)
-        self.mark_repaired(open_findings, class_changed)
+        _report, _diffs, class_changed, reverted = self.repair("coder-class", open_findings)
+        reverted_findings = self.mark_repaired(open_findings, class_changed, reverted)
         if class_changed:
-            sent_texts = [item.text for item in self.not_put_back(open_findings)]
-            self.closure.receipt = receipt_after_class_repair(sent_texts, held_texts, ruled_texts)
+            sent = [item for item in self.not_put_back(open_findings) if item not in reverted_findings]
+            sent_texts = [item.text for item in sent]
+            reverted_texts = [item.text for item in reverted_findings]
+            receipt = receipt_after_class_repair(sent_texts, held_texts, ruled_texts, reverted_texts)
+            self.closure.open_classes = reverted_texts
+            self.closure.receipt = receipt
         else:
             self.closure.open_classes = [item.text for item in open_findings]
             self.closure.receipt = receipt_still_open(self.closure.open_classes, held_texts, ruled_texts)
@@ -890,8 +816,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
 
         hits = [parse_finding("\n\n".join(hit_outputs))]
         pass_before_repair = self.last_pass
-        _report, _diffs, changed = self.repair("coder-prose", hits)
-        self.mark_repaired(hits, changed, records_skip=False)
+        _report, _diffs, changed, reverted = self.repair("coder-prose", hits)
+        self.mark_repaired(hits, changed, reverted, records_skip=False)
         if not changed:
             self.last_pass = pass_before_repair
             return False
@@ -931,8 +857,14 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
             "nits": self.nits,
             "unreviewed_fix": self.last_pass == "coder",
             "scoped_tests": self.scoped_tests,
+            "check_overridden": self.check_overridden,
             "tool_fault": " ".join(filter(None, [full_check.fault_note(self.full_check), *coder_fault_notes()])),
         }
+
+
+def check_ran_gates(loop):
+    """True when the full check already ran the `--test` commands and passed, so they need no second run."""
+    return loop.check_overridden and loop.full_check == full_check.PASSED
 
 
 def walk(loop, check_command, gate_commands):
@@ -953,7 +885,7 @@ def walk(loop, check_command, gate_commands):
         loop.class_closure_pass(check_command)
     if loop.status == "converged" and loop.untested_fix:
         loop.scoped_tests_pass(check_command, list(gate_commands))
-    elif loop.status == "converged" and loop.gates_every_run:
+    elif loop.status == "converged" and loop.gates_every_run and not check_ran_gates(loop):
         loop.run_test_commands(test_commands_of(gate_commands), budgeted=True, stop_when_unrun=True)
     loop.read_late_repairs()
     loop.apply_pending_cap()

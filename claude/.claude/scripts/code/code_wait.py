@@ -16,7 +16,10 @@ when a named reviewer finished with no report (exit 1), or once the loop ends: i
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
 exits 1 with the reason and the restart step. When that packet is clean (converged, or capped and read as deferred)
 and holds finding asks, it also opens a `phase-asks-open` row in the hand-back store and prints the
-`phase_asks.py rule` line the session runs to rule on them.
+`phase_asks.py rule` line the session runs to rule on them. When this session's latest hand-back for the repo still
+holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
+is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
+sentence that defers them to phase end (`review_fix.py defer`).
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
 or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
@@ -42,6 +45,8 @@ import reviewer_dispatch
 import script_utils
 import session_registry
 import stop_file_names
+from capped_review import effective_status
+from review_fix_state import defer_instruction
 
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
 WAIT_SECONDS = 150
@@ -156,9 +161,13 @@ def checked_agent_id(word):
     return word
 
 
+def phase_dir_or_none(repo):
+    """<git dir>/code-phase, which stays right in a linked worktree, where .git is a file; None when git cannot say."""
+    return script_utils.git_path(repo, PHASE_DIR_NAME)
+
+
 def phase_dir(repo):
-    # <git dir>/code-phase, which stays right in a linked worktree, where .git is a file.
-    folder = script_utils.git_path(repo, PHASE_DIR_NAME)
+    folder = phase_dir_or_none(repo)
     if folder is None:
         sys.exit(f"code_wait: {repo} is not inside a git checkout")
     return folder
@@ -208,6 +217,27 @@ def read_phase_run(repo):
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
                  f"(found {type(run_info).__name__}); delete it and run this wait again")
     return run_info
+
+
+def plan_impact_notice(repo):
+    """The lines that list each plan impact the commit gate still holds for this session's latest hand-back and tell
+    /code to defer them to phase end (the defer sentence), before any commit. Empty when no plan impact waits for a
+    ruling, and for a packet that is not clean (`defer` on such a packet records the ruling, but
+    `record_clean_review` refuses the commit credit)."""
+    hand_back = handback.current_session_held_impact_hand_back(str(repo))
+    held = hand_back.held
+    if not held:
+        return []
+
+    repo_top = script_utils.work_tree_top(str(repo))
+    if effective_status(hand_back.packet, repo_top) not in handback.CLEAN_STATUSES:
+        return []
+
+    handoff_file = phase_dir(repo) / HANDOFF_FILE
+    return [f"{len(held)} {handback.PLAN_IMPACTS_WAIT_TEXT}:",
+            *[f"- {script_utils.one_line(impact['text'], None)}" for impact in held],
+            "The run does not stop on them mid-phase. Defer them to phase end now, so the commit gate clears: "
+            + defer_instruction(handoff_file)]
 
 
 def phase_asks_notice(repo):
@@ -483,6 +513,9 @@ def follow_run(repo, run, words, launched_folder):
             return 1
         if notice:
             print("\n".join(notice))
+        impact_notice = plan_impact_notice(repo)
+        if impact_notice:
+            print("\n".join(impact_notice))
         return code
 
     pending = unanswered_requests(run, pairs)

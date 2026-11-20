@@ -16,7 +16,6 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 # The review modules come from the tree under test (the HOOK_SCRIPTS_DIR override), as the gate does.
 sys.path.insert(0, str(pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "review"))
-import plan_format
 import script_utils
 import verify_common
 
@@ -28,7 +27,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("lib", "user_prompts.py"), ("lib", "shell_command.py"), ("lib", "plan_format.py"),
                 ("lib", "shell_statements.py"), ("lib", "loop_transcript.py"),
                 ("lib", "expected_red.py"), ("review", "full_check.py"), ("lib", "check_scope.py"),
-                ("lib", "check_output.py"), ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
+                ("lib", "check_output.py"), ("lib", "check_parts.py"), ("lib", "collision_retry.py"),
+                ("lib", "linked_installs.py"), ("lib", "test_run_output.py"),
                 ("lib", "ansi_text.py"),
                 ("lib", "worktree_snapshot.py"), ("lib", "numstat.py"), ("lib", "makefile_text.py"),
                 ("lib", "full_check_receipt.py"), ("lib", "pytest_config.py"),
@@ -36,7 +36,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
                 ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
-                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"), ("review", "verify_common.py"))
+                ("lib", "git_commit_calls.py"), ("lib", "git_calls.py"), ("lib", "import_guard.py"),
+                ("review", "commit_placement.py"), ("review", "verify_common.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -282,6 +283,110 @@ class ReviewCommitGateTest(GateCase):
         for opener in ("python3 -W ignore x.py <<'EOF'", "perl -I lib x.pl <<'EOF'"):
             with self.subTest(opener=opener):
                 self.assert_silent(self.bash(f"{opener}\n{body}EOF"))
+
+    def test_a_script_file_run_with_a_commit_named_in_its_heredoc_is_not_a_commit(self):
+        self.dispatch()
+        script = "python3 ~/agent-evals/bin/build_queue.py new"
+        body = "The hook blocked git commit -m x as prose.\n"
+        commands = (f"{script} --title t --body - <<EOF\n{body}EOF",
+                    f"{script} --title t --body - <<'EOF'\n{body}EOF",
+                    f"{script} --title t --body - <<-EOF\n{body}EOF")
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_script_file_run_whose_arguments_hold_a_bare_git_commit_is_a_commit(self):
+        self.dispatch()
+        for command in ("python3 tools/retry.py git commit -m x", "python3 tools/retry.py git -C d commit -m x",
+                        "node tool.js --retry git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_file_write_beside_a_probe_that_names_a_commit_is_not_a_commit(self):
+        self.dispatch()
+        for command in ('echo "git commit -m x" > notes.txt', 'grep "git commit" a > b.txt',
+                        'printf "git commit" >> log'):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_commit_beside_a_script_file_run_is_still_denied(self):
+        self.dispatch()
+        script = "python3 ~/agent-evals/bin/build_queue.py new --title t"
+        for command in (f"{script} --body - <<EOF\nx\nEOF\ngit commit -m x", f"{script} && git commit -m x",
+                        f"{script} --body - <<EOF\n$(git commit -m x)\nEOF", f"{script} --title \"$(git commit -m x)\"",
+                        "python3 -c 'import os; os.system(\"git commit -m x\")'"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_sighted_script_runs_that_only_mention_a_commit_are_not_a_commit(self):
+        self.dispatch()
+        fixtures = pathlib.Path(__file__).resolve().parent / "fixtures"
+        # script_run_quoted_args.sh: quoted `--desc` text that names a commit; script_path_quoted_heredoc.sh: a
+        # quoted-path script fed a heredoc.
+        for name in ("script_run_quoted_args.sh", "script_path_quoted_heredoc.sh"):
+            with self.subTest(fixture=name):
+                self.assert_silent(self.bash((fixtures / name).read_text().rstrip("\n")))
+
+    def test_a_script_run_ignores_quoted_text_but_nothing_else_does(self):
+        self.dispatch()
+        for command in ('python3 x.py --description "hands a git commit command"',
+                        '~/.claude/scripts/tool --note "git commit runs" <<\'EOF\'\ngit commit -m x\nEOF',
+                        "~/.claude/scripts/tool.sh --rows - <<'JSON'\ngit commit\nJSON"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+        for command in ('~/.local/bin/mise exec -- bash -c "git commit -am x"',
+                        './node_modules/.bin/cross-env A=1 sh -c "git commit -am x"',
+                        '~/.claude/plugins/x/run "git commit -m x"',
+                        './node_modules/.bin/concurrently "git commit -am wip"',
+                        './tool.sh --note "git commit runs"',
+                        'node some/tool.js sh -c "git commit -m x"',
+                        '''php -r 'system("git commit -am x");' x''',
+                        '~/bin/tool --note "git commit runs"', "./tool.sh --rows - <<EOF\ngit commit -m x\nEOF",
+                        '/Applications/Tool.app/Contents/MacOS/tool "git commit -m x"'):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+        for command in ('gh pr create --body "run git commit"', "git commit -m x",
+                        'python3 x.py git commit -m x', 'python3 -c "git commit"',
+                        '/bin/bash <<\'EOF\'\ngit commit -m x\nEOF', 'sh -c "git commit -m x"',
+                        'eval "git commit -m x"', "~/bin/tool <<EOF\ngit commit -m x\nEOF",
+                        'python3 x.py "$(git commit -m x)"', 'python3 x.py "ok" && git commit -m x',
+                        'python3 x.py "a" | git commit -m "x"', 'python3 x.py "git commit -am x" | fish',
+                        'python3 x.py "git commit -am x" | nu', '/usr/bin/watch "git commit -m x"',
+                        '{ ~/.claude/scripts/tools/x.py "git commit -m y"; } | python3',
+                        '(python3 x.py "git commit -am x"; true) | python3',
+                        'if true; then python3 x.py "git commit -am x"; fi | python3',
+                        'for i in 1; do ~/.claude/scripts/tools/x.py "git commit -m y"; done | python3',
+                        "{ ~/.claude/scripts/x <<'EOF'\ngit commit -m y\nEOF\n} | python3",
+                        '/usr/bin/xargs -I{} sh -c "git commit -m x"', '/usr/bin/flock /tmp/l -c "git commit -m x"',
+                        '/usr/bin/find . -exec sh -c "git commit -m x" \\;', '/usr/bin/fish -c "git commit -m x"',
+                        "/usr/bin/fish <<'EOF'\ngit commit -m x\nEOF",
+                        """/usr/bin/awk 'BEGIN{system("git commit -m x")}'""",
+                        '/usr/bin/tmux new-window "git commit -m x"', '/usr/bin/sg wheel -c "git commit -m x"',
+                        '/usr/bin/expect -c "spawn git commit -m x"',
+                        "/usr/bin/tcsh <<'EOF'\ngit commit -m x\nEOF",
+                        "~/.local/bin/tcsh <<'EOF'\ngit commit -m x\nEOF",
+                        '~/.cargo/bin/nu -c "git commit -m x"',
+                        '/snap/bin/pwsh -c "git commit -m x"',
+                        '~/.claude/scripts/tools/notify python3 -c "git commit -am x"',
+                        '~/.claude/scripts/tools/notify node -e "git commit -am x"',
+                        '~/.claude/scripts/x docker exec c "git commit -am x"',
+                        '~/.claude/scripts/x podman run c "git commit -am x"',
+                        "~/.claude/scripts/review/review_fix.py launch --test 'git commit -am x'",
+                        "~/.claude/scripts/review/review_loop_script.py . --gate-command 'git commit -am x'",
+                        "~/.claude/scripts/review/review_loop_script.py . '--gate-command=git commit -am x'",
+                        '/home/linuxbrew/.linuxbrew/bin/bash -c "git commit -m x"'):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_the_hook_python_launcher_is_read_as_python_not_as_a_trusted_script(self):
+        self.dispatch()
+        launcher = "~/.claude/scripts/tools/hook-python"
+        for command in (f"""{launcher} -c "import os; os.system('git commit -am x')" """,
+                        f"{launcher} - <<'EOF'\nimport os\nos.system('git commit -am x')\nEOF",
+                        f"{launcher} -W ignore - <<'EOF'\nimport os\nos.system('git commit -am x')\nEOF"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+        self.assert_silent(self.bash(f'{launcher} x.py --description "hands a git commit command"'))
 
     def test_a_commit_inside_a_substitution_or_a_shell_runner_is_denied(self):
         self.dispatch()
@@ -964,8 +1069,8 @@ class ReviewedWorkCommitTest(GateCase):
         reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("review_fix.py defer", reason)
         self.assertIn("review_fix.py decide", reason)
-        self.assertIn("Only `decide keep` settles them", reason)
-        self.assertIn(plan_format.DECIDE_USAGE_STEM, reason)
+        self.assertIn("`defer` and `decide keep` settle them", reason)
+        self.assertIn("--plan <the plan path: required with --by session, else when the handoff names one>", reason)
         self.assertNotIn("invoke the /review skill", reason)
 
     def test_a_commit_of_the_reviewed_tree_passes_once_a_ruling_settles_the_held_plan_impact(self):

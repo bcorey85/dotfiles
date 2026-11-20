@@ -13,6 +13,8 @@ LINE_CONTINUATION = re.compile(r"\\\r?\n")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
+# The words that change the shell's working directory; every gate follows or flags the same set.
+DIRECTORY_MOVE_WORDS = ("cd", "pushd", "popd")
 REDIRECT_CHARS = set("<>&")
 # shlex drops the quotes and escapes, so a quoted or escaped operator character would read as a real operator.
 HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\1""")
@@ -215,6 +217,28 @@ def redirect_takes_next_word(word):
     return bool(BARE_REDIRECT_WORD.match(word))
 
 
+def kept_outside_redirections(word_shapes):
+    """The words of (word, shape) pairs with each redirection dropped: a word whose shape is a redirect, and the next
+    word when the redirect has no target of its own (`>` `main`). The shape is what the redirect is read from."""
+    kept = []
+    skip_target = False
+    for word, shape in word_shapes:
+        if skip_target:
+            skip_target = False
+            continue
+        if is_redirect_word(shape):
+            skip_target = redirect_takes_next_word(shape)
+            continue
+        kept.append(word)
+    return kept
+
+
+def without_redirection_words(words, blanked_words):
+    """The words with each redirection dropped. `blanked_words` are the same words with each quoted string blanked; a
+    redirect is read from them, so a quoted `'>'` stays a plain word."""
+    return kept_outside_redirections(zip(words, blanked_words, strict=True))
+
+
 def split_simple_commands(command):
     """The words of each simple command in a shell command, with the quotes and escapes resolved (see
     parse_simple_commands). A command that is only a redirection is left out."""
@@ -380,10 +404,35 @@ def _attached_environment_value(word):
     return None
 
 
-def skip_options(words, index, value_options):
+def one_letter_options(value_options):
+    # The letters of the one-letter options (`-C`) in value_options.
+    return {option[1] for option in value_options if len(option) == 2 and option[0] == "-"}
+
+
+def first_value_letter(word, value_options):
+    # The first letter of a short cluster (`-vC`) that is a one-letter option of value_options; None for a word that
+    # is no cluster or holds none.
+    if not is_short_cluster(word):
+        return None
+    position = len(flags_before_value(word, one_letter_options(value_options)))
+    if position == len(word) - 1:
+        return None
+    return word[1 + position]
+
+
+def value_letter_ends_cluster(word, value_letters):
+    # True when a short cluster's first value-taking letter is its last, so the value is the next word (`-iC /dir`).
+    return is_short_cluster(word) and len(flags_before_value(word, value_letters)) == len(word) - 2
+
+
+def skip_options(words, index, value_options, clusters_take_values=False):
     # The index of the first word from index on that is no option: an option that takes a value is skipped with it.
+    # With clusters_take_values, a short cluster that ends in a value letter takes the next word too.
     while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in value_options else 1
+        takes_next = words[index] in value_options
+        if clusters_take_values and value_letter_ends_cluster(words[index], one_letter_options(value_options)):
+            takes_next = True
+        index += 2 if takes_next else 1
     return index
 
 
@@ -403,13 +452,23 @@ def is_known_git_global_option(option):
 
 
 def git_c_settings(options):
-    """The `-c key=value` settings in git_options output, as {lowercased key: raw value}; the last one wins."""
+    """The `-c key=value` settings in git_options output, as {lowercased key: raw value}; the last one wins. A bare
+    `-c key` is read by git as true, so it is stored as "true"; `-c key=` stays empty."""
     settings = {}
     for option, value in options:
         if option == "-c" and value is not None:
-            key, _equals, setting = value.partition("=")
-            settings[key.lower()] = setting
+            key, equals, setting = value.partition("=")
+            settings[key.lower()] = setting if equals else "true"
     return settings
+
+
+def git_option_values(options, name):
+    """The value of each `name` option in git_options output, in order, from `--name value` or `--name=value`."""
+    for option, value in options:
+        if option == name and value is not None:
+            yield value
+        elif option.startswith(name + "="):
+            yield option.partition("=")[2]
 
 
 def git_options(words):
@@ -554,7 +613,7 @@ def _peel_option_wrapper(words, name):
     # The words after a WRAPPER_VALUE_OPTIONS wrapper, its options and its leading value; None for `command -v`.
     if name == "command" and words[1:2] in (["-v"], ["-V"]):
         return None
-    rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
+    rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name], clusters_take_values=True):]
     if name in WRAPPERS_WITH_A_LEADING_VALUE:
         return rest[1:]
     return rest
@@ -616,14 +675,9 @@ def words_without_redirections(text):
     stays a word."""
     quoted = quoted_positions(text)
     words = []
-    skip_target = False
-    for raw_word in _raw_words(text, quoted):
-        if skip_target:
-            skip_target = False
-            continue
-        if is_redirect_word(raw_word):
-            skip_target = redirect_takes_next_word(raw_word)
-            continue
+    raw_words = _raw_words(text, quoted)
+    word_shapes = list(zip(raw_words, raw_words, strict=True))
+    for raw_word in kept_outside_redirections(word_shapes):
         piece = closed_segment_words(raw_word)
         if piece is None:
             return None
@@ -970,15 +1024,27 @@ class ShellDirectory:
         self.move_to(os.path.normpath(os.path.join(self.current, path_word(folder))))
 
 
+def word_moves_directory(word, move_letter, wrapper):
+    # True for `--chdir`, `-<move_letter>...`, or a short cluster whose first value letter is move_letter.
+    if word.startswith("--chdir") or word.startswith("-" + move_letter):
+        return True
+    letter = first_value_letter(word, WRAPPER_VALUE_OPTIONS[wrapper])
+    return letter == move_letter
+
+
 def wrapper_moves_directory(words):
-    """True when an `env` or `sudo` wrapper of the simple command `words` runs the command in another directory
-    (`-C <dir>`, `--chdir`)."""
+    """True when an `env` or `sudo` wrapper of the simple command `words` runs the command in another directory:
+    `env -C <dir>`, `env -C<dir>`, `env --chdir`, `sudo -D <dir>`, `sudo -D<dir>`, `sudo --chdir`, and a short
+    cluster whose first value letter is that letter (`env -vC <dir>`). (`sudo -C` is close-from, not a directory
+    move.)"""
     word_lists = list(_peeled_word_lists(words))
     for before, after in itertools.pairwise(word_lists):
-        if os.path.basename(before[0]) not in ("env", "sudo"):
+        wrapper = os.path.basename(before[0])
+        if wrapper not in ("env", "sudo"):
             continue
+        move_letter = "C" if wrapper == "env" else "D"
         wrapper_words = before[1:len(before) - len(after)]
-        if any(word == "-C" or word.startswith("--chdir") for word in wrapper_words):
+        if any(word_moves_directory(word, move_letter, wrapper) for word in wrapper_words):
             return True
     return False
 

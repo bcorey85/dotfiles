@@ -19,7 +19,10 @@
                                         through), and denies any call from an agent whose
                                         report is already stored. `ran` is the PostToolUse hook (matcher
                                         Agent): it records a `dispatch-ran` row for a review-loop dispatch whose
-                                        call ran. Any other argument does nothing.
+                                        call ran. Any other argument does nothing. Fails open on purpose: `dispatch` and
+                                        `ran` only record, and `handback`, the kind that denies, still lets the call
+                                        run on a crash. An import crash exits 1, and a crash inside the hook is
+                                        caught and exits 0; both let the call run.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
 unreviewed_fix_section; the hook (handle_hook, unchecked_code_reason) is in handback_hook.py. They read

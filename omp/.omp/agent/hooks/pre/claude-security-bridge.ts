@@ -6,12 +6,12 @@
  * bash scripts stay the single source of truth for both harnesses.
  *
  * Covered gates (the "Safety Rails" set from the global CLAUDE.md):
- *   PreToolUse(Bash)        bash-safety-gate.sh, git-discipline-gate.sh, review-commit-gate.sh, shell-write-gate.sh, quality-check-cap.sh
+ *   PreToolUse(Bash)        bash-safety-gate.sh, gates/git_discipline_gate.py, review/review_commit_gate.py, gates/shell_write_gate.py, gates/quality_check_cap.py
  *   PreToolUse(Read|Grep)   block-credential-read.sh        (also mapped: glob)
  *   PreToolUse(Write|Edit)  write-edit-safety-gate.sh       (also mapped: ast_edit)
- *   PostToolUse(Agent)      review-commit-gate.sh           (arms on coder dispatch; omp task tool)
- *   PostToolUse(Bash)       quality-check-cap.sh            (records a check that ran, failing or not)
- *   PostToolUse(Write|Edit) quality-check-cap.sh            (marks an edit that landed; also ast_edit)
+ *   PostToolUse(Agent)      review/review_commit_gate.py    (arms on coder dispatch; omp task tool)
+ *   PostToolUse(Bash)       gates/quality_check_cap.py      (records a check that ran, failing or not)
+ *   PostToolUse(Write|Edit) gates/quality_check_cap.py      (marks an edit that landed; also ast_edit)
  *
  * Deliberately skipped: agent-model-guard.sh (would deny every omp dispatch —
  * it resolves ~/.claude/agents); spec-budget-gate / log-* / notify /
@@ -19,7 +19,9 @@
  *
  * Output conventions handled:
  *   CB hooks  — stdout JSON line {"hookSpecificOutput":{"permissionDecision":"deny"|"ask",...}}, exit 0
- *   custom    — stderr message + exit 2; no bridged gate uses it today
+ *   custom    — stderr message + exit 2; the four Python gates (review-commit-gate, quality-check-cap,
+ *               git-discipline-gate, shell-write-gate) deny through the JSON permissionDecision line and use exit 2
+ *               with stderr only when they crash (import_guard, run_gate)
  *
  * Session id: a per-session UUID that review-commit-gate keys its dirty/clean
  * state and its hand-back credit to.
@@ -115,15 +117,29 @@ function isHookVerdict(value: unknown): value is HookVerdict {
 
 /**
  * Run one gate script with a Claude-hook JSON payload on stdin.
- * Fails OPEN on spawn error/timeout (a hung bridge must not freeze the
- * session); the scripts themselves fail CLOSED on their own parse errors.
+ * A gate that crashes (spawn error, timeout, or an exit other than 0 or 2
+ * with no verdict) is a deny when `failClosed` is set, which every PreToolUse
+ * gate sets: a gate that died let the call run un-gated. The PostToolUse
+ * calls pass false: they record state and gate nothing, so a crash there
+ * fails open on purpose.
  */
 function runGate(
   script: string,
   payload: Record<string, unknown>,
   cwd: string,
+  failClosed = false,
 ): Promise<GateResult> {
   const { promise, resolve } = Promise.withResolvers<GateResult>();
+  function crashed(why: string): GateResult {
+    console.error(`[claude-security-bridge] ${script} ${why}`);
+    if (!failClosed) {
+      return { denied: false };
+    }
+    return {
+      denied: true,
+      reason: `[claude-security-bridge] ${script} ${why} - blocking the call. Fix the gate, then retry.`,
+    };
+  }
   let stdout = "";
   let stderr = "";
   let settled = false;
@@ -138,14 +154,17 @@ function runGate(
 
   let child: ChildProcess;
   try {
-    const interpreter = script.endsWith(".py") ? "python3" : "bash";
-    child = spawn(interpreter, [join(SCRIPTS_DIR, script)], {
+    // A .py gate runs through hook-python, as settings.json runs it, so an old python3 cannot crash it into a deny.
+    const scriptPath = join(SCRIPTS_DIR, script);
+    const [interpreter, interpreterArgs]: [string, string[]] = script.endsWith(".py")
+      ? ["sh", [join(SCRIPTS_DIR, "tools", "hook-python"), scriptPath]]
+      : ["bash", [scriptPath]];
+    child = spawn(interpreter, interpreterArgs, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (e) {
-    console.error(`[claude-security-bridge] spawn failed for ${script}: ${e}`);
-    resolve({ denied: false });
+    resolve(crashed(`spawn failed: ${e}`));
     return promise;
   }
 
@@ -153,17 +172,13 @@ function runGate(
     try {
       child.kill("SIGKILL");
     } catch {}
-    console.error(
-      `[claude-security-bridge] ${script} timed out after ${GATE_TIMEOUT_MS}ms — failing open`,
-    );
-    finish({ denied: false });
+    finish(crashed(`timed out after ${GATE_TIMEOUT_MS}ms`));
   }, GATE_TIMEOUT_MS);
 
   child.stdout?.on("data", (d: Buffer) => (stdout += d));
   child.stderr?.on("data", (d: Buffer) => (stderr += d));
   child.on("error", (e) => {
-    console.error(`[claude-security-bridge] ${script} error: ${e}`);
-    finish({ denied: false });
+    finish(crashed(`error: ${e}`));
   });
   child.on("close", (code) => {
     // CB Security Hooks convention: single-line JSON verdict on stdout.
@@ -196,7 +211,12 @@ function runGate(
         reason: stderr.trim() || `${script} blocked`,
       });
     }
-    finish({ denied: false });
+    if (code === 0) {
+      return finish({ denied: false });
+    }
+    // Any other exit (1 from an uncaught error, 127 for a missing gate file, a
+    // signal) is a crash: Claude Code runs the call on it, the bridge does not.
+    finish(crashed(`exited ${code ?? "on a signal"} with no verdict`));
   });
 
   child.stdin?.on("error", () => {});
@@ -252,7 +272,7 @@ export default function bridge(pi: HookPi): void {
         tool_input: toolInput,
       };
       const results = await Promise.all(
-        mapping.gates.map((g) => runGate(g, payload, cwd)),
+        mapping.gates.map((g) => runGate(g, payload, cwd, true)),
       );
       const hit = results.find((r) => r.denied);
       if (hit) return { block: true, reason: hit.reason };

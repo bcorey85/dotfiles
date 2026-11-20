@@ -34,6 +34,8 @@ from shell_command import (
     docker_set_variables,
     flags_before_value,
     git_c_directory,
+    git_c_settings,
+    git_options,
     interpreter_family,
     is_git_word,
     is_inline_code_option,
@@ -57,6 +59,7 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
     without_flag_values,
+    without_redirection_words,
     words_by_blank,
     words_without_redirections,
 )
@@ -142,6 +145,36 @@ class RedirectWordTest(unittest.TestCase):
             self.assertTrue(redirect_takes_next_word(word), word)
         for word in (">f", "&>f", "2>&1"):
             self.assertFalse(redirect_takes_next_word(word), word)
+
+
+class WithoutRedirectionWordsTest(unittest.TestCase):
+    def test_a_redirect_word_and_the_target_of_a_bare_one_are_dropped(self):
+        cases = {
+            ("push", "origin", "feature", ">", "main"): ["push", "origin", "feature"],
+            ("push", "origin", "feature", "2>", "master"): ["push", "origin", "feature"],
+            ("restore", "src", ">", "."): ["restore", "src"],
+            ("restore", "src", ">out", "f"): ["restore", "src", "f"],
+            ("restore", "src", "2>&1"): ["restore", "src"],
+            ("restore", "src", "&>f"): ["restore", "src"],
+        }
+        for words, expected in cases.items():
+            with self.subTest(words=words):
+                self.assertEqual(without_redirection_words(list(words), list(words)), expected)
+
+    def test_a_word_that_is_quoted_in_the_blanked_words_stays_an_argument(self):
+        self.assertEqual(without_redirection_words(["push", ">", "main"], ["push", '""', "main"]),
+                         ["push", ">", "main"])
+
+
+class GitCSettingsTest(unittest.TestCase):
+    def settings(self, *words):
+        options, _index = git_options(["git", *words, "pull"])
+        return git_c_settings(options)
+
+    def test_a_bare_key_is_true_and_an_empty_value_stays_empty(self):
+        self.assertEqual(self.settings("-c", "rebase.autoStash"), {"rebase.autostash": "true"})
+        self.assertEqual(self.settings("-c", "rebase.autoStash="), {"rebase.autostash": ""})
+        self.assertEqual(self.settings("-c", "rebase.autoStash=false"), {"rebase.autostash": "false"})
 
 
 class IsGitWordTest(unittest.TestCase):
@@ -334,12 +367,18 @@ class GitCommitDirsTest(unittest.TestCase):
                 self.assertEqual([], plain_commit_dirs(command, "/a"))
 
     def test_a_commit_run_through_env_or_sudo_with_a_chdir_is_left_out(self):
-        for command in ("env -C /b git commit", "env --chdir=/b git commit", "sudo -C /b git commit",
+        for command in ("env -C /b git commit", "env -C/b git commit", "env --chdir=/b git commit",
+                        "sudo -D /b git commit", "sudo -D/b git commit", "sudo --chdir=/b git commit",
+                        "env -vC /b git commit", "sudo -vD /b git commit", "env -iC /b git commit",
                         "env -C /b git commit && git commit"):
             with self.subTest(command):
                 expected = ["/a"] if command.endswith("&& git commit") else []
                 self.assertEqual(expected, plain_commit_dirs(command, "/a"))
         self.assertEqual(["/a"], plain_commit_dirs("env -u X git commit", "/a"))
+        self.assertEqual(["/a"], plain_commit_dirs("env -iu X git commit", "/a"))
+
+    def test_sudo_dash_c_closes_descriptors_and_does_not_move_a_commit(self):
+        self.assertEqual(["/a"], plain_commit_dirs("sudo -C 3 git commit", "/a"))
 
     def test_a_cd_inside_a_subshell_does_not_move_a_commit_after_the_subshell_closes(self):
         cases = (

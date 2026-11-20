@@ -36,7 +36,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "commit_gate_denials.py"), ("review", "phase_asks.py"), ("review", "review_asks.py"),
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
                 ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
-                ("lib", "git_commit_calls.py"), ("review", "commit_placement.py"), ("review", "verify_common.py"))
+                ("lib", "git_commit_calls.py"), ("lib", "git_calls.py"), ("lib", "import_guard.py"),
+                ("review", "commit_placement.py"), ("review", "verify_common.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -282,6 +283,40 @@ class ReviewCommitGateTest(GateCase):
         for opener in ("python3 -W ignore x.py <<'EOF'", "perl -I lib x.pl <<'EOF'"):
             with self.subTest(opener=opener):
                 self.assert_silent(self.bash(f"{opener}\n{body}EOF"))
+
+    def test_a_script_file_run_with_a_commit_named_in_its_heredoc_is_not_a_commit(self):
+        self.dispatch()
+        script = "python3 ~/agent-evals/bin/build_queue.py new"
+        body = "The hook blocked git commit -m x as prose.\n"
+        commands = (f"{script} --title t --body - <<EOF\n{body}EOF",
+                    f"{script} --title t --body - <<'EOF'\n{body}EOF",
+                    f"{script} --title t --body - <<-EOF\n{body}EOF")
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_script_file_run_whose_arguments_hold_a_bare_git_commit_is_a_commit(self):
+        self.dispatch()
+        for command in ("python3 tools/retry.py git commit -m x", "python3 tools/retry.py git -C d commit -m x",
+                        "node tool.js --retry git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_file_write_beside_a_probe_that_names_a_commit_is_not_a_commit(self):
+        self.dispatch()
+        for command in ('echo "git commit -m x" > notes.txt', 'grep "git commit" a > b.txt',
+                        'printf "git commit" >> log'):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(command))
+
+    def test_a_commit_beside_a_script_file_run_is_still_denied(self):
+        self.dispatch()
+        script = "python3 ~/agent-evals/bin/build_queue.py new --title t"
+        for command in (f"{script} --body - <<EOF\nx\nEOF\ngit commit -m x", f"{script} && git commit -m x",
+                        f"{script} --body - <<EOF\n$(git commit -m x)\nEOF", f"{script} --title \"$(git commit -m x)\"",
+                        "python3 -c 'import os; os.system(\"git commit -m x\")'"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
 
     def test_sighted_script_runs_that_only_mention_a_commit_are_not_a_commit(self):
         self.dispatch()

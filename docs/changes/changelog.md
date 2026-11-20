@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1033 changes
+1034 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -25,6 +25,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Branch-prep lists clone pairs on changed lines for the smell-reviewer](notes/2026-11-20-branch-prep-lists-clone-pairs-on-changed-lines-for.md) [skill/refactor, script/refactor-flow, script/clone-pairs] refactor_flow branch-prep runs jscpd at 40 tokens over the repo and prints the pairs that have a site on a line the branch changed in the smell-reviewer prompt, so a helper copied from a sibling folder reaches the reviewer.
 * [an adopted plan impact reaches the resume round's fix coder](notes/2026-11-19-an-adopted-plan-impact-reaches-the-resume-round-s.md) [script/review-fix, script/review-loop-script] A resume that adopts a plan impact puts it in that round's fix-coder list before any test or reviewer runs, and a coder that skips it or leaves no diff ends the round with a blocker naming the ruling and no reviewer.
 * [code_review_start accepts an ancestor base on resume and leaves merges out](notes/2026-11-19-code-review-start-accepts-an-ancestor-base-on.md) [script/code-step, skill/code] code_review_start accepts a --base that is an ancestor of the recorded head, or the current HEAD when the recorded head is an ancestor of it, refuses another base naming the flag, and leaves merge commits from the integration branch out of the review diff through a merge-free synthetic base.
 * [asks-done records session rulings while a user-only ask stays held](notes/2026-11-19-asks-done-records-session-rulings-while-a-user.md) [script/review-fix-asks, script/review-asks, script/approval-asks-store, script/ask-outcome-words] A session asks-done call takes held on each user-only ask, logs the plain asks and prints their fix run, and moves the held asks to a kept packet a later --by user call rules.

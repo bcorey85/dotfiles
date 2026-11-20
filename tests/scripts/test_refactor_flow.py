@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import fake_jscpd
 import fake_ledger
 import toolkit_paths
 
@@ -31,18 +32,9 @@ GIT_ENV = {
     "GIT_CONFIG_SYSTEM": "/dev/null",
 }
 
-# Captured from a real jscpd run (consoleFull reporter, --min-tokens 70) over src/a.js and
-# "src/sub dir/b copy.js": site paths are relative to the target, one site path has a space,
-# and code lines follow with a box-drawing bar.
-JSCPD_REAL = (
-    "\x1b[1mClone found (javascript)\x1b[22m\n"
-    " - a.js [1:1 - 48:2]\n"
-    "   sub dir/b copy.js [1:1 - 48:2]\n"
-    "\x1b[90m   1 │ \x1b[39mexport function step0(orders, limit) {\n"
-    "\x1b[90m   2 │ \x1b[39m  const kept = orders.filter((o) => o.total > limit * 0);\n"
-    "\x1b[90m   3 │ \x1b[39m  return kept.map((o) => ({ id: o.id, total: o.total + 0, tag: 'x0' }));\n"
-    "\x1b[90m     … 28 more lines\x1b[39m\n"
-)
+# The duplicate a real jscpd 5.4.3 JSON report holds for src/a.js and "src/sub dir/b copy.js": names are
+# relative to the target, and one name has a space.
+JSCPD_REAL = [fake_jscpd.duplicate(("a.js", 1, 48), ("sub dir/b copy.js", 1, 48), "javascript")]
 
 
 def load_script_module():
@@ -110,6 +102,8 @@ class RefactorFlowTest(unittest.TestCase):
             "BRANCH_BASE_SCRIPT": BRANCH_BASE,
             "REVIEW_ESCAPES_FILE": str(self.escapes),
             "REFACTOR_LOG_INPUT_DIR": str(self.log_input_dir),
+            # No test reaches the real jscpd (npx) unless it names a stub.
+            "REFACTOR_JSCPD_CMD": "/nonexistent-jscpd",
             **self.ledger_env,
             **(extra_env or {}),
         }
@@ -710,6 +704,127 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertNotIn("loose.py", done.stdout)
         self.assertIn("`git diff main...feature`", done.stdout)
 
+    # ----------------------------------------------- branch-prep clone pairs
+    def clone_stub(self, pairs, exit_code=0):
+        """A jscpd stand-in that writes a JSON report of `pairs` (two (name, start, end) sites each) into its
+        --output folder and records its argv and cwd."""
+        duplicates = [fake_jscpd.duplicate(first, second) for first, second in pairs]
+        return {"REFACTOR_JSCPD_CMD": fake_jscpd.stub_command(self.temp_root, duplicates, exit_code)}
+
+    def branch_with_old_sibling(self, line_count=6, edit=lambda body: body.replace("line 5", "edited 5")):
+        """Main holds old_a.py and old_b.py of `line_count` lines; the branch rewrites old_a.py with `edit(body)`."""
+        body = "".join(f"line {number}\n" for number in range(1, line_count + 1))
+        self.write("old_a.py", body)
+        self.write("old_b.py", body)
+        self.commit_all("siblings")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("old_a.py", edit(body))
+        self.commit_all("edit")
+
+    def test_branch_prep_lists_a_clone_pair_that_touches_a_changed_line(self):
+        self.branch_with_old_sibling()
+        env = self.clone_stub([(("old_a.py", 4, 6), ("old_b.py", 4, 6))])
+        done = self.flow("branch-prep", extra_env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- 1 clone pair(s) on changed lines; 1 listed", done.stdout)
+        prompt = done.stdout.split("dispatch prompt", 1)[1]
+        self.assertIn("Candidate clone pairs (jscpd):", prompt)
+        self.assertIn("- old_a.py [4 - 6]", prompt)
+        self.assertIn("- old_b.py [4 - 6]", prompt)
+        call = (self.temp_root / "jscpd_call.txt").read_text()
+        self.assertIn("--min-tokens 40", call)
+        self.assertEqual(call.splitlines()[1], str(self.repo.resolve()))
+
+    def test_branch_prep_drops_a_clone_pair_on_unchanged_lines(self):
+        self.branch_with_old_sibling()
+        env = self.clone_stub([(("old_a.py", 1, 3), ("old_b.py", 1, 3))])
+        done = self.flow("branch-prep", extra_env=env)
+        self.assertIn("- jscpd found no clone pair on changed lines", done.stdout)
+        self.assertNotIn("Candidate clone pairs", done.stdout)
+
+    def test_branch_prep_keeps_a_pair_whose_other_site_is_a_file_the_branch_did_not_touch(self):
+        self.write("lib/shared.py", "def helper():\n    return 1\n")
+        self.commit_all("shared")
+        self.branch_with({"tool/helper.py": "def helper():\n    return 1\n"})
+        env = self.clone_stub([(("tool/helper.py", 1, 2), ("lib/shared.py", 1, 2))])
+        done = self.flow("branch-prep", extra_env=env)
+        self.assertIn("- tool/helper.py [1 - 2]", done.stdout)
+        self.assertIn("- lib/shared.py [1 - 2]", done.stdout)
+
+    def test_branch_prep_counts_every_line_of_an_untracked_file_as_changed(self):
+        self.write("lib/shared.py", "def helper():\n    return 1\n")
+        self.commit_all("shared")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("tool/new.py", "def helper():\n    return 1\n")
+        env = self.clone_stub([(("tool/new.py", 1, 2), ("lib/shared.py", 1, 2))])
+        done = self.flow("branch-prep", extra_env=env)
+        self.assertIn("- 1 clone pair(s) on changed lines", done.stdout)
+        self.assertIn("- tool/new.py [1 - 2]", done.stdout)
+
+    def test_branch_prep_survives_a_failing_detector(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        env = self.clone_stub([], exit_code=3)
+        done = self.flow("branch-prep", extra_env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- no mechanical detection — agent prior-art search only", done.stdout)
+        self.assertEqual(self.last_line(done)[:5], "NEXT:")
+
+    def test_branch_prep_with_head_skips_clone_detection_and_says_so(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        env = self.clone_stub([(("a.py", 1, 1), ("b.py", 1, 1))])
+        done = self.flow("branch-prep", "--head", "feature", extra_env=env)
+        self.assertIn("clone detection reads the work tree only", done.stdout)
+        self.assertFalse((self.temp_root / "jscpd_call.txt").exists())
+
+    def test_branch_prep_cuts_the_clone_list_at_the_cap(self):
+        self.write("lib/shared.py", "x = 1\n")
+        self.commit_all("shared")
+        self.branch_with({"new.py": "x = 1\n"})
+        pairs = [(("new.py", 1, 1), ("lib/shared.py", 1, 1)) for _ in range(45)]
+        done = self.flow("branch-prep", extra_env=self.clone_stub(pairs))
+        self.assertIn("45 clone pair(s) on changed lines; 40 listed", done.stdout)
+        self.assertIn("5 more pair(s) not listed", done.stdout)
+        prompt = done.stdout.split("dispatch prompt", 1)[1]
+        self.assertEqual(prompt.count("Clone found"), 40)
+
+    def test_branch_prep_says_so_when_the_jscpd_report_does_not_parse(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        stub_dir = self.temp_root / "misshapen"
+        stub_dir.mkdir()
+        command = fake_jscpd.stub_command(stub_dir, [], report_text='{"duplicates": [{"format": "python"}]}')
+        done = self.flow("branch-prep", extra_env={"REFACTOR_JSCPD_CMD": command})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- jscpd output did not parse: ", done.stdout)
+        self.assertIn("jscpd-report.json", done.stdout)
+        self.assertNotIn("found no clone pair", done.stdout)
+
+    def test_branch_prep_drops_prose_format_pairs(self):
+        self.branch_with_old_sibling()
+        duplicates = [fake_jscpd.duplicate(("old_a.py", 4, 6), ("old_b.py", 4, 6), clone_format)
+                      for clone_format in ("markdown", "text", "txt")]
+        command = fake_jscpd.stub_command(self.temp_root, duplicates)
+        done = self.flow("branch-prep", extra_env={"REFACTOR_JSCPD_CMD": command})
+        self.assertIn("- jscpd found no clone pair on changed lines", done.stdout)
+
+    def test_branch_prep_counts_a_pair_whose_only_changed_line_is_the_last_or_first_line(self):
+        self.branch_with_old_sibling(line_count=8)
+        for first, last in ((3, 5), (5, 7)):
+            with self.subTest(first=first, last=last):
+                env = self.clone_stub([(("old_a.py", first, last), ("old_b.py", first, last))])
+                done = self.flow("branch-prep", extra_env=env)
+                self.assertIn("- 1 clone pair(s) on changed lines", done.stdout)
+
+    def test_branch_prep_reads_a_second_hunk_and_ignores_deleted_lines(self):
+        self.branch_with_old_sibling(line_count=20,
+                                     edit=lambda body: body.replace("line 2\n", "").replace("line 18", "edited 18"))
+        cases = [("on the second hunk", (17, 19), "- 1 clone pair(s)"),
+                 ("on a deletion only", (1, 1), "found no clone pair")]
+        for label, (first, last), expected in cases:
+            with self.subTest(label):
+                env = self.clone_stub([(("old_a.py", first, last), ("old_b.py", first, last))])
+                done = self.flow("branch-prep", extra_env=env)
+                self.assertIn(expected, done.stdout)
+
     def test_branch_prep_empty_diff_stops(self):
         self.git("checkout", "-q", "-b", "feature")
         done = self.flow("branch-prep")
@@ -882,16 +997,13 @@ class RefactorFlowTest(unittest.TestCase):
         self.write("src/a.js", "x = 1\n")
         self.write("src/sub dir/b copy.js", "x = 1\n")
         self.git("add", "-A")
-        stub = self.temp_root / "jscpd_real_output.py"
-        stub.write_text(f"import sys\nsys.stdout.write({JSCPD_REAL!r})\n")
-        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": f"{sys.executable} {stub}"})
+        command = fake_jscpd.stub_command(self.temp_root, JSCPD_REAL)
+        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": command})
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertNotIn("\x1b", done.stdout)
         prompt = done.stdout.split("dispatch prompt", 1)[1]
         self.assertIn("Clone found (javascript)", prompt)
-        self.assertIn("- src/a.js [1:1 - 48:2]", prompt)
-        self.assertIn("- src/sub dir/b copy.js [1:1 - 48:2]", prompt)
-        self.assertNotIn("export function step0", done.stdout)
+        self.assertIn("- src/a.js [1 - 48]", prompt)
+        self.assertIn("- src/sub dir/b copy.js [1 - 48]", prompt)
         self.assertNotIn("jscpd output above", done.stdout)
         self.assertIn("anti-churn line", prompt)
         self.assertEqual(self.last_line(done)[:5], "NEXT:")
@@ -906,14 +1018,29 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("no mechanical detection — agent prior-art search only", done.stdout)
         self.assertNotIn("anti-churn line", done.stdout)
 
+    def test_audit_prep_says_jscpd_found_no_clone_pairs(self):
+        self.write("src/a.py", "x = 1\n")
+        self.git("add", "-A")
+        command = fake_jscpd.stub_command(self.temp_root, [])
+        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": command})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- jscpd ran and found no clone pairs", done.stdout)
+
+    def test_audit_prep_reports_a_misshapen_report_as_not_parsed(self):
+        self.write("src/a.py", "x = 1\n")
+        self.git("add", "-A")
+        command = fake_jscpd.stub_command(self.temp_root, [], report_text='{"duplicates": 5}')
+        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": command})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("jscpd output did not parse", done.stdout)
+        self.assertNotIn("found no clone pairs", done.stdout)
+
     def test_audit_prep_cuts_the_clone_list_at_a_pair_boundary_and_counts_the_rest(self):
         self.write("src/a.js", "x = 1\n")
         self.git("add", "-A")
-        output = "".join(f"Clone found (javascript)\n - a{i}.js [1:1 - 5:2]\n   b{i}.js [1:1 - 5:2]\n"
-                         for i in range(55))
-        stub = self.temp_root / "many_clones.py"
-        stub.write_text(f"import sys\nsys.stdout.write({output!r})\n")
-        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": f"{sys.executable} {stub}"})
+        duplicates = [fake_jscpd.duplicate((f"a{i}.js", 1, 5), (f"b{i}.js", 1, 5), "javascript") for i in range(55)]
+        command = fake_jscpd.stub_command(self.temp_root, duplicates)
+        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": command})
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("55 clone pair(s); 40 listed", done.stdout)
         self.assertEqual(done.stdout.count("Clone found"), 40)
@@ -926,10 +1053,8 @@ class RefactorFlowTest(unittest.TestCase):
         self.git("add", "-A")
         spaced_dir = self.temp_root / "dir with space"
         spaced_dir.mkdir()
-        stub = spaced_dir / "stub.py"
-        stub.write_text(f"import sys\nsys.stdout.write({JSCPD_REAL!r})\n")
-        done = self.flow("audit-prep", "src",
-                         extra_env={"REFACTOR_JSCPD_CMD": f"{sys.executable} '{stub}'"})
+        command = fake_jscpd.stub_command(spaced_dir, JSCPD_REAL)
+        done = self.flow("audit-prep", "src", extra_env={"REFACTOR_JSCPD_CMD": command})
         self.assertIn("1 clone pair(s)", done.stdout)
 
     def test_audit_prep_untracked_target_stops(self):

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1033 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1034 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-19, [an adopted plan impact reaches the resume round's fix coder](notes/2026-11-19-an-adopted-plan-impact-reaches-the-resume-round-s.md).
+Latest change: 2026-11-20, [Branch-prep lists clone pairs on changed lines for the smell-reviewer](notes/2026-11-20-branch-prep-lists-clone-pairs-on-changed-lines-for.md).
 
 ## Top gains
 

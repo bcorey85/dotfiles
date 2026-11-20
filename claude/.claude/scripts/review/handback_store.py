@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """handback_store.py: the per-session store of review-loop rows (dispatch, dispatch-ran, hand-back, stop, step,
-asks-logged, plan-ruling, plan-impact-ruled, ask-rejected, ask-rejection-withdrawn, dispatch-repo,
+asks-logged, plan-ruling, plan-impact-ruled, plan-impact-applied, ask-rejected, ask-rejection-withdrawn, dispatch-repo,
 phase-asks-open, phase-asks-ruled, ask-ruling-relayed) and the reads of it that decide whether a hand-back is current
 and the open/ruled state of phase review asks (the one read that spans every session's file, by repo). Callers import
 these names from handback_store directly; handback.py imports only the ones it uses itself.
@@ -16,6 +16,7 @@ from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import file_lock
+import plan_format
 import reviewed_tree
 import script_utils
 
@@ -78,37 +79,120 @@ def ruled_rows_repo(path):
     return script_utils.work_tree_top(path)
 
 
-def record_ruled_impact(session_id, text, repo, finding_text=None):
+# The fields of a PLAN_IMPACT_RULED row that say how the plan impact was ruled: the decision word (`adopt` or `keep`),
+# who ruled and when. A row with no decision field keeps the plan.
+RULED_DECISION_KEY = "decision"
+RULED_OWNER_KEY = "ruling_owner"
+RULED_AT_KEY = "ruled_at"
+UNKNOWN_RULING_FIELD = "unknown"
+# One adopted ruling whose change a fix pass applied; `rulings` then leaves it out of `adopted`. Keyed like the ruling:
+# its text, finding text and ruled-at time.
+PLAN_IMPACT_APPLIED = "plan-impact-applied"
+
+
+def record_ruled_impact(session_id, text, repo, finding_text=None, decision=None, owner=None, ruled_at=None):
     """Records the text of a plan impact the user or the session ruled on in `repo` (its top level), so a later fix
-    run of that repo leaves a finding on it out. `finding_text` is the full text of the accepted finding the ruling
-    came from, when there is one: a later fix run leaves out that exact finding and no other. Does nothing without a
-    session id."""
+    run of that repo handles a finding on it as the ruling says. `finding_text` is the full text of the accepted
+    finding the ruling came from, when there is one: a later fix run matches that exact finding and no other.
+    `decision` is `adopt` or `keep`, with the ruler's `owner` and the `ruled_at` time. Does nothing without a session
+    id."""
     if not session_id:
         return None
-    if finding_text is None:
-        return record(session_id, PLAN_IMPACT_RULED, text=text, repo=repo)
-    return record(session_id, PLAN_IMPACT_RULED, text=text, repo=repo, **{RULED_FINDING_TEXT_KEY: finding_text})
+    fields = {"text": text, "repo": repo}
+    if finding_text is not None:
+        fields[RULED_FINDING_TEXT_KEY] = finding_text
+    if decision is not None:
+        fields[RULED_DECISION_KEY] = decision
+        fields[RULED_OWNER_KEY] = owner
+        fields[RULED_AT_KEY] = ruled_at
+    return record(session_id, PLAN_IMPACT_RULED, **fields)
+
+
+class AdoptedRuling(NamedTuple):
+    """One ruling that adopts a plan change: the impact's text, the full text of the accepted finding it came from
+    (None when the row holds none), who ruled and when."""
+    text: str
+    finding_text: str | None
+    owner: str
+    ruled_at: str
 
 
 class Rulings(NamedTuple):
-    """What a session already ruled on in one repo: the texts of the plan impacts, and the full texts of the accepted
-    findings those rulings came from. A `decide` run with no packet, or whose impact covers no accepted finding,
-    stores no finding text."""
+    """What a session already ruled on in one repo. `impacts` are the texts of the plan impacts whose ruling keeps
+    the plan, plus those of the adopted rulings a fix pass already applied, and `finding_texts` the full texts of the
+    accepted findings those rulings came from; a `decide` run with no packet, or whose impact covers no accepted
+    finding, stores no finding text. `adopted` holds the rulings that adopt the plan change."""
     impacts: list
     finding_texts: list
+    adopted: tuple = ()
 
 
 NO_RULINGS = Rulings([], [])
 
 
+def adopted_ruling(row):
+    """The AdoptedRuling of a PLAN_IMPACT_RULED row that adopts the change."""
+    return AdoptedRuling(row["text"], row.get(RULED_FINDING_TEXT_KEY) or None,
+                         row.get(RULED_OWNER_KEY) or UNKNOWN_RULING_FIELD,
+                         row.get(RULED_AT_KEY) or UNKNOWN_RULING_FIELD)
+
+
+def applied_key(ruling):
+    """What a PLAN_IMPACT_APPLIED row and an AdoptedRuling share: the impact text, finding text and ruled-at time."""
+    return (ruling.text, ruling.finding_text, ruling.ruled_at)
+
+
+def record_applied_ruling(session_id, ruling, repo):
+    """Records that a fix pass applied the AdoptedRuling `ruling` in `repo` (its top level), so `rulings` no longer
+    hands it to a later fix run. Does nothing without a session id."""
+    if not session_id:
+        return None
+    return record(session_id, PLAN_IMPACT_APPLIED, text=ruling.text, repo=repo, ruled_at=ruling.ruled_at,
+                  **{RULED_FINDING_TEXT_KEY: ruling.finding_text})
+
+
+def latest_rows_per_text(rows):
+    """`rows` with only the rows of the latest ruling on each impact text: the rows that share the text's last row's
+    decision and ruled-at time (one ruling writes one row per finding it covers), one per finding text. Ordered by
+    the last row of each text, then by write order."""
+    last_index = {row["text"]: index for index, row in enumerate(rows)}
+    kept = []
+    for text, index in sorted(last_index.items(), key=lambda item: item[1]):
+        last = rows[index]
+        same_ruling = {}
+        for row in rows:
+            if row["text"] != text:
+                continue
+            if row.get(RULED_DECISION_KEY) != last.get(RULED_DECISION_KEY):
+                continue
+            if row.get(RULED_AT_KEY) != last.get(RULED_AT_KEY):
+                continue
+            same_ruling.pop(row.get(RULED_FINDING_TEXT_KEY), None)
+            same_ruling[row.get(RULED_FINDING_TEXT_KEY)] = row
+        kept += same_ruling.values()
+    return kept
+
+
 def rulings(session_id, repo):
-    """The Rulings the PLAN_IMPACT_RULED rows of `repo` hold, in ruling order. NO_RULINGS without a session id."""
+    """The Rulings the PLAN_IMPACT_RULED rows of `repo` hold, in ruling order, the latest row of each impact text only,
+    and no adopted ruling a fix pass already applied. NO_RULINGS without a session id."""
     if not session_id:
         return NO_RULINGS
-    rows = [row for row in session_rows(session_id, PLAN_IMPACT_RULED) if row.get("repo") == repo]
-    impacts = [row["text"] for row in rows]
-    finding_texts = [row[RULED_FINDING_TEXT_KEY] for row in rows if row.get(RULED_FINDING_TEXT_KEY)]
-    return Rulings(impacts, finding_texts)
+    ruled_rows = [row for row in session_rows(session_id, PLAN_IMPACT_RULED) if row.get("repo") == repo]
+    rows = latest_rows_per_text(ruled_rows)
+    adopting = [row for row in rows if row.get(RULED_DECISION_KEY) == plan_format.ADOPT_DECISION]
+    keeping = [row for row in rows if row.get(RULED_DECISION_KEY) != plan_format.ADOPT_DECISION]
+    applied = {applied_key(adopted_ruling(row))
+               for row in session_rows(session_id, PLAN_IMPACT_APPLIED) if row.get("repo") == repo}
+    adopted = [adopted_ruling(row) for row in adopting]
+    pending = tuple(ruling for ruling in adopted if applied_key(ruling) not in applied)
+    # An applied adopted ruling still settles its impact: a later fix run must not send that finding to the coder.
+    applied_rulings = [ruling for ruling in adopted if applied_key(ruling) in applied]
+    applied_texts = [ruling.text for ruling in applied_rulings]
+    impacts = [*(row["text"] for row in keeping), *applied_texts]
+    finding_texts = [row[RULED_FINDING_TEXT_KEY] for row in keeping if row.get(RULED_FINDING_TEXT_KEY)]
+    finding_texts += [ruling.finding_text for ruling in applied_rulings if ruling.finding_text]
+    return Rulings(impacts, finding_texts, pending)
 
 
 def record_rejected_ask(session_id, text, repo):

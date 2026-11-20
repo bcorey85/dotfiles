@@ -304,7 +304,7 @@ def accepted_ask_deviation_lines(asks, outcomes, notes, decided_by):
     is the disagreement; a modified ask's note is the ruling."""
     owner = plan_format.ruling_owner(".", decided_by)
     ruled_at = plan_format.ruled_at_now()
-    choice = plan_format.DECISION_WORDS["adopt"]
+    choice = plan_format.DECISION_WORDS[plan_format.ADOPT_DECISION]
     lines = []
     for item, outcome, note in zip(asks, outcomes, notes, strict=True):
         if not is_accepted_plan_impact(item, outcome):

@@ -10,6 +10,8 @@ import unittest
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import test_run_output
+
 module_spec = importlib.util.spec_from_file_location("gate_commands", toolkit_paths.CODE_DIR / "gate_commands.py")
 gate_commands = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(gate_commands)
@@ -466,6 +468,54 @@ class CoderTestFilesTest(GateCommandsTestCase):
         filled = self.filled_command(repo_files, "**File**: `app/models.py`\n", "pytest")
 
         self.assertEqual("python3 -m pytest app/orders_test.py app/test_models.py", filled)
+
+
+TINY_TEST = ("import unittest\n\n\nclass TinyTest(unittest.TestCase):\n"
+             "    def test_one(self):\n        self.assertTrue(True)\n\n"
+             "    def test_two(self):\n        self.assertTrue(True)\n\n\n"
+             "if __name__ == '__main__':\n    unittest.main()\n")
+
+
+class RunnerScriptRepoTest(GateCommandsTestCase):
+    """A repo with no pyproject or pytest config, whose tests run through `tests/parallel_tests.py <file name>`."""
+
+    def runner_repo(self):
+        runner_text = (pathlib.Path(__file__).resolve().parents[1] / "parallel_tests.py").read_text()
+        # The runner imports the ledger guard from the toolkit_paths beside the tests it runs.
+        return self.new_repo({"tests/parallel_tests.py": runner_text, "tests/scripts/test_tiny.py": TINY_TEST,
+                              "tests/scripts/toolkit_paths.py": "def guard_real_ledger():\n    pass\n",
+                              "tests/scripts/helper.py": "VALUE = 1\n", "ruff.toml": "line-length = 120\n"})
+
+    def derived_in_loop(self, repo, paths):
+        sys.path[:0] = [str(toolkit_paths.REVIEW_DIR), str(toolkit_paths.CODE_DIR)]
+        import review_loop_scoped_tests
+        return review_loop_scoped_tests.derived_test_commands(repo, paths)
+
+    def test_a_changed_test_file_derives_the_runner_command_naming_it(self):
+        repo = self.runner_repo()
+
+        commands = self.derived_in_loop(repo, ["tests/scripts/test_tiny.py"])
+
+        self.assertEqual(["python3 tests/parallel_tests.py test_tiny.py"], commands)
+
+    def test_a_changed_helper_or_non_test_file_derives_no_command(self):
+        repo = self.runner_repo()
+
+        commands = self.derived_in_loop(repo, ["tests/scripts/helper.py", "tests/parallel_tests.py"])
+
+        self.assertEqual([], commands)
+
+    def test_the_derived_command_runs_in_the_repo_and_reports_counts(self):
+        repo = self.runner_repo()
+        commands = self.derived_in_loop(repo, ["tests/scripts/test_tiny.py"])
+
+        run = coder_gate.scoped_run(str(repo), commands, (), repo / "scoped-tests.log")
+
+        self.assertEqual("passed", run.result)
+        self.assertEqual([], run.tails)
+        summary_text = test_run_output.command_summaries_text(run.summaries)
+        self.assertIn("2 tests", summary_text)
+        self.assertNotIn("no runner summary", summary_text)
 
 
 if __name__ == "__main__":

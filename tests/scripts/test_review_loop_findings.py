@@ -11,6 +11,7 @@ import finding_record
 import handback
 import review_asks
 import review_loop_findings
+import standing_rulings
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 REAL_ASKS = {
@@ -375,6 +376,29 @@ class RepeatedPathlessAskTest(unittest.TestCase):
 
         self.assertTrue(review_loop_findings.repeats_an_ask(ask, [], [], [ruled]))
         self.assertFalse(review_loop_findings.repeats_an_ask(ask, [], [], [ruled_test_gap]))
+
+
+class ReviewerImpactKindTest(unittest.TestCase):
+    """A reviewer's plan-change ask spans lines; parsing joins them, and the kind field must survive the join."""
+
+    def impact_ask(self, *kind_lines):
+        lines = ["- `docs/plans/p/plan.md:4` PLAN-IMPACT: the plan words AC1 loosely; the code is stricter.",
+                 "  acceptance_criteria: AC1", *kind_lines]
+        return parsed_asks(ask_section(*lines))[0]
+
+    def test_a_kind_line_on_its_own_line_still_reads_after_the_ask_lines_are_joined(self):
+        text = self.impact_ask("  kind: reword")
+
+        self.assertTrue(standing_rulings.impact_rewords_criterion(text), text)
+
+    def test_a_kind_field_after_a_dash_separator_reads_too(self):
+        text = self.impact_ask("  — kind: reword")
+
+        self.assertTrue(standing_rulings.impact_rewords_criterion(text), text)
+
+    def test_a_cut_kind_is_no_reword_and_no_kind_is_no_reword(self):
+        self.assertFalse(standing_rulings.impact_rewords_criterion(self.impact_ask("  kind: cut")))
+        self.assertFalse(standing_rulings.impact_rewords_criterion(self.impact_ask()))
 
 
 if __name__ == "__main__":

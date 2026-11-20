@@ -267,14 +267,40 @@ def temp_roots():
     return [os.path.realpath(root) for root in roots]
 
 
+def claude_temp_folder():
+    """The name of the per-user scratchpad folder, claude-<uid>."""
+    return f"claude-{os.getuid()}"
+
+
 def claude_temp_root():
     """The real path of the session temp root, /tmp/claude-<uid>, where Claude Code keeps its scratchpads."""
-    return os.path.realpath("/tmp/claude-" + str(os.getuid()))
+    return os.path.realpath(os.path.join("/tmp", claude_temp_folder()))
 
 
-def is_under_claude_temp_root(path):
-    """True when the path, once symlinks and `..` are resolved, lies inside the session temp root."""
-    return script_utils.path_is_under(os.path.realpath(path), claude_temp_root())
+def claude_code_temp_root():
+    """The folder that holds the per-project session folders: $CLAUDE_CODE_TMPDIR, else the system temp dir, then
+    claude-<uid>."""
+    base = os.environ.get("CLAUDE_CODE_TMPDIR") or tempfile.gettempdir()
+    return os.path.join(base, claude_temp_folder())
+
+
+# The forms session_temp_roots covers, as text for a message.
+SESSION_TEMP_ROOT_FORMS = "/tmp/claude-<uid>/, $TMPDIR/claude-<uid>/ or $CLAUDE_CODE_TMPDIR/claude-<uid>/"
+
+
+def session_temp_roots():
+    """The real paths of the session temp roots, where Claude Code keeps its scratchpads: /tmp/claude-<uid>, the
+    claude-<uid> folder of the system temp dir or CLAUDE_CODE_TMPDIR, and $TMPDIR/claude-<uid> when TMPDIR is set."""
+    roots = [claude_temp_root(), os.path.realpath(claude_code_temp_root())]
+    if os.environ.get("TMPDIR"):
+        roots.append(os.path.realpath(os.path.join(os.environ["TMPDIR"], claude_temp_folder())))
+    return list(dict.fromkeys(roots))
+
+
+def is_under_session_temp_root(path):
+    """True when the path, once symlinks and `..` are resolved, lies inside one of the session temp roots."""
+    real = os.path.realpath(path)
+    return any(script_utils.path_is_under(real, root) for root in session_temp_roots())
 
 
 def is_under_temp_dir(path):

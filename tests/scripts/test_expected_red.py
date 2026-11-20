@@ -116,6 +116,14 @@ class CheckForPhaseTest(unittest.TestCase):
         self.assertEqual((QUALITY_CHECK, []), expected_red.check_for_phase(QUALITY_CHECK, ["# Notes"], "2"))
 
 
+class EarlierPhasePathsTest(unittest.TestCase):
+    def test_the_first_phase_has_no_earlier_path(self):
+        self.assertEqual([], expected_red.earlier_phase_paths(plan_lines(), "1"))
+
+    def test_the_paths_of_every_phase_before_this_one_come_back_sorted(self):
+        self.assertEqual(["app/shared.py", "app/totals.py"], expected_red.earlier_phase_paths(plan_lines(), "2"))
+
+
 class LaterPhasePathsTest(unittest.TestCase):
     def test_a_file_only_an_open_later_phase_names_is_closed_and_a_shared_one_stays_open(self):
         self.assertEqual(["app/audit.py"], expected_red.later_phase_paths(plan_lines(), "1"))

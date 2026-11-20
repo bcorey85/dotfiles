@@ -51,6 +51,28 @@ def live_session_rows():
     return rows
 
 
+def other_live_session_in(folder, own_session_id):
+    """The first live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it;
+    None when there is none. A row with no string `cwd` is no match."""
+    folder_path = pathlib.Path(folder).resolve()
+    for row in live_session_rows():
+        if row.get("sessionId") == own_session_id:
+            continue
+        cwd = row.get("cwd")
+        if not isinstance(cwd, str) or not cwd:
+            continue
+        if pathlib.Path(cwd).resolve().is_relative_to(folder_path):
+            return row
+    return None
+
+
+def holder_label(row):
+    """What names the live session of a registry row: its name, else its session id, else its pid, else
+    `unknown session`."""
+    pid = row.get("pid")
+    return row.get("name") or row.get("sessionId") or (f"pid {pid}" if pid is not None else "unknown session")
+
+
 def session_display_name(session_id):
     """The name ListAgents shows for a live Claude Code session, read from the live registry rows. None when no
     live row holds that session id with a non-empty name."""

@@ -1157,6 +1157,27 @@ class SharedHelpersTest(unittest.TestCase):
             with self.subTest(label):
                 self.assertEqual(expected, script_utils.drop_numbered(items, dropped, kept))
 
+    def test_repo_relative_reads_a_relative_path_against_the_repo_and_gives_none_outside_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            outside = repo.parent / "elsewhere.txt"
+
+            self.assertEqual("a/b.py", script_utils.repo_relative(repo, "a/b.py"))
+            self.assertEqual("a/b.py", script_utils.repo_relative(repo, repo / "a" / "b.py"))
+            self.assertIsNone(script_utils.repo_relative(repo, outside))
+
+    def test_is_ancestor_is_true_for_an_ancestor_and_false_for_a_descendant_or_a_bad_ref(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            identity = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(repo)]
+            subprocess.run([*identity, "init", "-q"], check=True)
+            subprocess.run([*identity, "commit", "-q", "--allow-empty", "-m", "one"], check=True)
+            subprocess.run([*identity, "commit", "-q", "--allow-empty", "-m", "two"], check=True)
+
+            self.assertTrue(script_utils.is_ancestor(repo, "HEAD~1", "HEAD"))
+            self.assertFalse(script_utils.is_ancestor(repo, "HEAD", "HEAD~1"))
+            self.assertFalse(script_utils.is_ancestor(repo, "no-such-ref", "HEAD"))
+
     def test_numbered_items_returns_the_named_items_in_order_and_a_number_past_the_end_raises(self):
         self.assertEqual(["c", "a"], script_utils.numbered_items([3, 1], ["a", "b", "c"]))
         self.assertEqual([], script_utils.numbered_items([], ["a"]))

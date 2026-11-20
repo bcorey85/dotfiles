@@ -318,6 +318,20 @@ def process_stderr_text(finished):
     return os.fsdecode(finished.stderr).strip()
 
 
+def repo_relative(repo, given):
+    """`given` (absolute, or relative to the repo root) as a path relative to the repo root, or None when it lies
+    outside the repo. `repo` must be a resolved path."""
+    try:
+        return (pathlib.Path(repo) / given).resolve().relative_to(repo).as_posix()
+    except ValueError:
+        return None
+
+
+def is_ancestor(repo, older, newer, timeout=None):
+    """Whether commit `older` is `newer` or one of its ancestors; False when git fails."""
+    return git_output(repo, "merge-base", "--is-ancestor", older, newer, timeout=timeout) is not None
+
+
 def head_commit(cwd, timeout=None):
     """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
     return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)

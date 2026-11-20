@@ -9,6 +9,7 @@ import threading
 import time
 
 import full_check_gate
+import review_loop_untracked
 import script_utils
 
 CALL_TIMEOUT_SECONDS = 1800
@@ -58,9 +59,12 @@ def record_main_dispatch(out, role, agent, wall):
     record_call(out, sequence, record)
 
 
-def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
+def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
     """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
-    prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument."""
+    prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument.
+    `deletable` are the untracked files a finding of the pass asks to delete; the call may remove them.
+    `guarded=False` is for a call that runs inside a batch whose caller holds one untracked-file guard for all of
+    it: concurrent calls cannot tell whose deletion is whose."""
     command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto",
                "--name", f"child of {PARENT_SESSION['label']} ({role})"]
     if agent:
@@ -80,15 +84,23 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None):
         child_pids.append(pid)
         LIVE_CHILDREN.add(pid)
 
+    guard = review_loop_untracked.begin(repo, out, deletable) if guarded else None
     try:
         return_code, stdout, stderr = script_utils.run_process(command, repo, stdin=prompt,
                                                                timeout=CALL_TIMEOUT_SECONDS, env=CHILD_ENV,
                                                                on_start=child_started)
+    except BaseException:
+        # A call that died has no call number; its notes name the role.
+        if guard:
+            review_loop_untracked.note_removal(role, guard.restore())
+        raise
     finally:
         LIVE_CHILDREN.difference_update(child_pids)
     wall = round(now() - started, 1)
 
     sequence = next_call_number()
+    if guard:
+        review_loop_untracked.note_removal(f"call-{sequence:02d}-{role}", guard.restore())
     raw = out / f"call-{sequence:02d}-{role}.json"
     raw.write_text(stdout)
     errors = out / f"call-{sequence:02d}-{role}.err"

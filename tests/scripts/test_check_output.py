@@ -733,10 +733,19 @@ class CommandClassificationTest(unittest.TestCase):
                 "pipenv run python backend/manage.py test app.tests", "make test-consistency ARGS=a.test.ts",
                 "pnpm --filter api test", "make install test", "make update test", "just install test",
                 "pnpm --filter add test", "python -m unittest tests.test_a", "uv run python3 -m unittest discover",
+                "python3 tests/parallel_tests.py test_a.py", "python3 tests/parallel_tests.py",
                 "nice -n 19 env CARGO_BUILD_JOBS=4 cargo nextest run --lib -E 'test(widget_sorts)'")
         for command in not_runs + runs:
             with self.subTest(command=command):
                 self.assertEqual(command in runs, check_scope.runs_tests(command))
+
+    def test_the_repo_runner_script_is_targeted_with_a_file_name_and_whole_without_one(self):
+        cases = (("python3 tests/parallel_tests.py test_a.py", "targeted"),
+                 ("python3 tests/parallel_tests.py test_a.py test_b.py", "targeted"),
+                 ("python3 tests/parallel_tests.py", "whole"))
+        for command, scope in cases:
+            with self.subTest(command=command):
+                self.assertEqual(scope, check_scope.command_check_scope(command, self.repo))
 
     def test_only_a_command_with_a_step_that_can_print_a_summary_prints_its_own(self):
         quotes = ("cat a.log", "cd tests && ls", "! pytest x", "FOO=1 cat a.log", "tail -5 run.log",

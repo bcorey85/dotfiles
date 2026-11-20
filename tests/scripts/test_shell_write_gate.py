@@ -108,6 +108,12 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assert_allowed("sed -i s/a/b/ " + str(scratch / "probe.txt"))
         self.assert_allowed("sed -i s/a/b/ probe.txt", cwd=str(scratch))
 
+    def test_in_place_edit_under_the_tmpdir_claude_folder_allowed(self):
+        scratch = self.tmp / f"claude-{os.getuid()}" / "pad"
+        scratch.mkdir(parents=True)
+        (scratch / "probe.txt").write_text("a\n")
+        self.assert_allowed("sed -i s/a/b/ " + str(scratch / "probe.txt"))
+
     def test_in_place_edit_in_other_tmp_path_still_denied(self):
         outside = pathlib.Path(tempfile.mkdtemp(dir="/tmp", prefix="shell-write-gate-test-"))
         self.addCleanup(shutil.rmtree, outside, ignore_errors=True)

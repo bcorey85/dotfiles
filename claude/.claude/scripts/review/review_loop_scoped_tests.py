@@ -1,10 +1,13 @@
 """review_loop_scoped_tests.py: the scoped and named test runs of a review loop, as a mixin for `LoopRun`. The host
-class holds repo, out, gate_env, gates_every_run and scoped_tests, and has stop, autofix_touched_files and
-scoped_failures_pre_existing."""
+class holds repo, out, gate_env, gates_every_run and scoped_tests, and has stop, autofix_touched_files,
+reviewed_and_touched_files and scoped_failures_pre_existing."""
+import pathlib
 import time
 
+import check_scope
 import coder_gate
 import full_check
+import gate_commands as gate_command_derivation
 import gate_env
 from test_run_output import command_summaries_text
 
@@ -29,6 +32,15 @@ def test_commands_of(gate_commands):
     return [command for command in gate_commands if not coder_gate.is_stale_prose_check(command)]
 
 
+def derived_test_commands(repo, paths):
+    """The test commands `gate_commands.derive_gate_commands` derives for the changed `paths` that exist in the tree.
+    No commands are listed, so every test command is derived from the paths."""
+    repo_dir = pathlib.Path(repo)
+    existing = [path for path in paths if (repo_dir / path).is_file()]
+    derived = gate_command_derivation.derive_gate_commands_for(repo_dir, existing, [])
+    return [command for command in derived if check_scope.runs_tests(command)]
+
+
 def time_left_for_rerun(deadline):
     """True when a rerun can start a command by `deadline`; an unbound run (deadline None) always can. A rerun with
     less left would start nothing and replace the red first run's failure with a bare `not run`."""
@@ -45,21 +57,30 @@ class ScopedTestRuns:
             budget = max(deadline - time.monotonic(), 0)
         return coder_gate.scoped_run(self.repo, test_commands, self.gate_env, self.out / SCOPED_TESTS_LOG, budget)
 
-    def run_test_commands(self, test_commands, budgeted=False, stop_when_unrun=False):
+    def derive_scoped_tests(self):
+        """The test commands for the files this run reviewed and changed, for a run whose caller named none. When
+        none derive, `scoped_tests` says so."""
+        paths = self.reviewed_and_touched_files()
+        commands = derived_test_commands(self.repo, paths)
+        if not commands:
+            self.scoped_tests = "not run (no test command derives for the changed files)"
+        return commands
+
+    def run_test_commands(self, test_commands, budgeted=False, stop_when_unrun=False, report_counts=False):
         """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and
         run once more. A red run whose every failure also fails on HEAD without the diff is pre-existing, not red.
         A budgeted run is bound by the named-tests budget, counted from this call and shared with the rerun. With
         less than coder_gate.MIN_COMMAND_SECONDS of it left, no rerun starts and the first red run is kept.
         A run with stop_when_unrun that has a command that timed out, never started, or gave a command error or
         setup fault stops the loop too.
-        A loop that gates every run adds the runner counts to every run's line. False, with the loop stopped, when one
-        stays red."""
+        A loop that gates every run, or a run with `report_counts`, adds the runner counts to the line. False, with the
+        loop stopped, when one stays red."""
         deadline = time.monotonic() + NAMED_TESTS_BUDGET_SECONDS if budgeted else None
         run = self.scoped_run_within(test_commands, deadline)
         if run.tails and time_left_for_rerun(deadline) and self.autofix_touched_files():
             run = self.scoped_run_within(test_commands, deadline)
         self.scoped_tests = run.result
-        if self.gates_every_run and run.summaries:
+        if (self.gates_every_run or report_counts) and run.summaries:
             self.scoped_tests = f"{run.result}; counts: {command_summaries_text(run.summaries)}"
         if stop_when_unrun and run.gave_no_result:
             self.stop("critical-blocker", [named_run_blocker(run)])

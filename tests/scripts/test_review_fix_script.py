@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -26,12 +28,14 @@ import process_group
 import review_fix
 import review_fix_asks
 import review_fix_names
+import review_fix_plan_impacts
 import review_loop_main
 import review_loop_prompt_file
 import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
 import script_utils
+import standing_rulings
 from review_asks import REJECT_MEANS, REJECTED
 from review_fix_asks import LAUNCH_COMMAND
 
@@ -319,6 +323,43 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("review-gate-mark", output)
         self.assertNotIn("render-and-finish", output)
 
+    def test_a_blocker_prints_whole_up_to_2000_characters_and_a_file_path_past_it(self):
+        cases = [("x" * 2000, False), ("x" * 2001, True), ("lint failed: " + "x" * 1187 + " FAILING-LINE", False)]
+        for blocker, gets_file in cases:
+            with self.subTest(length=len(blocker)):
+                code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[blocker]))
+                self.assertEqual(code, 0, output)
+                self.assertEqual(gets_file, "full text:" in output, output)
+                self.assertEqual(not gets_file, blocker in output, output)
+
+    def test_the_2000_character_limit_is_measured_after_whitespace_is_collapsed(self):
+        blocker = "a\n\n" * 700 + "FAILING-LINE"
+        collapsed = "a " * 700 + "FAILING-LINE"
+        self.assertGreater(len(blocker), 2000)
+        code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[blocker]))
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("full text:", output)
+        self.assertIn(collapsed, output)
+
+    def test_a_blocker_past_2000_characters_prints_a_path_to_a_file_holding_all_of_it(self):
+        huge_blocker = "test failed:\n" + "y" * 4970 + "\nFAILING-LINE"
+        code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[huge_blocker]))
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("FAILING-LINE", output)
+        match = re.search(r"\[full text: (\S+)\]", output)
+        self.assertIsNotNone(match, output)
+        self.assertEqual(huge_blocker + "\n", pathlib.Path(match.group(1)).read_text())
+
+    def test_a_long_plan_impact_prints_a_path_to_a_file_holding_all_of_it(self):
+        plan_impact = "assumed:\n" + "z" * 2500 + "\nFAILING-LINE"
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": plan_impact})
+        code, output = self.packet(packet)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("FAILING-LINE", output)
+        match = re.search(r"\[full text: (\S+)\]", output)
+        self.assertIsNotNone(match, output)
+        self.assertEqual(plan_impact + "\n", pathlib.Path(match.group(1)).read_text())
+
     def test_a_setup_fault_stops_and_says_it_is_not_a_code_failure(self):
         code, output = self.packet(SETUP_FAULT)
         self.assertEqual(code, 0, output)
@@ -577,6 +618,186 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("adopted by rule", output)
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertNotIn("Gate: do not commit yet", output)
+
+    def reword_packet(self, *flags):
+        reword = {**HELD_IMPACT, "text": "AC-2 is reworded\n  acceptance_criteria: AC-2\n  kind: reword",
+                  "reword": True}
+        message = {"status": "converged", "iter": 2, "fixed": [], "ask": [], "class_closure": "n/a - fixed[] empty",
+                   "plan_impacts": [reword]}
+        return self.packet(json.dumps(message), *flags)
+
+    def test_packet_reads_standing_rulings_from_the_plan_it_is_given(self):
+        plan = self.temp_root / "plan.md"
+        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                        "covers: rewords\n")
+
+        _code, without_plan = self.reword_packet()
+        code, with_plan = self.reword_packet("--plan", str(plan))
+
+        self.assertIn("ACTION: ask-user-plan-impact", without_plan)
+        self.assertEqual(code, 0, with_plan)
+        self.assertIn("standing ruling by Pat at 2026-11-19", with_plan)
+        self.assertNotIn("ask-user-plan-impact", with_plan)
+
+    def test_packet_stops_on_a_plan_that_does_not_exist(self):
+        code, output = self.reword_packet("--plan", str(self.temp_root / "missing.md"))
+
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("missing.md", output)
+
+    def present_with_plan(self, impacts, plan_text, state=None):
+        """What present_plan_impacts prints for the impacts, with a plan file holding plan_text."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        plan = pathlib.Path(folder.name) / "plan.md"
+        plan.write_text(plan_text)
+        packet = {"plan_impacts": [{"settled": False, "applied": False, "reword": False, **impact}
+                                   for impact in impacts],
+                  "iter": 1, "spec_iter": None}
+        captured = io.StringIO()
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        environment = {"HANDBACK_STORE_DIR": store.name, "CLAUDE_CODE_SESSION_ID": SESSION}
+        with (unittest.mock.patch.dict(os.environ, environment),
+              unittest.mock.patch.object(review_fix_plan_impacts, "save_fix_state"),
+              unittest.mock.patch.object(handback, "carried_findings", return_value=[]),
+              contextlib.redirect_stdout(captured)):
+            review_fix_plan_impacts.present_plan_impacts(packet, state or {}, plan)
+        return captured.getvalue()
+
+    def test_a_held_reword_impact_with_a_standing_ruling_prints_a_deviation_line_naming_it_and_no_ask(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn("ACTION: show-plan-impacts", output)
+        self.assertIn("standing ruling by Pat at 2026-11-19", output)
+        self.assertIn("the queue is at-most-once", output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertNotIn("Gate: do not commit yet", output)
+
+    def test_a_reword_impact_the_loop_adopted_prints_the_standing_ruling_not_the_code_wins_line(self):
+        adopted_reword = {**HELD_IMPACT, "reword": True, "ac_change": True, "adopted": True, "applied": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([adopted_reword], plan_text)
+
+        self.assertIn("standing ruling by Pat at 2026-11-19", output)
+        self.assertNotIn("the code wins", output)
+
+    STANDING_PLAN = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+    def test_a_standing_adoption_credits_the_review_and_prints_the_refusal_when_there_is_one(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        for refusal in (None, "the review left a finding open"):
+            with self.subTest(refusal=refusal):
+                with unittest.mock.patch.object(handback, "record_clean_review",
+                                                return_value=(refusal, None)) as credited:
+                    output = self.present_with_plan([reword], self.STANDING_PLAN)
+
+                credited.assert_called_once_with(SESSION)
+                self.assertEqual("the review left a finding open" in output, refusal is not None)
+
+    def test_a_standing_adoption_beside_a_held_cut_writes_no_ruling_row_and_credits_no_review(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        cut = {**HELD_IMPACT, "text": "AC-9 is dropped", "reword": False}
+        with unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)) as credited, \
+                unittest.mock.patch.object(handback_store, "record") as recorded, \
+                unittest.mock.patch.object(handback_store, "record_ruled_impact") as ruled_impact:
+            output = self.present_with_plan([reword, cut], self.STANDING_PLAN)
+
+        credited.assert_not_called()
+        recorded.assert_not_called()
+        ruled_impact.assert_called_once()
+        self.assertIn("ask-user-plan-impact", output)
+
+    def test_a_standing_adoption_of_every_held_impact_writes_the_ruling_row_and_credits_the_review(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        with unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)) as credited, \
+                unittest.mock.patch.object(handback_store, "record") as recorded:
+            self.present_with_plan([reword], self.STANDING_PLAN)
+
+        credited.assert_called_once_with(SESSION)
+        self.assertEqual(recorded.call_args.args[:2], (SESSION, handback_store.PLAN_RULING))
+
+    def test_a_standing_adoption_stores_its_rows_under_the_packets_repo_not_the_cwd(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        other_repo = self.temp_root / "other-repo"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(other_repo)], check=True)
+        state = {"relaunch_args": ["--repo", str(other_repo)]}
+        with unittest.mock.patch.object(handback_store, "record_ruled_impact") as stored, \
+                unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)):
+            self.present_with_plan([reword], self.STANDING_PLAN, state)
+
+        self.assertEqual(pathlib.Path(stored.call_args.args[2]).resolve(), other_repo.resolve())
+
+    def test_the_stored_row_and_the_deviation_line_carry_the_same_ruled_at(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        with unittest.mock.patch.object(handback_store, "record_ruled_impact") as stored:
+            output = self.present_with_plan([reword], self.STANDING_PLAN)
+
+        ruled_at = stored.call_args.kwargs["ruled_at"]
+        self.assertIn(f"Ruled by {plan_format.SESSION_RULING_OWNER} at {ruled_at}", output)
+
+    def test_the_standing_deviation_line_is_owned_by_the_session_with_one_time_and_no_rule_list(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn(f"Ruled by {plan_format.SESSION_RULING_OWNER} at ", output)
+        self.assertNotIn("Ruled by Pat", output)
+        self.assertNotIn("at 2026-11-19 at", output)
+        self.assertNotIn("Plan impacts adopted by rule", output)
+
+    def test_a_reword_and_a_rule_adopted_impact_each_print_once(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        by_rule = {**ADOPTED_IMPACT, "reword": False}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword, by_rule], plan_text)
+
+        self.assertEqual(output.count("the queue is at-most-once"), 1)
+        rule_section = output.split("Plan impacts adopted by rule", 1)[1]
+        self.assertIn("the cap moves into the config", rule_section)
+        self.assertNotIn("the queue is at-most-once", rule_section)
+        self.assertEqual(output.count("Plan impacts adopted by rule"), 1)
+
+    def test_a_bad_standing_ruling_line_is_named_by_file_and_line_and_the_impact_stays_held(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = '# Plan\n\n## Plan Deviations\n\nStanding ruling by Pat at yesterday: "x" covers: rewords\n'
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn("plan.md:5:", output)
+        self.assertIn(standing_rulings.STANDING_RULING_FORM, output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+
+    def test_a_held_cut_impact_still_asks_when_a_standing_ruling_covers_rewords(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        cut = {**HELD_IMPACT, "text": "AC-3 is dropped"}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword, cut], plan_text)
+
+        self.assertEqual(output.count("ACTION: ask-user-plan-impact"), 1)
+        self.assertIn("1 plan impact(s) wait for a ruling", output)
+        self.assertIn("AC-3 is dropped", output)
+
+    def test_a_held_reword_impact_with_no_standing_ruling_still_asks(self):
+        reword = {**HELD_IMPACT, "reword": True}
+
+        output = self.present_with_plan([reword], "# Plan\n")
+
+        self.assertIn("ACTION: ask-user-plan-impact", output)
 
     def test_a_held_plan_impact_is_asked_once_after_the_review_result_and_keeps_the_gate_dirty(self):
         code, output = self.impacts_packet([ADOPTED_IMPACT, HELD_IMPACT])
@@ -4098,17 +4319,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn(review_user_ruled.SKIP_QUESTION.split("{")[0], packet_output)
         self.assertNotIn("present-asks", packet_output)
 
-    def test_asks_done_then_decide_adopt_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
-        home = str(self.temp_root / "home")
-        launch_args = self.packet_with_ruled_impact_ask(home)
-        self.assertIn("--user-ruled", launch_args)
-        self.decide_adopt(home)
-
-        output = self.run_fix_round(home, launch_args, [RULED_IMPACT_SKIP])
-
-        self.assertEqual(self.fix_round_findings_files(), [])
-        self.assert_skip_stays_a_skip(output)
-
     def test_asks_done_then_decide_keep_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
@@ -4122,7 +4332,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_fix_launch_whose_only_finding_is_a_ruled_impact_on_a_clean_tree_launches_no_loop(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
-        self.decide_adopt(home)
+        self.decide_keep(home)
         self.git("checkout", "--", "README.md")
         state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
         prompts_before = list((state_dir / "loop-script").glob("*/prompt.txt"))
@@ -4135,10 +4345,25 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.fix_round_findings_files(), [])
         self.assertEqual(list((state_dir / "loop-script").glob("*/prompt.txt")), prompts_before)
 
-    def test_a_no_review_fix_launch_whose_only_finding_is_a_ruled_impact_launches_no_loop(self):
+    def test_a_real_decide_adopt_sends_the_adopted_finding_to_the_resume_rounds_fix_coder(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
         self.decide_adopt(home)
+
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        findings_files = self.fix_round_findings_files()
+        self.assertEqual(len(findings_files), 1)
+        sent = json.loads(findings_files[0].read_text())
+        self.assertEqual(len(sent), 1)
+        self.assertIn(review_user_ruled.ADOPTED_MARK, sent[0])
+        self.assertIn("keep the narrower AC2", sent[0])
+
+    def test_a_no_review_fix_launch_whose_only_finding_is_a_ruled_impact_launches_no_loop(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_keep(home)
 
         code, output = self.run_script([*launch_args, "--no-review"], HOME=home,
                                        REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
@@ -4154,7 +4379,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
                        capture_output=True)
         launch_args = self.packet_with_ruled_impact_ask(home)
-        self.decide_adopt(home)
+        self.decide_keep(home)
         message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[RULED_IMPACT_SKIP])
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
         self.assertEqual(code, 0, output)
@@ -4200,7 +4425,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
 
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             ruled_in_other = handback_store.rulings(SESSION, os.path.realpath(other_repo)).impacts
@@ -4213,7 +4438,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet_with_ruled_impact_ask(home)
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             handback_store.record(SESSION, "dispatch", repo=str(self.temp_root / "elsewhere"))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             ruled = handback_store.rulings(SESSION, os.path.realpath(self.repo)).impacts
@@ -4226,7 +4451,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
         self.assertEqual(code, 0, output)
         self.assertEqual(len(self.fix_round_findings_files()), 1)
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(shlex.split(output.splitlines()[-1].split("`")[1])[2:], HOME=home)
 
@@ -4259,7 +4484,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         finding = ("README.md:1 PLAN-IMPACT: drop the retry? acceptance_criteria: AC3 "
                    "Proposed change: drop the retry")
         rulings = handback_store.Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings), ([], [], [], [finding]))
+        left = review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings)
+        self.assertEqual(tuple(left[:4]), ([], [], [], [finding]))
 
     def test_a_rejected_ask_is_recorded_by_file_and_question_and_an_accepted_one_is_not(self):
         home = str(self.temp_root / "home")
@@ -4331,7 +4557,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         ordinary = ask_entry("cap the retry", "src/retry.ts:10", finding_id="a1b2c3d4e5f60005",
                              question="cap the retry at three?", change="cap the retry", ask_class="bug")
         launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, ordinary))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
 
@@ -4350,7 +4576,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                     question="[plan-drift] does AC3 still hold for reads? acceptance_criteria: AC3",
                                     change="keep the wider AC3", ask_class="plan-drift")
         launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, other_criterion))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
 
@@ -4365,7 +4591,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
         self.assertIn("plan impact(s) that await a ruling", self.false_clean_reason())
-        self.decide_adopt(home)
+        self.decide_keep(home)
         self.run_fix_round(home, launch_args, [])
 
         self.assertIsNone(self.false_clean_reason())

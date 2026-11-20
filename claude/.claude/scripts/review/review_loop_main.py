@@ -19,7 +19,9 @@ import script_utils
 import session_registry
 from finding_record import parse_finding
 from review_loop_calls import CALLS, LIVE_CHILDREN, PARENT_SESSION, now
+from review_loop_named_tests import NamedTestRemovedError
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
+from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
 from review_loop_prompt_file import (
     BASE_KEY,
@@ -29,10 +31,13 @@ from review_loop_prompt_file import (
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
+    RULED_OUT_FILES_KEY,
     SESSION_RULED_HEADER_KEY,
     USER_RULED_AT_KEY,
     USER_RULED_HEADER_KEY,
     YES,
+    header_adopted,
+    header_held_by,
     header_iter,
     header_list,
     header_ruled,
@@ -40,13 +45,11 @@ from review_loop_prompt_file import (
     read_prompt,
     reviewer_brief,
 )
-from review_loop_ruled import rejected_ask_records
+from review_loop_ruled import adopted_rulings, rejected_ask_records
 from review_loop_script import (
     ROUND_BUDGET,
     SKILLS,
-    ChangeRemovedError,
     CoderFailedError,
-    LaterPhaseEditError,
     LoopRun,
     TelemetryRun,
     first_pass,
@@ -109,11 +112,16 @@ def build_loop(request):
         loop.test_strategy = plan_format.test_strategy_section(plan_lines)
 
     loop.gates_every_run = request.gates_every_run
+    loop.gate_commands = list(request.gate_commands)
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)
     loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)
+    loop.ruled_out = set(header_list(header, RULED_OUT_FILES_KEY))
+    loop.held_holders = review_loop_held.caller_holders(caller_held, header_held_by(header))
+    loop.held_holders.update(review_loop_held.implicit_holders(
+        repo, loop.held_files, loop.held_holders, loop.only_files, request.session))
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     request.progress["iter"] = loop.iter_count
     return loop, check_command
@@ -139,14 +147,19 @@ def run_loop(request):
         findings = read_findings(header)
         loop.user_ruled = header_ruled(header, findings, USER_RULED_HEADER_KEY)
         loop.user_ruled_at = header.get(USER_RULED_AT_KEY, "")
+        loop.adopted = adopted_rulings(header_adopted(header, findings))
+        loop.session_id = request.session
         loop.session_ruled = header_ruled(header, findings, SESSION_RULED_HEADER_KEY)
         loop.resume_approval_asks([parse_finding(text) for text in findings])
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
-    except (LaterPhaseEditError, CoderFailedError) as error:
+    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])
+    except plan_format.PlanFormatError as error:
+        # The message names the plan file, the line and the expected form of the standing ruling.
+        loop.stop("critical-blocker", [f"the plan's standing ruling does not parse: {error}"])
 
     if request.gates_every_run and loop.status != "converged" and not loop.scoped_tests:
         loop.scoped_tests = full_check.SCOPED_NOT_RUN_STOPPED.format(status=loop.status)

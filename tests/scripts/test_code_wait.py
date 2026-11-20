@@ -244,6 +244,68 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
+    def test_a_loop_dir_other_than_the_recorded_one_returns_no_packet_and_names_both_folders(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("status: converged\n")
+        earlier_folder = temp_dir(self)
+        this_folder = temp_dir(self)
+        (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertNotIn("status: converged", output.getvalue())
+        self.assertIn(str(earlier_folder), output.getvalue())
+        self.assertIn(str(this_folder), output.getvalue())
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("was stopped", output.getvalue())
+
+    def test_a_live_review_with_a_mismatched_loop_folder_stops_without_waiting(self):
+        repo, phase_dir = self.repo_with_pid(os.getpid())
+        earlier_folder = temp_dir(self)
+        this_folder = temp_dir(self)
+        (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("status: converged", output.getvalue())
+
+    def test_an_absent_loop_dir_with_a_recorded_folder_returns_no_packet(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        recorded_folder = temp_dir(self)
+        (recorded_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / "review.out").write_text("status: converged\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", recorded_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn("No review of this phase has started.", output.getvalue())
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("status: converged", output.getvalue())
+
+    def test_the_recorded_loop_folder_returns_its_packet(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("status: converged\n")
+        loop_folder = temp_dir(self)
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", loop_folder)
+
+        self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
+
     def test_a_fix_removed_change_packet_prints_the_stop_step_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)
         packet = json.dumps({"status": "fix-removed-change", "blockers": ["the fix passes removed 24 of 41"]})
@@ -271,8 +333,19 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
-                         f"The review loop ended and left no packet in <loop dir>/packet.txt. "
-                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+                         f"No review of this phase has started. Log of the last start: {phase_dir / 'review.out'}. "
+                         f"{code_wait.PHASE_RESTART_STEP}")
+
+    def test_a_detached_child_that_died_before_writing_its_loop_dir_names_review_out(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("the child's error\n")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn(str(phase_dir / "review.out"), output.getvalue())
 
     def test_a_launched_loop_that_ended_with_no_packet_and_no_request_says_so_and_exits_one(self):
         repo, _ = self.repo_with_pid(os.getpid())
@@ -302,7 +375,7 @@ class WaitReviewTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
                          f"The review loop ended and left no packet in {packet_file}. "
-                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_STOPPED} {code_wait.PHASE_RESTART_STEP}")
 
     def test_a_loop_folder_named_after_the_run_was_built_is_the_one_the_message_names(self):
         repo, phase_dir = self.repo_with_pid(999999999)
@@ -584,6 +657,17 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("launch --detach", errors)
+
+    def test_a_loop_folder_whose_prompt_file_is_malformed_stops_naming_the_file(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text(str(os.getpid()))
+        prompt_file = self.loop_dir / code_wait.reviewer_dispatch.PROMPT_FILE
+        prompt_file.write_text("repo: /work/repo\n\nhandoff\n")
+
+        code, _, errors = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 2)
+        self.assertIn(str(prompt_file), errors)
+        self.assertNotIn("Traceback", errors)
 
     def test_a_loop_flag_with_no_folder_stops_loudly(self):
         code, _, errors = self.run_main("review", "--loop")

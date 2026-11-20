@@ -118,6 +118,39 @@ def phase_plan(first_mark, second_mark, first_items="", second_items="", extra="
             f"## Phase 2: Second\n\n#### Automated Verification:\n\n{second_items}\n{extra}")
 
 
+class SpecAcRowsTest(unittest.TestCase):
+    STANDING = 'Standing ruling by Pat at 2026-11-19: "every criterion reword follows one rule" covers: rewords'
+    CRITERIA = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, reworded)\n")
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.spec = self.folder / "spec.md"
+        (self.folder / "00-ticket.md").write_text(
+            "# T-1: Thing\n\nSource: https://example.com/T-1\n\n## Acceptance Criteria\n\n"
+            "- The cache reuses the stored value\n")
+        (self.folder / "acceptance-criteria.md").write_text(self.CRITERIA)
+
+    def spec_rows(self, standing_line):
+        self.spec.write_text(f"# Plan\n\n## Plan Deviations\n\n{standing_line}\n")
+        sys.path.insert(0, str(toolkit_paths.CODE_DIR))
+        import plan_check
+        return plan_check.spec_ac_rows(self.spec)
+
+    def test_a_reworded_ticket_criterion_gives_no_row_under_a_standing_reword_ruling(self):
+        self.assertEqual(self.spec_rows(self.STANDING), [])
+
+    def test_the_same_reword_gives_a_drift_row_with_no_standing_ruling(self):
+        self.assertEqual(len(self.spec_rows("- none")), 1)
+
+    def test_a_bad_standing_line_gives_one_row_naming_the_plan_file_and_line(self):
+        rows = self.spec_rows('Standing ruling by Pat at yesterday: "x" covers: rewords')
+
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0].startswith(f"{self.spec}:5:"), rows[0])
+
+
 class PlanCheckVerdictTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

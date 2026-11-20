@@ -12,6 +12,8 @@ still judges.
       --escape "file=<p>|class=<c>|severity=<s>|gate_missed=<g>|guard=<r>|desc=<one line>"   (fix, repeatable)
       --aikido "<path>:<line>=<comment_id>"                                                 (fix, repeatable)
       --pr <number>  (fix) the PR the Aikido comments are on; without it gh asks the current branch
+      --plan <path>  the run's plan: a held plan impact that only rewords a criterion is adopted when the plan holds
+                     a standing ruling that covers rewords (the packet command of a /code run carries it)
       --launch <launch.json>  the run's launch record, which `launch` adds to the packet command it prints; asks-done
                      reads the fix run's flags from it, and `packet` reads its `user_ruled` findings
       With empty stdin, `packet` reads this session's latest review-loop hand-back: the loop script stores it
@@ -24,7 +26,7 @@ still judges.
       same text are two runs.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
                        [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
-                       [--handoff <file>] [--test <cmd>]... [--fast|--deep]
+                       [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
                        [--iter N] [--lane <lane>] [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
@@ -114,6 +116,7 @@ import script_utils
 from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
+from review_blocker_text import blocker_text
 from review_fix_asks import (
     command_asks_done,
     conditional_ask_numbers,
@@ -193,7 +196,11 @@ def packet_arguments(argv):
     parser.add_argument("--aikido", action="append", default=[])
     parser.add_argument("--pr")
     parser.add_argument("--launch")
+    parser.add_argument("--plan", default="")
     options = parser.parse_args(argv)
+    options.plan_path = pathlib.Path(options.plan) if options.plan else None
+    if options.plan_path is not None and not options.plan_path.is_file():
+        raise UsageError(f"--plan {options.plan} does not exist")
     options.relaunch_args = []
     options.user_ruled = []
     if options.launch:
@@ -477,7 +484,7 @@ def print_logged(notes):
 
 
 def blocker_lines(packet):
-    return ["- " + one_line(item_text(item, "finding", "item"), 400) for item in packet["blockers"]]
+    return ["- " + blocker_text(item_text(item, "finding", "item")) for item in packet["blockers"]]
 
 
 def remaining_lines(packet):
@@ -485,7 +492,7 @@ def remaining_lines(packet):
 
 
 def plan_impact_lines(packet):
-    return ["- " + one_line(packet["plan_impact"], 400)]
+    return ["- " + blocker_text(packet["plan_impact"])]
 
 
 # The statuses that stop the caller: (the instruction, the packet's entry lines under it).
@@ -569,7 +576,7 @@ def stop_for_status(packet, options, state):
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
                      *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
     print_action("stop", instruction, *entries, *ask_lines)
-    present_plan_impacts(packet, state)
+    present_plan_impacts(packet, state, options.plan_path)
     if replies:
         print("AIKIDO REPLIES POSTED:")
         print("\n".join(replies))
@@ -629,7 +636,7 @@ def command_packet(argv):
         print_action("render-and-finish")
     sections = packet_sections(packet, state, replies, unreviewed_fix, capped_defer)
     print_user_block(handback.render(packet, options.skill, sections))
-    present_plan_impacts(packet, state)
+    present_plan_impacts(packet, state, options.plan_path)
     print_logged(notes)
     credit_refusal = commit_credit_refusal(packet)
     if credit_refusal:
@@ -723,7 +730,7 @@ def discuss_commands():
         (plan_format.SESSION_RULING, "your reason"),
     )
     for by, words in rulers:
-        for decision in ("adopt", "keep"):
+        for decision in (plan_format.ADOPT_DECISION, plan_format.KEEP_DECISION):
             commands.append(f'{REVIEW_FIX_COMMAND} decide {decision} --by {by} --ruling "<{words}>" {PLAN_ARG_NOTE}')
     return commands
 
@@ -790,7 +797,8 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo,
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     for finding_text in finding_texts or [None]:
-        handback_store.record_ruled_impact(session_id, impact_text, ruled_repo, finding_text=finding_text)
+        handback_store.record_ruled_impact(session_id, impact_text, ruled_repo, finding_text=finding_text,
+                                           decision=decision, owner=owner, ruled_at=ruled_at)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)
     return entry
@@ -802,8 +810,8 @@ def settle_kept_ruling():
     if not session_id:
         return ("CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate still counts the "
                 "review as dirty.")
-    return record_ruling(session_id, "keep", "The ruling settles the plan impact, so the commit gate counts the "
-                         "review as clean.")
+    return record_ruling(session_id, plan_format.KEEP_DECISION,
+                          "The ruling settles the plan impact, so the commit gate counts the review as clean.")
 
 
 def decide_from_hand_back(held, decision, by, ruling, plan_path):
@@ -831,7 +839,7 @@ def record_plan_ruling(state, decision, by, ruling, plan_path):
     covered = findings_covered_by_impact(state, state["plan_impact"])
     entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered)
 
-    if decision == "keep" and state.pop("plan_impact_held", False):
+    if decision == plan_format.KEEP_DECISION and state.pop("plan_impact_held", False):
         keep_line = (APPLIED_KEEP_LINE if state.pop("plan_impact_applied", False)
                      else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
         state["stage"] = "done"

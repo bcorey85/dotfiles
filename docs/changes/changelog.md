@@ -7,9 +7,19 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-980 changes
+985 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-16
+
+### Fixed
+
+* [The shell-write gate checks each alternative of a non-coder brace-list target](notes/2026-11-17-the-shell-write-gate-checks-each-alternative-of-a.md) [script/shell-write-gate] A non-coder redirect or tee to an unquoted brace list is denied when any alternative is a tracked file, and denied whole when the list is over 64 words or a sequence.
+* [The shell-write gate reads a tee word with quotes or escapes as tee](notes/2026-11-17-the-shell-write-gate-reads-a-tee-word-with-quotes.md) [script/shell-write-gate, script/shell-command] `t""ee`, `\tee`, `"tee"`, `/usr/bin/tee` and `(tee ...)` are read as tee, so their operands are checked; PRECHECK reads the command with quotes and escapes dropped.
+* [The inline-interpreter hint reads redirects through the shared shell parser](notes/2026-11-17-the-inline-interpreter-hint-reads-redirects.md) [script/inline-interpreter-hint, script/shell-command] The hint's fallback word splitter drops a redirect and its target through lib/shell_command.py, so a clobber redirect (`>! out.txt`, `>>| out.txt`, `&>| out.txt`) after a bare `python3` no longer reads as a script argument.
+* [The shell-write gate denies a coder redirect or tee target that zsh expands](notes/2026-11-17-the-shell-write-gate-denies-a-coder-redirect-or.md) [script/shell-write-gate, script/shell-command] A coder's redirect or tee target with an unquoted brace list, glob character, glob qualifier or a leading `=command` is denied whole, since zsh can land it outside the temp dir the literal text names.
+* [The shell-write gate reads a perl flag cluster with a digit as an in-place edit](notes/2026-11-17-the-shell-write-gate-reads-a-perl-flag-cluster.md) [script/shell-write-gate] `perl -0pi` on a tracked file is denied as an in-place edit; the flag check read only letters, so a cluster with `-0` passed.
 
 ## Week of 2026-11-09
 

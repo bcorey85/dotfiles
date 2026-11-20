@@ -18,6 +18,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import shell_command
+import shell_quoting
 import shell_statements
 
 INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
@@ -33,9 +34,6 @@ ALLOWED = (r"import\s+(json|sys|os\.path|pathlib|re|math|hashlib|base64|urllib|c
            r"pkg_resources|packaging|setuptools|distutils)|JSON\.(parse|stringify)|require\(|"
            r"console\.(log|error|warn|dir)|process\.(version|arch|platform|cwd)|Buffer\.(from|alloc)")
 HEREDOC_OPERATOR = re.compile(r"<<<?")
-PIPE_BOTH = re.compile(r"\|&")
-REDIRECT_OPERATOR = re.compile(r"\d*[<>]+&?")
-REDIRECT_WORD = re.compile(r"\d*[<>]")
 INTERPRETER_FAMILIES = shell_command.INTERPRETER_FAMILIES
 INTERPRETER = shell_command.INTERPRETER
 TEXT = ("Inline interpreter runs (python3 -c, node -e, perl -e, manage.py shell -c) and code fed on stdin to a bare "
@@ -67,7 +65,7 @@ def unparsed_runs_stdin_code(command):
     outside quotes ends the words of a piece split that way."""
     for operator, step in shell_command.split_command_steps(command):
         core, tail = shell_command.step_parts(step)
-        for part_index, part in enumerate(split_on_pipe_both(core + " " + tail)):
+        for part_index, part in enumerate(shell_statements.split_on_pipe_both(core + " " + tail)):
             if part_reads_stdin_code(part, part_index > 0 or operator == "|"):
                 return True
     return False
@@ -88,7 +86,7 @@ def split_part_reads_stdin_code(part, piped):
     # The fallback for a part the parser cannot read: split on whitespace, a heredoc or here-string outside quotes
     # ends the words, and a redirection word is dropped with its target.
     redirections = []
-    heredocs = shell_command.unquoted_matches(HEREDOC_OPERATOR, part)
+    heredocs = shell_quoting.unquoted_matches(HEREDOC_OPERATOR, part)
     if heredocs:
         redirections.append((heredocs[0].group(), ""))
         part = part[:heredocs[0].start()]
@@ -98,31 +96,18 @@ def split_part_reads_stdin_code(part, piped):
     for word in part.split():
         if skip_target:
             skip_target = False
-        elif REDIRECT_OPERATOR.fullmatch(word):
-            skip_target = True
-        elif REDIRECT_WORD.match(word):
-            continue
+        elif shell_command.is_redirect_word(word):
+            skip_target = shell_command.redirect_takes_next_word(word)
         else:
             words.append(word)
     return shell_command.reads_code_from_stdin(words, redirections, piped)
-
-
-def split_on_pipe_both(core):
-    # The parts of a step's text on each `|&` outside quotes; every part after the first reads from a pipe.
-    parts = []
-    part_start = 0
-    for found in shell_command.unquoted_matches(PIPE_BOTH, core):
-        parts.append(core[part_start:found.start()])
-        part_start = found.end()
-    parts.append(core[part_start:])
-    return parts
 
 
 def without_quoted_text(command):
     """The command with every character inside quotes replaced by `_`, so a `-c` inside a quoted argument (a title
     that names `git -C`) is not read as an interpreter flag. The gate blanks quoted text the same way on a command it
     judges read-only; on other commands the gate matches the raw text."""
-    quoted = shell_command.quoted_positions(command)
+    quoted = shell_quoting.quoted_positions(command)
     return "".join("_" if index in quoted else character for index, character in enumerate(command))
 
 

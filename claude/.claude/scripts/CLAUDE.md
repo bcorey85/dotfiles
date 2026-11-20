@@ -18,7 +18,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Test file and test path: `lib/source_paths.py` (`is_test_path`, `is_runnable_test_file`).
 - Test runner output: `lib/test_run_output.py`. Whether a check passed or could not run: `lib/check_output.py`.
 - Every question about a command (runs tests, runner family, is a check, test filter, cargo test target): `lib/check_scope.py` (`runs_tests`, `runner_family`, `is_check`, `command_check_scope`, `names_test_filter`, `names_cargo_test_target`, `names_test_runner`, `prints_own_runner_summary`). Add no per-gate runner or flag table.
-- Shell command parsing in a gate: `lib/shell_command.py`. Never use a bare `shlex.split`, `str.split` or operator regex on a command.
+- Shell command parsing in a gate: `lib/shell_command.py`; quote and comment positions (`quoted_positions`, `unquoted_matches`): `lib/shell_quoting.py`; what zsh expands in a word, redirect target words included: `lib/shell_expansion.py`; which word of a command is its name (`command_word_index`, `raw_word_names_command`): `lib/shell_command_words.py`. Never use a bare `shlex.split`, `str.split` or operator regex on a command.
 - Whether a git call makes a commit, and which folder it lands in: `lib/git_commit_calls.py` (`git_call_commits`, `git_commit_dirs`), with `lib/shell_command.py` `git_c_directory`; through an alias: `lib/git_alias_commits.py`. Never read the hook's cwd alone.
 - Ask outcome words (`accepted`, `rejected`) and the ruling command the commit gate prints: `lib/ask_outcome_words.py`, which imports nothing.
 - A lock held across processes: `lib/file_lock.py`. Never write a second flock helper.

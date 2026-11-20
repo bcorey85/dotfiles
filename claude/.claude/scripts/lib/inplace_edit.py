@@ -7,9 +7,13 @@ import shell_command
 from code_text import SPC
 from script_utils import ENV_ASSIGNMENT_NAME
 
-SED_INPLACE = re.compile(r"(^|" + SPC + r")(-[a-zA-Z]*i|--in-place(" + SPC + r"|=|$))")
-PERL_I = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*i")
-PERL_PN = re.compile(r"(^|" + SPC + r")-[a-zA-Z]*[pn]")
+# A sed flag cluster that holds `i`: letters only, sed has no numeric flags.
+SED_I_FLAG = r"-[a-zA-Z]*i"
+SED_INPLACE = re.compile(r"(^|" + SPC + r")(" + SED_I_FLAG + r"|--in-place(" + SPC + r"|=|$))")
+# A perl flag cluster that holds `i`; digits set the record separator (`-0pi`, `-0777pi`).
+PERL_I_FLAG = r"-[a-zA-Z0-9]*i"
+PERL_I = re.compile(r"(^|" + SPC + r")" + PERL_I_FLAG)
+PERL_PN = re.compile(r"(^|" + SPC + r")-[a-zA-Z0-9]*[pn]")
 AWK_INPLACE = re.compile(r"(^|" + SPC + r")-i" + SPC + "*inplace")
 SED_PROGRAMS = ("sed", "gsed")
 AWK_PROGRAMS = ("awk", "gawk")

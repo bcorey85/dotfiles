@@ -8,6 +8,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import shell_command
+import shell_quoting
 import shell_statements
 
 SHELL_NAME_AFTER_BAR = r"&?\s*((/usr(/local)?/s?bin/)|/s?bin/)?(ba|z|da|k)?sh(?![\w.-])"
@@ -29,7 +30,7 @@ def text_pipes_into_shell(command):
     before a quoted shell name."""
     if UNPARSED_PIPE_SHELL.search(command):
         return True
-    quoted = shell_command.quoted_positions(command, unclosed_is_quoted=False)
+    quoted = shell_quoting.quoted_positions(command, unclosed_is_quoted=False)
     # A match counts when its shell name sits inside closed quotes.
     return any(match.end() - 1 in quoted for match in QUOTED_PIPE_SHELL.finditer(command))
 
@@ -43,7 +44,7 @@ def pipes_into_shell(command):
         # whole text is searched; otherwise only the unquoted parts.
         if shell_command.names_code_runner(command):
             return text_pipes_into_shell(command)
-        return bool(shell_command.unquoted_matches(UNPARSED_PIPE_SHELL, command))
+        return bool(shell_quoting.unquoted_matches(UNPARSED_PIPE_SHELL, command))
 
     for words, _redirections, piped in piped_commands:
         if piped and shell_command.runs_shell(words):

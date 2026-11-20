@@ -21,10 +21,10 @@ GATES_DIR = SCRIPTS_DIR / "gates"
 WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh", "scripts/write-edit-safety-gate.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
 # The lib modules a copied coder_gate.py imports.
-CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_text.py", "test_run_output.py",
-                          "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
-                          "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py", "reviewed_tree.py",
-                          "pytest_config.py", "notes_paths.py", "ansi_text.py")
+CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "shell_quoting.py", "makefile_text.py",
+                          "test_run_output.py", "check_output.py", "check_scope.py", "numstat.py", "source_paths.py",
+                          "linked_installs.py", "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py",
+                          "reviewed_tree.py", "pytest_config.py", "notes_paths.py", "ansi_text.py", "code_text.py")
 
 
 def first_python_that_starts(names):

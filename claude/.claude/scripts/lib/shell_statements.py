@@ -4,17 +4,65 @@ import os
 import re
 
 import shell_command
+import shell_quoting
 
 SKIP_WORDS = {"do", "then", "else", "elif", "if", "!", "time"}
 # The delimiter is the whole shell word after `<<`: unquoted characters, quoted strings and escapes.
 HEREDOC = re.compile(r"""(?<!<)<<(?!<)-?[ \t]*((?:[^\s|&;()<>'"\\]|\\.|'[^']*'|"(?:[^"\\]|\\.)*")+)""")
 DELIMITER_PART = re.compile(r"""\\(.)|'([^']*)'|"((?:[^"\\]|\\.)*)"|([^'"\\]+)""")
-ARITHMETIC = re.compile(r"\$?\(\(.*?\)\)")
+# A `((` or `$((`, found at each position, so that a span inside another is found too.
+ARITHMETIC_OPENER = re.compile(r"\$?\((?=\()")
 QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 COMMENT_START = re.compile(r"(^|[\s;&|()])#")
 COMMENT = re.compile(r"(^|\s)#[^\n]*")
 COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
 SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||&|\(|\)")
+PIPE_BOTH = re.compile(r"\|&")
+
+
+def split_on_pipe_both(core):
+    """The parts of a step's text on each `|&` outside quotes; every part after the first reads from a pipe."""
+    parts = []
+    part_start = 0
+    for found in shell_quoting.unquoted_matches(PIPE_BOTH, core):
+        parts.append(core[part_start:found.start()])
+        part_start = found.end()
+    parts.append(core[part_start:])
+    return parts
+
+
+def arithmetic_spans(text, start=0):
+    """(begin, end) of each `$((...))` or `((...))` in text, from start on, that is arithmetic: the outer `(` closes
+    at the end and the inner `(` closes at the last character before it (`is_arithmetic_span`). A `((cmd) > f)` or
+    `$((cmd) )` is a subshell or command substitution and is no span. A span may hold another. An opener in quotes
+    or a comment is no span."""
+    hidden = shell_quoting.quoted_positions(text, unclosed_is_quoted=False)
+    spans = []
+    for opener in ARITHMETIC_OPENER.finditer(text, start):
+        outer = opener.end() - 1
+        if outer in hidden:
+            continue
+        close = shell_command.matching_parenthesis(text, outer, hidden)
+        if close is None or not is_arithmetic_span(text[outer + 1:close]):
+            continue
+        spans.append((opener.start(), close + 1))
+    return spans
+
+
+def arithmetic_positions(text, start=0):
+    """The positions in text, from start on, that lie inside `$((...))` or `((...))`: an operator scan skips them."""
+    positions = set()
+    for begin, end in arithmetic_spans(text, start):
+        positions.update(range(begin, end))
+    return positions
+
+
+def is_arithmetic_span(span):
+    """Whether the text between the `$(` and the final `)` of a `$((...))` is arithmetic: it opens with the inner `(`
+    and that `(` closes at the span's last character. When it closes earlier (`(cmd) `), zsh reads a command
+    substitution that runs cmd."""
+    quoted = shell_quoting.quoted_positions(span)
+    return shell_command.matching_parenthesis(span, 0, quoted) == len(span) - 1
 
 
 def strip_heredocs(command):
@@ -201,9 +249,8 @@ def heredoc_openers(text, line_start):
     # (delimiter, quoted) for each heredoc the last line of text opens, in order: the line starts at line_start. A
     # `<<` inside quotes (also quotes that open on an earlier line), a comment or arithmetic opens none. quoted is
     # True when any part of the delimiter word is quoted: the body then holds no substitution.
-    hidden_positions = shell_command.quoted_positions(text)
-    for arithmetic in ARITHMETIC.finditer(text, line_start):
-        hidden_positions.update(range(arithmetic.start(), arithmetic.end()))
+    hidden_positions = shell_quoting.quoted_positions(text)
+    hidden_positions.update(arithmetic_positions(text, line_start))
     openers = []
     for found in HEREDOC.finditer(text, line_start):
         if found.start() in hidden_positions:
@@ -225,7 +272,7 @@ def delimiter_text(word):
 def strip_comments(command):
     """The command with each comment outside quotes cut off, from its `#` to the end of its line. A quote character
     inside a comment opens no quote."""
-    for comment in reversed(shell_command.unquoted_matches(COMMENT_START, command)):
+    for comment in reversed(shell_quoting.unquoted_matches(COMMENT_START, command)):
         comment_start = comment.end() - 1
         line_end = command.find("\n", comment_start)
         command = command[:comment_start] + (command[line_end:] if line_end != -1 else "")

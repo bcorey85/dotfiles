@@ -41,7 +41,7 @@ from shell_command import (
     options_before_separator,
     parse_simple_commands,
     path_word,
-    quoted_positions,
+    raw_words_without_redirections,
     redirect_takes_next_word,
     redirection_writes_file,
     runs_only_after_success,
@@ -54,6 +54,7 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
     without_flag_values,
+    without_substitution_bodies,
     words_by_blank,
     words_without_redirections,
 )
@@ -92,7 +93,7 @@ class RedirectWordTest(unittest.TestCase):
             self.assertFalse(is_redirect_word(word), word)
 
     def test_a_redirect_word_with_no_target_takes_the_next_word(self):
-        for word in (">", "2>", "&>", ">&"):
+        for word in (">", "2>", "&>", ">&", ">>&", "<&", "0<&", ">|", ">>|", "&>|", ">!", ">>!", ">&|", ">>&|", "&>>|"):
             self.assertTrue(redirect_takes_next_word(word), word)
         for word in (">f", "&>f", "2>&1"):
             self.assertFalse(redirect_takes_next_word(word), word)
@@ -387,6 +388,27 @@ class WordsByBlankTest(unittest.TestCase):
         self.assertEqual(words_by_blank("echo 'a b"), segment_words("echo 'a b"))
 
 
+class WithoutSubstitutionBodiesTest(unittest.TestCase):
+    def test_the_inside_of_each_substitution_is_replaced(self):
+        cases = {'tee a "$(ls *)"': 'tee a "$(x)"', "tee `ls *` b": "tee `x` b", "tee a*": "tee a*"}
+        for text, expected in cases.items():
+            self.assertEqual(without_substitution_bodies(text), expected, text)
+
+
+class RawWordsWithoutRedirectionsTest(unittest.TestCase):
+    def test_quotes_stay_and_redirections_with_bare_targets_are_left_out(self):
+        cases = {
+            'tee "a b" > out 2>&1 \'c\'': ["tee", '"a b"', "'c'"],
+            "env A=\"a tee b*\" tee f": ["env", 'A="a tee b*"', "tee", "f"],
+            "echo \\tee >out x": ["echo", "\\tee", "x"],
+            "tee >| out a": ["tee", "a"],
+            "tee >>| out a": ["tee", "a"],
+            "tee &>| out a": ["tee", "a"],
+        }
+        for text, expected in cases.items():
+            self.assertEqual(raw_words_without_redirections(text), expected, text)
+
+
 class WordsWithoutRedirectionsTest(unittest.TestCase):
     def test_an_unquoted_redirection_is_left_out_with_its_bare_target(self):
         cases = {
@@ -493,6 +515,13 @@ class ParseSimpleCommandsTest(unittest.TestCase):
         self.assertEqual(parse_simple_commands("echo x >| f.txt"), [(["echo", "x"], [(">|", "f.txt")])])
         self.assertTrue(redirection_writes_file(">|", "f.txt"))
 
+    def test_an_adjacent_bang_clobber_is_an_output_redirection_and_a_spaced_bang_is_a_file_name(self):
+        self.assertEqual(parse_simple_commands("echo x >! f.txt"), [(["echo", "x"], [(">|", "f.txt")])])
+        self.assertEqual(parse_simple_commands("echo x >>! f.txt"), [(["echo", "x"], [(">>|", "f.txt")])])
+        self.assertEqual(parse_simple_commands("echo x >!f.txt"), [(["echo", "x"], [(">|", "f.txt")])])
+        self.assertEqual(parse_simple_commands("echo x > !f.txt"), [(["echo", "x"], [(">", "!f.txt")])])
+        self.assertEqual(parse_simple_commands("echo '>!' x"), [(["echo", ">!", "x"], [])])
+
 
 class RedirectionWritesFileTest(unittest.TestCase):
     def test_an_output_redirection_to_a_file_writes(self):
@@ -537,34 +566,6 @@ class SplitCommandStepsTest(unittest.TestCase):
     def test_an_unquoted_pipe_after_a_quoted_one_still_splits(self):
         self.assertEqual(len(split_command_steps("npm test | tee x")), 2)
         self.assertEqual(len(split_command_steps("echo 'a|b' && echo \"c;d\" ; ls")), 3)
-
-
-class QuotedPositionsTest(unittest.TestCase):
-    def test_an_unclosed_quote_covers_the_rest_unless_told_otherwise(self):
-        command = "echo 'a | sh"
-        pipe_index = command.index("|")
-        self.assertIn(pipe_index, quoted_positions(command))
-        self.assertNotIn(pipe_index, quoted_positions(command, unclosed_is_quoted=False))
-
-    def test_a_closed_quote_covers_its_text_either_way(self):
-        command = "echo 'a | b' | sh"
-        inside = command.index("|")
-        for unclosed_is_quoted in (True, False):
-            positions = quoted_positions(command, unclosed_is_quoted=unclosed_is_quoted)
-            self.assertIn(inside, positions)
-            self.assertNotIn(command.rindex("|"), positions)
-
-    def test_the_code_in_a_substitution_inside_double_quotes_is_not_quoted(self):
-        for command in ('echo "a $(echo x > f) b"', 'echo "a `echo x > f` b"', 'echo "$(echo "q > r" > f)"'):
-            positions = quoted_positions(command)
-            self.assertNotIn(command.rindex(">"), positions, command)
-            self.assertIn(command.index("b") if "q" not in command else command.index("q"), positions, command)
-
-    def test_the_text_after_a_substitution_in_double_quotes_is_quoted_again(self):
-        command = 'echo "$(true) | x" | y'
-        positions = quoted_positions(command)
-        self.assertIn(command.index("| x"), positions)
-        self.assertNotIn(command.rindex("|"), positions)
 
 
 class RunsOnlyAfterSuccessTest(unittest.TestCase):
@@ -826,6 +827,20 @@ class NamesCodeRunnerTest(unittest.TestCase):
                         "find . -name x", "kubectl get pods", "evaluate this", "echo hi 2>&1"):
             with self.subTest(command=command):
                 self.assertFalse(names_code_runner(command))
+
+
+class CodeRunnerFileNameTest(unittest.TestCase):
+    def test_a_runner_name_inside_a_file_name_is_not_a_code_runner(self):
+        for command in ("sed -n 1p bin/work-intake.sh", "cat ~/.ssh/config", "cat deploy-script.py",
+                        "ls ssh-keygen.log", "cat run.eval", "cat flock.c"):
+            with self.subTest(command=command):
+                self.assertFalse(names_code_runner(command))
+
+    def test_a_runner_name_before_an_option_or_path_is_still_a_code_runner(self):
+        for command in ("./run.sh; sh -c x", "bash x.sh", "ssh -t host", "xargs -0 sh", "emacs --eval x",
+                        "ssh.exe host ls", "bash.exe -c x"):
+            with self.subTest(command=command):
+                self.assertTrue(names_code_runner(command))
 
 
 class ShellCodeArgumentTest(unittest.TestCase):

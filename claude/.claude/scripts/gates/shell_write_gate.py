@@ -3,12 +3,16 @@
 
   1. In-place editors (sed -i, perl -pi, awk -i inplace), any target except a file inside the session temp root
      (/tmp/claude-<uid>, symlinks and `..` resolved): those are throwaway, and a read-only agent has no Write/Edit.
-  2. Redirection (>, >>) and tee onto a git-tracked file.
-  3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee that creates a new file
-     outside a temp dir, or whose target holds a `$` after `$TMPDIR` and `$HOME` are expanded, unless the command
-     proves every value the variable can take (shell_variables: a bare assignment that surely ran before, or a `for`
-     over literal words) and each resulting path is under a temp dir, symlinks resolved and a tracked file still
-     denied; also any relative target after any `cd`, `pushd` or `popd`.
+  2. Redirection (>, >>) and tee onto a git-tracked file; each alternative of an unquoted brace-list target counts,
+     and a list the gate cannot expand (over shell_expansion.BRACE_ALTERNATIVE_LIMIT words, or a `{1..3}` sequence)
+     is denied whole. A quoted blank or operator character inside an alternative stays in its target word.
+  3. Agent type `coder` (any coder variant, subagent or main session): a redirect or tee target that zsh expands
+     (brace list, glob, glob qualifier or a leading `=command`) is denied whole, before PRECHECK (a target inside
+     eval or shell `-c` text is checked per alternative, as in item 2). A redirect or tee that creates a new file
+     outside a temp dir, or whose target holds a `$` after `$TMPDIR` and `$HOME` are expanded, unless the
+     command proves every value the variable can take (shell_variables: a bare assignment that surely ran
+     before, or a `for` over literal words) and each resulting path is under a temp dir, symlinks
+     resolved and a tracked file still denied; also any relative target after any `cd`, `pushd` or `popd`.
   4. An interpreter (python, pypy, node, tsx, ts-node, bun, deno, ruby, perl; also behind npx or pnpm exec) run whose
      inline code (`-c`, `-e`, `-p`, `--print`, `--eval`, `deno eval`) or untracked, not git-ignored script file opens
      a file for writing and names a git-tracked file (interpreter_writes holds the trace).
@@ -40,6 +44,10 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import hook_input
 import script_utils
 import shell_command
+import shell_command_words
+import shell_expansion
+import shell_quoting
+import shell_statements
 from code_text import SP, SPC, trim
 from hook_input import (
     JqError,
@@ -50,9 +58,9 @@ from hook_input import (
     jq_get,
     jq_str,
 )
-from inplace_edit import file_operands, find_editor_word, has_unseen_files, is_inplace
+from inplace_edit import PERL_I_FLAG, file_operands, find_editor_word, has_unseen_files, is_inplace
 from interpreter_writes import interpreter_written_target
-from shell_statements import strip_comments, strip_heredocs
+from shell_statements import arithmetic_positions, strip_comments, strip_heredocs
 from shell_variables import ShellVariables
 from shell_write_denial import (
     CODER_NEW_FILE,
@@ -74,12 +82,12 @@ from shell_write_denial import (
 )
 from shell_write_paths import is_git_tracked, is_stream_or_device, resolve_target
 
-TARGET = r"[^ \t\r\f\v|&;<>()]+"
-REDIRECT = re.compile(r">[>|&]?" + SPC + "*" + TARGET)
-REDIRECT_PREFIX = re.compile(r"^>[>|&]?" + SPC + "*")
+TARGET = "[^" + re.escape(shell_command.WORD_END_CHARACTERS) + "]+"
+REDIRECT = re.compile(shell_command.REDIRECT_OPERATOR + SPC + "*" + TARGET)
+REDIRECT_PREFIX = re.compile("^" + shell_command.REDIRECT_OPERATOR + SPC + "*")
 TEE = re.compile(r"(^|" + SPC + r")tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+" + TARGET)
 TEE_PREFIX = re.compile(r"^" + SPC + r"*tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+")
-PRECHECK = re.compile(r"(-[a-zA-Z]*i|inplace|>|tee)")
+PRECHECK = re.compile("(" + PERL_I_FLAG + "|inplace|>|tee)")
 DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
 # The variables a redirect or tee target takes from the environment.
@@ -105,16 +113,16 @@ def written_targets(core):
     for words, redirections, _piped in commands:
         targets += [target for operator, target in redirections
                     if shell_command.redirection_writes_file(operator, target)]
-        words = shell_command.command_after_wrappers(words, peel_containers=False)
-        if words and os.path.basename(words[0]) == "tee":
-            targets += [arg for arg in words[1:] if not arg.startswith("-")]
+        tee_words = tee_command_words(words)
+        if tee_words is not None:
+            targets += [arg for arg in tee_words[1:] if not arg.startswith("-")]
     return targets
 
 
 def regex_written_targets(core, skip_quoted):
     """written_targets for text the parser cannot read: the regexes, skipping matches inside quotes when skip_quoted."""
     def matches(pattern):
-        return shell_command.unquoted_matches(pattern, core) if skip_quoted else list(pattern.finditer(core))
+        return shell_quoting.unquoted_matches(pattern, core) if skip_quoted else list(pattern.finditer(core))
 
     targets = []
     for found in matches(REDIRECT):
@@ -124,6 +132,15 @@ def regex_written_targets(core, skip_quoted):
             targets.append(target)
     targets += [TEE_PREFIX.sub("", found.group(0)) for found in matches(TEE)]
     return targets
+
+
+def text_written_targets(text, cwd):
+    """A WrittenTarget for each redirect and tee target in text that names a code runner, found by regex with the
+    quotes ignored. The text has no known step, so each target is checked against the session cwd and every literal
+    cd folder of the text only; a move to a folder that is not a literal is not applied to it."""
+    steps = step_folders(text, cwd)
+    _step, folders, _unread_change = steps[-1]
+    return [WrittenTarget(raw, folders, False, None) for raw in regex_written_targets(text, skip_quoted=False)]
 
 
 def simple_command_texts(step):
@@ -200,10 +217,18 @@ def step_targets(code, cwd, in_span):
 
 def code_texts(code):
     """The command text and the text of each `$(...)` and backtick span in it, at any depth: the shell runs the
-    spans, also inside double quotes."""
+    spans, also inside double quotes. The body of a `$((...))` is arithmetic, not code that redirects: it is not a
+    text, though a span inside it still is. A `$((cmd) )` whose inner `(` closes before the last character is a
+    command substitution and is a text."""
     texts = [code]
-    for text in texts:
-        texts += shell_command.substitution_spans(text)
+    pending = [code]
+    for text in pending:
+        arithmetic_begins = {begin for begin, _end in shell_statements.arithmetic_spans(text)}
+        for start, end in shell_command.substitution_bounds(text):
+            span = text[start:end]
+            pending.append(span)
+            if start - 2 not in arithmetic_begins:
+                texts.append(span)
     return texts
 
 
@@ -253,7 +278,7 @@ def run(raw):
         segment_folders += text_segments(text, request.cwd)
         targets += step_targets(text, request.cwd, in_span=position > 0)
         if shell_command.names_code_runner(text):
-            text_targets += regex_written_targets(text, skip_quoted=False)
+            text_targets += text_written_targets(text, request.cwd)
 
     if "#skip-shell-write-gate" in command and not request.cannot_skip:
         return
@@ -262,27 +287,136 @@ def run(raw):
     for segment, folders in segment_folders:
         check_script_writes(segment, folders, written_paths, request)
 
-    if not PRECHECK.search(command):
+    deny_expanding_targets(texts, request)
+    command_text = shell_quoting.without_quote_characters(request.command)
+    if not PRECHECK.search(command_text):
         return
 
     for segment, folders in segment_folders:
         check_in_place_edit(segment, folders, request.cannot_skip)
 
+    # Only a redirect denial gets the restore hint.
     try:
-        check_redirect_targets(targets, text_targets, request)
+        check_redirect_targets(texts, targets, text_targets, request)
     except DenyError as denial:
         if not any(reads_file_from_revision(text) for text in texts):
             raise
         raise DenyError(f"{denial} {RESTORE_HINT}") from None
 
 
-def check_redirect_targets(targets, text_targets, request):
+def expanding_target_texts(text):
+    """The redirect and tee targets in the text that zsh expands: one with an unquoted glob character or brace list,
+    or one a `(` cuts (a glob qualifier), or one with a leading `=command`. The text can name several paths, so no
+    one path is a scratch file, also when a variable sits in the target (`$TMPDIR/{a,b}`). A `${` is no brace list:
+    a target with only a variable is left to check_written_target, which proves or denies the variable."""
+    targets = []
+    arithmetic = arithmetic_positions(text)
+    for target in shell_expansion.redirect_target_words(text, arithmetic):
+        if shell_expansion.unquoted_expanding_word(target) and target not in targets:
+            targets.append(target)
+    targets += tee_expanding_operands(text)
+    return targets
+
+
+def tee_expanding_operands(text):
+    """The raw words that zsh expands (a glob character, a brace list, a `(` that cuts a glob qualifier or a leading
+    `=command`) among those after the command word of each `|&` or `|` part that runs `tee`, once wrappers are
+    peeled. Redirection words are left out, and so is the inside of a substitution, whose own targets are read as
+    code. Unbalanced `)` at the end of the last word are dropped first: they close a subshell."""
+    operands = []
+    for _operator, step in shell_command.split_command_steps(text):
+        for part in shell_statements.split_on_pipe_both(step):
+            operands += tee_part_expanding_operands(part)
+    return operands
+
+
+def tee_part_expanding_operands(part):
+    # The expanding words after the command word of one command of a pipeline, when that command is `tee`.
+    part_text = shell_command.without_substitution_bodies(part)
+    raw_words = shell_command.raw_words_without_redirections(part_text)
+    tee_index = shell_command_words.command_word_index(raw_words, "tee")
+    if tee_index is None:
+        return []
+    operand_words = raw_words[tee_index + 1:]
+    if operand_words:
+        operand_words[-1] = shell_command_words.without_subshell_closers(operand_words[-1])
+    return [word for word in operand_words if shell_expansion.unquoted_expanding_word(word)]
+
+
+def tee_command_words(words):
+    """The command words left once wrappers are peeled, when they run `tee`; None when they run something else."""
+    peeled = shell_command.command_after_wrappers(words, peel_containers=False)
+    if not peeled or not shell_command_words.word_names_command(peeled[0], "tee"):
+        return None
+    return peeled
+
+
+def deny_expanding_targets(texts, request):
+    """Deny a coder's redirect or tee target that zsh expands (a brace list, a glob, a glob qualifier or a
+    leading `=command`): where it lands is unknown."""
+    if not request.coder:
+        return
+    for text in texts:
+        for target_text in expanding_target_texts(text):
+            raise DenyError(deny_text(CODER_NEW_FILE, trim(target_text) + " is a redirect or tee target that zsh "
+                                      "expands (brace list, glob, glob qualifier or `=command`), so it may create "
+                                      "files outside a temp dir. Write to one explicit path.", request.cannot_skip))
+
+
+def check_redirect_targets(texts, targets, text_targets, request):
     """Check each redirect and tee target: step_targets rows, then the targets of text read only by regex."""
     for target in targets:
         check_written_target(target, request)
     text_request = request._replace(coder=False, variables=None)
-    for raw_target in text_targets:
-        check_written_target(WrittenTarget(raw_target, [request.cwd], False, None), text_request)
+    for text_target in text_targets:
+        check_written_target(text_target, text_request)
+    check_brace_lists(texts, text_targets, request)
+
+
+def check_brace_lists(texts, text_targets, request):
+    """Check each path of an unquoted brace list in a redirect or tee target: zsh writes every one of them (a tracked
+    file among them is written too). The raw words are read, because the parsed targets have lost their quotes and
+    stop at an operator character, so only the raw text tells a brace list from a quoted literal. Each word is
+    checked against the folders of its step. A coder's parsed brace list is denied whole by deny_expanding_targets,
+    so only the targets of code-runner text (`eval '...'`, `bash -c '...'`), which that deny does not read, are
+    checked for a coder; they are checked as a non-coder's are, against tracked files."""
+    if not request.coder:
+        for raw_word, folders, unread_change in non_coder_brace_words(texts, request.cwd):
+            check_brace_list(raw_word, folders, unread_change, request)
+    text_request = request._replace(coder=False, variables=None)
+    for text_target in text_targets:
+        # The target of text read by regex keeps the quotes around it; they are ignored there.
+        raw_word = shell_quoting.without_quote_characters(text_target.raw)
+        if shell_expansion.unquoted_expanding_word(raw_word):
+            check_brace_list(raw_word, text_target.folders, text_target.unread_change, text_request)
+
+
+def non_coder_brace_words(texts, cwd):
+    """Each (raw word, folders, unread_change) of an expanding redirect or tee target in the texts, with the folders
+    of the step that holds it. Read for every agent that is not a coder."""
+    for text in texts:
+        for step, folders, unread_change in step_folders(text, cwd):
+            for raw_word in expanding_target_texts(step):
+                yield raw_word, folders, unread_change
+
+
+def check_brace_list(raw_word, folders, unread_change, request):
+    """Check each alternative of the brace list in one raw target word. A list the gate cannot expand is denied
+    whole, as a tracked file may be among its words."""
+    # The parsed target stops at a glob-qualifier `(`, so the raw word is cut there too (a tee operand arrives whole,
+    # `{a,b}(N)`); a redirect word carries that `(` as its marker.
+    word = shell_expansion.cut_at_glob_qualifier(raw_word).removesuffix("(")
+    try:
+        alternatives = shell_expansion.expand_braces(word)
+    except shell_expansion.BraceListError as error:
+        raise DenyError(deny_text(TRACKED_TARGET, f"{trim(word)} is a brace list the gate cannot read ({error}), "
+                                  "so a git-tracked file may be among the files it writes. Write to one explicit "
+                                  "path.", request.cannot_skip)) from error
+    for alternative in alternatives:
+        if alternative == word:
+            continue
+        target = WrittenTarget(shell_command_words.unquoted_word(alternative), folders, unread_change, None)
+        check_written_target(target, request)
 
 
 def check_script_writes(segment, folders, written_paths, request):

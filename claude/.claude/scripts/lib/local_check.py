@@ -21,14 +21,12 @@ def main_checkout_name(repo):
     """The folder name of the main checkout of the repo that holds `repo`: that of a linked worktree's main checkout
     too. Outside git, or with a git that cannot answer, the folder name of `repo` itself."""
     repo_path = pathlib.Path(repo).resolve()
-    common_dir = script_utils.git_output(repo_path, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    if not common_dir:
+    main_dir = script_utils.main_checkout_dir(repo_path)
+    if main_dir is None:
         return repo_path.name
-
-    common_path = pathlib.Path(common_dir)
-    if common_path.name == ".git":
-        return common_path.parent.name
-    return common_path.name.removesuffix(".git")
+    if main_dir.is_bare:
+        return main_dir.folder.name.removesuffix(".git")
+    return main_dir.folder.name
 
 
 def local_check_command(repo):

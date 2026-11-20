@@ -1,14 +1,19 @@
 """The full check of a repo that names none, found from the repo's own files.
 
 In order: the Makefile `check` target (`make check`), the package.json `check` script (run with the repo's package
-manager), then the repo's lint, type check and tests joined with `&&`, built from what gate_commands.py already reads:
+manager), then the repo's lint, type check and tests, built from what gate_commands.py already reads:
 a package's lint and type-check scripts, ruff, and the repo's own test command (the Makefile `test` target, else the
 package.json `test` script). Only a repo that names no test command gets a guessed runner: its vitest or jest
-dependency, Django's `manage.py test` or pytest. None when the repo's files give no command."""
+dependency, Django's `manage.py test` or pytest. The steps of one part join with `&&`. With changed paths, only the
+part whose path kind a changed path has runs (the package part owns JS/TS/CSS paths and package.json, the Python part
+.py and Python config paths; an HTML or JSON file counts as both); a changed path of neither kind, or no changed
+paths, runs every part. Several parts run each on its own (lib/check_parts.py) and the run fails when any failed.
+None when the repo's files give no command."""
 import json
 import pathlib
 import shlex
 import sys
+from collections import namedtuple
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
@@ -16,22 +21,16 @@ sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import gate_commands
 import makefile_text
 import pytest_config
+import source_paths
+from check_parts import join_parts
 
+PACKAGE_PART = "package"
+PYTHON_PART = "python"
+TESTS_PART = "tests"
+# One check part: its name (PACKAGE_PART, PYTHON_PART, TESTS_PART) and the steps that join with &&.
+CheckPart = namedtuple("CheckPart", ["name", "commands"])
 CHECK_TARGET = "check"
 TEST_TARGET = "test"
-# The lock file that names a package manager, then the program that runs a package script and the one that runs a
-# binary the package depends on.
-PACKAGE_MANAGERS = (("pnpm-lock.yaml", "pnpm", "pnpm exec"), ("yarn.lock", "yarn", "yarn"))
-DEFAULT_PACKAGE_MANAGER = ("npm", "npx")
-
-
-def package_manager(repo_dir):
-    """(the program that runs a package script, the program that runs a dependency's binary) by the repo's lock file:
-    pnpm-lock.yaml pnpm, yarn.lock yarn, else npm."""
-    for lock_file, program, binary_runner in PACKAGE_MANAGERS:
-        if (repo_dir / lock_file).is_file():
-            return program, binary_runner
-    return DEFAULT_PACKAGE_MANAGER
 
 
 def read_package_json(repo_dir):
@@ -59,7 +58,7 @@ def package_check_command(repo_dir):
     if CHECK_TARGET not in scripts:
         return None
 
-    program, _ = package_manager(repo_dir)
+    program = gate_commands.package_manager(repo_dir)
     return f"{program} run {CHECK_TARGET}"
 
 
@@ -74,7 +73,7 @@ def own_test_command(repo_dir):
     if TEST_TARGET not in scripts:
         return None
 
-    program, _ = package_manager(repo_dir)
+    program = gate_commands.package_manager(repo_dir)
     return f"{program} {TEST_TARGET}"
 
 
@@ -87,23 +86,23 @@ def package_part_commands(repo_dir, guesses_tests):
 
     scripts = package.get("scripts", {})
     dependencies = {**package.get("dependencies", {}), **package.get("devDependencies", {})}
-    program, binary_runner = package_manager(repo_dir)
+    program = gate_commands.package_manager(repo_dir)
     commands = []
 
     if "lint" in scripts:
         commands.append(f"{program} run lint")
     elif "eslint" in dependencies:
-        commands.append(f"{binary_runner} eslint .")
+        commands.append(gate_commands.package_binary_command(program, "", "eslint ."))
 
     typecheck_name = gate_commands.typecheck_script_name(scripts)
     if typecheck_name:
         commands.append(f"{program} run {typecheck_name}")
     elif (repo_dir / "tsconfig.json").is_file():
-        commands.append(f"{binary_runner} tsc --noEmit")
+        commands.append(gate_commands.package_binary_command(program, "", "tsc --noEmit"))
 
     runner, _ = gate_commands.js_test_runner(dependencies, scripts)
     if guesses_tests and runner:
-        commands.append(f"{binary_runner} {runner}")
+        commands.append(gate_commands.package_binary_command(program, "", runner))
     return commands
 
 
@@ -136,7 +135,7 @@ def manage_py_words(repo_dir, runner):
     return [*python_words, "manage.py"]
 
 
-def python_part_commands(repo_dir, guesses_tests):
+def python_part_commands(repo_dir, guesses_tests, env=None):
     """The ruff check and, when `guesses_tests`, the tests of a Python repo: `manage.py test` for a Django repo with
     no pytest-django settings, else pytest."""
     runs_django = (repo_dir / "manage.py").is_file() and not pytest_config.has_django_settings(repo_dir)
@@ -145,7 +144,7 @@ def python_part_commands(repo_dir, guesses_tests):
     if not (runs_django or runs_pytest):
         return []
 
-    runner = gate_commands.project_python_runner(repo_dir) or ["python3", "-m"]
+    runner = gate_commands.project_python_runner(repo_dir, env) or ["python3", "-m"]
     commands = []
     ruff_command = gate_commands.ruff_check_command(repo_dir, runner)
     if ruff_command:
@@ -161,17 +160,69 @@ def python_part_commands(repo_dir, guesses_tests):
     return commands
 
 
-def part_commands_check(repo_dir):
+def parts_to_run(parts, changed_paths):
+    """The CheckParts a change touches. A shared path (a template or a JSON file, read by both kinds of code) counts as
+    both kinds. A path of neither kind (root config, lock file, CI), no changed path, or a change that touches no
+    existing part runs every part."""
+    if not changed_paths:
+        return parts
+
+    kinds = set()
+    for path in changed_paths:
+        if source_paths.is_shared_path(path):
+            kinds.update((PACKAGE_PART, PYTHON_PART))
+        elif source_paths.is_package_path(path):
+            kinds.add(PACKAGE_PART)
+        elif source_paths.is_python_path(path):
+            kinds.add(PYTHON_PART)
+        else:
+            return parts
+
+    selected = [part for part in parts if part.name in kinds]
+    return selected or parts
+
+
+def discovered_parts(repo_dir, changed_paths=None):
+    """The CheckParts for the parts `changed_paths` touch (every part when None or empty). The repo's own test command
+    is a part of its own, run after the others."""
     own_tests = own_test_command(repo_dir)
     guesses_tests = own_tests is None
-    commands = package_part_commands(repo_dir, guesses_tests) + python_part_commands(repo_dir, guesses_tests)
+    parts = [CheckPart(PACKAGE_PART, package_part_commands(repo_dir, guesses_tests)),
+             CheckPart(PYTHON_PART, python_part_commands(repo_dir, guesses_tests))]
+    parts = [part for part in parts if part.commands]
+    parts = parts_to_run(parts, changed_paths)
     if own_tests:
-        commands.append(own_tests)
-    return " && ".join(commands) or None
+        parts.append(CheckPart(TESTS_PART, [own_tests]))
+    return parts
 
 
-def discovered_check_command(repo):
-    """The full check the repo's own files give, or None."""
+def part_commands_check(repo_dir, changed_paths=None, left_out_steps=()):
+    """The discovered parts' commands, joined by join_parts, with each part's steps in `left_out_steps` taken out of
+    that part first. A part left with no step is dropped; None when no part is left."""
+    kept = []
+    for part in discovered_parts(repo_dir, changed_paths):
+        commands = [command for command in part.commands if command not in left_out_steps]
+        if commands:
+            kept.append(CheckPart(part.name, commands))
+    if not kept:
+        return None
+    return join_parts(kept)
+
+
+def discovered_check_steps(repo, changed_paths=None):
+    """The steps of the discovered parts, in run order; empty when a Makefile or package `check` target runs as one
+    command."""
+    repo_dir = pathlib.Path(repo)
+    if makefile_target_command(repo_dir, CHECK_TARGET) or package_check_command(repo_dir):
+        return []
+    return [command for part in discovered_parts(repo_dir, changed_paths) for command in part.commands]
+
+
+def discovered_check_command(repo, changed_paths=None, left_out_steps=()):
+    """The full check the repo's own files give, or None. `changed_paths` (relative to the repo) narrows the
+    guessed parts to the ones the change touches; the Makefile and package `check` targets run as they are.
+    `left_out_steps` are taken out of each guessed part."""
     repo_dir = pathlib.Path(repo)
     make_check = makefile_target_command(repo_dir, CHECK_TARGET)
-    return make_check or package_check_command(repo_dir) or part_commands_check(repo_dir)
+    return (make_check or package_check_command(repo_dir)
+            or part_commands_check(repo_dir, changed_paths, left_out_steps))

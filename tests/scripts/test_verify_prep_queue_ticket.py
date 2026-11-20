@@ -200,6 +200,20 @@ class QueueTicketTest(branch.VerifyBranchBase):
         self.assertIn("no criteria heading", done.stderr)
 
 
+class RunRulesTmpdirTest(branch.VerifyBranchBase):
+    def test_the_run_rules_keep_the_default_tmpdir_and_allow_no_tmp_redirect_ban(self):
+        self.task_dir()
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
+        self.assertIn("TMPDIR", payload)
+        self.assertIn("keep the default TMPDIR", payload)
+        self.assertIn("never set TMPDIR", payload)
+        self.assertNotIn("Never write it to /tmp", payload)
+
+
 class CriteriaReaderStopsTest(unittest.TestCase):
     def test_a_done_when_heading_with_a_suffix_stops_beside_a_real_criteria_heading(self):
         text = "# T\n\n## Done when (narrowed by ruling)\n\n- one\n\n## Acceptance Criteria\n\n- two\n"

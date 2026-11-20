@@ -33,23 +33,24 @@ def unruled_plan_impact_denial(repo_dirs, session, git_timeout):
     or None. A ruling settles them."""
     try:
         import handback
-        import handback_store
     except ImportError as error:
         # A missing store or handback module skips this check (fail open): the plain review deny still applies.
         hook_input.emit_stderr(f"review-commit-gate: cannot import handback: {error}\n")
         return None
 
     for repo_top in commit_repo_tops(repo_dirs, git_timeout):
-        unruled = handback.unruled_plan_impacts(handback_store.latest_for_repo(session, str(repo_top)))
+        unruled = handback.session_unruled_plan_impacts(session, str(repo_top))
         if not unruled:
             continue
         review_fix = pathlib.Path(__file__).resolve().parent / "review_fix.py"
         return (
             f"[review-commit-gate] The latest /review of {repo_top} handed back {len(unruled)} plan impact(s) that "
             f"await a ruling. Do not run /review again: rule on them first, with `python3 {review_fix} defer "
-            f"<handoff file>` to defer them to phase end or `python3 {review_fix} {plan_format.DECIDE_USAGE_STEM}`. "
-            "Only `decide keep` settles them; `decide adopt` logs the deviation and re-dispatches the loop (or, with "
-            "no `packet` state, stops for `/code resume`). Then commit the tree the review covered."
+            f"<handoff file>` to defer them to phase end or `python3 {review_fix} {plan_format.DECIDE_USAGE}`. "
+            "`defer` and `decide keep` settle them, and so does `decide adopt` when every fix is already in "
+            "the tree and the packet leaves nothing else open; any other `decide adopt` logs the deviation and "
+            "re-dispatches the loop (or, when no packet state waits on this impact, stops for "
+            "`/code resume`). Then commit the tree the review covered."
         )
     return None
 

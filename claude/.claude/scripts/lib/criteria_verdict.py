@@ -11,6 +11,8 @@ from check_output import (
     SUMMARY_FAILURE_NOTE,
     cannot_start_line,
     check_verdict,
+    missing_tool,
+    tool_not_found_text,
 )
 from test_run_output import matches_no_test
 
@@ -41,8 +43,9 @@ NOT_RUN_EXIT_CODES = (script_utils.COMMAND_NOT_FOUND_EXIT_CODE, script_utils.TIM
 
 
 class ItemVerdict(NamedTuple):
-    """outcome: GREEN, RED, BROKEN (the command did not run: not found, timed out) or ENV (it failed and its output
-    shows the tool could not start, such as a version manager's missing version). code: the exit-style verdict (0
+    """outcome: GREEN, RED, BROKEN (the command did not run: an exit 127 that names no missing tool, or timed out) or
+    ENV (an exit 127 that names a missing tool, or a failure whose output shows the tool could not start, such as a
+    version manager's missing version). code: the exit-style verdict (0
     holds, anything else fails), output: the command's output with any note on why it failed, hits: the number of
     matches of a search ban (None for any other item), flag: the dry-run flag text for a zero-test match or an ENV
     outcome (else None)."""
@@ -101,10 +104,16 @@ def ban_verdict(command, code, output):
 
 
 def item_verdict(command, line, code, output):
-    """Judge one item whose command ran with exit `code` and `output`. `line` is the plan item's text. An exit that
-    says the command did not run (not found, timed out) keeps the exit-style verdict, but reads BROKEN. A failing run
-    whose output shows the tool could not start reads ENV, keeping the exit-style code."""
+    """Judge one item whose command ran with exit `code` and `output`. `line` is the plan item's text. An exit 127 whose
+    output names the missing program reads ENV with the install fix. Any other exit that says the command did not run
+    (not found, timed out) keeps the exit-style verdict, but reads BROKEN. A failing run whose output shows the tool
+    could not start reads ENV, keeping the exit-style code."""
     verdict = judge_item(command, line, code, output)
+    tool = missing_tool(code, output)
+    if tool:
+        return verdict._replace(outcome=ENV_OUTCOME,
+                                flag=f"environment failure: {tool_not_found_text(tool)}; "
+                                     f"fix: install {tool} or add the pyenv shims to PATH")
     if code in NOT_RUN_EXIT_CODES:
         return verdict._replace(outcome="BROKEN")
 

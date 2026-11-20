@@ -141,6 +141,7 @@ from git_commit_calls import (
 )
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
+    DIRECTORY_MOVE_WORDS,
     GIT_VALUE_OPTIONS,
     GROUP_WORDS,
     LINE_CONTINUATION,
@@ -160,12 +161,13 @@ from shell_command import (
 )
 
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
-# A command that changes folder or repo (cd, pushd, popd, eval, source, or a git dir or work-tree option or variable;
-# `.` is read from the command words). The gate never parses where the chain leads.
-CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source)(?![\w./-])"
-                            r"|--git-dir|--work-tree|" + "|".join(REPO_ENVIRONMENT_NAMES))
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
-FOLDER_COMMAND_WORDS = ("cd", "pushd", "popd", "eval", "source", ".")
+FOLDER_COMMAND_WORDS = (*DIRECTORY_MOVE_WORDS, "eval", "source", ".")
+# A command that changes folder or repo (a folder command word, or a git dir or work-tree option or variable; `.` is
+# read from the command words only). The gate never parses where the chain leads.
+CHANGES_FOLDER_WORDS = "|".join(word for word in FOLDER_COMMAND_WORDS if word != ".")
+CHANGES_FOLDER = re.compile(r"(?<![\w./-])(?:" + CHANGES_FOLDER_WORDS + r")(?![\w./-])"
+                            r"|--git-dir|--work-tree|" + "|".join(REPO_ENVIRONMENT_NAMES))
 # Subcommands whose words after the subcommand are paths, flags or a message: none of them moves the commit.
 FOLDER_FREE_GIT = ("add", "commit")
 # A double-quoted string or an escaped character stays; a single-quoted string and a comment are dropped. The comment

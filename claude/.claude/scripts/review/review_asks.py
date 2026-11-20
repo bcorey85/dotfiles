@@ -14,6 +14,7 @@ import plan_format
 from ask_outcome_words import (
     ACCEPTED,
     APPLIED,
+    HELD,
     REJECTED,
     RELAY_USAGE,
     USER_ONLY_KEY,
@@ -26,12 +27,15 @@ from script_utils import ask_text, hanging_indent_lines, one_line, or_list, run_
 
 MODIFIED = "modified"
 ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED, APPLIED)
+# The words a first `--by session` asks-done call takes: the ruling outcomes and `held`.
+SESSION_CALL_OUTCOMES = (*ASK_OUTCOMES, HELD)
 # The outcomes that carry no change of their own: each is refused on a conditional change, which only `modified`
 # answers.
 PLAIN_OUTCOMES_TEXT = or_list([word for word in ASK_OUTCOMES if word != MODIFIED])
 ACCEPT_MEANS = "make this change"
 APPLIED_MEANS = "the change is already in the tree: nothing to change"
 REJECT_MEANS = "leave the code as it is"
+HELD_MEANS = "a user_only ask in a session call waits for the user's `--by user` call"
 JUMP_NOTE_LIMIT = 160
 # The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
 # line, so the conditional-change check skips it.
@@ -128,18 +132,23 @@ def accept_reject_lines(change):
     return hanging_indent_lines(f"   Accept = {ACCEPT_MEANS}: ", text)
 
 
-def user_only_refusal(asks, ruler, user_command):
+def user_only_refusal(asks, ruler, user_command, holdable=False):
     """The refusal text when a session (`ruler` is not the user) rules on an ask only the user rules, else None.
-    `user_command` is the call that records the user's ruling."""
+    `user_command` is the call that records the user's ruling. `holdable` names `held`, the word a first asks-done
+    call gives such an ask."""
     if ruler == plan_format.USER_RULING:
         return None
     numbers = [str(number) for number in user_only_numbers(asks)]
     if not numbers:
         return None
+    held_text = ""
+    if holdable:
+        held_text = (f" A session call gives `{HELD}` for each of them and an outcome for each plain ask: "
+                     f"{HELD}: {HELD_MEANS}.")
     return (f"ask(s) {', '.join(numbers)} are user_only: only the user rules them, never the session (a fix coder "
-            "edited an approval-only file). Hand them to the user, and when the user has ruled, record the user's "
-            f"outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to another "
-            f"session is recorded with `{RELAY_USAGE}` added to that call")
+            f"edited an approval-only file).{held_text} Hand them to the user, and when the user has ruled, record "
+            f"the user's outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to "
+            f"another session is recorded with `{RELAY_USAGE}` added to that call")
 
 
 def ruler_of_ask(item, call_ruler):

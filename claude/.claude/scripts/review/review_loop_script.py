@@ -80,17 +80,19 @@ from review_loop_calls import (
     record_main_dispatch,
 )
 from review_loop_closure import (
+    FIX_DIFF_STATS,
     ClosureState,
     closure_check,
     receipt_after_class_repair,
     receipt_all_held,
     receipt_still_open,
 )
-from review_loop_coder import CoderCallError, coder_call, coder_fault_notes
+from review_loop_coder import CoderCallError, coder_call, coder_fault_notes, without_reverted
 from review_loop_docs_kind import change_added_ranges, docs_kind
 from review_loop_findings import (
     PLAN_CHANGE_YES,
     POINTER_ASK_REASON,
+    REVERTED_APPROVAL_EDIT_REASON,
     UNLOCATED,
     absent_file_split,
     finding_records,
@@ -343,13 +345,18 @@ def tally_review(tallies, findings, assessment):
         tallies["result"] = assessment
 
 
-def prior_issue_entries(round_findings, skips):
-    """The round's findings as the next reviewers' prior issues: fixed, or skipped with the coder's reason."""
+def prior_issue_entries(round_findings, skips, reverted_findings):
+    """The round's findings as the next reviewers' prior issues: fixed, or skipped with the coder's reason. A finding
+    filed on a reverted approval-only path (`reverted_findings`) reads as skipped."""
     entries = []
     for number, item in enumerate(round_findings, 1):
-        entry = {"issue": item.text, "status": "skipped" if number in skips else "fixed",
+        reverted = item in reverted_findings
+        skipped = number in skips or reverted
+        entry = {"issue": item.text, "status": "skipped" if skipped else "fixed",
                  "file": item.path or "unknown"}
-        if number in skips:
+        if reverted:
+            entry["reason"] = REVERTED_APPROVAL_EDIT_REASON
+        elif number in skips:
             entry["reason"] = skips[number]
         entries.append(entry)
     return entries
@@ -647,10 +654,10 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
                 self.add_ask(agent, item)
 
     def repair(self, call_name, findings, nits=()):
-        """One coder pass on the findings. Returns a CoderResult (report, diffs, changed files). Raises
-        LaterPhaseEditError when the pass edited a later-phase file, ChangeRemovedError when the passes so far
-        removed half or more of the lines the change under review adds, and CoderFailedError when the coder call
-        fails, with the findings kept in open_fixes."""
+        """One coder pass on the findings. Returns a CoderResult (report, diffs, changed files, reverted
+        approval-only paths). Raises LaterPhaseEditError when the pass edited a later-phase file, ChangeRemovedError
+        when the passes so far removed half or more of the lines the change under review adds, and CoderFailedError
+        when the coder call fails, with the findings kept in open_fixes."""
         finding_paths = [finding.path for finding in findings if finding.path]
         files_in_scope = list(dict.fromkeys([*self.review_scope(), *finding_paths]))
         issue_texts = [self.issue_text(finding) for finding in findings]
@@ -660,18 +667,21 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         self.last_pass = "coder"
         self.untested_fix = True
         self.snapshot_approval_blobs()
+        stats_before = len(FIX_DIFF_STATS)
         try:
             result = coder_call(call_name, prompt, self.repo, self.out, self.held_files)
         except CoderCallError as error:
-            self.files_touched.update(error.changed)
             self.flag_broken_no_code_rulings(findings, error.changed, nits)
-            self.ask_for_approval_only_edits(error.changed, findings)
+            reverted = self.ask_for_approval_only_edits(error.changed, findings)
+            kept = [path for path in error.changed if path not in reverted]
+            self.files_touched.update(kept)
             self.keep_coder_commit_in_scope()
             self.open_fixes += [finding for finding in findings if finding not in self.open_fixes]
-            raise CoderFailedError(coder_failure_blocker(call_name, error)) from error
+            raise CoderFailedError(coder_failure_blocker(call_name, error.keeping_only(kept))) from error
         self.keep_coder_commit_in_scope()
         self.flag_broken_no_code_rulings(findings, result.changed, nits)
-        self.ask_for_approval_only_edits(result.changed, findings)
+        reverted = self.ask_for_approval_only_edits(result.changed, findings)
+        result = without_reverted(result, reverted, stats_before)
 
         later_phase_edits = sorted(set(result.changed) & self.later_phase_files)
         if later_phase_edits:
@@ -711,13 +721,15 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         plan_reported = PLAN_CHANGE_YES.search(result.report.strip()) is not None
         plan_held = plan_reported and self.record_coder_plan_impact(result.report, changed)
 
-        skipped_findings, round_open_fixes = self.record_skips(round_findings, skips, changed, plan_held)
+        reverted_findings = self.findings_on_reverted_paths(round_findings, result.reverted)
+        skipped_findings, round_open_fixes = self.record_skips(round_findings, skips, changed, plan_held,
+                                                               reverted_findings)
         self.open_fixes += round_open_fixes
         self.mark_round_fixes(round_open_fixes, skipped_findings)
         applied = [item for item in round_findings if item not in skipped_findings]
         self.fixed += applied
         self.open_fixes = [item for item in self.open_fixes if not matches_any_finding(item, applied)]
-        self.prior_issues = prior_issue_entries(round_findings, skips)
+        self.prior_issues = prior_issue_entries(round_findings, skips, reverted_findings)
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
@@ -727,17 +739,21 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
 
-    def record_skips(self, round_findings, skips, changed, plan_held):
+    def record_skips(self, round_findings, skips, changed, plan_held, reverted_findings):
         """Sorts the round's findings the coder did not fix. Returns (skipped findings, findings still open). With a
-        plan impact held, they stay open; otherwise they join skipped_fp."""
+        plan impact held, they stay open; otherwise they join skipped_fp. A finding in `reverted_findings` (filed on
+        an approval-only path that the loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) stays open and
+        is never fixed or skipped, whatever the coder reported."""
         skipped_entries = [{"item": round_findings[number - 1], "reason": line}
-                           for number, line in sorted(skips.items())]
-        round_open_fixes = []
+                           for number, line in sorted(skips.items())
+                           if round_findings[number - 1] not in reverted_findings]
+        round_open_fixes = list(reverted_findings)
         if plan_held:
             round_open_fixes += [entry["item"] for entry in skipped_entries]
         else:
             self.skipped_fp += skipped_entries
         skipped_findings = [round_findings[number - 1] for number in sorted(skips)]
+        skipped_findings += [item for item in reverted_findings if item not in skipped_findings]
         if changed:
             return skipped_findings, round_open_fixes
 
@@ -774,8 +790,10 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         if not findings:
             return
 
-        report, _diffs, changed = self.repair("coder0", findings)
+        report, _diffs, changed, reverted = self.repair("coder0", findings)
         self.files_touched.update(changed)
+        # A finding filed on a reverted approval-only path is open, never fixed or skipped.
+        reverted_findings = self.keep_reverted_open(findings, reverted)
         if PLAN_CHANGE_YES.search(report.strip()):
             self.record_coder_plan_impact(report, changed)
 
@@ -784,7 +802,9 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         skips = {**reasked, **skips}
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
-        kept = [item for number, item in enumerate(findings, 1) if number not in skips]
+        skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]
+        kept = [item for number, item in enumerate(findings, 1)
+                if number not in skips and item not in reverted_findings]
         if not changed:
             skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept]
             kept = []
@@ -792,18 +812,23 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
         self.given_skipped += len(skipped)
         self.fixed += kept
         self.check_fixed += len(kept)
-        self.prior_issues = prior_issue_entries(findings, skips)
+        self.prior_issues = prior_issue_entries(findings, skips, reverted_findings)
 
-    def mark_repaired(self, findings, changed, records_skip=True):
-        """A repair's findings go to fixed when it changed a file, else to skipped_fp. With `records_skip` False, a
-        repair that changed nothing records nothing: the findings are a gate's prompt, not a reviewer's claim."""
+    def mark_repaired(self, findings, changed, reverted, records_skip=True):
+        """A repair's findings go to fixed when it changed a file, else to skipped_fp. A finding on one of the
+        `reverted` approval-only paths stays in open_fixes and is never fixed or skipped. With `records_skip` False, a
+        repair that changed nothing records nothing: the findings are a gate's prompt, not a reviewer's claim. Returns
+        the findings on reverted paths."""
+        reverted_findings = self.keep_reverted_open(findings, reverted)
+        findings = [item for item in findings if item not in reverted_findings]
         if not changed:
             if records_skip:
                 self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in findings]
-            return
+            return reverted_findings
         self.fixed += findings
         self.check_fixed += len(findings)
         self.files_touched.update(changed)
+        return reverted_findings
 
     def class_closure_pass(self, check_command):
         """The class-closure judgment on the fixes, and one coder pass with a full check on any class left open. When
@@ -824,11 +849,14 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
             self.closure.receipt = receipt_all_held(held_texts)
             return
 
-        _report, _diffs, class_changed = self.repair("coder-class", open_findings)
-        self.mark_repaired(open_findings, class_changed)
+        _report, _diffs, class_changed, reverted = self.repair("coder-class", open_findings)
+        reverted_findings = self.mark_repaired(open_findings, class_changed, reverted)
         if class_changed:
-            sent_texts = [item.text for item in open_findings]
-            self.closure.receipt = receipt_after_class_repair(sent_texts, held_texts)
+            sent_texts = [item.text for item in open_findings if item not in reverted_findings]
+            reverted_texts = [item.text for item in reverted_findings]
+            receipt = receipt_after_class_repair(sent_texts, held_texts, reverted_texts)
+            self.closure.open_classes = reverted_texts
+            self.closure.receipt = receipt
         else:
             self.closure.open_classes = [item.text for item in open_findings]
             self.closure.receipt = receipt_still_open(self.closure.open_classes, held_texts)
@@ -871,8 +899,8 @@ class LoopRun(ScopedTestRuns, RuledFindings, full_check_gate.FullCheckSteps):
 
         hits = [parse_finding("\n\n".join(hit_outputs))]
         pass_before_repair = self.last_pass
-        _report, _diffs, changed = self.repair("coder-prose", hits)
-        self.mark_repaired(hits, changed, records_skip=False)
+        _report, _diffs, changed, reverted = self.repair("coder-prose", hits)
+        self.mark_repaired(hits, changed, reverted, records_skip=False)
         if not changed:
             self.last_pass = pass_before_repair
             return False

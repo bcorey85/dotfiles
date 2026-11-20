@@ -63,8 +63,8 @@ CASES = {
     ),
     "review_escape": (
         toolkit_paths.TELEMETRY_DIR / "log-escape",
-        ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
-         "miss_reason=overlooked"],
+        # An eng-spec row with no miss_reason writes no local escape-text row, so each case sees one writer file.
+        ["gate_missed=eng-spec", "stage_found=pr-human", "severity=high", "class=bug", "guard=none"],
         "review-escapes.jsonl",
         {"class": "bug", "branch": BRANCH},
     ),
@@ -241,6 +241,36 @@ class LedgerWriteTest(unittest.TestCase):
         self.assertEqual(len(done.stderr.strip().splitlines()), 1, done.stderr)
         self.assertIn("could not append", done.stderr)
         self.assertIn("row dropped", done.stderr)
+
+    def test_local_path_prints_the_home_file_and_writes_nothing_even_with_a_ledger(self):
+        for with_ledger in (False, True):
+            with self.subTest(with_ledger=with_ledger):
+                done = self.run_script(LEDGER_WRITE, ["--local-path", "escape_text"], with_ledger=with_ledger)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(done.stdout, f"{self.home}/.claude/escape-text.jsonl\n")
+                self.assertFalse((self.home / ".claude").exists(), "the verb wrote a file")
+
+    def test_local_path_prints_the_file_override_when_set(self):
+        override_path = self.temp_root / "override.jsonl"
+        done = self.run_script(
+            LEDGER_WRITE, ["--local-path", "escape_text"], extra_env={"ESCAPE_TEXT_FILE": str(override_path)}
+        )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout, f"{override_path}\n")
+
+    def test_local_path_exits_1_with_no_output_for_an_unknown_type_or_an_unset_home(self):
+        unknown_type = self.run_script(LEDGER_WRITE, ["--local-path", "bogus"])
+        self.assertEqual((unknown_type.returncode, unknown_type.stdout), (1, ""))
+        no_home = self.run_script(LEDGER_WRITE, ["--local-path", "escape_text"], home_set=False)
+        self.assertEqual((no_home.returncode, no_home.stdout), (1, ""))
+
+    def test_a_call_with_no_type_prints_a_usage_error_and_exits_2(self):
+        for args in (["--local-path"], ["--local"], []):
+            with self.subTest(args=args):
+                done = self.run_script(LEDGER_WRITE, args)
+                self.assertEqual(done.returncode, 2, done.stderr)
+                self.assertIn("usage: ledger-write", done.stderr)
+                self.assertNotIn("unbound", done.stderr)
 
     def test_ids_the_head_commit_and_the_snapshot_stay_strings_and_other_numbers_are_typed(self):
         row_fields = {

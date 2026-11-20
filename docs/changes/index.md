@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-992 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+998 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-19, [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md).
+Latest change: 2026-11-19, [asks-done records session rulings while a user-only ask stays held](notes/2026-11-19-asks-done-records-session-rulings-while-a-user.md).
 
 ## Top gains
 

@@ -73,12 +73,23 @@ def held_clause(held_texts):
     return "; skipped, held by another session: " + "; ".join(held_texts)
 
 
-def receipt_after_class_repair(closed_members, held_texts):
+def reverted_clause(reverted_texts):
+    """The receipt's tail naming the class members whose fix was an approval-only edit the loop reverted; empty when
+    none."""
+    if not reverted_texts:
+        return ""
+    return "; still open, their fix was an approval-only edit the loop reverted: " + "; ".join(reverted_texts)
+
+
+def receipt_after_class_repair(closed_members, held_texts, reverted_texts):
     """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
-    members skipped as held are not claimed fixed. It replaces the check's receipt, whose prose still calls the sent
-    members open."""
+    members skipped as held are not claimed fixed, and it claims no fix when every sent member was reverted. It
+    replaces the check's receipt, whose prose still calls the sent members open."""
+    if not closed_members:
+        return ("the class repair fixed none of the class members the closure check found open"
+                + held_clause(held_texts) + reverted_clause(reverted_texts))
     return ("the class repair fixed these class members the closure check found open: " + "; ".join(closed_members)
-            + held_clause(held_texts))
+            + held_clause(held_texts) + reverted_clause(reverted_texts))
 
 
 def receipt_all_held(held_texts):

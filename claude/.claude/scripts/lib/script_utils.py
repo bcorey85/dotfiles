@@ -302,12 +302,78 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
-def work_tree_blob(repo, path):
+def work_tree_blob(repo, path, keep_object=False):
     """The blob id of the work-tree content of `path` in `repo`, or None when the file is absent or git cannot hash
-    it."""
+    it. With `keep_object`, git also stores the content, so `restore_blob` can write it back later."""
     if not (pathlib.Path(repo) / path).is_file():
         return None
-    return git_output(repo, "hash-object", "--", path)
+    write_flag = ["-w"] if keep_object else []
+    return git_output(repo, "hash-object", *write_flag, "--", path)
+
+
+def restore_blob(repo, path, blob):
+    """Puts the work-tree file `path` back to the content of `blob` (a blob id git holds), or deletes it when `blob`
+    is None. Returns True when the file now matches; False when git cannot read the blob or the file cannot be
+    written, with the file left as it was."""
+    target = pathlib.Path(repo) / path
+    if blob is None:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            return False
+        return True
+    try:
+        # --filters applies the smudge and eol conversion of `path`, so a CRLF file comes back CRLF.
+        finished = subprocess.run(["git", "cat-file", "--filters", f"--path={path}", blob], cwd=repo,
+                                  stdin=subprocess.DEVNULL, capture_output=True)
+    except OSError:
+        return False
+    if finished.returncode != 0:
+        return False
+    try:
+        write_text_atomically(target, finished.stdout)
+    except OSError:
+        return False
+    return True
+
+
+# What the index of a repo holds for one path: the file mode and the blob id. A namedtuple for the reason above.
+IndexEntry = namedtuple("IndexEntry", ["mode", "blob"])
+
+
+def index_entry(repo, path):
+    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
+    file) or git cannot say."""
+    listing = git_output(repo, "ls-files", "--stage", "-z", "--", path)
+    if not listing:
+        return None
+    # One entry reads `<mode> <blob> <stage>\t<path>`; a path with a merge conflict lists several stages, and the
+    # first is enough to tell the entry changed.
+    description = listing.split("\0")[0].split("\t")[0]
+    mode, blob, _stage = description.split(" ")
+    return IndexEntry(mode, blob)
+
+
+def restore_index_entry(repo, path, entry):
+    """Puts the index entry of `path` back to `entry` (an IndexEntry from `index_entry`), or takes the path out of the
+    index when `entry` is None. Leaves the work tree alone. Returns True when the index now holds `entry`."""
+    if entry is None:
+        return git_output(repo, "rm", "--cached", "-q", "--ignore-unmatch", "--", path) is not None
+    cache_info = f"{entry.mode},{entry.blob},{path}"
+    return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
+
+
+def blob_at_commit(repo, commit, path):
+    """The blob id of `path` in `commit` of `repo`, or None when the commit has no such file or git cannot say."""
+    return git_output(repo, "rev-parse", "--verify", "-q", f"{commit}:{path}")
+
+
+def matches_head(repo, path):
+    """Whether `path` has no diff against HEAD in `repo`: a file HEAD tracks with the same content, or a file that is
+    absent and that HEAD does not track. A deleted tracked file and a new file are diffs, so is a present file in a
+    repo with no commit; an absent file there is no diff."""
+    head_blob = blob_at_commit(repo, "HEAD", path)
+    return not content_changed_since(repo, path, head_blob)
 
 
 def content_changed_since(repo, path, blob):
@@ -1110,16 +1176,18 @@ def _has_git_entry_above(folder):
         folder = parent
 
 
-def write_text_atomically(path, text):
-    """Write `text` to `path` so a reader sees the old file or the new one, never a half-written file."""
+def write_text_atomically(path, content):
+    """Write `content` (text, or bytes for a binary-exact write) to `path` so a reader sees the old file or the new
+    one, never a half-written file."""
     path = pathlib.Path(path)
+    mode = "wb" if isinstance(content, bytes) else "w"
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
 
     # A new file gets 0o666 less the umask, as write_text gives. The kernel applies the umask here, so it is never read.
     descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
-        with os.fdopen(descriptor, "w") as temp_file:
-            temp_file.write(text)
+        with os.fdopen(descriptor, mode) as temp_file:
+            temp_file.write(content)
         if path.exists():
             os.chmod(temp_path, stat.S_IMODE(path.stat().st_mode))
         os.replace(temp_path, path)

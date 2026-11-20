@@ -18,8 +18,11 @@ from approval_asks_store import (
     ApprovalAsksFileError,
     check_approval_paths_readable,
     forget_ruled_approval_paths,
+    read_held_changes,
+    user_only_changes,
+    write_held_changes,
 )
-from ask_outcome_words import USER_ONLY_KEY
+from ask_outcome_words import HELD, USER_ONLY_KEY
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
 from human_turn_lookup import HumanTurnRefusedError
 from review_asks import (
@@ -28,13 +31,15 @@ from review_asks import (
     APPLIED,
     APPLIED_MEANS,
     ASK_OUTCOMES,
+    HELD_MEANS,
     MODIFIED,
     REJECT_MEANS,
     REJECTED,
+    SESSION_CALL_OUTCOMES,
     USER_RULED_KEY,
     rejected_ask_text,
 )
-from review_fix_names import RUN_FOLDER_FINDINGS_NAME
+from review_fix_names import PACKET_IDENTITY_KEYS, RUN_FOLDER_FINDINGS_NAME
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
     ASK_FINDINGS_NAME,
@@ -66,20 +71,23 @@ STALE_RUN_FOLDER_FINDINGS_REMOVED = (
 PRINTED_RUN_LINE = "The first asks-done printed this fix run; run it now unless it already ran."
 
 
-def read_outcomes(argv, asks):
+def read_outcomes(argv, asks, allow_held=False):
     """(the outcome word of each ask, the note after `:` of each, "" when none). A modified ask needs its note: the
-    note is the ruler's change."""
+    note is the ruler's change. `allow_held` lets the first asks-done call give `held`; every other caller refuses it
+    as an unknown word."""
+    allowed = SESSION_CALL_OUTCOMES if allow_held else ASK_OUTCOMES
     try:
-        return review_asks.parse_outcome_words(argv, len(asks), ASK_OUTCOMES, (MODIFIED,))
+        return review_asks.parse_outcome_words(argv, len(asks), allowed, (MODIFIED,))
     except review_asks.OutcomeError as error:
         if error.problem == review_asks.WRONG_COUNT:
             raise UsageError(f"{len(asks)} ask(s) waiting but {len(argv)} outcome(s) given") from error
         if error.problem == review_asks.UNKNOWN_OUTCOME:
+            held_text = f"; {HELD}: {HELD_MEANS}" if allow_held else ""
             raise UsageError(
-                f"outcome {error.word!r} is not one of {'|'.join(ASK_OUTCOMES)}. {ACCEPTED}: {ACCEPT_MEANS}; "
+                f"outcome {error.word!r} is not one of {'|'.join(allowed)}. {ACCEPTED}: {ACCEPT_MEANS}; "
                 f"{REJECTED}: {REJECT_MEANS} (the outcome for a 'leave it' or 'accept the gap' "
                 f"option); {APPLIED}: {APPLIED_MEANS}; "
-                f"{MODIFIED}:<change>: make that change instead") from error
+                f"{MODIFIED}:<change>: make that change instead{held_text}") from error
         raise UsageError(f"outcome {error.number} is modified with no note; "
                          f"write '{MODIFIED}:<the change>' quoted as one shell word") from error
 
@@ -414,7 +422,7 @@ def record_ruled_asks_once(target, asks, outcomes, repo):
     target["asks_rejections_recorded"] = True
 
 
-def summary_line(target, asks, ask_counts, decided_by, failures):
+def summary_line(target, asks, ask_counts, decided_by, failures, held=False, retryable=True):
     rows_logged = sum(1 for index in target["asks_logged"] if not is_plan_impact_ask(asks[index]))
     summary = f"Logged {rows_logged} of {len(asks)} ask outcome row(s)."
     if decided_by == plan_format.SESSION_RULING:
@@ -425,7 +433,10 @@ def summary_line(target, asks, ask_counts, decided_by, failures):
         summary += (f" {ask_counts[NEW_FINDING_ID]} ask(s) without a valid finding_id are logged under a new "
                     "finding_id.")
     if failures:
-        summary += " Failures (mention, never block; run the same asks-done again to retry only these):"
+        retry_advice = "run the same asks-done again to retry only these"
+        if held and retryable:
+            retry_advice = "retry only these with the call in the held line below"
+        summary += f" Failures (mention, never block; {retry_advice}):"
     return summary
 
 
@@ -566,12 +577,18 @@ def write_unprinted_fix_run(state, target, finding_lines, decided_by):
 
 def print_done_again(state):
     """A repeat asks-done with every ask logged. A stored fix run is printed again: the first call may have been
-    cut off before its launch line was run."""
+    cut off before its launch line was run. The held line is printed again too, as it gives the held packet's id
+    and the user's call."""
     done_line = "The ask outcomes were already logged."
+    held_id = held_packet_id(state.get("packet_id", ""))
+    held_lines = []
+    for packet in state.get("waiting_packets") or []:
+        if packet["packet_id"] == held_id:
+            held_lines = held_summary_lines(packet, state["packet_id"], retryable=True)
     launch_line = state.get("last_asks_launch_line")
     if not launch_line:
-        return print_action("done", done_line, "Run nothing more.")
-    return print_action("done", done_line, PRINTED_RUN_LINE, launch_line)
+        return print_action("done", done_line, "Run nothing more.", *held_lines)
+    return print_action("done", done_line, PRINTED_RUN_LINE, launch_line, *held_lines)
 
 
 def mark_packet_answered(state, target):
@@ -731,10 +748,10 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
-def refuse_session_on_user_only(asks, decided_by, user_command):
+def refuse_session_on_user_only(asks, decided_by, user_command, holdable=False):
     """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`. `user_command` is the
-    call the refusal tells the session to use for the user's ruling."""
-    refusal = review_asks.user_only_refusal(asks, decided_by, user_command)
+    call the refusal tells the session to use for the user's ruling; `holdable` makes it name `held` too."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, holdable)
     if refusal:
         raise UsageError(refusal)
 
@@ -770,25 +787,143 @@ def command_correct_asks(options):
     return print_fix_run(state, findings_file, [summary])
 
 
+class HeldChanges(NamedTuple):
+    """The approval changes of the held asks of one call, and the repo whose approval store holds them."""
+    repo: str
+    changes: list
+
+
 class Answers(NamedTuple):
-    """What an asks-done call answers: the packet, its outcome words and notes, and who decided."""
+    """What an asks-done call answers: the packet, its outcome words and notes, who decided, the kept
+    packet that holds the asks the call held (None when it held none) and the approval changes of those asks
+    (None when it held none). After a hold, `target` and the outcomes cover the plain asks only."""
     target: dict
     outcomes: list
     notes: list
     decided_by: str
+    held_packet: dict | None
+    held_changes: HeldChanges | None
+
+
+def refuse_misplaced_held(target, outcomes, decided_by):
+    """Refuses (nothing is logged) `held` in a `--by user` call, on an ask that is not user-only, on every ask of
+    the packet (a call that holds all of them rules nothing), and on a retry of a packet whose outcomes are already
+    logged (an ask the user ruled cannot move to the held packet)."""
+    asks = target["asks"]
+    if HELD in outcomes and target.get("ask_outcomes") is not None:
+        raise UsageError("asks-done is a retry: a retry gives the outcomes already logged, never `held`. "
+                         "Nothing was logged.")
+    problems = []
+    for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
+        if outcome != HELD:
+            continue
+        if decided_by == plan_format.USER_RULING:
+            problems.append(f"ask {number}: {HELD} is for a session call; a `--by user` call rules every ask")
+        elif not item.get(USER_ONLY_KEY):
+            problems.append(f"ask {number}: {HELD} is only for a user_only ask; give this one "
+                            f"{review_asks.PLAIN_OUTCOMES_TEXT} or '{MODIFIED}:<the change>'")
+    if problems:
+        raise UsageError("\n".join(problems) + "\nNothing was logged.")
+    if all(outcome == HELD for outcome in outcomes):
+        raise UsageError(f"every ask is {HELD}: the call would rule nothing. Leave the packet for the user's "
+                         "`--by user` call. Nothing was logged.")
+
+
+class HeldSplit(NamedTuple):
+    """The asks of a packet split by the call's outcomes: the plain asks with their outcomes and notes, and the
+    held asks."""
+    plain_asks: list
+    plain_outcomes: list
+    plain_notes: list
+    held_asks: list
+
+
+def split_held(asks, outcomes, notes):
+    """The HeldSplit of the asks. Changes nothing."""
+    split = HeldSplit([], [], [], [])
+    for item, outcome, note in zip(asks, outcomes, notes, strict=True):
+        if outcome == HELD:
+            split.held_asks.append(item)
+            continue
+        split.plain_asks.append(item)
+        split.plain_outcomes.append(outcome)
+        split.plain_notes.append(note)
+    return split
+
+
+# The keys of a packet's state that its held asks keep: the kept packet relaunches the same review run.
+HELD_PACKET_KEYS = (*PACKET_IDENTITY_KEYS, "relaunch_args")
+HELD_PACKET_SUFFIX = "-held"
+
+
+def held_packet_id(packet_id):
+    """The id of the kept packet that holds the held asks of the packet `packet_id`."""
+    return packet_id + HELD_PACKET_SUFFIX
+
+
+def held_approval_changes(target, held_asks):
+    """The HeldChanges of `held_asks`, which the call writes once its state is saved (`command_asks_done`). Refuses
+    (nothing is logged) when the repo's held-changes file is damaged, so the later write cannot fail."""
+    packet_repo_path = required_packet_repo(target.get("relaunch_args") or [])
+    try:
+        read_held_changes(packet_repo_path)
+    except ApprovalAsksFileError as error:
+        raise UsageError(f"{error}. Nothing was logged.") from error
+    return HeldChanges(packet_repo_path, user_only_changes(held_asks))
+
+
+def keep_held_packet(state, target, held_asks):
+    """Moves held_asks into a new kept packet of `state` (its own packet id, the parent's relaunch args) that waits
+    for the user's `--by user --packet <id>` call, and returns it. Writes nothing to disk: the held approval
+    changes are written by `command_asks_done` after the state is saved."""
+    held_id = held_packet_id(target["packet_id"])
+    held_packet = {key: target[key] for key in HELD_PACKET_KEYS if key in target}
+    held_packet.update({"packet_id": held_id, "stage": "asks", "asks": held_asks})
+    state.setdefault("waiting_packets", []).append(held_packet)
+    return held_packet
 
 
 def read_answers(state, options, waiting):
     """The Answers of an asks-done call. Refuses a bad answer before anything is logged, and a retry that answers
     differently from the outcomes already logged. Those answers stay on the packet, as the logged rows and the
-    findings file hold them, so `--correct` can tell which ask changed."""
+    findings file hold them, so `--correct` can tell which ask changed. A `held` ask leaves the packet for a new
+    kept one once every check has passed."""
     target = choose_asks_packet(waiting, options.packet_id)
-    outcomes, notes = read_outcomes(options.outcome_words, target["asks"])
-    refuse_conditional_changes(target["asks"], outcomes)
-    refuse_changed_retry(state, target, outcomes, notes, correctable=False)
-    target.setdefault("ask_outcomes", outcomes)
-    target.setdefault("ask_notes", notes)
-    return Answers(target, outcomes, notes, options.decided_by)
+    asks = target["asks"]
+    outcomes, notes = read_outcomes(options.outcome_words, asks, allow_held=True)
+    refuse_misplaced_held(target, outcomes, options.decided_by)
+    split = split_held(asks, outcomes, notes)
+    # The held asks are not ruled: blank them, keeping their places, so the refusals skip them and name the
+    # asks by their numbers in the stop's order.
+    kept_places = [{} if outcome == HELD else item for item, outcome in zip(asks, outcomes, strict=True)]
+    user_command = f"asks-done --by {plan_format.USER_RULING} ..."
+    refuse_session_on_user_only(kept_places, options.decided_by, user_command, holdable=True)
+    refuse_conditional_changes(kept_places, outcomes)
+    refuse_changed_retry(state, target, split.plain_outcomes, split.plain_notes, correctable=False)
+
+    held_packet = None
+    held_changes = None
+    if split.held_asks:
+        held_changes = held_approval_changes(target, split.held_asks)
+        target["asks"] = split.plain_asks
+        held_packet = keep_held_packet(state, target, split.held_asks)
+    target.setdefault("ask_outcomes", split.plain_outcomes)
+    target.setdefault("ask_notes", split.plain_notes)
+    return Answers(target, split.plain_outcomes, split.plain_notes, options.decided_by, held_packet, held_changes)
+
+
+def held_summary_lines(held_packet, parent_id, retryable):
+    """The summary lines that say where the held asks wait and how the user rules them. When the call that held the
+    asks can be retried (its packet is the current one, or a row failed to log), they also say how to retry it."""
+    if held_packet is None:
+        return []
+    held_id = held_packet["packet_id"]
+    line = (f"{len(held_packet['asks'])} user_only ask(s) are {HELD}, unruled, in packet {held_id}. The user rules "
+            f"them with `asks-done --by {plan_format.USER_RULING} --packet {held_id} <outcome>...`.")
+    if retryable:
+        line += (f" A retry of this call is `asks-done --by {plan_format.SESSION_RULING} --packet {parent_id} "
+                 "<plain outcomes>`, the outcomes of the plain asks only.")
+    return [line]
 
 
 def refuse_changed_retry(state, target, outcomes, notes, correctable):
@@ -814,7 +949,8 @@ def refuse_changed_retry(state, target, outcomes, notes, correctable):
 
 
 def repeat_done_asks(state, options):
-    """An asks-done call with no packet waiting: a retry of the finished call prints its result again, with the same
+    """An asks-done call with no packet waiting, or a retry of a finished call that held asks
+    (`is_retry_of_done_packet`): a retry of the finished call prints its result again, with the same
     outcomes as the ones already logged. Anything else is refused."""
     last_outcomes = state.get("last_ask_outcomes")
     if state.get("stage") != "done" or not last_outcomes:
@@ -830,6 +966,20 @@ def repeat_done_asks(state, options):
     return print_done_again(state)
 
 
+def is_retry_of_done_packet(state, waiting, options):
+    """Whether an asks-done call retries the finished current packet's call: the call names that packet, or names
+    none while only its kept held packet waits. Only a session call holds asks, so only a session call that names
+    no packet retries a hold; a user call then rules the held packet."""
+    if state.get("stage") != "done":
+        return False
+    if options.packet_id is not None:
+        return options.packet_id == state.get("packet_id")
+    if options.decided_by != plan_format.SESSION_RULING:
+        return False
+    held_id = held_packet_id(state.get("packet_id", ""))
+    return all(packet["packet_id"] == held_id for packet in waiting)
+
+
 def command_asks_done(argv):
     options = asks_done_options(argv)
     if options.correct:
@@ -837,12 +987,11 @@ def command_asks_done(argv):
 
     state = load_fix_state()
     waiting = waiting_ask_packets(state)
-    if not waiting:
+    if not waiting or is_retry_of_done_packet(state, waiting, options):
         return repeat_done_asks(state, options)
 
-    target, outcomes, notes, decided_by = read_answers(state, options, waiting)
+    target, outcomes, notes, decided_by, held_packet, held_changes = read_answers(state, options, waiting)
     asks = target["asks"]
-    refuse_session_on_user_only(asks, decided_by, f"asks-done --by {plan_format.USER_RULING} ...")
     relayed = verified_fix_relay(options, asks)
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
     refuse_damaged_approval_paths(repo, asks)
@@ -851,8 +1000,11 @@ def command_asks_done(argv):
 
     logged_now = log_fix_ask_outcomes(target, asks, outcomes, decided_by)
     ask_counts, failures = logged_now.ask_counts, logged_now.failures
-    summary_lines = [summary_line(target, asks, ask_counts, decided_by, failures),
-                     *["- " + failure for failure in failures]]
+    # A kept parent has left the waiting packets, so its call is retryable only while a row failed to log.
+    retryable = target is state or bool(failures)
+    summary_lines = [summary_line(target, asks, ask_counts, decided_by, failures, held_packet is not None, retryable),
+                     *["- " + failure for failure in failures],
+                     *held_summary_lines(held_packet, target["packet_id"], retryable)]
     deviation_lines = unprinted_deviation_lines(target, asks, outcomes, notes, decided_by)
     record_ruled_asks_once(target, asks, outcomes, repo)
     record_unrecorded_relay(target, relayed, repo, logged_now.new_indexes)
@@ -871,6 +1023,10 @@ def command_asks_done(argv):
     if not failures:
         mark_packet_answered(state, target)
     save_fix_state(state)
+    # After the save: a crash before it leaves no held record that no saved kept packet holds, which a later loop
+    # would skip for good. A crash after the save only lets the loop file the ask again.
+    if held_changes is not None:
+        write_held_changes(held_changes.repo, held_changes.changes)
 
     if findings_file:
         print_fix_run(target, findings_file, summary_lines)

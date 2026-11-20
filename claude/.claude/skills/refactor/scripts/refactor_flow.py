@@ -10,7 +10,7 @@
 Every verb prints its report and ends with one `NEXT:` line naming what the
 model still does, or a `STOP:` line with the reason. Each prep verb deletes all but the newest 49
 regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`)
-in REFACTOR_LOG_INPUT_DIR (default: the system temp dir) before it names a fresh path.
+in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it names a fresh path.
 Otherwise read-only except `log`, which appends rows through the existing writers
 (log-escape, log-review-finding); this script never writes a second copy of those rows.
 `log` is idempotent per input file: it keeps a hash of every row a writer accepted, grouped by the
@@ -260,21 +260,20 @@ def untracked_files(root):
     names = script_utils.untracked_paths(root)
     if names is None:
         raise RefactorFlowError(f"git could not list the untracked files in {root}")
-    found = []
-    for name in names:
-        full_path = Path(root) / name
-        if full_path.is_symlink():
-            found.append(UntrackedFile(name, [], UNTRACKED_SYMLINK))
-            continue
-        if not full_path.is_file():
-            found.append(UntrackedFile(name, [], UNTRACKED_NOT_A_FILE))
-            continue
-        numbered = script_utils.read_text_lines(full_path)
-        if numbered is None:
-            found.append(UntrackedFile(name, [], UNTRACKED_BINARY))
-            continue
-        found.append(UntrackedFile(name, numbered, ""))
-    return found
+    return [classify_untracked(root, name) for name in names]
+
+
+def classify_untracked(root, name):
+    """One untracked file, with its lines when it is a regular UTF-8 text file."""
+    full_path = Path(root) / name
+    if full_path.is_symlink():
+        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
+    if not full_path.is_file():
+        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
+    numbered = script_utils.read_text_lines(full_path)
+    if numbered is None:
+        return UntrackedFile(name, [], UNTRACKED_BINARY)
+    return UntrackedFile(name, numbered, "")
 
 
 def untracked_label(entry):
@@ -309,9 +308,21 @@ def prune_log_inputs(folder):
             stale.unlink()
 
 
+def log_input_folder():
+    """REFACTOR_LOG_INPUT_DIR, else the repo's own git dir, which outlives the system temp folder."""
+    override = os.environ.get("REFACTOR_LOG_INPUT_DIR")
+    if override:
+        return Path(override)
+    folder = script_utils.git_path(".", "refactor-flow")
+    if folder is None:
+        raise RefactorFlowError("git could not give the refactor-flow folder of this repo")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def fresh_log_input():
     """A path no earlier /refactor invocation used; `log` dedupes rows per input path."""
-    folder = Path(os.environ.get("REFACTOR_LOG_INPUT_DIR") or tempfile.gettempdir())
+    folder = log_input_folder()
     prune_log_inputs(folder)
     return str(folder / f"{LOG_INPUT_PREFIX}{uuid.uuid4().hex[:LOG_INPUT_HEX_DIGITS]}.json")
 
@@ -509,12 +520,20 @@ def run_jscpd(target, timeout):
     return pairs, ""
 
 
-def tracked_files(target):
-    """Tracked files under the target paths, relative to the cwd (git ls-files -z)."""
-    done = git("--literal-pathspecs", "ls-files", "-z", "--", *target, check=False)
+def ls_files(targets, *flags):
+    """Files under the target paths (relative to the cwd) that `git ls-files` lists for the flags.
+
+    Ignored files are left out.
+    """
+    done = git("--literal-pathspecs", "ls-files", "-z", *flags, "--exclude-standard", "--", *targets, check=False)
     if done.returncode != 0:
-        raise RefactorFlowError(f"git ls-files failed for {target}: {done.stderr.strip()}")
+        raise RefactorFlowError(f"git ls-files failed for {targets}: {done.stderr.strip()}")
     return [name for name in done.stdout.split("\0") if name]
+
+
+def target_files(target):
+    """Tracked and untracked (not ignored) files under the target paths, relative to the cwd."""
+    return ls_files(target, "--cached", "--others")
 
 
 def _print_candidate_pairs(listed_pairs, unlisted_count):
@@ -529,16 +548,16 @@ def _print_candidate_pairs(listed_pairs, unlisted_count):
 def audit_prep(opts):
     require_repo()
     target = opts.target
-    files = tracked_files([target])
+    files = target_files([target])
     if not files:
-        print(f"STOP: `git ls-files {target}` is empty; ask the user for a tracked dir or module.")
+        print(f"STOP: `{target}` holds no tracked or untracked (not ignored) file; ask the user for a dir or module.")
         return 0
     log_input = fresh_log_input()
     pairs, note = run_jscpd(target, opts.jscpd_timeout)
     listed_pairs = pairs[:MAX_CLONE_PAIRS]
     unlisted_count = len(pairs) - len(listed_pairs)
 
-    print(f"## Audit target `{target}` ({len(files)} tracked file(s))")
+    print(f"## Audit target `{target}` ({len(files)} file(s))")
     print()
     print("## Mechanical clone detection (jscpd, --min-tokens 70)")
     if note:
@@ -577,9 +596,12 @@ def simplify_prep(opts):
     targets = opts.target
     files_by_target = []
     for target in targets:
-        found = tracked_files([target])
+        found = target_files([target])
         if not found:
-            print(f"STOP: `git ls-files {target}` is empty; ask the user for a tracked dir or module.")
+            print(
+                f"STOP: `{target}` holds no tracked or untracked (not ignored) file; "
+                "ask the user for a dir or module."
+            )
             return 0
         files_by_target.append((target, found))
     return _simplify_report(opts, files_by_target)
@@ -773,6 +795,14 @@ def validate_log(mode, refactor_log):
             "targets": targets, "handoff": handoff}
 
 
+def untracked_line_count(live_targets):
+    """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
+    total = 0
+    for name in ls_files(live_targets, "--others"):
+        total += len(classify_untracked(".", name).added_lines)
+    return total
+
+
 def diff_loc_for(mode, base, targets):
     """The committed branch diff size (not the uncommitted or untracked work the finder also read), or the line count
     of the files it received."""
@@ -781,7 +811,7 @@ def diff_loc_for(mode, base, targets):
         stat = diff_output(f"{base_ref}...HEAD", "--shortstat")
         return sum(int(count) for count in re.findall(r"(\d+) (?:insertion|deletion)", stat))
 
-    live = [target for target in targets if tracked_files([target])]
+    live = [target for target in targets if target_files([target])]
     # A repo with no commit has nothing deleted from HEAD.
     deleted_names = ""
     if ref_exists("HEAD"):
@@ -791,7 +821,8 @@ def diff_loc_for(mode, base, targets):
     stat = diff_output(tree, "--shortstat", pathspecs=live) if live else ""
     # A file deleted in the index adds no lines to the work tree; the finder read it at HEAD.
     deleted_stat = diff_output(f"{tree}..HEAD", "--shortstat", pathspecs=deleted) if deleted else ""
-    return sum(int(count) for count in re.findall(r"(\d+) insertion", stat + deleted_stat))
+    tracked_lines = sum(int(count) for count in re.findall(r"(\d+) insertion", stat + deleted_stat))
+    return tracked_lines + untracked_line_count(live)
 
 
 def render_handoff(root, handoff, modifier):
@@ -986,18 +1017,20 @@ def tracked_at_head(target):
 
 
 def check_targets_match(mode, validated_log):
-    """A target that matches no tracked file would log diff_loc 0 as if the finder had read nothing.
+    """A target that matches no tracked or untracked file would log diff_loc 0 as if the finder had read nothing.
     A target the branch deleted (tracked at HEAD, gone from the index) is the slice that ran: it is accepted,
     and diff_loc_for counts its lines from HEAD."""
     if not validated_log["finder"] or mode not in ("audit", "simplify"):
         return
     for target in validated_log["targets"]:
-        if tracked_files([target]):
+        if target_files([target]):
             continue
         if tracked_at_head(target):
             print(f"target `{target}` is deleted in the index (tracked at HEAD)")
             continue
-        raise RefactorFlowError(f"target `{target}` matches no tracked file; log the paths the prep listed")
+        raise RefactorFlowError(
+            f"target `{target}` matches no file (tracked or untracked); log the paths the prep listed"
+        )
 
 
 def log_next(validated_log, mode):

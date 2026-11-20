@@ -8,6 +8,7 @@ ASK_FINDINGS_NAME = "ask-findings.md"
 # is measured against, which the next review loop run of the repo reloads and rewrites with the paths it files again,
 # and each ruling on a user-only ask, accepted or rejected, removes its path. Kept beside the state file.
 APPROVAL_ASKS_NAME = "approval-asks.json"
+HELD_APPROVAL_NAME = "held-approval-changes.json"
 # The run folder's findings file: `/fix` passes it to `--fix`, and a fork writes it for `launch --also-fix` to add
 # findings to the fix run asks-done printed. The run folder is the one place the fork may write.
 RUN_FOLDER_FINDINGS_NAME = "fix-findings.md"
@@ -21,3 +22,7 @@ CORRECT_OPEN_KEY = "correct_open"
 # Who ruled on each ask, a list with one entry per ask: set by the asks-done that prints the fix run, then reset to the
 # decider of each ask a later `asks-done --correct` re-answers, so a session correction drops that ask's `--user-ruled`.
 ASKS_DECIDED_BY_KEY = "asks_decided_by"
+# The identity keys of a packet's saved state, set when the packet is saved (apart from `packet_id`). A kept packet
+# that holds a packet's held asks copies them, as it relaunches the same review run.
+PACKET_IDENTITY_KEYS = ("skill", "scope", "lane", "iter", "review_round", "spec_iter", "status", "branch", "source",
+                        "fixed_paths", "files_touched")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# static-hooks/unix/agent-model-guard.sh
+# claude/.claude/scripts/agent-model-guard.sh
 # Guards Agent tool calls against silent Opus inheritance.
 #
 # Logic:
@@ -7,15 +7,17 @@
 #      This keeps parity with other security hooks and lets the user bypass
 #      all hooks consistently via the documented CLAUDE_SKIP_HOOKS mechanism.
 #   2. Non-Agent tools pass immediately.
-#   3. Call-site model containing "opus" (case-insensitive) is always blocked.
+#   2a. subagent_type "fork" passes immediately. A fork has no agent file and
+#      always runs on the parent model; the harness ignores a model on it.
+#   3. Call-site model containing "opus" (case-insensitive) on a non-fork agent is blocked.
 #      Opus subagents must be opted into via the agent file's own frontmatter,
 #      never overridden from the call site.
-#   4. Call-site model containing "inherit" (case-insensitive) is always blocked.
+#   4. Call-site model containing "inherit" (case-insensitive) on a non-fork agent is blocked.
 #      "inherit" resolves to the orchestrator's model at runtime — identical to
 #      leaving model empty, but explicit. When the orchestrator is on Opus this
 #      silently fans out Opus subagents.
 #   5. Any other explicit model at the call site is allowed.
-#   6. Empty model: resolve the agent file from CLAUDE_PROJECT_DIR (preferred)
+#   6. Empty model on a non-fork agent: resolve the agent file from CLAUDE_PROJECT_DIR (preferred)
 #      or HOME, then check for a `model:` frontmatter line. If found, exit 0
 #      (frontmatter handles selection, including a deliberate `model: opus`
 #      pin). If not found, block — the subagent would silently inherit the
@@ -37,6 +39,10 @@ fi
 
 model=$(printf '%s' "$input" | jq -r '.tool_input.model // ""')
 subagent=$(printf '%s' "$input" | jq -r '.tool_input.subagent_type // ""')
+
+if [[ "$subagent" == "fork" ]]; then
+  exit 0
+fi
 
 if [[ -n "$subagent" ]] && [[ ! "$subagent" =~ ^[A-Za-z0-9_-]+$ ]]; then
   reason="Agent call to subagent_type='${subagent}' is invalid. subagent_type must contain only alphanumeric characters, hyphens, and underscores."

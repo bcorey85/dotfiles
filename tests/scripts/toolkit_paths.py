@@ -21,7 +21,9 @@ FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
-# Installed by the work repo's CB Security Hooks package: never tested or patched here.
+# The hooks come from the work repo's CB Security Hooks package and are not tested here, except
+# agent-model-guard.sh: it carries a local fork pass, tested in test_agent_model_guard.py,
+# that the package must carry too.
 WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh", "scripts/write-edit-safety-gate.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
 # The lib modules a copied coder_gate.py imports.

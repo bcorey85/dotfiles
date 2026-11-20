@@ -50,7 +50,7 @@ planted_note="planted note zq"
 export AGENT_LEDGER_ROOT="$work/root"
 export HOME="$work/home"
 export CLAUDE_TOOLKIT_TELEMETRY=1
-unset CLAUDE_CODE_SESSION_ID
+unset CLAUDE_CODE_SESSION_ID ESCAPE_TEXT_FILE REVIEW_ESCAPES_FILE SCAN_RUNS_FILE
 mkdir -p "$HOME/.claude"
 
 repo="$work/repo"
@@ -83,12 +83,22 @@ contains "escape: unknown class prints a reject line" "$(cat "$work/err.txt")" "
 expect "escape: unknown class stored as other" other \
   "$(scalar "select class from review_escape where gate_missed = 'review'")"
 # An older ledger build has no miss_reason column: log-escape keeps the row without it.
+text_file=$(bash "$here/ledger-write" --local-path escape_text)
 if grep -q "does not store miss_reason" "$work/err.txt"; then
   pass "escape: this ledger build has no miss_reason; the row landed without it"
+  contains "escape: the note names the local escape text file" "$(cat "$work/err.txt")" \
+    "the miss_reason is in $text_file"
 else
   expect "escape: miss_reason stored as plain text" rule-absent \
     "$(scalar "select miss_reason from review_escape where gate_missed = 'review'")"
 fi
+expect "escape: the local escape text file holds the miss_reason" rule-absent \
+  "$(jq -r 'select(.class == "nonsense") | .miss_reason' "$text_file" 2>/dev/null)"
+# A non-hand-catch stage with no desc still keeps its miss_reason in the local file.
+AGENT_LEDGER_ROOT="$work/refactor-root" "$escape" gate_missed=review stage_found=refactor severity=low class=bug \
+  guard=none miss_reason=needs-runtime >"$work/out.txt" 2>"$work/err.txt"
+expect "escape: a non-hand-catch row keeps its miss_reason in the local file" needs-runtime \
+  "$(jq -r 'select(.stage_found == "refactor") | .miss_reason' "$text_file" 2>/dev/null)"
 rejects=$(grep -rh '' "$AGENT_LEDGER_ROOT/data/rejects" 2>/dev/null)
 expect "escape: one class reject line" 1 "$(printf '%s\n' "$rejects" | grep -c '"field":"class"')"
 contains "escape: the reject line names the class field" "$rejects" '"class"'

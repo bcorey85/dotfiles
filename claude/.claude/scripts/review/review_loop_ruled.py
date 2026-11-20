@@ -1,19 +1,26 @@
 """review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
-a coder's edit to an approval-only file (it files an ask), as a mixin for `LoopRun`. The host class holds asks,
-plan_impacts and resolved_texts, and provides `add_ask`."""
+a coder's edit to an approval-only file (it reverts the edit and reports it), as a mixin for `LoopRun`. The host
+class holds asks, plan_impacts, resolved_texts and files_touched, and provides `add_ask`."""
+import pathlib
 from pathlib import PurePosixPath
 
 import coder_report
 import handback_store
 import plan_format
 import script_utils
-from approval_asks_store import approval_change, read_approval_paths, write_approval_paths
+from approval_asks_store import (
+    approval_change,
+    read_approval_paths,
+    read_held_changes,
+    write_approval_paths,
+)
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
 from review_loop_findings import (
     NOTE_ASK_REASON,
     REJECTED_ASK_REASON,
     REPEATED_ASK_REASON,
+    REVERTED_APPROVAL_EDIT_REASON,
     near_title,
     pass_note_split,
     plan_change_items,
@@ -33,7 +40,8 @@ CODER_GATE = "coder"
 
 def approval_only_paths(changed):
     """The paths in `changed` whose basename is one of `PROMPT_MARKDOWN_NAMES` (CLAUDE.md, CLAUDE.local.md,
-    AGENTS.md). A coder never changes these without the user's approval, so each edit becomes an ask."""
+    AGENTS.md). A coder never changes these without the user's approval, so each edit is reverted and reported, or
+    asked about when it cannot be reverted."""
     return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
 
 
@@ -90,9 +98,14 @@ class RuledFindings:
         self.dropped_asks = []
         self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
         self.user_only_paths = []  # the repo-relative path each approval ask was filed for
-        # path -> the blob id its edit is measured against, so a coder's own commit of the edit still shows on resume
+        # path -> the blob id its edit is measured against
         self.user_only_bases = {}
         self.approval_blobs = {}  # path -> blob id of each approval-only file before the latest coder pass
+        # path -> the index entry of each approval-only file before the latest coder pass (None: not in the index)
+        self.approval_index_entries = {}
+        self.approval_head_before = None  # the commit HEAD named before the latest coder pass
+        self.approval_snapshot_ok = False  # whether the latest snapshot could list the repo's files
+        self.approval_unhashed = set()  # the existing approval-only files the latest snapshot could not hash
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
@@ -205,33 +218,99 @@ class RuledFindings:
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
 
     def ask_for_approval_only_edits(self, changed, findings):
-        """After a coder pass on `findings`: files one ask for the user per approval-only file (see
-        `approval_only_paths`) the pass changed. The ask rides the packet's ask list like a reviewer ask: a /code
-        phase review's commit gate holds the commit until it is ruled; the run's status is unchanged. The same file in
-        a later round stays one ask. A file that a finding the user ruled on names by its repo-relative (or absolute)
-        path is not asked about: the ruling is the approval, and a same-named file in another folder still is asked
-        about.
-        A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
-        again."""
+        """After a coder pass on `findings`: reverts the pass's edit to each approval-only file (see
+        `approval_only_paths`) and reports it in the dropped asks (see `revert_approval_edit`). Returns the paths it
+        reverted. Only an edit that cannot be reverted files an ask for the user. That ask rides the packet's ask
+        list like a reviewer ask: a /code phase review's commit gate holds the commit until it is ruled; the run's
+        status is unchanged. The same file in a later round stays one ask. A file that a finding the user ruled on
+        names by its repo-relative (or absolute) path is left as edited: the ruling is the approval, and a same-named
+        file in another folder still is reverted. A session's ruling is no approval, except on this ask itself (a
+        revert), which would otherwise be filed again."""
         ruled_paths = self.approval_ruled_paths(findings)
         filed = False
+        reverted = []
         for path in approval_only_paths(changed):
             if path in ruled_paths:
+                continue
+            if self.revert_approval_edit(path):
+                reverted.append(path)
                 continue
             self.file_approval_ask(path, self.approval_blobs.get(path))
             filed = True
         if filed:
             self.save_approval_paths()
+        return reverted
+
+    def revert_approval_edit(self, path):
+        """Puts approval-only file `path` back to its pre-pass blob (deletes a file the pass created) and records the
+        edit in the dropped asks under `REVERTED_APPROVAL_EDIT_REASON`. Returns True when the file needs no ask: it
+        was reverted, or the pass left its content as it was. False when the revert failed or the pre-pass content
+        is unknown (the snapshot could not list the files, or could not hash this one), so the edit stays and is
+        asked about (fail closed). A path the snapshot did not list was created by the pass.
+        The index entry goes back to its pre-pass entry when the pass changed it (a `git add` of the edit). When the
+        pass committed the edit, the work tree goes back as above and the path joins `files_touched`, so the session
+        commits the revert."""
+        if not self.approval_snapshot_ok or path in self.approval_unhashed:
+            return False
+        base = self.approval_blobs.get(path)
+        content_changed = script_utils.content_changed_since(self.repo, path, base)
+        index_before = self.approval_index_entries.get(path)
+        index_changed = script_utils.index_entry(self.repo, path) != index_before
+        committed = self.committed_during_pass(path)
+        if not (content_changed or index_changed or committed):
+            return True
+        if content_changed and not script_utils.restore_blob(self.repo, path, base):
+            return False
+        if index_changed and not script_utils.restore_index_entry(self.repo, path, index_before):
+            return False
+        if committed:
+            self.files_touched.add(path)
+        self.drop_asks([parse_finding(approval_ask_text(path))], REVERTED_APPROVAL_EDIT_REASON)
+        return True
+
+    def findings_on_reverted_paths(self, findings, reverted):
+        """The `findings` whose path is one of the `reverted` approval-only paths: their fix lived in an edit the loop
+        put back, so none of them is fixed."""
+        reverted_paths = set(reverted)
+        return [finding for finding in findings if held_path_in_repo(finding.path, self.repo) in reverted_paths]
+
+    def keep_reverted_open(self, findings, reverted):
+        """Adds each finding on a reverted path to `open_fixes` once, and returns them. The caller leaves them out of
+        its fixed and skipped sets."""
+        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
+        self.open_fixes += [item for item in reverted_findings if item not in self.open_fixes]
+        return reverted_findings
+
+    def committed_during_pass(self, path):
+        """Whether the latest coder pass committed a change to `path`: HEAD holds another blob for it than the commit
+        HEAD named before the pass did."""
+        head_now = script_utils.head_commit(self.repo)
+        if self.approval_head_before is None or head_now == self.approval_head_before:
+            return False
+        blob_before = script_utils.blob_at_commit(self.repo, self.approval_head_before, path)
+        return script_utils.blob_at_commit(self.repo, head_now, path) != blob_before
 
     def snapshot_approval_blobs(self):
         """Before a coder pass: saves the blob id of each approval-only file's work-tree content (None for a file the
         tree lacks), so the pass's edit is measured against what the file held before it, a phase's own uncommitted
-        edit included. A coder's commit of the edit cannot hide it, and a revert to this content clears it."""
+        edit included. Within the pass, a coder's commit of the edit cannot hide it, and a revert to this content
+        clears it. An existing file whose hash fails goes to `approval_unhashed`, never stored as absent."""
+        self.approval_blobs = {}
+        self.approval_index_entries = {}
+        self.approval_head_before = script_utils.head_commit(self.repo)
+        self.approval_unhashed = set()
+        self.approval_snapshot_ok = False
         listing = script_utils.git_output(self.repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
-        if not listing:
+        if listing is None:
             return
+        self.approval_snapshot_ok = True
         for path in approval_only_paths(listing.split("\0")):
-            self.approval_blobs[path] = script_utils.work_tree_blob(self.repo, path)
+            blob = script_utils.work_tree_blob(self.repo, path, keep_object=True)
+            if blob is None and (pathlib.Path(self.repo) / path).is_file():
+                self.approval_unhashed.add(path)
+                continue
+            self.approval_blobs[path] = blob
+            self.approval_index_entries[path] = script_utils.index_entry(self.repo, path)
 
     def approval_ruled_paths(self, findings):
         """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""
@@ -256,15 +335,22 @@ class RuledFindings:
 
     def resume_approval_asks(self, findings):
         """At the start of a run: files again each approval ask an earlier run saved whose content still differs
-        from its saved base blob (committed or not), that no ruling in `findings` settles, and that the session has
-        not rejected. Reads only the saved paths, never the change. Rewrites the saved paths with the ones filed
-        again, so a settled path leaves the file; with nothing saved, writes nothing."""
+        from its saved base blob, that no ruling in `findings` settles, and that the session has not rejected, and
+        whose file still differs from HEAD (a file that matches HEAD, reverted or committed, files no ask), and that no
+        kept held packet waits on. Reads only the saved paths, never the change. Rewrites the saved paths with the
+        ones filed again, so a settled path leaves the file; with nothing saved, writes nothing."""
         saved = read_approval_paths(self.repo)
         if not saved:
             return
         ruled_paths = self.approval_ruled_paths(findings)
+        # The kept packet owns a held change, and the user's ruling on that packet drops it from the record.
+        held_changes = read_held_changes(self.repo)
         for path, base in saved.items():
+            if approval_change(path) in held_changes:
+                continue
             if path in ruled_paths or not script_utils.content_changed_since(self.repo, path, base):
+                continue
+            if script_utils.matches_head(self.repo, path):
                 continue
             ask = parse_finding(approval_ask_text(path))
             if self.without_rejected([ask]):

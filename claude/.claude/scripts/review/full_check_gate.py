@@ -68,7 +68,7 @@ def lint_finding_texts(problems):
 class FullCheckSteps:
     """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
     expected_red, and provides review_scope(), stop(status, remaining), repair(call_name, findings),
-    mark_repaired(findings, changed) and format_reviewed_files(check_command)."""
+    mark_repaired(findings, changed, reverted) and format_reviewed_files(check_command)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -101,8 +101,8 @@ class FullCheckSteps:
             return
 
         gate_records = [parse_finding(text) for text in gate_findings]
-        _report, _diffs, gate_changed = self.repair("coder-gate", gate_records)
-        self.mark_repaired(gate_records, gate_changed)
+        _report, _diffs, gate_changed, gate_reverted = self.repair("coder-gate", gate_records)
+        self.mark_repaired(gate_records, gate_changed, gate_reverted)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
     def reviewed_and_touched_files(self):
@@ -118,8 +118,8 @@ class FullCheckSteps:
             return True
 
         lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
-        _report, _diffs, lint_changed = self.repair("coder-lint", lint_records)
-        self.mark_repaired(lint_records, lint_changed)
+        _report, _diffs, lint_changed, lint_reverted = self.repair("coder-lint", lint_records)
+        self.mark_repaired(lint_records, lint_changed, lint_reverted)
         self.format_reviewed_files(check_command)
         problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
         if not problems:

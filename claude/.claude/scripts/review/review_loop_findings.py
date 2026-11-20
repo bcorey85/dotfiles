@@ -370,6 +370,7 @@ def pointer_ask_split(asks, open_asks):
 POINTER_ASK_REASON = "ask only points back to another ask"
 NOTE_ASK_REASON = "item proposes no change and asks no question, so it is a note and no ask"
 REPEATED_ASK_REASON = "ask repeats an earlier ask or a plan impact already on record"
+REVERTED_APPROVAL_EDIT_REASON = "the fix coder's edit to a file that needs the user's approval was reverted"
 
 
 def is_pass_note(ask):

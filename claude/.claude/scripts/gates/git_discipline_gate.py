@@ -45,15 +45,13 @@ import shell_command
 import shell_statements
 import user_prompts
 from git_calls import REPO_ENVIRONMENT_NAMES, git_calls, is_linked_worktree
-from git_destructive_calls import (
+from git_destructive_calls import config_trigger_note, destructive_reason, is_force_push
+from git_subcommand_options import (
     CONFLICT_SHORTEST,
     GIT_FALSE_VALUES,
     PROTECTED_BRANCHES,
     SWITCH_VALUE_LETTERS,
-    config_trigger_note,
-    destructive_reason,
     discards_on_switch,
-    is_force_push,
     is_orphan_option,
     restore_stages,
     takes_separate_value,

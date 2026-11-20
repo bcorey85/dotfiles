@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-113 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+114 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-133 further findings are left out of this page.
+134 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-19 [Review resume relay: the user said line maps to the relay flags](../../../agent-evals/findings/2026-11-19-review-resume-relay-the-user-said-line-maps-to-the.md) - HOLD: Rule-meter check, Sonnet: the Resume step's sentence mapping a `user said: "<words>"` line to `asks-done --by user --relayed-by <session> --quote "<words>"` holds 9/9 against 0/9 without it (RF05). [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-16 [A Sonnet plan runner gains nothing on the harder WH-200 fixture: 36 of 37 keys like Opus, Opus cache read up 27% (37.7M → 47.9M)](../../../agent-evals/findings/2026-11-16-a-sonnet-main-session-runs-the-frozen-opus-wh-200.md) - HOLD: From one frozen Opus plan on a three-part InvenTree ticket (37 hidden keys: 33 backend, 4 browser), an Opus-main /code run and a Sonnet-main run each pass 36 of 37 keys and miss the same one. The Sonnet run did not cut Opus use: Opus cache read rose 37.7M → 47.9M and Opus output 487k → 709k, cost rose $53.10 → $65.83, and it stopped for the human 4 times against 1. The fixture also missed its own bar (Opus at most 29 of 37). [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-15 [InvenTree plan bench fixture dropped: a Sonnet main session runs the frozen Opus plan to 7 of 7 keys, the same as both Opus runs](../../../agent-evals/findings/2026-11-15-opus-plan-bench-fixture-runs-at-the-ceiling-both.md) - HOLD: From one frozen Opus plan, two Opus-main /code runs and one Sonnet-main run all pass 7 of 7 new-behavior keys once the keys test the plan's own merge setting; the fixture cannot separate the running models, so it is dropped. The Sonnet run used 33.8M Opus tokens, the same as the second Opus run, and stopped 5 times for the human against 3. [watch: no watch]

@@ -101,11 +101,6 @@ def review_fix_route_reason(file_path):
     return REVIEW_FIX_ROUTE_TEXT.format(file_path=file_path, findings_file=findings_file)
 
 
-def load_hook_input():
-    import hook_input
-    return hook_input
-
-
 def write_deny_reason(payload, hook_input):
     """The deny text for a code-fork Write outside a run folder, or for review-stop.md
     in the run folder while a fix launch is pending, else None."""
@@ -128,7 +123,7 @@ def main():
         return 0
 
     try:
-        hook_input = load_hook_input()
+        import hook_input
         reason = write_deny_reason(payload, hook_input)
         if reason:
             hook_input.emit_decision("deny", reason)

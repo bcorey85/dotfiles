@@ -19,6 +19,7 @@ unmeasured: ""
 
 - `lib/shell_statements.py`: `strip_stored_heredocs` also cuts an unquoted stored heredoc, keeping its `$(...)` and backtick spans because the shell runs them.
 - `review/review_commit_gate.py`: only the heredoc body of a script-file run is data: a script-file run whose arguments name a commit, bare or quoted (`python3 tools/retry.py 'git commit -m x'`), is a commit, since a wrapper script may run it.
+- `review/review_commit_gate.py`: its folder-changing command words come from `shell_command.DIRECTORY_MOVE_WORDS` plus `eval`, `source` and `.`, not a second list.
 - `lib/git_commit_calls.py`: names the `git commit` options that take a value (`COMMIT_VALUE_OPTIONS`, `COMMIT_VALUE_LETTERS`).
 
 ## Evidence

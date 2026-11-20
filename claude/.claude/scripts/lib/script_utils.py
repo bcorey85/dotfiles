@@ -302,6 +302,32 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+# What main_checkout_dir returns: the folder, and whether it is a bare common dir rather than a checkout folder.
+MainCheckout = namedtuple("MainCheckout", ["folder", "is_bare"])
+
+
+def main_checkout_dir(repo):
+    """The MainCheckout of the repo that holds `repo` (that of a linked worktree too): the parent of the git common
+    dir when it is named `.git`, else the common dir itself with is_bare set (a bare repo; a submodule's common dir
+    under `.git/modules/` reads the same way, so its folder is not a checkout). None when git cannot answer."""
+    common_dir = git_output(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common_dir:
+        return None
+
+    common_path = pathlib.Path(common_dir)
+    if common_path.name == ".git":
+        return MainCheckout(common_path.parent, False)
+    return MainCheckout(common_path, True)
+
+
+def first_nonempty_line(text_file):
+    """The first line of the file that holds text, stripped, or "" when it holds none."""
+    for line in text_file.read_text(errors="replace").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def work_tree_blob(repo, path, keep_object=False):
     """The blob id of the work-tree content of `path` in `repo`, or None when the file is absent or git cannot hash
     it. With `keep_object`, git also stores the content, so `restore_blob` can write it back later."""
@@ -432,10 +458,13 @@ def read_text_lines(path):
     return list(enumerate(lines, start=1))
 
 
-def changed_files(directory, base="HEAD"):
-    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
-    untracked files that .gitignore does not hide."""
-    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", base) or ""
+def changed_files(directory, base="HEAD", with_deleted=False):
+    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded unless
+    `with_deleted`) plus untracked files that .gitignore does not hide."""
+    diff_args = ["diff", "--name-only", "--relative"]
+    if not with_deleted:
+        diff_args.append("--diff-filter=d")
+    tracked_files = git_output(directory, *diff_args, base) or ""
     untracked = untracked_paths(directory) or []
     names = [name for name in tracked_files.split("\n") if name]
     return sorted(set(names + untracked))
@@ -462,13 +491,14 @@ def details_with_outcome(outcomes, outcome):
 CommandResult = namedtuple("CommandResult", "code output timed_out")
 
 
-def run_command_result(command, cwd=None, stdin=None, timeout=None):
+def run_command_result(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_process does and return a CommandResult: the exit code, stdout and stderr joined and
     stripped, and whether the run passed `timeout`. A program that is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a
     run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note after what it printed. timed_out is True only for
-    that run, never for a program that exits with the same code itself."""
+    that run, never for a program that exits with the same code itself. `env`, when given, is the command's whole
+    environment."""
     try:
-        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout)
+        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout, env=env)
     except FileNotFoundError:
         program = command if isinstance(command, str) else command[0]
         return CommandResult(COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found", False)
@@ -480,9 +510,9 @@ def run_command_result(command, cwd=None, stdin=None, timeout=None):
     return CommandResult(code, output, False)
 
 
-def run_command(command, cwd=None, stdin=None, timeout=None):
+def run_command(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_command_result does and return (exit code, output)."""
-    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout)
+    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout, env=env)
     return result.code, result.output
 
 

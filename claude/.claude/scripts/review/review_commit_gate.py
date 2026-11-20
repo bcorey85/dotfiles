@@ -14,10 +14,10 @@ every repo dirty. A commit is judged when a repo it commits in is dirty.
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder or a path listed in the repo's `.claude/notes-paths` (one entry per line: a
 `/` ending is a folder prefix, else an exact file; read from HEAD, so an uncommitted edit of the list grants
-nothing): the paths already staged (`git diff --cached`, run in the hook input's
-cwd), every `git add` pathspec in the command, and every commit pathspec. Each pathspec must name one file
-literally: a folder, `.`, a glob, `~`, `$` or a `:` magic pathspec is denied. It is denied when the command can
-stage or pick more than that, or when the hook cannot tell which repo or files it uses:
+nothing): the paths already staged (`git diff --cached`, run in the hook input's cwd), every `git add` pathspec in
+the command, and every commit pathspec. Each pathspec must name one file literally: a folder, `.`, a glob, `~`, `$` or
+a `:` magic pathspec is denied. It is denied when the command can stage or pick more than that, or when the hook
+cannot tell which repo or files it uses:
   - `git add` with any option except `--`
   - `git commit` with an option other than the plain flags and message options it knows, so `-a`, `--all`, `-i`,
     `--include`, `--amend` and `-o`/`--only` with no pathspec are all denied
@@ -37,26 +37,37 @@ and then `commit` (not `commit-tree` or `commit-graph`, which move no branch). A
 may take a value, so `commit` anywhere after it counts. The text match fails closed, for a command shlex reads and one
 it cannot: unless every simple command is a safe probe, or when shlex cannot read the command, it counts when its text
 holds `git commit`, or `git`, then only global options (a known one that takes a value is followed by it), then
-`commit`. The text is read as written, with every quoted-string join (a quote, optional whitespace, `+`, optional
-whitespace, a quote; the quotes may be backslash-escaped) removed, and with the quotes and backslashes removed too,
-so `"gi" + "t com" + "mit"` and `git 'commit'` count. A `$( )` or backtick span is judged whether or not every
-simple command is a safe probe. A safe probe's first word, as written, is echo, printf, grep, cat, head, tail, wc,
-cut, uniq, tr, nl, column, jq, ls, cd, pwd or true, sort with no `--compress-program` word or any shortened form
-(sort runs that program), rg with no `--pre`, `--pre=`, `--hostname-bin` or `--hostname-bin=` word (rg runs that
-program), or git with status, diff, log, show or rev-parse and no `-c` or `--config-env`. A leading shell keyword
-(do, then, else, elif, if, while, until, `!`, `{`) is skipped and the rest judged; a `for` header and a bare done,
-fi or `}` run nothing. So a probe that prints or searches the words passes, also piped through a text tool, after a
-`cd` or inside a loop, and a backslashed `sh -c`, `env -S` or `awk` holding the words is denied. A command shlex
-cannot read also counts when `git`, then only option-like words with an optional value each, then `commit` appears
-in it.
-The session stays dirty; a later commit that ships code is denied again.
+`commit`. Except that the quoted arguments of a step that is one script run (an absolute path to `verify-log "…"`;
+shell_statements.runs_script_file) are emptied first (unless another step runs a shell or `eval`),
+and the body of a quoted heredoc fed to one is not read: they are data. A script run is an interpreter given a
+script file, or an absolute path to a
+program in the scripts folder of the installed toolkit or of the toolkit the gate is loaded from, or a skill's
+scripts folder, whose later words name no program of
+`shell_statements.NOT_SCRIPT_PROGRAMS` (a shell, launcher, git or another code runner) and no interpreter,
+and no later word is a flag of `shell_statements.COMMAND_VALUE_FLAGS` (`--test`, `--gate-command`), alone or as
+`<flag>=<value>`
+(a trusted program's argv and stdin are trusted as data, except a launcher of
+`shell_statements.INTERPRETER_LAUNCHER_SCRIPTS`, which is read as the interpreter it runs).
+A step that a `|` or `|&` follows is read as written: its output may feed a shell. So is a whole
+command that holds a `|` and an unquoted compound opener (`{`, `(`, `do`, `then`, `else`), quoted text and
+heredoc bodies included. Otherwise the text is read as written, with every quoted-string join (a quote,
+optional whitespace, `+`, optional whitespace, a quote; the quotes may be backslash-escaped) removed,
+and with the quotes and backslashes removed too, so `"gi" + "t com" + "mit"` and `git 'commit'` count.
+A `$( )` or backtick span is judged whether or not every simple command is a safe probe. A safe probe's first word,
+as written, is echo, printf, grep, cat, head, tail, wc, cut, uniq, tr, nl, column, jq, ls, cd, pwd or true,
+sort with no `--compress-program` word or any shortened form (sort runs that program), rg with no `--pre`, `--pre=`,
+`--hostname-bin` or `--hostname-bin=` word (rg runs that program), or git with status, diff, log, show or rev-parse and
+no `-c` or `--config-env`. A leading shell keyword (do, then, else, elif, if, while, until, `!`, `{`) is skipped and the
+rest judged; a `for` header and a bare done, fi or `}` run nothing. So a probe that prints or searches the words passes,
+also piped through a text tool, after a `cd` or inside a loop, and a backslashed `sh -c`, `env -S` or `awk` holding the
+words is denied. A command shlex cannot read also counts when `git`, then only option-like words with an optional value
+each, then `commit` appears in it. The session stays dirty; a later commit that ships code is denied again.
 
 A git call that makes a commit (`git commit` or another call of git_commit_calls.py), or an alias of one, is judged
-as a commit and is never notes-only. A command with a program beside git reads as a plain-text
-commit for `git commit` only, unless the program is a shell or `eval`, whose text counts every committing call, so
-a PR body that names `git merge` is no commit. A commit through
-a `!` shell alias earns no credit (it may land in any repo) and is read in the cwd repo for asks; where the repo it
-runs in is placed by git_commit_calls.git_commit_dirs, through commit_placement.py.
+as a commit and is never notes-only. A command with a program beside git reads as a plain-text commit for
+`git commit` only, unless the program is a shell or `eval`, whose text counts every committing call, so a PR body
+that names `git merge` is no commit. A commit through a `!` shell alias earns no credit (it may land in any repo)
+and is read in the cwd repo for asks; its repo is placed by git_commit_calls.git_commit_dirs via commit_placement.py.
 
 A dirty session still commits in five more cases. The first four are each checked against something a subagent
 cannot write; the fifth trusts the record verify-log writes, the same record verify-prep trusts, so a session or
@@ -358,8 +369,8 @@ def commit_follows_git(words, git_index):
 
 def is_commit_command(command):
     """True when the command commits, as the module docstring defines it. Line continuations are removed and each
-    substitution span is read both as written and shrunk. The body of a quoted heredoc that only stores text is not
-    read."""
+    substitution span is read both as written and shrunk. The body of a quoted heredoc that only stores text (cat or
+    tee writing a file, or a script run) is not read."""
     unstored = shell_statements.strip_stored_heredocs(command)
     joined = LINE_CONTINUATION.sub("", unstored)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
@@ -376,10 +387,13 @@ def runs_text_as_shell(words):
     return runs_shell(words) or command_after_wrappers(words)[:1] == ["eval"]
 
 
-def reads_as_commit(reading):
+def reading_texts(reading):
     unsplit = QUOTED_STRING_JOIN.sub("", reading)
-    unquoted = QUOTES_AND_BACKSLASHES.sub("", unsplit)
-    texts = (reading, unsplit, unquoted)
+    return reading, unsplit, QUOTES_AND_BACKSLASHES.sub("", unsplit)
+
+
+def reads_as_commit(reading):
+    texts = reading_texts(reading)
     try:
         simple_commands = split_simple_commands(reading)
     except ValueError:
@@ -397,7 +411,9 @@ def reads_as_commit(reading):
         # (`gh pr create --body "run git merge"`) only carries the text, so there `git commit` alone counts.
         if any(runs_text_as_shell(words) for words in unsafe_commands):
             return text_holds_commit(texts, (COMMITTING, GIT_THEN_COMMITTING))
-        return text_holds_commit(texts, (COMMIT, GIT_THEN_COMMIT))
+        # The quoted arguments of a script run are data for that script, so they are not read.
+        script_texts = reading_texts(shell_statements.blank_script_run_quotes(reading))
+        return text_holds_commit(script_texts, (COMMIT, GIT_THEN_COMMIT))
 
     return False
 

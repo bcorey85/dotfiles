@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-998 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1013 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-19, [asks-done records session rulings while a user-only ask stays held](notes/2026-11-19-asks-done-records-session-rulings-while-a-user.md).
 

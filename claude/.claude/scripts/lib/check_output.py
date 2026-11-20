@@ -3,6 +3,7 @@ and which tests failed."""
 import pathlib
 import re
 
+import script_utils
 from ansi_text import strip_ansi
 from check_scope import prints_own_runner_summary, runs_tests
 from test_run_output import matches_no_test, runner_summaries
@@ -32,21 +33,30 @@ RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
                                  r"|the command \S+ could not be found within PATH")
 # A shell name, with an optional path.
 SHELL_PROGRAM = r"(?:\S*/)?(?:ba|z|k|da)?sh"
-# A shell's top-level `command not found` line or a version manager shim (mise, asdf, pyenv) whose pinned version is
-# missing or unset. Anchored to the start of a line and limited to shell and shim names, so a test's assertion text that
-# quotes the phrase (`AssertionError: uv: command not found`) does not match. The only `: line N:` form kept is the dry
-# run's own `/bin/sh: line 1: uv: command not found`. A repo script's line (`tests/run.sh: line 40:`, a function it does
-# not define) and `bash: line 1:` (a script that runs `bash -c` prints it too) read as a failing check.
+# A word with no `/` or `:`, which a shell looks up on PATH; a path (`./scripts/foo.sh`) that was not found is a
+# cannot-start line but names no tool.
+PATH_LOOKUP_NAME = r"[^\s:/]+"
+# A shell's top-level `command not found` line, in the forms of bash, the dry run's `/bin/sh: line N:`, pyenv, zsh and
+# dash, with the program it could not find in a `tool_*` group (empty for a path or a bare `command not found`).
+# Anchored to the start of a line and limited to shell and shim names, so a test's assertion text that quotes the
+# phrase (`AssertionError: uv: command not found`) does not match. The only `: line N:` form kept is the dry run's own
+# `/bin/sh: line 1: uv: command not found`. A repo script's line (`tests/run.sh: line 40:`, a function it does not
+# define) and `bash: line 1:` (a script that runs `bash -c` prints it too) read as a failing check and name no tool.
+NOT_FOUND_BRANCHES = (
+    rf"^{SHELL_PROGRAM}: (?:(?:(?P<tool_shell>{PATH_LOOKUP_NAME})|\S+): )?command not found$",
+    rf"^/bin/sh: line \d+: (?:(?P<tool_sh>{PATH_LOOKUP_NAME})|\S+): command not found$",
+    rf"^pyenv: (?:(?P<tool_pyenv>{PATH_LOOKUP_NAME})|\S+): command not found$",
+    rf"^zsh: command not found: (?:(?P<tool_zsh>{PATH_LOOKUP_NAME})|\S+)$",
+    rf"^(?:/bin/)?sh: \d+: (?:(?P<tool_dash>{PATH_LOOKUP_NAME})|.+): not found",
+)
+NOT_FOUND_LINE = re.compile("|".join(NOT_FOUND_BRANCHES), re.IGNORECASE | re.MULTILINE)
+# NOT_FOUND_LINE, or a version manager shim (mise, asdf, pyenv) whose pinned version is missing or unset.
 SHELL_OR_SHIM_CANNOT_START = re.compile(
-    rf"^{SHELL_PROGRAM}: (?:\S+: )?command not found$"
-    r"|^/bin/sh: line \d+: \S+: command not found$"
-    r"|^pyenv: \S+: command not found$"
-    r"|^zsh: command not found: \S+$"
-    r"|^(?:/bin/)?sh: \d+: .+: not found"
-    r"|^mise ERROR (?:.*\bnot installed\b|.*not currently active|Failed to install )"
-    r"|^pyenv: version `[^']*' is not installed"
-    r"|^No version is set for (?:command|shim)"
-    r"|^No preset version installed for command",
+    "|".join(NOT_FOUND_BRANCHES) + (
+        r"|^mise ERROR (?:.*\bnot installed\b|.*not currently active|Failed to install )"
+        r"|^pyenv: version `[^']*' is not installed"
+        r"|^No version is set for (?:command|shim)"
+        r"|^No preset version installed for command"),
     re.IGNORECASE | re.MULTILINE)
 NO_PACKAGE_MANIFEST = re.compile(
     r"ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND|Couldn't find a package\.json"
@@ -55,6 +65,16 @@ NO_PACKAGE_MANIFEST = re.compile(
 PACKAGE_MANAGER_MISMATCH = re.compile(
     r"ERR_PNPM_BAD_PM_VERSION|ERR_PNPM_UNSUPPORTED_ENGINE|npm (?:ERR!|error) code EBADENGINE"
     r"|This project is configured to use|The engine \"node\" is incompatible")
+# A test-database collision: two runs of one repo's tests share a test database name, and one run drops or holds the
+# other's. Django's recreate error (its create error is logged whenever a stale test database exists, and Django then
+# recovers and runs the tests), and Postgres's in-use and missing-database errors on a `test_` database (psycopg's
+# InvalidCatalogName carries the same missing-database text).
+TEST_DB_COLLISION = re.compile(
+    r"Got an error recreating the test database"
+    r'|database "test_[^"]*" (?:is being accessed by other users|does not exist)')
+# What a caller reports when the retry collides too: the collision and the fix.
+TEST_DB_COLLISION_FAULT = ("test database collision (set DATABASES TEST NAME from an env var and add it to "
+                           "~/.claude/gate-env.json)")
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)")
 TESTS_FAILED = re.compile(r"\b\d+ failed\b")
 # A run that found no test to run: pytest exit 5, vitest and jest exiting non-zero, unittest and Django output.
@@ -69,8 +89,19 @@ NO_TESTS_EXIT_ZERO = re.compile(r"No test(?: file)?s found, exiting with code 0|
 # result line is not a test.
 PANIC_LINE = re.compile(r"^\s*thread '[^']*'(?P<thread_id> \(\d+\))? panicked at "
                         r"(?P<path>[^\s:]+)(?P<position>:\d+:\d+)?")
-FAILING_TEST_LINE = re.compile(r"^(?:FAILED (?!\()|ERROR |FAIL: |ERROR: |\s*FAIL\s|\s*\xd7|\s*test \S+ \.\.\. FAILED$)"
-                               rf"|{PANIC_LINE.pattern}")
+# Logger lines (`ERROR django.request ...`, `ERROR: some message`) are not failed tests: a pytest `ERROR ` line must
+# name a node id or a path, and a unittest `ERROR: ` line must have the header shape `name (dotted.path)`. A logger
+# never prints `FAILED ` or `FAIL: `, so those need no shape.
+PYTEST_ERROR_LINE = r"ERROR (?=\S*(?:::|/|\.py))[^\s\[]+(?:\[.*\])?(?: - |$)"
+UNITTEST_ERROR_HEADER = r"ERROR: [\w.]+ \([\w.]+\)"
+UNITTEST_BLOCK_HEADER = re.compile(rf"(?:{UNITTEST_ERROR_HEADER}|FAIL: )")
+UNITTEST_BLOCK_END = re.compile(r"Ran \d+ tests?\b|FAILED \(")
+FAILING_TEST_LINE = re.compile(
+    rf"^(?:FAILED (?!\()|{PYTEST_ERROR_LINE}|{UNITTEST_ERROR_HEADER}|FAIL: |\s*FAIL\s|\s*\xd7"
+    r"|\s*test \S+ \.\.\. FAILED$)"
+    rf"|{PANIC_LINE.pattern}")
+# A Python traceback frame line: the `, line N` after the file path.
+TRACEBACK_FRAME_LINE_NUMBER = re.compile(r'(?P<before>^\s*File "[^"]*"), line \d+(?=, in )')
 FAILING_TESTS_HEADER = "Failing tests:\n"
 # Lines of a failing block that are not error text: a vitest passing-test line and a `⎯⎯⎯`, `---` or `===` rule.
 PASSING_TEST_LINE = re.compile(r"^\s*✓")
@@ -178,6 +209,35 @@ def cannot_start_line(code, output):
     return None
 
 
+def missing_tool(code, output):
+    """The name of the program a shell, dash, zsh or pyenv `not found` line says is missing, when the run exited 127
+    (the shell could not find the program), or None for any other exit or when the output names no such program."""
+    if code != script_utils.COMMAND_NOT_FOUND_EXIT_CODE:
+        return None
+
+    for line in strip_ansi(output).splitlines():
+        found = NOT_FOUND_LINE.match(line.strip())
+        if not found:
+            continue
+        names = [name for name in found.groupdict().values() if name]
+        if names:
+            return names[0]
+    return None
+
+
+def tool_not_found_text(tool):
+    """`<tool> not found on PATH`."""
+    return f"{tool} not found on PATH"
+
+
+def missing_tool_text(code, output):
+    """`<tool> not found on PATH` for a run that exited 127 on a named missing program, else None."""
+    tool = missing_tool(code, output)
+    if tool is None:
+        return None
+    return tool_not_found_text(tool)
+
+
 def tail_with_failing_tests(output, tail):
     """The tail of the output with the failing-test lines of the whole output above it, the ones the tail does not
     already hold."""
@@ -254,7 +314,8 @@ def failing_blocks(lines):
 
 
 def normalized_log_line(line):
-    """The log line without runner timings (`(5.2 s)`, `in 1.2s`) and, on a runner summary line, without the non-failure
+    """The log line without runner timings (`(5.2 s)`, `in 1.2s`), a Python traceback frame's `, line N` and a Rust
+    panic's thread id and `:LINE:COL`, and, on a runner summary line, without the non-failure
     counts (`10 passed`, `2 skipped`) and vitest's total in parentheses (`(12)`), which differ per run; the failed and
     error counts stay. A per-run clock line (`Time: 1.2 s`) keeps its label and loses its time and, for vitest, the
     parenthetical after it; any other text after the time stays. Any other line keeps its counts: `expected 3 passed`
@@ -264,6 +325,8 @@ def normalized_log_line(line):
     line = RUN_CLOCK_LINE.sub(r"\g<label>", line)
     # A panic line's thread id differs per run, and its line and column move when a diff shifts the file.
     line = without_panic_run_details(line)
+    # A traceback frame's line number moves when a diff shifts lines in the file.
+    line = TRACEBACK_FRAME_LINE_NUMBER.sub(r"\g<before>", line)
     # A failing test's reason keeps its numbers: `expected 5000ms, got 2000ms` is an assertion, not a timing.
     if FAILING_TEST_LINE.match(line) and FAILURE_REASON_SEPARATOR in line:
         name, separator, reason = line.partition(FAILURE_REASON_SEPARATOR)
@@ -346,6 +409,47 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if not include_missing_modules or not missing_modules:
         return False
     return not any(is_repo_module(name, repo_root) for name in missing_modules)
+
+
+def failed_without_a_result(code, output, repo_root):
+    """True when a failed run's output holds no runner summary and shows the check never produced a result: the runner
+    or tool could not start, or an environment fault stopped it (a missing outside module, no test found)."""
+    if runner_summaries(output, limit=1):
+        return False
+    if cannot_start_line(code, output):
+        return True
+    return is_setup_fault(code, output, repo_root)
+
+
+def unittest_failure_blocks(plain):
+    """The text of each unittest `ERROR: ` or `FAIL: ` block: from its header to the next header, the `Ran N tests`
+    line or the `FAILED (` line, whichever comes first."""
+    blocks = []
+    current = None
+    for line in plain.splitlines():
+        if UNITTEST_BLOCK_HEADER.match(line):
+            current = [line]
+            blocks.append(current)
+        elif UNITTEST_BLOCK_END.match(line):
+            current = None
+        elif current is not None:
+            current.append(line)
+    return ["\n".join(block) for block in blocks]
+
+
+def is_test_db_collision(output):
+    """True when the output shows a test-database collision, which another run of the same tests causes. A run with a
+    failed test never reads as one, unless it is unittest output whose every failing block holds the collision text:
+    a teardown error after the results is not a collision to retry or excuse."""
+    plain = strip_ansi(output)
+    blocks = unittest_failure_blocks(plain)
+    if blocks:
+        return all(TEST_DB_COLLISION.search(block) for block in blocks)
+
+    if SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
+        return False
+
+    return TEST_DB_COLLISION.search(plain) is not None
 
 
 def is_django_settings_fault(command, output, changed_file_list):

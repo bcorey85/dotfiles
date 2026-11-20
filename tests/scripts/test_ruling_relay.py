@@ -544,5 +544,73 @@ class PhaseRuleRelayTest(RelayTranscriptMixin, phase_fixture.ScriptRunCase):
         self.assertIn("--by takes only", error)
 
 
+class DecideRelayTest(RelayTranscriptMixin, unittest.TestCase):
+    """`review_fix.py decide` against a plan the user owns: the user's words relayed with a quote pass, a bare
+    `--by session` call is refused."""
+    stop_launched_loops = fix_fixture.ReviewFixScriptTest.stop_launched_loops
+    fake_command = fix_fixture.ReviewFixScriptTest.fake_command
+    environment = fix_fixture.ReviewFixScriptTest.environment
+    git = fix_fixture.ReviewFixScriptTest.git
+    run_script = fix_fixture.ReviewFixScriptTest.run_script
+    false_clean_reason = fix_fixture.ReviewFixScriptTest.false_clean_reason
+    plant_held_hand_back = fix_fixture.ReviewFixScriptTest.plant_held_hand_back
+
+    def setUp(self):
+        fix_fixture.ReviewFixScriptTest.setUp(self)
+        self.make_home()
+        self.plant_held_hand_back()
+        self.user_plan = self.temp_root / "plan.md"
+        self.user_plan.write_text("# Plan\n")
+
+    def decide(self, by="user", relay=True, quote=QUOTE):
+        relay_words = ["--relayed-by", RELAY_NAME, "--quote", quote] if relay else []
+        return self.run_script(["decide", "keep", "--by", by, *relay_words, "--ruling", "keep the retry",
+                                "--plan", str(self.user_plan)], **self.home_env)
+
+    def relay_rows(self):
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            return handback_store.session_rows(fix_fixture.SESSION, handback_store.PLAN_RULING_RELAYED)
+
+    def assert_refused_with_nothing_logged(self, code, output, needle):
+        self.assertEqual(code, 2, output)
+        self.assertIn(needle, output)
+        self.assertEqual(self.user_plan.read_text(), "# Plan\n")
+        self.assertEqual(self.relay_rows(), [])
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_a_relayed_user_ruling_on_a_user_owned_plan_is_logged_with_the_relayer_and_the_quote(self):
+        self.say(QUOTE, HUMAN)
+
+        code, output = self.decide()
+
+        self.assertEqual(code, 0, output)
+        plan_text = self.user_plan.read_text()
+        self.assertIn(f"relayed by session {RELAY_NAME}", plan_text)
+        self.assertIn(QUOTE, plan_text)
+        self.assertIsNone(self.false_clean_reason())
+        rows = self.relay_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["ruler"], rows[0]["relayed_by"], rows[0]["quote"]), ("user", RELAY_NAME, QUOTE))
+
+    def test_a_bare_session_ruling_on_a_user_owned_plan_is_refused(self):
+        code, output = self.decide(by="session", relay=False)
+        self.assert_refused_with_nothing_logged(code, output, "--by user")
+
+    def test_a_relay_under_by_session_is_refused(self):
+        self.say(QUOTE, HUMAN)
+        code, output = self.decide(by="session")
+        self.assert_refused_with_nothing_logged(code, output, "--by user")
+
+    def test_a_quote_no_human_turn_holds_is_refused(self):
+        self.say("something else entirely", HUMAN)
+        code, output = self.decide()
+        self.assert_refused_with_nothing_logged(code, output, "no human turn")
+
+    def test_a_turn_typed_before_the_impact_was_handed_back_is_refused(self):
+        self.say(QUOTE, HUMAN, when=time.time() - 3600)
+        code, output = self.decide()
+        self.assert_refused_with_nothing_logged(code, output, "older than")
+
+
 if __name__ == "__main__":
     unittest.main()

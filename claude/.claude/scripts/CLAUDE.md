@@ -22,6 +22,8 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Whether a git call makes a commit, and which folder it lands in: `lib/git_commit_calls.py` (`git_call_commits`, `git_commit_dirs`), with `lib/shell_command.py` `git_c_directory`; through an alias: `lib/git_alias_commits.py`. Never read the hook's cwd alone.
 - Ask outcome words (`accepted`, `rejected`) and the ruling command the commit gate prints: `lib/ask_outcome_words.py`, which imports nothing.
 - A lock held across processes: `lib/file_lock.py`. Never write a second flock helper.
+- Whether a process id is alive: `lib/process_group.py` `pid_is_alive`. Never call `os.kill(pid, 0)` elsewhere.
+- Claude session folders and live session rows (sessions, projects, the config dir override): `lib/session_registry.py` (`sessions_dir`, `projects_dir`, `live_session_rows`).
 - Stop file names (`stop.md`, `review-stop.md`): `lib/stop_file_names.py`, which imports nothing. The Write gate loads it on every code-fork Write in a run folder.
 - Review-fix state folder and file names, the asks-findings file name, and the `asks_launch_pending`, `correct_open` and `asks_decided_by` keys: `lib/review_fix_names.py`, which imports nothing. `review/review_fix_state.py` re-exports them.
 - Text for a changed or no-code ask ruling on a finding (ruler clauses, marker, no-code test): `lib/ruled_change_text.py` (`changed_text`, `ruled_note`, `is_no_code_ruling`), standard library only.

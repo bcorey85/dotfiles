@@ -197,6 +197,8 @@ ROUND_ONE_REVIEW = review_of("`app.py:5` [docs] the edited line has a wrong comm
                              "`app.py:3` [bug] the limit is wrong")
 ROUND_TWO_REVIEW = review_of("`app.py:2` [docs] the fix wrote a wrong comment",
                              "`notes.py:1` [docs] the fix made the note false")
+# A run whose round budget ends on a coder pass gets one more reviewer read of that pass.
+FINAL_READ = {"result": loop_tests.CLEAN_REVIEW}
 FIX_CODER = {"result": "Fixed.", "edits": {"app.py": loop_tests.APP_FIXED}}
 NOTES_CODER = {"result": "Fixed.", "edits": {"notes.py": "value = {'a': 1}\n"}}
 
@@ -216,14 +218,15 @@ class LoopRowsTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(kinds, {("1", "app.py", "5"): NEW, ("1", "app.py", "1"): STALE, ("1", "app.py", "3"): ""})
 
     def test_round_two_labels_each_docs_row_against_the_fix_diff(self):
-        kinds = self.kinds_by_spot({"code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": ROUND_TWO_REVIEW}],
-                                    "coder": [FIX_CODER, NOTES_CODER], "closure": [{"result": loop_tests.CLOSED}]})
+        reviews = [{"result": loop_tests.FIX_REVIEW}, {"result": ROUND_TWO_REVIEW}, FINAL_READ]
+        kinds = self.kinds_by_spot({"code-reviewer": reviews, "coder": [FIX_CODER, NOTES_CODER],
+                                    "closure": [{"result": loop_tests.CLOSED}]})
 
         self.assertEqual(kinds[("2", "app.py", "2")], NEW)
         self.assertEqual(kinds[("2", "notes.py", "1")], STALE)
 
     def test_a_resumed_loop_whose_round_has_no_diff_logs_its_docs_rows_without_the_label(self):
-        kinds = self.kinds_by_spot({"code-reviewer": [{"result": ROUND_TWO_REVIEW}], "coder": [NOTES_CODER],
+        kinds = self.kinds_by_spot({"code-reviewer": [{"result": ROUND_TWO_REVIEW}, FINAL_READ], "coder": [NOTES_CODER],
                                     "closure": [{"result": loop_tests.CLOSED}]}, header_extra="iter: 1\n")
 
         self.assertEqual(set(kinds.values()), {""})
@@ -233,7 +236,7 @@ class LoopRowsTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         first = review_of("`app.py:1` [docs] the old line names a gone flag")
         again = review_of("`app.py:1` [correctness] the old line names a gone flag")
 
-        completed = self.run_script({"code-reviewer": [{"result": first}, {"result": again}],
+        completed = self.run_script({"code-reviewer": [{"result": first}, {"result": again}, FINAL_READ],
                                      "coder": [FIX_CODER, NOTES_CODER], "closure": [{"result": loop_tests.CLOSED}]})
 
         self.assertEqual(completed.returncode, 0, completed.stderr)

@@ -7,6 +7,7 @@ from typing import NamedTuple
 
 import script_utils
 from shell_command import (
+    DIRECTORY_MOVE_WORDS,
     LAUNCHER_PROGRAMS,
     ShellDirectory,
     command_after_wrappers,
@@ -38,6 +39,10 @@ VALUE_OPTIONS = {
     "cherry-pick": ("-m", "--mainline", "--strategy", "-X", "--strategy-option", "--cleanup"),
     "revert": ("-m", "--mainline", "--strategy", "-X", "--strategy-option", "--cleanup"),
 }
+# The options of `git commit` that take the next word, or the rest of the cluster, as their value.
+COMMIT_VALUE_OPTIONS = {"--message", "--file", "--author", "--date", "--trailer", "--template", "--cleanup",
+                        "--reuse-message", "--reedit-message"}
+COMMIT_VALUE_LETTERS = "mFCct"
 # The flags of `merge` that choose whether it commits; the last one among the arguments wins.
 COMMIT_FLAGS = ("--commit", "--no-commit")
 # `--commit` after `--squash` undoes it, as does `--no-squash`.
@@ -272,7 +277,7 @@ def git_commit_dirs(command, start_dir, commit_call):
             words = command_after_wrappers(simple_command)
             if not words:
                 continue
-            if words[0] in ("cd", "pushd", "popd"):
+            if words[0] in DIRECTORY_MOVE_WORDS:
                 shell.apply(words)
                 continue
             for git_words, placed in committing_calls(words, simple_command, shell.current, start_dir, commit_call):

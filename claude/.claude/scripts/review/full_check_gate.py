@@ -11,6 +11,8 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib")]
 import format_files
 import full_check
+import full_check_receipt
+import handback
 import script_utils
 import source_paths
 from finding_record import parse_finding
@@ -31,16 +33,22 @@ LIVE_CHILDREN = set()
 LIVE_BASE_TREES = set()
 
 
-def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=FULL_CHECK_LOG, left_out=()):
+def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=FULL_CHECK_LOG, left_out=(),
+                   source=None, base=None):
     """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
     summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
     calls. `runner` (full_check.run by default) is any function with run's check arguments, such as
     full_check.base_run, whose result this returns as it is. `left_out` (the Expected red entries the command leaves
-    out) goes to the runner only when it holds some."""
+    out), `source` (where an overriding command came from) and `base` (the revision the diff that narrows the
+    discovered check is taken against) go to the runner only when they hold some."""
     runner = runner or full_check.run
     assignments = script_utils.environment_from_assignments(gate_env)
     check_pids = []
     options = {"left_out": left_out} if left_out else {}
+    if source:
+        options["source"] = source
+    if base:
+        options["base"] = base
 
     def check_started(pid):
         check_pids.append(pid)
@@ -68,41 +76,46 @@ def lint_finding_texts(problems):
 class FullCheckSteps:
     """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
     expected_red, and provides review_scope(), stop(status, remaining), repair(call_name, findings),
-    mark_repaired(findings, changed) and format_reviewed_files(check_command)."""
+    mark_repaired(findings, changed, reverted) and format_reviewed_files(check_command)."""
 
     def init_full_check_state(self):
         self.full_check = ""
         self.full_check_command = ""
         self.expected_red = []  # the phase's Expected red entries that the check leaves out
-        self.base_checked = False
-        self.base_run = None
+        self.plan_on_disk = None  # the plan path and phase id phase_check reads the Expected red lines from
+        self.phase = None
+        # a `--test` command stands in for a default check that hit a setup fault or an environment gap, or was itself
+        # an overridden run
+        self.check_overridden = False
+        self.base_runs = {}  # {full check command: its base run}, one base run per command per loop
         self.scoped_base_runs = {}  # {scoped test command: its base run}, one base run per command per loop
         self.check_details = {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
     def full_check_pass(self, check_command):
         """The lint pass runs first, and a lint stop skips the check. Then the full check, with one coder repair when
         it fails outside a spec file. A check that did not run, in CI or past its time limit, and one that exited 0 with
-        no runner summary or ran no test, is no failure and gets no repair; one the environment could not run stops
-        as `setup-fault`."""
+        no runner summary or ran no test, is no failure and gets no repair. A missing tool or a missing declared
+        module is a non-failing environment gap; any other check the environment could not run stops as
+        `setup-fault`."""
         if not self.lint_pass(check_command):
             return
 
         tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
+            self.stop_on_setup_fault(tail)
             return
 
         if not full_check.is_failure(self.full_check):
             return
 
-        gate_findings = [f"full check failed (`{check_command}`), failing lines:\n{tail}"]
+        gate_findings = [f"full check failed (`{self.full_check_command}`), failing lines:\n{tail}"]
         if source_paths.names_spec_file(tail):
             self.stop("critical-blocker", gate_findings)
             return
 
         gate_records = [parse_finding(text) for text in gate_findings]
-        _report, _diffs, gate_changed = self.repair("coder-gate", gate_records)
-        self.mark_repaired(gate_records, gate_changed)
+        _report, _diffs, gate_changed, gate_reverted = self.repair("coder-gate", gate_records)
+        self.mark_repaired(gate_records, gate_changed, gate_reverted)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
     def reviewed_and_touched_files(self):
@@ -118,8 +131,8 @@ class FullCheckSteps:
             return True
 
         lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
-        _report, _diffs, lint_changed = self.repair("coder-lint", lint_records)
-        self.mark_repaired(lint_records, lint_changed)
+        _report, _diffs, lint_changed, lint_reverted = self.repair("coder-lint", lint_records)
+        self.mark_repaired(lint_records, lint_changed, lint_reverted)
         self.format_reviewed_files(check_command)
         problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
         if not problems:
@@ -138,9 +151,12 @@ class FullCheckSteps:
         Expected red entries leave out whole does not run, and sets untested_fix so the changed files' tests run, and
         so does a check-only pass in a repo whose full suite runs in CI. Every run, the left-out one too, writes the
         full-check receipt."""
+        base = self.review_base or full_check.DEFAULT_DIFF_BASE
+        check_command = self.check_command_for_diff(check_command, base)
         self.full_check_command = check_command or ""
+        source = full_check_receipt.SOURCE_OVERRIDDEN if self.check_overridden else None
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env,
-                                                        left_out=self.expected_red)
+                                                        left_out=self.expected_red, source=source, base=base)
         if check_command is None and self.expected_red:
             self.untested_fix = True
         elif self.full_check == full_check.PASSED:
@@ -161,20 +177,35 @@ class FullCheckSteps:
             self.full_check = full_check.PRE_EXISTING
         return tail
 
+    def check_command_for_diff(self, check_command, base):
+        """The check to run now: the repo's check resolved again against the current diff from `base`, with the phase's
+        Expected red entries applied again, so a fix pass that touched a file of another part runs that part. The
+        entries it leaves out replace `expected_red`. An overridden check runs as it is."""
+        if self.check_overridden:
+            return check_command
+
+        found_command = full_check.configured_check_command(self.repo, base)
+        command, self.expected_red = full_check.phase_check(self.repo, found_command, self.plan_on_disk, self.phase,
+                                                            base)
+        return command
+
     def fails_without_the_diff(self, check_command):
         """True when the check's latest log fails as the base run does on HEAD without the working-tree changes: the
         same result, failing lines that are not empty and all in the base run's, every failing-block detail line in the
         base run's, and no other line new to the log holding an error marker. When every failing line is a
-        `FAILED: <steps>` summary, no line may be new to the log. The base run happens once per loop; later checks
-        reuse its failing lines."""
-        if not self.base_checked:
-            self.base_checked = True
+        `FAILED: <steps>` summary, no line may be new to the log. The base run happens once per check command per
+        loop; later checks of the same command reuse its failing lines."""
+        if check_command not in self.base_runs:
             gate_assignments = script_utils.environment_from_assignments(self.gate_env)
             base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES,
-                                            gate_env=gate_assignments)
-            self.base_run = run_full_check(self.repo, self.out, check_command, self.gate_env,
-                                           runner=base_runner, log_name=FULL_CHECK_BASE_LOG)
-        return full_check.is_pre_existing(self.out / FULL_CHECK_LOG, self.full_check, self.base_run)
+                                            gate_assignments=gate_assignments)
+            base_log = FULL_CHECK_BASE_LOG
+            if self.base_runs:
+                stem = FULL_CHECK_BASE_LOG.removesuffix(".log")
+                base_log = f"{stem}-{len(self.base_runs)}.log"
+            self.base_runs[check_command] = run_full_check(self.repo, self.out, check_command, self.gate_env,
+                                                           runner=base_runner, log_name=base_log)
+        return full_check.is_pre_existing(self.out / FULL_CHECK_LOG, self.full_check, self.base_runs[check_command])
 
     def scoped_failures_pre_existing(self, real_failures):
         """True when every red scoped test command, each a (command, outcome, output) from
@@ -185,7 +216,8 @@ class FullCheckSteps:
             return False
 
         gate_assignments = script_utils.environment_from_assignments(self.gate_env)
-        base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES, gate_env=gate_assignments)
+        base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES,
+                                        gate_assignments=gate_assignments)
         for index, (command, outcome, output) in enumerate(real_failures):
             if command not in self.scoped_base_runs:
                 base_log = f"{SCOPED_BASE_LOG_STEM}-{len(self.scoped_base_runs)}.log"
@@ -217,11 +249,14 @@ class FullCheckSteps:
         if full_check.is_failure(self.full_check) and self.autofix_touched_files():
             tail = self.run_check(check_command)
         if full_check.is_setup_fault_result(self.full_check):
-            self.stop_on_setup_fault(check_command, tail)
+            self.stop_on_setup_fault(tail)
         elif full_check.is_failure(self.full_check):
             self.stop("critical-blocker", [f"{failure_heading}:\n{tail}"])
 
-    def stop_on_setup_fault(self, check_command, tail):
-        """The full check could not run here, which no coder repair changes: stop for the user."""
-        self.stop("setup-fault", [f"the full check could not run in this environment (`{check_command}`), full "
-                                  f"log {self.out / FULL_CHECK_LOG}, last lines:\n{tail}"])
+    def stop_on_setup_fault(self, tail):
+        """The full check could not run here, which no coder repair changes: stop for the user. An overridden check's
+        own fault stops too; the default check never runs on an overridden launch. The message names the command that
+        ran, which `run_check` stores."""
+        self.stop(handback.SETUP_FAULT_STATUS,
+                  [f"the full check could not run in this environment (`{self.full_check_command}`), full "
+                   f"log {self.out / FULL_CHECK_LOG}, last lines:\n{tail}"])

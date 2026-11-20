@@ -35,3 +35,5 @@ None: the hook block log shows the rule by reason tag.
 
 Restore the grep line in bash-safety-gate.sh and delete tools/git_push_main_check.py.
 
+2026-11-18: bash-safety-gate no longer runs tools/git_push_main_check.py, and the script was deleted.
+

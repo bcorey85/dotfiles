@@ -1,5 +1,5 @@
-"""Reading a coder hand-back report: the plan-impact block, the open questions, the eng-spec marker, and the why and
-behavior notes."""
+"""Reading a coder hand-back report: the plan-impact block, the open questions, the eng-spec marker, the why and
+behavior notes, and the issue skips and the issues that cover them."""
 import pathlib
 import re
 import sys
@@ -9,6 +9,9 @@ import script_utils
 
 OPEN_QUESTIONS_LINE = re.compile(r"^[ \t>*`_-]*OPEN QUESTIONS[*`_]*:[*`_]*[ \t]*(.*)$", re.M)
 UNREADABLE_QUOTE_LIMIT = 120
+COVERING_ISSUE = re.compile(
+    r"\b(?:(?:fixed|done|covered|applied|handled|addressed)\s+(?:with|by|in|under)\s+(?:issue\s+|#)"
+    r"|(?:same as|duplicate of)\s+(?:issue\s+|#)?)(\d+)\b", re.IGNORECASE)
 
 
 def open_questions(report):
@@ -83,6 +86,57 @@ def why_by_file(report):
     for match in re.finditer(r"^WHY:\s*`?(\S+?)`?(?::|\s+)(\d+-\d+)\s*[—-]+\s*(.+)$", report, re.M):
         grouped.setdefault(match.group(1), []).append({"lines": match.group(2), "note": match.group(3).strip()})
     return grouped
+
+
+def covered_issue(reason, number, issue_count):
+    """The other listed issue a skip reason names as the one that covers it (`fixed with issue <m>`, `same as #<m>`,
+    `duplicate of <m>`), or None. A bare mention of an issue is no cover."""
+    for match in COVERING_ISSUE.finditer(reason):
+        covering = int(match.group(1))
+        if covering != number and 1 <= covering <= issue_count:
+            return covering
+    return None
+
+
+def skipped_issues(report, issue_count):
+    """Issue number -> the coder's `SKIPPED <n>: <reason>` line, for numbers that name a listed issue. A `SKIPPED
+    small <n>` line is a small item's, never an issue's. An issue whose reason names another listed issue as the one
+    that covers it is fixed, so it is no skip, when its chain of covering issues ends at an issue the coder did not
+    skip (see cover_chain_ends_fixed)."""
+    skips = {}
+    coverings = {}
+    for line in report.splitlines():
+        match = re.match(r"\s*[-*]?\s*`?SKIPPED (\d+):(.*)", line)
+        if not match:
+            continue
+        number = int(match.group(1))
+        if not 1 <= number <= issue_count:
+            continue
+        skips.setdefault(number, line.strip())
+        coverings.setdefault(number, covered_issue(match.group(2), number, issue_count))
+    fixed = [number for number, covering in coverings.items()
+             if covering is not None and cover_chain_ends_fixed(covering, skips, coverings)]
+    for number in fixed:
+        del skips[number]
+    return skips
+
+
+def cover_chain_ends_fixed(covering, skips, coverings):
+    """Whether following covering issues from `covering` ends at an issue the coder did not skip. A chain that ends
+    at a skip with no cover, or loops, is not fixed."""
+    seen = set()
+    current = covering
+    while current not in seen:
+        seen.add(current)
+        if current not in skips:
+            return True
+
+        next_cover = coverings[current]
+        if next_cover is None:
+            return False
+
+        current = next_cover
+    return False
 
 
 def behavior_lines(report):

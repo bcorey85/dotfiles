@@ -16,6 +16,8 @@ LINE_CONTINUATION = re.compile(r"\\\r?\n")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
 SEPARATOR_CHARS = set("();|&\n")
+# The words that change the shell's working directory; every gate follows or flags the same set.
+DIRECTORY_MOVE_WORDS = ("cd", "pushd", "popd")
 REDIRECT_CHARS = set("<>&")
 # shlex drops the quotes and escapes, so a quoted or escaped operator character would read as a real operator.
 HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\1""")
@@ -47,6 +49,10 @@ SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
 # Programs that run the command named after their own words (`find -exec` is read apart:
 # git_commit_calls.runs_through_launcher).
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
+# Container programs: `exec` and `run` run the command named after them inside a container.
+CONTAINER_PROGRAMS = ("docker", "podman")
+# Other programs that run their arguments as commands, locally or on another host.
+ARGUMENT_RUNNER_PROGRAMS = ("eval", "su", "script", "ssh")
 # A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
 # `eval` argument, a command run through another program or on another host. A quoted mention counts, except a
 # shell name right after a `|` or a backslash: that is a regex alternative such as `(py|sh)`. A name that is part of
@@ -54,10 +60,10 @@ LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
 # `-` after it joins it to a longer word.
 CODE_RUNNERS = re.compile(
     r"(?<![|\\.])\b(" + "|".join(sorted(SHELL_INTERPRETERS)) + r")(?=\.exe\b|(?![\w.-]))"
-    r"|(?<!\.)\b(eval|su|script|ssh|" + "|".join(LAUNCHER_PROGRAMS) + r")(?=\.exe\b|(?![\w.-]))"
+    r"|(?<!\.)\b(" + "|".join(ARGUMENT_RUNNER_PROGRAMS + LAUNCHER_PROGRAMS) + r")(?=\.exe\b|(?![\w.-]))"
     r"|\bgit\b[^\n]*\brebase\b[^\n]*\s(--exec|-x)\b"
     r"|\bfind\b[^\n]*\s-exec(dir)?\b"
-    r"|\b(docker|podman)\b[^\n]*\b(exec|run)\b"
+    r"|\b(" + "|".join(CONTAINER_PROGRAMS) + r")\b[^\n]*\b(exec|run)\b"
     r"|\bkubectl\b[^\n]*\bexec\b"
 )
 SHELL_VALUE_OPTIONS = {"--rcfile", "--init-file", "--init"}
@@ -97,20 +103,25 @@ RUNNER_WRAPPERS = {
 }
 # By interpreter family: the name pattern, the flags after which it runs no program from stdin or a script (a module,
 # a version, help), the options that take the next word as their value, the letters that end a short-flag cluster
-# whose next word is code (`-c`, `-Bc`, `-le`), and the long flags that take the next word as code. nodejs is the
+# whose next word is code (`-c`, `-Bc`, `-le`), the letters whose attached value ends the walk with no code
+# (`-mcProfile`; the next word is not consumed), and the long flags that take the next word as code. nodejs is the
 # node family.
 INTERPRETER_FAMILIES = {
     "python": {"name": r"python[\d.]*", "no_stdin_code_flags": {"-m", "-V", "-VV", "--version", "-h", "--help"},
-               "value_options": {"-W", "-X", "-Q"}, "inline_code_letters": "c", "inline_code_flags": set()},
+               "value_options": {"-W", "-X", "-Q"}, "inline_code_letters": "c", "attached_value_letters": "m",
+               "inline_code_flags": set()},
     "perl": {"name": r"perl", "no_stdin_code_flags": {"-v", "-V", "--version", "-h", "--help"},
-             "value_options": {"-I", "-M", "-C"}, "inline_code_letters": "eE", "inline_code_flags": set()},
+             "value_options": {"-I", "-M", "-C"}, "inline_code_letters": "eE", "attached_value_letters": "xF",
+             "inline_code_flags": set()},
     "ruby": {"name": r"ruby", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-             "value_options": {"-I", "-r", "-C", "-E"}, "inline_code_letters": "e", "inline_code_flags": set()},
+             "value_options": {"-I", "-r", "-C", "-E"}, "inline_code_letters": "e", "attached_value_letters": "xFK",
+             "inline_code_flags": set()},
     "node": {"name": r"node(?:js)?", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
              "value_options": {"-r", "--require", "--import", "-C", "--conditions"}, "inline_code_letters": "ep",
-             "inline_code_flags": {"--print", "--eval"}},
+             "attached_value_letters": "", "inline_code_flags": {"--print", "--eval"}},
     "php": {"name": r"php", "no_stdin_code_flags": {"-v", "--version", "-h", "--help"},
-            "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "inline_code_flags": set()},
+            "value_options": {"-d", "-c", "-r"}, "inline_code_letters": "r", "attached_value_letters": "f",
+            "inline_code_flags": set()},
 }
 INTERPRETER = re.compile("|".join(family["name"] for family in INTERPRETER_FAMILIES.values()), re.I)
 MANAGE_SCRIPT = "manage.py"
@@ -119,6 +130,41 @@ STDIN_PROGRAM_FILES = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
 # Redirections that carry code inside the command: a heredoc or a here-string. A file read with `<` is a script file,
 # as in `python3 <file>`.
 STDIN_CODE_REDIRECTIONS = {"<<", "<<<"}
+
+
+def code_letter_position(word, family):
+    # The index in word of the code letter of a short-flag cluster of the INTERPRETER_FAMILIES entry `family` (`-c`,
+    # `-Bc`), or None. The cluster is read one letter at a time: a value option ends it, because the rest of the word
+    # is its value (`-rdotenv/config`, `-Xtracemalloc`).
+    if not re.match(r"-[a-zA-Z]", word):
+        return None
+    for position, letter in enumerate(word[1:], start=1):
+        if letter in family["inline_code_letters"]:
+            return position
+        if letter in family["attached_value_letters"]:
+            return None  # the rest of the word is this option's value, not a code letter (`-mcProfile`, `-fw.php`)
+        if not letter.isalpha() or "-" + letter in family["value_options"]:
+            return None
+    return None
+
+
+def is_inline_code_option(word, family):
+    # True when word is an option of the INTERPRETER_FAMILIES entry `family` that carries code: a short-flag cluster
+    # ending in a code letter, or a long code flag. Code attached to the cluster (`-cprint(1)`) counts.
+    if word in family["inline_code_flags"]:
+        return True
+    return code_letter_position(word, family) is not None
+
+
+def attached_inline_code(word, family):
+    # The code attached to the code letter of an option for which is_inline_code_option is True (`-cprint(1)` gives
+    # `print(1)`); "" when the code is the next word (`-c`, `-Bc`) or the option is a long flag.
+    if word in family["inline_code_flags"]:
+        return ""
+    position = code_letter_position(word, family)
+    if position is None:
+        return ""
+    return word[position + 1:]
 
 
 def interpreter_family(word):
@@ -181,6 +227,28 @@ def is_redirect_word(word):
 def redirect_takes_next_word(word):
     """True when the redirect word has no target of its own, so the next word is its target."""
     return bool(BARE_REDIRECT_WORD.match(word))
+
+
+def kept_outside_redirections(word_shapes):
+    """The words of (word, shape) pairs with each redirection dropped: a word whose shape is a redirect, and the next
+    word when the redirect has no target of its own (`>` `main`). The shape is what the redirect is read from."""
+    kept = []
+    skip_target = False
+    for word, shape in word_shapes:
+        if skip_target:
+            skip_target = False
+            continue
+        if is_redirect_word(shape):
+            skip_target = redirect_takes_next_word(shape)
+            continue
+        kept.append(word)
+    return kept
+
+
+def without_redirection_words(words, blanked_words):
+    """The words with each redirection dropped. `blanked_words` are the same words with each quoted string blanked; a
+    redirect is read from them, so a quoted `'>'` stays a plain word."""
+    return kept_outside_redirections(zip(words, blanked_words, strict=True))
 
 
 def split_simple_commands(command):
@@ -357,10 +425,35 @@ def _attached_environment_value(word):
     return None
 
 
-def skip_options(words, index, value_options):
+def one_letter_options(value_options):
+    # The letters of the one-letter options (`-C`) in value_options.
+    return {option[1] for option in value_options if len(option) == 2 and option[0] == "-"}
+
+
+def first_value_letter(word, value_options):
+    # The first letter of a short cluster (`-vC`) that is a one-letter option of value_options; None for a word that
+    # is no cluster or holds none.
+    if not is_short_cluster(word):
+        return None
+    position = len(flags_before_value(word, one_letter_options(value_options)))
+    if position == len(word) - 1:
+        return None
+    return word[1 + position]
+
+
+def value_letter_ends_cluster(word, value_letters):
+    # True when a short cluster's first value-taking letter is its last, so the value is the next word (`-iC /dir`).
+    return is_short_cluster(word) and len(flags_before_value(word, value_letters)) == len(word) - 2
+
+
+def skip_options(words, index, value_options, clusters_take_values=False):
     # The index of the first word from index on that is no option: an option that takes a value is skipped with it.
+    # With clusters_take_values, a short cluster that ends in a value letter takes the next word too.
     while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in value_options else 1
+        takes_next = words[index] in value_options
+        if clusters_take_values and value_letter_ends_cluster(words[index], one_letter_options(value_options)):
+            takes_next = True
+        index += 2 if takes_next else 1
     return index
 
 
@@ -380,13 +473,23 @@ def is_known_git_global_option(option):
 
 
 def git_c_settings(options):
-    """The `-c key=value` settings in git_options output, as {lowercased key: raw value}; the last one wins."""
+    """The `-c key=value` settings in git_options output, as {lowercased key: raw value}; the last one wins. A bare
+    `-c key` is read by git as true, so it is stored as "true"; `-c key=` stays empty."""
     settings = {}
     for option, value in options:
         if option == "-c" and value is not None:
-            key, _equals, setting = value.partition("=")
-            settings[key.lower()] = setting
+            key, equals, setting = value.partition("=")
+            settings[key.lower()] = setting if equals else "true"
     return settings
+
+
+def git_option_values(options, name):
+    """The value of each `name` option in git_options output, in order, from `--name value` or `--name=value`."""
+    for option, value in options:
+        if option == name and value is not None:
+            yield value
+        elif option.startswith(name + "="):
+            yield option.partition("=")[2]
 
 
 def git_options(words):
@@ -531,7 +634,7 @@ def _peel_option_wrapper(words, name):
     # The words after a WRAPPER_VALUE_OPTIONS wrapper, its options and its leading value; None for `command -v`.
     if name == "command" and words[1:2] in (["-v"], ["-V"]):
         return None
-    rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name]):]
+    rest = words[skip_options(words, 1, WRAPPER_VALUE_OPTIONS[name], clusters_take_values=True):]
     if name in WRAPPERS_WITH_A_LEADING_VALUE:
         return rest[1:]
     return rest
@@ -604,17 +707,9 @@ def raw_words_without_redirections(text):
     """The blank-separated words of one command text with quotes kept and each redirection left out, the target of a
     bare `>` with it."""
     quoted = quoted_positions(text)
-    raw_words = []
-    skip_target = False
-    for raw_word in _raw_words(text, quoted):
-        if skip_target:
-            skip_target = False
-            continue
-        if is_redirect_word(raw_word):
-            skip_target = redirect_takes_next_word(raw_word)
-            continue
-        raw_words.append(raw_word)
-    return raw_words
+    raw_words = _raw_words(text, quoted)
+    word_shapes = list(zip(raw_words, raw_words, strict=True))
+    return kept_outside_redirections(word_shapes)
 
 
 def _raw_words(text, quoted):
@@ -879,15 +974,27 @@ class ShellDirectory:
         self.move_to(os.path.normpath(os.path.join(self.current, path_word(folder))))
 
 
+def word_moves_directory(word, move_letter, wrapper):
+    # True for `--chdir`, `-<move_letter>...`, or a short cluster whose first value letter is move_letter.
+    if word.startswith("--chdir") or word.startswith("-" + move_letter):
+        return True
+    letter = first_value_letter(word, WRAPPER_VALUE_OPTIONS[wrapper])
+    return letter == move_letter
+
+
 def wrapper_moves_directory(words):
-    """True when an `env` or `sudo` wrapper of the simple command `words` runs the command in another directory
-    (`-C <dir>`, `--chdir`)."""
+    """True when an `env` or `sudo` wrapper of the simple command `words` runs the command in another directory:
+    `env -C <dir>`, `env -C<dir>`, `env --chdir`, `sudo -D <dir>`, `sudo -D<dir>`, `sudo --chdir`, and a short
+    cluster whose first value letter is that letter (`env -vC <dir>`). (`sudo -C` is close-from, not a directory
+    move.)"""
     word_lists = list(_peeled_word_lists(words))
     for before, after in itertools.pairwise(word_lists):
-        if os.path.basename(before[0]) not in ("env", "sudo"):
+        wrapper = os.path.basename(before[0])
+        if wrapper not in ("env", "sudo"):
             continue
+        move_letter = "C" if wrapper == "env" else "D"
         wrapper_words = before[1:len(before) - len(after)]
-        if any(word == "-C" or word.startswith("--chdir") for word in wrapper_words):
+        if any(word_moves_directory(word, move_letter, wrapper) for word in wrapper_words):
             return True
     return False
 

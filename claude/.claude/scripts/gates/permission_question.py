@@ -7,6 +7,14 @@ before a space) between the phrase and the `?`. A question that names a step tha
 (commit, push, merge, deploy, publish, release, delete, drop, reset, rebase, force, send, email, post, install,
 upgrade, migrate, void, cancel, refund, revoke, submit, approve, archive, remove, overwrite, wipe, purge, truncate,
 destroy, reply, notify, message, ping),
+that makes a worktree (`make`, `create`, `add`, `open`, `start`, `use`, `set up` or `spin up` then at most two of
+`a`, `an`, `new`, `separate`, `fresh`, `lane`, `git`, `own`, `another`, a number, `two` or `three`, then `worktree`
+or `worktrees` and then `for`, `in` (not `in tests` or `in the tests`), `per`, `to` and a verb (work, hold, run,
+try, test, keep, isolate, do, build, fix, land), a comma, a sentence end or the end of the text, so `the` and
+`existing`, or a name such as `worktree support`, `worktree-prune` or `worktree.py`, leave the question as a local
+step that is sent back; `in|into|to` then an optional `a`, `an` or `its` (never `the`: `the new worktree` already
+exists) and `own`, `new`, `separate` or `fresh` then `worktree`; `in|into` then `a` or `an` then `worktree`; or
+`run` or `do` then `git worktree add`; a rule requires the user's yes before one is made),
 that files, opens, creates or raises a ticket, sub-ticket, subtask, issue, sub-issue, pull request or merge request
 (a bare `task` does not count), that names Slack, or that files, opens, creates or raises
 `them|these|those|this|it|each` in/on/to/into Jira, Linear or GitHub (the pronoun comes right after the verb), that
@@ -47,10 +55,29 @@ FILE_NAME_AFTER = r"(?![\w-]|[./]\w)"
 HOST_NAME_AFTER = r"(?![\w-]|/\w|\.(?!(?:com|io|app)\b)\w)"
 # Up to two words may sit between a destination preposition and the destination name (`on the main PR`).
 WORDS_BEFORE_DESTINATION = r"\s+(?:[\w-]+\s+){0,2}"
+# Only words that say a worktree is new: `the` or `existing` would also match a question about a worktree that exists.
+WORKTREE_GAP = r"(?:(?:an?|new|separate|fresh|lane|git|own|another|\d+|two|three)\s+){0,2}"
+# What may follow the made worktree: `for|in|per`, `to` then a verb (`worktree to try it`, not `worktree to the
+# docs`), a comma, or the end of the question. A name word (`worktree support`,
+# `worktree-prune`, `worktree.py`) is a file or a feature, not a worktree.
+# `in the tests` names where worktrees are used, not one to make.
+WORKTREE_DESTINATION = (r"(?=\s+(?:for|per)\b|\s+in\b(?!\s+(?:the\s+)?tests?\b)"
+                        r"|\s+to\s+(?:work|hold|run|try|test|keep|isolate|do|build|fix|land)\b"
+                        r"|\s*[?.!,]|\s*$)")
 OUTWARD_STEP = re.compile(
     r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
     r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy|"
     r"reply|replies|notify|message|ping)\w*"
+    r"|\b(?:make|create|add|open|start|use|set\s+up|spin\s+up)\s+"
+    + WORKTREE_GAP
+    + r"worktrees?"
+    + FILE_NAME_AFTER
+    + WORKTREE_DESTINATION
+    + r"|\b(?:in|into|to)\s+(?:an?\s+|its\s+)?(?:own|new|separate|fresh)\s+worktree"
+    + FILE_NAME_AFTER
+    + r"|\b(?:in|into)\s+an?\s+worktree"
+    + FILE_NAME_AFTER
+    + r"|\b(?:run|do)\s+git\s+worktree\s+add\b"
     r"|\b(?:file|open|create|raise)\s+(?:an?\s+|the\s+)?(?:[\w-]+\s+){0,2}"
     r"(?:(?:sub-?)?(?:tickets?|issues?)|sub-?tasks?|pull\s+requests?|PRs?|MRs?)" + FILE_NAME_AFTER +
     r"|\bslack" + HOST_NAME_AFTER +
@@ -74,7 +101,7 @@ QUESTION_OPENING = re.compile(
     r"has|have|any|whats|hows|isnt|doesnt)\b", re.IGNORECASE)
 REASON = ("Your message ends asking permission to go on. Send it again without that closing question. Do not start "
           "the step it offers unless the user's request already covers it. Ask only before a step that cannot be "
-          "undone or leaves this machine.")
+          "undone, leaves this machine, or a rule requires the user's yes for (a worktree).")
 
 
 def asks_a_question(prompt):

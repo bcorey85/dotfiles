@@ -19,8 +19,13 @@ from source_text import indent_of
 UNLOCATED = handback.UNLOCATED
 
 PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
-# The marker before the one edit an accepted ask makes: `... — the question — change: the edit`.
-ASK_CHANGE_MARK = re.compile(r"\bchange(?:\s+if\s+[`*_]*accepted[`*_]*)?:", re.I)
+# The marker before the one edit an accepted ask makes: `... — the question — change: the edit`. A reviewer also
+# names the condition: `Change if accepted:`, `Change if not accepted:`, `Change if yes:`, `Change if moved:` and so
+# on, with up to three words and optional markup around them.
+CHANGE_IF_CONDITION = r"\s+if\s+[`*_]*\w+(?:\s+\w+){0,2}[`*_]*"
+ASK_CHANGE_MARK = re.compile(rf"\bchange(?P<condition>{CHANGE_IF_CONDITION})?:", re.I)
+# The same mark with its condition required: the pattern text of a `Change if <answer>:` label.
+CHANGE_IF_LABEL_PATTERN = rf"\bchange{CHANGE_IF_CONDITION}:"
 
 # An ask that names another ask in place of a question: "The open ask about pinning the window still stands."
 ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previous|prior|above|first|existing|standing)"
@@ -45,22 +50,46 @@ FINDING_HEAD = re.compile(rf"(?:{script_utils.BLOCKER_TAG_PATTERN}\s*)?[*_]*" + 
 
 
 class AskParts(NamedTuple):
-    """An ask's text split at its last change mark: the question, and the edit an accepted answer makes."""
+    """An ask's text split at its change mark (see `ask_parts`): the question, and the edit an accepted answer makes."""
     question: str
     change: str
+
+
+def opens_with_plain_mark_then_condition(text, change_marks):
+    """True when an ask's first change mark is plain (`change:`), follows the ask's question (`Q? change: A. Change if
+    no: B.`), and a later mark carries a condition. The ask proposes A and B for different answers, so its change keeps
+    both: the conditional-change check then refuses `accepted` and `applied` on it, and only `modified:<change>`
+    answers it. A `change:` inside the question's own words ("Should the default change: 10 or 20?") is no mark."""
+    first_mark = change_marks[0]
+    if first_mark.group("condition"):
+        return False
+    if not any(mark.group("condition") for mark in change_marks[1:]):
+        return False
+    before_first_mark = text[:first_mark.start()].rstrip(" —-")
+    return before_first_mark.endswith("?")
 
 
 def ask_parts(text):
     """The AskParts of an ask's text. The text before the last `change:` marker is the question; the text after it is
     the edit. An ask with no marker carries its own recommended edit, so its whole text is both. An ask that opens
-    with its marker asks its change, and one that ends on an empty marker carries its edit in its question."""
+    with its marker asks its change, and one that ends on an empty marker carries its edit in its question. An ask
+    with two or more `Change if <answer>:` marks has a branch for each answer (`Change if yes: A. Change if no: B`):
+    its question ends at the first of them and its change keeps every branch, so that the conditional-change check
+    refuses it. An ask whose question ends in `?` and then a plain `change:` and a later mark carries a condition
+    splits at the plain one, so its change keeps the conditional branch and the same check refuses it. A plain
+    `change:` inside the question's words never counts as a branch."""
     change_marks = list(ASK_CHANGE_MARK.finditer(text))
     if not change_marks:
         return AskParts(text, text)
 
-    last_mark = change_marks[-1]
-    after_mark = text[last_mark.end():].strip()
-    before_mark = text[:last_mark.start()].rstrip(" —-")
+    split_mark = change_marks[-1]
+    conditional_marks = [mark for mark in change_marks if mark.group("condition")]
+    if len(conditional_marks) > 1:
+        split_mark = conditional_marks[0]
+    if opens_with_plain_mark_then_condition(text, change_marks):
+        split_mark = change_marks[0]
+    after_mark = text[split_mark.end():].strip()
+    before_mark = text[:split_mark.start()].rstrip(" —-")
     return AskParts(before_mark or after_mark, after_mark or before_mark)
 
 
@@ -341,6 +370,7 @@ def pointer_ask_split(asks, open_asks):
 POINTER_ASK_REASON = "ask only points back to another ask"
 NOTE_ASK_REASON = "item proposes no change and asks no question, so it is a note and no ask"
 REPEATED_ASK_REASON = "ask repeats an earlier ask or a plan impact already on record"
+REVERTED_APPROVAL_EDIT_REASON = "the fix coder's edit to a file that needs the user's approval was reverted"
 
 
 def is_pass_note(ask):

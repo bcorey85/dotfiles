@@ -6,7 +6,9 @@
 Runs only the repo's resolved check, the first of: the repo's `Quality check (<repo name>): `<command>`` entry in the
 machine-local CLAUDE.local.md (the repo name is the folder name of the main checkout, so a linked worktree
 matches), the command of the CLAUDE.md `Quality check:` line, the check found from the repo's own files
-(check_discovery.py: `make check`, the package `check` script, then its lint, type check and tests); a repo whose
+(check_discovery.py: `make check`, the package `check` script, then its lint, type check and tests, only for the parts
+the paths changed against `--base` touch, every part when no `--base` is given; several parts run each on its own
+(lib/check_parts.py) and a `FAILED PARTS: <parts>` line names the failed ones); a repo whose
 CLAUDE.md says `Full suite: CI` and holds no entry or line discovers none. A command handed after `--`
 never runs; when it differs from the resolved one a note on stderr says so and the resolved check runs.
 
@@ -18,13 +20,17 @@ after the result line. When they leave out the whole command, nothing runs and t
 Runs the command in one shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no test result shown)` when the command exited 0 but
 printed no test runner's own summary line or ran no test, `failed (exit N)` with the failing step's lines after it
-(on a lint error, each lint error with its file:line, the FAIL and ERROR lines, vitest's leading-space FAIL and \xd7
-lines and the
+(on a lint error, each lint error with its file:line, the failing-test lines (FAIL lines, ERROR lines that name a
+test, vitest's leading-space FAIL and \xd7 lines) and the
 `FAILED: <steps>` step-summary lines; else the failing tests and the log's last lines), `setup fault (exit N)` with
-the same when the environment could not run the check (no program, a runner that cannot start, no package manifest,
-no test found, a package-manager or engine version mismatch), `not run (check-command error: <line>)` when a step of
+the same when the environment could not run the check (an exit 126, or an exit 127 that names no missing program,
+a runner that cannot start, no package manifest, no test found, a package-manager or engine version mismatch),
+`setup fault (test database collision (<fix>))` when a test-database collision repeats on its one retry, or leaves no
+time for one (the retry runs 30 s later, with at least 60 s of the timeout left),
+`not run (check-command error: <line>)` when a step of
 the command stops on a path that does not exist and did not exist at the diff base either (`--base`, HEAD by
-default; a path the diff removed or moved is a failure), `not run (timeout)` when the command runs past the limit,
+default for the missing-path test; a path the diff removed or moved is a failure),
+`not run (timeout)` when the command runs past the limit,
 `not run (CI)` when the repo's CLAUDE.md holds the line `Full suite: CI` and names no `Quality check:` command,
 `passed (check only; CI runs the full suite)` when that repo's check exits 0 with no runner summary or ran no test.
 A `passed` or `unverified` result is followed by `summary: <the runner summary lines joined with " | ">`
@@ -38,10 +44,17 @@ check ran (the `tree:` line). The receipt is satisfied by an exit 0, except when
 Tracked files the command rewrote and files it created are left in place and named (`changed by the check: <paths>`,
 `created by the check: <paths>`). A file that held edits before the check and was rewritten is named on its own line
 (`rewrote edited files: <paths>`). Exit 0 with a runner summary that counts failures is a failure.
-A command past the limit is killed with its whole process group, so no test process outlives the check. A repo with
-a `.python-version` file runs the command with the pyenv shims first on PATH. A failed check whose log says
-`No module named X`, for an X that the repo declares as a dependency (requirements*.txt, pyproject.toml, setup.cfg
-or Pipfile, by normalized name), prints `not run (environment gap: No module named 'X')`.
+A command past the limit is killed with its whole process group, so no test process outlives the check. A repo
+pinned by a `.python-version` file, its own or the main checkout's, runs the command with the pyenv shims first on
+PATH (gate_env.check_env); when only the main checkout pins a version, PYENV_VERSION is set to it. A failed check
+whose log says `No module named X`, for an X that the repo declares as a dependency (requirements*.txt,
+pyproject.toml, setup.cfg or Pipfile, by normalized name), prints
+`not run (environment gap: No module named 'X')`. A check that exits 127 with a shell line that names the missing
+program prints `not run (environment gap: <tool> not found on PATH)`, followed, when another part printed a runner
+summary, by a `summary:` line of those summaries. A joined command prints `PART <name> exit <code>` after each
+part; each failed part is judged on its own section of the output, and the gap result stands only when every
+failed part has a gap of its own (a declared missing module, or a named missing program on a 127 exit). A real
+failing part beside a gap part reads as a failure.
 Right after the result line, `tree: <fingerprint>` names the repo's tree as the check left it (the log left out),
 as lib/reviewed_tree.py computes it; the line is absent when the repo cannot be fingerprinted. Then
 `command: <the command run>` (`command: none` when nothing runs).
@@ -67,9 +80,12 @@ import time
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib", "../code")]
 
 import check_output
+import check_parts
 import check_scope
+import collision_retry
 import expected_red
 import full_check_receipt
+import gate_env
 import local_check
 import reviewed_tree
 import script_utils
@@ -79,6 +95,7 @@ from check_output import (
     failing_block_details,
     is_setup_fault,
     missing_path,
+    missing_tool_text,
     normalized_log_line,
     tail_with_failing_tests,
 )
@@ -106,6 +123,7 @@ UNVERIFIED = "unverified (exit 0, no test result shown)"
 CHECK_ONLY_PASSED = "passed (check only; CI runs the full suite)"
 # Exit 0 whose runner summary still counts failures: a wrapper that swallowed the runner's exit code.
 FAILED_EXIT_ZERO = "failed (exit 0, summary reports failures)"
+ENVIRONMENT_GAP_PREFIX = "not run (environment gap: "
 NOT_RUN_CI = "not run (CI)"
 NOT_RUN_TIMEOUT = "not run (timeout)"
 # The check could not run here: no program, a runner that cannot start, no package manifest, no test found, or a
@@ -138,8 +156,11 @@ TAIL_LINES = 40
 # A lint error: ruff's rule line, then its ` --> file:line:col` line.
 LINT_RULE_LINE = re.compile(r"^[A-Z]+\d+ ")
 LINT_LOCATION_LINE = re.compile(r"^\s*--> \S+:\d+:\d+")
-# The line tests/run.sh prints for a failed step (`FAILED: lint duplicate-check`).
-FAILED_STEPS_LINE = re.compile(r"^FAILED: ")
+# The line tests/run.sh prints for a failed step (`FAILED: lint duplicate-check`), or a joined check for its failed
+# parts. These are failing lines to show; only the parts marker counts parts (check_parts.failed_part_names).
+FAILED_STEPS_LINE = re.compile(rf"^(?:FAILED:|{re.escape(check_parts.FAILED_PARTS_MARKER)}) ")
+# The revision the diff of a run is read against when the caller names none.
+DEFAULT_DIFF_BASE = "HEAD"
 # Where the base worktree lives, under the repo's git common dir.
 BASE_TREE_FOLDER = "full-check-base"
 # The check fails the same way on HEAD without the diff. Not a failure: it starts with neither "failed" nor "not run".
@@ -198,10 +219,13 @@ def declared_check_command(repo):
     return match.group(1)
 
 
-def resolved_check(repo):
+def resolved_check(repo, base=None, left_out_steps=()):
     """(the full check command, where it came from) for the repo: the repo's entry in the machine-local
     CLAUDE.local.md, else the CLAUDE.md `Quality check:` line, else what the repo's own files give
-    (check_discovery.py), unless the repo's full suite runs in CI. (None, None) when none is found."""
+    (check_discovery.py), unless the repo's full suite runs in CI. (None, None) when none is found. With `base`, the
+    discovered check runs only the parts the paths changed against that revision touch; with none it runs every part.
+    `left_out_steps` are taken out of each part of a discovered check. A local or CLAUDE.md command is run as
+    written."""
     local = local_check.local_check_command(repo)
     if local:
         return ResolvedCheck(local, SOURCE_LOCAL)
@@ -216,30 +240,24 @@ def resolved_check(repo):
     # Imported here: the hooks that import this module never discover a check.
     import check_discovery
 
-    discovered = check_discovery.discovered_check_command(repo)
+    changed_paths = changed_paths_since(repo, base)
+    discovered = check_discovery.discovered_check_command(repo, changed_paths, left_out_steps)
     if discovered:
         return ResolvedCheck(discovered, SOURCE_DISCOVERED)
     return ResolvedCheck(None, None)
 
 
-def configured_check_command(repo):
-    """The command resolved_check gives, or None when it finds none."""
-    return resolved_check(repo).command
+def changed_paths_since(repo, base):
+    """The paths changed against `base`, or None with no base (every part of a discovered check runs). Deletions
+    count: removing a Python module can break the Python suite."""
+    if not base:
+        return None
+    return script_utils.changed_files(repo, base, with_deleted=True)
 
 
-def pinned_interpreter_env(repo, env):
-    """`env` with the pyenv shims first on PATH when the repo pins a Python with `.python-version`."""
-    check_env = dict(os.environ if env is None else env)
-    if not (pathlib.Path(repo) / ".python-version").is_file():
-        return check_env
-
-    pyenv_root = pathlib.Path(check_env.get("PYENV_ROOT") or pathlib.Path.home() / ".pyenv")
-    shims = pyenv_root / "shims"
-    if not shims.is_dir():
-        return check_env
-
-    check_env["PATH"] = os.pathsep.join([str(shims), check_env.get("PATH", "")])
-    return check_env
+def configured_check_command(repo, base=None):
+    """The command resolved_check gives for `base`, or None when it finds none."""
+    return resolved_check(repo, base).command
 
 
 def distribution_name(requirement):
@@ -314,20 +332,22 @@ def declared_distributions(repo):
     return names
 
 
-def environment_gap(repo, log_text):
-    """The `No module named 'X'` line of a failed check whose X the repo declares as a dependency, or None."""
+def declared_missing_modules(repo, log_text):
+    """The distinct `No module named 'X'` lines of a log whose X the repo declares as a dependency, in log order."""
     declared = declared_distributions(repo)
+    lines = []
     for found in MISSING_MODULE.finditer(log_text):
         module = found.group(1)
         top_level = module.split(".")[0]
-        if normalized_name(top_level) in declared:
-            return f"No module named '{module}'"
-    return None
+        line = f"No module named '{module}'"
+        if normalized_name(top_level) in declared and line not in lines:
+            lines.append(line)
+    return lines
 
 
 def failing_step_lines(log_lines):
-    """The lint errors with their file:line, the FAIL and ERROR lines (vitest's leading-space FAIL and \xd7 lines too)
-    and the `FAILED: <steps>` step-summary lines of a failed check's log, in log order."""
+    """The lint errors with their file:line, the failing-test lines (check_output.FAILING_TEST_LINE) and the
+    `FAILED: <steps>` step-summary lines of a failed check's log, in log order."""
     plain_lines = [strip_ansi(line) for line in log_lines]
     picked = []
     for index, line in enumerate(plain_lines):
@@ -377,11 +397,40 @@ def run_check_command(repo, check_command, log, timeout, env, on_start):
             return None
 
 
+def run_check_command_retrying_collision(repo, check_command, log, timeout, env, on_start):
+    """run_check_command, run once more after a wait when the first run failed on a test-database collision (another
+    run of the same tests shares the database). The retry rewrites the log; a second collision stays in it for
+    failed_run_result to report. The retry gets what the timeout has left after the first run and the wait; with
+    less than collision_retry.MIN_COMMAND_SECONDS left, no retry runs and the collided log stands."""
+    started = time.monotonic()
+    exit_code = run_check_command(repo, check_command, log, timeout, env, on_start)
+    if exit_code in (0, None):
+        return exit_code
+
+    first_output = pathlib.Path(log).read_text(errors="replace")
+    seconds_left = timeout - (time.monotonic() - started)
+    retry_timeout = collision_retry.collision_retry_seconds(
+        exit_code, first_output, seconds_left)
+    if retry_timeout is None:
+        return exit_code
+
+    collision_retry.wait_out_collision()
+    return run_check_command(repo, check_command, log, retry_timeout, env, on_start)
+
+
 def empty_details():
     return {"summaries": [], **{kind: [] for kind in CHANGE_KINDS}}
 
 
-def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD", left_out=(), receipt=True):
+def record_changes(details, before, log):
+    """Fill each CHANGE_KINDS list in `details` with the files the check changed since `before`, leaving out the log."""
+    log_path = pathlib.Path(log).resolve()
+    for kind, paths in zip(CHANGE_KINDS, changes_since(before), strict=True):
+        details[kind] = [path for path in paths if (before["root"] / path).resolve() != log_path]
+
+
+def run(repo, check_command, log, timeout, env=None, on_start=None, base=None, left_out=(), receipt=True,
+        source=None):
     """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists, both kinds of file left in place. On a lint
@@ -390,16 +439,20 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
 
     `check_command` is the declared `Quality check:` command, or it with the Expected red steps in `left_out` taken out
     (phase_check); None when there is none or the entries leave out all of it. The command is run as given: the
-    caller takes it from the declared check. It runs in one shell. With `receipt` the run writes its receipt rows and
+    caller takes it from configured_check_command(repo, base), so a discovered check is already narrowed to the parts
+    the diff against `base` touches. `source` names where a command the
+    caller overrode came from (the started row records it; default the resolved check's source). It runs in one
+    shell. With `receipt` the run writes its receipt rows and
     `details["tree"]` holds the fingerprint of the tree after the check (None without a receipt, outside a git work
     tree, or when git cannot fingerprint it)."""
     details = {**empty_details(), "tree": None}
     in_ci = full_suite_runs_in_ci(repo)
     run_id = None
     if receipt:
-        resolved = resolved_check(repo)
-        run_id = full_check_receipt.write_started_row(repo, resolved.command, check_command, left_out,
-                                                      source=resolved.source)
+        # Only the receipt rows read the resolution; a bare run needs no discovery.
+        whole = resolved_check(repo, base)
+        run_id = full_check_receipt.write_started_row(repo, whole.command, check_command, left_out,
+                                                      source=source or whole.source)
 
     def finish(result, tail, exit_code=0, satisfied=False):
         if run_id:
@@ -414,13 +467,11 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
     if run_id:
         write_step_rows(repo, run_id, check_command)
 
-    env = pinned_interpreter_env(repo, env)
+    env = gate_env.check_env(repo, env)
     before = take(repo)
-    exit_code = run_check_command(repo, check_command, log, timeout, env, on_start)
+    exit_code = run_check_command_retrying_collision(repo, check_command, log, timeout, env, on_start)
 
-    log_path = pathlib.Path(log).resolve()
-    for kind, paths in zip(CHANGE_KINDS, changes_since(before), strict=True):
-        details[kind] = [path for path in paths if (before["root"] / path).resolve() != log_path]
+    record_changes(details, before, log)
 
     output = pathlib.Path(log).read_text(errors="replace")
     tail = "\n".join(output.splitlines()[-TAIL_LINES:])
@@ -435,7 +486,7 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base="HEAD",
         result, result_tail = clean_exit_result(verdict, output, tail, bool(all_summaries), in_ci)
         return finish(result, result_tail, 0, satisfied=result != FAILED_EXIT_ZERO)
 
-    result, failure_lines = failed_run_result(repo, base, exit_code, output, tail)
+    result, failure_lines = failed_run_result(repo, base or DEFAULT_DIFF_BASE, exit_code, output, tail)
     return finish(result, failure_lines, exit_code)
 
 
@@ -464,16 +515,41 @@ def write_step_rows(repo, run_id, check_command):
         full_check_receipt.write_step_row(repo, run_id, index, step, check_scope.runs_tests(step), scope)
 
 
+def environment_gap_text(repo, exit_code, output):
+    """What explains a failed check as an environment gap, or None. Each failed part, judged on its own section of the
+    output (the whole output for a check that is not a joined one), needs a gap of its own: a declared module it
+    misses, or a program it names as missing on a 127 exit. One failed part without a gap makes it a failure. A
+    module gap is named ahead of a tool gap."""
+    failed_results = [part for part in check_parts.part_results(output) if part.code != 0]
+    if not failed_results:
+        failed_results = [check_parts.PartResult("check", exit_code, output)]
+
+    module_gaps = [declared_missing_modules(repo, part.text) for part in failed_results]
+    tool_gaps = [missing_tool_text(part.code, part.text) for part in failed_results]
+    if not all(modules or tool for modules, tool in zip(module_gaps, tool_gaps, strict=True)):
+        return None
+
+    first_module_gap = next((modules[0] for modules in module_gaps if modules), None)
+    return first_module_gap or next(tool for tool in tool_gaps if tool)
+
+
 def failed_run_result(repo, base, exit_code, output, tail):
     """(result, the lines that show it) for a check that exited non-zero."""
     log_lines = output.splitlines()
-    gap = environment_gap(repo, output)
-    if gap:
-        return f"not run (environment gap: {gap})", tail
+    failed_parts = check_parts.failed_part_names(log_lines)
+    # A collision that outlasted the retry is the environment's fault, never a failure. A multi-part check is left
+    # out: a setup fault would hide a real failure in another part.
+    if check_output.is_test_db_collision(output) and len(failed_parts) < 2:
+        return f"{SETUP_FAULT} ({check_output.TEST_DB_COLLISION_FAULT})", tail_with_failing_tests(output, tail)
 
-    # The command is wrong, not the code, when the missing path did not exist at the diff base either.
+    gap = environment_gap_text(repo, exit_code, output)
+    if gap:
+        return f"{ENVIRONMENT_GAP_PREFIX}{gap})", tail
+
+    # The command is wrong, not the code, when the missing path did not exist at the diff base either. A multi-part
+    # check is left out: a not-run result would hide a real failure in another part.
     missing = missing_path(log_lines[-TAIL_LINES:])
-    if missing:
+    if missing and len(failed_parts) < 2:
         missing_path_line, path = missing
         if not existed_at_base(repo, base, path):
             return f"not run (check-command error: {missing_path_line})", tail
@@ -518,14 +594,14 @@ def sweep_stale_base_trees(root, base_parent, max_age_seconds):
         shutil.rmtree(child, ignore_errors=True)
 
 
-def base_run_would_test_head(root, repo_path, check_command, env, gate_env):
+def base_run_would_test_head(root, repo_path, check_command, env, gate_assignments):
     """True when a base run would test the head tree: the repo holds an editable or linked install, the command or a
-    `gate_env` value names the repo's own path as a whole path, or an inherited import path enters the repo."""
+    `gate_assignments` value names the repo's own path as a whole path, or an inherited import path enters the repo."""
     if holds_editable_install(repo_path, env):
         return True
 
     own_paths = (str(repo_path), str(root))
-    gate_values = (gate_env or {}).values()
+    gate_values = (gate_assignments or {}).values()
     names_repo_path = any(script_utils.names_path(path, text)
                           for path in own_paths for text in (check_command, *gate_values))
     return names_repo_path or import_path_enters_repo(env, own_paths, repo_path)
@@ -538,15 +614,15 @@ def link_dependency_folders(repo_path, base_repo):
             (base_repo / folder).symlink_to(repo_path / folder, target_is_directory=True)
 
 
-def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_trees=None, gate_env=None):
+def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_trees=None, gate_assignments=None):
     """The check run in a detached worktree of HEAD, made under the repo's git common dir and removed afterwards,
     with the repo's dependency folders linked in; the log is written to `log`. Returns a BaseRun, or None when the
     base run is not a failure (it passes, timed out, hit a setup fault or an environment gap), the repo holds an
-    editable or linked install, the command or a `gate_env` value (the assignments the gate adds, not the inherited
-    environment) names the repo's own path as a whole path, or an inherited PYTHONPATH or NODE_PATH entry resolves
-    inside the repo (no base run is made: it would test the head tree), or the worktree cannot be made or does not hold
-    the repo's folder (an untracked one). The user's
-    working tree is never touched. A cache the check writes through a linked folder lands in the user's folder.
+    editable or linked install, the command or a `gate_assignments` value (the assignments the gate adds, not the
+    inherited environment) names the repo's own path as a whole path, or an inherited PYTHONPATH or NODE_PATH entry
+    resolves inside the repo (no base run is made: it would test the head tree), or the worktree cannot be made or
+    does not hold the repo's folder (an untracked one). The user's working tree is never touched.
+    A cache the check writes through a linked folder lands in the user's folder.
     `live_trees`, when given, is a set that holds (repo root, worktree) while the worktree exists, so a signal
     handler can remove it. The run writes no receipt: only a run on the work tree is one."""
     root = script_utils.repo_root(repo)
@@ -554,7 +630,7 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
         return None
 
     repo_path = pathlib.Path(repo).resolve()
-    if base_run_would_test_head(root, repo_path, check_command, env, gate_env):
+    if base_run_would_test_head(root, repo_path, check_command, env, gate_assignments):
         return None
 
     common_dir = script_utils.git_output(root, "rev-parse", "--git-common-dir")
@@ -637,25 +713,59 @@ def is_not_run(result):
 
 def summary_text(result, summaries):
     """The summary line's text for a passed or unverified result: the runner's summary lines joined, or `not found`
-    when there are none. None for any other result, which carries no summary."""
+    when there are none. An environment gap carries the summary lines of the parts that did run, and none when no part
+    printed one. None for any other result, which carries no summary."""
+    if is_environment_gap_result(result):
+        return SUMMARY_SEPARATOR.join(summaries) or None
     if result != PASSED and not is_unverified(result):
         return None
     return SUMMARY_SEPARATOR.join(summaries) or "not found"
+
+
+def is_environment_gap_result(result):
+    return result.startswith(ENVIRONMENT_GAP_PREFIX)
 
 
 def is_setup_fault_result(result):
     return result.startswith(SETUP_FAULT)
 
 
-def phase_check(repo, check_command, plan, phase):
+def phase_check(repo, check_command, plan, phase, base=None):
     """(the command the phase's full check runs, None when the phase's Expected red lines leave out all of it; the
     Expected red entries left out). `plan` is the plan path, relative to the repo or absolute. With no plan or phase
-    the command is as given. A plan that cannot be read raises OSError."""
+    the command is as given. A plan that cannot be read raises OSError. `base` is the revision `check_command` was
+    resolved for: an entry that names one step of a discovered check's parts leaves that step out of its part."""
     if not plan or not phase or not check_command:
         return check_command, []
 
     plan_lines = (pathlib.Path(repo) / plan).read_text().splitlines()
-    return expected_red.check_for_phase(check_command, plan_lines, phase)
+    command, left_out = expected_red.check_for_phase(check_command, plan_lines, phase)
+    if left_out:
+        return command, left_out
+    return discovered_part_check(repo, check_command, expected_red.active(plan_lines, phase), base)
+
+
+def discovered_part_check(repo, check_command, entries, base):
+    """phase_check for the Expected red `entries` that name a step of a discovered check's parts: the check without
+    those steps, and the entries it left out. `check_command` as given when it is no discovered check or no entry
+    names a step."""
+    unchanged = (check_command, [])
+    if not entries:
+        return unchanged
+
+    resolved = resolved_check(repo, base)
+    if resolved.source != SOURCE_DISCOVERED or resolved.command != check_command:
+        return unchanged
+
+    import check_discovery
+
+    steps = check_discovery.discovered_check_steps(repo, changed_paths_since(repo, base))
+    left_out = [entry for entry in entries if entry["command"] in steps]
+    if not left_out:
+        return unchanged
+
+    left_out_steps = {entry["command"] for entry in left_out}
+    return resolved_check(repo, base, left_out_steps).command, left_out
 
 
 def checked_tree_fingerprint(repo, log):
@@ -695,7 +805,7 @@ def main(argv):
     parser.add_argument("repo")
     parser.add_argument("--log", required=True)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
-    parser.add_argument("--base", default="HEAD")
+    parser.add_argument("--base", default=None)
     parser.add_argument("--plan")
     parser.add_argument("--phase")
     separator = argv.index("--") if "--" in argv else len(argv)
@@ -705,7 +815,7 @@ def main(argv):
     if bool(args.plan) != bool(args.phase):
         parser.error("--plan and --phase go together")
 
-    declared = configured_check_command(args.repo)
+    declared = configured_check_command(args.repo, args.base)
     command_words = argv[separator + 1:]
     handed_command = shlex.join(command_words) if len(command_words) > 1 else "".join(command_words)
     if handed_command and handed_command != declared:
@@ -713,7 +823,7 @@ def main(argv):
         print(note, file=sys.stderr)
 
     try:
-        phase_command, left_out = phase_check(args.repo, declared, args.plan, args.phase)
+        phase_command, left_out = phase_check(args.repo, declared, args.plan, args.phase, args.base)
     except OSError as error:
         parser.error(f"--plan {args.plan}: {error.strerror}")
 

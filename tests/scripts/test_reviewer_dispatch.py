@@ -128,6 +128,30 @@ class ReviewerDispatchTest(unittest.TestCase):
         with self.assertRaises(reviewer_dispatch.ManifestError):
             reviewer_dispatch.packet_command(self.loop_dir)
 
+    def test_the_packet_command_names_the_plan_the_loop_prompt_header_gives(self):
+        self.loop_dir.mkdir(parents=True)
+        prompt = "lane: code\nrepo: /work/repo\nplan: docs/plans/x/plan.md\nphase: 2\n\nhandoff\n"
+        (self.loop_dir / reviewer_dispatch.PROMPT_FILE).write_text(prompt)
+
+        command = reviewer_dispatch.packet_command(self.loop_dir)
+
+        self.assertEqual(command, f"{reviewer_dispatch.PACKET_COMMAND} --skill review "
+                                  "--plan /work/repo/docs/plans/x/plan.md")
+
+    def test_the_packet_command_adds_no_plan_for_a_prompt_header_without_one(self):
+        self.loop_dir.mkdir(parents=True)
+        (self.loop_dir / reviewer_dispatch.PROMPT_FILE).write_text("lane: code\nrepo: /work/repo\n\nhandoff\n")
+
+        command = reviewer_dispatch.packet_command(self.loop_dir)
+
+        self.assertEqual(command, f"{reviewer_dispatch.PACKET_COMMAND} --skill review")
+
+    def test_a_prompt_file_not_in_the_form_stops_loudly(self):
+        self.loop_dir.mkdir(parents=True)
+        (self.loop_dir / reviewer_dispatch.PROMPT_FILE).write_text("repo: /work/repo\n\nhandoff\n")
+        with self.assertRaises(reviewer_dispatch.ManifestError):
+            reviewer_dispatch.packet_command(self.loop_dir)
+
     def test_wait_with_no_pid_file_stops_loudly(self):
         self.loop_dir.mkdir(parents=True)
         code, output = self.run_wait()

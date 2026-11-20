@@ -13,7 +13,6 @@ yet, or, once the loop process (pid in <loop dir>/loop.pid) has ended, the line 
 """
 import argparse
 import json
-import os
 import pathlib
 import shlex
 import sys
@@ -22,7 +21,9 @@ import time
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "review")]
 import script_utils
+from process_group import pid_is_alive
 from review_fix_state import REVIEW_FIX_COMMAND
+from review_loop_prompt_file import PROMPT_FILE, PromptFileError, read_prompt
 
 REQUESTS_FOLDER = "reviewer-requests"
 PID_FILE = "loop.pid"
@@ -164,16 +165,6 @@ def wait_for_step(loop_dir, is_running, poll=POLL_SECONDS):
         time.sleep(poll)
 
 
-def pid_is_running(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 def loop_pid(loop_dir):
     """The pid in <loop dir>/loop.pid, or None when the file is missing or holds no number."""
     try:
@@ -190,7 +181,7 @@ def live_loops(loop_root):
         return
     for loop_dir in sorted(loop_root.iterdir()):
         pid = loop_pid(loop_dir)
-        if pid is None or not pid_is_running(pid):
+        if pid is None or not pid_is_alive(pid):
             continue
         yield loop_dir, pid
 
@@ -227,10 +218,27 @@ def packet_command(loop_dir):
     """The packet command of the run: `packet` plus the arguments `launch` saved in <loop dir>/launch.json, or
     `--skill review` for a run with no such file (one /code started)."""
     launch_file = pathlib.Path(loop_dir) / LAUNCH_FILE
-    if not launch_file.is_file():
-        return f"{PACKET_COMMAND} --skill review"
-    packet_args = read_launch_record(launch_file, "packet_args")
+    packet_args = ["--skill", "review"]
+    if launch_file.is_file():
+        packet_args = read_launch_record(launch_file, "packet_args")
+    packet_args = [*packet_args, *plan_arguments(loop_dir)]
     return " ".join([PACKET_COMMAND, shlex.join(packet_args)])
+
+
+def plan_arguments(loop_dir):
+    """`--plan <path>` for the plan the loop's prompt header names (a /code run writes one), so `packet` reads the
+    plan's standing rulings; [] when the run has no prompt file or its header names no plan."""
+    prompt_file = pathlib.Path(loop_dir) / PROMPT_FILE
+    if not prompt_file.is_file():
+        return []
+    try:
+        header, _handoff = read_prompt(prompt_file)
+    except PromptFileError as error:
+        raise ManifestError(f"{prompt_file}: {error}") from error
+    plan, repo = header.get("plan"), header.get("repo")
+    if not plan or not repo:
+        return []
+    return ["--plan", str(pathlib.Path(repo) / plan)]
 
 
 def command_wait(loop_dir):
@@ -242,7 +250,7 @@ def command_wait(loop_dir):
               "`review_fix.py launch` wrote. Run `launch` again.", file=sys.stderr)
         return 2
 
-    lines = wait_for_step(loop_dir, lambda: pid_is_running(pid))
+    lines = wait_for_step(loop_dir, lambda: pid_is_alive(pid))
     if lines is None:
         lines = [f"The review loop script finished. Run `{packet_command(loop_dir)}` now."]
     print("\n".join(lines))

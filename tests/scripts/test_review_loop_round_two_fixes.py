@@ -29,10 +29,11 @@ def review_of(*fixes):
 class RoundTwoFixesTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
     def run_two_rounds(self, *second_round_fixes, second_coder=None, header_extra="", first_round=True):
         """Round one files an app.py fix; round two files `second_round_fixes`. Returns the fix coder prompts."""
-        reviews = [{"result": review_of(*second_round_fixes)}]
+        # The round budget ends on the second coder pass, so one more reviewer read of that pass follows.
+        reviews = [{"result": review_of(*second_round_fixes)}, {"result": loop_tests.CLEAN_REVIEW}]
         coders = [second_coder or {"result": "Fixed.", "edits": {"notes.py": NOTES_FIXED}}]
         if first_round:
-            reviews.insert(0, {"result": loop_tests.FIX_REVIEW})
+            reviews.insert(0, {"result": loop_tests.FIX_REVIEW})  # round one precedes both
             coders.insert(0, FIRST_CODER)
         scenario = {"code-reviewer": reviews, "coder": coders, "closure": [{"result": loop_tests.CLOSED}]}
         completed = self.run_script(scenario, header_extra=header_extra)
@@ -88,10 +89,10 @@ class RoundTwoFixesTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         reviewer_calls = [call for call in calls if call["key"] == "code-reviewer"]
         coder_calls = [call for call in calls if call["key"] == "coder"]
         self.assertEqual(len(coder_calls), 2)
-        # A third review round never starts: the budget is the number of rounds the loop ran.
-        self.assertEqual(len(reviewer_calls), 2)
+        # No third review round starts; the one extra reviewer call is the read of the last fix pass.
+        self.assertEqual(len(reviewer_calls), 3)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["iter"], 2)
+        self.assertEqual(packet["iter"], 3)
         self.assertNotEqual(packet["status"], capped_review.DEFERRED)
 
     def test_a_round_two_run_resumed_over_an_old_fix_diff_sends_the_finding_to_the_coder(self):

@@ -33,6 +33,12 @@ MISS_REASONS = ("out-of-scope", "needs-other-file", "needs-runtime", "plan-gap",
                 "overlooked", "unknown")
 
 
+def jsonl_rows(log_file):
+    if not log_file.exists():
+        return []
+    return [json.loads(line) for line in log_file.read_text().splitlines()]
+
+
 class LogEscapeTest(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
@@ -67,7 +73,9 @@ class LogEscapeTest(unittest.TestCase):
 
     def test_writes_review_escape_with_string_values(self):
         done = self.run_escape(*VALID_ARGS, "line=7", "lane=code")
-        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+        self.assertEqual((done.returncode, done.stdout), (0, ""))
+        self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+        self.assertIn("escape-text.jsonl", done.stderr)
         rows = self.escape_rows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["gate_missed"], "review")
@@ -149,10 +157,165 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.escape_rows()[0]["path_key"], "src/my dir/a b.py")
 
-    def test_desc_with_spaces_is_accepted_and_dropped(self):
+    def test_desc_with_spaces_is_accepted_and_kept_out_of_the_ledger_row(self):
         done = self.run_escape(*VALID_ARGS, "desc=free text, with spaces")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertNotIn("desc", self.escape_rows()[0])
+
+    def text_file(self):
+        return self.temp_root / "escape-text.jsonl"
+
+    def text_env(self, **extra):
+        return self.environment(ESCAPE_TEXT_FILE=str(self.text_file()), **extra)
+
+    def text_rows(self):
+        return jsonl_rows(self.text_file())
+
+    def test_desc_row_lands_in_the_text_file_and_not_in_the_ledger_payload(self):
+        done = self.run_escape(*VALID_ARGS, "desc=planted text zq", "file=src/a b.py", "ticket=T-1",
+                               "scan_flagged=1", "repo=evil", "date=x", "session=evil", "schema_version=9",
+                               env=self.text_env(CLAUDE_CODE_SESSION_ID="sess-1"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        (row,) = self.text_rows()
+        self.assertNotIn("scan_flagged", row)
+        self.assertEqual(row["desc"], "planted text zq")
+        self.assertEqual(row["file"], "src/a b.py")
+        self.assertEqual(row["branch"], PLANTED_BRANCH)
+        self.assertEqual((row["ticket"], row["session"], row["schema_version"]), ("T-1", "sess-1", 2))
+        self.assertEqual(row["repo"], "repo")
+        self.assertRegex(row["date"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertNotIn("ts", row)
+        self.assertNotIn("desc", self.escape_rows()[0])
+
+    def test_number_like_desc_and_file_stay_strings_in_the_text_file(self):
+        cases = (("404", "123", "1234e56", "2026", "0123"),
+                 ("nan", "1e400", "1234e57", "1.10", "007"),
+                 ("42", "7", "99", "3", "5"))
+        for desc, file_path, commit, branch, ticket in cases:
+            done = self.run_escape(*VALID_ARGS, f"desc={desc}", f"file={file_path}",
+                                   f"commit={commit}", f"branch={branch}", f"ticket={ticket}",
+                                   env=self.text_env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+        rows = self.text_rows()
+        self.assertEqual([row["desc"] for row in rows], ["404", "nan", "42"])
+        self.assertEqual([row["file"] for row in rows], ["123", "1e400", "7"])
+        self.assertEqual([row["commit"] for row in rows], ["1234e56", "1234e57", "99"])
+        self.assertEqual([row["branch"] for row in rows], ["2026", "1.10", "3"])
+        self.assertEqual([row["ticket"] for row in rows], ["0123", "007", "5"])
+
+    def test_a_hand_catch_text_write_prints_one_stderr_line_naming_the_text_file(self):
+        done = self.run_escape(*VALID_ARGS, "desc=noted zq", env=self.text_env())
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+        self.assertIn(str(self.text_file()), done.stderr)
+
+    def test_text_rows_append(self):
+        for desc in ("a", "b"):
+            done = self.run_escape(*VALID_ARGS, f"desc={desc}", env=self.text_env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["desc"] for row in self.text_rows()], ["a", "b"])
+
+    def test_text_row_defaults_to_the_claude_folder_under_home(self):
+        done = self.run_escape(*VALID_ARGS, "desc=default zq")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        rows = jsonl_rows(self.home / ".claude/escape-text.jsonl")
+        self.assertEqual([row["desc"] for row in rows], ["default zq"])
+
+    def test_text_row_lands_when_there_is_no_ledger(self):
+        no_ledger_path = fake_ledger.path_without_ledger(self.ledger_env["PATH"])
+        env = self.text_env(PATH=no_ledger_path, CARGO_HOME=str(self.temp_root / "no-cargo"))
+        done = self.run_escape(*VALID_ARGS, "desc=offline zq", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["desc"] for row in self.text_rows()], ["offline zq"])
+
+    def test_text_row_lands_when_the_ledger_fails(self):
+        done = self.run_escape(*VALID_ARGS, "desc=kept zq", env=self.text_env(FAKE_LEDGER_WRITE_EXIT="1"))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual([row["desc"] for row in self.text_rows()], ["kept zq"])
+
+    def test_only_a_hand_catch_stage_keeps_its_desc_in_the_text_row(self):
+        hand_stages = ("cc", "walkthrough", "pr-human", "peer-review", "prod", "other")
+        other_stages = ("pr-bot", "plan-review", "phase-gate", "refactor", "verify", "q-verify")
+        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
+        for stage in hand_stages + other_stages:
+            done = self.run_escape(*args, f"stage_found={stage}", f"desc=from {stage}".replace(" ", "-"),
+                                   env=self.text_env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+        rows = self.text_rows()
+        self.assertEqual([row["stage_found"] for row in rows], list(hand_stages + other_stages))
+        stages_with_desc = [row["stage_found"] for row in rows if "desc" in row]
+        self.assertEqual(stages_with_desc, list(hand_stages))
+
+    def test_a_row_with_a_miss_reason_and_no_desc_writes_a_text_row_for_every_stage(self):
+        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
+        for stage in ("cc", "refactor", "plan-review", "pr-bot"):
+            done = self.run_escape(*args, f"stage_found={stage}", env=self.text_env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+        rows = self.text_rows()
+        self.assertEqual([row["stage_found"] for row in rows], ["cc", "refactor", "plan-review", "pr-bot"])
+        self.assertEqual({row["miss_reason"] for row in rows}, {"overlooked"})
+
+    def test_an_eng_spec_row_with_no_miss_reason_and_no_desc_writes_no_text_row(self):
+        args = [arg for arg in VALID_ARGS
+                if not arg.startswith(("miss_reason=", "gate_missed=", "stage_found="))]
+        done = self.run_escape(*args, "gate_missed=eng-spec", "stage_found=plan-review", env=self.text_env())
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse(self.text_file().exists())
+
+    def test_a_ledger_that_refuses_miss_reason_leaves_it_in_the_text_file_and_the_note_names_the_file(self):
+        env = self.text_env(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
+        done = self.run_escape(*args, "stage_found=refactor", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("does not store miss_reason", done.stderr)
+        self.assertIn(f"the miss_reason is in {self.text_file()}", done.stderr)
+        self.assertNotIn("kept out of the ledger", done.stderr)
+        (row,) = self.text_rows()
+        self.assertEqual(row["miss_reason"], "overlooked")
+        self.assertNotIn("miss_reason", self.escape_rows()[0])
+
+    def test_the_refusal_note_does_not_claim_a_kept_row_when_the_text_append_fails(self):
+        blocker = self.temp_root / "blocker"
+        blocker.write_text("a file, not a folder\n")
+        env = self.environment(ESCAPE_TEXT_FILE=str(blocker / "escape-text.jsonl"),
+                               FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("could not append escape_text row", done.stderr)
+        self.assertNotIn("row appended to", done.stderr)
+
+    def test_the_refusal_note_does_not_claim_a_kept_row_when_the_append_fails_on_a_file_with_older_rows(self):
+        self.text_file().write_text('{"older": "row"}\n')
+        self.text_file().chmod(0o444)
+        env = self.text_env(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("could not append escape_text row", done.stderr)
+        self.assertNotIn("the miss_reason is in", done.stderr)
+
+    def test_a_refused_call_with_desc_writes_no_text_row(self):
+        bad_enum_args = [arg for arg in VALID_ARGS if not arg.startswith("miss_reason=")]
+        done = self.run_escape(*bad_enum_args, "miss_reason=not-a-reason", "desc=refused text zq",
+                               env=self.text_env())
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertFalse(self.text_file().exists())
+
+    def test_text_row_is_not_written_when_telemetry_is_off_or_on_check(self):
+        off = self.run_escape(*VALID_ARGS, "desc=x", env=self.text_env(CLAUDE_TOOLKIT_TELEMETRY="0"))
+        self.assertEqual(off.returncode, 0, off.stderr)
+        check = self.run_escape("--check", *VALID_ARGS, "desc=x", env=self.text_env())
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertFalse(self.text_file().exists())
+
+    def test_an_unwritable_text_file_exits_0_with_one_stderr_line(self):
+        blocker = self.temp_root / "blocker"
+        blocker.write_text("a file, not a folder\n")
+        env = self.environment(ESCAPE_TEXT_FILE=str(blocker / "escape-text.jsonl"))
+        done = self.run_escape(*VALID_ARGS, "desc=x", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+        self.assertIn("could not append escape_text row", done.stderr)
+        self.assertEqual(len(self.escape_rows()), 1)
 
     def test_missing_guard_is_refused_with_the_ratchet_pointer(self):
         args = [argument for argument in VALID_ARGS if argument != "guard=none"]
@@ -227,6 +390,23 @@ class LogEscapeTest(unittest.TestCase):
                 self.assertIn("refusing to log: miss_reason=", done.stderr)
         self.assertEqual(self.escape_rows(), [])
 
+    def test_a_stage_found_outside_the_list_is_refused_and_writes_no_row(self):
+        for stage in ("pr-humna", "walk-through", "Other"):
+            with self.subTest(stage=stage):
+                args = [argument for argument in VALID_ARGS if not argument.startswith("stage_found=")]
+                done = self.run_escape(*args, f"stage_found={stage}", "desc=the-catch", env=self.text_env())
+                self.assertEqual(done.returncode, 1)
+                self.assertIn(f"refusing to log: stage_found='{stage}'", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertEqual(self.text_rows(), [])
+
+    def test_check_refuses_a_stage_found_outside_the_list(self):
+        args = [argument for argument in VALID_ARGS if not argument.startswith("stage_found=")]
+        done = self.run_escape("--check", *args, "stage_found=pr-humna", "desc=x", env=self.text_env())
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("refusing to log: stage_found='pr-humna'", done.stderr)
+        self.assertFalse(self.text_file().exists())
+
     def test_unknown_class_reaches_the_ledger(self):
         args = [argument.replace("class=bug", "class=nonsense") for argument in VALID_ARGS]
         done = self.run_escape(*args)
@@ -251,15 +431,15 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(self.escape_rows(), [])
 
     def local_rows(self):
-        log_text = (self.home / ".claude" / "review-escapes.jsonl").read_text()
-        return [json.loads(line) for line in log_text.splitlines()]
+        return jsonl_rows(self.home / ".claude" / "review-escapes.jsonl")
 
     def test_a_ledger_failure_keeps_the_row_locally_with_one_note_and_exit_0(self):
         for code in (2, 1, 75):
             with self.subTest(code=code):
                 done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_WRITE_EXIT=str(code)))
                 self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+                note_lines = [line for line in done.stderr.splitlines() if line.startswith("note:")]
+                self.assertEqual(len(note_lines), 1, done.stderr)
                 self.assertIn(f"ledger write exit {code}", done.stderr)
                 self.assertEqual(self.local_rows()[-1]["miss_reason"], "overlooked")
         self.assertEqual(len(self.local_rows()), 3)

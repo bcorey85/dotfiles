@@ -75,6 +75,53 @@ class ClosureCheckRetryTest(unittest.TestCase):
                 self.assertEqual(["class-closure", "class-closure-retry"], [role for role, _ in calls])
                 self.assertIn(f"'{rejected_key}' must be a list of non-blank strings", calls[1][1])
 
+    def test_a_left_alone_object_is_repaired_to_one_string_with_no_retry(self):
+        reply = ('{"receipt": "r", "open": [], '
+                 '"left_alone": [{"file": "a.py", "line": 3, "purpose": "logs it"}]}')
+        result, calls = self.check([reply])
+
+        self.assertEqual(["a.py:3 - logs it"], result["left_alone"])
+        self.assertEqual(["class-closure"], [role for role, _ in calls])
+
+    def test_object_entries_read_their_purpose_from_the_first_purpose_key_and_keep_other_keys(self):
+        cases = [
+            ({"path": "b.py", "line": 7, "reason": "prints"}, "b.py:7 - prints"),
+            ({"file": "c.py", "line": 1, "why": "echo", "kind": "log"}, "c.py:1 - echo; kind: log"),
+            ({"file": "d.py", "reads": "the limit", "what": "x"}, "d.py - the limit; what: x"),
+            ({"file": "e.py"}, "e.py"),
+            ({"line": 3, "reason": "x"}, "x; line: 3"),
+            ({"file": "", "line": 3, "reason": "x"}, "x; line: 3"),
+        ]
+        for member, expected in cases:
+            with self.subTest(member=member):
+                self.assertEqual(expected, review_loop_closure.member_object_text(member))
+
+    def test_an_open_object_is_repaired_only_with_a_file_key_and_other_entries_still_retry(self):
+        repaired = '{"receipt": "r", "open": [{"file": "a.py", "line": 3, "reason": "bad"}], "left_alone": []}'
+        result, calls = self.check([repaired])
+        self.assertEqual(["a.py:3 - bad"], result["open"])
+        self.assertEqual(1, len(calls))
+
+        no_file = '{"receipt": "r", "open": [{"line": 3, "reason": "bad"}], "left_alone": []}'
+        number = '{"receipt": "r", "open": [], "left_alone": [3]}'
+        cases = [
+            (no_file, 'each one string "<file>:<line> - <defect> - <correction>"'),
+            (number, 'each one string "<file>:<line> - <purpose>"'),
+        ]
+        for reply, expected_shape in cases:
+            with self.subTest(reply=reply):
+                _, calls = self.check([reply, JSON_REPLY])
+                self.assertEqual(["class-closure", "class-closure-retry"], [role for role, _ in calls])
+                self.assertIn("must be a list of non-blank strings", calls[1][1])
+                self.assertIn(expected_shape, calls[1][1])
+
+    def test_an_open_object_without_a_file_key_in_both_replies_raises_after_one_retry(self):
+        no_file = '{"receipt": "r", "open": [{"line": 3, "reason": "bad"}], "left_alone": []}'
+
+        with self.assertRaises(review_loop_findings.ReplyShapeError) as raised:
+            self.check([no_file, no_file])
+        self.assertIn("'open' must be a list of non-blank strings", str(raised.exception))
+
     def test_two_malformed_replies_raise(self):
         malformed = '{"receipt": "r", "open": [], "left_alone": "log.py:9 - prints the limit"}'
 
@@ -155,6 +202,28 @@ class ClosureCheckRetryTest(unittest.TestCase):
         _, calls = self.check([JSON_REPLY])
 
         self.assertEqual([role for role, _ in calls], ["class-closure"])
+
+
+class ReceiptTest(unittest.TestCase):
+    RULED_CLAUSE = "; skipped, ruled out of scope by the user: n.py:1 - defect"
+    HELD_CLAUSE = "; skipped, held by another session: h.py:2 - defect"
+
+    def test_the_ruled_out_clause_stands_apart_from_the_held_clause_in_every_receipt(self):
+        receipts = [
+            review_loop_closure.receipt_after_class_repair(["a.py:3"], ["h.py:2 - defect"], ["n.py:1 - defect"]),
+            review_loop_closure.receipt_all_held(["h.py:2 - defect"], ["n.py:1 - defect"]),
+            review_loop_closure.receipt_still_open(["a.py:3"], ["h.py:2 - defect"], ["n.py:1 - defect"]),
+        ]
+        for receipt in receipts:
+            with self.subTest(receipt):
+                self.assertTrue(receipt.endswith(self.HELD_CLAUSE + self.RULED_CLAUSE), receipt)
+
+    def test_only_ruled_out_members_give_a_receipt_with_no_held_clause(self):
+        receipt = review_loop_closure.receipt_all_held([], ["n.py:1 - defect"])
+
+        self.assertTrue(receipt.endswith(self.RULED_CLAUSE), receipt)
+        self.assertNotIn("held by another session", receipt)
+        self.assertIn("another session holds or the user ruled out of scope", receipt)
 
 
 if __name__ == "__main__":

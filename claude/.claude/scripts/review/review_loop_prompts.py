@@ -31,9 +31,12 @@ SCOPED_TESTS = (
 SMALL_ITEMS = (
     "Small items follow the issues. They are the reviewer's optional notes, not findings. Apply a small "
     'item only when it names wrong behavior, or a false statement in a doc or a comment, and one '
-    'correction is clear. Skip every other small item, and report each skip with its reason. A small '
+    'correction is clear. Skip every other small item, and report each skip as `SKIPPED small <n>: <reason>`, '
+    'where n is the small item\'s number. A small '
     'item never widens the change: no rename, no restructure, no new abstraction.'
 )
+
+NAMED_TESTS_RULE = "Tests the plan runs by name; never delete or rename them: "
 
 LATER_PHASE_RULE = (
     "Never edit these files: the plan gives them to a later phase. When an issue needs one of them, leave it "
@@ -44,6 +47,10 @@ HELD_FILES_RULE = (
     "Never edit these files: another session holds uncommitted edits in them. When an issue needs one of them, skip "
     "it and say so: "
 )
+
+RULED_OUT_CODER_RULE = "The user ruled these files out of scope. Never edit, create or delete them: "
+
+RULED_OUT_REVIEWER_RULE = "Out of scope by the user's ruling; file no finding on them: "
 
 GUIDANCE_RULE = "Guidance from the main session. Follow it within the issues and the plan; it changes neither: "
 
@@ -85,10 +92,12 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
 
 
 def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", test_strategy="",
-                    no_code_rulings=()):
+                    no_code_rulings=(), ruled_out=()):
     # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
+    if ruled_out:
+        lines.append(RULED_OUT_REVIEWER_RULE + ", ".join(sorted(ruled_out)))
     lines.append(CLASS_TAG_RULE)
     if fix_diff_path:
         lines.append("Round-one fix diff (what the coder changed since the first review; read it, and review only "
@@ -145,7 +154,7 @@ def path_list(paths, list_file, in_scope=()):
 
 
 def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), later_phase_files=(), guidance="",
-                 held_files=(), no_code_numbers=()):
+                 held_files=(), no_code_numbers=(), named_tests=(), ruled_out_files=()):
     """The fix coder's brief. `list_dir` is the folder that takes the full issue texts, the full small-item texts
     and each path list the brief folds."""
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
@@ -158,11 +167,15 @@ def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), late
     if small_items:
         body += ["", "## Small items", "", SMALL_ITEMS, "",
                  *listed_texts(small_items, list_dir / "small-items.txt", "small item")]
+    if named_tests:
+        body += ["", NAMED_TESTS_RULE + path_list(named_tests, list_dir / "named-tests.txt")]
     body += ["", "Files in scope: " + path_list(files, list_dir / "files-in-scope.txt")]
     if later_phase_files:
         body += ["", LATER_PHASE_RULE + path_list(sorted(later_phase_files), list_dir / "later-phase-files.txt", files)]
     if held_files:
         body += ["", HELD_FILES_RULE + path_list(sorted(held_files), list_dir / "held-files.txt", files)]
+    if ruled_out_files:
+        body += ["", RULED_OUT_CODER_RULE + path_list(sorted(ruled_out_files), list_dir / "ruled-out-files.txt", files)]
     if guidance:
         body += ["", GUIDANCE_RULE + guidance]
     gate_env_text = plan_format.gate_env_text(list(gate_env))

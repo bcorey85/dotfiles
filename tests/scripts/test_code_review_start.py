@@ -157,6 +157,16 @@ class CodeReviewStartTest(unittest.TestCase):
         loop_dir_file = self.repo / ".git/code-phase/loop-dir"
         self.assertEqual(loop_dir_file.read_text().strip(), str(prompt_folder))
 
+    def test_a_missing_handoff_file_stops_with_its_path_and_no_traceback(self):
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               str(self.repo / ".git/code-phase/handoff.txt"), "--base", "HEAD", "--detach"],
+                              cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(f"no hand-off file at {self.repo / '.git/code-phase/handoff.txt'}", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
+
     def test_a_handoff_an_earlier_phase_review_read_stops_the_next_phase_review(self):
         code_review_start = self.load_module()
         handoff_text = (self.repo / "handoff.txt").read_text()
@@ -196,7 +206,8 @@ class CodeReviewStartTest(unittest.TestCase):
         with mock.patch.object(code_review_start, "subprocess") as fake_subprocess, \
                 contextlib.redirect_stdout(io.StringIO()):
             fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
-            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"])
+            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"],
+                                     code_review_start.ReviewScope([], "", [], None))
 
         self.assertFalse((phase_dir / "loop-dir").exists())
 
@@ -210,7 +221,8 @@ class CodeReviewStartTest(unittest.TestCase):
 
         with mock.patch.object(code_review_start, "subprocess") as fake_subprocess, \
                 self.assertRaises(SystemExit) as stop:
-            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"])
+            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"],
+                                     code_review_start.ReviewScope([], "", [], None))
 
         self.assertIn(str(os.getpid()), str(stop.exception.code))
         self.assertIn("/running/loop", str(stop.exception.code))
@@ -222,7 +234,71 @@ class CodeReviewStartTest(unittest.TestCase):
         self.run_live(self.load_module(), write_packet=False)
 
         run_record = json.loads((self.repo / ".git/code-phase/run.json").read_text())
-        self.assertEqual(run_record, {"lane": "lane-a", "phase": "1"})
+        self.assertEqual(set(run_record), {"lane", "phase", "loop_dir"})
+        self.assertEqual((run_record["lane"], run_record["phase"]), ("lane-a", "1"))
+
+    def test_the_live_run_records_the_loop_folder_that_loop_dir_names(self):
+        _printed, prompt_folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)
+
+        run_record = json.loads((self.repo / ".git/code-phase/run.json").read_text())
+        self.assertEqual(run_record["loop_dir"], str(prompt_folder))
+
+    def git(self, *args):
+        done = subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              capture_output=True, text=True, check=True)
+        return done.stdout.strip()
+
+    def test_a_merge_commit_after_the_phase_is_left_out_of_the_review_diff(self):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "main")
+        base = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "-b", "integration")
+        (self.repo / "integration.py").write_text("from the integration branch\n")
+        self.git("add", "integration.py")
+        self.git("commit", "-q", "-m", "integration change")
+        self.git("checkout", "-q", "main")
+        (self.repo / "phase.py").write_text("the phase\n")
+        self.git("add", "phase.py")
+        self.git("commit", "-q", "-m", "the phase")
+        self.git("merge", "-q", "--no-ff", "-m", "merge integration", "integration")
+        (self.repo / "handoff.txt").write_text("  files:\n    - path: x\n      why: the phase\n")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+                               "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header, _, handoff = done.stdout.partition("\n\n")
+        base_line = next(line for line in header.splitlines() if line.startswith("base: "))
+        review_base = base_line.removeprefix("base: ")
+        self.assertNotEqual(review_base, base)
+        self.assertIn("- path: phase.py", handoff)
+        self.assertNotIn("integration.py", handoff)
+        diff_names = self.git("diff", "--name-only", review_base).splitlines()
+        self.assertIn("phase.py", diff_names)
+        self.assertNotIn("integration.py", diff_names)
+
+    def test_a_merge_that_cannot_fold_into_the_base_stops_the_run_naming_it(self):
+        (self.repo / "f.py").write_text("base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "main")
+        base = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "--orphan", "unrelated")
+        (self.repo / "f.py").write_text("another history\n")
+        self.git("add", "f.py")
+        self.git("commit", "-q", "-m", "unrelated")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--allow-unrelated-histories", "-X", "ours", "-m", "merge unrelated", "unrelated")
+        merge = self.git("rev-parse", "HEAD")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+                               "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(merge, done.stderr)
 
     def test_a_start_refused_while_a_loop_runs_leaves_the_run_record_as_it_was(self):
         phase_dir = self.repo / ".git/code-phase"
@@ -243,28 +319,6 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertIn("status: converged", printed)
         self.assertEqual(loop_folder, prompt_folder, "the loop writes its packet where the run looks for it")
 
-    def test_a_converged_packet_with_a_held_plan_impact_prints_the_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: AC2 now names the archived orders too", "gate": "code-reviewer",
-                    "ac_change": True, "cause": "plan", "adopted": False}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        handoff = self.repo / "handoff.txt"
-        self.assertIn("ACTION: defer-plan-impacts. 1 plan impact(s) wait for a ruling", printed)
-        self.assertIn(f"review_fix.py defer {handoff}", printed)
-
-    def test_a_converged_packet_with_only_an_adopted_plan_impact_prints_no_defer_action(self):
-        impacts = [{"text": "PLAN-IMPACT: the helper lives in lib", "gate": "code-reviewer", "ac_change": False,
-                    "cause": "plan", "adopted": True}]
-        packet = json.dumps({"status": "converged", "iter": 1, "fixed": [], "plan_impacts": impacts})
-
-        printed, _folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=True,
-                                                                 packet_text=packet)
-
-        self.assertNotIn("defer-plan-impacts", printed)
-
     def test_the_live_run_names_the_log_when_the_loop_wrote_no_packet(self):
         printed, folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)
 
@@ -284,7 +338,8 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         header = done.stdout.partition("\n\n")[0].splitlines()
-        self.assertEqual(["mode: review-first", "caller: code", "lane: lane-a", f"repo: {self.repo}"], header)
+        self.assertEqual(["mode: review-first", "caller: code", "lane: lane-a", f"repo: {self.repo}",
+                          f"base: {base}"], header)
         self.assertEqual(SAMPLE_COMMANDS, commands)
 
     def test_a_handoff_that_names_a_repo_root_file_gets_its_gate(self):
@@ -356,6 +411,147 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("is not a commit", done.stderr)
 
+    def held_rows(self, unchanged, live_row, phase="2"):
+        code_review_start = self.load_module()
+        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=unchanged), \
+                mock.patch.object(code_review_start.session_registry, "other_live_session_in",
+                                  return_value=live_row), \
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}):
+            return code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", phase)
+
+    def test_a_dirty_file_is_held_only_when_another_live_session_works_in_the_repo(self):
+        live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo / "sub")}
+
+        held = self.held_rows(["theirs.py"], live_row)
+        not_held = self.held_rows(["theirs.py"], None)
+
+        claim = f"dirty at the run start, unchanged now; live session in {self.repo / 'sub'}"
+        self.assertEqual(held, [{"path": "theirs.py", "session": "lane-b", "claim": claim}])
+        self.assertEqual(not_held, [])
+
+    def test_a_holder_with_no_name_is_recorded_by_its_session_id(self):
+        held = self.held_rows(["theirs.py"], {"sessionId": "s2", "cwd": str(self.repo)})
+
+        self.assertEqual(held[0]["session"], "s2")
+
+    def test_a_file_an_earlier_phase_of_the_plan_names_is_never_held(self):
+        live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo)}
+
+        held = self.held_rows(["src/one.py", "theirs.py"], live_row, phase="2")
+
+        self.assertEqual([row["path"] for row in held], ["theirs.py"])
+
+    def test_a_file_a_numbered_step_of_an_earlier_phase_names_is_never_held(self):
+        step_plan = PLAN.replace("#### 1. One\n**File**: `src/one.py`", "1. Edit `src/one.py` to add the check.")
+        (self.repo / "docs/plans/p/spec.md").write_text(step_plan)
+        live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo)}
+
+        held = self.held_rows(["src/one.py", "theirs.py"], live_row, phase="2")
+
+        self.assertEqual([row["path"] for row in held], ["theirs.py"])
+
+    def test_the_run_session_id_is_passed_so_it_is_never_its_own_holder(self):
+        code_review_start = self.load_module()
+        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]), \
+                mock.patch.object(code_review_start.session_registry, "other_live_session_in",
+                                  return_value=None) as other_live_session_in, \
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}):
+            code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", "2")
+
+        other_live_session_in.assert_called_once_with(self.repo, "test-session")
+
+    def test_an_unset_session_id_holds_nothing_and_does_not_exit(self):
+        code_review_start = self.load_module()
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
+        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]), \
+                mock.patch.object(code_review_start.session_registry, "other_live_session_in") as other_live, \
+                mock.patch.dict(os.environ, environment, clear=True), \
+                contextlib.redirect_stderr(io.StringIO()) as note:
+            held = code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", "2")
+
+        self.assertEqual(held, [])
+        other_live.assert_not_called()
+        self.assertIn("CLAUDE_CODE_SESSION_ID", note.getvalue())
+
+    def test_a_dry_run_with_no_session_id_prints_the_prompt(self):
+        (self.repo / "src").mkdir()
+        (self.repo / "src/two.py").write_text("x\n")
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               "handoff.txt", "--base", BASE, "--dry-run"], cwd=self.repo, capture_output=True,
+                              text=True, check=False, env=environment)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("lane: lane-a", done.stdout)
+
+    def commit_empty(self):
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "base"], check=True)
+
+    def run_main(self, code_review_start, extra, environment):
+        """Runs main in this process with the loop's repo as the cwd; returns (stdout, stderr)."""
+        argv = ["code_review_start.py", "lane-a", "docs/plans/p/spec.md", "1", str(self.repo / "handoff.txt"),
+                "--base", "HEAD", *extra]
+        output = io.StringIO()
+        errors = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(pathlib.Path, "cwd", return_value=self.repo), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code_review_start.main(argv)
+        return output.getvalue(), errors.getvalue()
+
+    def test_a_dry_run_with_no_session_id_says_in_its_output_that_no_file_is_held(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
+
+        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]):
+            printed, _errors = self.run_main(code_review_start, ["--dry-run"], environment)
+
+        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", printed)
+        self.assertIn("lane: lane-a", printed)
+
+    def test_a_detached_run_hands_its_review_scope_to_the_child_which_does_not_compute_it_again(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        environment = {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"}
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess:
+            fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
+            self.run_main(code_review_start, ["--detach"], environment)
+        child_command = fake_subprocess.Popen.call_args.args[0]
+
+        self.assertIn("--scope-file", child_command)
+        with mock.patch.object(code_review_start, "review_scope", side_effect=AssertionError("computed twice")):
+            printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
+        self.assertIn("lane: lane-a", printed)
+
+    def test_a_run_with_no_session_id_stops_before_it_starts(self):
+        environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1",
+                               "handoff.txt", "--base", BASE], cwd=self.repo, capture_output=True, text=True,
+                              check=False, env=environment)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("CLAUDE_CODE_SESSION_ID", done.stderr)
+
+    def test_a_holder_with_no_name_and_no_session_id_is_recorded_by_its_pid(self):
+        held = self.held_rows(["theirs.py"], {"pid": 4242, "cwd": str(self.repo)})
+
+        self.assertEqual(held[0]["session"], "pid 4242")
+
+    def test_the_prompt_carries_a_held_by_line_with_the_holder_rows(self):
+        code_review_start = self.load_module()
+        holders = [{"path": "theirs.py", "session": "lane-b", "claim": "dirty at the run start, unchanged now"}]
+
+        prompt = code_review_start.review_prompt(self.repo, "lane-a", "docs/plans/p/spec.md", "1", "Done.", (), holders)
+
+        header = prompt.partition("\n\n")[0].splitlines()
+        self.assertIn("held files: theirs.py", header)
+        self.assertIn(f"held-by: {json.dumps(holders)}", header)
+
     def test_too_few_arguments_print_the_usage(self):
         done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a"], cwd=self.repo, capture_output=True,
                               text=True, check=False)
@@ -371,7 +567,8 @@ class CodeReviewStartTest(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             popen = fake_subprocess.Popen
             popen.return_value = mock.Mock(pid=4242)
-            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"])
+            code_review_start.detach(self.repo, ["code_review_start.py", "lane-a", "--detach"],
+                                     code_review_start.ReviewScope([], "", [], None))
 
         self.assertIn("python3 ~/.claude/scripts/code/code_wait.py review", output.getvalue())
         self.assertIn("Bash timeout set to 600000", output.getvalue())

@@ -19,6 +19,7 @@ import expected_red
 import full_check
 import plan_format
 import script_utils
+import standing_rulings
 from plan_verification import verification_format_failure
 
 USAGE = "usage: plan_check.py check [--final] <plan>\n       plan_check.py owner <plan>"
@@ -40,6 +41,16 @@ def print_failure(failure):
     return failure
 
 
+def spec_ac_rows(plan_path):
+    """The AC failure rows of the spec, read with its standing rulings. A standing ruling line that does not parse is
+    one failure row."""
+    try:
+        rewords_ruled = standing_rulings.reword_ruling(plan_path) is not None
+    except plan_format.PlanFormatError as error:
+        return [str(error)]
+    return plan_format.spec_ac_failures(plan_path, rewords_ruled)
+
+
 def check_plan(plan_lines, plan, plan_path, final):
     # Print each way the plan does not hold; True when any is a failure (warnings print but do not fail).
     for row in plan_format.plan_failure_rows(plan, plan_path):
@@ -51,7 +62,7 @@ def check_plan(plan_lines, plan, plan_path, final):
     red_failure = print_failure(expected_red_failure(plan_lines, plan_path, repo_dir))
     for row in plan_format.plain_verification_item_warnings(plan_lines, plan_path):
         print(row)
-    ac_failures = plan_format.spec_ac_failures(pathlib.Path(plan_path))
+    ac_failures = spec_ac_rows(pathlib.Path(plan_path))
     for row in ac_failures:
         print(row)
     criteria_failure = None

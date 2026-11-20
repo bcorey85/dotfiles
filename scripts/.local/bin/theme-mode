@@ -92,7 +92,7 @@ FAMILY_FILE="$HOME/.cache/theme-family"
 GHOSTTY_SWITCH="$HOME/.config/ghostty/theme-switch.conf"
 DEFAULT_FAMILY="dredge"
 
-families() { printf '%s\n' edge bamboo gruvbox-material nightfox dredge flexoki token-flint token kanagawa tairiki everforest gruvbox papercolor hybrid vitesse; }
+families() { printf '%s\n' edge bamboo gruvbox-material nightfox dredge flexoki token-flint token kanagawa tairiki everforest gruvbox papercolor hybrid vitesse min kanagawa-paper monoglow; }
 
 claude_theme_file() { # <family> <mode> -> the authored Claude Code theme JSON, empty if none
   # A family that ships claude/.claude/themes/<slug>.json gets it copied into
@@ -163,6 +163,18 @@ ghostty_theme() { # <family> <mode> -> ghostty theme name
     # vitesse: custom files, antfu's terminal sixteen.
     vitesse:light)          echo "vitesse-light" ;;
     vitesse:*)              echo "vitesse-dark" ;;
+    # min (kanagawa flavor, low contrast): custom files, the plugin's own
+    # terminal sixteen.
+    min:light)              echo "min-light" ;;
+    min:*)                  echo "min-dark" ;;
+    # kanagawa-paper (ink dark, canvas light): custom files, copied from the
+    # repo's extras/ghostty.
+    kanagawa-paper:light)   echo "kanagawa-paper-canvas" ;;
+    kanagawa-paper:*)       echo "kanagawa-paper-ink" ;;
+    # monoglow (void dark, light): custom files, the repo's extras/ghostty with
+    # the green slots in teal.
+    monoglow:light)         echo "monoglow-light" ;;
+    monoglow:*)             echo "monoglow-void" ;;
   esac
 }
 
@@ -231,6 +243,18 @@ hunk_theme() { # <family> <mode> -> the hunk theme id, or the `base` a custom bl
     # vitesse: hunk's own builtins, used directly (no [custom_theme]).
     vitesse:light)          echo "vitesse-light" ;;
     vitesse:*)              echo "vitesse-dark" ;;
+    # min: BASE of a full [custom_theme]; the kanagawa pair has the nearest
+    # neutrals.
+    min:light)              echo "kanagawa-lotus" ;;
+    min:*)                  echo "kanagawa-wave" ;;
+    # kanagawa-paper: BASE of a full [custom_theme]. Ink shares wave's ground
+    # and text; lotus has the nearest ink to canvas's grey.
+    kanagawa-paper:light)   echo "kanagawa-lotus" ;;
+    kanagawa-paper:*)       echo "kanagawa-wave" ;;
+    # monoglow: BASE of a full [custom_theme]. dark-plus is grey on #1e1e1e
+    # (void is #c0c0c0 on #1c1c1c); one-light is the nearest grey-on-off-white.
+    monoglow:light)         echo "one-light" ;;
+    monoglow:*)             echo "dark-plus" ;;
   esac
 }
 
@@ -509,18 +533,18 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         type_fg="#445200"; builtin_fg="#004f85"; param_fg="#872f00"; attr_fg="#951816"
         bright="#131820"; quote="#3e4148"; bullet="#4e5158"
       else
-        bg="#191f25"; panel="#12181e"; panelAlt="#262c33"; border="#41484f"; note="#12181e"
-        accent="#5ab9b0"; accentMuted="#41484f"; text="#c1cfdc"; muted="#a5a9b0"; lnFg="#9599a0"
+        bg="#1c1c1c"; panel="#161616"; panelAlt="#292929"; border="#454545"; note="#161616"
+        accent="#51a49c"; accentMuted="#454545"; text="#c0c0c0"; muted="#a1a1a1"; lnFg="#707070"
         # Words must stay >= RGB distance 28 from the line wash, or hunk
         # replaces them with its own blend of the sign colour.
-        addWord="#1e4041"; remWord="#432834"
+        addWord="#213d38"; remWord="#46252b"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#1a2a2d"; removedBg="#282128"; ctxBg="#191f25"
-        sAdd="#5ab9b0"; sRem="#d887ae"; badgeNeu="#eed286"
-        kw="#95a5b5"; punct="#989ea4"; str="#5ab9b0"; num="#f38ba5"; fn="#9ca4f1"; cmt="#c9a65a"
-        type_fg="#9eb34a"; builtin_fg="#5bb2e7"; param_fg="#f0925f"; attr_fg="#f78d83"
-        bright="#d9e0eb"; quote="#bec3cb"; bullet="#a5a9b0"
+        addedBg="#1d2724"; removedBg="#2b1e1f"; ctxBg="#1c1c1c"
+        sAdd="#51a49c"; sRem="#d887ae"; badgeNeu="#eed286"
+        kw="#949494"; punct="#a1a1a1"; str="#51a49c"; num="#d97d94"; fn="#8b92d6"; cmt="#af955f"
+        type_fg="#8d9f43"; builtin_fg="#529ecd"; param_fg="#d68356"; attr_fg="#dc7f76"
+        bright="#d1d1d1"; quote="#b1b1b1"; bullet="#a1a1a1"
       fi
       op="$punct"; tag="$kw"; imp="$kw"
       konst="$num"; esc="$num"; lang="$num"
@@ -536,33 +560,42 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       badgeAdd="$sAdd"; badgeRem="$sRem"
       fRename="$sAdd"; fMod="$sAdd"; fUntracked="$sAdd"
       # Roles replace the token-kind colours above.
-      local heading1 role_extra bind act exit_fg lit desc
+      local heading1 role_extra bind grey exit_fg lit desc
       if [ "$2" = light ]; then
-        bind="#433fa8"; act="#006c66"; exit_fg="#a80e62"; lit="#2a7000"; desc="#07549f"
-        kw="#4c5158"; cmt="#6d4a00"
+        bind="#433fa8"; grey="#4c5158"; exit_fg="#a80e62"; lit="#2a7000"; desc="#006c66"
+        cmt="#6d4a00"
       else
-        bind="#9ca4f1"; act="#5ab9b0"; exit_fg="#f38ba5"; lit="#9eb34a"; desc="#5bb2e7"
-        cmt="#c9a65a"
+        bind="#8b92d6"; grey="#949494"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#51a49c"
+        cmt="#af955f"
       fi
-      # Binds: names where they are introduced. Acts: calls, decorators, builtins.
-      fn="$bind"; cls="$bind"; param="$bind"; var="$bind"
-      call="$act"; bfn="$act"; mac="$act"; attr="$act"; pre="$act"
+      # Names are plain. Declaring keywords take the violet, flow keywords and types the teal,
+      # operators and brackets the grey.
+      # fn stays violet for the markup lines below; function names go plain after them.
+      fn="$bind"; cls="$text"; param="$text"; var="$text"
+      call="$text"; bfn="$text"; mac="$text"; attr="$text"; pre="$bind"
+      kw="$bind"; punct="$grey"; op="$grey"
       num="$lit"; konst="$lit"; esc="$lit"; lang="$lit"; str="$lit"
       typ="$desc"; prim="$desc"; tag="$kw"; imp="$kw"; heading1="$exit_fg"
       vbi="$text"; ns="$text"; use="$text"; mem="$text"
       role_extra=$(cat <<EOF
 "entity.other.inherited-class"      = "$desc"
 "support.class"                     = "$desc"
-"meta.function-call entity.name.function" = "$act"
-"new.expr entity.name.type"         = "$act"
-"new.expr entity.name.function"     = "$act"
-"meta.function.decorator.python"    = "$act"
-"meta.object-literal.key"           = "$bind"
+"meta.function-call entity.name.function" = "$text"
+"new.expr entity.name.type"         = "$text"
+"new.expr entity.name.function"     = "$text"
+"meta.function.decorator.python"    = "$text"
+"meta.object-literal.key"           = "$text"
+"entity.name.type.enum"             = "$text"
+"entity.other.attribute-name.tsx"   = "$lit"
+"entity.other.attribute-name.jsx"   = "$lit"
+"entity.other.attribute-name.html"  = "$lit"
+"keyword.control.conditional"       = "$desc"
+"keyword.control.loop"              = "$desc"
 "keyword.control.return.shell"      = "$exit_fg"
 "keyword.control.flow.ts"           = "$exit_fg"
 "keyword.control.flow.tsx"          = "$exit_fg"
 "keyword.control.flow.js"           = "$exit_fg"
-"keyword.control.trycatch.ts"       = "$kw"
+"keyword.control.trycatch.ts"       = "$desc"
 "storage.type.sql"                  = "$desc"
 "heading.1.markdown entity.name.section.markdown" = "$heading1"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$heading1"
@@ -735,6 +768,7 @@ EOF
         ROLES="$role_extra" awk 'BEGIN { n = split(ENVIRON["ROLES"], r, "\n"); for (i = 1; i <= n; i++) { split(r[i], kv, " *= "); skip[kv[1]] = 1 } }
           { split($0, kv, " *= ") } !(kv[1] in skip)')"
       extra="$extra"$'\n'"$role_extra"
+      fn="$text"
       ;;
     # flexoki (kepano/flexoki-neovim): roles are the resolved fg of nvim's
     # groups. Rows are the green/red 15% into the ground, words 30%; the
@@ -995,6 +1029,118 @@ EOF
 "punctuation.definition.heading.markdown" = "$h2"
 "heading.1.markdown entity.name.section.markdown" = "$h1"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # min (dybdeskarphet/min.nvim, kanagawa flavor, low contrast). Roles are
+    # the plugin's table: colour on definitions (red), strings (yellow),
+    # constants and comments (cyan); calls a step under the text, operators
+    # and delimiters grey, everything else text. Diff rows are its bg_green
+    # and bg_red.
+    min:*)
+      local cls key
+      bg="#181616"; panel="#1d1c19"; panelAlt="#282727"; border="#393836"
+      accent="#7aa89f"; accentMuted="#393836"; text="#eeeada"; muted="#8e8c84"
+      addedBg="#2b2e22"; removedBg="#362224"; ctxBg="#181616"
+      sAdd="#98bb6c"; sRem="#e46876"; lnFg="#625e5a"
+      badgeNeu="#7e9cd8"; fRename="#957fb8"; fMod="#e6c384"; note="#1d1c19"
+      str="#e6c384"; konst="#7aa89f"; fn="#e46876"; call="#dcd7ba"
+      punct="#9e9b93"; tag="#e3dfc8"
+      if [ "$2" = light ]; then
+        bg="#f2ecbc"; panel="#e5ddb0"; panelAlt="#dcd5ac"; border="#d5cea3"
+        accent="#597b75"; accentMuted="#d5cea3"; text="#2e2e3d"; muted="#636262"
+        addedBg="#deddab"; removedBg="#ebd2ac"; ctxBg="#f2ecbc"
+        sAdd="#6f894e"; sRem="#c84053"; lnFg="#a09cac"
+        badgeNeu="#4d699b"; fRename="#766b90"; fMod="#836f4a"; note="#e5ddb0"
+        str="#836f4a"; konst="#597b75"; fn="#c84053"; call="#43436c"
+        punct="#545464"; tag="#3c3c58"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      kw="$text"; num="$text"; typ="$text"; cls="$text"; prim="$text"; ns="$text"
+      vbi="$text"; imp="$text"; pre="$text"; mac="$text"; attr="$text"
+      mem="$text"; param="$text"; var="$text"; use="$text"; key="$text"
+      op="$punct"; cmt="$konst"; lang="$konst"; esc="$konst"; bfn="$fn"
+      ;;
+    # kanagawa-paper (thesimonho/kanagawa-paper): ink dark, canvas light. Roles
+    # are the plugin's treesitter table as nvim resolves it; diff rows are its
+    # DiffAdd and DiffDelete. Comments are its grey after nvim's comment floor.
+    kanagawa-paper:*)
+      local cls key h1 h2
+      bg="#1f1f28"; panel="#16161d"; panelAlt="#2a2a37"; border="#363646"
+      accent="#859fac"; accentMuted="#363646"; text="#dcd7ba"; muted="#9e9b93"
+      addedBg="#2c3732"; removedBg="#452f33"; ctxBg="#1f1f28"
+      sAdd="#699469"; sRem="#c4746e"; lnFg="#54546d"
+      badgeNeu="#658594"; fRename="#a292a3"; fMod="#c4b28a"; note="#2a2a37"
+      kw="#a292a3"; str="#8a9a7b"; num="#a292a3"; konst="#b6927b"
+      fn="#859fac"; typ="#8ea49e"; op="#c4746e"; punct="#9e9b93"
+      prim="#c4b28a"; bfn="#c4b28a"; tag="#c4b28a"; attr="#c4b28a"; key="#c4b28a"
+      param="#a6a69c"; cmt="#b1ad99"; h1="#c4746e"; h2="#a292a3"
+      if [ "$2" = light ]; then
+        bg="#e1e1de"; panel="#d8d8d2"; panelAlt="#d1cfc5"; border="#cbc8bc"
+        accent="#5a7380"; accentMuted="#cbc8bc"; text="#616569"; muted="#77746c"
+        addedBg="#ced0cb"; removedBg="#d6cecb"; ctxBg="#e1e1de"
+        sAdd="#667659"; sRem="#a36360"; lnFg="#92928b"
+        badgeNeu="#6c828c"; fRename="#947992"; fMod="#91825e"; note="#d8d8d2"
+        kw="#947992"; str="#6a7d66"; num="#947992"; konst="#a1805e"
+        fn="#5c8388"; typ="#5c8388"; op="#a36360"; punct="#77746c"
+        prim="#6a7893"; bfn="#6a7893"; tag="#6a7893"; attr="#91825e"; key="#6a7893"
+        param="#616569"; cmt="#616569"; h1="#a36360"; h2="#947992"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      cls="$typ"; ns="$typ"; call="$fn"; mac="$fn"
+      lang="$konst"; vbi="$konst"
+      imp="$op"; pre="$op"; mem="$op"; esc="$op"
+      var="$text"; use="$text"
+      extra=$(cat <<EOF
+"string.regexp"                     = "$op"
+"markup.heading"                    = "$h2"
+"entity.name.section"               = "$h2"
+"entity.name.section.markdown"      = "$h2"
+"punctuation.definition.heading.markdown" = "$h2"
+"heading.1.markdown entity.name.section.markdown" = "$h1"
+"heading.1.markdown punctuation.definition.heading.markdown" = "$h1"
+EOF
+      )
+      ;;
+    # monoglow (wnkz/monoglow.nvim): void dark, light. Roles are the plugin's
+    # table as nvim resolves it: greys by role, the glow on operators, teal
+    # booleans. The glow is teal (the nvim spec's on_colors), not stock green.
+    # Diff rows are the spec's washes; comments are after nvim's comment floor.
+    # Its dimmest greys (parameters, builtin calls, line numbers) are too faint
+    # on a washed row, so here they take the next grey up.
+    monoglow:*)
+      local cls key heading
+      bg="#1c1c1c"; panel="#212121"; panelAlt="#292929"; border="#404040"
+      accent="#33e6c6"; accentMuted="#404040"; text="#c0c0c0"; muted="#a1a1a1"
+      addedBg="#343e36"; removedBg="#3e3334"; ctxBg="#1c1c1c"
+      sAdd="#baffc9"; sRem="#ffb3ba"; lnFg="#707070"
+      badgeNeu="#66b2b2"; fRename="#708090"; fMod="#ffffba"; note="#292929"
+      kw="#a1a1a1"; str="#b1b1b1"; fn="#d1d1d1"; call="#a1a1a1"; bfn="#a1a1a1"
+      op="#33e6c6"; punct="#d1d1d1"; lang="#a1a1a1"; esc="#879aad"
+      key="#a1a1a1"; param="#a1a1a1"; cmt="#a5a5a5"; var="#d1d1d1"
+      heading="#a1a1a1"
+      if [ "$2" = light ]; then
+        bg="#f0f0f0"; panel="#ebebeb"; panelAlt="#e1e1e1"; border="#b0b0b0"
+        accent="#2e8a8a"; accentMuted="#b0b0b0"; text="#3a3a3a"; muted="#707070"
+        addedBg="#d3ddd5"; removedBg="#e4d5d5"; ctxBg="#f0f0f0"
+        sAdd="#2d6e3a"; sRem="#9e3a3a"; lnFg="#909090"
+        badgeNeu="#2e8a8a"; fRename="#506070"; fMod="#8a7a2e"; note="#e1e1e1"
+        kw="#555555"; str="#555555"; fn="#3a3a3a"; call="#555555"; bfn="#555555"
+        op="#2e8a8a"; punct="#3a3a3a"; lang="#555555"; esc="#506070"
+        key="#555555"; param="#555555"; cmt="#5e5e5e"; var="#3a3a3a"
+        heading="#707070"
+      fi
+      badgeAdd="$sAdd"; badgeRem="$sRem"; fUntracked="$sAdd"
+      num="$str"; konst="$str"; typ="$str"; cls="$str"; prim="$str"
+      tag="$str"; mem="$str"
+      ns="$kw"; mac="$kw"; vbi="$kw"; imp="$kw"; pre="$kw"
+      attr="$call"; use="$var"
+      extra=$(cat <<EOF
+"string.regexp"                     = "$esc"
+"markup.heading"                    = "$heading"
+"entity.name.section"               = "$heading"
+"entity.name.section.markdown"      = "$heading"
+"punctuation.definition.heading.markdown" = "$heading"
 EOF
       )
       ;;
@@ -1525,12 +1671,12 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       ;;
     dredge:*)
       base_name="one-dark"
-      accent="#5ab9b0" panel_bg="#12181e" surface_dim="#262c33"
-      surface0="#353b42" surface1="#41484f"
-      overlay0="#9a9ea4" overlay1="#a5a9b0"
-      text="#c1cfdc" subtext0="#a5a9b0"
-      green="#5ab9b0" yellow="#eed286" red="#f54b43"
-      blue="#9ca4f1" teal="#5ab9b0" peach="#f38ba5"
+      accent="#51a49c" panel_bg="#161616" surface_dim="#292929"
+      surface0="#383838" surface1="#454545"
+      overlay0="#585858" overlay1="#a1a1a1"
+      text="#c0c0c0" subtext0="#a1a1a1"
+      green="#51a49c" yellow="#eed286" red="#f54b43"
+      blue="#8b92d6" teal="#51a49c" peach="#d97d94"
       ;;
     kanagawa:light)
       # kanagawa lotus (#f2ecbc).
@@ -1653,6 +1799,68 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       text="#c5c8c6" subtext0="#8b9299"
       green="#b5bd68" yellow="#f0c674" red="#cc6666"
       blue="#81a2be" teal="#8abeb7" peach="#de935f"
+      ;;
+    min:light)
+      # min, kanagawa flavor, low contrast (#f2ecbc). Surfaces are its base
+      # ramp; the accent is its comment cyan.
+      base_name="one-light"
+      accent="#597b75" panel_bg="#e5ddb0" surface_dim="#dcd5ac"
+      surface0="#d5cea3" surface1="#c4be96"
+      overlay0="#716e61" overlay1="#636262"
+      text="#2e2e3d" subtext0="#636262"
+      green="#6f894e" yellow="#836f4a" red="#c84053"
+      blue="#4d699b" teal="#597b75" peach="#cc6d00"
+      ;;
+    min:*)
+      # min, kanagawa flavor, low contrast (#181616).
+      base_name="one-dark"
+      accent="#7aa89f" panel_bg="#0d0c0c" surface_dim="#282727"
+      surface0="#393836" surface1="#4d4b48"
+      overlay0="#727169" overlay1="#9e9b93"
+      text="#eeeada" subtext0="#9e9b93"
+      green="#98bb6c" yellow="#e6c384" red="#e46876"
+      blue="#7e9cd8" teal="#7aa89f" peach="#ffa066"
+      ;;
+    kanagawa-paper:light)
+      # kanagawa-paper canvas (#e1e1de). Surfaces are its darker ground steps.
+      base_name="one-light"
+      accent="#5a7380" panel_bg="#d8d8d2" surface_dim="#d1cfc5"
+      surface0="#cbc8bc" surface1="#b2acb2"
+      overlay0="#77746c" overlay1="#616569"
+      text="#616569" subtext0="#77746c"
+      green="#6a7d66" yellow="#91825e" red="#a36360"
+      blue="#6c828c" teal="#5c8388" peach="#a1805e"
+      ;;
+    kanagawa-paper:*)
+      # kanagawa-paper ink (#1f1f28), on wave's ink ramp.
+      base_name="one-dark"
+      accent="#859fac" panel_bg="#16161d" surface_dim="#2a2a37"
+      surface0="#363646" surface1="#54546d"
+      overlay0="#727169" overlay1="#9e9b93"
+      text="#dcd7ba" subtext0="#9e9b93"
+      green="#8a9a7b" yellow="#c4b28a" red="#c4746e"
+      blue="#859fac" teal="#8ea49e" peach="#b6927b"
+      ;;
+    monoglow:light)
+      # monoglow light (#f0f0f0). Surfaces are its grey ramp; status colours
+      # are its diagnostics.
+      base_name="one-light"
+      accent="#2e8a8a" panel_bg="#ebebeb" surface_dim="#e1e1e1"
+      surface0="#d9d9d9" surface1="#b0b0b0"
+      overlay0="#909090" overlay1="#707070"
+      text="#3a3a3a" subtext0="#707070"
+      green="#2a7a40" yellow="#9a7a20" red="#c04040"
+      blue="#1a6e99" teal="#2e8a8a" peach="#9a7a20"
+      ;;
+    monoglow:*)
+      # monoglow void (#1c1c1c), teal glow. Status colours are its diagnostics.
+      base_name="one-dark"
+      accent="#33e6c6" panel_bg="#212121" surface_dim="#292929"
+      surface0="#313131" surface1="#404040"
+      overlay0="#585858" overlay1="#a1a1a1"
+      text="#c0c0c0" subtext0="#a1a1a1"
+      green="#b3f6c0" yellow="#fce094" red="#ffc0b9"
+      blue="#a6dbff" teal="#33e6c6" peach="#fce094"
       ;;
     vitesse:light)
       # vitesse light (white ground), the palette of bcorey85/vitesse.nvim.

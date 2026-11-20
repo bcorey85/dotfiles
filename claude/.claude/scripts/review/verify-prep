@@ -21,6 +21,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import gate_env
 import numstat
 import plan_format
+import script_utils
 import verify_common as vc
 
 USAGE = __doc__.splitlines()[0]
@@ -39,8 +40,8 @@ VERIFIER_RUN_RULES = (
     "no process running when you report. A Manual Verification item that needs a process left running (a "
     "server, a watcher) is human-only: do not start it.",
     "Delete, move or kill nothing. Create no file yourself: your only write is a Manual Verification "
-    "checkbox line, and command output you redirect to a file, which goes only under {output_dir}. Never write "
-    "it to /tmp or anywhere else.",
+    "checkbox line, and command output you redirect to a file, which goes only under {output_dir}. Test runs "
+    "keep the default TMPDIR: never set TMPDIR.",
     "An `Agent-run` item is yours: run it as its text says and record pass/fail with its output; never mark it "
     "human-only. Start that row's `item` with the plan line's words from the tag on, for example "
     "`**Agent-run**: time the import`.",
@@ -355,9 +356,9 @@ def print_plan(context):
 def excluded_from_fingerprint(mode, ticket_path, plan_path, top):
     """The repo-relative task dir (the plan file itself in flat mode), or None for a ticket-only run."""
     if mode in FOLDER_MODES:
-        return vc.repo_relative(task_folder(ticket_path, plan_path), top)
+        return script_utils.repo_relative(top, task_folder(ticket_path, plan_path))
     if mode == "flat":
-        return vc.repo_relative(plan_path, top)
+        return script_utils.repo_relative(top, plan_path)
     return None
 
 
@@ -392,8 +393,8 @@ def main(argv):
     review = vc.review_state(repo, branch, fingerprint, review_logged_tree, top)
 
     plan_file = plan_path or ticket_path
-    plan_rel = vc.repo_relative(plan_file, top) or str(plan_file)
-    env_assignments = gate_env.repo_gate_env(top, vc.repo_relative(plan_path, top) if plan_path else None)
+    plan_rel = script_utils.repo_relative(top, plan_file) or str(plan_file)
+    env_assignments = gate_env.repo_gate_env(top, script_utils.repo_relative(top, plan_path) if plan_path else None)
     head = vc.script_utils.git_output(top, "rev-parse", "HEAD")
     context = {"repo": repo, "top": str(top), "head": head, "branch": branch, "note": note,
                "ticket": str(ticket_path) if ticket_path else None,

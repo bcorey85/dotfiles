@@ -48,23 +48,24 @@ Merge the four reports and your own findings into one list, deduplicated by file
 
 An `ask` whose change cuts or changes a ticket AC goes to the user, not to the coder: log it with disposition `ask` and actioned `ask`.
 
-Before the dispatch, run `git add -A` so the index holds the reviewed tree. Then dispatch `coder` ONCE with the whole list. The coder runs the tests for the files it changed. With an empty list, skip to Step 5.
+Before the dispatch, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` to record the reviewed tree. The index stays as the user left it. Then dispatch `coder` ONCE with the whole list. The coder runs the tests for the files it changed. With an empty list, skip to Step 5.
 
 ## Step 4: the fix-diff gate
 
-The fix diff is `git diff` (working tree against the index) plus any file `git status --porcelain` shows as `??`. Run in one response:
+The fix diff is the `diff_command` that `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py show` prints, with its `files`. Run in one response:
 
 - the check from Step 1 again;
-- ONE `code-reviewer` (omit `model`) with this prompt: "Report-only gate. Review ONLY the fix diff: `git diff` (working tree against the index) and these new files: <list>. The fixes answered these findings: <the Step 3 list, one line each>. For each finding, say whether the diff fixes it. Report every new defect the diff introduces, with file, line and severity (critical, high, medium, low). For each criterion in this list, name the test that now covers it, or say MISSING: <the criteria from Step 3>."
+- ONE `code-reviewer` (omit `model`) with this prompt: "Report-only gate. Review ONLY the fix diff: `<diff_command>`, which lists these files: <files>. The fixes answered these findings: <the Step 3 list, one line each>. For each finding, say whether the diff fixes it. Report every new defect the diff introduces, with file, line and severity (critical, high, medium, low). For each criterion in this list, name the test that now covers it, or say MISSING: <the criteria from Step 3>."
 
 The gate FAILS on a red full check, a critical or high finding, a criterion still MISSING, or a Step 3 finding the diff left unfixed without showing it wrong. Medium and low findings do not fail it: they go under open items in the recap.
 
-On a fail, run `git add -A`, dispatch `coder` ONCE with only the failing items, and run Step 4 once more on the new fix diff. A second fail → STOP: report the failing items to the user.
+On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` (the index stays as the user left it), dispatch `coder` ONCE with only the failing items, and run Step 4 once more on the new fix diff. A second fail → STOP: report the failing items to the user.
 
 ## Step 5: log
 
 1. Rerun `verify-prep`. Log every finding from Steps 2 to 4 with `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file>`, in the row shape `~/.claude/skills/verify-branch/SKILL.md` Step 1 gives (`actioned` `fixed`, `skipped_fp`, or `ask`). Rerun `verify-prep`; it must report the review as ran.
 2. Log the plan-verifier's verdicts with `verify-log --rows <file>`, as `~/.claude/skills/verify-branch/SKILL.md` Step 3 says, with each criterion the gate showed covered moved to `done` and its covering test as the evidence. On gaps, follow that file's Routing for gaps; on asks open, its Routing for asks.
+3. Log the smell-reviewer's run: write its findings to the input path `branch-prep` printed, in the input shape of `~/.claude/skills/refactor/SKILL.md` Step 5, with no `handoff` key; read `~/.claude/skills/_shared/escape-ratchet.md` for each escape's `miss_reason` and `guards`; then run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode branch --base <base> --input <that path>`. Skip the `NEXT:` line `log` prints and go on to Step 6.
 
 ## Step 6: recap
 

@@ -11,6 +11,24 @@ class ProcessQueryError(OSError):
     """`ps` could not answer: it is missing, timed out, or failed for a reason other than an unknown pid."""
 
 
+def pid_is_alive(owner_pid):
+    """True when a process with this pid (an int or its digits) exists, even one this user may not signal."""
+    try:
+        pid = int(owner_pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, OverflowError):
+        # A pid past the C int range cannot name a process.
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def command_line(pid):
     """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
     try:

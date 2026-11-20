@@ -210,6 +210,13 @@ def text_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
+def or_list(words):
+    """An English list of plain strings: "a", "a or b", "a, b or c". An empty list gives an empty string."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" or {words[-1]}"
+
+
 class ItemNumberError(ValueError):
     """A 1-based item number that names no item."""
 
@@ -295,12 +302,104 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
-def work_tree_blob(repo, path):
+# What main_checkout_dir returns: the folder, and whether it is a bare common dir rather than a checkout folder.
+MainCheckout = namedtuple("MainCheckout", ["folder", "is_bare"])
+
+
+def main_checkout_dir(repo):
+    """The MainCheckout of the repo that holds `repo` (that of a linked worktree too): the parent of the git common
+    dir when it is named `.git`, else the common dir itself with is_bare set (a bare repo; a submodule's common dir
+    under `.git/modules/` reads the same way, so its folder is not a checkout). None when git cannot answer."""
+    common_dir = git_output(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common_dir:
+        return None
+
+    common_path = pathlib.Path(common_dir)
+    if common_path.name == ".git":
+        return MainCheckout(common_path.parent, False)
+    return MainCheckout(common_path, True)
+
+
+def first_nonempty_line(text_file):
+    """The first line of the file that holds text, stripped, or "" when it holds none."""
+    for line in text_file.read_text(errors="replace").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def work_tree_blob(repo, path, keep_object=False):
     """The blob id of the work-tree content of `path` in `repo`, or None when the file is absent or git cannot hash
-    it."""
+    it. With `keep_object`, git also stores the content, so `restore_blob` can write it back later."""
     if not (pathlib.Path(repo) / path).is_file():
         return None
-    return git_output(repo, "hash-object", "--", path)
+    write_flag = ["-w"] if keep_object else []
+    return git_output(repo, "hash-object", *write_flag, "--", path)
+
+
+def restore_blob(repo, path, blob):
+    """Puts the work-tree file `path` back to the content of `blob` (a blob id git holds), or deletes it when `blob`
+    is None. Returns True when the file now matches; False when git cannot read the blob or the file cannot be
+    written, with the file left as it was."""
+    target = pathlib.Path(repo) / path
+    if blob is None:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            return False
+        return True
+    try:
+        # --filters applies the smudge and eol conversion of `path`, so a CRLF file comes back CRLF.
+        finished = subprocess.run(["git", "cat-file", "--filters", f"--path={path}", blob], cwd=repo,
+                                  stdin=subprocess.DEVNULL, capture_output=True)
+    except OSError:
+        return False
+    if finished.returncode != 0:
+        return False
+    try:
+        write_text_atomically(target, finished.stdout)
+    except OSError:
+        return False
+    return True
+
+
+# What the index of a repo holds for one path: the file mode and the blob id. A namedtuple for the reason above.
+IndexEntry = namedtuple("IndexEntry", ["mode", "blob"])
+
+
+def index_entry(repo, path):
+    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
+    file) or git cannot say."""
+    listing = git_output(repo, "ls-files", "--stage", "-z", "--", path)
+    if not listing:
+        return None
+    # One entry reads `<mode> <blob> <stage>\t<path>`; a path with a merge conflict lists several stages, and the
+    # first is enough to tell the entry changed.
+    description = listing.split("\0")[0].split("\t")[0]
+    mode, blob, _stage = description.split(" ")
+    return IndexEntry(mode, blob)
+
+
+def restore_index_entry(repo, path, entry):
+    """Puts the index entry of `path` back to `entry` (an IndexEntry from `index_entry`), or takes the path out of the
+    index when `entry` is None. Leaves the work tree alone. Returns True when the index now holds `entry`."""
+    if entry is None:
+        return git_output(repo, "rm", "--cached", "-q", "--ignore-unmatch", "--", path) is not None
+    cache_info = f"{entry.mode},{entry.blob},{path}"
+    return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
+
+
+def blob_at_commit(repo, commit, path):
+    """The blob id of `path` in `commit` of `repo`, or None when the commit has no such file or git cannot say."""
+    return git_output(repo, "rev-parse", "--verify", "-q", f"{commit}:{path}")
+
+
+def matches_head(repo, path):
+    """Whether `path` has no diff against HEAD in `repo`: a file HEAD tracks with the same content, or a file that is
+    absent and that HEAD does not track. A deleted tracked file and a new file are diffs, so is a present file in a
+    repo with no commit; an absent file there is no diff."""
+    head_blob = blob_at_commit(repo, "HEAD", path)
+    return not content_changed_since(repo, path, head_blob)
 
 
 def content_changed_since(repo, path, blob):
@@ -316,6 +415,20 @@ def content_changed_since(repo, path, blob):
 def process_stderr_text(finished):
     """What a finished subprocess wrote to stderr, as text for a failure message."""
     return os.fsdecode(finished.stderr).strip()
+
+
+def repo_relative(repo, given):
+    """`given` (absolute, or relative to the repo root) as a path relative to the repo root, or None when it lies
+    outside the repo. `repo` must be a resolved path."""
+    try:
+        return (pathlib.Path(repo) / given).resolve().relative_to(repo).as_posix()
+    except ValueError:
+        return None
+
+
+def is_ancestor(repo, older, newer, timeout=None):
+    """Whether commit `older` is `newer` or one of its ancestors; False when git fails."""
+    return git_output(repo, "merge-base", "--is-ancestor", older, newer, timeout=timeout) is not None
 
 
 def head_commit(cwd, timeout=None):
@@ -359,10 +472,13 @@ def read_text_lines(path):
     return list(enumerate(lines, start=1))
 
 
-def changed_files(directory, base="HEAD"):
-    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded) plus
-    untracked files that .gitignore does not hide."""
-    tracked_files = git_output(directory, "diff", "--name-only", "--relative", "--diff-filter=d", base) or ""
+def changed_files(directory, base="HEAD", with_deleted=False):
+    """Sorted paths git shows changed against base, relative to directory: tracked changes (deletions excluded unless
+    `with_deleted`) plus untracked files that .gitignore does not hide."""
+    diff_args = ["diff", "--name-only", "--relative"]
+    if not with_deleted:
+        diff_args.append("--diff-filter=d")
+    tracked_files = git_output(directory, *diff_args, base) or ""
     untracked = untracked_paths(directory) or []
     names = [name for name in tracked_files.split("\n") if name]
     return sorted(set(names + untracked))
@@ -389,13 +505,14 @@ def details_with_outcome(outcomes, outcome):
 CommandResult = namedtuple("CommandResult", "code output timed_out")
 
 
-def run_command_result(command, cwd=None, stdin=None, timeout=None):
+def run_command_result(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_process does and return a CommandResult: the exit code, stdout and stderr joined and
     stripped, and whether the run passed `timeout`. A program that is not found exits COMMAND_NOT_FOUND_EXIT_CODE; a
     run past `timeout` seconds exits TIMEOUT_EXIT_CODE with a note after what it printed. timed_out is True only for
-    that run, never for a program that exits with the same code itself."""
+    that run, never for a program that exits with the same code itself. `env`, when given, is the command's whole
+    environment."""
     try:
-        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout)
+        code, stdout, stderr = run_process(command, cwd, stdin=stdin, timeout=timeout, env=env)
     except FileNotFoundError:
         program = command if isinstance(command, str) else command[0]
         return CommandResult(COMMAND_NOT_FOUND_EXIT_CODE, f"{program}: command not found", False)
@@ -407,20 +524,22 @@ def run_command_result(command, cwd=None, stdin=None, timeout=None):
     return CommandResult(code, output, False)
 
 
-def run_command(command, cwd=None, stdin=None, timeout=None):
+def run_command(command, cwd=None, stdin=None, timeout=None, env=None):
     """Run a command as run_command_result does and return (exit code, output)."""
-    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout)
+    result = run_command_result(command, cwd, stdin=stdin, timeout=timeout, env=env)
     return result.code, result.output
 
 
-def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False):
+def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(0,), timeout=None, as_bytes=False,
+                env=None):
     """Run argv and return the CompletedProcess, its output decoded as UTF-8 with no newline translation (with
-    as_bytes, stdin is bytes and stdout stays raw bytes). Raise error_type when argv cannot start or runs past
-    `timeout` seconds and, with check, when its exit code is not in ok_codes, naming the command and its stderr, or
-    its stdout when stderr is empty."""
+    as_bytes, stdin is bytes and stdout stays raw bytes). env, when given, is the child's whole environment. Raise
+    error_type when argv cannot start or runs past `timeout` seconds and, with check, when its exit code is not in
+    ok_codes, naming the command and its stderr, or its stdout when stderr is empty."""
     stdin_bytes = stdin if as_bytes or stdin is None else stdin.encode()
     try:
-        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout)
+        finished = subprocess.run(argv, cwd=cwd, input=stdin_bytes, capture_output=True, timeout=timeout,
+                                  env=env)
     except OSError as error:
         raise error_type(f"cannot run {argv[0]}: {error}") from error
     except subprocess.TimeoutExpired as error:
@@ -950,20 +1069,6 @@ def preloaded_skills_prompt(agent, claude_home=None):
     return "\n\n".join(skill_texts)
 
 
-def session_display_name(session_id):
-    """The name ListAgents shows for a live Claude Code session, read from its ~/.claude/sessions/<pid>.json entry.
-    None when no readable entry holds that session id with a non-empty name."""
-    sessions = pathlib.Path.home() / ".claude" / "sessions"
-    for entry_path in sessions.glob("*.json"):
-        try:
-            entry = json.loads(entry_path.read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(entry, dict) and entry.get("sessionId") == session_id and entry.get("name"):
-            return entry["name"]
-    return None
-
-
 def telemetry_switch_on():
     """The toolkit metrics switch from telemetry/telemetry_enabled.py. A missing helper counts as off."""
     try:
@@ -1115,16 +1220,18 @@ def _has_git_entry_above(folder):
         folder = parent
 
 
-def write_text_atomically(path, text):
-    """Write `text` to `path` so a reader sees the old file or the new one, never a half-written file."""
+def write_text_atomically(path, content):
+    """Write `content` (text, or bytes for a binary-exact write) to `path` so a reader sees the old file or the new
+    one, never a half-written file."""
     path = pathlib.Path(path)
+    mode = "wb" if isinstance(content, bytes) else "w"
     temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
 
     # A new file gets 0o666 less the umask, as write_text gives. The kernel applies the umask here, so it is never read.
     descriptor = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
-        with os.fdopen(descriptor, "w") as temp_file:
-            temp_file.write(text)
+        with os.fdopen(descriptor, mode) as temp_file:
+            temp_file.write(content)
         if path.exists():
             os.chmod(temp_path, stat.S_IMODE(path.stat().st_mode))
         os.replace(temp_path, path)

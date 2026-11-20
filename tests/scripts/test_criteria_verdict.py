@@ -147,9 +147,19 @@ class ItemVerdictTest(unittest.TestCase):
         verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 0, MISE_NOT_INSTALLED)
         self.assertEqual(verdict.outcome, "GREEN")
 
-    def test_a_command_that_did_not_run_reads_broken_even_when_its_output_says_not_found(self):
+    def test_a_command_that_exits_127_on_a_named_missing_tool_reads_env_with_the_fix(self):
         verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 127,
                                                 "zsh: command not found: uv\n")
+        self.assertEqual(verdict.outcome, "ENV")
+        self.assertIn("fix: install uv or add the pyenv shims to PATH", verdict.flag)
+
+    def test_a_missing_tool_line_with_an_exit_other_than_127_carries_no_install_fix(self):
+        verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 1, "zsh: command not found: uv\n")
+        self.assertEqual((verdict.outcome, verdict.flag),
+                         ("ENV", "environment failure: zsh: command not found: uv"))
+
+    def test_a_command_that_exits_127_with_no_named_tool_reads_broken(self):
+        verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 127, "something failed\n")
         self.assertEqual(verdict.outcome, "BROKEN")
 
     def test_a_search_shim_that_cannot_start_reads_env_though_its_exit_1_is_a_no_match(self):

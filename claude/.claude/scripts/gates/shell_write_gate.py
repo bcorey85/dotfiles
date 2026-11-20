@@ -41,6 +41,9 @@ import sys
 from collections import namedtuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import import_guard
+
+import_guard.guard("shell-write-gate", __name__)
 import hook_input
 import script_utils
 import shell_command
@@ -53,7 +56,7 @@ from hook_input import (
     JqError,
     claude_temp_root,
     expand_env_names,
-    is_under_claude_temp_root,
+    is_under_session_temp_root,
     is_under_temp_dir,
     jq_get,
     jq_str,
@@ -88,8 +91,8 @@ REDIRECT_PREFIX = re.compile("^" + shell_command.REDIRECT_OPERATOR + SPC + "*")
 TEE = re.compile(r"(^|" + SPC + r")tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+" + TARGET)
 TEE_PREFIX = re.compile(r"^" + SPC + r"*tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+")
 PRECHECK = re.compile("(" + PERL_I_FLAG + "|inplace|>|tee)")
-DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
-DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
+DIRECTORY_COMMAND_TEXT = re.compile(
+    r"(^|[\s;&|(){`])(" + "|".join(shell_command.DIRECTORY_MOVE_WORDS) + r")(\s|$|[;&|)])")
 # The variables a redirect or tee target takes from the environment.
 ENV_NAMES = ("TMPDIR", "HOME")
 
@@ -171,7 +174,7 @@ def directory_changes(step):
     folders = []
     for words, _redirections, _piped in commands:
         words = shell_command.command_after_wrappers(words)
-        if words and words[0] in DIRECTORY_COMMANDS:
+        if words and words[0] in shell_command.DIRECTORY_MOVE_WORDS:
             expanded_words = [expand_env_names(word, ENV_NAMES) for word in words]
             folders.append(shell_command.cd_folder(expanded_words))
     return folders
@@ -446,7 +449,7 @@ def check_in_place_edit(segment, folders, cannot_skip):
         return
     operands = file_operands(segment, editor)
     resolved = [resolve_target(operand, folders[-1]) for operand in operands]
-    all_scratch = all(path is not None and is_under_claude_temp_root(path) for path in resolved)
+    all_scratch = all(path is not None and is_under_session_temp_root(path) for path in resolved)
     if operands and not has_unseen_files(operands) and all_scratch:
         return
     if operands:

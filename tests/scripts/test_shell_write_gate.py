@@ -108,6 +108,12 @@ class ShellWriteGateTest(unittest.TestCase):
         self.assert_allowed("sed -i s/a/b/ " + str(scratch / "probe.txt"))
         self.assert_allowed("sed -i s/a/b/ probe.txt", cwd=str(scratch))
 
+    def test_in_place_edit_under_the_tmpdir_claude_folder_allowed(self):
+        scratch = self.tmp / f"claude-{os.getuid()}" / "pad"
+        scratch.mkdir(parents=True)
+        (scratch / "probe.txt").write_text("a\n")
+        self.assert_allowed("sed -i s/a/b/ " + str(scratch / "probe.txt"))
+
     def test_in_place_edit_in_other_tmp_path_still_denied(self):
         outside = pathlib.Path(tempfile.mkdtemp(dir="/tmp", prefix="shell-write-gate-test-"))
         self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
@@ -1112,8 +1118,24 @@ class ShellWriteGateTest(unittest.TestCase):
             "npx -p tsx tsx -e \"require('fs').writeFileSync('tracked.txt', 'y')\"",
             "npx tsx -e \"require('fs').createWriteStream('tracked.txt')\"",
             "pypy3 -c \"open('tracked.txt','w')\"",
+            "python3 -c\"open('tracked.txt','w')\"",
+            "perl -e\"open(F,'>','tracked.txt')\"",
+            "node -e\"require('fs').writeFileSync('tracked.txt','y')\"",
+            "ruby -e\"File.write('tracked.txt','y')\"",
             "node -e \"const s = \\`a #b\\`; fs.writeFileSync('tracked.txt', s)\"",
             "node -e \"const s = 'a'.replace(/ #x/g, ''); fs.writeFileSync('tracked.txt', s)\"",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assert_denied(command)
+
+    def test_untracked_script_run_with_an_attached_value_option_is_still_read_and_denied(self):
+        (self.repo / "w.py").write_text("open('tracked.txt', 'w')\n")
+        (self.repo / "w.js").write_text("require('fs').writeFileSync('tracked.txt', 'y')\n")
+        commands = (
+            "python3 -Xtracemalloc w.py",
+            "python3 -Xpycache_prefix=/tmp w.py",
+            "node -rdotenv/config w.js",
         )
         for command in commands:
             with self.subTest(command=command):

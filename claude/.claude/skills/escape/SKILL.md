@@ -15,7 +15,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
    - `gate_missed` — which layer should have caught it: `review` (bugs/quality), `drift-gate` (plan drift), `test-intent` (bug-pinning), `stage` (SAFE-tier invariant failed), `coder` (should never have been written), `eng-spec` (**defect was in the plan** — use whenever implementation faithfully matched a wrong spec, never `coder`).
    - `class` — `bug` | `smell` | `duplication` | `complexity` | `plan-drift` | `test-gap` | `docs` | `other` (`complexity` = code that need not have existed, the `/refactor simplify` class; `docs` = prose that is false or stale about the code: a comment, docstring, doc, ADR or run-time description, even when the code is right)
    - `severity` — `high` | `medium` | `low`
-   - `desc` — one line, specific enough to be legible in 3 months (not stored; the row keeps the other fields)
+   - `desc` — one line, specific enough to be legible in 3 months (stored only in the local escape-text file, and only for a hand catch: `cc`, `walkthrough`, `pr-human`, `peer-review`, `prod`, `other`; never in the ledger row. That file also keeps the row's miss_reason for every stage)
    - `file` — representative path, if known
    - `lane` — optional planning lane (`eng-spec`/`code`/`other`); ask when ambiguous.
 

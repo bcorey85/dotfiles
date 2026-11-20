@@ -61,6 +61,13 @@ class LocalCheckTest(unittest.TestCase):
         self.assertEqual("shop-api", local_check.main_checkout_name(linked))
         self.assertEqual("make check", local_check.local_check_command(linked))
 
+    def test_a_main_checkout_folder_named_with_a_git_suffix_keeps_its_suffix(self):
+        suffixed = self.scratch / "foo.git"
+        suffixed.mkdir()
+        git(suffixed, "init", "-q")
+
+        self.assertEqual("foo.git", local_check.main_checkout_name(suffixed))
+
     def test_a_folder_outside_git_is_named_by_its_own_folder(self):
         plain = self.scratch / "plain-repo"
         plain.mkdir()

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -22,16 +24,19 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import process_group
 import review_fix
 import review_fix_asks
 import review_fix_names
+import review_fix_plan_impacts
 import review_loop_main
 import review_loop_prompt_file
 import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
 import script_utils
-from review_asks import REJECT_MEANS, REJECTED
+import standing_rulings
+from review_asks import PLAIN_OUTCOMES_TEXT, REJECT_MEANS, REJECTED
 from review_fix_asks import LAUNCH_COMMAND
 
 LOGGED_MARK = "LOGGED / POSTED"
@@ -202,9 +207,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         loop_root = state_dir / reviewer_dispatch.LOOP_FOLDER
         deadline = time.monotonic() + 10
         for _loop_dir, pid in list(reviewer_dispatch.live_loops(loop_root)):
-            while reviewer_dispatch.pid_is_running(pid) and time.monotonic() < deadline:
+            while process_group.pid_is_alive(pid) and time.monotonic() < deadline:
                 time.sleep(0.05)
-            if reviewer_dispatch.pid_is_running(pid):
+            if process_group.pid_is_alive(pid):
                 os.killpg(pid, signal.SIGKILL)
 
     def fake_command(self, name, body):
@@ -317,6 +322,43 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("public API field rename", output)
         self.assertNotIn("review-gate-mark", output)
         self.assertNotIn("render-and-finish", output)
+
+    def test_a_blocker_prints_whole_up_to_2000_characters_and_a_file_path_past_it(self):
+        cases = [("x" * 2000, False), ("x" * 2001, True), ("lint failed: " + "x" * 1187 + " FAILING-LINE", False)]
+        for blocker, gets_file in cases:
+            with self.subTest(length=len(blocker)):
+                code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[blocker]))
+                self.assertEqual(code, 0, output)
+                self.assertEqual(gets_file, "full text:" in output, output)
+                self.assertEqual(not gets_file, blocker in output, output)
+
+    def test_the_2000_character_limit_is_measured_after_whitespace_is_collapsed(self):
+        blocker = "a\n\n" * 700 + "FAILING-LINE"
+        collapsed = "a " * 700 + "FAILING-LINE"
+        self.assertGreater(len(blocker), 2000)
+        code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[blocker]))
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("full text:", output)
+        self.assertIn(collapsed, output)
+
+    def test_a_blocker_past_2000_characters_prints_a_path_to_a_file_holding_all_of_it(self):
+        huge_blocker = "test failed:\n" + "y" * 4970 + "\nFAILING-LINE"
+        code, output = self.packet(packet_text(BLOCKER_FIELDS, blockers=[huge_blocker]))
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("FAILING-LINE", output)
+        match = re.search(r"\[full text: (\S+)\]", output)
+        self.assertIsNotNone(match, output)
+        self.assertEqual(huge_blocker + "\n", pathlib.Path(match.group(1)).read_text())
+
+    def test_a_long_plan_impact_prints_a_path_to_a_file_holding_all_of_it(self):
+        plan_impact = "assumed:\n" + "z" * 2500 + "\nFAILING-LINE"
+        packet = json.dumps({"status": "plan-impact", "iter": 1, "plan_impact": plan_impact})
+        code, output = self.packet(packet)
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("FAILING-LINE", output)
+        match = re.search(r"\[full text: (\S+)\]", output)
+        self.assertIsNotNone(match, output)
+        self.assertEqual(plan_impact + "\n", pathlib.Path(match.group(1)).read_text())
 
     def test_a_setup_fault_stops_and_says_it_is_not_a_code_failure(self):
         code, output = self.packet(SETUP_FAULT)
@@ -577,6 +619,186 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("ask-user-plan-impact", output)
         self.assertNotIn("Gate: do not commit yet", output)
 
+    def reword_packet(self, *flags):
+        reword = {**HELD_IMPACT, "text": "AC-2 is reworded\n  acceptance_criteria: AC-2\n  kind: reword",
+                  "reword": True}
+        message = {"status": "converged", "iter": 2, "fixed": [], "ask": [], "class_closure": "n/a - fixed[] empty",
+                   "plan_impacts": [reword]}
+        return self.packet(json.dumps(message), *flags)
+
+    def test_packet_reads_standing_rulings_from_the_plan_it_is_given(self):
+        plan = self.temp_root / "plan.md"
+        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                        "covers: rewords\n")
+
+        _code, without_plan = self.reword_packet()
+        code, with_plan = self.reword_packet("--plan", str(plan))
+
+        self.assertIn("ACTION: ask-user-plan-impact", without_plan)
+        self.assertEqual(code, 0, with_plan)
+        self.assertIn("standing ruling by Pat at 2026-11-19", with_plan)
+        self.assertNotIn("ask-user-plan-impact", with_plan)
+
+    def test_packet_stops_on_a_plan_that_does_not_exist(self):
+        code, output = self.reword_packet("--plan", str(self.temp_root / "missing.md"))
+
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("missing.md", output)
+
+    def present_with_plan(self, impacts, plan_text, state=None):
+        """What present_plan_impacts prints for the impacts, with a plan file holding plan_text."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        plan = pathlib.Path(folder.name) / "plan.md"
+        plan.write_text(plan_text)
+        packet = {"plan_impacts": [{"settled": False, "applied": False, "reword": False, **impact}
+                                   for impact in impacts],
+                  "iter": 1, "spec_iter": None}
+        captured = io.StringIO()
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        environment = {"HANDBACK_STORE_DIR": store.name, "CLAUDE_CODE_SESSION_ID": SESSION}
+        with (unittest.mock.patch.dict(os.environ, environment),
+              unittest.mock.patch.object(review_fix_plan_impacts, "save_fix_state"),
+              unittest.mock.patch.object(handback, "carried_findings", return_value=[]),
+              contextlib.redirect_stdout(captured)):
+            review_fix_plan_impacts.present_plan_impacts(packet, state or {}, plan)
+        return captured.getvalue()
+
+    def test_a_held_reword_impact_with_a_standing_ruling_prints_a_deviation_line_naming_it_and_no_ask(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn("ACTION: show-plan-impacts", output)
+        self.assertIn("standing ruling by Pat at 2026-11-19", output)
+        self.assertIn("the queue is at-most-once", output)
+        self.assertNotIn("ask-user-plan-impact", output)
+        self.assertNotIn("Gate: do not commit yet", output)
+
+    def test_a_reword_impact_the_loop_adopted_prints_the_standing_ruling_not_the_code_wins_line(self):
+        adopted_reword = {**HELD_IMPACT, "reword": True, "ac_change": True, "adopted": True, "applied": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([adopted_reword], plan_text)
+
+        self.assertIn("standing ruling by Pat at 2026-11-19", output)
+        self.assertNotIn("the code wins", output)
+
+    STANDING_PLAN = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+    def test_a_standing_adoption_credits_the_review_and_prints_the_refusal_when_there_is_one(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        for refusal in (None, "the review left a finding open"):
+            with self.subTest(refusal=refusal):
+                with unittest.mock.patch.object(handback, "record_clean_review",
+                                                return_value=(refusal, None)) as credited:
+                    output = self.present_with_plan([reword], self.STANDING_PLAN)
+
+                credited.assert_called_once_with(SESSION)
+                self.assertEqual("the review left a finding open" in output, refusal is not None)
+
+    def test_a_standing_adoption_beside_a_held_cut_writes_no_ruling_row_and_credits_no_review(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        cut = {**HELD_IMPACT, "text": "AC-9 is dropped", "reword": False}
+        with unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)) as credited, \
+                unittest.mock.patch.object(handback_store, "record") as recorded, \
+                unittest.mock.patch.object(handback_store, "record_ruled_impact") as ruled_impact:
+            output = self.present_with_plan([reword, cut], self.STANDING_PLAN)
+
+        credited.assert_not_called()
+        recorded.assert_not_called()
+        ruled_impact.assert_called_once()
+        self.assertIn("ask-user-plan-impact", output)
+
+    def test_a_standing_adoption_of_every_held_impact_writes_the_ruling_row_and_credits_the_review(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        with unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)) as credited, \
+                unittest.mock.patch.object(handback_store, "record") as recorded:
+            self.present_with_plan([reword], self.STANDING_PLAN)
+
+        credited.assert_called_once_with(SESSION)
+        self.assertEqual(recorded.call_args.args[:2], (SESSION, handback_store.PLAN_RULING))
+
+    def test_a_standing_adoption_stores_its_rows_under_the_packets_repo_not_the_cwd(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        other_repo = self.temp_root / "other-repo"
+        other_repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(other_repo)], check=True)
+        state = {"relaunch_args": ["--repo", str(other_repo)]}
+        with unittest.mock.patch.object(handback_store, "record_ruled_impact") as stored, \
+                unittest.mock.patch.object(handback, "record_clean_review", return_value=(None, None)):
+            self.present_with_plan([reword], self.STANDING_PLAN, state)
+
+        self.assertEqual(pathlib.Path(stored.call_args.args[2]).resolve(), other_repo.resolve())
+
+    def test_the_stored_row_and_the_deviation_line_carry_the_same_ruled_at(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        with unittest.mock.patch.object(handback_store, "record_ruled_impact") as stored:
+            output = self.present_with_plan([reword], self.STANDING_PLAN)
+
+        ruled_at = stored.call_args.kwargs["ruled_at"]
+        self.assertIn(f"Ruled by {plan_format.SESSION_RULING_OWNER} at {ruled_at}", output)
+
+    def test_the_standing_deviation_line_is_owned_by_the_session_with_one_time_and_no_rule_list(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn(f"Ruled by {plan_format.SESSION_RULING_OWNER} at ", output)
+        self.assertNotIn("Ruled by Pat", output)
+        self.assertNotIn("at 2026-11-19 at", output)
+        self.assertNotIn("Plan impacts adopted by rule", output)
+
+    def test_a_reword_and_a_rule_adopted_impact_each_print_once(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        by_rule = {**ADOPTED_IMPACT, "reword": False}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword, by_rule], plan_text)
+
+        self.assertEqual(output.count("the queue is at-most-once"), 1)
+        rule_section = output.split("Plan impacts adopted by rule", 1)[1]
+        self.assertIn("the cap moves into the config", rule_section)
+        self.assertNotIn("the queue is at-most-once", rule_section)
+        self.assertEqual(output.count("Plan impacts adopted by rule"), 1)
+
+    def test_a_bad_standing_ruling_line_is_named_by_file_and_line_and_the_impact_stays_held(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        plan_text = '# Plan\n\n## Plan Deviations\n\nStanding ruling by Pat at yesterday: "x" covers: rewords\n'
+
+        output = self.present_with_plan([reword], plan_text)
+
+        self.assertIn("plan.md:5:", output)
+        self.assertIn(standing_rulings.STANDING_RULING_FORM, output)
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+
+    def test_a_held_cut_impact_still_asks_when_a_standing_ruling_covers_rewords(self):
+        reword = {**HELD_IMPACT, "reword": True}
+        cut = {**HELD_IMPACT, "text": "AC-3 is dropped"}
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                     "covers: rewords\n")
+
+        output = self.present_with_plan([reword, cut], plan_text)
+
+        self.assertEqual(output.count("ACTION: ask-user-plan-impact"), 1)
+        self.assertIn("1 plan impact(s) wait for a ruling", output)
+        self.assertIn("AC-3 is dropped", output)
+
+    def test_a_held_reword_impact_with_no_standing_ruling_still_asks(self):
+        reword = {**HELD_IMPACT, "reword": True}
+
+        output = self.present_with_plan([reword], "# Plan\n")
+
+        self.assertIn("ACTION: ask-user-plan-impact", output)
+
     def test_a_held_plan_impact_is_asked_once_after_the_review_result_and_keeps_the_gate_dirty(self):
         code, output = self.impacts_packet([ADOPTED_IMPACT, HELD_IMPACT])
 
@@ -603,6 +825,53 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("revert them", output)
         self.assertNotIn("the held fix is not applied", output)
+
+    def test_decide_adopt_from_packet_state_when_every_held_impact_is_applied_re_dispatches_nothing(self):
+        code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}])
+        self.assertEqual(code, 0, output)
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True})
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "keep the coder's edits"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIn("nothing is re-dispatched", output)
+        self.assertNotIn("ACTION: redispatch", output)
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_decide_adopt_from_packet_state_stops_when_the_gate_cannot_be_cleared(self):
+        code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "keep the coder's edits"],
+                                       CLAUDE_CODE_SESSION_ID="")
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("ACTION: done", output)
+        self.assertIn("still counts the review as dirty", output)
+
+    def test_decide_adopt_of_an_applied_impact_with_a_finding_left_open_still_re_dispatches(self):
+        remaining = [{"disposition": "fix", "finding": "still racy", "file_line": "src/q.ts:7"}]
+        code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}], findings_remaining=remaining)
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt, review them too"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertNotIn("ACTION: done", output)
+
+    def test_decide_adopt_from_packet_state_with_one_unapplied_impact_still_re_dispatches(self):
+        other_impact = {**HELD_IMPACT, "text": "the cap moves into the config"}
+        code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}, other_impact])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt the plan change"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: redispatch", output)
+        self.assertNotIn("ACTION: done", output)
 
     def test_a_toolkit_cause_plan_impact_prints_as_a_fault_with_no_question(self):
         code, output = self.impacts_packet([TOOLKIT_IMPACT])
@@ -642,6 +911,19 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("the commit gate counts the review as clean", output)
         self.assertIn("1 plan impact(s) that await a ruling", held_reason)
         self.assertIsNone(self.false_clean_reason())
+
+    def test_a_repeat_of_the_same_held_packet_keeps_the_time_the_impact_was_filed(self):
+        message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        self.packet(message)
+        first_filed_at = json.loads(state_file.read_text())[review_fix_names.PLAN_IMPACT_FILED_AT_KEY]
+        time.sleep(0.05)
+
+        self.packet(message)
+
+        second_filed_at = json.loads(state_file.read_text())[review_fix_names.PLAN_IMPACT_FILED_AT_KEY]
+        self.assertEqual(second_filed_at, first_filed_at)
 
     def test_a_plan_impact_deferred_to_phase_end_lets_the_commit_through(self):
         message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
@@ -778,7 +1060,14 @@ class ReviewFixScriptTest(unittest.TestCase):
         for word in ("adopt", "keep"):
             for by in ("user", "session"):
                 self.assertIn(f"review_fix.py decide {word} --by {by} --ruling", output)
-        self.assertEqual(4, output.count("--plan <the plan path, when the handoff names one>"))
+        command_lines = [line for line in output.splitlines() if "review_fix.py decide" in line]
+        by_user = [line for line in command_lines if "--by user" in line]
+        by_session = [line for line in command_lines if "--by session" in line]
+        for line in by_user:
+            self.assertTrue(line.endswith("--plan <the plan path, when the handoff names one>"), line)
+        for line in by_session:
+            self.assertTrue(line.endswith("--plan <the plan path>"), line)
+        self.assertEqual((2, 2), (len(by_user), len(by_session)))
         self.assertEqual(2, output.count('--ruling "<the decision in one line>"'))
 
     def test_the_script_usage_asks_for_the_decision_in_one_line(self):
@@ -789,11 +1078,18 @@ class ReviewFixScriptTest(unittest.TestCase):
                       output)
         self.assertIn(f"{REJECTED}: {REJECT_MEANS}", output)
 
+    def test_the_script_usage_has_no_line_over_120_characters(self):
+        code, output = self.run_script([])
+
+        self.assertEqual(2, code)
+        for line in output.splitlines():
+            self.assertLessEqual(len(line), 120, line)
+
     def test_plan_impact_modal_names_the_by_form(self):
         _code, output = self.packet(PLAN_IMPACT)
         self.assertIn('decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"', output)
         self.assertIn("pass `--by session`", output)
-        self.assertIn("--plan <the plan path, when the handoff names one>", output)
+        self.assertIn("--plan <the plan path: required with --by session, else when the handoff names one>", output)
 
     def test_decide_without_a_ruling_stops_with_the_usage_line_and_records_nothing(self):
         self.packet(PLAN_IMPACT)
@@ -845,8 +1141,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_decide_by_session_signs_as_the_session_not_the_user(self):
         self.packet(PLAN_IMPACT)
-        plan_file = self.temp_root / "plan.md"
-        plan_file.write_text("# Plan\n")
+        plan_file = self.session_plan_file()
         code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "my own call",
                                         "--plan", str(plan_file)])
         self.assertEqual(code, 0, output)
@@ -874,9 +1169,20 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("stop-usage", output)
         self.assertNotIn("review-gate-mark", output)
 
-    def plant_held_hand_back(self):
+    def session_plan_file(self):
+        """A plan whose criteria the plan author wrote (owner `plan`), so a session may rule on its impacts."""
+        folder = self.temp_root / "session-plan"
+        folder.mkdir(exist_ok=True)
+        (folder / "acceptance-criteria.md").write_text("# Criteria\n")
+        plan_file = folder / "plan.md"
+        plan_file.write_text("# Plan\n")
+        return plan_file
+
+    def plant_held_hand_back(self, *impacts, **packet_fields):
+        impacts = impacts or (HELD_IMPACT,)
         message = json.dumps({"status": "converged", "iter": 2, "fixed": [], "ask": [],
-                              "class_closure": "n/a - fixed[] empty", "plan_impacts": [HELD_IMPACT]})
+                              "class_closure": "n/a - fixed[] empty", "plan_impacts": list(impacts),
+                              **packet_fields})
         self.store_dir.mkdir(exist_ok=True)
         dispatch = {"kind": "dispatch", "session_id": SESSION, "ts": time.time(), "repo": str(self.repo.resolve())}
         (self.store_dir / f"{SESSION}.jsonl").write_text(json.dumps(dispatch) + "\n")
@@ -885,8 +1191,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_decide_keep_with_no_state_rules_on_the_held_impact_in_the_hand_back(self):
         self.plant_held_hand_back()
-        plan_file = self.temp_root / "plan.md"
-        plan_file.write_text("# Plan\n")
+        plan_file = self.session_plan_file()
 
         code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep the retry",
                                         "--plan", str(plan_file)])
@@ -900,8 +1205,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_decide_adopt_with_no_state_logs_the_deviation_and_stops_for_the_callers_own_loop(self):
         self.plant_held_hand_back()
-        plan_file = self.temp_root / "plan.md"
-        plan_file.write_text("# Plan\n")
+        plan_file = self.session_plan_file()
 
         code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "drop the retry",
                                         "--plan", str(plan_file)])
@@ -912,6 +1216,150 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("ACTION: redispatch", output)
         self.assertIn("The ruling: drop the retry", plan_file.read_text())
         self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_settles_the_held_impact_the_gate_blocks_on_past_a_stale_finished_state(self):
+        self.plant_held_hand_back()
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stage": "done", "iter": 2}))
+        self.assertIsNotNone(self.false_clean_reason())
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_decide_adopt_on_an_applied_held_impact_settles_the_gate_with_no_review_loop(self):
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True})
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "keep the coder's edits",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("/code resume", output)
+        self.assertIn("The ruling: keep the coder's edits", plan_file.read_text())
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_decide_adopt_from_the_hand_back_of_an_applied_impact_with_carried_findings_does_not_settle(self):
+        carried = [{"disposition": "fix", "finding": "still racy", "file_line": "src/q.ts:7"}]
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True}, findings_remaining=carried)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt, review them too"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIn("Run the review again", output)
+        self.assertNotIn("already in the tree", output)
+
+    def test_decide_adopt_from_the_hand_back_of_an_applied_impact_with_a_blocker_does_not_settle(self):
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True}, blockers=["[critical] x"])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt, review them too"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("already in the tree", output)
+
+    def test_decide_adopt_from_the_hand_back_of_an_applied_impact_with_a_loop_note_does_not_settle(self):
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True}, surprise="x")
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt, review them too"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("already in the tree", output)
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_adopt_with_one_applied_and_one_unapplied_impact_still_stops(self):
+        other_impact = {**HELD_IMPACT, "text": "the cap moves into the config"}
+        self.plant_held_hand_back({**HELD_IMPACT, "applied": True}, other_impact)
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "keep the edits",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("already in the tree", output)
+        self.assertIn("the cap moves into the config", plan_file.read_text())
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_after_ruling_the_hand_back_impact_does_not_fall_back_to_a_stale_state(self):
+        self.plant_held_hand_back()
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stage": "plan-impact", "plan_impact": "- an older impact",
+                                          "plan_impact_held": True, "iter": 1}))
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep the retry"])
+        self.assertEqual(code, 0, output)
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep the older one"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no plan-impact is waiting", output)
+
+    def test_decide_prefers_the_hand_back_impact_over_a_stale_state_waiting_on_another_one(self):
+        self.plant_held_hand_back()
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stage": "plan-impact", "plan_impact": "- an older impact",
+                                          "plan_impact_held": True, "iter": 1}))
+        self.assertIsNotNone(self.false_clean_reason())
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: done", output)
+        self.assertIsNone(self.false_clean_reason())
+
+    def test_a_session_ruling_with_a_missing_plan_file_names_the_missing_file(self):
+        self.plant_held_hand_back()
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep",
+                                        "--plan", str(self.temp_root / "no-such-plan.md")])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("does not exist", output)
+
+    def test_a_session_may_not_rule_when_the_user_owns_the_criteria_or_the_plan_is_missing_or_unreadable(self):
+        self.plant_held_hand_back()
+        user_plan = self.temp_root / "plan.md"
+        user_plan.write_text("# Plan\n")
+        two_tickets = self.temp_root / "two-tickets"
+        two_tickets.mkdir()
+        for name in ("a-00-ticket.md", "b-00-ticket.md"):
+            (two_tickets / name).write_text("ticket\n")
+        two_tickets_plan = two_tickets / "plan.md"
+        two_tickets_plan.write_text("# Plan\n")
+        cases = {"user-owned": ["--plan", str(user_plan)], "no plan": [],
+                 "unreadable plan folder": ["--plan", str(two_tickets_plan)]}
+        for label, plan_arguments in cases.items():
+            for decision in ("adopt", "keep"):
+                with self.subTest(case=label, decision=decision):
+                    code, output = self.run_script(["decide", decision, "--by", "session", "--ruling", "my call",
+                                                    *plan_arguments])
+                    self.assertEqual(code, 2, output)
+                    self.assertIn("--by user", output)
+                    self.assertEqual(user_plan.read_text(), "# Plan\n")
+                    self.assertIsNotNone(self.false_clean_reason())
+
+    def test_a_session_may_rule_when_a_session_written_queue_item_owns_the_criteria(self):
+        self.plant_held_hand_back()
+        folder = self.temp_root / "queue-item-plan"
+        folder.mkdir()
+        (folder / "00-ticket.md").write_text(
+            '---\ntype: "QueueItem"\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n\nbody\n')
+        plan_file = folder / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "my call",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("The ruling: my call", plan_file.read_text())
 
     def test_decide_with_no_state_and_no_hand_back_keeps_the_no_packet_error(self):
         code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "x"])
@@ -952,17 +1400,31 @@ class ReviewFixScriptTest(unittest.TestCase):
         state_file.write_text(json.dumps({"stage": "plan-impact", "plan_impact": "- the queue is at-most-once",
                                           "plan_impact_held": True, "iter": 2}))
 
-        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "x"],
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "x"],
                                        CLAUDE_CODE_SESSION_ID="")
 
         self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("ACTION: done", output)
         self.assertIn("still counts the review as dirty", output)
         self.assertIsNotNone(self.false_clean_reason())
 
+    def test_a_held_keep_settled_while_asks_wait_keeps_the_asks_stage(self):
+        state_file = self.repo / ".git" / "review-fix" / "state.json"
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(json.dumps({"stage": "asks", "plan_impact": "- the queue is at-most-once",
+                                          "plan_impact_held": True, "iter": 2}))
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "x"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(json.loads(state_file.read_text())["stage"], "asks")
+        self.assertIn("asks still wait", output)
+        self.assertIn("asks-done", output)
+
     def test_a_repeat_decide_on_an_already_ruled_hand_back_logs_no_second_deviation(self):
         self.plant_held_hand_back()
-        plan_file = self.temp_root / "plan.md"
-        plan_file.write_text("# Plan\n")
+        plan_file = self.session_plan_file()
         arguments = ["decide", "keep", "--by", "session", "--ruling", "keep the retry", "--plan", str(plan_file)]
 
         first_code, first_output = self.run_script(arguments)
@@ -1011,7 +1473,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                    "--scope", "branch-exit")
         self.assertEqual(code, 0, output)
         self.assertIn("Answer ask 2 with 'modified:<change with no condition>': "
-                      "accepted or rejected is refused on a conditional change", output)
+                      f"{PLAIN_OUTCOMES_TEXT} is refused on a conditional change", output)
 
     def test_the_ask_presentation_lists_every_conditional_ask_number(self):
         first = ask_entry("one", "src/a.ts:1", question="Confirm?", change="If not confirmed, revert X")
@@ -4090,17 +4552,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn(review_user_ruled.SKIP_QUESTION.split("{")[0], packet_output)
         self.assertNotIn("present-asks", packet_output)
 
-    def test_asks_done_then_decide_adopt_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
-        home = str(self.temp_root / "home")
-        launch_args = self.packet_with_ruled_impact_ask(home)
-        self.assertIn("--user-ruled", launch_args)
-        self.decide_adopt(home)
-
-        output = self.run_fix_round(home, launch_args, [RULED_IMPACT_SKIP])
-
-        self.assertEqual(self.fix_round_findings_files(), [])
-        self.assert_skip_stays_a_skip(output)
-
     def test_asks_done_then_decide_keep_then_the_fix_round_has_no_ask_and_no_plan_impact(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
@@ -4114,7 +4565,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_fix_launch_whose_only_finding_is_a_ruled_impact_on_a_clean_tree_launches_no_loop(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
-        self.decide_adopt(home)
+        self.decide_keep(home)
         self.git("checkout", "--", "README.md")
         state_dir = script_utils.git_path(self.repo, reviewer_dispatch.LAUNCH_STATE_NAME)
         prompts_before = list((state_dir / "loop-script").glob("*/prompt.txt"))
@@ -4127,10 +4578,25 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.fix_round_findings_files(), [])
         self.assertEqual(list((state_dir / "loop-script").glob("*/prompt.txt")), prompts_before)
 
-    def test_a_no_review_fix_launch_whose_only_finding_is_a_ruled_impact_launches_no_loop(self):
+    def test_a_real_decide_adopt_sends_the_adopted_finding_to_the_resume_rounds_fix_coder(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
         self.decide_adopt(home)
+
+        code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
+
+        self.assertEqual(code, 0, output)
+        findings_files = self.fix_round_findings_files()
+        self.assertEqual(len(findings_files), 1)
+        sent = json.loads(findings_files[0].read_text())
+        self.assertEqual(len(sent), 1)
+        self.assertIn(review_user_ruled.ADOPTED_MARK, sent[0])
+        self.assertIn("keep the narrower AC2", sent[0])
+
+    def test_a_no_review_fix_launch_whose_only_finding_is_a_ruled_impact_launches_no_loop(self):
+        home = str(self.temp_root / "home")
+        launch_args = self.packet_with_ruled_impact_ask(home)
+        self.decide_keep(home)
 
         code, output = self.run_script([*launch_args, "--no-review"], HOME=home,
                                        REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
@@ -4146,7 +4612,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=other_repo, env={**os.environ, **GIT_ENV}, check=True,
                        capture_output=True)
         launch_args = self.packet_with_ruled_impact_ask(home)
-        self.decide_adopt(home)
+        self.decide_keep(home)
         message = packet_text(CLEAN_EMPTY_FIELDS, skipped_fp=[RULED_IMPACT_SKIP])
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
         self.assertEqual(code, 0, output)
@@ -4192,7 +4658,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
 
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             ruled_in_other = handback_store.rulings(SESSION, os.path.realpath(other_repo)).impacts
@@ -4205,7 +4671,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.packet_with_ruled_impact_ask(home)
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             handback_store.record(SESSION, "dispatch", repo=str(self.temp_root / "elsewhere"))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             ruled = handback_store.rulings(SESSION, os.path.realpath(self.repo)).impacts
@@ -4218,7 +4684,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(message)))
         self.assertEqual(code, 0, output)
         self.assertEqual(len(self.fix_round_findings_files()), 1)
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(shlex.split(output.splitlines()[-1].split("`")[1])[2:], HOME=home)
 
@@ -4251,7 +4717,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         finding = ("README.md:1 PLAN-IMPACT: drop the retry? acceptance_criteria: AC3 "
                    "Proposed change: drop the retry")
         rulings = handback_store.Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings), ([], [], [], [finding]))
+        left = review_user_ruled.leave_out_ruled_impacts([finding], [1], rulings)
+        self.assertEqual(tuple(left[:4]), ([], [], [], [finding]))
 
     def test_a_rejected_ask_is_recorded_by_file_and_question_and_an_accepted_one_is_not(self):
         home = str(self.temp_root / "home")
@@ -4281,8 +4748,8 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir),
                                                    "CLAUDE_CODE_SESSION_ID": SESSION}):
-            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
-            review_fix_asks.record_unrecorded_rejections(target, asks, [REJECTED], repo)
+            review_fix_asks.record_ruled_asks_once(target, asks, [REJECTED], repo)
+            review_fix_asks.record_ruled_asks_once(target, asks, [REJECTED], repo)
 
         self.assertEqual(self.rejected_texts(), ["src/a.ts:5 pin the window?"])
 
@@ -4323,7 +4790,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         ordinary = ask_entry("cap the retry", "src/retry.ts:10", finding_id="a1b2c3d4e5f60005",
                              question="cap the retry at three?", change="cap the retry", ask_class="bug")
         launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, ordinary))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
 
@@ -4342,7 +4809,7 @@ class ReviewFixScriptTest(unittest.TestCase):
                                     question="[plan-drift] does AC3 still hold for reads? acceptance_criteria: AC3",
                                     change="keep the wider AC3", ask_class="plan-drift")
         launch_args = self.packet_with_ruled_impact_ask(home, asks=(RULED_IMPACT_ASK, other_criterion))
-        self.decide_adopt(home)
+        self.decide_keep(home)
 
         code, output = self.run_script(launch_args, HOME=home, REVIEW_FIX_LOOP_SCRIPT=str(self.loop_stub(CONVERGED)))
 
@@ -4357,7 +4824,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
         self.assertIn("plan impact(s) that await a ruling", self.false_clean_reason())
-        self.decide_adopt(home)
+        self.decide_keep(home)
         self.run_fix_round(home, launch_args, [])
 
         self.assertIsNone(self.false_clean_reason())

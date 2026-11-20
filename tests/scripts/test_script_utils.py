@@ -16,6 +16,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = pathlib.Path(os.environ.get("SCRIPT_UTILS_SCRIPT")
                       or REPO_ROOT / "claude" / ".claude" / "scripts" / "lib" / "script_utils.py")
 sys.path.insert(0, str(SCRIPT.parent.parent / "telemetry"))
+sys.path.insert(0, str(SCRIPT.parent))
 module_spec = importlib.util.spec_from_file_location("script_utils", SCRIPT)
 script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
@@ -1156,6 +1157,27 @@ class SharedHelpersTest(unittest.TestCase):
             with self.subTest(label):
                 self.assertEqual(expected, script_utils.drop_numbered(items, dropped, kept))
 
+    def test_repo_relative_reads_a_relative_path_against_the_repo_and_gives_none_outside_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            outside = repo.parent / "elsewhere.txt"
+
+            self.assertEqual("a/b.py", script_utils.repo_relative(repo, "a/b.py"))
+            self.assertEqual("a/b.py", script_utils.repo_relative(repo, repo / "a" / "b.py"))
+            self.assertIsNone(script_utils.repo_relative(repo, outside))
+
+    def test_is_ancestor_is_true_for_an_ancestor_and_false_for_a_descendant_or_a_bad_ref(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            identity = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(repo)]
+            subprocess.run([*identity, "init", "-q"], check=True)
+            subprocess.run([*identity, "commit", "-q", "--allow-empty", "-m", "one"], check=True)
+            subprocess.run([*identity, "commit", "-q", "--allow-empty", "-m", "two"], check=True)
+
+            self.assertTrue(script_utils.is_ancestor(repo, "HEAD~1", "HEAD"))
+            self.assertFalse(script_utils.is_ancestor(repo, "HEAD", "HEAD~1"))
+            self.assertFalse(script_utils.is_ancestor(repo, "no-such-ref", "HEAD"))
+
     def test_numbered_items_returns_the_named_items_in_order_and_a_number_past_the_end_raises(self):
         self.assertEqual(["c", "a"], script_utils.numbered_items([3, 1], ["a", "b", "c"]))
         self.assertEqual([], script_utils.numbered_items([], ["a"]))
@@ -1163,6 +1185,118 @@ class SharedHelpersTest(unittest.TestCase):
             with self.subTest(number=number), self.assertRaises(script_utils.ItemNumberError) as raised:
                 script_utils.numbered_items([1, number], ["a", "b", "c"])
             self.assertEqual((number, 3), (raised.exception.number, raised.exception.item_count))
+
+
+GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+
+
+class WorkTreeBlobRestoreTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name).resolve()
+        (self.repo / "a.md").write_text("one\n\n")
+        for argv in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "init"]):
+            subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
+                           capture_output=True)
+
+    def test_a_kept_blob_restores_the_file_byte_for_byte_after_an_edit(self):
+        (self.repo / "a.md").write_text("phase edit\n\n")
+        blob = script_utils.work_tree_blob(self.repo, "a.md", keep_object=True)
+        (self.repo / "a.md").write_text("coder edit\n")
+
+        self.assertTrue(script_utils.restore_blob(self.repo, "a.md", blob))
+
+        self.assertEqual((self.repo / "a.md").read_text(), "phase edit\n\n")
+
+    def git_run(self, *argv):
+        subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+
+    def test_an_index_entry_is_restored_after_the_path_is_staged_again(self):
+        before = script_utils.index_entry(self.repo, "a.md")
+        (self.repo / "a.md").write_text("staged\n")
+        self.git_run("add", "a.md")
+        self.assertNotEqual(script_utils.index_entry(self.repo, "a.md"), before)
+
+        self.assertTrue(script_utils.restore_index_entry(self.repo, "a.md", before))
+
+        self.assertEqual(script_utils.index_entry(self.repo, "a.md"), before)
+        self.assertEqual((self.repo / "a.md").read_text(), "staged\n", "the work tree is left alone")
+
+    def test_a_path_that_was_not_in_the_index_is_taken_out_again(self):
+        (self.repo / "new.md").write_text("new\n")
+        self.assertIsNone(script_utils.index_entry(self.repo, "new.md"))
+        self.git_run("add", "new.md")
+
+        self.assertTrue(script_utils.restore_index_entry(self.repo, "new.md", None))
+
+        self.assertIsNone(script_utils.index_entry(self.repo, "new.md"))
+        self.assertTrue((self.repo / "new.md").exists())
+
+    def test_the_blob_at_a_commit_matches_the_index_and_is_none_for_a_missing_file(self):
+        head = script_utils.head_commit(self.repo)
+
+        self.assertEqual(script_utils.blob_at_commit(self.repo, head, "a.md"), script_utils.index_entry(
+            self.repo, "a.md").blob)
+        self.assertIsNone(script_utils.blob_at_commit(self.repo, head, "missing.md"))
+
+    def test_a_crlf_file_comes_back_with_its_crlf_line_endings_under_autocrlf(self):
+        subprocess.run(["git", "config", "core.autocrlf", "true"], cwd=self.repo, check=True, capture_output=True)
+        (self.repo / "a.md").write_bytes(b"phase\r\nedit\r\n")
+        blob = script_utils.work_tree_blob(self.repo, "a.md", keep_object=True)
+        (self.repo / "a.md").write_bytes(b"coder edit\r\n")
+
+        self.assertTrue(script_utils.restore_blob(self.repo, "a.md", blob))
+
+        self.assertEqual((self.repo / "a.md").read_bytes(), b"phase\r\nedit\r\n")
+
+    def test_no_blob_deletes_the_file_and_an_unknown_blob_leaves_it(self):
+        (self.repo / "b.md").write_text("new\n")
+        self.assertTrue(script_utils.restore_blob(self.repo, "b.md", None))
+        self.assertFalse((self.repo / "b.md").exists())
+
+        self.assertFalse(script_utils.restore_blob(self.repo, "a.md", "0" * 40))
+        self.assertEqual((self.repo / "a.md").read_text(), "one\n\n")
+
+    def test_a_target_that_cannot_be_written_or_deleted_returns_false(self):
+        blob = script_utils.work_tree_blob(self.repo, "a.md", keep_object=True)
+        (self.repo / "dir.md").mkdir()
+        (self.repo / "dir.md" / "inner").write_text("x\n")
+
+        self.assertFalse(script_utils.restore_blob(self.repo, "dir.md", blob))
+        self.assertFalse(script_utils.restore_blob(self.repo, "dir.md", None))
+        self.assertEqual(sorted(entry.name for entry in self.repo.iterdir() if entry.name.endswith(".tmp")), [])
+
+    def test_a_failed_atomic_write_returns_false_and_leaves_the_file_unchanged(self):
+        blob = script_utils.work_tree_blob(self.repo, "a.md", keep_object=True)
+        (self.repo / "a.md").write_text("coder edit\n")
+
+        with unittest.mock.patch.object(script_utils, "write_text_atomically", side_effect=OSError("disk full")):
+            restored = script_utils.restore_blob(self.repo, "a.md", blob)
+
+        self.assertFalse(restored)
+        self.assertEqual((self.repo / "a.md").read_text(), "coder edit\n")
+
+    def test_matches_head_in_a_repo_with_no_commit_is_a_diff_for_a_present_file_and_none_for_an_absent_one(self):
+        fresh = self.repo / "fresh"
+        fresh.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=fresh, env={**os.environ, **GIT_ENV}, check=True,
+                       capture_output=True)
+        (fresh / "new.md").write_text("x\n")
+
+        self.assertFalse(script_utils.matches_head(fresh, "new.md"))
+        self.assertTrue(script_utils.matches_head(fresh, "missing.md"))
+
+    def test_matches_head_reads_tracked_changed_deleted_new_and_absent_files(self):
+        self.assertTrue(script_utils.matches_head(self.repo, "a.md"))
+        self.assertTrue(script_utils.matches_head(self.repo, "gone.md"))
+        (self.repo / "new.md").write_text("x\n")
+        self.assertFalse(script_utils.matches_head(self.repo, "new.md"))
+        (self.repo / "a.md").write_text("changed\n")
+        self.assertFalse(script_utils.matches_head(self.repo, "a.md"))
+        (self.repo / "a.md").unlink()
+        self.assertFalse(script_utils.matches_head(self.repo, "a.md"))
 
 
 if __name__ == "__main__":

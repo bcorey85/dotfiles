@@ -225,14 +225,6 @@ def require_branch(top, timeout=None):
     return branch
 
 
-def repo_relative(path, top):
-    """`path` relative to the repo top level; None when it lies outside the repo."""
-    try:
-        return str(pathlib.Path(path).resolve().relative_to(top))
-    except ValueError:
-        return None
-
-
 def review_ran(repo, branch, fingerprint):
     """(ran, reason). A branch-exit code-reviewer run row that verify-log wrote (it carries REVIEW_MARKER and a tree
     fingerprint) counts when its fingerprint equals `fingerprint`. `ledger yield --review-trees` lists the

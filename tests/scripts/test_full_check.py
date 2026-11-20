@@ -18,6 +18,9 @@ sys.path.insert(0, str(SCRIPT.parent))
 import full_check  # noqa: E402
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
+import check_parts  # noqa: E402
+import full_check_receipt  # noqa: E402
 import linked_installs  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -69,6 +72,20 @@ class FullCheckTest(unittest.TestCase):
                          completed.stdout)
         self.assertEqual(self.log.read_text(), "pinned python3\n")
 
+    def test_a_linked_worktree_runs_the_check_with_the_version_the_main_checkout_pins(self):
+        main_checkout = self.repo / "main"
+        linked = self.repo / "linked"
+        subprocess.run(["git", "init", "-q", str(main_checkout)], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "-c", "user.name=t", "-c", "user.email=t@t", "commit",
+                        "-q", "--allow-empty", "-m", "base"], check=True)
+        subprocess.run(["git", "-C", str(main_checkout), "worktree", "add", "-q", str(linked)], check=True)
+        (main_checkout / ".python-version").write_text("3.12.4\n")
+        self.repo = linked
+
+        completed = self.check('echo "version=$PYENV_VERSION"')
+
+        self.assertIn("version=3.12.4", completed.stdout + self.log.read_text())
+
     def test_a_repo_with_no_python_version_file_keeps_the_path_as_it_is(self):
         pyenv_root = self.pyenv_root_with_a_python3_shim()
 
@@ -88,6 +105,78 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0],
                          "full check: not run (environment gap: No module named 'ruff')")
 
+    def collide_times(self, collisions):
+        # A check that prints a test-database collision and exits 1 for its first `collisions` runs, then passes.
+        counter = self.repo / "runs"
+        text = 'django.db.utils.OperationalError: database "test_app" is being accessed by other users'
+        return (f'echo x >> "{counter}"; if [ "$(wc -l < "{counter}")" -le {collisions} ]; '
+                f"then echo '{text}'; exit 1; fi; echo '3 passed in 0.1s'")
+
+    def test_a_collision_that_passes_on_the_retry_is_a_pass_after_one_wait(self):
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision") as wait:
+            result, _tail, _details = full_check.run(self.repo, self.collide_times(1), self.log, 120, receipt=False)
+
+        self.assertEqual(full_check.PASSED, result)
+        wait.assert_called_once_with()
+
+    def test_a_second_collision_is_a_setup_fault_naming_the_collision_and_the_fix_not_a_failure(self):
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision") as wait:
+            result, _tail, _details = full_check.run(self.repo, self.collide_times(5), self.log, 120, receipt=False)
+
+        wait.assert_called_once_with()
+        self.assertEqual(2, len((self.repo / "runs").read_text().splitlines()))
+        self.assertTrue(full_check.is_setup_fault_result(result), result)
+        self.assertIn("test database collision", result)
+        self.assertIn("gate-env.json", result)
+        self.assertFalse(full_check.is_failure(result), result)
+
+    def test_a_collided_part_does_not_hide_a_real_failure_in_another_part(self):
+        text = 'django.db.utils.OperationalError: database "test_app" is being accessed by other users'
+        collided = ("python", [f"echo '{text}'; (exit 1)"])
+        failing = ("package", ["echo 'FAIL: test_x (a.B)'; (exit 1)"])
+        joined = check_parts.join_parts([collided, failing])
+
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision"):
+            result, _tail, _details = full_check.run(self.repo, joined, self.log, 120, receipt=False)
+
+        self.assertTrue(full_check.is_failure(result), result)
+
+    def test_a_repos_own_failed_step_line_does_not_count_as_failed_parts(self):
+        own_summary = "echo 'FAILED: lint duplicate-check'; "
+
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision"):
+            result, _tail, _details = full_check.run(self.repo, own_summary + self.collide_times(5), self.log, 120,
+                                                     receipt=False)
+
+        self.assertTrue(full_check.is_setup_fault_result(result), result)
+
+    def test_a_collision_with_too_little_time_left_for_a_retry_is_not_retried(self):
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision") as wait:
+            result, _tail, _details = full_check.run(self.repo, self.collide_times(1), self.log,
+                                                     full_check.collision_retry.MIN_COMMAND_SECONDS + 10, receipt=False)
+
+        wait.assert_not_called()
+        self.assertEqual(1, len((self.repo / "runs").read_text().splitlines()))
+        self.assertTrue(full_check.is_setup_fault_result(result), result)
+
+    def test_collision_text_on_an_exit_0_run_is_a_pass_with_no_wait(self):
+        text = 'OperationalError: database "test_app" is being accessed by other users'
+        command = f"echo '{text}'; echo '3 passed in 0.1s'"
+
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision") as wait:
+            result, _tail, _details = full_check.run(self.repo, command, self.log, 60, receipt=False)
+
+        wait.assert_not_called()
+        self.assertEqual(full_check.PASSED, result)
+
+    def test_an_ordinary_failure_is_not_retried(self):
+        with mock.patch.object(full_check.collision_retry, "wait_out_collision") as wait:
+            result, _tail, _details = full_check.run(self.repo, "echo 'FAIL: test_x (a.T)'; exit 1", self.log, 60,
+                                                     receipt=False)
+
+        wait.assert_not_called()
+        self.assertEqual("failed (exit 1)", result)
+
     def test_a_missing_declared_module_is_reported_ahead_of_a_setup_fault_marker(self):
         (self.repo / "requirements-dev.txt").write_text("ruff==0.6.9\n")
 
@@ -96,6 +185,201 @@ class FullCheckTest(unittest.TestCase):
 
         self.assertEqual(completed.stdout.splitlines()[0],
                          "full check: not run (environment gap: No module named 'ruff')")
+
+    def test_a_missing_tool_is_an_environment_gap_naming_the_tool_not_a_failure(self):
+        completed = self.check("echo 'bash: pipenv: command not found'; exit 127")
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        self.assertEqual(completed.stdout.splitlines()[0],
+                         "full check: not run (environment gap: pipenv not found on PATH)")
+        self.assertNotIn("summary:", completed.stdout)
+
+    def test_a_part_exiting_127_still_runs_the_other_part_and_the_result_shows_both(self):
+        gap = "sh -c \"echo 'bash: pipenv: command not found'; exit 127\""
+        command = check_parts.join_parts([("package", [PASSING_SUITE]), ("python", [gap])])
+        # Backend first, so a join that stops at the first failure would skip the frontend part.
+        reversed_command = check_parts.join_parts([("python", [gap]), ("package", [PASSING_SUITE])])
+
+        for joined in (command, reversed_command):
+            with self.subTest(command=joined):
+                completed = self.check(joined)
+
+                lines = completed.stdout.splitlines()
+                self.assertEqual("full check: not run (environment gap: pipenv not found on PATH)", lines[0])
+                self.assertIn("summary: 3 passed in 0.1s", completed.stdout)
+                self.assertIn("FAILED PARTS: python", self.log.read_text())
+
+    def test_a_failed_part_keeps_its_exit_code_in_the_joined_command(self):
+        joined = check_parts.join_parts([("package", ["echo 'FAIL: test_x (a.B)'; (exit 1)"]),
+                                             ("python", [PASSING_SUITE])])
+
+        completed = self.check(joined)
+
+        self.assertEqual("full check: failed (exit 1)", completed.stdout.splitlines()[0])
+        self.assertIn("FAILED PARTS: package", completed.stdout)
+
+    def test_a_failed_part_is_not_hidden_by_another_part_that_hits_an_environment_gap(self):
+        failing = ("package", ["echo 'Tests  1 failed | 3 passed'; (exit 1)"])
+        missing_tool = ("python", ["sh -c \"echo 'bash: pipenv: command not found'; exit 127\""])
+        missing_module = ("python", ["echo \"ModuleNotFoundError: No module named 'ruff'\"; (exit 1)"])
+        (self.repo / "requirements.txt").write_text("ruff==0.6.9\n")
+
+        for gap_part in (missing_tool, missing_module):
+            for parts in ([failing, gap_part], [gap_part, failing]):
+                with self.subTest(parts=parts):
+                    completed = self.check(check_parts.join_parts(parts))
+
+                    self.assertEqual("full check: failed (exit 1)", completed.stdout.splitlines()[0])
+                    self.assertEqual(1, completed.returncode)
+
+    def test_a_part_with_two_missing_modules_does_not_hide_another_part_that_failed_for_real(self):
+        (self.repo / "requirements.txt").write_text("ruff==0.6.9\nblack==24.1\n")
+        two_gaps = ("python", ["echo \"ModuleNotFoundError: No module named 'ruff'\"; "
+                               "echo \"ModuleNotFoundError: No module named 'black'\"; (exit 1)"])
+        real_failure = ("package", ["echo 'Tests  1 failed | 3 passed'; (exit 1)"])
+
+        for parts in ([two_gaps, real_failure], [real_failure, two_gaps]):
+            with self.subTest(parts=[name for name, _ in parts]):
+                completed = self.check(check_parts.join_parts(parts))
+
+                self.assertEqual("full check: failed (exit 1)", completed.stdout.splitlines()[0])
+
+    def commit_two_parts_and_touch_the_frontend(self):
+        # A repo with a package part and a python part committed, and an uncommitted change in the package part.
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / "package.json").write_text('{"scripts": {"lint": "eslint ."}}')
+        (self.repo / "pytest.ini").write_text("[pytest]\naddopts = -q\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "parts"], check=True)
+        (self.repo / "app.js").write_text("1\n")
+
+    def test_the_cli_narrows_the_check_to_the_parts_the_diff_touches(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log), "--base", "HEAD",
+                "--", "npm run lint"]
+
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+        self.assertIn("command: npm run lint", completed.stdout.splitlines())
+        self.assertNotIn("the handed command is not run", completed.stderr)
+        started, _rest = full_check_receipt.latest_run(self.repo)
+        self.assertEqual("npm run lint", started["configured"])
+
+    def test_resolved_check_runs_only_the_parts_the_diff_touches(self):
+        self.commit_two_parts_and_touch_the_frontend()
+
+        self.assertEqual("npm run lint", full_check.resolved_check(self.repo, base="HEAD").command)
+        self.assertIn("pytest", full_check.resolved_check(self.repo).command)
+        self.assertIn("npm run lint", full_check.resolved_check(self.repo).command)
+
+    def test_a_deleted_python_module_next_to_a_frontend_edit_keeps_the_python_part(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        (self.repo / "mod.py").write_text("x = 1\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "module"], check=True)
+        (self.repo / "mod.py").unlink()
+        (self.repo / "app.js").write_text("2\n")
+
+        command = full_check.resolved_check(self.repo, base="HEAD").command
+
+        self.assertIn("pytest", command)
+        self.assertIn("npm run lint", command)
+
+    def test_two_127_parts_read_as_an_environment_gap(self):
+        pnpm = ("package", ["sh -c \"echo 'bash: pnpm: command not found'; exit 127\""])
+        pipenv = ("python", ["sh -c \"echo 'bash: pipenv: command not found'; exit 127\""])
+
+        completed = self.check(check_parts.join_parts([pnpm, pipenv]))
+
+        self.assertEqual("full check: not run (environment gap: pnpm not found on PATH)",
+                         completed.stdout.splitlines()[0])
+
+    def test_a_declared_module_part_and_a_127_part_read_as_an_environment_gap(self):
+        (self.repo / "requirements.txt").write_text("ruff==0.6.9\n")
+        missing_module = ("package", ["echo \"ModuleNotFoundError: No module named 'ruff'\"; (exit 1)"])
+        missing_tool = ("python", ["sh -c \"echo 'bash: pipenv: command not found'; exit 127\""])
+
+        for parts in ([missing_module, missing_tool], [missing_tool, missing_module]):
+            with self.subTest(parts=parts):
+                completed = self.check(check_parts.join_parts(parts))
+
+                self.assertEqual("full check: not run (environment gap: No module named 'ruff')",
+                                 completed.stdout.splitlines()[0])
+
+    def test_run_records_the_command_narrowed_to_the_parts_the_diff_touches(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        narrowed_check = full_check.configured_check_command(self.repo, "HEAD")
+
+        full_check.run(self.repo, narrowed_check, self.log, 60, base="HEAD")
+
+        started, _rest = full_check_receipt.latest_run(self.repo)
+        self.assertEqual("npm run lint", started["command"])
+        self.assertEqual("npm run lint", started["configured"])
+
+    def test_expected_red_naming_one_step_of_a_two_part_discovered_check_leaves_out_that_step(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        (self.repo / "plan.md").write_text(
+            "## Phase Status\n\n- [ ] Phase 1: Totals (risk: low)\n- [ ] Phase 2: Audit (risk: low)\n\n"
+            "## Phase 1: Totals\n\nExpected red: `npm run lint` until Phase 2\n\n## Phase 2: Audit\n")
+        whole_check = full_check.configured_check_command(self.repo)
+
+        command, left_out = full_check.phase_check(self.repo, whole_check, "plan.md", "1")
+
+        self.assertNotIn("npm run lint", command)
+        self.assertIn("pytest", command)
+        self.assertEqual(["npm run lint"], [entry["command"] for entry in left_out])
+
+    def test_run_with_no_base_runs_every_part_of_the_discovered_check(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        whole_check = full_check.configured_check_command(self.repo)
+
+        full_check.run(self.repo, whole_check, self.log, 60)
+
+        started, _rest = full_check_receipt.latest_run(self.repo)
+        self.assertEqual(whole_check, started["command"])
+        self.assertIn("pytest", started["command"])
+
+    def test_the_cli_with_no_base_runs_every_part_of_the_discovered_check(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        whole_check = full_check.configured_check_command(self.repo)
+        argv = [sys.executable, "-B", str(SCRIPT), str(self.repo), "--log", str(self.log)]
+
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+        self.assertIn(f"command: {whole_check}", completed.stdout)
+
+    def test_run_resolves_the_check_once(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        whole_check = full_check.configured_check_command(self.repo)
+
+        with mock.patch.object(full_check, "resolved_check", wraps=full_check.resolved_check) as resolved:
+            full_check.run(self.repo, whole_check, self.log, 60)
+
+        self.assertEqual(1, resolved.call_count)
+
+    def test_run_with_a_base_resolves_the_check_once(self):
+        self.commit_two_parts_and_touch_the_frontend()
+        whole_check = full_check.configured_check_command(self.repo)
+
+        with mock.patch.object(full_check, "resolved_check", wraps=full_check.resolved_check) as resolved:
+            full_check.run(self.repo, whole_check, self.log, 60, base="HEAD")
+
+        self.assertEqual(1, resolved.call_count)
+
+    def test_run_with_no_receipt_and_no_base_resolves_no_check(self):
+        with mock.patch.object(full_check, "resolved_check", wraps=full_check.resolved_check) as resolved:
+            full_check.run(self.repo, "true", self.log, 60, receipt=False)
+
+        self.assertEqual(0, resolved.call_count)
+
+    def test_a_failed_run_that_echoes_a_missing_tool_line_with_exit_1_is_still_a_failure(self):
+        completed = self.check("echo 'bash: pipenv: command not found'; exit 1")
+
+        first_line = completed.stdout.splitlines()[0]
+        self.assertNotIn("environment gap", first_line)
+        self.assertEqual(first_line, "full check: failed (exit 1)")
 
     def test_a_missing_undeclared_module_is_a_failure(self):
         (self.repo / "requirements.txt").write_text("flask>=3\n")
@@ -205,6 +489,16 @@ class FullCheckTest(unittest.TestCase):
                 first_line = completed.stdout.splitlines()[0]
                 self.assertTrue(first_line.startswith("full check: not run (check-command error: "), first_line)
                 self.assertIn("missing", first_line)
+
+    def test_a_missing_path_in_one_part_does_not_hide_a_failing_other_part(self):
+        stand_in = ("echo 'FAIL: test_rounding (test_money.MoneyTest)'; "
+                    "echo 'ERROR: file or directory not found: missing/test_x.py'; "
+                    "echo 'FAILED PARTS: package python'; exit 1")
+
+        completed = self.check(stand_in)
+
+        self.assertEqual(completed.returncode, 1, completed.stdout)
+        self.assertEqual(completed.stdout.splitlines()[0], "full check: failed (exit 1)")
 
     def test_a_step_on_a_path_the_diff_removed_is_a_failure(self):
         (self.repo / "pkg").mkdir()
@@ -731,6 +1025,14 @@ class BaseComparisonTest(unittest.TestCase):
                  "failed (exit 1)", False),
             "identical logs that hold only a failed-steps summary":
                 ("FAILED: lint duplicate-check\n", "FAILED: lint duplicate-check\n", "failed (exit 1)", True),
+            "a traceback frame whose line number shifted":
+                ("FAIL: test_export (api.tests.ExportTest)\nTraceback (most recent call last):\n"
+                 '  File "/repo/api/tests/test_api.py", line 3405, in test_export\n'
+                 "    self.assertEqual(r.status_code, 200)\nAssertionError: 500 != 200\n",
+                 "FAIL: test_export (api.tests.ExportTest)\nTraceback (most recent call last):\n"
+                 '  File "/repo/api/tests/test_api.py", line 3397, in test_export\n'
+                 "    self.assertEqual(r.status_code, 200)\nAssertionError: 500 != 200\n",
+                 "failed (exit 1)", True),
             "a changed timing is not a new line":
                 ("FAIL: test_a\nran 10 tests in 1.5s\n", old + "ran 10 tests in 2.5s\n", "failed (exit 1)", True),
         }
@@ -804,7 +1106,8 @@ class BaseComparisonTest(unittest.TestCase):
                 self.base_log.unlink(missing_ok=True)
 
                 base = full_check.base_run(str(self.repo), command, self.base_log, 60,
-                                           env={**os.environ, **(gate_env or {})}, gate_env=gate_env)
+                                           env={**os.environ, **(gate_env or {})},
+                                           gate_assignments=gate_env)
 
                 self.assertEqual(base is None, blocked)
                 self.assertEqual(self.base_log.exists(), not blocked)

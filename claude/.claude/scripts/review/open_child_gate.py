@@ -8,8 +8,9 @@ keeps), and tells it to wait for the notice, Glob for the file the child writes,
 failure when the child failed. The deny is once per agent.
 
 code-fork: denies a hand-back while a background launch has not reported back and its agent's own transcript does
-not show it finished or dead (`loop_transcript.agent_finished`, the test code_wait.py waits on), and tells the fork to
-stay active and wait with code_wait.py. The deny is once per child agent.
+not show it finished or dead (`loop_transcript.agent_finished`: its meta file says finished or it delivered a
+hand-back, the finish test code_wait.py also applies), and tells the fork to stay active and wait with code_wait.py.
+The deny is once per child agent.
 
 Each deny is kept in the handback store, so a child that never reports cannot trap its caller: a later hand-back
 passes. Every other agent type passes, and so does a hand-back with no open child.

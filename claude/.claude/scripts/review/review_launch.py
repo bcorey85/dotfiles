@@ -25,14 +25,17 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import code_wait
 import handback_hook
 import handback_store
+import hook_input
 import plan_format
 import process_group
 import review_fix_state
 import review_user_ruled
 import reviewer_dispatch
 import script_utils
+from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_loop_plan import review_files
 from review_loop_prompt_file import (
+    ADOPTED_HEADER_KEY,
     BASE_KEY,
     FILES_KEY,
     FINDINGS_KEY,
@@ -41,6 +44,7 @@ from review_loop_prompt_file import (
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_MAIN,
+    RULED_OUT_FILES_KEY,
     SESSION_RULED_HEADER_KEY,
     USER_RULED_AT_KEY,
     USER_RULED_HEADER_KEY,
@@ -94,7 +98,11 @@ def launch_parser():
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
     parser.add_argument("--base", help="review every change since this ref, commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
-                        help="review only this file (repeatable): absolute, or relative to the repo root")
+                        help="review only this file (repeatable): absolute, or relative to the repo root. A file "
+                             f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")
+    parser.add_argument("--ruled-out", action="append", default=[], metavar="PATH",
+                        help="a file the user ruled out of this review (repeatable): the loop never reviews it, "
+                             "sends no finding on it to a coder and puts back any change a coder makes to it")
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
                         help="a test command the loop runs on every converged run, before commit credit (repeatable)")
@@ -159,16 +167,57 @@ def resolved_base(repo, base):
     return commit.strip()
 
 
-def repo_paths(repo, files):
-    """Each --file as a path relative to the repo root. A path neither on disk nor changed in the range stops."""
-    paths = []
+def is_session_brief(full):
+    """True when `full` is an existing file under one of the session temp roots."""
+    if not os.path.isfile(full):
+        return False
+    return hook_input.is_under_session_temp_root(full)
+
+
+class FileFlags(NamedTuple):
+    repo_files: list
+    briefs: list
+
+
+def split_brief_files(repo, files):
+    """The --file values as FileFlags: the ones in the repo as paths relative to the repo root, and the briefs
+    (absolute paths of existing files under the session temp root). A relative value is read against the repo.
+    Any other path outside the repo stops, and the message names the temp root forms."""
+    repo_files, briefs = [], []
     for given in files:
-        full = pathlib.Path(given) if pathlib.Path(given).is_absolute() else repo / given
+        full = repo / given
+        relative = script_utils.repo_relative(repo, given)
+        if relative is not None:
+            repo_files.append(relative)
+        elif is_session_brief(full):
+            briefs.append(full.resolve())
+        else:
+            raise LaunchError(f"--file {given} is outside the repo {repo}; outside it, --file reads only an existing "
+                              f"brief file under {hook_input.SESSION_TEMP_ROOT_FORMS}")
+    return FileFlags(repo_files, briefs)
+
+
+def with_briefs(handoff, briefs):
+    """The handoff followed by the text of each brief file, so the brief reaches every reviewer prompt."""
+    parts = [handoff]
+    for brief in briefs:
         try:
-            relative = full.resolve().relative_to(repo)
-        except ValueError as error:
-            raise LaunchError(f"--file {given} is outside the repo {repo}") from error
-        paths.append(relative.as_posix())
+            parts.append(f"Caller's brief ({brief}):\n{brief.read_text()}")
+        except (OSError, UnicodeDecodeError) as error:
+            raise LaunchError(f"--file {brief}: {error}") from error
+    return "\n\n".join(parts)
+
+
+def ruled_out_files(repo, given):
+    """Each --ruled-out as a path relative to the repo root. The flag takes one file per use, so a folder stops."""
+    paths = []
+    for given_file in given:
+        relative = script_utils.repo_relative(repo, given_file)
+        if relative is None:
+            raise LaunchError(f"--ruled-out {given_file} is outside the repo {repo}")
+        if (repo / relative).is_dir():
+            raise LaunchError(f"--ruled-out {relative} is a folder; --ruled-out takes one file per flag")
+        paths.append(relative)
     return paths
 
 
@@ -179,19 +228,25 @@ def check_files_exist(repo, paths, base):
         raise LaunchError(f"--file names no file in {repo}: {', '.join(missing)}")
 
 
-def header_pairs(options, base, paths, findings_file):
-    pairs = [("mode", "fix-first" if options.fix else "review-first"), ("caller", options.skill),
-             ("lane", options.lane)]
+def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None):
+    # A launch with no --fix still runs fix-first when adopted rulings come back as findings (`findings_file` is set).
+    mode = "fix-first" if options.fix or findings_file else "review-first"
+    pairs = [("mode", mode), ("caller", options.skill), ("lane", options.lane)]
     if base:
         pairs.append((BASE_KEY, base))
     if paths:
         pairs.append((FILES_KEY, LIST_SEPARATOR.join(paths)))
+    if ruled_out:
+        pairs.append((RULED_OUT_FILES_KEY, LIST_SEPARATOR.join(ruled_out)))
     if findings_file:
         pairs.append((FINDINGS_KEY, str(findings_file)))
     if findings_file and options.user_ruled:
         pairs.append((USER_RULED_HEADER_KEY, LIST_SEPARATOR.join(str(number) for number in options.user_ruled)))
         ruled_at = plan_format.ruled_at_now()
         pairs.append((USER_RULED_AT_KEY, ruled_at))
+    if findings_file and adopted:
+        rows = [{"number": number, **ruling._asdict()} for number, ruling in adopted.items()]
+        pairs.append((ADOPTED_HEADER_KEY, json.dumps(rows)))
     if findings_file and options.session_ruled:
         pairs.append((SESSION_RULED_HEADER_KEY, LIST_SEPARATOR.join(str(number) for number in options.session_ruled)))
     if options.no_review:
@@ -225,15 +280,17 @@ def packet_args(options, launch_file):
     return [*args, "--lane", options.lane, "--launch", str(launch_file)]
 
 
-def relaunch_args(options, repo, paths, handoff_file):
-    """The flags a later fix run of this review carries: the same repo, range, files, reviewer model, lane,
-    handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--user-ruled`, `--session-ruled` and `--detach` are the
-    caller's to add."""
+def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
+    """The flags a later fix run of this review carries: the same repo, range, files, ruled-out files, reviewer
+    model, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--user-ruled`, `--session-ruled` and
+    `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
     for path in paths:
         args += ["--file", path]
+    for path in ruled_out:
+        args += ["--ruled-out", path]
     if options.fast:
         args.append("--fast")
     if options.deep:
@@ -309,16 +366,29 @@ def read_user_ruled(launch_file):
     raise LaunchError(f"--launch {launch_file}: {USER_RULED_RECORD_KEY} is not a list of finding texts")
 
 
+def remove_stale_run_folder_findings(repo):
+    """Deletes the run folder's fix-findings.md, the file a session writes for `--also-fix`, and returns True when one
+    was there. A launch reads only a file written after this call, never one an earlier run left."""
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
+        return False
+    stale = folder / RUN_FOLDER_FINDINGS_NAME
+    if not stale.is_file():
+        return False
+    stale.unlink()
+    return True
+
+
 def consume_run_folder_inputs(repo, options):
     """Deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such
     as the asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
     cannot leave this launch's file in place for the next one to read."""
-    run_folder = script_utils.git_path(repo, code_wait.PHASE_DIR_NAME)
-    if run_folder is None:
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
         return
     inputs = [pathlib.Path(given).resolve() for given in (options.fix, options.also_fix, options.handoff)
               if given]
-    consumed = [input_file for input_file in inputs if input_file.parent == run_folder.resolve()]
+    consumed = [input_file for input_file in inputs if input_file.parent == folder.resolve()]
     if not consumed:
         return
     for stale in consumed:
@@ -341,7 +411,7 @@ def wait_for_exit(pid):
     """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
     the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
     deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while reviewer_dispatch.pid_is_running(pid):
+    while process_group.pid_is_alive(pid):
         if time.monotonic() >= deadline:
             print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
                   file=sys.stderr)
@@ -381,15 +451,17 @@ class FixRunFindings(NamedTuple):
     user_ruled_texts: list
     left_out: list
     session_ruled_numbers: list
+    adopted: dict  # number of each adopted finding -> its AdoptedRuling
 
 
 def fix_run_findings(options, repo):
     """The fix run's findings with the plan impacts a recorded ruling settled left out, the numbers of the findings
     the user ruled on after the renumbering, their texts, the findings left out, and the session-ruled numbers after
-    the renumbering. Prints each finding left out."""
-    if not options.fix:
-        return FixRunFindings([], [], [], [], [])
-    findings = read_findings_file(options.fix)
+    the renumbering. Prints each finding left out. A launch with no --fix reads no findings file, and an adopted
+    ruling the repo holds still comes back as a finding, so the loop gets it on every resume."""
+    findings = []
+    if options.fix:
+        findings = read_findings_file(options.fix)
     if options.also_fix:
         findings += read_findings_file(options.also_fix, "--also-fix")
     # Called only to check the numbers: a --user-ruled or --session-ruled number that names no finding stops the launch.
@@ -402,7 +474,8 @@ def fix_run_findings(options, repo):
     for text in left.dropped:
         print(f"Left out of the fix run (a ruling already settled this plan impact): {text}")
     user_texts = ruled_texts("--user-ruled", left.user_ruled_numbers, left.kept)
-    return FixRunFindings(left.kept, left.user_ruled_numbers, user_texts, left.dropped, left.session_ruled_numbers)
+    return FixRunFindings(left.kept, left.user_ruled_numbers, user_texts, left.dropped, left.session_ruled_numbers,
+                          left.adopted)
 
 
 def command_launch(argv, loop_script):
@@ -427,15 +500,21 @@ def command_launch(argv, loop_script):
     options.user_ruled = found.user_ruled_numbers
     options.session_ruled = found.session_ruled_numbers
     base = resolved_base(repo, options.base) if options.base else ""
-    paths = repo_paths(repo, options.files)
+    file_flags = split_brief_files(repo, options.files)
+    paths = file_flags.repo_files
+    ruled_out = ruled_out_files(repo, options.ruled_out)
     check_files_exist(repo, paths, base)
-    handoff = handoff_text(options, paths, findings)
-    in_scope = review_files(repo, base, paths)
+    handoff = with_briefs(handoff_text(options, paths, findings), file_flags.briefs)
+    changed = review_files(repo, base, paths)
+    in_scope = script_utils.without_paths(changed, ruled_out)
     if options.fix and left_out and not findings and (options.no_review or not in_scope):
         raise LaunchError(f"every finding in {options.fix} was left out: a recorded ruling already settled each plan "
                           "impact, and there is nothing else to fix or review. Nothing was launched.")
     if not findings and not in_scope:
         since = f"since {options.base}" if base else "against HEAD"
+        if changed:
+            raise LaunchError(f"every changed file {since} was given to --ruled-out, so the review scope is empty and "
+                              "no reviewer would read anything. Nothing was launched.")
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
                           "reviewer would read anything. Nothing was launched. To review committed work, launch "
                           "with --base <ref>.")
@@ -448,13 +527,13 @@ def command_launch(argv, loop_script):
     findings_file = loop_dir / FINDINGS_JSON if findings else None
     if findings_file:
         write_findings(findings_file, findings)
-    prompt = render_prompt(header_pairs(options, base, paths, findings_file), handoff)
+    prompt = render_prompt(header_pairs(options, base, paths, findings_file, ruled_out, found.adopted), handoff)
     prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
     handoff_file = loop_dir / HANDOFF_NAME
     script_utils.write_text_atomically(handoff_file, handoff)
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
     launch_record = {"packet_args": packet_args(options, launch_file),
-                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file),
+                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file, ruled_out),
                      USER_RULED_RECORD_KEY: user_ruled}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     consume_run_folder_inputs(repo, options)
@@ -478,6 +557,9 @@ def command_launch(argv, loop_script):
     if dispatch_lines is not None:
         print("\n".join(dispatch_lines))
         return 0
-    packet_command = reviewer_dispatch.packet_command(loop_dir)
+    try:
+        packet_command = reviewer_dispatch.packet_command(loop_dir)
+    except reviewer_dispatch.ManifestError as error:
+        raise LaunchError(str(error)) from error
     print(f"The review loop script exited {loop.returncode}. Run `{packet_command}` now.")
     return 0

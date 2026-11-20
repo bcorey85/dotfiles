@@ -19,11 +19,12 @@ module_spec.loader.exec_module(code_wait)
 
 AGENT_ID = "a1817e9d1060d81ea"
 REPORT = "Phase 0 is implemented."
+STORE_SESSION = "sess-store"
 
 
-def handback_records(report):
-    call = {"type": "tool_use", "id": "toolu_1", "name": "SubagentHandback", "input": {"message": report}}
-    result = {"type": "tool_result", "tool_use_id": "toolu_1",
+def handback_records(report, call_id="toolu_1"):
+    call = {"type": "tool_use", "id": call_id, "name": "SubagentHandback", "input": {"message": report}}
+    result = {"type": "tool_result", "tool_use_id": call_id,
               "content": [{"type": "text", "text": '{"success":true,"message":"Report delivered to your caller."}'}]}
     return [{"type": "assistant", "message": {"content": [{"type": "text", "text": "Done."}, call]}},
             {"type": "user", "message": {"content": [result]}}]
@@ -46,13 +47,28 @@ def printed(call, *args):
     return output.getvalue()
 
 
+def patch_projects_and_waits(test):
+    """Points the transcript folder at `test.projects` and zeroes the waits for the test's lifetime."""
+    patchers = [mock.patch.object(code_wait.session_registry, "projects_dir", return_value=test.projects),
+                mock.patch.object(code_wait, "WAIT_SECONDS", 0),
+                mock.patch.object(code_wait, "SETTLE_SECONDS", 0)]
+    for patcher in patchers:
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
 class WaitAgentTest(unittest.TestCase):
     def setUp(self):
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
-            patcher = mock.patch.object(code_wait, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patch_projects_and_waits(self)
+        reports_patcher = mock.patch.object(code_wait, "AGENT_REPORTS_DIR", temp_dir(self) / "agent-reports")
+        reports_patcher.start()
+        self.addCleanup(reports_patcher.stop)
+        self.repo = temp_dir(self)
+        init_repo(self.repo)
+        cwd_patcher = mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=self.repo)
+        cwd_patcher.start()
+        self.addCleanup(cwd_patcher.stop)
 
     def write_transcript(self, records, finished=None):
         subagents = self.projects / "proj/session/subagents"
@@ -62,31 +78,144 @@ class WaitAgentTest(unittest.TestCase):
         if finished is not None:
             transcript.with_suffix(".meta.json").write_text(json.dumps({"finished": finished}))
 
+    def append_records(self, records):
+        transcript = self.projects / f"proj/session/subagents/agent-{AGENT_ID}.jsonl"
+        with transcript.open("a") as handle:
+            handle.write("".join(json.dumps(record) + "\n" for record in records))
+
+    def wait(self):
+        return printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID])
+
+    def test_a_second_wait_does_not_print_the_report_an_earlier_wait_printed(self):
+        self.write_transcript(handback_records(REPORT))
+
+        first = self.wait()
+        second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        lines = second.strip().splitlines()
+        self.assertEqual(lines[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+        record_file = code_wait.printed_report_file(AGENT_ID)
+        printed_line = json.loads(record_file.read_text())["line"]
+        self.assertIn(f"line {printed_line + 1}", lines[1])
+        self.assertIn(f"agent-{AGENT_ID}.jsonl", lines[1])
+
+    def test_the_printed_report_record_does_not_depend_on_the_cwd(self):
+        self.write_transcript(handback_records(REPORT))
+        outside_a_checkout = temp_dir(self)
+        elsewhere = temp_dir(self)
+        init_repo(elsewhere)
+
+        with mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=outside_a_checkout):
+            first = self.wait()
+        with mock.patch.object(code_wait.pathlib.Path, "cwd", return_value=elsewhere):
+            second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        self.assertEqual(second.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+
+    def test_a_record_file_the_wait_cannot_read_stops_loudly(self):
+        self.write_transcript(handback_records(REPORT))
+        record_file = code_wait.printed_report_file(AGENT_ID)
+        record_file.parent.mkdir(parents=True)
+        bad_contents = {"not json": "not json", "no line": '{"time": "t"}', "no time": '{"line": 1}',
+                        "line not a number": '{"line": "abc", "time": "t"}'}
+        for name, contents in bad_contents.items():
+            with self.subTest(name):
+                record_file.write_text(contents)
+
+                with self.assertRaises(SystemExit) as stop:
+                    self.wait()
+
+                self.assertIn(str(record_file), str(stop.exception))
+
+    def test_a_finished_agent_with_no_report_records_nothing_printed(self):
+        self.write_transcript([{"type": "assistant", "message": {"content": []}}], finished=True)
+
+        output = self.wait()
+
+        self.assertIn(code_wait.NO_REPORT, output)
+        self.assertFalse(code_wait.printed_report_file(AGENT_ID).exists())
+
+    def test_a_resumed_agent_s_second_hand_back_prints_as_the_next_report(self):
+        self.write_transcript(handback_records(REPORT))
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        self.append_records([resume, *handback_records("Phase 1 is implemented.", "toolu_2")])
+
+        self.assertEqual(self.wait().strip(), "Phase 1 is implemented.")
+
+    def test_a_resumed_agent_whose_meta_still_says_finished_keeps_working_without_a_new_hand_back(self):
+        self.write_transcript(handback_records(REPORT), finished=True)
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        more_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Working."}]}}
+        self.append_records([resume, more_text])
+
+        output = self.wait()
+
+        self.assertEqual(output.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, output)
+
+    def test_a_resumed_agent_with_no_new_hand_back_keeps_working(self):
+        self.write_transcript(handback_records(REPORT))
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        self.append_records([resume])
+
+        output = self.wait()
+
+        self.assertEqual(output.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, output)
+
+    def test_a_last_text_with_no_hand_back_prints_once(self):
+        self.write_transcript([{"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}],
+                              finished=True)
+
+        first = self.wait()
+        second = self.wait()
+
+        self.assertEqual(first.strip(), REPORT)
+        self.assertEqual(second.strip().splitlines()[0], code_wait.STILL_WORKING)
+        self.assertNotIn(REPORT, second)
+
+    def test_a_resumed_agent_s_new_text_after_a_last_text_report_prints_as_the_next_report(self):
+        first_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}
+        self.write_transcript([first_text], finished=True)
+        self.wait()
+        resume = {"type": "attachment", "attachment": {"type": "queued_command", "prompt": "Do phase 1."}}
+        more_text = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Working."}]}}
+        self.append_records([resume, more_text])
+
+        self.assertEqual(self.wait().strip(), "Working.")
+
     def test_a_delivered_hand_back_prints_its_report(self):
         self.write_transcript(handback_records(REPORT))
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), REPORT)
+        self.assertEqual(self.wait().strip(), REPORT)
 
     def test_an_agent_still_at_work_says_to_run_again(self):
         self.write_transcript([handback_records(REPORT)[0]], finished=False)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_an_agent_not_yet_written_says_to_run_again(self):
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_a_finished_meta_without_a_hand_back_prints_the_last_text(self):
         self.write_transcript([{"type": "assistant", "message": {"content": [{"type": "text", "text": REPORT}]}}],
                               finished=True)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), REPORT)
+        self.assertEqual(self.wait().strip(), REPORT)
 
     def test_a_denied_hand_back_is_not_a_finish(self):
         records = handback_records(REPORT)
         records[1]["message"]["content"][0]["is_error"] = True
         self.write_transcript(records)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), code_wait.STILL_WORKING)
+        self.assertEqual(self.wait().strip(), code_wait.STILL_WORKING)
 
     def test_a_denied_hand_back_message_is_not_the_report_of_a_finished_agent(self):
         later_text = "The real report."
@@ -95,7 +224,7 @@ class WaitAgentTest(unittest.TestCase):
         records.append({"type": "assistant", "message": {"content": [{"type": "text", "text": later_text}]}})
         self.write_transcript(records, finished=True)
 
-        self.assertEqual(printed(code_wait.main, ["code_wait.py", "agent", AGENT_ID]).strip(), later_text)
+        self.assertEqual(self.wait().strip(), later_text)
 
 
 class WaitReviewTest(unittest.TestCase):
@@ -115,6 +244,163 @@ class WaitReviewTest(unittest.TestCase):
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
+
+    def test_a_loop_dir_other_than_the_recorded_one_returns_no_packet_and_names_both_folders(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("status: converged\n")
+        earlier_folder = temp_dir(self)
+        this_folder = temp_dir(self)
+        (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertNotIn("status: converged", output.getvalue())
+        self.assertIn(str(earlier_folder), output.getvalue())
+        self.assertIn(str(this_folder), output.getvalue())
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("was stopped", output.getvalue())
+
+    def test_a_live_review_with_a_mismatched_loop_folder_stops_without_waiting(self):
+        repo, phase_dir = self.repo_with_pid(os.getpid())
+        earlier_folder = temp_dir(self)
+        this_folder = temp_dir(self)
+        (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("status: converged", output.getvalue())
+
+    def test_an_absent_loop_dir_with_a_recorded_folder_returns_no_packet(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        recorded_folder = temp_dir(self)
+        (recorded_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / "review.out").write_text("status: converged\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", recorded_folder)
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn("No review of this phase has started.", output.getvalue())
+        self.assertIn(code_wait.PHASE_RESTART_STEP, output.getvalue())
+        self.assertNotIn("status: converged", output.getvalue())
+
+    def test_the_recorded_loop_folder_returns_its_packet(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("status: converged\n")
+        loop_folder = temp_dir(self)
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        code_wait.write_phase_run(repo, "lane-a", "2", loop_folder)
+
+        self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
+
+    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=()):
+        """A repo whose review ended, with this session's dispatch and hand-back (holding `impacts`) in the real
+        store, keyed as the commit gate keys them."""
+        repo, phase_dir = self.repo_with_pid(999999999)
+        packet = json.dumps({"status": status, "iter": 1, "fixed": [], "ask": [], "blockers": list(blockers),
+                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts})
+        # code_review_start's real output: its exit line, then the packet.
+        (phase_dir / "review.out").write_text(f"The review loop script exited 0.\n{packet}\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
+        environment = mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(temp_dir(self)),
+                                                   "CLAUDE_CODE_SESSION_ID": STORE_SESSION})
+        environment.start()
+        self.addCleanup(environment.stop)
+        handback_store = code_wait.handback_store
+        handback_store.record(STORE_SESSION, "dispatch", repo=str(repo.resolve()))
+        handback_store.record(STORE_SESSION, "handback", status="converged", message=packet)
+        return repo, packet
+
+    def test_a_finished_review_lists_each_held_plan_impact_and_the_defer_sentence_and_not_an_adopted_one(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        adopted = {"text": "the cap moves into the config", "gate": "smell-reviewer", "ac_change": False,
+                   "cause": "plan", "adopted": True}
+        repo, packet = self.finished_review_in_a_store_repo([held, adopted])
+
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertIn(packet, output)
+        notice = output[len(packet):]
+        self.assertIn("the queue is at-most-once; AC-2 drops the retry", notice)
+        self.assertNotIn("ask the user", notice, "the /code skill defers held impacts and never stops on them")
+        self.assertNotIn("decide", notice)
+        handoff_file = code_wait.phase_dir(repo) / code_wait.HANDOFF_FILE
+        self.assertIn("1 plan impact(s) wait for a ruling:", notice)
+        self.assertIn(code_wait.defer_instruction(handoff_file), notice)
+        self.assertIn(f"python3 ~/.claude/scripts/review/review_fix.py defer {handoff_file}", notice)
+        self.assertNotIn("<run folder>", notice)
+        self.assertIn("`RESOLVED: deferred to phase end by the session, <date>: <summary>`", notice)
+        self.assertNotIn("ACTION line", notice)
+        self.assertNotIn("the cap moves into the config", notice)
+
+    def test_a_packet_that_is_not_clean_prints_no_defer_notice_for_its_held_impact(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held], status="cap-reached",
+                                                             blockers=["[critical] data loss"])
+
+        self.assertEqual(code_wait.plan_impact_notice(repo), [])
+
+    def test_the_notice_finds_the_hand_back_through_a_linked_path_to_the_repo(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        link = temp_dir(self) / "linked-repo"
+        link.symlink_to(repo.resolve(), target_is_directory=True)
+
+        notice = code_wait.plan_impact_notice(link)
+
+        self.assertIn("1 plan impact(s) wait for a ruling:", notice[0])
+
+    def test_the_review_wait_names_the_rulings_that_clear_the_gate_before_code_stops(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+        self.assertIsNotNone(code_wait.handback.false_clean_reason(STORE_SESSION), "the gate starts dirty")
+
+        handoff_file = code_wait.phase_dir(repo) / code_wait.HANDOFF_FILE
+        self.assertIn(f"review_fix.py defer {handoff_file}", output)
+        handoff_file.write_text("plan_impact: RESOLVED: deferred to phase end by the session, 2026-11-19: "
+                                "drop the retry\n", encoding="utf-8")
+
+        script = toolkit_paths.REVIEW_DIR / "review_fix.py"
+        finished = subprocess.run(["python3", "-I", str(script), "defer", str(handoff_file)], cwd=repo,
+                                  capture_output=True, text=True, env=dict(os.environ))
+
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.assertIsNone(code_wait.handback.false_clean_reason(STORE_SESSION), "the defer clears the gate")
+
+    def test_a_second_wait_after_a_plan_ruling_prints_no_notice(self):
+        held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
+                "ac_change": True, "cause": "plan", "adopted": False}
+        repo, _packet = self.finished_review_in_a_store_repo([held])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            self.assertIn("1 plan impact(s) wait for a ruling:", printed(code_wait.wait_review, repo))
+
+            code_wait.handback_store.record(STORE_SESSION, code_wait.handback_store.PLAN_RULING, decision="keep")
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertNotIn("plan impact(s) wait for a ruling", output)
 
     def test_a_fix_removed_change_packet_prints_the_stop_step_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)
@@ -143,8 +429,19 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
-                         f"The review loop ended and left no packet in <loop dir>/packet.txt. "
-                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+                         f"No review of this phase has started. Log of the last start: {phase_dir / 'review.out'}. "
+                         f"{code_wait.PHASE_RESTART_STEP}")
+
+    def test_a_detached_child_that_died_before_writing_its_loop_dir_names_review_out(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("the child's error\n")
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo)
+
+        self.assertEqual(code, 1)
+        self.assertIn(str(phase_dir / "review.out"), output.getvalue())
 
     def test_a_launched_loop_that_ended_with_no_packet_and_no_request_says_so_and_exits_one(self):
         repo, _ = self.repo_with_pid(os.getpid())
@@ -174,7 +471,7 @@ class WaitReviewTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
                          f"The review loop ended and left no packet in {packet_file}. "
-                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_RESTART}")
+                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_STOPPED} {code_wait.PHASE_RESTART_STEP}")
 
     def test_a_loop_folder_named_after_the_run_was_built_is_the_one_the_message_names(self):
         repo, phase_dir = self.repo_with_pid(999999999)
@@ -222,10 +519,7 @@ class ReviewerRequestTest(unittest.TestCase):
         self.entries = code_wait.reviewer_dispatch.write_round(
             self.loop_dir, 1, [("review1-code-reviewer", "code-reviewer", "Review app.py.")])
         self.projects = temp_dir(self)
-        for name, value in (("PROJECTS", self.projects), ("WAIT_SECONDS", 0), ("SETTLE_SECONDS", 0)):
-            patcher = mock.patch.object(code_wait, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patch_projects_and_waits(self)
 
     def write_finished_reviewer(self, records):
         subagents = self.projects / "proj/session/subagents"
@@ -459,6 +753,17 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("launch --detach", errors)
+
+    def test_a_loop_folder_whose_prompt_file_is_malformed_stops_naming_the_file(self):
+        (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text(str(os.getpid()))
+        prompt_file = self.loop_dir / code_wait.reviewer_dispatch.PROMPT_FILE
+        prompt_file.write_text("repo: /work/repo\n\nhandoff\n")
+
+        code, _, errors = self.run_main("review", "--loop", str(self.loop_dir))
+
+        self.assertEqual(code, 2)
+        self.assertIn(str(prompt_file), errors)
+        self.assertNotIn("Traceback", errors)
 
     def test_a_loop_flag_with_no_folder_stops_loudly(self):
         code, _, errors = self.run_main("review", "--loop")

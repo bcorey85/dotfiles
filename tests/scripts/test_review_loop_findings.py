@@ -11,6 +11,7 @@ import finding_record
 import handback
 import review_asks
 import review_loop_findings
+import standing_rulings
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 REAL_ASKS = {
@@ -375,6 +376,95 @@ class RepeatedPathlessAskTest(unittest.TestCase):
 
         self.assertTrue(review_loop_findings.repeats_an_ask(ask, [], [], [ruled]))
         self.assertFalse(review_loop_findings.repeats_an_ask(ask, [], [], [ruled_test_gap]))
+
+
+class ReviewerImpactKindTest(unittest.TestCase):
+    """A reviewer's plan-change ask spans lines; parsing joins them, and the kind field must survive the join."""
+
+    def impact_ask(self, *kind_lines):
+        lines = ["- `docs/plans/p/plan.md:4` PLAN-IMPACT: the plan words AC1 loosely; the code is stricter.",
+                 "  acceptance_criteria: AC1", *kind_lines]
+        return parsed_asks(ask_section(*lines))[0]
+
+    def test_a_kind_line_on_its_own_line_still_reads_after_the_ask_lines_are_joined(self):
+        text = self.impact_ask("  kind: reword")
+
+        self.assertTrue(standing_rulings.impact_rewords_criterion(text), text)
+
+    def test_a_kind_field_after_a_dash_separator_reads_too(self):
+        text = self.impact_ask("  — kind: reword")
+
+        self.assertTrue(standing_rulings.impact_rewords_criterion(text), text)
+
+    def test_a_cut_kind_is_no_reword_and_no_kind_is_no_reword(self):
+        self.assertFalse(standing_rulings.impact_rewords_criterion(self.impact_ask("  kind: cut")))
+        self.assertFalse(standing_rulings.impact_rewords_criterion(self.impact_ask()))
+
+class AskChangeMarkShapesTest(unittest.TestCase):
+    """A reviewer writes `Change if <condition>:` in many forms; each one splits the question from the change."""
+    QUESTION = "Is it acceptable that a commit run through a script given a quoted argument no longer counts?"
+    CHANGE = "remove the quoted-argument exemption, so that a script-file run counts."
+
+    def test_every_change_if_condition_splits_the_question_from_the_change(self):
+        conditions = ["accepted", "yes", "not", "moved", "not accepted", "dropped", "no", "declined", "delete",
+                      "`accepted`", "**not accepted**"]
+        for condition in conditions:
+            for label in (f"Change if {condition}:", f"change if {condition}:"):
+                with self.subTest(label):
+                    ask = f"`gates/x.py:12` [security]: The run no longer counts. {self.QUESTION} {label} {self.CHANGE}"
+                    parts = review_loop_findings.ask_parts(ask)
+
+                    self.assertEqual(parts.change, self.CHANGE)
+                    self.assertTrue(parts.question.endswith(self.QUESTION), parts.question)
+                    self.assertNotIn("hange if", parts.question)
+
+    def test_a_four_word_change_if_label_is_not_a_mark(self):
+        ask = f"{self.QUESTION} Change if the user declines it: {self.CHANGE}"
+
+        parts = review_loop_findings.ask_parts(ask)
+
+        self.assertEqual(parts.change, ask)
+
+    def test_a_branch_label_split_over_a_newline_or_spaces_is_still_a_branch(self):
+        for second_mark in ("Change if no:", "Change\nif no:", "Change  if  no:"):
+            with self.subTest(second_mark):
+                ask = f"{self.QUESTION} Change if yes: drop it. {second_mark} keep it."
+                parts = review_loop_findings.ask_parts(ask)
+
+                self.assertEqual(parts.question, self.QUESTION)
+                self.assertTrue(parts.change.startswith("drop it."), parts.change)
+
+    def test_an_ask_with_two_branches_keeps_both_in_its_change(self):
+        ask = f"`a.py:1` [bug]: {self.QUESTION} Change if yes: drop the cache. Change if no: keep the cache."
+        parts = review_loop_findings.ask_parts(ask)
+
+        self.assertTrue(parts.question.endswith(self.QUESTION), parts.question)
+        self.assertEqual(parts.change, "drop the cache. Change if no: keep the cache.")
+        self.assertTrue(review_asks.is_conditional_change(parts.change))
+
+    def test_a_single_change_if_accepted_ask_is_not_conditional(self):
+        parts = review_loop_findings.ask_parts(f"{self.QUESTION} Change if accepted: {self.CHANGE}")
+
+        self.assertEqual(parts.change, self.CHANGE)
+        self.assertFalse(review_asks.is_conditional_change(parts.change))
+
+    def test_a_plain_change_then_a_conditional_branch_is_refused_not_split_to_the_branch(self):
+        ask = "Is it fine to drop the cache? change: drop it. Change if no: keep it."
+
+        parts = review_loop_findings.ask_parts(ask)
+
+        self.assertEqual(parts.question, "Is it fine to drop the cache?")
+        self.assertEqual(parts.change, "drop it. Change if no: keep it.")
+        self.assertTrue(review_asks.is_conditional_change(parts.change))
+
+    def test_a_plain_change_alone_still_splits(self):
+        parts = review_loop_findings.ask_parts(f"{self.QUESTION} change: {self.CHANGE}")
+
+        self.assertEqual(parts.change, self.CHANGE)
+        self.assertFalse(review_asks.is_conditional_change(parts.change))
+
+    def test_a_change_if_not_accepted_ask_states_an_ask(self):
+        self.assertTrue(review_loop_findings.states_an_ask(f"Remove it. Change if not accepted: {self.CHANGE}"))
 
 
 if __name__ == "__main__":

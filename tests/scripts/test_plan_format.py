@@ -15,6 +15,9 @@ SCRIPT = pathlib.Path(
 )
 sys.path.insert(0, str(SCRIPT.parent))
 import plan_format
+import script_utils
+import signoff_lines
+import standing_rulings
 
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import coder_report
@@ -776,6 +779,106 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(plan_format.spec_ac_failures(spec), [])
 
 
+STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: "every criterion reword follows one rule" covers: rewords')
+CRITERIA_NAMING_TICKET = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, "
+                          "reworded)\n")
+REWORD_IMPACT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n"
+                 "  kind: reword\n  acceptance_criteria: AC1\n  cause: plan")
+
+
+class StandingRulingTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        self.plan = self.folder / "plan.md"
+
+    def test_a_well_formed_line_in_plan_deviations_parses(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
+
+        rulings = standing_rulings.standing_rulings(self.plan)
+
+        self.assertEqual(rulings, [{"who": "Pat", "at": "2026-11-19",
+                                    "quote": "every criterion reword follows one rule", "covers": "rewords"}])
+
+    def test_a_well_formed_line_in_the_decision_log_beside_the_plan_parses(self):
+        self.plan.write_text("# Plan\n")
+        (self.folder / "03-decisions.md").write_text(f"# Decisions\n\n{STANDING_LINE}\n")
+
+        self.assertEqual(len(standing_rulings.standing_rulings(self.plan)), 1)
+
+    def test_a_standing_line_outside_plan_deviations_is_not_read(self):
+        self.plan.write_text(f"# Plan\n\n{STANDING_LINE}\n")
+
+        self.assertEqual(standing_rulings.standing_rulings(self.plan), [])
+
+    def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):
+        malformed = {
+            "covers cuts": 'Standing ruling by Pat at 2026-11-19: "x" covers: cuts',
+            "no quote": "Standing ruling by Pat at 2026-11-19 covers: rewords",
+            "bad date": 'Standing ruling by Pat at yesterday: "x" covers: rewords',
+        }
+        for label, line in malformed.items():
+            with self.subTest(label):
+                self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n{line}\n")
+
+                with self.assertRaises(plan_format.PlanFormatError) as raised:
+                    standing_rulings.standing_rulings(self.plan)
+
+                message = str(raised.exception)
+                self.assertIn(f"{self.plan}:5:", message)
+                self.assertIn(standing_rulings.STANDING_RULING_FORM, message)
+
+    def test_a_reword_whose_ac_names_the_ticket_criterion_passes_drift_only_with_the_ruling(self):
+        ticket = f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n"
+
+        without = plan_format.ac_drift_failures(ticket, CRITERIA_NAMING_TICKET, "# Plan\n")
+        with_ruling = plan_format.ac_drift_failures(ticket, CRITERIA_NAMING_TICKET, "# Plan\n", rewords_ruled=True)
+
+        self.assertEqual(len(without), 1)
+        self.assertEqual(with_ruling, [])
+
+    def test_a_criterion_no_ac_names_still_fails_with_the_ruling(self):
+        ticket = f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n"
+
+        failures = plan_format.ac_drift_failures(ticket, CRITERIA_WITH_TICKET_NOT_CARRIED, "# Plan\n",
+                                                 rewords_ruled=True)
+
+        self.assertEqual(len(failures), 1)
+
+    def test_a_note_line_that_names_the_ticket_is_no_ac_and_the_cut_still_fails_with_the_ruling(self):
+        ticket = f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n"
+        criteria = "# Acceptance Criteria\n\n- **AC1** — Something else\n\nNote: Ticket #1 cut, out of scope\n"
+
+        failures = plan_format.ac_drift_failures(ticket, criteria, "# Plan\n", rewords_ruled=True)
+
+        self.assertEqual(len(failures), 1)
+
+    def test_a_malformed_line_in_the_decision_log_raises_naming_that_file_and_line(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
+        decisions = self.folder / "03-decisions.md"
+        decisions.write_text('# Decisions\n\nStanding ruling by Pat at yesterday: "x" covers: rewords\n')
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            standing_rulings.standing_rulings(self.plan)
+
+        self.assertIn(f"{decisions}:3:", str(raised.exception))
+
+    def test_the_impact_kind_reads_reword_only_when_every_impact_says_so(self):
+        cut = REWORD_IMPACT.replace("kind: reword", "kind: cut")
+        no_id = REWORD_IMPACT.replace("AC1", "none")
+        no_kind = "PLAN-IMPACT:\n  acceptance_criteria: AC1"
+        kindless = "PLAN-IMPACT:\n  acceptance_criteria: AC2\n  cause: plan"
+        cases = {"reword": (REWORD_IMPACT, True), "cut": (cut, False), "no kind": (no_kind, False),
+                 "no id": (no_id, False),
+                 "reword and cut": (f"{REWORD_IMPACT}\n\n{cut}", False),
+                 "reword and no kind": (f"{REWORD_IMPACT}\n\n{kindless}", False),
+                 "two rewords": (f"{REWORD_IMPACT}\n\n{REWORD_IMPACT.replace('AC1', 'AC2')}", True)}
+        for label, (text, expected) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(standing_rulings.impact_rewords_criterion(text), expected)
+
+
 class LoudFailureTest(unittest.TestCase):
     def assert_fails_at(self, text, line_number):
         with self.assertRaises(plan_format.PlanFormatError) as caught:
@@ -1250,6 +1353,123 @@ class CriteriaIdsTest(unittest.TestCase):
     def test_answers_only_names_no_id_for_a_text_without_the_line(self):
         self.assertEqual(plan_format.criteria_ids("the reworded AC2 holds", answers_only=True), frozenset())
         self.assertEqual(plan_format.criteria_ids("acceptance_criteria: AC2", answers_only=True), frozenset({"AC2"}))
+
+
+RULING_ENTRY = plan_format.ruling_deviation(3, "Keep plan as written", "the session, not the user",
+                                            "2026-11-11 03:17", "kept\n  as written", "path:1 the finding")
+SIGNOFF_PLAN = "\n".join([
+    "# Plan", "", "A sign-off is mentioned here, outside the log.", "", "## Plan Deviations", "",
+    *RULING_ENTRY, "",
+    "- 2026-11-10: AC1 narrowed. Ruled by the orchestrating session x,",
+    "  not the user, 2026-11-10.",
+    "- AC5 cut: user sign-off, Brandon, 2026-11-10.",
+    "- Rulings by x, 2026-11-13, on the items:", "- an entry with no mark", "", "## Phase 1: x", "",
+    "Ruled by nobody here.",
+])
+
+
+class SignoffLinesTest(unittest.TestCase):
+    def numbers(self, text):
+        return [number for number, _line in signoff_lines.signoff_lines(text)]
+
+    def test_every_entry_form_of_a_deviations_section_is_found_and_other_sections_are_not(self):
+        lines = SIGNOFF_PLAN.splitlines()
+        entry_start = lines.index(RULING_ENTRY[0]) + 1
+        expected = [entry_start, entry_start + 2, entry_start + 7, entry_start + 8, entry_start + 9,
+                    entry_start + 10]
+
+        self.assertEqual(self.numbers(SIGNOFF_PLAN), expected)
+
+    def test_the_disagreement_block_of_an_entry_is_not_a_sign_off_line(self):
+        found = [line for _number, line in signoff_lines.signoff_lines(SIGNOFF_PLAN)]
+
+        self.assertFalse(any("The disagreement" in line or "path:1" in line for line in found))
+
+    def test_a_text_with_no_deviations_heading_is_read_whole(self):
+        self.assertEqual(self.numbers("# Decisions\n\nRuled by the user at 2026-11-11 10:00.\nplain\n"), [3])
+
+    def test_a_plan_md_with_no_deviations_heading_has_no_sign_off_line_even_with_the_word_ruling(self):
+        text = "# Plan\n\n## Phase 1: x\n\n- the ruling check runs first\n"
+
+        self.assertEqual([number for number, _line in signoff_lines.signoff_lines(text, "plan.md")], [])
+
+    def test_a_spec_md_with_no_deviations_heading_has_no_sign_off_line_even_with_the_word_sign_off(self):
+        text = "# Spec\n\n## Steps\n\n- the user's sign-off is asked for first\n- a ruling is recorded\n"
+
+        self.assertEqual([number for number, _line in signoff_lines.signoff_lines(text, "spec.md")], [])
+
+    def test_eng_spec_prose_notes_yield_no_sign_off_lines(self):
+        text = "# Research\n\n- the user's sign-off is asked for first\n- a ruling is recorded\n"
+
+        for name in ("01-questions.md", "02-research.md"):
+            found = [number for number, _line in signoff_lines.signoff_lines(text, name)]
+            self.assertEqual(found, [], name)
+
+    def test_an_evidence_file_with_no_deviations_heading_is_read_whole(self):
+        text = "# Notes\n\nRuled by the user.\n"
+
+        self.assertEqual([number for number, _line in signoff_lines.signoff_lines(text, "evidence.md")], [3])
+
+    def test_an_indented_marker_after_a_blank_line_does_not_mark_the_earlier_bullet(self):
+        text = self.deviation_plan("- earlier entry", "", "  Ruled by agent.")
+
+        self.assertEqual(self.numbers(text), [7])
+
+    def test_a_wrapped_marker_under_an_unindented_first_line_is_found_from_that_line(self):
+        text = self.deviation_plan("Phase 2: moved the step;", "  decided by the session.")
+
+        self.assertEqual(self.numbers(text), [5, 6])
+
+    def deviation_plan(self, *entry_lines):
+        return "\n".join(["# Plan", "", "## Plan Deviations", "", *entry_lines, "", "## Phase 1: x", "", "text"])
+
+    def test_a_wrapped_bullet_with_the_marker_on_the_continuation_is_found_from_its_first_line(self):
+        text = self.deviation_plan(
+            "- Phase 3 rule: the guard subtracts only the new",
+            "  line. Ruled by agent, 2026-11-13.",
+            "- plain entry",
+        )
+
+        self.assertEqual(self.numbers(text), [5, 6])
+
+    def test_adopted_decided_cut_and_signed_off_forms_are_found(self):
+        forms = ["- Phase 1: moved. Adopted by the session, 2026-11-19.",
+                 "- Phase 2: kept; decided by the session.",
+                 "Phase 3: dropped; decided by the lane session.",
+                 "- AC1 cut by the lane session, 2026-11-10.",
+                 "- AC2 reworded by the lane session.",
+                 "- Brandon Corey signed off the cut, 2026-11-10.",
+                 "- Phase 1 ruling (AC1, owner plan, session, 2026-11-13)"]
+        for form in forms:
+            with self.subTest(form=form):
+                self.assertEqual(self.numbers(self.deviation_plan(form)), [5])
+
+    def test_nested_rulings_under_a_rulings_by_header_are_all_found(self):
+        text = self.deviation_plan("- Rulings by agent, 2026-11-13, on the items:", "  - Cut the first: reason",
+                                   "    wrapped.", "  - Replaced the second.", "- an entry with no mark")
+
+        self.assertEqual(self.numbers(text), [5, 6, 7, 8])
+
+    def test_a_bullet_entry_with_no_marker_is_not_found(self):
+        self.assertEqual(self.numbers(self.deviation_plan("- Phase 1: reworded the text.", "  wrapped")), [])
+
+    @unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
+    def test_every_marked_deviation_entry_of_the_repos_own_plans_has_its_first_line_found(self):
+        plans = sorted(glob.glob(str(REPO_ROOT / "docs" / "plans" / "*" / "plan.md")))
+        entries = 0
+        for plan in plans:
+            text = pathlib.Path(plan).read_text(errors="replace")
+            lines = text.splitlines()
+            section = script_utils.heading_section_indexes(lines, plan_format.DEVIATIONS_HEADING)
+            found = {number for number, _line in signoff_lines.signoff_lines(text)}
+            for index in section:
+                if not lines[index].startswith("- ") or not signoff_lines.is_signoff_marker(lines[index]):
+                    continue
+                entries += 1
+                with self.subTest(plan=plan, line=index + 1):
+                    self.assertIn(index + 1, found)
+        self.assertGreater(entries, 0)
+        print(f"checked {entries} marked deviation entries of {len(plans)} repo plans", file=sys.stderr)
 
 
 if __name__ == "__main__":

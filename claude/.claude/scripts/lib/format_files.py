@@ -12,6 +12,7 @@ from collections import namedtuple
 
 import hook_input
 import script_utils
+from plan_format import PLANS_DIR
 from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
 
@@ -19,7 +20,6 @@ LINT_TIMEOUT_SECONDS = 300
 LINT_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".vue")
 FORMAT_ONLY_SUFFIXES = (".json", ".css", ".scss", ".md")
 PYTHON_SUFFIX = ".py"
-PLANS_DIR = "docs/plans/"
 PROMPT_MARKDOWN_DIR = ".claude"
 PROMPT_MARKDOWN_PREFIX = ".config/opencode/"
 PROMPT_MARKDOWN_NAMES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"}

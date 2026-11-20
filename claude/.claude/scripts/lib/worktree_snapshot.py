@@ -1,10 +1,13 @@
 """The working-tree state of a git repo before and after a command, and the report of what the command changed: a
 tracked file it rewrote and a file it created are named, and both stay as they are. Any repo, any command."""
 import hashlib
+import os
 import pathlib
+import shutil
+import tempfile
 
 from numstat import changed_lines_by_path
-from script_utils import git_output, repo_root
+from script_utils import git_output, git_path, repo_root, run_or_raise
 
 UNTRACKED = "??"
 # The hash of a file that exists but cannot be read.
@@ -99,6 +102,28 @@ def working_tree_changes(root):
         changes[path] = {"code": code, "hash": blob_hashes.get(path), "added": added, "deleted": deleted,
                          "new": is_new}
     return changes
+
+
+class WorkTreeTreeError(RuntimeError):
+    """A git call that work_tree_tree needs failed."""
+
+
+def work_tree_tree(repo):
+    """The tree object id of the work tree as it stands: tracked edits and untracked files included, gitignored files
+    left out. Built in a scratch index seeded from a copy of the real index, so the real index is never written."""
+    root = repo_root(repo)
+    if root is None:
+        raise WorkTreeTreeError(f"{repo} is not inside a git work tree")
+
+    real_index = git_path(root, "index")
+    with tempfile.TemporaryDirectory(prefix="work-tree-tree-") as scratch_folder:
+        scratch_index = pathlib.Path(scratch_folder) / "index"
+        if real_index is not None and real_index.is_file():
+            shutil.copyfile(real_index, scratch_index)
+        scratch_env = {**os.environ, "GIT_INDEX_FILE": str(scratch_index)}
+        run_or_raise(["git", "add", "-A"], WorkTreeTreeError, cwd=root, check=True, env=scratch_env)
+        written = run_or_raise(["git", "write-tree"], WorkTreeTreeError, cwd=root, check=True, env=scratch_env)
+        return written.stdout.strip()
 
 
 def take(repo):

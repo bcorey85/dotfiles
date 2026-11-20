@@ -153,6 +153,119 @@ class ReviewLaunchTest(unittest.TestCase):
         launch_record = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())
         self.assertNotIn("--also-fix", json.dumps(launch_record))
 
+    def test_each_ruled_out_file_reaches_the_prompt_header_and_the_relaunch_args_as_a_repo_relative_path(self):
+        absolute = str(self.repo / "sub" / "b.py")
+
+        self.launch("--ruled-out", "a.py", "--ruled-out", absolute)
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), r"(?m)^ruled-out files: a\.py, sub/b\.py$")
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertEqual([relaunch[index + 1] for index, word in enumerate(relaunch) if word == "--ruled-out"],
+                         ["a.py", "sub/b.py"])
+
+    def test_a_launch_with_no_ruled_out_file_writes_no_ruled_out_line(self):
+        self.launch()
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertNotIn("ruled-out", prompt_file.read_text())
+
+    def test_a_ruled_out_file_outside_the_repo_stops_the_launch_and_the_error_names_the_flag(self):
+        outside = self.temp_root / "elsewhere.py"
+
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.ruled_out_files(self.repo.resolve(), [str(outside)])
+
+        self.assertIn(f"--ruled-out {outside} is outside the repo", str(raised.exception))
+
+    def session_brief(self, root_name, text):
+        root = self.temp_root / root_name / f"claude-{os.getuid()}"
+        root.mkdir(parents=True)
+        brief = root / "brief.md"
+        brief.write_text(text)
+        return brief
+
+    def test_a_file_flag_naming_a_brief_under_the_tmpdir_session_root_reaches_the_reviewer_prompt(self):
+        brief = self.session_brief("tmpdir", "Check the retry path first.\n")
+
+        self.launch("--file", str(brief), "--file", "README.md",
+                    env_overrides={"TMPDIR": str(self.temp_root / "tmpdir")})
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertIn("Check the retry path first.", prompt_file.read_text())
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        self.assertIn("Check the retry path first.", (loop_dir / "handoff.txt").read_text())
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertNotIn(str(brief), relaunch)
+
+    def test_a_brief_under_the_claude_code_tmpdir_root_is_read_as_a_brief(self):
+        brief = self.session_brief("cct", "brief\n")
+
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_TMPDIR": str(self.temp_root / "cct")}):
+            split = review_launch.split_brief_files(self.repo.resolve(), [str(brief)])
+
+        self.assertEqual((split.repo_files, split.briefs), ([], [brief.resolve()]))
+
+    def test_a_relative_file_flag_outside_the_repo_is_read_against_the_repo_and_kept_as_a_brief(self):
+        brief = self.session_brief("tmpdir", "brief\n")
+        relative = os.path.relpath(brief, self.repo)
+
+        with mock.patch.dict(os.environ, {"TMPDIR": str(self.temp_root / "tmpdir")}):
+            split = review_launch.split_brief_files(self.repo.resolve(), [relative])
+
+        self.assertEqual(split.briefs, [brief.resolve()])
+
+    def test_a_brief_that_is_not_utf8_stops_with_a_launch_error_naming_the_file(self):
+        brief = self.session_brief("tmpdir", "")
+        brief.write_bytes(b"\xff\xfe")
+
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.with_briefs("handoff", [brief])
+
+        self.assertIn(str(brief), str(raised.exception))
+
+    def test_a_file_flag_outside_the_repo_and_the_session_root_stops_and_names_every_root_form(self):
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.split_brief_files(self.repo.resolve(), ["/etc/hosts"])
+
+        message = str(raised.exception)
+        self.assertIn("--file /etc/hosts is outside the repo", message)
+        self.assertIn("/tmp/claude-<uid>/", message)
+        self.assertIn("$TMPDIR/claude-<uid>/", message)
+        self.assertIn("$CLAUDE_CODE_TMPDIR/claude-<uid>/", message)
+
+    def test_a_missing_file_under_the_session_root_stops(self):
+        missing = self.temp_root / "tmpdir" / f"claude-{os.getuid()}" / "nope.md"
+
+        tmpdir = {"TMPDIR": str(self.temp_root / "tmpdir")}
+        with mock.patch.dict(os.environ, tmpdir), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.split_brief_files(self.repo.resolve(), [str(missing)])
+
+        self.assertIn(f"--file {missing} is outside the repo", str(raised.exception))
+
+    def test_a_folder_given_to_ruled_out_stops_the_launch(self):
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "b.py").write_text("x = 1\n")
+
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.ruled_out_files(self.repo.resolve(), ["sub"])
+
+        self.assertIn("--ruled-out sub is a folder; --ruled-out takes one file per flag", str(raised.exception))
+
+    def test_a_tree_whose_only_changes_are_ruled_out_files_stops_as_an_empty_scope(self):
+        environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
+                       "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
+                       "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+        (self.repo / "README.md").write_text("hi, edited\n")
+
+        with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo), "--ruled-out", "README.md"],
+                                         str(self.loop_stub))
+
+        self.assertIn("every changed file against HEAD was given to --ruled-out", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
     def test_also_fix_without_fix_stops_the_launch(self):
         with self.assertRaises(review_launch.LaunchError) as raised:
             review_launch.launch_arguments(["--also-fix", "x.md"])
@@ -300,6 +413,19 @@ class ReviewLaunchTest(unittest.TestCase):
         prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
         self.assertRegex(prompt_file.read_text(), r"(?m)^session-ruled: 1$")
 
+    def test_a_launch_with_no_fix_still_carries_an_adopted_ruling_as_a_finding(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        store = self.temp_root / "store"
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(store), "CLAUDE_CODE_SESSION_ID": SESSION}):
+            handback_store.record_ruled_impact(SESSION, impact, os.path.realpath(self.repo), finding_text=impact,
+                                               decision="adopt", owner="the user", ruled_at="2026-11-19 10:00")
+            options = review_launch.launch_arguments([])
+            found = review_launch.fix_run_findings(options, self.repo)
+
+        self.assertEqual(len(found.findings), 1)
+        self.assertIn(impact, found.findings[0])
+        self.assertEqual(found.user_ruled_numbers, [1])
+
     def test_a_session_ruled_flag_with_no_fix_stops_the_launch(self):
         with self.assertRaises(review_launch.LaunchError) as raised:
             review_launch.launch_arguments(["--session-ruled", "1"])
@@ -346,6 +472,16 @@ class UserRuledHeaderTest(unittest.TestCase):
         self.assertEqual(pairs["session-ruled"], "2, 3")
         self.assertNotIn("user-ruled-at", pairs)
 
+    def test_a_launch_with_no_fix_flag_but_findings_to_apply_writes_the_fix_first_mode(self):
+        options = argparse.Namespace(fix=None, skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, user_ruled=[], session_ruled=[])
+
+        with_findings = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.json")))
+        without_findings = dict(review_launch.header_pairs(options, "", [], None))
+
+        self.assertEqual(with_findings["mode"], "fix-first")
+        self.assertEqual(without_findings["mode"], "review-first")
+
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
                                      iter=None, user_ruled=[], session_ruled=[])
@@ -371,7 +507,7 @@ class StopLoopTest(unittest.TestCase):
     def stop(self, running_answers, wait_seconds=5):
         with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
                 mock.patch.object(review_launch.process_group, "terminate_group", return_value=True), \
-                mock.patch.object(review_launch.reviewer_dispatch, "pid_is_running", side_effect=running_answers), \
+                mock.patch.object(review_launch.process_group, "pid_is_alive", side_effect=running_answers), \
                 mock.patch.object(review_launch, "STOP_WAIT_SECONDS", wait_seconds), \
                 mock.patch.object(review_launch, "STOP_POLL_SECONDS", 0.01), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):

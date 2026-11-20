@@ -920,7 +920,7 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("origin/HEAD (not set)", done.stderr)
         self.assertIn("pass --base <ref>", done.stderr)
 
-    def test_the_verifier_gets_an_empty_output_folder_in_the_git_dir_and_no_tmp_writes(self):
+    def test_the_verifier_gets_an_empty_output_folder_in_the_git_dir_and_keeps_the_default_tmpdir(self):
         self.task_dir()
         output_dir = self.repo / ".git" / "verify-output"
         output_dir.mkdir()
@@ -930,8 +930,8 @@ class PrepTest(VerifyBranchBase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         payload = done.stdout.split("subagent_type=plan-verifier", 1)[1]
-        self.assertIn(f"command output you redirect to a file, which goes only under {output_dir}. Never write "
-                      "it to /tmp or anywhere else.", payload)
+        self.assertIn(f"command output you redirect to a file, which goes only under {output_dir}. Test runs "
+                      "keep the default TMPDIR: never set TMPDIR.", payload)
         self.assertEqual([], list(output_dir.iterdir()))
         self.assertEqual(str(output_dir), self.context()["verifierOutputDir"])
         self.assertNotIn("verify-output", self.git("status", "--porcelain", "--untracked-files=all"))

@@ -23,8 +23,10 @@ from git_commit_calls import (
     stopping_flags,
 )
 from shell_command import (
+    INTERPRETER_FAMILIES,
     and_steps,
     and_steps_or_whole,
+    attached_inline_code,
     cd_folder,
     command_after_wrappers,
     contains_word_run,
@@ -32,8 +34,11 @@ from shell_command import (
     docker_set_variables,
     flags_before_value,
     git_c_directory,
+    git_c_settings,
+    git_options,
     interpreter_family,
     is_git_word,
+    is_inline_code_option,
     is_long_prefix,
     is_redirect_word,
     is_short_cluster,
@@ -54,6 +59,7 @@ from shell_command import (
     unwrap_docker,
     without_assignments,
     without_flag_values,
+    without_redirection_words,
     without_substitution_bodies,
     words_by_blank,
     words_without_redirections,
@@ -85,6 +91,49 @@ class InterpreterFamilyTest(unittest.TestCase):
                 self.assertEqual(family, interpreter_family(word))
 
 
+class InlineCodeOptionTest(unittest.TestCase):
+    def test_a_cluster_ending_in_a_code_letter_or_a_long_code_flag_is_inline_code(self):
+        cases = (
+            ("python", "-c"), ("python", "-Bc"), ("python", "-cprint(1)"), ("perl", "-le"), ("perl", "-eprint"),
+            ("ruby", "-e"), ("node", "-e"), ("node", "-p"), ("node", "--eval"), ("php", "-r"),
+            ("php", "-rsystem(1);"),
+        )
+        for family, word in cases:
+            with self.subTest(word=word):
+                self.assertTrue(is_inline_code_option(word, INTERPRETER_FAMILIES[family]))
+
+    def test_a_value_option_with_its_value_attached_is_not_inline_code(self):
+        cases = (
+            ("python", "-Xtracemalloc"), ("python", "-Xpycache_prefix=/tmp"), ("python", "-i"),
+            ("php", "-dmemory_limit=-1"), ("python", "-Xc"), ("perl", "-Ie"),
+            ("node", "-rdotenv/config"), ("ruby", "-rset"), ("perl", "-MFile::Temp"), ("node", "script.js"),
+            ("python", "-mcProfile"), ("php", "-fw.php"), ("perl", "-xe"), ("ruby", "-Fe"),
+        )
+        for family, word in cases:
+            with self.subTest(word=word):
+                self.assertFalse(is_inline_code_option(word, INTERPRETER_FAMILIES[family]))
+
+
+class AttachedInlineCodeTest(unittest.TestCase):
+    def test_the_code_after_the_code_letter_is_returned(self):
+        cases = (
+            ("python", "-cprint(1)", "print(1)"), ("perl", "-eprint", "print"), ("ruby", "-eputs(1)", "puts(1)"),
+            ("node", "-pprocess.pid", "process.pid"), ("php", "-rsystem(1);", "system(1);"),
+        )
+        for family, word, code in cases:
+            with self.subTest(family=family, word=word):
+                self.assertEqual(code, attached_inline_code(word, INTERPRETER_FAMILIES[family]))
+
+    def test_no_code_is_attached_when_it_is_the_next_word_or_the_option_is_not_inline_code(self):
+        cases = (
+            ("python", "-c"), ("python", "-Bc"), ("node", "--eval"), ("php", "-r"), ("python", "-i"),
+            ("python", "-mcProfile"),
+        )
+        for family, word in cases:
+            with self.subTest(family=family, word=word):
+                self.assertEqual("", attached_inline_code(word, INTERPRETER_FAMILIES[family]))
+
+
 class RedirectWordTest(unittest.TestCase):
     def test_a_word_that_starts_a_redirect_is_one(self):
         for word in (">", "2>", "&>f", ">>f"):
@@ -97,6 +146,36 @@ class RedirectWordTest(unittest.TestCase):
             self.assertTrue(redirect_takes_next_word(word), word)
         for word in (">f", "&>f", "2>&1"):
             self.assertFalse(redirect_takes_next_word(word), word)
+
+
+class WithoutRedirectionWordsTest(unittest.TestCase):
+    def test_a_redirect_word_and_the_target_of_a_bare_one_are_dropped(self):
+        cases = {
+            ("push", "origin", "feature", ">", "main"): ["push", "origin", "feature"],
+            ("push", "origin", "feature", "2>", "master"): ["push", "origin", "feature"],
+            ("restore", "src", ">", "."): ["restore", "src"],
+            ("restore", "src", ">out", "f"): ["restore", "src", "f"],
+            ("restore", "src", "2>&1"): ["restore", "src"],
+            ("restore", "src", "&>f"): ["restore", "src"],
+        }
+        for words, expected in cases.items():
+            with self.subTest(words=words):
+                self.assertEqual(without_redirection_words(list(words), list(words)), expected)
+
+    def test_a_word_that_is_quoted_in_the_blanked_words_stays_an_argument(self):
+        self.assertEqual(without_redirection_words(["push", ">", "main"], ["push", '""', "main"]),
+                         ["push", ">", "main"])
+
+
+class GitCSettingsTest(unittest.TestCase):
+    def settings(self, *words):
+        options, _index = git_options(["git", *words, "pull"])
+        return git_c_settings(options)
+
+    def test_a_bare_key_is_true_and_an_empty_value_stays_empty(self):
+        self.assertEqual(self.settings("-c", "rebase.autoStash"), {"rebase.autostash": "true"})
+        self.assertEqual(self.settings("-c", "rebase.autoStash="), {"rebase.autostash": ""})
+        self.assertEqual(self.settings("-c", "rebase.autoStash=false"), {"rebase.autostash": "false"})
 
 
 class IsGitWordTest(unittest.TestCase):
@@ -289,12 +368,18 @@ class GitCommitDirsTest(unittest.TestCase):
                 self.assertEqual([], plain_commit_dirs(command, "/a"))
 
     def test_a_commit_run_through_env_or_sudo_with_a_chdir_is_left_out(self):
-        for command in ("env -C /b git commit", "env --chdir=/b git commit", "sudo -C /b git commit",
+        for command in ("env -C /b git commit", "env -C/b git commit", "env --chdir=/b git commit",
+                        "sudo -D /b git commit", "sudo -D/b git commit", "sudo --chdir=/b git commit",
+                        "env -vC /b git commit", "sudo -vD /b git commit", "env -iC /b git commit",
                         "env -C /b git commit && git commit"):
             with self.subTest(command):
                 expected = ["/a"] if command.endswith("&& git commit") else []
                 self.assertEqual(expected, plain_commit_dirs(command, "/a"))
         self.assertEqual(["/a"], plain_commit_dirs("env -u X git commit", "/a"))
+        self.assertEqual(["/a"], plain_commit_dirs("env -iu X git commit", "/a"))
+
+    def test_sudo_dash_c_closes_descriptors_and_does_not_move_a_commit(self):
+        self.assertEqual(["/a"], plain_commit_dirs("sudo -C 3 git commit", "/a"))
 
     def test_a_cd_inside_a_subshell_does_not_move_a_commit_after_the_subshell_closes(self):
         cases = (

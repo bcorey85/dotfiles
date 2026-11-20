@@ -4,11 +4,13 @@ import os
 import pathlib
 import re
 import shlex
+import shutil
 import sys
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import check_scope
+import gate_env
 import plan_format
 import pytest_config
 import script_utils
@@ -25,6 +27,9 @@ TEST_TARGET_FLAGS = ("--test", "--example", "--bench")
 # One cargo target flag of a scope, with its name when it takes one: `--test orders`, `--bin tool`, `--lib`.
 CARGO_TARGET_FLAG = re.compile(r"--(?:test|bin|example|bench) \S+|\S+")
 UNKNOWN_FAMILY = "unknown"
+# The lock file that names a package manager, then the program that runs a package script.
+PACKAGE_MANAGERS = (("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"))
+DEFAULT_PACKAGE_MANAGER = "npm"
 TYPECHECK_SCRIPTS = ["typecheck", "type-check", "check-types", "tsc"]
 PYTHON_RUNNERS = (("uv.lock", ["uv", "run"]), ("poetry.lock", ["poetry", "run"]), ("pdm.lock", ["pdm", "run"]),
                   ("Pipfile.lock", ["pipenv", "run"]))
@@ -39,8 +44,40 @@ def nearest_directory_with(repo_dir, rel_path, manifest_name):
     return manifest.parent if manifest else None
 
 
-def in_directory(command, package_rel):
-    return f"cd {shlex.quote(package_rel)} && {command}" if package_rel else command
+def package_manager(repo_dir):
+    """The program that runs a package script, by the repo's lock file: pnpm-lock.yaml, yarn.lock, else npm."""
+    for lock_file, program in PACKAGE_MANAGERS:
+        if (repo_dir / lock_file).is_file():
+            return program
+    return DEFAULT_PACKAGE_MANAGER
+
+
+def package_script_command(manager, package_rel, arguments):
+    # `<manager> [<folder flag> <dir>] <arguments>`: one simple command, with no `cd` before it.
+    if not package_rel:
+        return f"{manager} {arguments}"
+    return f"{manager} {check_scope.PACKAGE_FOLDER_FLAGS[manager]} {shlex.quote(package_rel)} {arguments}"
+
+
+def package_binary_command(manager, package_rel, binary_command):
+    # A dependency's binary: `npm exec -- tool ...`, `pnpm exec tool ...` or `yarn run tool ...`, with the folder flag
+    # in a package folder. None for npm in a subfolder: `npm --prefix <dir> exec` runs the binary in the caller's
+    # folder, not <dir>, so that package runs only through its scripts.
+    if manager == "npm" and package_rel:
+        return None
+    launcher = " ".join(check_scope.PACKAGE_BINARY_LAUNCHERS[manager])
+    return package_script_command(manager, package_rel, f"{launcher} {binary_command}")
+
+
+def crate_command(command, crate_rel):
+    # The cargo command for the crate in `crate_rel`: `--manifest-path <dir>/Cargo.toml`, put before the ` -- ` that
+    # starts the arguments for the tool cargo runs.
+    if not crate_rel:
+        return command
+
+    manifest_path = shlex.quote(f"{crate_rel}/Cargo.toml")
+    cargo_arguments, separator, tool_arguments = command.partition(" -- ")
+    return f"{cargo_arguments} --manifest-path {manifest_path}{separator}{tool_arguments}"
 
 
 def typecheck_script_name(scripts):
@@ -61,18 +98,21 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     scripts = package_json.get("scripts", {})
     dependencies = {**package_json.get("dependencies", {}), **package_json.get("devDependencies", {})}
     package_rel = script_utils.directory_relative_to(repo_dir, package_dir)
+    manager = package_manager(repo_dir)
     relative_paths = [str((repo_dir / path).relative_to(package_dir)) for path in paths]
     commands = []
 
     typecheck_name = typecheck_script_name(scripts)
     if typecheck_name:
-        commands.append(in_directory(f"npm run {typecheck_name}", package_rel))
+        commands.append(package_script_command(manager, package_rel, f"run {typecheck_name}"))
     elif (package_dir / "tsconfig.json").is_file():
-        commands.append(in_directory("npx tsc --noEmit", package_rel))
+        commands.append(package_binary_command(manager, package_rel, "tsc --noEmit"))
 
     source_suffixes = sorted({pathlib.Path(p).suffix for p in relative_paths if p.endswith(SCRIPT_SUFFIXES)})
     if ("eslint" in dependencies or "lint" in scripts) and source_suffixes:
-        commands.append(in_directory("npx eslint {files:" + ",".join(source_suffixes) + "}", package_rel))
+        eslint_command = "eslint {files:" + ",".join(source_suffixes) + "}"
+        commands.append(package_binary_command(manager, package_rel, eslint_command))
+    commands = [command for command in commands if command]
 
     if not derives_tests:
         return commands
@@ -88,10 +128,14 @@ def script_package_commands(repo_dir, package_dir, paths, derives_tests):
     test_paths = [p for p in relative_paths if p.endswith(SCRIPT_SUFFIXES) and is_runnable_test_file(p, runs_jest)]
     placeholder = "jest-tests" if runs_jest else "tests"
     scope = " ".join(shlex.quote(p) for p in test_paths) or "{" + placeholder + ":" + ",".join(SCRIPT_SUFFIXES) + "}"
-    if runner:
-        commands.append(in_directory(f"npx {runner} {scope}", package_rel))
+    runner_command = package_binary_command(manager, package_rel, f"{runner} {scope}") if runner else None
+    if runner_command:
+        commands.append(runner_command)
     elif "test" in scripts:
-        commands.append(in_directory(f"npm test -- {scope}", package_rel))
+        # pnpm passes a `--` through to the script, so the script would read the files as non-filters; npm and yarn
+        # drop it.
+        separator = "" if manager == "pnpm" else "-- "
+        commands.append(package_script_command(manager, package_rel, f"test {separator}{scope}"))
     return commands
 
 
@@ -177,16 +221,30 @@ def nearest_manage_script(repo_dir, python_paths):
     return None
 
 
-def project_python_runner(repo_dir):
-    # The runner the repo's lock file or virtualenv names, or None when it names none.
-    for lock_file, runner in PYTHON_RUNNERS:
-        if (repo_dir / lock_file).is_file():
-            return runner
-
+def project_venv_runner(repo_dir):
+    # The `-m` runner of the first project virtualenv that holds a python, else None.
     for venv in VENV_FOLDERS:
         if (repo_dir / venv / "bin/python").is_file():
             return [f"{venv}/bin/python", "-m"]
     return None
+
+
+def project_python_runner(repo_dir, env=None):
+    # The runner the repo's lock file or virtualenv names, or None when it names none. A lock file's runner counts only
+    # when the program is on the PATH gate_env.check_env gives for `env` (the gate's environment; default os.environ);
+    # otherwise the project virtualenv runs them. With
+    # neither, the lock file's runner stays, so the run names the missing program.
+    venv_runner = project_venv_runner(repo_dir)
+    for lock_file, runner in PYTHON_RUNNERS:
+        if not (repo_dir / lock_file).is_file():
+            continue
+        if venv_runner is None:
+            return runner
+        check_path = gate_env.check_env(repo_dir, env).get("PATH")
+        if shutil.which(runner[0], path=check_path):
+            return runner
+        return venv_runner
+    return venv_runner
 
 
 def django_test_label(test_path, manage_dir):
@@ -227,8 +285,24 @@ def ruff_check_command(repo_dir, runner):
     return shlex.join([*ruff_runner, "ruff", "check"])
 
 
+def runner_script_commands(repo_dir, python_paths):
+    # A repo with no Python test config but a `tests/<runner script>` that takes test file names from
+    # `tests/scripts/` gets one command naming the changed test files there, or none when no such file changed.
+    runner = repo_dir / "tests" / check_scope.TEST_RUNNER_SCRIPT
+    if not runner.is_file():
+        return []
+
+    names = [pathlib.PurePosixPath(path).name for path in python_paths
+             if pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath("tests/scripts")
+             and is_runnable_test_file(path)]
+    if not names:
+        return []
+
+    return [shlex.join(["python3", f"tests/{check_scope.TEST_RUNNER_SCRIPT}", *names])]
+
+
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,
-                    derives_tests):
+                    derives_tests, env=None):
     # Tests run through the phase's listed runner, else the repo's lock file or virtualenv, else python3. Ruff runs
     # through the same runner, except a bare system python, where ruff is usually its own program. The tests are
     # `manage.py test` when the phase lists one, or when a manage.py sits at the root or above the phase's Python
@@ -237,8 +311,11 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
     python_paths = [p for p in paths if p.endswith(".py")]
     manage_script = nearest_manage_script(repo_dir, python_paths)
     has_config = any((repo_dir / name).is_file() for name in ("pyproject.toml", "pytest.ini", "setup.cfg", "manage.py"))
-    if not python_paths or not (has_config or manage_script):
+    if not python_paths:
         return []
+
+    if not (has_config or manage_script):
+        return runner_script_commands(repo_dir, python_paths) if derives_tests else []
 
     django_options = None
     if listed_django:
@@ -248,7 +325,7 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
         if not pytest_config.has_django_settings(repo_dir) and not pytest_config.has_django_settings(manage_dir):
             django_options = []
 
-    runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir)
+    runner = listed_runner if listed_runner is not None else project_python_runner(repo_dir, env)
     if runner is None:
         runner = ["python3", "-m"]
     commands = []
@@ -375,7 +452,7 @@ def scoped_clippy_commands(repo_dir, paths):
     for crate_dir, crate_scopes in scopes_by_crate.items():
         clippy = f"cargo clippy {' '.join(crate_scopes)} -- -D warnings"
         crate_rel = script_utils.directory_relative_to(repo_dir, crate_dir)
-        commands.append(in_directory(clippy, crate_rel))
+        commands.append(crate_command(clippy, crate_rel))
     return commands
 
 
@@ -402,7 +479,7 @@ def cargo_commands(repo_dir, paths, derives_tests):
             crate_commands = [CARGO_CLIPPY, "cargo test --tests"]
 
         crate_rel = script_utils.directory_relative_to(repo_dir, crate_dir)
-        commands += [in_directory(command, crate_rel) for command in crate_commands]
+        commands += [crate_command(command, crate_rel) for command in crate_commands]
     return commands
 
 
@@ -424,20 +501,24 @@ def test_command_families(command):
     return check_scope.runner_family(command) or {UNKNOWN_FAMILY}
 
 
-def derive_gate_commands(repo_dir, phase_section):
+def derive_gate_commands(repo_dir, phase_section, env=None):
     # The phase's listed test commands that run less than a whole suite are the gate's test commands, verbatim, and no
     # test command is derived. A phase that lists none of those gets the test commands derived from the files it names.
     # Listed cargo commands replace the derived ones; when none of them runs clippy, a clippy scoped to the named
     # files' targets runs before them.
     paths = plan_format.named_paths(phase_section, repo_dir)
+    listed = listed_commands(repo_dir, phase_section)
+    return derive_gate_commands_for(repo_dir, paths, listed, env)
 
+
+def derive_gate_commands_for(repo_dir, paths, listed, env=None):
+    # The gate commands for the named `paths` and the phase's `listed` commands, by the rules of derive_gate_commands.
     by_package = {}
     for path in paths:
         package_dir = nearest_directory_with(repo_dir, path, "package.json")
         if package_dir is not None:
             by_package.setdefault(package_dir, []).append(path)
 
-    listed = listed_commands(repo_dir, phase_section)
     listed_tests = [command for command in listed if takes_listed_test_command(command, repo_dir)]
     listed_families = set().union(*(test_command_families(command) for command in listed_tests))
     derives_js_tests = not listed_families & {"js", UNKNOWN_FAMILY}
@@ -459,12 +540,12 @@ def derive_gate_commands(repo_dir, phase_section):
     listed_django = listed_django_test(listed)
     phase_lists_pytest = lists_pytest(listed)
     commands += python_commands(repo_dir, paths, listed_runner, listed_django, phase_lists_pytest,
-                                derives_tests=derives_python_tests)
+                                derives_tests=derives_python_tests, env=env)
     commands += [command for command in listed_tests if command not in commands]
     return commands
 
 
-def plan_gate_commands(repo_dir, plan, phase):
+def plan_gate_commands(repo_dir, plan, phase, env=None):
     # Returns (commands, has_section): the gate commands of one plan phase, or of the whole plan when it has no entry
     # for the phase, and whether the plan has that entry. With no plan (`-`) there are no files to read, so there are
     # no commands.
@@ -474,7 +555,8 @@ def plan_gate_commands(repo_dir, plan, phase):
     plan_lines = (repo_dir / plan).read_text().splitlines()
     section = plan_format.phase_text(plan_lines, phase)
     has_section = section is not None
-    return derive_gate_commands(repo_dir, section if has_section else "\n".join(plan_lines)), has_section
+    phase_section = section if has_section else "\n".join(plan_lines)
+    return derive_gate_commands(repo_dir, phase_section, env), has_section
 
 
 def main(argv):

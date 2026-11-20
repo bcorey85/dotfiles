@@ -30,6 +30,7 @@ import re
 
 import script_utils
 import source_text
+from ask_outcome_words import RELAY_USAGE
 
 # A `path/to/file.ext` or a repo-root `file.ext` in backticks, with an optional :line or :start-end suffix inside the
 # ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so most readers take a bare name only from
@@ -69,6 +70,8 @@ PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 # A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
 AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
+
+# The `cause: plan` line of a PLAN-IMPACT block: the marks a line opens with, the field name, then its value.
 PLAN_IMPACT_CAUSE = re.compile(r"^[ \t>*`_-]*cause[*`_]*:[ \t*`_]*(.*?)[ \t*`_]*$", re.I | re.M)
 # plan: the plan and the code disagree. toolkit: a toolkit gate or script is at fault and nothing in the plan is wrong.
 PLAN_CAUSE = "plan"
@@ -484,7 +487,10 @@ AUTOMATED_ITEM = re.compile(r"^- \[[ x]\]")
 TOP_LEVEL_LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 AUTOMATED_ITEM_BOX = re.compile(r"^- \[[ x]\]\s*")
 SPEC_FILE_NAME = "spec.md"
-PLAN_FILES_GLOB = f"docs/plans/*/{SPEC_FILE_NAME}"
+QUESTIONS_FILE_NAME = "01-questions.md"
+RESEARCH_FILE_NAME = "02-research.md"
+PLANS_DIR = "docs/plans/"
+PLAN_FILES_GLOB = f"{PLANS_DIR}*/{SPEC_FILE_NAME}"
 GATE_ENV_HINT = "(Put these variables before every test, check or build command you run.)"
 
 # An Automated Verification item that says there is nothing to run: "- [ ] N/A — docs only", "- [ ] none".
@@ -825,14 +831,25 @@ def ruling_owner(repo_dir, by):
 
 
 PLAN_IMPACT_OPTIONS = ["Adopt plan change", "Keep plan as written", "Discuss"]
-DECISION_WORDS = {"adopt": PLAN_IMPACT_OPTIONS[0], "keep": PLAN_IMPACT_OPTIONS[1], "discuss": PLAN_IMPACT_OPTIONS[2]}
+ADOPT_DECISION = "adopt"
+KEEP_DECISION = "keep"
+DISCUSS_DECISION = "discuss"
+DECISION_WORDS = {ADOPT_DECISION: PLAN_IMPACT_OPTIONS[0], KEEP_DECISION: PLAN_IMPACT_OPTIONS[1],
+                  DISCUSS_DECISION: PLAN_IMPACT_OPTIONS[2]}
 PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
 PLAN_OWNER_RULE_CONDITION = "the ticket's own words, or with no ticket the user's own request, stay met"
-DECIDE_BY_NOTE = ("If the user told you to make the call yourself, or you rule without asking, pass `--by session` in "
-                  "place of `--by user`. A session ruling changes an acceptance criterion only when "
+DECIDE_BY_NOTE = ("If the user told you to make the call, pass `--by user` and quote that instruction in --ruling; "
+                  "pass `--by session` only when you rule without asking and "
                   f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while "
-                  f"{PLAN_OWNER_RULE_CONDITION}.")
-DECIDE_USAGE_STEM = 'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>"'
+                  f"{PLAN_OWNER_RULE_CONDITION}. A user ruling another session relays: `--by user {RELAY_USAGE}`, "
+                  "verified against that session's transcript.")
+PLAN_ARG_STEM = "--plan <the plan path"
+PLAN_ARG_WHEN_NAMED = "when the handoff names one"
+PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}, {PLAN_ARG_WHEN_NAMED}>"  # a `--by user` line
+SESSION_PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}>"  # a `--by session` line: the criteria owner is read from the plan
+ANY_PLAN_ARG_NOTE = f"{PLAN_ARG_STEM}: required with --by session, else {PLAN_ARG_WHEN_NAMED}>"
+DECIDE_USAGE = (f'decide <adopt|keep> --by <user|session> --ruling "<the decision in one line>" '
+                f"{ANY_PLAN_ARG_NOTE}")
 
 
 def is_ruling_by(by):
@@ -994,11 +1011,12 @@ def missing_criteria_failure(spec_path):
             "step never ran: dispatch spec-criteria (eng-spec Phase 6, step 17), never write the file yourself.")
 
 
-def spec_ac_failures(spec_path):
+def spec_ac_failures(spec_path, rewords_ruled=False):
     """The finalization rows for a file named spec.md: the ac_reference_failures rows read against the
     acceptance-criteria.md beside it (a missing file is None) and the ac_drift_failures rows against the ticket beside
     it (checked only when both the ticket and the criteria file exist). Any other file name gives []. A criteria file
-    with a repeated id gives its one error row. A ticket with no criteria heading is not checked for drift."""
+    with a repeated id gives its one error row. A ticket with no criteria heading is not checked for drift.
+    `rewords_ruled` is passed on to ac_drift_failures."""
     if spec_path.name != SPEC_FILE_NAME:
         return []
     spec_text = spec_path.read_text()
@@ -1011,7 +1029,7 @@ def spec_ac_failures(spec_path):
         if criteria_text is not None and ticket_path is not None:
             owner = criteria_owner(ticket_path)["owner"]
             failures += ac_drift_failures(ticket_path.read_text(), criteria_text, spec_text, str(ticket_path),
-                                          str(criteria_path), owner)
+                                          str(criteria_path), owner, rewords_ruled)
     except PlanFormatError as error:
         failures.append(str(error))
     return failures
@@ -1413,15 +1431,19 @@ def criteria_owner(ticket_path):
     return owner_record(ticket_path, CRITERIA_OWNER_USER, None)
 
 
+DECISION_LOG_NAME = "03-decisions.md"
+TICKET_FILE_NAME = "00-ticket.md"
+
+
 def ticket_beside(plan_path):
     """The plan folder's `00-ticket.md`, else its single `*-00-ticket.md`; None when there is none. Raises
     PlanFormatError naming the folder and the files when there are several `*-00-ticket.md` and no exact one, because
     no one of them can be picked."""
     folder = pathlib.Path(plan_path).parent
-    exact_ticket = folder / "00-ticket.md"
+    exact_ticket = folder / TICKET_FILE_NAME
     if exact_ticket.is_file():
         return exact_ticket
-    ticket_paths = sorted(folder.glob("*-00-ticket.md"))
+    ticket_paths = sorted(folder.glob(f"*-{TICKET_FILE_NAME}"))
     if not ticket_paths:
         return None
     if len(ticket_paths) > 1:
@@ -1470,25 +1492,39 @@ def normalized_words(text):
 def sign_off_names(lines, entry, mark=SIGN_OFF):
     """True when a line holds the `mark` (a sign-off by default) and names the ticket criterion: it quotes the
     criterion's text or says `Ticket #<n>`."""
-    label = re.compile(rf"ticket\s*#{entry['number']}(?!\d)", re.I)
+    label = ticket_label_pattern(entry)
     for line in lines:
         if mark.search(line) and (normalized_words(entry["text"]) in normalized_words(line) or label.search(line)):
             return True
     return False
 
 
-def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-ticket.md",
-                      criteria_name=CRITERIA_FILE_NAME, owner=CRITERIA_OWNER_USER):
+def ticket_label_pattern(entry):
+    """The regex for the label `Ticket #<n>` of the ticket criterion `entry`."""
+    return re.compile(rf"ticket\s*#{entry['number']}(?!\d)", re.I)
+
+
+def names_ticket_criterion(lines, entry):
+    """True when a line says `Ticket #<n>` for the ticket criterion `entry`."""
+    label = ticket_label_pattern(entry)
+    return any(label.search(line) for line in lines)
+
+
+def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name=TICKET_FILE_NAME,
+                      criteria_name=CRITERIA_FILE_NAME, owner=CRITERIA_OWNER_USER, rewords_ruled=False):
     """One message for each ticket criterion whose text (compared after markdown marks and whitespace are normalised)
     is the text of no AC in the criteria file, unless a line of the criteria file or of the spec's `## Plan Deviations`
     section holds a sign-off that names it. For a `session` owner, a line holding a ruling (`ruled`, `ruling`) counts
-    too. A ticket with no criteria heading has nothing to drift from and gives []; any other ticket the reader cannot
-    parse raises PlanFormatError (`ticket_name:line:`)."""
+    too. With `rewords_ruled` (a standing ruling covers rewords), a criterion that an AC names as `Ticket #<n>` passes
+    too: the change is a reword, not a cut. A criterion no AC names still fails. A ticket with no criteria heading
+    has nothing to drift from and gives []; any other ticket the reader cannot parse raises
+    PlanFormatError (`ticket_name:line:`)."""
     try:
         ticket_entries = ticket_criteria(ticket_text, ticket_name)
     except NoCriteriaHeadingError:
         return []
-    criteria_texts = {normalized_words(text) for text in criteria_by_id(criteria_text, criteria_name).values()}
+    ac_texts = list(criteria_by_id(criteria_text, criteria_name).values())
+    criteria_texts = {normalized_words(text) for text in ac_texts}
     spec_lines = spec_text.splitlines()
     deviation_lines = [spec_lines[index]
                        for index in script_utils.heading_section_indexes(spec_lines, DEVIATIONS_HEADING)]
@@ -1498,6 +1534,8 @@ def ac_drift_failures(ticket_text, criteria_text, spec_text, ticket_name="00-tic
     failures = []
     for entry in ticket_entries:
         if normalized_words(entry["text"]) in criteria_texts or sign_off_names(sign_off_lines, entry, mark):
+            continue
+        if rewords_ruled and names_ticket_criterion(ac_texts, entry):
             continue
         if session_owned:
             failures.append(f"{criteria_name}: ticket criterion {entry['number']} reads {entry['text'][:100]!r}: no AC "

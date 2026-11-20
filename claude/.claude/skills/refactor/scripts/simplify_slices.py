@@ -18,7 +18,7 @@ DROPPED_KINDS = (KIND_TEST, KIND_INDEX, KIND_STYLE, KIND_GENERATED)
 
 
 class SliceError(Exception):
-    """A tracked file that does not sit under the target it was listed for."""
+    """A file that does not sit under the target it was listed for."""
 
 
 class Slice(NamedTuple):
@@ -57,7 +57,7 @@ def dropped_summary(dropped):
 
 
 def plan_slices(files_by_target, limit):
-    """files_by_target: (target, tracked files) pairs in the order given. A file in two targets counts once."""
+    """files_by_target: (target, files) pairs in the order given. A file in two targets counts once."""
     dropped = dict.fromkeys(DROPPED_KINDS, 0)
     units = []
     seen = set()

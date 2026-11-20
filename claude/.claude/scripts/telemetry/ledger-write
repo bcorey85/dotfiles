@@ -3,9 +3,10 @@
 #
 # usage: ledger-write <type>   (the row is read from stdin)
 #        ledger-write --local <type>
+#        ledger-write --local-path <type>   (prints the local file of <type>; exit 1 with no file)
 #
 # --local skips the ledger and appends the row to its local file, as with no ledger. A writer uses
-# it to keep a row the ledger refused or failed on.
+# it to keep a row the ledger refused or failed on, or to write a local-only type (escape_text).
 #
 # The ledger is the first `ledger` on PATH, else the one in ${CARGO_HOME:-~/.cargo}/bin (ledger_bin).
 #
@@ -14,11 +15,11 @@
 # --session when CLAUDE_CODE_SESSION_ID is set, and exits with the code `ledger write` returns.
 #
 # With no ledger: appends the row as one JSON line to the file its type used before the
-# ledger, with date (UTC ISO), schema_version, repo and session added, and prints one stderr line
-# naming the file. Numeric-looking strings are stored as numbers, one object level down too
+# ledger (or its local-only file), with date (UTC ISO), schema_version, repo and session added,
+# and prints one stderr line naming the file. Numeric-looking strings are stored as numbers, one object level down too
 # (specialists, fixed_classes); branch_key is stored as branch and path_key as file, both stored
-# raw in the local jsonl file with no ledger. Keys ending in _id, and head, dirty and snapshot,
-# stay strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
+# raw in the local jsonl file with no ledger. Keys ending in _id, and head, dirty, snapshot, desc,
+# file, commit, branch and ticket, stay strings. A result is stored with spaces (PASS WITH WARNINGS). A review_scope row is
 # {ts, skill, via, session, repo, caller}, the shape the skill-usage file always held. If the
 # append fails, or HOME is unset, it prints one stderr line and exits 0: a telemetry write never
 # blocks the workflow. A type with no file is dropped with one stderr line.
@@ -27,6 +28,8 @@
 #   review_finding, review_run  ~/.claude/review-findings.jsonl  REVIEW_FINDINGS_FILE
 #   review_finding_label        ~/.claude/review-finding-labels.jsonl  REVIEW_FINDING_LABELS_FILE
 #     (--local only: {finding_id, docs_kind} of a row whose label the ledger refused)
+#   escape_text                 ~/.claude/escape-text.jsonl      ESCAPE_TEXT_FILE
+#     (--local only: a review_escape row's catch text and its miss_reason, written by log-escape)
 #   review_metrics              ~/.claude/review-metrics.jsonl   REVIEW_METRICS_FILE
 #   review_escape               ~/.claude/review-escapes.jsonl   REVIEW_ESCAPES_FILE
 #   spec_run                    ~/.claude/spec-runs.jsonl        SPEC_RUNS_FILE
@@ -52,6 +55,18 @@ if [ "${1:-}" = "--local" ]; then
   shift
 fi
 
+path_only=""
+if [ "${1:-}" = "--local-path" ]; then
+  path_only=1
+  force_local=1
+  shift
+fi
+
+if [ $# -lt 1 ]; then
+  echo "ledger-write: usage: ledger-write [--local | --local-path] <type>" >&2
+  exit 2
+fi
+
 if [ -z "$force_local" ] && ledger=$(ledger_bin); then
   session_args=()
   [ -z "${CLAUDE_CODE_SESSION_ID:-}" ] || session_args=(--session "$CLAUDE_CODE_SESSION_ID")
@@ -66,6 +81,7 @@ fi
 
 row_type="$1"
 if [ -z "${HOME:-}" ]; then
+  [ -z "$path_only" ] || exit 1
   echo "ledger-write: $local_reason; HOME is unset, row dropped" >&2
   exit 0
 fi
@@ -76,23 +92,31 @@ case "$row_type" in
   review_finding_label) log_file="${REVIEW_FINDING_LABELS_FILE:-$HOME/.claude/review-finding-labels.jsonl}"; schema_version=1; kind="" ;;
   review_metrics) log_file="${REVIEW_METRICS_FILE:-$HOME/.claude/review-metrics.jsonl}"; schema_version=2; kind="" ;;
   review_escape) log_file="${REVIEW_ESCAPES_FILE:-$HOME/.claude/review-escapes.jsonl}"; schema_version=2; kind="" ;;
+  escape_text) log_file="${ESCAPE_TEXT_FILE:-$HOME/.claude/escape-text.jsonl}"; schema_version=2; kind="" ;;
   spec_run) log_file="${SPEC_RUNS_FILE:-$HOME/.claude/spec-runs.jsonl}"; schema_version=1; kind="" ;;
   scan_run) log_file="${SCAN_RUNS_FILE:-$HOME/.claude/scan-runs.jsonl}"; schema_version=2; kind="" ;;
   review_scope) log_file="${SKILL_USAGE_FILE:-$HOME/.claude/skill-usage.jsonl}"; schema_version=null; kind="" ;;
   *)
+    [ -z "$path_only" ] || exit 1
     echo "ledger-write: $local_reason; $row_type has no jsonl file, row dropped" >&2
     exit 0 ;;
 esac
 
+if [ -n "$path_only" ]; then
+  printf '%s\n' "$log_file"
+  exit 0
+fi
+
 # The checkout is not the repo: repo-name names a linked worktree by its main checkout.
 repo=$("$script_dir/../tools/repo-name" 2>/dev/null || true)
 
-# Ids and the head commit are strings: a 16-hex id such as 12e4567890123456 reads as a number.
+# Ids, the head commit and free-text or name keys (desc, file, commit, branch, ticket) are strings:
+# a 16-hex id such as 12e4567890123456 reads as a number.
 if ! jsonl_row=$(jq -c --argjson sv "$schema_version" --arg kind "$kind" --arg repo "$repo" \
   --arg session "${CLAUDE_CODE_SESSION_ID:-}" --arg row_type "$row_type" '
   def number_like: if type == "string" then (tonumber? // .) else . end;
   def typed($key):
-    if ($key | endswith("_id")) or $key == "head" or $key == "dirty" or $key == "snapshot" then .
+    if ($key | endswith("_id")) or ($key | IN("head", "dirty", "snapshot", "desc", "file", "commit", "branch", "ticket")) then .
     elif type == "object" then map_values(number_like)
     else number_like end;
   def spaced_result:

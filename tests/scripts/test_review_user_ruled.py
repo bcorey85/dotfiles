@@ -1,15 +1,25 @@
+import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
+import handback_store
+import plan_format
 import review_user_ruled
-from handback_store import NO_RULINGS, Rulings
+from handback_store import NO_RULINGS, AdoptedRuling, Rulings
 
 REAL_ASK = {"question": "keep the retry?", "file_line": "src/retry.ts:10", "class": "bug", "gate": "none"}
+
+
+def leave_out(*args):
+    """The kept findings, user-ruled numbers, session-ruled numbers and dropped findings of the leave-out."""
+    return tuple(review_user_ruled.leave_out_ruled_impacts(*args)[:4])
 
 
 def given(item, **fields):
@@ -151,7 +161,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         ruled = ["a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2 (ruled)"]
 
         rulings = Rulings(ruled, [])
-        kept, numbers, _session, dropped = review_user_ruled.leave_out_ruled_impacts(findings, [2, 3], rulings)
+        kept, numbers, _session, dropped = leave_out(findings, [2, 3], rulings)
 
         self.assertEqual((kept, numbers, dropped), ([findings[0], findings[2]], [2], [impact]))
 
@@ -162,7 +172,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
                  "— change: reword AC2 to 7 days"]
 
         rulings = Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([accepted], [1], [], []))
+        self.assertEqual(leave_out([accepted], [1], rulings), ([accepted], [1], [], []))
 
     def test_the_exact_accepted_finding_is_left_out_and_a_different_one_on_the_same_criterion_stays(self):
         exact = "app.py:9 [plan-drift] does AC2 hold for deletes? Proposed change: keep the narrower AC2"
@@ -171,7 +181,7 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         stored_finding = "app.py:9 [plan-drift] does AC2 hold for deletes?   Proposed change: keep the narrower AC2"
 
         rulings = Rulings(ruled, [stored_finding])
-        result = review_user_ruled.leave_out_ruled_impacts([exact, different], [1, 2], rulings)
+        result = leave_out([exact, different], [1, 2], rulings)
 
         self.assertEqual(result, ([different], [1], [], [exact]))
 
@@ -190,14 +200,14 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         ruled = ["a.py:1 [plan-drift] the reword of AC2 is narrower than the ticket! acceptance_criteria: AC2"]
 
         rulings = Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([accepted], [1], rulings), ([], [], [], [accepted]))
+        self.assertEqual(leave_out([accepted], [1], rulings), ([], [], [], [accepted]))
 
     def test_a_finding_the_user_did_not_accept_is_left_out_by_criterion_ids(self):
         other = "a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2"
         ruled = ["PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"]
 
         rulings = Rulings(ruled, [])
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts([other, "y.py:2 [bug] two"], [2], rulings),
+        self.assertEqual(leave_out([other, "y.py:2 [bug] two"], [2], rulings),
                          (["y.py:2 [bug] two"], [1], [], [other]))
 
     def test_the_session_ruled_number_follows_the_drop_of_an_earlier_finding(self):
@@ -205,14 +215,14 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         other = "b.py:3 [plan-drift] purge() skips deletes Proposed change: handle deletes"
         rulings = Rulings(["PLAN-IMPACT: unrelated cache change. acceptance_criteria: none"], [settled])
 
-        result = review_user_ruled.leave_out_ruled_impacts([settled, other], [1], rulings, [2])
+        result = leave_out([settled, other], [1], rulings, [2])
 
         self.assertEqual(result, ([other], [], [1], [settled]))
 
     def test_a_session_ruled_number_stays_as_named_when_nothing_is_dropped(self):
         twin = "a.py:1 [plan-drift] does AC2 hold? Proposed change: keep AC2"
 
-        result = review_user_ruled.leave_out_ruled_impacts([twin, twin], [], NO_RULINGS, [2])
+        result = leave_out([twin, twin], [], NO_RULINGS, [2])
 
         self.assertEqual(result, ([twin, twin], [], [2], []))
 
@@ -220,15 +230,196 @@ class LeaveOutRuledImpactsTest(unittest.TestCase):
         different = "b.py:3 [plan-drift] purge() skips deletes that AC2 requires Proposed change: handle deletes"
         ruled = ["PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"]
 
-        result = review_user_ruled.leave_out_ruled_impacts([different], [], Rulings(ruled, []), [1])
+        result = leave_out([different], [], Rulings(ruled, []), [1])
 
         self.assertEqual(result, ([different], [], [1], []))
 
     def test_nothing_is_dropped_when_no_ruling_is_recorded(self):
         findings = ["a.py:1 [plan-drift] does AC2 hold? acceptance_criteria: AC2"]
 
-        self.assertEqual(review_user_ruled.leave_out_ruled_impacts(findings, [1], NO_RULINGS),
+        self.assertEqual(leave_out(findings, [1], NO_RULINGS),
                          (findings, [1], [], []))
+
+
+IMPACT = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+FINDING = "a.py:1 [plan-drift] PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+ADOPTED = AdoptedRuling(IMPACT, FINDING, "the user", "2026-11-19 10:00")
+
+
+class AdoptedRulingTest(unittest.TestCase):
+    def test_an_adopted_ruling_keeps_its_finding_marked_and_user_ruled_and_a_keep_ruling_drops_it(self):
+        adopted = Rulings([], [], (ADOPTED,))
+        keep = Rulings([IMPACT], [FINDING])
+
+        kept_result = leave_out([FINDING], [], adopted)
+        dropped_result = leave_out([FINDING], [1], keep)
+
+        marked = review_user_ruled.adopted_issue(FINDING, ADOPTED)
+        self.assertEqual(kept_result, ([marked], [1], [], []))
+        self.assertIn("the user, ruled 2026-11-19 10:00", marked)
+        self.assertEqual(dropped_result, ([], [], [], [FINDING]))
+
+    def test_the_left_out_names_the_ruling_of_each_adopted_finding_by_its_number(self):
+        other = "b.py:2 [bug] unrelated finding"
+
+        result = review_user_ruled.leave_out_ruled_impacts([other, FINDING], [], Rulings([], [], (ADOPTED,)))
+
+        self.assertEqual(result.adopted, {2: ADOPTED})
+
+    def test_a_second_ruling_for_a_matched_change_adds_no_finding(self):
+        again = AdoptedRuling(IMPACT, FINDING, "the user", "2026-11-19 11:00")
+
+        result = review_user_ruled.leave_out_ruled_impacts([FINDING], [], Rulings([], [], (ADOPTED, again)))
+
+        self.assertEqual(len(result.kept), 1)
+
+    def test_an_unaccepted_finding_that_is_the_ruling_text_adds_no_second_finding(self):
+        text = "PLAN-IMPACT: AC2 reworded."
+        finding = f"app.py:2 [plan-drift] {text}"
+        ruling = AdoptedRuling(text, None, "the user", "2026-11-19 10:00")
+
+        result = review_user_ruled.leave_out_ruled_impacts([finding], [], Rulings([], [], (ruling,)))
+
+        self.assertEqual(result.kept, [review_user_ruled.adopted_issue(finding, ruling)])
+
+    def test_an_adopted_ruling_with_no_matching_finding_adds_its_text_as_a_user_ruled_finding(self):
+        other = "b.py:2 [bug] unrelated finding"
+        adopted = Rulings([], [], (ADOPTED,))
+
+        result = leave_out([other], [], adopted)
+
+        marked = review_user_ruled.adopted_issue(IMPACT, ADOPTED)
+        self.assertEqual(result, ([other, marked], [2], [], []))
+
+    def test_the_numbers_follow_a_drop_beside_an_adopted_finding(self):
+        kept_impact = "PLAN-IMPACT: AC5 dropped. acceptance_criteria: AC5"
+        kept_finding = "c.py:3 [plan-drift] PLAN-IMPACT: AC5 dropped. acceptance_criteria: AC5"
+        rulings = Rulings([kept_impact], [kept_finding], (ADOPTED,))
+
+        result = leave_out([kept_finding, FINDING], [1], rulings)
+
+        self.assertEqual(result, ([review_user_ruled.adopted_issue(FINDING, ADOPTED)], [1], [], [kept_finding]))
+        full = review_user_ruled.leave_out_ruled_impacts([kept_finding, FINDING], [1], rulings)
+        self.assertEqual(full.adopted, {1: ADOPTED})
+
+
+class RulingsReadTest(unittest.TestCase):
+    def test_a_row_reads_as_adopted_only_with_the_adopt_decision(self):
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=FINDING, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+            handback_store.record_ruled_impact("s1", "kept impact", "/r", decision=plan_format.KEEP_DECISION,
+                                               owner="x", ruled_at="y")
+            handback_store.record_ruled_impact("s1", "legacy impact", "/r")
+
+            read = handback_store.rulings("s1", "/r")
+
+        self.assertEqual(read.adopted, (ADOPTED,))
+        self.assertEqual(read.impacts, ["kept impact", "legacy impact"])
+
+    def test_an_adopt_row_with_no_owner_ruled_at_or_finding_text_reads_with_the_fallbacks(self):
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", decision=plan_format.ADOPT_DECISION)
+
+            read = handback_store.rulings("s1", "/r")
+
+        unknown = handback_store.UNKNOWN_RULING_FIELD
+        self.assertEqual(read.adopted, (AdoptedRuling(IMPACT, None, unknown, unknown),))
+
+    def test_the_latest_ruling_on_an_impact_wins_in_either_order(self):
+        adopt = plan_format.ADOPT_DECISION
+        keep = plan_format.KEEP_DECISION
+        cases = (("adopt then keep", (adopt, keep), 0, [IMPACT]),
+                 ("keep then adopt", (keep, adopt), 1, []))
+        for label, decisions, adopted_count, impacts in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as store, \
+                    mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+                for decision in decisions:
+                    handback_store.record_ruled_impact("s1", IMPACT, "/r", decision=decision, owner="u", ruled_at="t")
+
+                read = handback_store.rulings("s1", "/r")
+
+                self.assertEqual(len(read.adopted), adopted_count, label)
+                self.assertEqual(read.impacts, impacts, label)
+
+    def test_an_applied_ruling_is_left_out_of_adopted_and_adds_no_finding_on_a_later_launch(self):
+        other = "b.py:2 [bug] unrelated finding"
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=FINDING, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+            first = review_user_ruled.leave_out_ruled_impacts([other], [], handback_store.rulings("s1", "/r"))
+            handback_store.record_applied_ruling("s1", ADOPTED, "/r")
+
+            second = review_user_ruled.leave_out_ruled_impacts([other], [], handback_store.rulings("s1", "/r"))
+
+        self.assertEqual(len(first.kept), 2)
+        self.assertEqual(second.kept, [other])
+        self.assertEqual(second.adopted, {})
+
+    def test_the_finding_an_applied_ruling_came_from_is_dropped_when_passed_again(self):
+        # Far from IMPACT in wording, so only the recorded finding text can settle it, not the impact text.
+        distant = ("src/purge.py:40 [plan-drift] purge() leaves orphaned rows behind when a parent record is "
+                   "removed during a nightly batch, which the plan never mentions. PLAN-IMPACT: AC2 reworded. "
+                   "acceptance_criteria: AC2")
+        ruling = AdoptedRuling(IMPACT, distant, "the user", "2026-11-19 10:00")
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=distant, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+            handback_store.record_applied_ruling("s1", ruling, "/r")
+
+            again = review_user_ruled.leave_out_ruled_impacts([distant], [1], handback_store.rulings("s1", "/r"))
+
+        self.assertEqual(again.kept, [])
+
+    def test_one_ruling_covering_two_findings_keeps_an_adopted_ruling_for_each(self):
+        first = "a.py:1 one"
+        second = "b.py:2 two"
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            for finding_text in (first, second):
+                handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=finding_text, decision="adopt",
+                                                   owner="the user", ruled_at="2026-11-19 10:00")
+
+            read = handback_store.rulings("s1", "/r")
+
+        self.assertEqual([ruling.finding_text for ruling in read.adopted], [first, second])
+
+    def test_a_keep_ruling_on_two_findings_keeps_both_finding_texts_and_an_older_ruling_is_dropped(self):
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text="old.py:1 old", decision="keep",
+                                               owner="u", ruled_at="2026-11-19 09:00")
+            for finding_text in ("a.py:1 one", "b.py:2 two"):
+                handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=finding_text, decision="keep",
+                                                   owner="u", ruled_at="2026-11-19 10:00")
+
+            read = handback_store.rulings("s1", "/r")
+
+        self.assertEqual(read.finding_texts, ["a.py:1 one", "b.py:2 two"])
+
+    def test_an_applied_ruling_still_counts_as_a_ruled_impact_so_a_later_fix_run_skips_its_finding(self):
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=FINDING, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+            handback_store.record_applied_ruling("s1", ADOPTED, "/r")
+
+            read = handback_store.rulings("s1", "/r")
+            left_out = review_user_ruled.leave_out_ruled_impacts([FINDING], [], read)
+
+        self.assertEqual(read.adopted, ())
+        self.assertIn(IMPACT, read.impacts)
+        self.assertEqual(left_out.kept, [])
+        self.assertEqual(left_out.dropped, [FINDING])
+
+    def test_a_later_decision_on_an_applied_change_comes_back(self):
+        with tempfile.TemporaryDirectory() as store, mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": store}):
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=FINDING, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+            handback_store.record_applied_ruling("s1", ADOPTED, "/r")
+            handback_store.record_ruled_impact("s1", IMPACT, "/r", finding_text=FINDING, decision="adopt",
+                                               owner="the user", ruled_at="2026-11-19 12:00")
+
+            read = handback_store.rulings("s1", "/r")
+
+        self.assertEqual(read.adopted, (AdoptedRuling(IMPACT, FINDING, "the user", "2026-11-19 12:00"),))
 
 
 if __name__ == "__main__":

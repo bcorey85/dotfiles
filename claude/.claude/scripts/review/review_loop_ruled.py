@@ -1,19 +1,30 @@
 """review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
-a coder's edit to an approval-only file (it files an ask), as a mixin for `LoopRun`. The host class holds asks,
-plan_impacts and resolved_texts, and provides `add_ask`."""
-from pathlib import PurePosixPath
+a coder's edit to an approval-only file (it reverts the edit and reports it), as a mixin for `LoopRun`. The host
+class holds asks, plan_impacts, resolved_texts, files_touched, repo and plan (the plan's path in repo, or ""), and
+provides `add_ask`."""
+import pathlib
+from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 import coder_report
 import handback_store
 import plan_format
+import review_loop_ruled_out
 import script_utils
-from approval_asks_store import approval_change, read_approval_paths, write_approval_paths
+import standing_rulings
+from approval_asks_store import (
+    approval_change,
+    read_approval_paths,
+    read_held_changes,
+    write_approval_paths,
+)
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
 from review_loop_findings import (
     NOTE_ASK_REASON,
     REJECTED_ASK_REASON,
     REPEATED_ASK_REASON,
+    REVERTED_APPROVAL_EDIT_REASON,
     near_title,
     pass_note_split,
     plan_change_items,
@@ -33,7 +44,8 @@ CODER_GATE = "coder"
 
 def approval_only_paths(changed):
     """The paths in `changed` whose basename is one of `PROMPT_MARKDOWN_NAMES` (CLAUDE.md, CLAUDE.local.md,
-    AGENTS.md). A coder never changes these without the user's approval, so each edit becomes an ask."""
+    AGENTS.md). A coder never changes these without the user's approval, so each edit is reverted and reported, or
+    asked about when it cannot be reverted."""
     return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
 
 
@@ -79,7 +91,102 @@ def broken_ruling_finding(ruled, other_paths, path, every_finding_ruled, repo):
     return named[0] if named else None
 
 
+NOT_APPLIED_BLOCKER = "The coder did not apply the adopted plan change ({why}): {ruling}"
+SKIPPED_WHY = "it skipped the finding"
+NO_DIFF_WHY = "the pass left no fix diff"
+NO_FILE_DIFF_WHY = "the pass left no fix diff in the finding's file"
+HELD_WHY = "its file is held by another session"
+RULED_OUT_WHY = "its file is ruled out of the review"
+
+
+class Unapplied(NamedTuple):
+    finding: object
+    blocker: str
+
+
+def adopted_rulings(rows):
+    """{finding text: AdoptedRuling} of the rows `review_loop_prompt_file.header_adopted` reads."""
+    fields = handback_store.AdoptedRuling._fields
+    return {text: handback_store.AdoptedRuling(**{field: row[field] for field in fields})
+            for text, row in rows.items()}
+
+
+def not_applied_why(finding, number, skips, changed, repo):
+    """Why the fix pass left the adopted `finding` unapplied, None when it applied it. It is unapplied when the coder
+    skipped it (`number` is in `skips`), left no diff in the finding's file, or, for a finding with no path, left no
+    diff at all."""
+    if number in skips:
+        return SKIPPED_WHY
+    if not finding.path:
+        return None if changed else NO_DIFF_WHY
+    if any(names_changed_path(finding.path, path, repo) for path in changed):
+        return None
+    return NO_FILE_DIFF_WHY
+
+
+def unapplied_adopted(findings, adopted, skips, changed, repo):
+    """The Unapplied (finding, blocker) of each adopted finding (a text in `adopted`) of a fix pass that the coder
+    left unapplied (see `not_applied_why`). Each blocker names the ruling: the marker's who and when, then the
+    change."""
+    unapplied = []
+    for number, finding in enumerate(findings, 1):
+        if finding.text not in adopted:
+            continue
+        why = not_applied_why(finding, number, skips, changed, repo)
+        if why is None:
+            continue
+        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        unapplied.append(Unapplied(finding, blocker))
+    return unapplied
+
+
+def withheld_adopted(findings, adopted, kept, held):
+    """The Unapplied of each adopted finding among `findings` that the loop withheld from the coder: it is not in
+    `kept`; it sits on a held file when it is in `held`, else on a ruled-out file."""
+    withheld = []
+    for finding in findings:
+        if finding.text not in adopted or finding in kept:
+            continue
+        why = HELD_WHY if finding in held else RULED_OUT_WHY
+        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        withheld.append(Unapplied(finding, blocker))
+    return withheld
+
+
+def prior_issue_entries(round_findings, skips, put_back_findings, reverted_findings=()):
+    """The round's findings as the next reviewers' prior issues: fixed, skipped with the coder's reason, or partial
+    when the loop put the file back. A finding filed on a reverted approval-only path (`reverted_findings`) reads as
+    skipped."""
+    entries = []
+    for number, item in enumerate(round_findings, 1):
+        entry = {"issue": item.text, "status": "fixed", "file": item.path or "unknown"}
+        if item in reverted_findings:
+            entry["status"] = "skipped"
+            entry["reason"] = REVERTED_APPROVAL_EDIT_REASON
+        elif number in skips:
+            entry["status"] = "skipped"
+            entry["reason"] = skips[number]
+        elif item in put_back_findings:
+            entry["status"] = "partial"
+            entry["reason"] = "the loop put the file back to keep a recorded ruling"
+        entries.append(entry)
+    return entries
+
+
 class RuledFindings:
+    def unrecord_ruled_out(self, withheld):
+        """Takes each withheld finding out of skipped_fp: it stays open, so the packet carries it once. The host holds
+        skipped_fp and given_skipped."""
+        withheld_findings = [item.finding for item in withheld]
+        kept_entries = []
+        for entry in self.skipped_fp:
+            ruled_out = entry["reason"] == review_loop_ruled_out.RULED_OUT_REASON
+            if ruled_out and entry["item"] in withheld_findings:
+                self.given_skipped -= 1
+                continue
+            kept_entries.append(entry)
+        self.skipped_fp = kept_entries
+
     def init_ruled_state(self):
         # a location-and-note line (`ruling_line`) per finding ruled no code change, for the reviewer prompt
         self.no_code_rulings = []
@@ -90,12 +197,19 @@ class RuledFindings:
         self.dropped_asks = []
         self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
         self.user_only_paths = []  # the repo-relative path each approval ask was filed for
-        # path -> the blob id its edit is measured against, so a coder's own commit of the edit still shows on resume
+        # path -> the blob id its edit is measured against
         self.user_only_bases = {}
         self.approval_blobs = {}  # path -> blob id of each approval-only file before the latest coder pass
+        # path -> the index entry of each approval-only file before the latest coder pass (None: not in the index)
+        self.approval_index_entries = {}
+        self.approval_head_before = None  # the commit HEAD named before the latest coder pass
+        self.approval_snapshot_ok = False  # whether the latest snapshot could list the repo's files
+        self.approval_unhashed = set()  # the existing approval-only files the latest snapshot could not hash
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
+        self.adopted = {}  # finding text -> the AdoptedRuling of each finding whose plan change a ruling adopted
+        self.session_id = ""  # the session whose store holds the rulings; an applied ruling is recorded there
 
     @property
     def ruled_texts(self):
@@ -165,10 +279,11 @@ class RuledFindings:
         return True
 
     def record_plan_impact(self, impact):
-        """Adds one plan impact ({text, gate, ac_change, cause, adopted, applied, settled}). The same text again, from a
-        later round or a second reviewer, stays one. `applied` is True when the coder's edits for it are already in the
-        tree. `settled` (default False) marks an impact an earlier ruling covers: it is adopted, never printed, and
-        logs no deviation."""
+        """Adds one plan impact ({text, gate, ac_change, cause, adopted, applied, settled, reword}). The same text
+        again, from a later round or a second reviewer, stays one. `applied` is True when the coder's edits for it
+        are already in the tree. `reword` is True for an impact that names a criterion and says `kind: reword`: only
+        the criterion's words change, so a standing ruling can cover it. `settled` (default False) marks an impact
+        an earlier ruling covers: it is adopted, never printed, and logs no deviation."""
         if any(near_title(entry["text"], impact["text"]) for entry in self.plan_impacts):
             return
         self.plan_impacts.append({"settled": False, **impact})
@@ -177,7 +292,9 @@ class RuledFindings:
         """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
         acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
         nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
-        ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above."""
+        ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above. A reword of a
+        criterion is a plain fix too, adopted and applied, when the loop's plan holds a standing ruling that covers
+        rewords."""
         to_coder, ruling_held = [], []
         for item in items:
             if ruled_plan_impact(item.text, self.resolved_texts, self.ruled_texts):
@@ -185,10 +302,38 @@ class RuledFindings:
                 continue
 
             ac_change = plan_format.changes_acceptance_criteria(item.text)
+            reword = standing_rulings.impact_rewords_criterion(item.text)
+            under_standing_ruling = reword and self.standing_reword_ruling() is not None
+            adopted = not ac_change or under_standing_ruling
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
-                                     "cause": plan_format.PLAN_CAUSE, "adopted": not ac_change, "applied": False})
-            (ruling_held if ac_change else to_coder).append(item)
+                                     "cause": plan_format.PLAN_CAUSE, "adopted": adopted,
+                                     "applied": False, "reword": reword})
+            (ruling_held if ac_change and not under_standing_ruling else to_coder).append(item)
         return to_coder, ruling_held
+
+    def mark_standing_rewords_applied(self, changed):
+        """After a coder pass: the reword impacts adopted under a standing ruling count as applied when the pass
+        changed the plan's acceptance-criteria file or the plan file. Any other change leaves them unapplied."""
+        if not self.plan:
+            return
+        plan_file = PurePosixPath(self.plan)
+        reword_files = {plan_file.as_posix(), plan_file.with_name(plan_format.CRITERIA_FILE_NAME).as_posix()}
+        if not reword_files.intersection(changed):
+            return
+        for impact in self.plan_impacts:
+            if impact["adopted"] and impact["reword"] and impact["ac_change"] and not impact["settled"]:
+                impact["applied"] = True
+
+    def standing_reword_ruling(self):
+        """The standing ruling in the loop's plan that covers rewords, or None with no plan on disk or no such ruling.
+        A standing ruling line that does not parse raises PlanFormatError (`file:line:` and the expected form); the
+        loop stops on it."""
+        if not self.plan:
+            return None
+        plan_path = Path(self.repo) / self.plan
+        if not plan_path.is_file():
+            return None
+        return standing_rulings.reword_ruling(plan_path)
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
@@ -201,37 +346,104 @@ class RuledFindings:
         settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
         adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
         self.record_plan_impact({"text": text, "gate": CODER_GATE, "ac_change": ac_change, "cause": cause,
-                                 "adopted": adopted, "applied": bool(changed), "settled": settled})
+                                 "adopted": adopted, "applied": bool(changed), "settled": settled,
+                                 "reword": standing_rulings.impact_rewords_criterion(text)})
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
 
     def ask_for_approval_only_edits(self, changed, findings):
-        """After a coder pass on `findings`: files one ask for the user per approval-only file (see
-        `approval_only_paths`) the pass changed. The ask rides the packet's ask list like a reviewer ask: a /code
-        phase review's commit gate holds the commit until it is ruled; the run's status is unchanged. The same file in
-        a later round stays one ask. A file that a finding the user ruled on names by its repo-relative (or absolute)
-        path is not asked about: the ruling is the approval, and a same-named file in another folder still is asked
-        about.
-        A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
-        again."""
+        """After a coder pass on `findings`: reverts the pass's edit to each approval-only file (see
+        `approval_only_paths`) and reports it in the dropped asks (see `revert_approval_edit`). Returns the paths it
+        reverted. Only an edit that cannot be reverted files an ask for the user. That ask rides the packet's ask
+        list like a reviewer ask: a /code phase review's commit gate holds the commit until it is ruled; the run's
+        status is unchanged. The same file in a later round stays one ask. A file that a finding the user ruled on
+        names by its repo-relative (or absolute) path is left as edited: the ruling is the approval, and a same-named
+        file in another folder still is reverted. A session's ruling is no approval, except on this ask itself (a
+        revert), which would otherwise be filed again."""
         ruled_paths = self.approval_ruled_paths(findings)
         filed = False
+        reverted = []
         for path in approval_only_paths(changed):
             if path in ruled_paths:
+                continue
+            if self.revert_approval_edit(path):
+                reverted.append(path)
                 continue
             self.file_approval_ask(path, self.approval_blobs.get(path))
             filed = True
         if filed:
             self.save_approval_paths()
+        return reverted
+
+    def revert_approval_edit(self, path):
+        """Puts approval-only file `path` back to its pre-pass blob (deletes a file the pass created) and records the
+        edit in the dropped asks under `REVERTED_APPROVAL_EDIT_REASON`. Returns True when the file needs no ask: it
+        was reverted, or the pass left its content as it was. False when the revert failed or the pre-pass content
+        is unknown (the snapshot could not list the files, or could not hash this one), so the edit stays and is
+        asked about (fail closed). A path the snapshot did not list was created by the pass.
+        The index entry goes back to its pre-pass entry when the pass changed it (a `git add` of the edit). When the
+        pass committed the edit, the work tree goes back as above and the path joins `files_touched`, so the session
+        commits the revert."""
+        if not self.approval_snapshot_ok or path in self.approval_unhashed:
+            return False
+        base = self.approval_blobs.get(path)
+        content_changed = script_utils.content_changed_since(self.repo, path, base)
+        index_before = self.approval_index_entries.get(path)
+        index_changed = script_utils.index_entry(self.repo, path) != index_before
+        committed = self.committed_during_pass(path)
+        if not (content_changed or index_changed or committed):
+            return True
+        if content_changed and not script_utils.restore_blob(self.repo, path, base):
+            return False
+        if index_changed and not script_utils.restore_index_entry(self.repo, path, index_before):
+            return False
+        if committed:
+            self.files_touched.add(path)
+        self.drop_asks([parse_finding(approval_ask_text(path))], REVERTED_APPROVAL_EDIT_REASON)
+        return True
+
+    def findings_on_reverted_paths(self, findings, reverted):
+        """The `findings` whose path is one of the `reverted` approval-only paths: their fix lived in an edit the loop
+        put back, so none of them is fixed."""
+        reverted_paths = set(reverted)
+        return [finding for finding in findings if held_path_in_repo(finding.path, self.repo) in reverted_paths]
+
+    def keep_reverted_open(self, findings, reverted):
+        """Adds each finding on a reverted path to `open_fixes` once, and returns them. The caller leaves them out of
+        its fixed and skipped sets."""
+        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
+        self.open_fixes += [item for item in reverted_findings if item not in self.open_fixes]
+        return reverted_findings
+
+    def committed_during_pass(self, path):
+        """Whether the latest coder pass committed a change to `path`: HEAD holds another blob for it than the commit
+        HEAD named before the pass did."""
+        head_now = script_utils.head_commit(self.repo)
+        if self.approval_head_before is None or head_now == self.approval_head_before:
+            return False
+        blob_before = script_utils.blob_at_commit(self.repo, self.approval_head_before, path)
+        return script_utils.blob_at_commit(self.repo, head_now, path) != blob_before
 
     def snapshot_approval_blobs(self):
         """Before a coder pass: saves the blob id of each approval-only file's work-tree content (None for a file the
         tree lacks), so the pass's edit is measured against what the file held before it, a phase's own uncommitted
-        edit included. A coder's commit of the edit cannot hide it, and a revert to this content clears it."""
+        edit included. Within the pass, a coder's commit of the edit cannot hide it, and a revert to this content
+        clears it. An existing file whose hash fails goes to `approval_unhashed`, never stored as absent."""
+        self.approval_blobs = {}
+        self.approval_index_entries = {}
+        self.approval_head_before = script_utils.head_commit(self.repo)
+        self.approval_unhashed = set()
+        self.approval_snapshot_ok = False
         listing = script_utils.git_output(self.repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
-        if not listing:
+        if listing is None:
             return
+        self.approval_snapshot_ok = True
         for path in approval_only_paths(listing.split("\0")):
-            self.approval_blobs[path] = script_utils.work_tree_blob(self.repo, path)
+            blob = script_utils.work_tree_blob(self.repo, path, keep_object=True)
+            if blob is None and (pathlib.Path(self.repo) / path).is_file():
+                self.approval_unhashed.add(path)
+                continue
+            self.approval_blobs[path] = blob
+            self.approval_index_entries[path] = script_utils.index_entry(self.repo, path)
 
     def approval_ruled_paths(self, findings):
         """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""
@@ -256,15 +468,22 @@ class RuledFindings:
 
     def resume_approval_asks(self, findings):
         """At the start of a run: files again each approval ask an earlier run saved whose content still differs
-        from its saved base blob (committed or not), that no ruling in `findings` settles, and that the session has
-        not rejected. Reads only the saved paths, never the change. Rewrites the saved paths with the ones filed
-        again, so a settled path leaves the file; with nothing saved, writes nothing."""
+        from its saved base blob, that no ruling in `findings` settles, and that the session has not rejected, and
+        whose file still differs from HEAD (a file that matches HEAD, reverted or committed, files no ask), and that no
+        kept held packet waits on. Reads only the saved paths, never the change. Rewrites the saved paths with the
+        ones filed again, so a settled path leaves the file; with nothing saved, writes nothing."""
         saved = read_approval_paths(self.repo)
         if not saved:
             return
         ruled_paths = self.approval_ruled_paths(findings)
+        # The kept packet owns a held change, and the user's ruling on that packet drops it from the record.
+        held_changes = read_held_changes(self.repo)
         for path, base in saved.items():
+            if approval_change(path) in held_changes:
+                continue
             if path in ruled_paths or not script_utils.content_changed_since(self.repo, path, base):
+                continue
+            if script_utils.matches_head(self.repo, path):
                 continue
             ask = parse_finding(approval_ask_text(path))
             if self.without_rejected([ask]):
@@ -305,8 +524,39 @@ class RuledFindings:
             if entry not in self.no_code_broken:
                 self.no_code_broken.append(entry)
 
+    def stop_on_unapplied(self, unapplied):
+        """Stops the run as a critical blocker, which plans no reviewer, naming each of the `unapplied` adopted
+        findings (see `Unapplied`), and keeps them open. False, with no stop, when there are none."""
+        if not unapplied:
+            return False
+        self.stop("critical-blocker", [item.blocker for item in unapplied])
+        self.keep_open([item.finding for item in unapplied])
+        return True
+
+    def settle_adopted_after_pass(self, findings, skips, changed):
+        """After the fix-first pass on `findings`: (the Unapplied of each adopted ruling the pass left unapplied, the
+        1-based numbers of those findings, `skips` without them). The applied findings are recorded as applied. An
+        unapplied adopted finding stays open: it is no skipped false positive and no fix."""
+        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo)
+        unapplied_findings = [item.finding for item in unapplied]
+        # A finding the sign-off put-back undid was not applied, so it is not recorded as applied.
+        self.record_applied_adopted(self.not_put_back(item for item in findings if item not in unapplied_findings))
+        unapplied_numbers = {number for number, item in enumerate(findings, 1) if item in unapplied_findings}
+        kept_skips = {number: line for number, line in skips.items() if number not in unapplied_numbers}
+        return unapplied, unapplied_numbers, kept_skips
+
+    def record_applied_adopted(self, findings):
+        """Records each adopted finding of an applied fix-first pass as applied in the session's store, so a later fix
+        run of the repo is not handed its ruling again."""
+        rows_repo = handback_store.ruled_rows_repo(self.repo)
+        for finding in findings:
+            ruling = self.adopted.get(finding.text)
+            if ruling is not None:
+                handback_store.record_applied_ruling(self.session_id, ruling, rows_repo)
+
     def issue_text(self, finding):
-        """The finding's text for the coder's issue list, marked when the user accepted the finding."""
-        if finding.text not in self.user_ruled:
+        """The finding's text for the coder's issue list, marked when the user accepted the finding. An adopted
+        finding carries its own mark."""
+        if finding.text in self.adopted or finding.text not in self.user_ruled:
             return finding.text
         return user_ruled_issue(finding.text, self.user_ruled_at)

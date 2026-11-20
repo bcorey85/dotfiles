@@ -66,32 +66,47 @@ def diff_stat_lines(stats):
     return lines
 
 
-def held_clause(held_texts):
-    """The receipt's tail naming the class members skipped because another session holds their file; empty when none."""
-    if not held_texts:
+def held_clause(held_texts, ruled_texts):
+    """The receipt's tail naming the class members skipped because another session holds their file, and those skipped
+    because the user ruled their file out of scope; empty when none."""
+    clause = ""
+    if held_texts:
+        clause += "; skipped, held by another session: " + "; ".join(held_texts)
+    if ruled_texts:
+        clause += "; skipped, ruled out of scope by the user: " + "; ".join(ruled_texts)
+    return clause
+
+
+def reverted_clause(reverted_texts):
+    """The receipt's tail naming the class members whose fix was an approval-only edit the loop reverted; empty when
+    none."""
+    if not reverted_texts:
         return ""
-    return "; skipped, held by another session: " + "; ".join(held_texts)
+    return "; still open, their fix was an approval-only edit the loop reverted: " + "; ".join(reverted_texts)
 
 
-def receipt_after_class_repair(closed_members, held_texts):
+def receipt_after_class_repair(closed_members, held_texts, ruled_texts, reverted_texts=()):
     """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
-    members skipped as held are not claimed fixed. It replaces the check's receipt, whose prose still calls the sent
-    members open."""
+    members skipped as held or ruled out are not claimed fixed, and it claims no fix when every sent member was
+    reverted. It replaces the check's receipt, whose prose still calls the sent members open."""
+    if not closed_members:
+        return ("the class repair fixed none of the class members the closure check found open"
+                + held_clause(held_texts, ruled_texts) + reverted_clause(reverted_texts))
     return ("the class repair fixed these class members the closure check found open: " + "; ".join(closed_members)
-            + held_clause(held_texts))
+            + held_clause(held_texts, ruled_texts) + reverted_clause(reverted_texts))
 
 
-def receipt_all_held(held_texts):
-    """The closure receipt when every open class member is in a held file, so no coder ran."""
-    return ("every open class member is in a file another session holds, so none went to a coder"
-            + held_clause(held_texts))
+def receipt_all_held(held_texts, ruled_texts):
+    """The closure receipt when every open class member is in a held or ruled-out file, so no coder ran."""
+    return ("every open class member is in a file another session holds or the user ruled out of scope, so none went "
+            "to a coder" + held_clause(held_texts, ruled_texts))
 
 
-def receipt_still_open(open_texts, held_texts):
-    """The closure receipt when the class repair changed nothing. The check's receipt names the held members as open,
-    so it is rebuilt from the members that stay open."""
+def receipt_still_open(open_texts, held_texts, ruled_texts):
+    """The closure receipt when the class repair changed nothing. The check's receipt names the skipped members as
+    open, so it is rebuilt from the members that stay open."""
     return ("class members still open, the class repair changed nothing: " + "; ".join(open_texts)
-            + held_clause(held_texts))
+            + held_clause(held_texts, ruled_texts))
 
 
 def closure_check(repo, out, fixed, claude_call):
@@ -112,17 +127,54 @@ def closure_check(repo, out, fixed, claude_call):
     )
     parsed = reply_with_one_retry(claude_call, "class-closure", prompt, repo, out, ("open",),
                                   '{"receipt": .., "open": [..], "left_alone": [..]}', recover=closure_from_open_list,
-                                  problem=closure_list_problem, model="sonnet", tools="Read,Grep")
+                                  problem=repaired_closure_problem, model="sonnet", tools="Read,Grep")
     return {"receipt": str(parsed.get("receipt", "")), "open": parsed["open"],
             "left_alone": parsed.get("left_alone", [])}
 
 
-def closure_list_problem(parsed):
-    """A sentence naming the first of `open` and `left_alone` that the reply holds and that is not a list of
-    non-blank strings; None when both are fine."""
-    for key in ("open", "left_alone"):
+FILE_KEYS = ("file", "path")
+PURPOSE_KEYS = ("purpose", "reason", "reads", "why", "what")
+
+
+def member_object_text(member):
+    """One string from an object a reply gave for a class member: `<file>[:<line>] - <details>` when the object
+    names a file, the details alone when it does not. The purpose is the first of PURPOSE_KEYS the object holds;
+    every other key follows as `key: value`."""
+    file_key = next((key for key in FILE_KEYS if key in member), None)
+    purpose_key = next((key for key in PURPOSE_KEYS if key in member), None)
+    location = str(member[file_key]) if file_key else ""
+    if location and "line" in member:
+        location += f":{member['line']}"
+    used = {file_key, purpose_key}
+    if location:
+        used.add("line")
+    details = [str(member[purpose_key])] if purpose_key else []
+    details += [f"{key}: {value}" for key, value in member.items() if key not in used]
+    if not location:
+        return "; ".join(details)
+    return f"{location} - {'; '.join(details)}" if details else location
+
+
+def repair_member_objects(parsed):
+    """Replace, in place, each object entry of `left_alone`, and each object entry of `open` that has a `file` key,
+    with its one-string form. Any other entry stays as the reply gave it, for repaired_closure_problem to judge."""
+    for key, needs_file in (("left_alone", False), ("open", True)):
+        members = parsed.get(key)
+        if not isinstance(members, list):
+            continue
+        for index, member in enumerate(members):
+            if isinstance(member, dict) and (not needs_file or "file" in member):
+                members[index] = member_object_text(member)
+
+
+def repaired_closure_problem(parsed):
+    """Repairs `parsed` in place, then judges it: a sentence naming the first of `open` and `left_alone` that the
+    reply holds and that is not a list of non-blank strings; None when both are fine."""
+    repair_member_objects(parsed)
+    entry_shapes = {"open": "<file>:<line> - <defect> - <correction>", "left_alone": "<file>:<line> - <purpose>"}
+    for key, shape in entry_shapes.items():
         if key in parsed and not script_utils.is_nonblank_string_list(parsed[key]):
-            return f"'{key}' must be a list of non-blank strings"
+            return f"'{key}' must be a list of non-blank strings, each one string \"{shape}\""
     return None
 
 

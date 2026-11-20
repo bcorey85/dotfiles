@@ -13,6 +13,8 @@ Exit 0 when the pull ran and the changes are back, or when there is nothing to p
 recovery command when one exists. A failed branch-name lookup before the pull exits 1 naming the failed command. A
 failed remote lookup before the pull (origin, or the configured remote) exits 1 with the git error, before anything is
 set aside; one after a failed pull ends in the pull-failure exit.
+A branch whose fetched upstream tip is already an ancestor of HEAD (pushed, then the integration branch merged in)
+pulls nothing, prints one line saying so and exits 0, with the index and every commit hash untouched.
 A branch rewritten here (rebase, amend, reset) pulls nothing and exits 0 with a message to push with
 --force-with-lease: the upstream tip, fetched first, is not on HEAD but is in the branch's own reflog, so the remote
 holds nothing the branch never had. An upstream tip that is not in the reflog (another machine pushed) is pulled as
@@ -24,6 +26,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from typing import NamedTuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import script_utils
@@ -105,11 +108,23 @@ def merge_in_place_of_rebase(repo, state_dir, saved):
     return True
 
 
-def rewritten_locally(repo):
-    """(branch, short id of the upstream tip) when the freshly fetched upstream tip is not on HEAD but the branch's own
-    reflog holds it, so the branch was rewritten here (rebase, amend, reset) and the remote has nothing it never had;
-    None otherwise, including when the fetch or any git lookup fails (the run goes on as before, and reports a
-    deleted upstream)."""
+class UpstreamRelation(NamedTuple):
+    """How HEAD stands to the freshly fetched upstream tip when there is nothing to pull."""
+    kind: str  # ALREADY_HELD or REWRITTEN_LOCALLY
+    branch: str
+    short_tip: str
+
+
+ALREADY_HELD = "already held"
+REWRITTEN_LOCALLY = "rewritten locally"
+
+
+def upstream_relation(repo):
+    """After a fetch, the UpstreamRelation when the upstream has nothing HEAD lacks: ALREADY_HELD when the upstream
+    tip is an ancestor of HEAD (pushed, then built on, for instance by merging the integration branch in), or
+    REWRITTEN_LOCALLY when the tip is not on HEAD but the branch's own reflog holds it (rebase, amend, reset). None
+    otherwise, including when the fetch or any git lookup fails (the run goes on as before, and reports a deleted
+    upstream)."""
     branch = script_utils.current_branch(repo)
     if not branch:
         return None
@@ -123,14 +138,23 @@ def rewritten_locally(repo):
     tip = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", "@{u}^{commit}")
     if not tip:
         return None
+    short_tip = script_utils.git_output(repo, "rev-parse", "--short", tip) or tip
     on_head = run_in_repo(repo, "merge-base", "--is-ancestor", tip, "HEAD")
     if on_head.returncode == 0:
-        return None
+        return UpstreamRelation(ALREADY_HELD, branch, short_tip)
     held = script_utils.git_output(repo, "rev-list", "--walk-reflogs", f"refs/heads/{branch}")
     if held is None or tip not in held.split():
         return None
-    short_tip = script_utils.git_output(repo, "rev-parse", "--short", tip)
-    return branch, short_tip or tip
+    return UpstreamRelation(REWRITTEN_LOCALLY, branch, short_tip)
+
+
+def relation_text(relation):
+    """The one line that says why nothing is pulled."""
+    if relation.kind == ALREADY_HELD:
+        return (f"pull_keep_index: {relation.branch} already holds the upstream tip {relation.short_tip}; "
+                "nothing pulled.")
+    return (f"pull_keep_index: {relation.branch} was rewritten locally (the upstream tip {relation.short_tip} was on "
+            "it before); nothing pulled. Push with --force-with-lease.")
 
 
 def set_aside(repo):
@@ -306,11 +330,9 @@ def main(arguments):
     if state_dir:
         sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
 
-    rewrite = rewritten_locally(repo)
-    if rewrite:
-        branch, short_tip = rewrite
-        print(f"pull_keep_index: {branch} was rewritten locally (the upstream tip {short_tip} was on it before); "
-              "nothing pulled. Push with --force-with-lease.")
+    relation = upstream_relation(repo)
+    if relation:
+        print(relation_text(relation))
         return
 
     target = pull_target(repo)

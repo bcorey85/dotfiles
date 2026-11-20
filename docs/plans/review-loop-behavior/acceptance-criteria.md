@@ -1,0 +1,20 @@
+# Acceptance criteria
+
+- **AC1** — A class-closure reply whose `left_alone` holds objects is accepted or repaired, and a shape error retries once before it stops. (Phase 1)
+- **AC2** — The review packet prints each blocker in full, or prints the path of a file that holds the full text, and a test covers a blocker longer than the old limit. (Phase 1)
+- **AC3** — A finding's status and reason come from the same finding. (Phase 2)
+- **AC4** — A reviewer does not delete a test the plan's criteria name, or the loop restores it before its scoped-tests check. (Phase 2)
+- **AC5** — The step that removes untracked files is named, and a test fails before and passes after: a review run leaves an untracked file it did not create in place. (Phase 3)
+- **AC6** — The loop skips a finding as held only when it can name the holding session and the claim, and a skipped correct finding is returned as unfixed with that proof. (Phase 4)
+- **AC7** — A user ruling (skip or out-of-scope file list) given before or during /review reaches every coder and reviewer dispatch of that loop; the loop never edits a ruled-out file or deletes a file in the diff without a finding that names the deletion. (Phase 5)
+- **AC8** — The review loop never edits or deletes a sign-off line (who, when) or the ruling text beside it in a decision log, a deviations list or an evidence file. (Phase 6)
+- **AC9** — A reviewer's objection to a ruling is reported as a finding for the caller to route, with the entry named, and no fix is dispatched for it. (Phase 6)
+- **AC10** — The review loop runs the changed-file test commands the repo's CLAUDE.md names (or the ones the caller passes) after its last fix, and reports their counts. (Phase 7)
+- **AC11** — The last fix round gets a read by a reviewer, or the loop caps what an unreviewed last round can change. (Phase 7)
+- **AC12** — `review_fix.py --file` accepts a brief in the session scratchpad. (Phase 7)
+- **AC13** — On resume, the phase base comes from the commit before the phase's first commit, or the stop file records it before stopping; a `--base` override is accepted when it is an ancestor of the phase commits; merge commits from the integration branch are left out of the review diff. (Phase 8)
+- **AC14** — code_review_start accepts a base passed on resume, or names the flag that overrides the recorded base. (Phase 8)
+- **AC15** — code_wait never returns a packet from an earlier phase. (Phase 8)
+- **AC16** — A resume that adopts a plan impact puts the change into that round's fix-coder list before any test or reviewer runs, and a check fails the round if an adopted ruling produced no fix diff. (Phase 9)
+- **AC17** — A recorded standing ruling (quoted, dated, in the decision log) settles each criterion reword it covers, in the drift check and in the review's plan-impact routing; a cut, or a reword with no such ruling, still stops for the user. (Phase 10)
+- **AC18** — `bash tests/run.sh` passes.

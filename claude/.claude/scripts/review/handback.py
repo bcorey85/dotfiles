@@ -19,7 +19,10 @@
                                         through), and denies any call from an agent whose
                                         report is already stored. `ran` is the PostToolUse hook (matcher
                                         Agent): it records a `dispatch-ran` row for a review-loop dispatch whose
-                                        call ran. Any other argument does nothing.
+                                        call ran. Any other argument does nothing. Fails open on purpose: `dispatch` and
+                                        `ran` only record, and `handback`, the kind that denies, still lets the call
+                                        run on a crash. An import crash exits 1, and a crash inside the hook is
+                                        caught and exits 0; both let the call run.
 
 Importers use, among others, parse, validate, load, render, false_clean_reason, fixed_paths and
 unreviewed_fix_section; the hook (handle_hook, unchecked_code_reason) is in handback_hook.py. They read
@@ -29,10 +32,12 @@ scripted-loop hand-back (agent_id, ask_rows); `latest` keeps the last one after 
 packet's fixed, skipped_fp, findings_remaining and ask entries are all mappings. The store is keyed by the hook
 event's session_id, which is the value of CLAUDE_CODE_SESSION_ID inside a Bash call."""
 import json
+import os
 import pathlib
 import re
 import secrets
 import sys
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import reviewed_tree
@@ -56,29 +61,36 @@ LOGGER_TIMEOUT_SECONDS = 30
 # The status for a loop that stopped because the fix passes removed the change under review.
 FIX_REMOVED_CHANGE = "fix-removed-change"
 PLAN_IMPACT_STATUS = "plan-impact"
-STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, "setup-fault",
+SETUP_FAULT_STATUS = "setup-fault"
+INVALID_STATUS = "invalid"
+STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, SETUP_FAULT_STATUS,
             FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", DEFERRED)
+# The words after the count in the lines that say plan impacts hold the commit gate.
+PLAN_IMPACTS_WAIT_TEXT = "plan impact(s) wait for a ruling"
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
                "files_touched", "check_changed", "check_rewrote_edited", "check_created", "nit", "load_bearing_clean",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
-SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
+SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden"]
+# The `check_overridden` value of a run whose full check was the launch's `--test` commands.
+CHECK_OVERRIDDEN = "yes"
+LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
+             "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
              "plan_impacts", "no_code_ruling_broken"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes", "left_alone")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
-ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "findings_remaining": ("finding",),
-                   "ask": ("question",), "plan_impacts": ("text",), "no_code_ruling_broken": ("ruling", "file")}
+ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
+                   "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
+                   "no_code_ruling_broken": ("ruling", "file")}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
 STATUS_REQUIRES = {PLAN_IMPACT_STATUS: ("plan_impact", "empty"), "critical-blocker": ("blockers", "empty"),
-                   "setup-fault": ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
+                   SETUP_FAULT_STATUS: ("blockers", "empty"), FIX_REMOVED_CHANGE: ("blockers", "empty"),
                    CAP_REACHED: ("findings_remaining", "empty"),
                    DEFERRED: ("findings_remaining", "missing or empty")}
 BLOCKER_STATUSES = {status for status, (field, _) in STATUS_REQUIRES.items() if field == "blockers"}
@@ -342,6 +354,7 @@ def read_header(raw):
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "scoped_tests": raw.get("scoped_tests", "").strip(),
+              "check_overridden": raw.get("check_overridden", "").strip() == CHECK_OVERRIDDEN,
               "unrun_reviewer": raw.get("unrun_reviewer", "").strip(),
               "plan_impact": plan_impact, "plan_impact_cause": cause}
     return header, problems
@@ -371,9 +384,10 @@ def fill_fixed_finding(item):
 
 def normalize_plan_impact(item):
     """Fills the defaults of a plan impact entry: it changes a criterion, is not adopted, is not applied to the tree,
-    is not settled by an earlier ruling and has a plan cause unless it says otherwise. The flags read as booleans, so
-    `"false"` is false."""
-    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False), ("settled", False)):
+    is not settled by an earlier ruling, does not only reword a criterion and has a plan cause unless it says
+    otherwise. The flags read as booleans, so `"false"` is false."""
+    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False), ("settled", False),
+                          ("reword", False)):
         value = item.get(flag, default)
         item[flag] = value.strip().lower() == "true" if isinstance(value, str) else bool(value)
     item["cause"] = str(item.get("cause") or PLAN_CAUSE).strip().lower()
@@ -611,6 +625,11 @@ def no_code_ruling_lines(packet):
             for broken in packet["no_code_ruling_broken"]]
 
 
+def held_unfixed_text(entry):
+    """One held_unfixed entry as `<item> (<reason>)`: the finding that stays unfixed and the holder that proves why."""
+    return f"{one_line(entry['item'], None)} ({entry['reason']})"
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer. Fixed findings, nits
     and skipped false positives show as counts only."""
@@ -626,6 +645,9 @@ def render(packet, skill, sections=()):
                          "run as clean.")
     if packet["left_alone"]:
         lines.append("Left alone, read for another purpose: " + "; ".join(packet["left_alone"]))
+    if packet["held_unfixed"]:
+        lines.append("Unfixed, held by another session: " + "; ".join(held_unfixed_text(entry)
+                                                                      for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
     if packet["tool_fault"]:
@@ -667,15 +689,6 @@ def stored_packet(message):
         return load(message), None
     except PacketError as error:
         return None, str(error)
-
-
-def stored_held_plan_impacts(message):
-    """(the held plan impacts of a stored hand-back, the parse error or None). A message that is not a JSON packet has
-    none."""
-    packet, parse_error = stored_packet(message)
-    if packet is None:
-        return [], parse_error
-    return held_plan_impacts(packet), None
 
 
 def false_clean_reason(session_id):
@@ -723,13 +736,62 @@ def clean_handback_since(session, repo_top, since):
 def unruled_plan_impacts(seen):
     """The held plan impacts of the hand-back in a `latest` or `latest_for_repo` result that no ruling since settles:
     none when there is no hand-back, its packet does not parse, or a ruling came after it."""
+    return unruled_impacts_and_packet(seen)[0]
+
+
+def unruled_impacts_and_packet(seen):
+    """(unruled held plan impacts, packet) of the hand-back in a `latest` or `latest_for_repo` result, from one parse
+    of the stored message. The impacts are those unruled_plan_impacts describes; the packet is None with no
+    hand-back or a message that holds no readable packet."""
     row = seen["handback"]
     if row is None:
-        return []
-    held, _parse_error = stored_held_plan_impacts(row.get("message", ""))
+        return [], None
+    packet, _parse_error = stored_packet(row.get("message", ""))
+    if packet is None:
+        return [], None
+    held = held_plan_impacts(packet)
     if held and plan_ruled_since(row["session_id"], row):
+        return [], packet
+    return held, packet
+
+
+def session_unruled_plan_impacts(session_id, repo):
+    """The unruled held plan impacts of this session's latest hand-back in `repo`: none with no session id or no work
+    tree."""
+    if not session_id or not repo:
         return []
-    return held
+    return unruled_plan_impacts(latest_for_repo(session_id, repo))
+
+
+class HeldImpactHandBack(NamedTuple):
+    """The unruled held plan impacts and packet of a session's latest hand-back, and the hand-back's stored time
+    (None with no hand-back or no numeric time)."""
+    held: list
+    packet: dict | None
+    handed_back_at: float | None
+
+
+def current_session_held_impact_hand_back(directory):
+    """The HeldImpactHandBack of the session in CLAUDE_CODE_SESSION_ID and the work tree that holds `directory`: the
+    one place that reads the session id for a plan-impact lookup."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    repo = script_utils.work_tree_top(directory)
+    if not session_id or not repo:
+        return HeldImpactHandBack([], None, None)
+    seen = latest_for_repo(session_id, repo)
+    held, packet = unruled_impacts_and_packet(seen)
+    stored_at = (seen["handback"] or {}).get("ts")
+    handed_back_at = stored_at if isinstance(stored_at, (int, float)) else None
+    return HeldImpactHandBack(held, packet, handed_back_at)
+
+
+def adopt_settles(packet, held):
+    """True when an adopt ruling on the held plan impacts needs no re-dispatch: every impact's fix is already in the
+    tree and the packet leaves nothing else open (no blocker, remaining finding or closing note). A packet that is
+    None, or no held impact, never settles."""
+    if packet is None or not held:
+        return False
+    return all(impact["applied"] for impact in held) and not carried_findings(packet)
 
 
 def record_clean_review(session_id, committing_session=None):

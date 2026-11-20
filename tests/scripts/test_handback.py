@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import unittest.mock
 
@@ -106,6 +107,46 @@ class HandbackTestBase(unittest.TestCase):
         capped = json_packet(status="cap-reached", findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}],
                              full_check="passed", full_check_tree=tree)
         return repo, capped
+
+
+class SessionUnruledImpactsTest(HandbackTestBase):
+    HELD = types.MappingProxyType({
+        "text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer", "ac_change": True,
+        "cause": "plan", "adopted": False})
+
+    def plant_held_hand_back(self):
+        message = json_packet(ask=[], class_closure="n/a - fixed[] empty", plan_impacts=[dict(self.HELD)])
+        handback_store.record(SESSION, "dispatch", repo=str(self.tmp))
+        handback_store.record(SESSION, "handback", status="converged", message=message)
+
+    def test_a_held_impact_is_listed_until_a_plan_ruling_follows_the_hand_back(self):
+        self.plant_held_hand_back()
+
+        held = handback.session_unruled_plan_impacts(SESSION, str(self.tmp))
+        self.assertEqual([impact["text"] for impact in held], [self.HELD["text"]])
+
+        handback_store.record(SESSION, handback_store.PLAN_RULING, decision="keep")
+
+        self.assertEqual(handback.session_unruled_plan_impacts(SESSION, str(self.tmp)), [])
+
+    def test_no_session_id_or_no_repo_lists_nothing(self):
+        self.plant_held_hand_back()
+
+        self.assertEqual(handback.session_unruled_plan_impacts("", str(self.tmp)), [])
+        self.assertEqual(handback.session_unruled_plan_impacts(SESSION, ""), [])
+
+    def test_impacts_and_packet_come_from_one_hand_back_and_a_ruling_clears_only_the_impacts(self):
+        self.plant_held_hand_back()
+
+        held, packet = handback.unruled_impacts_and_packet(handback.latest_for_repo(SESSION, str(self.tmp)))
+        self.assertEqual([impact["text"] for impact in held], [self.HELD["text"]])
+        self.assertIsNotNone(packet)
+
+        handback_store.record(SESSION, handback_store.PLAN_RULING, decision="keep")
+
+        held, packet = handback.unruled_impacts_and_packet(handback.latest_for_repo(SESSION, str(self.tmp)))
+        self.assertEqual(held, [])
+        self.assertIsNotNone(packet)
 
 
 class RuledImpactStoreTest(HandbackTestBase):
@@ -430,10 +471,10 @@ class JsonPacketTest(HandbackTestBase):
         packet = handback.load(json_packet(plan_impacts=impacts))
 
         self.assertEqual({"text": "PLAN-IMPACT: a column", "gate": "code-reviewer", "ac_change": True,
-                          "cause": "plan", "adopted": False, "applied": False, "settled": False},
+                          "cause": "plan", "adopted": False, "applied": False, "settled": False, "reword": False},
                          packet["plan_impacts"][0])
         self.assertEqual({"text": "PLAN-IMPACT: x", "gate": "smell-reviewer", "ac_change": False,
-                          "cause": "toolkit", "adopted": True, "applied": False, "settled": False},
+                          "cause": "toolkit", "adopted": True, "applied": False, "settled": False, "reword": False},
                          packet["plan_impacts"][1])
         self.assertEqual([packet["plan_impacts"][0]], handback.held_plan_impacts(packet))
 
@@ -790,6 +831,18 @@ class RenderTest(HandbackTestBase):
         rendered = handback.render(packet, "fix", [("Aikido replies", ["- a.ts:1: Fixed"])])
         self.assertLess(rendered.index("### Aikido replies"), rendered.index("Closing note"))
 
+    def test_a_finding_held_by_another_session_prints_with_its_holder_and_a_clean_status_stays_clean(self):
+        held = {"item": "a.py:3 unused import", "reason": "held by lane-b: dirty at the run start"}
+        packet = handback.load(packet_text(CONVERGED_FIELDS, held_unfixed=[held]))
+        rendered = handback.render(packet, "review")
+        self.assertIn("Unfixed, held by another session: a.py:3 unused import (held by lane-b: dirty at the run start)",
+                      rendered)
+        self.assertIn(packet["status"], handback.CLEAN_STATUSES)
+
+    def test_a_held_unfixed_entry_with_no_item_is_a_packet_error(self):
+        with self.assertRaises(handback.PacketError):
+            handback.load(packet_text(CONVERGED_FIELDS, held_unfixed=[{"reason": "r"}]))
+
     def test_fixed_findings_show_as_a_count_and_never_as_a_list(self):
         small_fix = {"finding": "small", "file_line": "a.ts:1", "blocker": False}
         text = packet_text(CONVERGED_FIELDS, fixed=[small_fix, *CONVERGED_FIELDS["fixed"]])
@@ -1002,6 +1055,39 @@ class StoreTest(HandbackTestBase):
         handback_store.record(SESSION, "handback", status="converged",
                               message=json_packet(plan_impacts=[adopted, held]))
         self.assertIn("1 plan impact(s) that await a ruling", handback.false_clean_reason(SESSION))
+
+    def test_a_reword_adopted_under_a_standing_ruling_clears_the_commit_gate(self):
+        import contextlib
+        import io
+
+        import review_fix_plan_impacts
+        reword = {"text": "PLAN-IMPACT: AC1 reworded", "ac_change": True, "cause": "plan", "adopted": False,
+                  "reword": True}
+        handback_store.record(SESSION, "dispatch")
+        handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[reword]))
+        self.assertIn("await a ruling", handback.false_clean_reason(SESSION))
+        plan = self.tmp / "plan.md"
+        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "rewords are fine" '
+                        "covers: rewords\n")
+        packet = {"plan_impacts": [{"settled": False, "applied": False, **reword}], "iter": 1, "spec_iter": None}
+
+        with (unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": SESSION}),
+              contextlib.redirect_stdout(io.StringIO()) as printed):
+            review_fix_plan_impacts.present_plan_impacts(packet, {}, plan)
+
+        self.assertIsNone(handback.false_clean_reason(SESSION))
+        refusal, _repo = handback.record_clean_review(SESSION)
+        self.assertIsNone(refusal)
+        self.assertNotIn("Ruled by Pat", printed.getvalue())
+        self.assertIn("Ruled by the session, not the user", printed.getvalue())
+
+    def test_a_packet_impact_without_reword_loads_false_and_one_with_it_keeps_it(self):
+        impact = {"text": "PLAN-IMPACT: AC1", "ac_change": True, "cause": "plan"}
+        packet = json.loads(json_packet(plan_impacts=[impact, {**impact, "text": "other", "reword": True}]))
+        for item in packet["plan_impacts"]:
+            handback.normalize_plan_impact(item)
+
+        self.assertEqual([item["reword"] for item in packet["plan_impacts"]], [False, True])
 
     def test_a_ruling_from_an_earlier_hand_back_does_not_clear_a_later_held_plan_impact(self):
         held = {"text": "PLAN-IMPACT: a column", "ac_change": True, "cause": "plan", "adopted": False}

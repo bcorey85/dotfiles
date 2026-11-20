@@ -1,12 +1,15 @@
 """review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
 a coder's edit to an approval-only file (it files an ask), as a mixin for `LoopRun`. The host class holds asks,
-plan_impacts and resolved_texts, and provides `add_ask`."""
-from pathlib import PurePosixPath
+plan_impacts, resolved_texts, repo and plan (the plan's path in repo, or ""), and provides `add_ask`."""
+from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 import coder_report
 import handback_store
 import plan_format
+import review_loop_ruled_out
 import script_utils
+import standing_rulings
 from approval_asks_store import approval_change, read_approval_paths, write_approval_paths
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
@@ -79,7 +82,98 @@ def broken_ruling_finding(ruled, other_paths, path, every_finding_ruled, repo):
     return named[0] if named else None
 
 
+NOT_APPLIED_BLOCKER = "The coder did not apply the adopted plan change ({why}): {ruling}"
+SKIPPED_WHY = "it skipped the finding"
+NO_DIFF_WHY = "the pass left no fix diff"
+NO_FILE_DIFF_WHY = "the pass left no fix diff in the finding's file"
+HELD_WHY = "its file is held by another session"
+RULED_OUT_WHY = "its file is ruled out of the review"
+
+
+class Unapplied(NamedTuple):
+    finding: object
+    blocker: str
+
+
+def adopted_rulings(rows):
+    """{finding text: AdoptedRuling} of the rows `review_loop_prompt_file.header_adopted` reads."""
+    fields = handback_store.AdoptedRuling._fields
+    return {text: handback_store.AdoptedRuling(**{field: row[field] for field in fields})
+            for text, row in rows.items()}
+
+
+def not_applied_why(finding, number, skips, changed, repo):
+    """Why the fix pass left the adopted `finding` unapplied, None when it applied it. It is unapplied when the coder
+    skipped it (`number` is in `skips`), left no diff in the finding's file, or, for a finding with no path, left no
+    diff at all."""
+    if number in skips:
+        return SKIPPED_WHY
+    if not finding.path:
+        return None if changed else NO_DIFF_WHY
+    if any(names_changed_path(finding.path, path, repo) for path in changed):
+        return None
+    return NO_FILE_DIFF_WHY
+
+
+def unapplied_adopted(findings, adopted, skips, changed, repo):
+    """The Unapplied (finding, blocker) of each adopted finding (a text in `adopted`) of a fix pass that the coder
+    left unapplied (see `not_applied_why`). Each blocker names the ruling: the marker's who and when, then the
+    change."""
+    unapplied = []
+    for number, finding in enumerate(findings, 1):
+        if finding.text not in adopted:
+            continue
+        why = not_applied_why(finding, number, skips, changed, repo)
+        if why is None:
+            continue
+        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        unapplied.append(Unapplied(finding, blocker))
+    return unapplied
+
+
+def withheld_adopted(findings, adopted, kept, held):
+    """The Unapplied of each adopted finding among `findings` that the loop withheld from the coder: it is not in
+    `kept`; it sits on a held file when it is in `held`, else on a ruled-out file."""
+    withheld = []
+    for finding in findings:
+        if finding.text not in adopted or finding in kept:
+            continue
+        why = HELD_WHY if finding in held else RULED_OUT_WHY
+        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        withheld.append(Unapplied(finding, blocker))
+    return withheld
+
+
+def prior_issue_entries(round_findings, skips, put_back_findings):
+    """The round's findings as the next reviewers' prior issues: fixed, skipped with the coder's reason, or partial
+    when the loop put the file back."""
+    entries = []
+    for number, item in enumerate(round_findings, 1):
+        entry = {"issue": item.text, "status": "fixed", "file": item.path or "unknown"}
+        if number in skips:
+            entry["status"] = "skipped"
+            entry["reason"] = skips[number]
+        elif item in put_back_findings:
+            entry["status"] = "partial"
+            entry["reason"] = "the loop put the file back to keep a recorded ruling"
+        entries.append(entry)
+    return entries
+
+
 class RuledFindings:
+    def unrecord_ruled_out(self, withheld):
+        """Takes each withheld finding out of skipped_fp: it stays open, so the packet carries it once. The host holds
+        skipped_fp and given_skipped."""
+        withheld_findings = [item.finding for item in withheld]
+        kept_entries = []
+        for entry in self.skipped_fp:
+            ruled_out = entry["reason"] == review_loop_ruled_out.RULED_OUT_REASON
+            if ruled_out and entry["item"] in withheld_findings:
+                self.given_skipped -= 1
+                continue
+            kept_entries.append(entry)
+        self.skipped_fp = kept_entries
+
     def init_ruled_state(self):
         # a location-and-note line (`ruling_line`) per finding ruled no code change, for the reviewer prompt
         self.no_code_rulings = []
@@ -96,6 +190,8 @@ class RuledFindings:
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
+        self.adopted = {}  # finding text -> the AdoptedRuling of each finding whose plan change a ruling adopted
+        self.session_id = ""  # the session whose store holds the rulings; an applied ruling is recorded there
 
     @property
     def ruled_texts(self):
@@ -165,10 +261,11 @@ class RuledFindings:
         return True
 
     def record_plan_impact(self, impact):
-        """Adds one plan impact ({text, gate, ac_change, cause, adopted, applied, settled}). The same text again, from a
-        later round or a second reviewer, stays one. `applied` is True when the coder's edits for it are already in the
-        tree. `settled` (default False) marks an impact an earlier ruling covers: it is adopted, never printed, and
-        logs no deviation."""
+        """Adds one plan impact ({text, gate, ac_change, cause, adopted, applied, settled, reword}). The same text
+        again, from a later round or a second reviewer, stays one. `applied` is True when the coder's edits for it
+        are already in the tree. `reword` is True for an impact that names a criterion and says `kind: reword`: only
+        the criterion's words change, so a standing ruling can cover it. `settled` (default False) marks an impact
+        an earlier ruling covers: it is adopted, never printed, and logs no deviation."""
         if any(near_title(entry["text"], impact["text"]) for entry in self.plan_impacts):
             return
         self.plan_impacts.append({"settled": False, **impact})
@@ -177,7 +274,9 @@ class RuledFindings:
         """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
         acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
         nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
-        ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above."""
+        ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above. A reword of a
+        criterion is a plain fix too, adopted and applied, when the loop's plan holds a standing ruling that covers
+        rewords."""
         to_coder, ruling_held = [], []
         for item in items:
             if ruled_plan_impact(item.text, self.resolved_texts, self.ruled_texts):
@@ -185,10 +284,38 @@ class RuledFindings:
                 continue
 
             ac_change = plan_format.changes_acceptance_criteria(item.text)
+            reword = standing_rulings.impact_rewords_criterion(item.text)
+            under_standing_ruling = reword and self.standing_reword_ruling() is not None
+            adopted = not ac_change or under_standing_ruling
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
-                                     "cause": plan_format.PLAN_CAUSE, "adopted": not ac_change, "applied": False})
-            (ruling_held if ac_change else to_coder).append(item)
+                                     "cause": plan_format.PLAN_CAUSE, "adopted": adopted,
+                                     "applied": False, "reword": reword})
+            (ruling_held if ac_change and not under_standing_ruling else to_coder).append(item)
         return to_coder, ruling_held
+
+    def mark_standing_rewords_applied(self, changed):
+        """After a coder pass: the reword impacts adopted under a standing ruling count as applied when the pass
+        changed the plan's acceptance-criteria file or the plan file. Any other change leaves them unapplied."""
+        if not self.plan:
+            return
+        plan_file = PurePosixPath(self.plan)
+        reword_files = {plan_file.as_posix(), plan_file.with_name(plan_format.CRITERIA_FILE_NAME).as_posix()}
+        if not reword_files.intersection(changed):
+            return
+        for impact in self.plan_impacts:
+            if impact["adopted"] and impact["reword"] and impact["ac_change"] and not impact["settled"]:
+                impact["applied"] = True
+
+    def standing_reword_ruling(self):
+        """The standing ruling in the loop's plan that covers rewords, or None with no plan on disk or no such ruling.
+        A standing ruling line that does not parse raises PlanFormatError (`file:line:` and the expected form); the
+        loop stops on it."""
+        if not self.plan:
+            return None
+        plan_path = Path(self.repo) / self.plan
+        if not plan_path.is_file():
+            return None
+        return standing_rulings.reword_ruling(plan_path)
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
@@ -201,7 +328,8 @@ class RuledFindings:
         settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
         adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
         self.record_plan_impact({"text": text, "gate": CODER_GATE, "ac_change": ac_change, "cause": cause,
-                                 "adopted": adopted, "applied": bool(changed), "settled": settled})
+                                 "adopted": adopted, "applied": bool(changed), "settled": settled,
+                                 "reword": standing_rulings.impact_rewords_criterion(text)})
         return not adopted and cause != plan_format.TOOLKIT_CAUSE
 
     def ask_for_approval_only_edits(self, changed, findings):
@@ -305,8 +433,39 @@ class RuledFindings:
             if entry not in self.no_code_broken:
                 self.no_code_broken.append(entry)
 
+    def stop_on_unapplied(self, unapplied):
+        """Stops the run as a critical blocker, which plans no reviewer, naming each of the `unapplied` adopted
+        findings (see `Unapplied`), and keeps them open. False, with no stop, when there are none."""
+        if not unapplied:
+            return False
+        self.stop("critical-blocker", [item.blocker for item in unapplied])
+        self.keep_open([item.finding for item in unapplied])
+        return True
+
+    def settle_adopted_after_pass(self, findings, skips, changed):
+        """After the fix-first pass on `findings`: (the Unapplied of each adopted ruling the pass left unapplied, the
+        1-based numbers of those findings, `skips` without them). The applied findings are recorded as applied. An
+        unapplied adopted finding stays open: it is no skipped false positive and no fix."""
+        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo)
+        unapplied_findings = [item.finding for item in unapplied]
+        # A finding the sign-off put-back undid was not applied, so it is not recorded as applied.
+        self.record_applied_adopted(self.not_put_back(item for item in findings if item not in unapplied_findings))
+        unapplied_numbers = {number for number, item in enumerate(findings, 1) if item in unapplied_findings}
+        kept_skips = {number: line for number, line in skips.items() if number not in unapplied_numbers}
+        return unapplied, unapplied_numbers, kept_skips
+
+    def record_applied_adopted(self, findings):
+        """Records each adopted finding of an applied fix-first pass as applied in the session's store, so a later fix
+        run of the repo is not handed its ruling again."""
+        rows_repo = handback_store.ruled_rows_repo(self.repo)
+        for finding in findings:
+            ruling = self.adopted.get(finding.text)
+            if ruling is not None:
+                handback_store.record_applied_ruling(self.session_id, ruling, rows_repo)
+
     def issue_text(self, finding):
-        """The finding's text for the coder's issue list, marked when the user accepted the finding."""
-        if finding.text not in self.user_ruled:
+        """The finding's text for the coder's issue list, marked when the user accepted the finding. An adopted
+        finding carries its own mark."""
+        if finding.text in self.adopted or finding.text not in self.user_ruled:
             return finding.text
         return user_ruled_issue(finding.text, self.user_ruled_at)

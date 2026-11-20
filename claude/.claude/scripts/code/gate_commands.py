@@ -227,6 +227,22 @@ def ruff_check_command(repo_dir, runner):
     return shlex.join([*ruff_runner, "ruff", "check"])
 
 
+def runner_script_commands(repo_dir, python_paths):
+    # A repo with no Python test config but a `tests/<runner script>` that takes test file names from
+    # `tests/scripts/` gets one command naming the changed test files there, or none when no such file changed.
+    runner = repo_dir / "tests" / check_scope.TEST_RUNNER_SCRIPT
+    if not runner.is_file():
+        return []
+
+    names = [pathlib.PurePosixPath(path).name for path in python_paths
+             if pathlib.PurePosixPath(path).parent == pathlib.PurePosixPath("tests/scripts")
+             and is_runnable_test_file(path)]
+    if not names:
+        return []
+
+    return [shlex.join(["python3", f"tests/{check_scope.TEST_RUNNER_SCRIPT}", *names])]
+
+
 def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, phase_lists_pytest=False, *,
                     derives_tests):
     # Tests run through the phase's listed runner, else the repo's lock file or virtualenv, else python3. Ruff runs
@@ -237,8 +253,11 @@ def python_commands(repo_dir, paths, listed_runner=None, listed_django=None, pha
     python_paths = [p for p in paths if p.endswith(".py")]
     manage_script = nearest_manage_script(repo_dir, python_paths)
     has_config = any((repo_dir / name).is_file() for name in ("pyproject.toml", "pytest.ini", "setup.cfg", "manage.py"))
-    if not python_paths or not (has_config or manage_script):
+    if not python_paths:
         return []
+
+    if not (has_config or manage_script):
+        return runner_script_commands(repo_dir, python_paths) if derives_tests else []
 
     django_options = None
     if listed_django:
@@ -430,14 +449,18 @@ def derive_gate_commands(repo_dir, phase_section):
     # Listed cargo commands replace the derived ones; when none of them runs clippy, a clippy scoped to the named
     # files' targets runs before them.
     paths = plan_format.named_paths(phase_section, repo_dir)
+    listed = listed_commands(repo_dir, phase_section)
+    return derive_gate_commands_for(repo_dir, paths, listed)
 
+
+def derive_gate_commands_for(repo_dir, paths, listed):
+    # The gate commands for the named `paths` and the phase's `listed` commands, by the rules of derive_gate_commands.
     by_package = {}
     for path in paths:
         package_dir = nearest_directory_with(repo_dir, path, "package.json")
         if package_dir is not None:
             by_package.setdefault(package_dir, []).append(path)
 
-    listed = listed_commands(repo_dir, phase_section)
     listed_tests = [command for command in listed if takes_listed_test_command(command, repo_dir)]
     listed_families = set().union(*(test_command_families(command) for command in listed_tests))
     derives_js_tests = not listed_families & {"js", UNKNOWN_FAMILY}

@@ -13,7 +13,6 @@ import os
 import re
 import shutil
 import sys
-import tempfile
 import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -23,12 +22,6 @@ import session_registry
 
 MAX_AGE_HOURS = 24
 SESSION_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-
-
-def temp_root():
-    """The folder that holds the per-project session folders."""
-    base = os.environ.get("CLAUDE_CODE_TMPDIR") or tempfile.gettempdir()
-    return os.path.join(base, f"claude-{os.getuid()}")
 
 
 def current_session_id():
@@ -80,7 +73,7 @@ def stale_session_folders(root, keep_ids, now):
 def main():
     # Fail open: a sweep error never blocks the session start.
     try:
-        root = temp_root()
+        root = hook_input.claude_code_temp_root()
         if not os.path.isdir(root):
             return 0
         keep_ids = live_session_ids()

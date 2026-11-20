@@ -4,6 +4,8 @@ code-fork Write, so it must stay free of anything slow."""
 REVIEW_FIX_FOLDER = "review-fix"
 STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
+# The folder under the review-fix state folder that holds the whole text of a long blocker line.
+BLOCKER_TEXT_FOLDER = "blocker-text"
 # The paths of the approval-only files with an open user-only ask, a JSON object of each path to the blob id its edit
 # is measured against, which the next review loop run of the repo reloads and rewrites with the paths it files again,
 # and each ruling on a user-only ask, accepted or rejected, removes its path. Kept beside the state file.

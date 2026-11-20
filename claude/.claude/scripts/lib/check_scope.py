@@ -14,6 +14,7 @@ import re
 import shlex
 from collections import namedtuple
 
+import source_paths
 from shell_command import (
     and_steps_or_whole,
     command_after_wrappers,
@@ -144,6 +145,8 @@ WHOLE_PACKAGE_PATHS = {".", "./"}
 
 # What runs tests. A word that is one of these runs tests wherever it stands in a step.
 TEST_RUNNER_WORDS = ("pytest", "vitest", "jest", "mocha")
+# A repo's own runner script, which takes the names of the test files to run (`python3 tests/parallel_tests.py x.py`).
+TEST_RUNNER_SCRIPT = "parallel_tests.py"
 # The wide text reading of a test runner: a runner word, `cargo test`, `go test`, `bun test`, or a package manager
 # with a `test` word anywhere after it. A search or print step that names a runner matches it too.
 TEST_RUNNER = re.compile(r"\b(?:" + "|".join(TEST_RUNNER_WORDS) + r"|cargo\s+test|go\s+test|bun\s+test"
@@ -269,6 +272,9 @@ def direct_check_scope(words, cwd=None):
             return check_run_scope(words, prefix, cwd)
     if names_unittest_module(words):
         return "targeted"
+    runner_script_words = runner_script_arguments(words)
+    if runner_script_words is not None:
+        return "targeted" if any(not word.startswith("-") for word in runner_script_words) else "whole"
     return "targeted" if runner_names_part_of_suite(words) else "none"
 
 
@@ -602,6 +608,22 @@ def runs_tests(command):
     return any(step_runs_tests(without_assignments(words)) for words in simple_command_list)
 
 
+NODE_SEPARATOR = "::"
+
+
+def named_test_targets(command):
+    """The words of the command's test-running steps that name a test file or a `file::name` node id, in order."""
+    targets = []
+    for words in step_words(command):
+        if not step_runs_tests(without_assignments(words)):
+            continue
+        for word in words:
+            path = word.split(NODE_SEPARATOR, 1)[0]
+            if not word.startswith("-") and source_paths.is_test_path(path):
+                targets.append(word)
+    return targets
+
+
 def step_runs_tests(words):
     # True when one step (assignments already removed) runs tests, by a runner word, a `-m unittest` module run or a
     # script runner's test word.
@@ -609,7 +631,24 @@ def step_runs_tests(words):
         return False
 
     return (any(word in TEST_RUNNER_WORDS for word in words) or contains_word_run(words, UNITTEST_MODULE_WORDS)
-            or step_runs_test_script(words))
+            or step_runs_test_script(words) or step_runs_test_runner_script(words))
+
+
+def runner_script_arguments(words):
+    # The words after the repo's runner script when a python program runs it (`python3 tests/parallel_tests.py x.py`),
+    # else None.
+    if len(words) < 2 or not PYTHON_PROGRAM.fullmatch(os.path.basename(words[0])):
+        return None
+
+    if os.path.basename(words[1]) != TEST_RUNNER_SCRIPT:
+        return None
+
+    return words[2:]
+
+
+def step_runs_test_runner_script(words):
+    # True when a python program runs the repo's runner script.
+    return runner_script_arguments(words) is not None
 
 
 def step_installs_or_looks_up(words):

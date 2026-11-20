@@ -9,6 +9,7 @@ from typing import NamedTuple
 
 import handback
 import handback_store
+from finding_record import parse_finding
 from handback_store import NO_RULINGS
 from review_asks import USER_RULED_KEY
 from review_loop_findings import is_plan_item_text, near_title, ruled_plan_impact
@@ -97,23 +98,79 @@ def settled_impact_numbers(findings, accepted_numbers, rulings):
             if settled_by_recorded_ruling(text, rulings, number in accepted_numbers)]
 
 
+ADOPTED_MARK = "[plan change adopted by "
+
+
+def adopted_issue(text, ruling):
+    """A finding whose plan change a ruling adopted, marked with who ruled and when. The marker comes first, so a
+    cut of a long issue never removes it."""
+    return f"{ADOPTED_MARK}{ruling.owner}, ruled {ruling.ruled_at}] {text}"
+
+
+def adopted_ruling_for(text, adopted, accepted=False):
+    """The first of the `adopted` rulings (handback_store.AdoptedRuling) that settles the plan-change finding `text`,
+    by the same match a keep ruling uses (see `settled_by_recorded_ruling`), None when none does. A finding that is
+    the ruling's exact text or a near title of it matches whether or not it was accepted, so the ruling is never
+    appended beside it as a second finding. The finding's title, without its `path:line [class]` lead, is compared
+    to the ruling text's title too, since the lead would keep a finding that is the ruling text from reading as
+    near it. The titles must be equal: a near title would join two impacts that differ only in a criterion id."""
+    title = parse_finding(text).title
+    for ruling in adopted:
+        finding_texts = [ruling.finding_text] if ruling.finding_text else []
+        one_ruling = handback_store.Rulings([ruling.text], finding_texts)
+        if is_plan_item_text(text) and parse_finding(ruling.text).title == title:
+            return ruling
+        if settled_by_recorded_ruling(text, one_ruling, True):
+            return ruling
+        if not accepted and settled_by_recorded_ruling(text, one_ruling, False):
+            return ruling
+    return None
+
+
 class LeftOut(NamedTuple):
     kept: list
     user_ruled_numbers: list
     session_ruled_numbers: list
     dropped: list
+    adopted: dict  # 1-based number of each adopted finding in `kept` -> the AdoptedRuling that marked it
+
+
+def ruling_key(ruling):
+    """What makes two adopted rulings the same change: the impact text and the finding text."""
+    return (ruling.text, ruling.finding_text)
 
 
 def leave_out_ruled_impacts(findings, user_ruled_numbers, rulings=NO_RULINGS, session_ruled_numbers=()):
-    """The findings without the plan-change findings a ruling settled, the user-ruled and session-ruled numbers
-    renumbered to follow, and the dropped findings. The fix coder would skip such a finding for want of a sign-off
-    the ruling already gave."""
+    """The findings without the plan-change findings a ruling that keeps the plan settled, the user-ruled and
+    session-ruled numbers renumbered to follow, and the dropped findings. The fix coder would skip such a finding for
+    want of a sign-off the ruling already gave.
+
+    A finding a ruling that adopts the change settled stays, marked (see `adopted_issue`) and counted as user-ruled,
+    and an adopted ruling with no finding among `findings` adds its text as a last finding."""
     accepted_numbers = [*user_ruled_numbers, *session_ruled_numbers]
-    dropped_numbers = settled_impact_numbers(findings, accepted_numbers, rulings)
+    adopted_for = {number: adopted_ruling_for(text, rulings.adopted, number in accepted_numbers)
+                   for number, text in enumerate(findings, 1)}
+    adopted_numbers = [number for number, ruling in adopted_for.items() if ruling is not None]
+    kept_only_numbers = settled_impact_numbers(findings, accepted_numbers, rulings)
+    dropped_numbers = [number for number in kept_only_numbers if number not in adopted_numbers]
     dropped = [findings[number - 1] for number in dropped_numbers]
-    kept, kept_user_numbers = drop_numbered(findings, dropped_numbers, user_ruled_numbers)
-    _, kept_session_numbers = drop_numbered(findings, dropped_numbers, session_ruled_numbers)
-    return LeftOut(kept, kept_user_numbers, kept_session_numbers, dropped)
+
+    marked = [adopted_issue(text, adopted_for[number]) if number in adopted_numbers else text
+              for number, text in enumerate(findings, 1)]
+    kept, kept_user_numbers = drop_numbered(marked, dropped_numbers, [*user_ruled_numbers, *adopted_numbers])
+    _, kept_session_numbers = drop_numbered(marked, dropped_numbers, session_ruled_numbers)
+
+    _, kept_adopted_numbers = drop_numbered(marked, dropped_numbers, adopted_numbers)
+    kept_adopted = dict(zip(kept_adopted_numbers, [adopted_for[number] for number in adopted_numbers], strict=True))
+
+    handled_keys = {ruling_key(ruling) for ruling in kept_adopted.values()}
+    for ruling in rulings.adopted:
+        if ruling_key(ruling) in handled_keys:
+            continue
+        kept.append(adopted_issue(ruling.text, ruling))
+        kept_user_numbers.append(len(kept))
+        kept_adopted[len(kept)] = ruling
+    return LeftOut(kept, sorted(set(kept_user_numbers)), kept_session_numbers, dropped, kept_adopted)
 
 
 def is_user_ruled_entry(entry, user_ruled, rulings=NO_RULINGS):

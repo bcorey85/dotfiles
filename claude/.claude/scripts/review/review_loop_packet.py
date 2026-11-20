@@ -17,7 +17,7 @@ import script_utils
 from ask_outcome_words import USER_ONLY_KEY
 from review_loop_findings import UNLOCATED, ask_parts
 
-PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied", "settled")
+PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied", "settled", "reword")
 
 
 def located(finding):
@@ -26,7 +26,8 @@ def located(finding):
 
 
 def skipped_entry(entry):
-    """The packet's skipped_fp entry. `given` marks a skip of a finding the caller gave the fix coder."""
+    """A skipped_fp or held_unfixed entry of the packet. `given` marks a skip of a finding the caller gave the fix
+    coder."""
     packet_entry = {"item": entry["item"].text, "reason": entry["reason"], "file_line": located(entry["item"]),
                     "class": entry["item"].finding_class}
     if entry.get("given"):
@@ -70,6 +71,7 @@ def packet_message(outcome):
         "review_round": outcome["review_round"],
         "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
         "skipped_fp": [skipped_entry(entry) for entry in outcome["skipped_fp"]],
+        "held_unfixed": [skipped_entry(entry) for entry in outcome["held_unfixed"]],
         "blockers": outcome["blockers"],
         "findings_remaining": [{"disposition": "fix", **finding_entry(finding)}
                                for finding in outcome["open_fixes"]],
@@ -98,8 +100,9 @@ def packet_message(outcome):
 
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
-    "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "blockers": [], "open_fixes": [],
-    "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {}, "ask_rows": [],
+    "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "held_unfixed": [], "blockers": [],
+    "open_fixes": [], "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {},
+    "ask_rows": [],
     "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",
     "full_check_summaries": [],
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],

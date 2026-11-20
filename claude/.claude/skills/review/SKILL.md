@@ -23,6 +23,8 @@ Read `~/.claude/skills/_shared/review-fork-run.md` whole first and follow it. **
    - a `handoff:` block (schema: `~/.claude/skills/_shared/handoff-block.md`): write it verbatim to `<run folder>/review-handoff.txt`, then `--handoff <that file>`; `--lane <lane>` when it names one
    - `base=<ref>`: `--base <ref>`
    - a file path, with no handoff block: `--file <path>`, once per file
+   - a brief file in the session scratchpad, with or without a handoff block: `--file <path>` (read as a brief for every reviewer)
+   - each file the user ruled out of scope: `--ruled-out <path>`
    - `+fast`: `--fast`; `+deep`: `--deep`; `iter=N`: `--iter N`
    - `--repo <absolute path>` when the work lives outside your cwd's repo
 

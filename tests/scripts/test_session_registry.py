@@ -23,6 +23,11 @@ class SessionRegistryTest(unittest.TestCase):
         config_env.start()
         self.addCleanup(config_env.stop)
 
+    def test_a_holder_is_labelled_by_name_then_session_id_then_pid(self):
+        self.assertEqual(session_registry.holder_label({"name": "n", "sessionId": "s", "pid": 1}), "n")
+        self.assertEqual(session_registry.holder_label({"sessionId": "s", "pid": 1}), "s")
+        self.assertEqual(session_registry.holder_label({"pid": 1}), "pid 1")
+
     def register(self, name, session_id, pid, file_name):
         row = {"pid": pid, "name": name, "sessionId": session_id}
         (self.home / "sessions" / file_name).write_text(json.dumps(row))
@@ -36,12 +41,38 @@ class SessionRegistryTest(unittest.TestCase):
                 self.assertEqual(session_registry.sessions_dir(), pathlib.Path(fake_home) / ".claude" / "sessions")
                 self.assertEqual(session_registry.projects_dir(), pathlib.Path(fake_home) / ".claude" / "projects")
 
+    def test_a_row_with_no_name_session_id_or_pid_still_gets_a_label(self):
+        self.assertEqual(session_registry.holder_label({}), "unknown session")
+
     def test_a_session_display_name_comes_from_the_live_row_only(self):
         self.register("lane-one", "sid-live", os.getpid(), "1.json")
         self.register("lane-dead", "sid-dead", 10**30, "2.json")
         self.assertEqual("lane-one", session_registry.session_display_name("sid-live"))
         self.assertIsNone(session_registry.session_display_name("sid-dead"))
         self.assertIsNone(session_registry.session_display_name("sid-none"))
+
+    def register_in(self, session_id, cwd, file_name, pid=None):
+        row = {"pid": pid or os.getpid(), "name": "lane", "sessionId": session_id, "cwd": cwd}
+        (self.home / "sessions" / file_name).write_text(json.dumps(row))
+
+    def test_another_live_session_inside_the_folder_is_found_and_the_own_session_is_not(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            (repo / "sub").mkdir()
+            self.register_in("own", str(repo), "1.json")
+            self.assertIsNone(session_registry.other_live_session_in(repo, "own"))
+            self.register_in("other", str(repo / "sub"), "2.json")
+            found = session_registry.other_live_session_in(repo, "own")
+            self.assertEqual("other", found["sessionId"])
+
+    def test_a_session_outside_the_folder_a_dead_one_and_a_row_with_no_cwd_are_no_match(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            self.register_in("elsewhere", str(repo.parent), "1.json")
+            self.register_in("dead", str(repo), "2.json", pid=10**30)
+            (self.home / "sessions" / "3.json").write_text(
+                json.dumps({"pid": os.getpid(), "sessionId": "no-cwd", "name": "x"}))
+            self.assertIsNone(session_registry.other_live_session_in(repo, "own"))
 
     def test_a_live_row_with_an_empty_name_gives_no_display_name(self):
         self.register("", "sid-unnamed", os.getpid(), "3.json")

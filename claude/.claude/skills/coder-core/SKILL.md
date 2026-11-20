@@ -89,7 +89,10 @@ PLAN-IMPACT:
   changes: <what in the plan this invalidates and the options you see>
   acceptance_criteria: <none, or the criteria this changes>
   cause: <plan, or toolkit>
+  kind: <optional: reword, cut, or narrow>
 ```
+
+Add `kind: reword` only when the change keeps the criterion and changes only its words. Write `cut` or `narrow` otherwise, or leave the line out.
 
 Write `acceptance_criteria: none` only when every acceptance criterion holds either way. Then the plan change is adopted and logged under Plan Deviations without asking the user. Any other value asks the user.
 

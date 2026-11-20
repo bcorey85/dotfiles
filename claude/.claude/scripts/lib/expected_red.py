@@ -140,6 +140,21 @@ def later_phase_paths(plan_lines, phase_id):
     return sorted(later_paths - own_paths)
 
 
+def earlier_phase_paths(plan_lines, phase_id):
+    """Every backticked path (section_paths) of every phase section before this one in Phase Status, sorted: files an
+    earlier phase of the plan names, which stay the run's own. A plan written as numbered steps names its files in
+    backticks, with no `**File**:` entry."""
+    plan = plan_format.parse_plan_with_closing_phases(plan_lines)
+    order = [entry["number"] for entry in plan["entries"]]
+    if str(phase_id) not in order:
+        return []
+
+    earlier_paths = set()
+    for earlier_id in order[:order.index(str(phase_id))]:
+        earlier_paths |= section_paths(plan_lines, plan["sections"].get(earlier_id))
+    return sorted(earlier_paths)
+
+
 def section_paths(plan_lines, section):
     # Every backticked path of the section, a bare `name.ext` included, so a root file a later phase also names stays
     # this phase's own.

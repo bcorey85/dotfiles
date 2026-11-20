@@ -388,9 +388,7 @@ def matches_recorded_base(session, repo_dir, top):
         return False
 
     # Fail-closed: a non-ancestor, an unknown base commit or git failing counts as not reviewed.
-    is_ancestor = script_utils.git_output(top, "merge-base", "--is-ancestor", base, "HEAD",
-                                          timeout=GIT_TIMEOUT_SECONDS)
-    if is_ancestor is None:
+    if not script_utils.is_ancestor(top, base, "HEAD", timeout=GIT_TIMEOUT_SECONDS):
         return False
 
     against_base = reviewed_fingerprint(repo_dir, base=base)

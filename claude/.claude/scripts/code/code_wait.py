@@ -52,8 +52,8 @@ SETTLE_POLL_SECONDS = 0.25
 STILL_WORKING = "Still working. Run the same command again."
 NO_REPORT = "The agent finished with no report."
 LOOP_GONE = "The review loop process is not running, but these reviewer requests have no report:"
-PHASE_RESTART = ("Its process was stopped before the loop finished. Run this phase's "
-                 "`code_review_start.py ... --detach` line again, then this wait.")
+PHASE_RESTART_STEP = "Run this phase's `code_review_start.py ... --detach` line again, then this wait."
+PHASE_STOPPED = "Its process was stopped before the loop finished."
 LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the skill's launch line with --detach "
                     "again, then the wait it prints.")
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
@@ -67,7 +67,9 @@ HANDOFF_FILE = "handoff.txt"  # the phase's hand-off block, in the run folder
 PREVIOUS_HANDOFF_FILE = "handoff.prev.txt"  # where phase_start.py moves the last phase's hand-off
 REVIEW_OUTPUT = "review.out"
 PHASE_RUN_FILE = "run.json"  # the lane and phase of the last started phase review
+LOOP_FOLDER_KEY = "loop_dir"  # the key of PHASE_RUN_FILE that holds this phase's loop folder
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
+PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last phase's loop-dir
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
 
@@ -181,11 +183,15 @@ def loop_dir(repo):
         return None
 
 
-def write_phase_run(repo, lane, phase):
-    """Records the lane and phase of the phase review that code_review_start.py runs, where the ask rows read them."""
+def write_phase_run(repo, lane, phase, loop_folder=None):
+    """Records the lane and phase of the phase review that code_review_start.py runs, where the ask rows read them,
+    and the folder of its loop when it names one: `code_wait.py review` returns no other folder's packet."""
     folder = phase_dir(repo)
     folder.mkdir(exist_ok=True)
-    script_utils.write_text_atomically(folder / PHASE_RUN_FILE, json.dumps({"lane": lane, "phase": phase}) + "\n")
+    record = {"lane": lane, "phase": phase}
+    if loop_folder is not None:
+        record[LOOP_FOLDER_KEY] = str(loop_folder)
+    script_utils.write_text_atomically(folder / PHASE_RUN_FILE, json.dumps(record) + "\n")
 
 
 def read_phase_run(repo):
@@ -265,13 +271,18 @@ def phase_review(repo):
     """The review code_review_start.py --detach left for the /code fork."""
 
     def no_output():
-        # The loop names its folder after this run starts, so read it when the message is needed.
-        folder = loop_dir(repo) or "<loop dir>"
+        # The loop names its folder after this run starts, so read it when the message is needed. No folder and no
+        # process means no loop of this phase started (phase_start.py moved the last one aside), or a detached child
+        # died before it wrote its loop folder: the log holds that child's error.
+        folder = loop_dir(repo)
+        if folder is None and running_review_pid(repo) is None:
+            return f"No review of this phase has started. Log of the last start: {phase_dir(repo) / REVIEW_OUTPUT}."
+        folder = folder or "<loop dir>"
         return (f"The review loop ended and left no packet in {pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE}. "
-                f"Log: {phase_dir(repo) / REVIEW_OUTPUT}.")
+                f"Log: {phase_dir(repo) / REVIEW_OUTPUT}. {PHASE_STOPPED}")
 
     return ReviewRun(REVIEW_COMMAND, lambda: loop_dir(repo), lambda: running_review_pid(repo) is not None,
-                     lambda: phase_review_output(repo), no_output, PHASE_RESTART, lambda: phase_stop_line(repo))
+                     lambda: phase_review_output(repo), no_output, PHASE_RESTART_STEP, lambda: phase_stop_line(repo))
 
 
 def phase_stop_line(repo):
@@ -308,7 +319,10 @@ def launched_review(folder):
     if not pid_file.is_file():
         raise UsageError(f"{folder} holds no {reviewer_dispatch.PID_FILE}; expected the loop folder that "
                          "`review_fix.py launch --detach` printed")
-    packet_command = reviewer_dispatch.packet_command(folder)
+    try:
+        packet_command = reviewer_dispatch.packet_command(folder)
+    except reviewer_dispatch.ManifestError as error:
+        raise UsageError(str(error)) from error
     packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
 
     def final_output():
@@ -417,8 +431,30 @@ def reviewer_dispatch_lines(run, pending):
             "for each agent you dispatched, every one written out as its own word."]
 
 
+def stale_loop_line(repo):
+    """The stop text when the loop-dir file names a folder other than the one this phase's code_review_start.py
+    recorded in run.json, else "". A run.json with no recorded folder (an older record) is not checked."""
+    named = loop_dir(repo)
+    recorded = read_phase_run(repo).get(LOOP_FOLDER_KEY)
+    if named is None or recorded is None or named == recorded:
+        return ""
+    record_file = phase_dir(repo) / PHASE_RUN_FILE
+    return (f"The loop folder {named} is not the one this phase's review recorded in {record_file} ({recorded}), "
+            f"so its packet belongs to another phase's review and is not returned. {PHASE_RESTART_STEP}")
+
+
 def wait_review(repo, words=(), launched_folder=None):
-    run = phase_review(repo) if launched_folder is None else launched_review(launched_folder)
+    if launched_folder is not None:
+        return follow_run(repo, launched_review(launched_folder), words, launched_folder)
+
+    stale_line = stale_loop_line(repo)
+    if stale_line:
+        print(stale_line)
+        return 1
+    return follow_run(repo, phase_review(repo), words, None)
+
+
+def follow_run(repo, run, words, launched_folder):
     pairs = reviewer_pairs(run, list(words))
     empty = []
 

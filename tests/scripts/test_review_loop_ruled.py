@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -12,15 +13,21 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
+import handback
+import handback_store
+import plan_format
 import review_loop_findings
 import review_loop_packet
 import review_loop_prompts
 import review_loop_ruled
 import review_loop_script
+import review_loop_signoffs
+import review_user_ruled
 import ruled_change_text
 from approval_ask_chain import accepted_approval_ask_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
+from test_review_loop_script import APP_FIXED, CLEAN_REVIEW, CLOSED, SESSION, ReviewLoopHarness
 
 
 def ruled_finding(note, location="`a/b.py:3`"):
@@ -35,7 +42,10 @@ def broken_entry(finding, path):
 class Host(review_loop_ruled.RuledFindings):
     def __init__(self):
         self.repo = "/repo"
+        self.plan = ""
         self.change = None
+        self.plan_impacts = []
+        self.resolved_texts = []
         self.init_ruled_state()
 
 
@@ -380,6 +390,104 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md", "AGENTS.md"])
 
 
+class RewordFlagTest(unittest.TestCase):
+    REPORT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n  acceptance_criteria: AC1\n"
+              "  cause: plan\n  kind: {kind}")
+
+    def impact_for(self, kind):
+        host = Host()
+        host.record_coder_plan_impact(self.REPORT.format(kind=kind), [])
+        return host.plan_impacts[0]
+
+    def test_a_coder_impact_says_reword_only_with_kind_reword_and_a_criterion(self):
+        self.assertTrue(self.impact_for("reword")["reword"])
+        self.assertFalse(self.impact_for("cut")["reword"])
+
+    def test_a_reviewer_impact_says_reword_only_with_kind_reword_and_a_criterion(self):
+        for kind, expected in {"reword": True, "cut": False}.items():
+            with self.subTest(kind):
+                host = Host()
+                item = types.SimpleNamespace(text=self.REPORT.format(kind=kind))
+
+                host.route_plan_items("code-reviewer", [item])
+
+                self.assertEqual(host.plan_impacts[0]["reword"], expected)
+
+    def routed_with_plan(self, plan_text, kind="reword"):
+        """(to_coder, held, impacts) of one reviewer impact, with a plan file holding plan_text (None: no plan)."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        host = Host()
+        host.repo = folder.name
+        if plan_text is not None:
+            (pathlib.Path(folder.name) / "plan.md").write_text(plan_text)
+            host.plan = "plan.md"
+        item = types.SimpleNamespace(text=self.REPORT.format(kind=kind))
+        to_coder, held = host.route_plan_items("code-reviewer", [item])
+        return to_coder, held, host.plan_impacts
+
+    STANDING = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+                "covers: rewords\n")
+
+    def test_a_standing_ruled_reword_goes_to_the_coder_adopted_and_unapplied(self):
+        to_coder, held, impacts = self.routed_with_plan(self.STANDING)
+
+        self.assertEqual((len(to_coder), held), (1, []))
+        self.assertTrue(impacts[0]["adopted"])
+        self.assertFalse(impacts[0]["applied"])
+
+    def test_a_standing_ruled_reword_counts_as_applied_only_when_the_pass_changed_the_plan_or_its_criteria(self):
+        cases = {"the criteria file": (["docs/plans/p/acceptance-criteria.md"], True),
+                 "the plan file": (["docs/plans/p/plan.md", "app.py"], True),
+                 "only code": (["app.py"], False),
+                 "nothing": ([], False),
+                 "another plan's criteria": (["docs/plans/q/acceptance-criteria.md"], False)}
+        for name, (changed, expected) in cases.items():
+            with self.subTest(name):
+                folder = tempfile.TemporaryDirectory()
+                self.addCleanup(folder.cleanup)
+                plan_dir = pathlib.Path(folder.name) / "docs" / "plans" / "p"
+                plan_dir.mkdir(parents=True)
+                (plan_dir / "plan.md").write_text(self.STANDING)
+                host = Host()
+                host.repo = folder.name
+                host.plan = "docs/plans/p/plan.md"
+                host.route_plan_items("code-reviewer", [types.SimpleNamespace(text=self.REPORT.format(kind="reword"))])
+
+                host.mark_standing_rewords_applied(changed)
+
+                self.assertEqual(host.plan_impacts[0]["applied"], expected)
+
+    def test_an_impact_the_standing_ruling_does_not_cover_stays_held(self):
+        cases = {"a cut under a standing ruling": (self.STANDING, "cut"),
+                 "a reword with no ruling in the plan": ("# Plan\n", "reword"),
+                 "a reword with no plan": (None, "reword")}
+        for name, (plan_text, kind) in cases.items():
+            with self.subTest(name):
+                to_coder, held, impacts = self.routed_with_plan(plan_text, kind)
+
+                self.assertEqual((to_coder, len(held)), ([], 1))
+                self.assertFalse(impacts[0]["adopted"])
+
+    def test_a_malformed_standing_ruling_raises_with_the_file_line_and_form(self):
+        bad_plan = '# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at yesterday: "x" covers: rewords\n'
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            self.routed_with_plan(bad_plan)
+
+        message = str(raised.exception)
+        self.assertIn("plan.md:5:", message)
+        self.assertIn("expected", message)
+
+    def test_the_flag_reaches_the_packet_and_survives_loading_it(self):
+        host = Host()
+        host.record_coder_plan_impact(self.REPORT.format(kind="reword"), [])
+
+        message = review_loop_packet.packet_message({"status": "converged", "plan_impacts": host.plan_impacts})
+
+        self.assertTrue(handback.load(message)["plan_impacts"][0]["reword"])
+
+
 class ApprovalAskTextTest(unittest.TestCase):
     def test_the_ask_is_one_unconditional_change(self):
         _question, change = review_loop_findings.ask_parts(review_loop_ruled.approval_ask_text("CLAUDE.md"))
@@ -475,6 +583,160 @@ class NoCodeRulingTest(unittest.TestCase):
         prompt = review_loop_prompts.reviewer_prompt(
             "/repo", "bug-reviewer", ["a/b.py"], [], no_code_rulings=tuple(host.no_code_rulings))
         self.assertIn("add one Watch line to the change note", prompt)
+
+
+ADOPTED_RULING = handback_store.AdoptedRuling("PLAN-IMPACT: AC2 reworded.", None, "the user", "2026-11-19 10:00")
+ADOPTED_FINDING = review_user_ruled.adopted_issue("app.py:2 [plan-drift] PLAN-IMPACT: AC2 reworded. "
+                                                  "acceptance_criteria: AC2", ADOPTED_RULING)
+
+
+class UnappliedAdoptedBlockersTest(unittest.TestCase):
+    def blockers(self, texts, skips, changed):
+        findings = [parse_finding(text) for text in texts]
+        adopted = {ADOPTED_FINDING: ADOPTED_RULING}
+        unapplied = review_loop_ruled.unapplied_adopted(findings, adopted, skips, changed, "/repo")
+        return [item.blocker for item in unapplied]
+
+    def test_an_adopted_finding_the_coder_skipped_or_left_no_diff_for_is_a_blocker_naming_the_ruling(self):
+        cases = (
+            ("skipped", {1: "SKIPPED 1: no"}, ["app.py"], review_loop_ruled.SKIPPED_WHY),
+            ("no diff", {}, [], review_loop_ruled.NO_FILE_DIFF_WHY),
+            ("another file changed", {}, ["other.py"], review_loop_ruled.NO_FILE_DIFF_WHY),
+        )
+        for label, skips, changed, why in cases:
+            with self.subTest(label):
+                blockers = self.blockers([ADOPTED_FINDING], skips, changed)
+
+                self.assertEqual(len(blockers), 1, label)
+                self.assertIn(why, blockers[0])
+                self.assertIn("ruled 2026-11-19 10:00", blockers[0])
+                self.assertIn("the user", blockers[0])
+
+    def test_an_applied_adopted_finding_and_a_plain_finding_are_no_blocker(self):
+        self.assertEqual(self.blockers([ADOPTED_FINDING], {}, ["app.py"]), [])
+        self.assertEqual(self.blockers(["a.py:1 [bug] plain"], {1: "SKIPPED 1: no"}, []), [])
+
+    def test_an_adopted_finding_with_no_path_needs_only_some_diff_in_the_pass(self):
+        text = review_user_ruled.adopted_issue("PLAN-IMPACT: AC2 reworded.", ADOPTED_RULING)
+        findings = [parse_finding(text)]
+        adopted = {text: ADOPTED_RULING}
+
+        no_diff = review_loop_ruled.unapplied_adopted(findings, adopted, {}, [], "/repo")
+        some_diff = review_loop_ruled.unapplied_adopted(findings, adopted, {}, ["x.py"], "/repo")
+
+        self.assertIn(review_loop_ruled.NO_DIFF_WHY, no_diff[0].blocker)
+        self.assertEqual(some_diff, [])
+
+    def test_an_adopted_finding_the_loop_withheld_is_a_blocker_naming_why(self):
+        finding = parse_finding(ADOPTED_FINDING)
+        plain = parse_finding("a.py:1 [bug] plain")
+        adopted = {ADOPTED_FINDING: ADOPTED_RULING}
+
+        held = review_loop_ruled.withheld_adopted([finding, plain], adopted, [], [finding])
+        ruled_out = review_loop_ruled.withheld_adopted([finding, plain], adopted, [], [])
+        sent = review_loop_ruled.withheld_adopted([finding, plain], adopted, [finding], [])
+
+        self.assertEqual([item.finding for item in held], [finding])
+        self.assertIn(review_loop_ruled.HELD_WHY, held[0].blocker)
+        self.assertIn(review_loop_ruled.RULED_OUT_WHY, ruled_out[0].blocker)
+        self.assertEqual(sent, [])
+
+    def test_an_adopted_finding_the_sign_off_put_back_undid_is_not_recorded_as_applied(self):
+        finding = parse_finding(ADOPTED_FINDING)
+        host = Host()
+        host.adopted = {ADOPTED_FINDING: ADOPTED_RULING}
+        host.session_id = "s1"
+        host.put_back_findings = [finding]
+        host.not_put_back = types.MethodType(review_loop_signoffs.SignoffRuns.not_put_back, host)
+
+        with mock.patch.object(handback_store, "record_applied_ruling") as record_applied:
+            host.settle_adopted_after_pass([finding], {}, ["app.py"])
+
+        record_applied.assert_not_called()
+
+    def test_an_adopted_finding_keeps_its_own_mark_in_the_coders_issue_list(self):
+        host = Host()
+        host.adopted = {ADOPTED_FINDING: ADOPTED_RULING}
+        host.user_ruled = [ADOPTED_FINDING]
+        host.user_ruled_at = "2026-11-13 11:32:00Z"
+
+        self.assertEqual(host.issue_text(parse_finding(ADOPTED_FINDING)), ADOPTED_FINDING)
+
+
+class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
+    """The fix-first round of a resume that adopts a plan change."""
+
+    def run_adopted(self, coder_reply, findings=(ADOPTED_FINDING,)):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps(list(findings)))
+        row = {"number": 1, **ADOPTED_RULING._asdict()}
+        header = (f"mode: fix-first\nfindings: {findings_file}\nuser-ruled: 1\n"
+                  f"user-ruled-at: 2026-11-19 10:00:00Z\nadopted: {json.dumps([row])}\n")
+        scenario = {"coder": [coder_reply], "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
+                    "closure": [{"result": CLOSED}]}
+        completed = self.run_script(scenario, header_extra=header)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def test_a_coder_that_changes_nothing_for_an_adopted_ruling_ends_the_round_with_a_blocker_and_no_reviewer(self):
+        packet = self.run_adopted({"result": "Fixed 1."})
+
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("2026-11-19 10:00", packet["blockers"][0])
+        self.assertIn(review_loop_ruled.NO_DIFF_WHY, packet["blockers"][0])
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder"])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(packet["ask"], [])
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
+
+    def test_a_coder_that_skips_the_adopted_finding_ends_the_round_with_a_blocker_and_no_reviewer(self):
+        packet = self.run_adopted({"result": "SKIPPED 1: needs a sign-off.", "edits": {"app.py": APP_FIXED}})
+
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(review_loop_ruled.SKIPPED_WHY, packet["blockers"][0])
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder"])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(packet["ask"], [])
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
+
+    def seed_adopt_row(self):
+        """Records the adopt decision the launch reads, in the store the run writes its applied row to."""
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            handback_store.record_ruled_impact(
+                SESSION, ADOPTED_RULING.text, handback_store.ruled_rows_repo(self.repo), decision="adopt",
+                owner=ADOPTED_RULING.owner, ruled_at=ADOPTED_RULING.ruled_at)
+
+    def adopted_left(self):
+        with mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": self.env["HANDBACK_STORE_DIR"]}):
+            return handback_store.rulings(SESSION, handback_store.ruled_rows_repo(self.repo)).adopted
+
+    def test_an_applied_adopted_ruling_is_recorded_as_applied(self):
+        self.seed_adopt_row()
+        self.assertEqual(len(self.adopted_left()), 1)
+
+        packet = self.run_adopted({"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}})
+
+        self.assertNotEqual(packet["status"], "critical-blocker")
+        self.assertEqual(self.adopted_left(), ())
+
+    def test_an_adopted_ruling_the_coder_left_unapplied_stays_adopted(self):
+        self.seed_adopt_row()
+
+        self.run_adopted({"result": "Fixed 1."})
+
+        self.assertEqual(len(self.adopted_left()), 1)
+
+    def test_a_plain_finding_the_coder_fixed_is_fixed_beside_an_unapplied_adopted_one(self):
+        plain = "app.py:1 [bug] plain finding"
+
+        packet = self.run_adopted({"result": "SKIPPED 1: needs a sign-off.\nFixed 2.", "edits": {"app.py": APP_FIXED}},
+                                  findings=(ADOPTED_FINDING, plain))
+
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(plain, json.dumps(packet["fixed"]))
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
+        self.assertEqual(packet["skipped_fp"], [])
 
 
 if __name__ == "__main__":

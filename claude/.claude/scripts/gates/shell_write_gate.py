@@ -45,7 +45,7 @@ from hook_input import (
     JqError,
     claude_temp_root,
     expand_env_names,
-    is_under_claude_temp_root,
+    is_under_session_temp_root,
     is_under_temp_dir,
     jq_get,
     jq_str,
@@ -312,7 +312,7 @@ def check_in_place_edit(segment, folders, cannot_skip):
         return
     operands = file_operands(segment, editor)
     resolved = [resolve_target(operand, folders[-1]) for operand in operands]
-    all_scratch = all(path is not None and is_under_claude_temp_root(path) for path in resolved)
+    all_scratch = all(path is not None and is_under_session_temp_root(path) for path in resolved)
     if operands and not has_unseen_files(operands) and all_scratch:
         return
     if operands:

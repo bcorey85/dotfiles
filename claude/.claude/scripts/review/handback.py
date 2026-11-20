@@ -65,15 +65,16 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "tool_fault", "blocked_agents", "scoped_tests", "open_classes",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
-SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round"]
-LIST_KEYS = ["fixed", "skipped_fp", "blockers", "findings_remaining", "ask", "nit", "files_touched", "check_changed",
-             "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
+SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed"]
+LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
+             "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
              "plan_impacts", "no_code_ruling_broken"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes", "left_alone")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
-ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "findings_remaining": ("finding",),
-                   "ask": ("question",), "plan_impacts": ("text",), "no_code_ruling_broken": ("ruling", "file")}
+ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
+                   "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
+                   "no_code_ruling_broken": ("ruling", "file")}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -371,9 +372,10 @@ def fill_fixed_finding(item):
 
 def normalize_plan_impact(item):
     """Fills the defaults of a plan impact entry: it changes a criterion, is not adopted, is not applied to the tree,
-    is not settled by an earlier ruling and has a plan cause unless it says otherwise. The flags read as booleans, so
-    `"false"` is false."""
-    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False), ("settled", False)):
+    is not settled by an earlier ruling, does not only reword a criterion and has a plan cause unless it says
+    otherwise. The flags read as booleans, so `"false"` is false."""
+    for flag, default in (("ac_change", True), ("adopted", False), ("applied", False), ("settled", False),
+                          ("reword", False)):
         value = item.get(flag, default)
         item[flag] = value.strip().lower() == "true" if isinstance(value, str) else bool(value)
     item["cause"] = str(item.get("cause") or PLAN_CAUSE).strip().lower()
@@ -611,6 +613,11 @@ def no_code_ruling_lines(packet):
             for broken in packet["no_code_ruling_broken"]]
 
 
+def held_unfixed_text(entry):
+    """One held_unfixed entry as `<item> (<reason>)`: the finding that stays unfixed and the holder that proves why."""
+    return f"{one_line(entry['item'], None)} ({entry['reason']})"
+
+
 def render(packet, skill, sections=()):
     """The user-facing text. `sections` are (heading, lines) pairs placed before the trailer. Fixed findings, nits
     and skipped false positives show as counts only."""
@@ -626,6 +633,9 @@ def render(packet, skill, sections=()):
                          "run as clean.")
     if packet["left_alone"]:
         lines.append("Left alone, read for another purpose: " + "; ".join(packet["left_alone"]))
+    if packet["held_unfixed"]:
+        lines.append("Unfixed, held by another session: " + "; ".join(held_unfixed_text(entry)
+                                                                      for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
     if packet["tool_fault"]:

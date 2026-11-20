@@ -82,7 +82,7 @@ Never audit pre-existing smells in surrounding code. The one sanctioned reach ou
 ### Ask
 [file:line — issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
 [Only two cases are an `ask`: you checked and cannot confirm the premise, or the defect is real and more than one correction is defensible. A defect with one clear correction is a `fix`. Finish every check that you can run yourself.]
-[Never auto-fixed. When the code and the plan or ticket disagree and the plan is the side in doubt, open the line with `PLAN-IMPACT:`, name both sides, and end it with `acceptance_criteria: none` when every acceptance criterion holds either way, else `acceptance_criteria: <the criteria it changes>`.]
+[Never auto-fixed. When the code and the plan or ticket disagree and the plan is the side in doubt, open the line with `PLAN-IMPACT:`, name both sides, and end it with `acceptance_criteria: none` when every acceptance criterion holds either way, else `acceptance_criteria: <the criteria it changes>`. Add an optional `kind: reword|cut|narrow` line: `reword` only when the criterion stays and only its words change.]
 
 ### Nit
 [One combined line. Never fixed, never re-raised. Omit when empty.]

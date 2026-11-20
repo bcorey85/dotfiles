@@ -37,6 +37,9 @@ import sys
 from collections import namedtuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import import_guard
+
+import_guard.guard("shell-write-gate", __name__)
 import hook_input
 import script_utils
 import shell_command
@@ -80,8 +83,8 @@ REDIRECT_PREFIX = re.compile(r"^>[>|&]?" + SPC + "*")
 TEE = re.compile(r"(^|" + SPC + r")tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+" + TARGET)
 TEE_PREFIX = re.compile(r"^" + SPC + r"*tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+")
 PRECHECK = re.compile(r"(-[a-zA-Z]*i|inplace|>|tee)")
-DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
-DIRECTORY_COMMAND_TEXT = re.compile(r"(^|[\s;&|(){`])(cd|pushd|popd)(\s|$|[;&|)])")
+DIRECTORY_COMMAND_TEXT = re.compile(
+    r"(^|[\s;&|(){`])(" + "|".join(shell_command.DIRECTORY_MOVE_WORDS) + r")(\s|$|[;&|)])")
 # The variables a redirect or tee target takes from the environment.
 ENV_NAMES = ("TMPDIR", "HOME")
 
@@ -154,7 +157,7 @@ def directory_changes(step):
     folders = []
     for words, _redirections, _piped in commands:
         words = shell_command.command_after_wrappers(words)
-        if words and words[0] in DIRECTORY_COMMANDS:
+        if words and words[0] in shell_command.DIRECTORY_MOVE_WORDS:
             expanded_words = [expand_env_names(word, ENV_NAMES) for word in words]
             folders.append(shell_command.cd_folder(expanded_words))
     return folders

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-630 fix notes
+633 fix notes
 
 Recent: the 7 days up to 2026-11-19, the newest note.
 
@@ -16,29 +16,29 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/code-step | 166 | 0 |
 | script/review-fix | 66 | 15 |
 | script/review-loop-script | 60 | 5 |
-| script/handback | 55 | 4 |
-| script/review-commit-gate | 40 | 5 |
+| script/handback | 56 | 5 |
+| script/review-commit-gate | 42 | 7 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 28 | 6 |
-| script/coder-gate | 26 | 5 |
+| script/coder-gate | 27 | 6 |
 | script/script-utils | 23 | 5 |
 | script/plan-format | 22 | 4 |
 | agent/review-loop | 20 | 0 |
-| script/quality-check-cap | 18 | 1 |
+| script/quality-check-cap | 19 | 2 |
 | skill/code | 18 | 1 |
 | script/review-loop | 17 | 9 |
 | skill/review | 17 | 0 |
-| script/shell-write-gate | 15 | 1 |
+| script/shell-write-gate | 16 | 2 |
 | script/verify-prep | 15 | 3 |
 | script/staged-claim-gate | 13 | 2 |
 | script/verify-log | 13 | 3 |
 | script/log-review-finding | 12 | 1 |
 | script/pull-keep-index | 12 | 1 |
+| script/git-discipline-gate | 11 | 3 |
 | script/code-wait | 10 | 4 |
 | script/log-escape | 10 | 2 |
 | script/verify-common | 10 | 3 |
 | script/criteria-dry-run | 9 | 2 |
-| script/git-discipline-gate | 9 | 1 |
 | script/refactor-flow | 9 | 3 |
 | script/review-asks | 9 | 9 |
 | script/shell-command | 9 | 4 |
@@ -93,6 +93,7 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/code-relay | 2 | 1 |
 | script/coder-packet | 2 | 0 |
 | script/emit-orchestration | 2 | 0 |
+| script/fork-write-scope | 2 | 2 |
 | script/herdr-dev | 2 | 0 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -128,7 +129,6 @@ Recent: the 7 days up to 2026-11-19, the newest note.
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 1 |
 | script/fix-diff | 1 | 1 |
-| script/fork-write-scope | 1 | 1 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-replay | 1 | 0 |
 | script/git-push-main-check | 1 | 0 |

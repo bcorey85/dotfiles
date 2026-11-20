@@ -13,12 +13,69 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
 from shell_statements import (
     blank_script_run_quotes,
+    clean,
+    decode_ansi_c,
     opens_shell_heredoc,
+    resolved_word,
     runs_script_file,
+    statement_word_pairs,
+    statements_with_operators,
     strip_comments,
     strip_heredocs,
     strip_stored_heredocs,
 )
+
+
+class DecodeAnsiCTest(unittest.TestCase):
+    def test_a_code_point_above_the_unicode_range_does_not_crash(self):
+        for word in ("\\U00110000", "\\UFFFFFFFF"):
+            with self.subTest(word=word):
+                self.assertEqual(decode_ansi_c(word), word)
+
+    def test_a_code_point_in_range_decodes(self):
+        self.assertEqual(decode_ansi_c("\\U0010FFFF\\x41"), "\U0010FFFFA")
+
+
+class StatementsWithOperatorsTest(unittest.TestCase):
+    def test_a_redirection_stays_a_word_of_its_statement_and_is_no_separator(self):
+        cases = {
+            "git push 2>&1 && ls": [("", ["git", "push", "2>&1"], "&&"), ("&&", ["ls"], "")],
+            "git push &>f; ls": [("", ["git", "push", "&>f"], ";"), (";", ["ls"], "")],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                found = [(s.operator_before, s.words, s.operator_after) for s in statements_with_operators(command)]
+                self.assertEqual(found, expected)
+
+
+class StatementWordPairsTest(unittest.TestCase):
+    def test_a_redirection_word_is_the_same_in_both_lists(self):
+        for command, word in (("git push 2>&1", "2>&1"), ("git push &>f", "&>f")):
+            with self.subTest(command=command):
+                pair, = statement_word_pairs(command)
+                self.assertEqual(pair.blanked, ["git", "push", word])
+                self.assertEqual(pair.resolved, ["git", "push", word])
+
+    def test_an_ansi_c_word_is_blanked_in_one_list_and_decoded_in_the_other(self):
+        pair, = statement_word_pairs("git reset $'--hard'")
+
+        self.assertEqual(pair.blanked, ["git", "reset", '$""'])
+        self.assertEqual(pair.resolved, ["git", "reset", "--hard"])
+
+
+class ResolvedWordTest(unittest.TestCase):
+    def resolve(self, command, index):
+        quotes = []
+        words = clean(command, quotes).split()
+        return resolved_word(words[index], quotes)
+
+    def test_an_ansi_c_string_is_decoded_and_its_dollar_dropped(self):
+        self.assertEqual(self.resolve("git reset $'--hard'", 2), "--hard")
+        self.assertEqual(self.resolve("git reset $'\\x2d\\x2dhard'", 2), "--hard")
+
+    def test_a_redirection_word_is_returned_unchanged(self):
+        self.assertEqual(self.resolve("git push 2>&1", 2), "2>&1")
+        self.assertEqual(self.resolve("git push &>f", 2), "&>f")
 
 
 class StripCommentsTest(unittest.TestCase):

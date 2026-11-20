@@ -138,6 +138,31 @@ class ShellWriteGateTest(unittest.TestCase):
                         "sed -i 's/a\\|b/c/' f", "sed -i 's/\\(a\\)/b/' f"):
             self.assert_denied(command)
 
+    def test_a_perl_flag_cluster_with_a_digit_is_an_in_place_edit(self):
+        for command in ("perl -0pi -e 's/a/b/' tracked.txt", "perl -0777pi -e 's/a/b/' tracked.txt",
+                        "perl -i -0pe 's/a/b/' tracked.txt", "perl -0777 -pi.bak -e 's/a/b/' tracked.txt",
+                        "perl -0777ni -e 'print' tracked.txt"):
+            self.assertIn("[inplace_edit]", self.assert_denied(command), command)
+            self.assertIn("[inplace_edit]", self.assert_denied(command, agent="coder"), command)
+
+    def test_a_perl_digit_cluster_with_no_i_is_not_an_in_place_edit(self):
+        for command in ("perl -0777pe 's/a/b/' tracked.txt", "perl -0ne 'print' tracked.txt",
+                        "perl -e 'print 1' file-0i", "grep -0i foo tracked.txt"):
+            self.assert_allowed(command)
+
+    def test_a_quote_after_an_escaped_dollar_or_a_pid_does_not_hide_a_tracked_write(self):
+        for command in ("echo \\$'a\\' > tracked.txt; echo '|'", "echo $$'a\\' > tracked.txt; echo '|'"):
+            self.assertIn("[tracked_target]", self.assert_denied(command), command)
+            self.assertIn("[tracked_target]", self.assert_denied(command, agent="coder"), command)
+
+    def test_a_script_file_name_is_no_code_runner_so_a_quoted_gt_is_no_redirect(self):
+        (self.repo / ".tracked-dot").write_text("x\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", ".tracked-dot"], check=True)
+        for command in ("sed -n 1p bin/run.sh; rg -e '\"m\":\"<s>\".*' f", "cat ~/.ssh/config; rg -e '\"<s>\".*' f",
+                        "cat deploy-script.py; rg -e '\"<s>\".*' f"):
+            self.assert_allowed(command)
+            self.assert_allowed(command, agent="coder")
+
     def test_a_step_with_no_file_operand_is_denied_in_plain_words(self):
         reason = self.assert_denied("sed -i s/a/b/ -n")
         self.assertIn("in-place editing by sed found no file operand it can read", reason)
@@ -1216,6 +1241,248 @@ class ShellWriteGateTest(unittest.TestCase):
     def coder_denied(self, command, **options):
         return self.assert_denied(command, agent="coder", cwd=str(self.make_outside_dir()), **options)
 
+    def test_a_coder_target_that_zsh_expands_is_denied_as_a_new_file(self):
+        for command in ("echo hi > /tmp/x/{a,b}.log", "echo hi > /tmp/x/*.log", "echo hi >> /tmp/x/f?.log",
+                        "echo hi > /tmp/x/f[12].log", "echo hi > /tmp/x/f(:s.tmp.etc.)",
+                        "echo hi 2> /tmp/x/f(:s.tmp.etc.)", "echo hi | tee /tmp/x/{a,b}.log",
+                        "echo hi | tee -a /tmp/x/*.log", "echo hi &> /tmp/x/{a,b}",
+                        "echo hi | tee /tmp/x/f(:s.tmp.etc.)", "echo hi | tee /tmp/a.log /tmp/{..,x}/home/f",
+                        "echo hi | /usr/bin/tee /tmp/{..,x}/home/f", "echo hi | (tee /tmp/{..,x}/home/f)",
+                        "echo hi | { tee /tmp/x/*.log; }"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+
+    def test_a_coder_target_with_a_leading_equals_expands_even_inside_a_temp_dir(self):
+        # zsh resolves `=python3` to the interpreter path, so the plain relative name in a temp dir is not the target.
+        for command in ("echo x > =python3", "echo x | tee =python3"):
+            reason = self.assert_denied(command, agent="coder", cwd=str(self.tmp))
+            self.assertIn("[coder_new_file]", reason, command)
+        self.assert_allowed("echo x > a=b.log", agent="coder", cwd=str(self.tmp))
+        self.assert_allowed("echo x > '=python3'", agent="coder", cwd=str(self.tmp))
+
+    def test_a_dollar_double_paren_whose_inner_paren_closes_early_is_a_command_substitution(self):
+        for command in ("x=$((echo x > /tmp/q/{a,b}) )", "x=$((echo x > /tmp/q/f(:s.tmp.opt.)) )"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+        self.assertIn("tracked.txt", self.assert_denied("x=$((echo x > {tracked,c}.txt) )"))
+
+    def test_a_real_arithmetic_span_is_still_allowed(self):
+        self.coder_allowed("x=$((1+2))")
+        self.assert_allowed("x=$((1+2))")
+
+    def test_a_bare_subshell_is_no_arithmetic_span_when_a_real_one_follows_it(self):
+        for command in ("((echo hi) > /tmp/claude-1000/{a,b}); echo $((1))",
+                        "((echo hi) > /tmp/claude-1000/{a,b})"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+
+    def test_a_coder_tee_operand_that_zsh_expands_is_denied_through_a_wrapper_or_an_unreadable_step(self):
+        for command in ("echo hi | nice tee /tmp/x/{a,b}.log", "echo hi | env A=1 tee /tmp/x/*.log",
+                        "echo hi | tee /tmp/x/*.log 'unclosed"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+
+    def test_a_coder_tee_word_with_a_quote_or_escape_and_an_expanding_operand_is_denied(self):
+        for command in ('echo hi | "tee" /tmp/{a,../../home/brandon/f}',
+                        "echo hi | \\tee /tmp/{a,../../home/brandon/f}", "echo hi | 'tee' /tmp/x*",
+                        'echo hi | t""ee /tmp/x*', "echo hi | te''e /tmp/{a,b}", "echo hi | t\\ee /tmp/x*"):
+            self.assertIn("[coder_new_file]", self.coder_denied(command), command)
+
+    def test_a_coder_quoted_tee_word_inside_an_assignment_is_no_command_word(self):
+        self.coder_allowed('echo hi | env A="a tee b*" tee /tmp/o.log')
+
+    def test_a_coder_redirect_target_cut_at_a_qualifier_names_the_whole_path(self):
+        self.assertIn("/tmp/o(", self.coder_denied("echo x > /tmp/o(N)"))
+
+    def test_a_coder_command_substitution_target_is_no_glob_qualifier(self):
+        for command in ("echo hi > $(echo /tmp/a.log)", "echo hi | tee /tmp/a.log $(echo)",
+                        'echo hi | tee /tmp/a.log "$(ls *)"'):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_unresolved_var]", reason, command)
+            self.assertNotIn("zsh expands", reason, command)
+
+    def test_a_coder_leading_equals_command_target_deny_names_the_expansion(self):
+        reason = self.coder_denied("echo x >=foo")
+        self.assertIn("`=command`", reason)
+
+    def test_a_coder_process_substitution_target_is_no_glob_qualifier(self):
+        for command in ("echo hi > =(echo x)", "echo hi | tee /tmp/a.log =(cat)"):
+            reason = self.coder_denied(command)
+            self.assertIn("[coder_new_file]", reason, command)
+            self.assertNotIn("zsh expands", reason, command)
+
+    def test_a_subshell_closer_is_not_part_of_a_tee_target_subject(self):
+        reason = self.coder_denied("echo hi | (tee /tmp/x*)")
+        self.assertIn("/tmp/x* is a redirect or tee target", reason)
+        reason = self.coder_denied("(tee /tmp/x*)")
+        self.assertIn("/tmp/x* is a redirect or tee target", reason)
+        reason = self.coder_denied("echo hi | (tee /tmp/x(N))")
+        self.assertIn("/tmp/x(N) is a redirect or tee target", reason)
+
+    def test_a_coder_quoted_tee_operand_is_not_an_expansion(self):
+        for command in ("echo hi | tee '/tmp/x/*.log'", 'echo hi | tee "/tmp/x/{a,b}.log"',
+                        "echo hi | tee /tmp/x/a\\*.log"):
+            self.coder_allowed(command)
+
+    def test_a_coder_tee_operand_with_a_parameter_brace_is_left_to_the_variable_check(self):
+        reason = self.coder_denied("echo hi | tee /tmp/x/${A}")
+        self.assertIn("[coder_unresolved_var]", reason)
+        self.assertNotIn("[coder_new_file] /tmp/x/${A} is a redirect or tee target", reason)
+
+    def test_a_glob_inside_a_substitution_or_parameter_of_a_redirect_target_is_no_expansion(self):
+        for command in ("echo x > /tmp/claude-1000/log-$(ls *.txt | head -1)",
+                        "echo x >/tmp/claude-1000/${arr[1]}", "echo x > $TMPDIR/${f%.*}.out"):
+            self.assertNotIn("zsh expands", self.coder_denied(command), command)
+
+    def test_a_coder_brace_pair_with_no_comma_or_sequence_is_a_literal_name(self):
+        for command in ("echo x > /tmp/claude-1000/{x}", "echo x > /tmp/claude-1000/a{}",
+                        "echo hi | tee /tmp/claude-1000/{x}"):
+            self.coder_allowed(command)
+
+    def test_a_non_coder_brace_list_cut_by_a_glob_qualifier_checks_each_alternative(self):
+        reason = self.assert_denied("echo hi > {a,tracked.txt}(N)", cwd=str(self.repo))
+        self.assertIn("[tracked_target]", reason)
+        self.assert_allowed("echo hi > {a,untracked.txt}(N)", cwd=str(self.repo))
+
+    def test_a_non_coder_tee_brace_list_cut_by_a_glob_qualifier_checks_each_alternative(self):
+        reason = self.assert_denied("echo hi | tee {a,tracked.txt}(N)", cwd=str(self.repo))
+        self.assertIn("[tracked_target]", reason)
+        self.assert_allowed("echo hi | tee {a,untracked.txt}(N)", cwd=str(self.repo))
+
+    def test_a_non_coder_clobber_operator_form_with_a_brace_list_or_tracked_file_is_denied(self):
+        for command in ("echo hi >>| {a,tracked.txt}", "echo hi &>>| {a,tracked.txt}", "echo hi >! tracked.txt",
+                        "echo hi >&| tracked.txt", "echo hi >>&| {a,tracked.txt}", "echo hi >>! {a,tracked.txt}"):
+            reason = self.assert_denied(command, cwd=str(self.repo))
+            self.assertIn("[tracked_target]", reason, command)
+
+    def test_a_non_coder_clobber_operator_with_no_blank_before_the_target_is_denied(self):
+        for command in ("echo hi >!tracked.txt", "echo hi >>!tracked.txt", "echo hi &>!tracked.txt",
+                        "echo hi 2>!tracked.txt", "echo hi >!{a,tracked.txt}", "echo hi >&!tracked.txt",
+                        "echo hi >&! tracked.txt", "echo hi >>&!tracked.txt"):
+            reason = self.assert_denied(command, cwd=str(self.repo))
+            self.assertIn("[tracked_target]", reason, command)
+
+    def test_a_coder_clobber_operator_with_no_blank_before_a_new_file_is_denied(self):
+        for command in ("echo hi >!/srv/zzq/newfile", "echo hi >>!/srv/zzq/newfile"):
+            self.coder_denied(command)
+
+    def test_a_coder_clobber_operator_form_with_a_brace_list_is_denied_as_expanding(self):
+        for command in ("echo hi >>| $TMPDIR/{a,b}", "echo hi >&| $TMPDIR/{a,b}"):
+            self.assertIn("zsh expands", self.coder_denied(command), command)
+
+    def test_a_coder_redirect_inside_a_substitution_is_read_as_its_own_text(self):
+        for command in ("echo $(date > /tmp/d)*", "x=$(make 2> /tmp/err)[1]", "ls $(echo hi > $TMPDIR/o)/*.py"):
+            self.assert_allowed(command, agent="coder", cwd=str(self.tmp))
+
+    def test_a_coder_brace_list_redirect_inside_a_substitution_names_only_its_own_word(self):
+        reason = self.coder_denied("echo $(echo hi > {a,README.md})")
+        self.assertIn("{a,README.md} is a redirect or tee target", reason)
+
+    def test_a_denied_expanding_target_stops_at_the_newline(self):
+        reason = self.coder_denied("echo hi > /tmp/x/*.log\necho done")
+        self.assertIn("/tmp/x/*.log is a redirect or tee target", reason)
+        self.assertNotIn("done", reason)
+
+    def test_a_coder_may_use_arithmetic_a_process_substitution_or_a_tee_redirection(self):
+        for command in ("echo $((a>b?1:2))", "x=$((a>b?1:2)); echo $x > /tmp/q.log",
+                        "echo hi | tee >(sha256sum) > /tmp/a.log", "echo hi | tee /tmp/a.log >(cat)",
+                        "echo hi | tee /tmp/a.log <(cat)", "echo hi | tee /tmp/a.log < in*.txt"):
+            self.assert_allowed(command, agent="coder", cwd=str(self.tmp))
+
+    def test_a_coder_target_mixing_an_expansion_and_a_variable_is_denied_as_expanding(self):
+        for command in ("echo hi > /tmp/x/{a,b}$T.log", "echo hi > $TMPDIR/{../../home/brandon/rvwf,x}",
+                        "echo hi | tee $TMPDIR/{a,b}.log", 'echo hi > "$TMPDIR"/{a,b}.log'):
+            reason = self.coder_denied(command)
+            self.assertIn("is a redirect or tee target that zsh expands", reason, command)
+
+    def test_a_quoted_tee_word_with_a_tracked_operand_is_denied_for_the_main_session(self):
+        reason = self.assert_denied('echo hi | t""ee tracked.txt')
+        self.assertIn("[tracked_target]", reason)
+
+    def test_a_tee_behind_a_wrapper_with_a_tracked_operand_is_denied_for_the_main_session(self):
+        for command in ("echo hi | nice tee tracked.txt", "echo hi | env A=1 tee tracked.txt"):
+            self.assertIn("[tracked_target]", self.assert_denied(command), command)
+
+    def test_a_quoted_or_escaped_in_place_editor_flag_is_denied_for_the_main_session(self):
+        for command in ('sed "-i" s/a/b/ tracked.txt', "sed -\\i s/a/b/ tracked.txt"):
+            self.assertIn("[inplace_edit]", self.assert_denied(command), command)
+
+    def test_a_brace_list_past_the_word_limit_or_a_sequence_list_is_denied_for_the_main_session(self):
+        names = ",".join(f"n{number}" for number in range(70))
+        for command in (f"echo hi > {{{names},tracked.txt}}", "echo hi > {a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,tracked.txt}",
+                        "echo hi > test{1..2}.txt", "echo hi > tracked.t{x..x}t"):
+            self.assertIn("[tracked_target]", self.assert_denied(command), command)
+
+    def test_a_quoted_brace_list_is_a_literal_name_for_the_main_session(self):
+        for command in ('echo hi > "{tracked.txt,x}"', "echo hi > '{tracked.txt,x}'", "echo hi | tee '{tracked.txt,x}'",
+                        "echo x > 'track{ed.txt,x}'"):
+            self.assert_allowed(command)
+
+    def test_a_brace_alternative_with_a_quoted_blank_operator_or_substitution_still_checks_the_tracked_one(self):
+        alternatives = ("'a b'", '"a b"', "a\\ b", "'a;b'", "'a|b'", "'a>b'", "'a(b'", "'a&b'", "$(echo a)",
+                        "`echo a`")
+        for alternative in alternatives:
+            for command in (f"echo x > {{tracked.txt,{alternative}}}", f"echo x > {{{alternative},tracked.txt}}",
+                            f"echo x>{{tracked.txt,{alternative}}}"):
+                self.assertIn("[tracked_target]", self.assert_denied(command), command)
+
+    def test_a_brace_list_with_a_quoted_blank_and_no_tracked_alternative_is_allowed(self):
+        self.assert_allowed("echo x > {untracked.txt,'a b'}")
+
+    def test_a_quoted_and_an_unquoted_brace_target_in_one_command_are_both_denied(self):
+        self.assertIn("[tracked_target]", self.assert_denied("echo x > {tracked.txt,x}; echo y > '{tracked.txt,x}'"))
+
+    def test_a_deep_chain_of_brace_lists_is_denied_in_time(self):
+        self.assertIn("[tracked_target]", self.assert_denied("echo hi > " + "{a,b}" * 30))
+
+    def test_a_coder_target_with_quoted_or_parameter_braces_is_not_an_expansion(self):
+        for command in ("echo hi > '/tmp/x{a,b}.log'", 'echo hi > "/tmp/x*.log"', "echo hi > ${TMPDIR}/x.log",
+                        "echo hi > /tmp/x.log; [ -f /tmp/x.log ]",
+                        "echo hi > /tmp/a.log\n[ -f /tmp/a.log ] && cat /tmp/a.log",
+                        "echo hi > /tmp/a.log\n{ echo x; } > /tmp/b.log",
+                        "grep tee src/*.py", "grep -c tee src/*.py > /tmp/n.log"):
+            self.coder_allowed(command)
+
+    def test_a_tee_word_after_a_pipe_both_or_a_quoted_operator_is_no_tee_command(self):
+        for command in ("grep tee src/*.py |& tee /tmp/a.log", "grep 'a;' tee src/*.py | tee /tmp/a.log",
+                        "grep tee src/*.py |& env tee /tmp/a.log"):
+            self.coder_allowed(command)
+
+    def test_a_coder_tee_after_a_pipe_both_with_an_expanding_operand_is_denied(self):
+        for command in ("echo hi |& tee /tmp/x/*.log", "echo hi |& sudo tee /tmp/x/*.log",
+                        "grep tee x |& tee /tmp/x/*.log"):
+            self.assertIn("zsh expands", self.coder_denied(command), command)
+
+    def test_a_space_after_a_redirect_makes_a_bang_name_a_file_not_a_clobber(self):
+        self.assert_allowed("echo x > !tracked.txt")
+        self.assert_allowed("echo x >> !tracked.txt")
+        self.assertIn("[tracked_target]", self.assert_denied("echo x >!tracked.txt"))
+        outside = self.make_outside_dir()
+        (outside / ".git").mkdir()
+        for command in ("echo x > !.git", "echo x > !newfile"):
+            self.assertIn("[coder_new_file]", self.assert_denied(command, agent="coder", cwd=str(outside)), command)
+
+    def test_a_non_coder_brace_list_with_a_quoted_or_escaped_operator_checks_each_alternative(self):
+        for command in ("echo x > {a\\;b,tracked.txt}", "echo x > {';',tracked.txt}",
+                        'echo a\\; > {"tracked".txt,b}', "echo ';' > {\"tracked\".txt,b}",
+                        "eval 'echo x > {tracked.txt,b}'", "bash -c 'echo x > {a,tracked.txt}'"):
+            self.assertIn("[tracked_target]", self.assert_denied(command), command)
+
+    def test_a_coder_brace_list_in_code_runner_text_checks_each_alternative(self):
+        for command in ("eval 'echo x > {tracked.txt,b}'", "bash -c 'echo x > {a,tracked.txt}'",
+                        "eval 'echo x | tee {tracked.txt,b}'"):
+            self.assertIn("[tracked_target]", self.assert_denied(command, agent="coder"), command)
+
+    def test_a_non_coder_brace_list_with_a_quoted_operator_and_no_tracked_alternative_is_allowed(self):
+        for command in ("echo x > {a\\;b,untracked}", "echo ';' > {\"x\".txt,b}", "eval 'echo x > {a,b}'"):
+            self.assert_allowed(command)
+
+    def test_the_main_session_may_redirect_to_an_expanding_target_with_no_tracked_path(self):
+        for command in ("echo hi > /tmp/x/{a,b}.log", "echo hi > {untracked.txt,x}", "echo hi | tee /tmp/{a,b}"):
+            self.assert_allowed(command)
+
+    def test_the_main_session_is_denied_a_brace_list_with_a_tracked_alternative(self):
+        for command in ("echo hi > {tracked.txt,x}", "echo hi | tee {untracked.txt,tracked.txt}",
+                        "echo hi > {a,{x,tracked.txt}}", "echo hi > {tracked,x}.txt"):
+            reason = self.assert_denied(command)
+            self.assertIn("[tracked_target]", reason, command)
+
     def test_a_coder_may_redirect_through_a_for_variable_over_literal_words(self):
         for command in ("for t in a b c; do echo hi > /tmp/swg_$t.log 2>&1; done",
                         "for t in a b; do echo hi >> /var/tmp/swg-t-$t.log; done",
@@ -1236,14 +1503,22 @@ class ShellWriteGateTest(unittest.TestCase):
             self.coder_allowed(command)
 
     def test_a_coder_variable_target_with_expansion_syntax_is_denied(self):
-        for command in ("S=/tmp/x; echo hi > $S[1]/zz", "S=/tmp/x; echo hi > ${S}[1]/zz",
-                        "S=/tmp/x; echo hi > $S:h:h/zz", "S=/tmp/x; echo hi > ${S}:h/zz",
-                        "S=/tmp/x; echo hi > $S/*", "S=/tmp/x; echo hi > $S/?",
-                        "S=/tmp/x; echo hi > $S/{a,../../etc/zz}", "S=/tmp/x; echo hi > $S/\\\\zz",
-                        "S=/tmp/x; echo hi | tee $S/{a,b}", "S=/tmp/x; echo hi > ~/$S",
-                        "S=/tmp/x; echo hi > ${S:-/etc}/zz", "for d in a b; do echo hi > /tmp/$d/*; done"):
-            reason = self.coder_denied(command)
-            self.assertIn("[coder_unresolved_var]", reason, command)
+        tags = {
+            "S=/tmp/x; echo hi > $S[1]/zz": "coder_new_file",
+            "S=/tmp/x; echo hi > ${S}[1]/zz": "coder_new_file",
+            "S=/tmp/x; echo hi > $S:h:h/zz": "coder_unresolved_var",
+            "S=/tmp/x; echo hi > ${S}:h/zz": "coder_unresolved_var",
+            "S=/tmp/x; echo hi > $S/*": "coder_new_file",
+            "S=/tmp/x; echo hi > $S/?": "coder_new_file",
+            "S=/tmp/x; echo hi > $S/{a,../../etc/zz}": "coder_new_file",
+            "S=/tmp/x; echo hi > $S/\\\\zz": "coder_unresolved_var",
+            "S=/tmp/x; echo hi | tee $S/{a,b}": "coder_new_file",
+            "S=/tmp/x; echo hi > ~/$S": "coder_unresolved_var",
+            "S=/tmp/x; echo hi > ${S:-/etc}/zz": "coder_unresolved_var",
+            "for d in a b; do echo hi > /tmp/$d/*; done": "coder_new_file",
+        }
+        for command, tag in tags.items():
+            self.assertIn(f"[{tag}]", self.coder_denied(command), command)
 
     def test_a_quote_or_backslash_that_ends_a_name_keeps_the_variable_target_deny(self):
         tracked = f"{self.repo}/tracked.t"
@@ -1476,10 +1751,18 @@ class ShellWriteGateTest(unittest.TestCase):
         self.coder_allowed("S=/tmp/swg; set -o pipefail; echo x > $S/a")
 
     def test_a_coder_target_with_glob_or_modifier_syntax_beside_a_variable_is_denied(self):
-        for target in ("$S/passwd(:s.tmp.etc.)", "$S/a(:h:h:h)", "$S/a<->", "$S/a#b", "$S/a^b", "=ls$S",
-                       '"$S/a|b"'):
+        tags = {
+            "$S/passwd(:s.tmp.etc.)": "coder_new_file",
+            "$S/a(:h:h:h)": "coder_new_file",
+            "$S/a<->": "coder_unresolved_var",
+            "$S/a#b": "coder_unresolved_var",
+            "$S/a^b": "coder_unresolved_var",
+            "=ls$S": "coder_unresolved_var",
+            '"$S/a|b"': "coder_unresolved_var",
+        }
+        for target, tag in tags.items():
             reason = self.coder_denied(f"S=/tmp/x; echo hi > {target}")
-            self.assertIn("[coder_unresolved_var]", reason, target)
+            self.assertIn(f"[{tag}]", reason, target)
 
     def test_a_coder_pipe_after_a_variable_target_checks_the_target_before_the_pipe(self):
         self.coder_allowed("S=/tmp/swg; echo hi > $S/a|cat")

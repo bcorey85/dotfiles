@@ -5,10 +5,13 @@ import posixpath
 import re
 import shlex
 
+from code_text import SP
+from shell_quoting import quoted_positions, unquoted_matches
+
 SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W\d]\w*=[^ \t]*[ \t]*)+$)")
-# `>|` (clobber redirection) is not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`; a lone
-# `&` sends the step before it to the background.
-OPERATOR = re.compile(r"(\|\||&&|(?<!>)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
+# `>|` and `>&|` (clobber redirection) are not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`;
+# a lone `&` sends the step before it to the background.
+OPERATOR = re.compile(r"(\|\||&&|(?<!>)(?<!>&)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
 LINE_CONTINUATION = re.compile(r"\\\r?\n")
 LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
 TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
@@ -22,8 +25,15 @@ SPACED_REDIRECT_NUMBER = re.compile(r"(?<!\S)\d+[ \t]+[<>]")
 FILE_DESCRIPTOR_TARGET = re.compile(r"\d+-?|-")
 # A word that starts a redirect: `>f`, `<f`, `2>f`, `&>f`.
 REDIRECT_WORD = re.compile(r"(?:\d+|&)?[<>]")
+# Where a redirect target word ends, and the `>` operators that open one: the one copy of both.
+WORD_END_CHARACTERS = SP + "|&;<>()"
+_REDIRECT_BASE = r">>?&?"
+REDIRECT_OPERATOR = _REDIRECT_BASE + "[|!]?"
+ADJACENT_BANG_CLOBBER = re.compile(_REDIRECT_BASE + "!")
+# The lexer reads `>|`, `>>|`, `&>|`, `>&|` and `>>&|` as one operator token.
+CLOBBER_TOKEN = re.compile(r"(?:&?>>?|>>?&)\|")
 # A bare redirect word (`>`, `2>`, `&>>`) takes the next word as its target; `2>&1` and `>out` carry theirs.
-BARE_REDIRECT_WORD = re.compile(r"^(\d*[<>]{1,2}|\d*>&|&>{1,2})$")
+BARE_REDIRECT_WORD = re.compile(r"^(\d*(?:[<>]{1,2}|>>?[|!])&?|\d*>>?&[|!]|&>{1,2}[|!]?)$")
 # docker and docker compose options that take the next word as their value. `--opt=value` is one word, read as a flag.
 DOCKER_VALUE_OPTIONS = {
     "-e", "--env", "-w", "--workdir", "-u", "--user", "--entrypoint", "-v", "--volume", "--name", "-p", "--publish",
@@ -39,10 +49,12 @@ SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
 # A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
 # `eval` argument, a command run through another program or on another host. A quoted mention counts, except a
-# shell name right after a `|` or a backslash: that is a regex alternative such as `(py|sh)`.
+# shell name right after a `|` or a backslash: that is a regex alternative such as `(py|sh)`. A name that is part of
+# a file name (`run.sh`, `~/.ssh/config`, `deploy-script.py`, `ssh-keygen`) is no runner: a `.` before it or a `.` or
+# `-` after it joins it to a longer word.
 CODE_RUNNERS = re.compile(
-    r"(?<![|\\])\b(" + "|".join(sorted(SHELL_INTERPRETERS)) + r")(?![\w.-])"
-    r"|\b(eval|su|script|ssh|" + "|".join(LAUNCHER_PROGRAMS) + r")\b"
+    r"(?<![|\\.])\b(" + "|".join(sorted(SHELL_INTERPRETERS)) + r")(?=\.exe\b|(?![\w.-]))"
+    r"|(?<!\.)\b(eval|su|script|ssh|" + "|".join(LAUNCHER_PROGRAMS) + r")(?=\.exe\b|(?![\w.-]))"
     r"|\bgit\b[^\n]*\brebase\b[^\n]*\s(--exec|-x)\b"
     r"|\bfind\b[^\n]*\s-exec(dir)?\b"
     r"|\b(docker|podman)\b[^\n]*\b(exec|run)\b"
@@ -183,7 +195,7 @@ def parse_simple_commands(command):
     `)` and an unquoted newline end a command (an empty one is left out); a redirection's file descriptor number is
     not a word; a comment is not a comment, its words stay. Raises ValueError for text this reading cannot trust: an
     unclosed quote, a quoted or escaped operator character, a number then a space then a redirection (`5 >f`), or a
-    run of operator characters it cannot sort (`<|`). `>|` is an output redirection."""
+    run of operator characters it cannot sort (`<|`). `>|` and the adjacent `>!` are output redirections."""
     return [(words, redirections) for words, redirections, _piped in parse_piped_commands(command)]
 
 
@@ -196,7 +208,7 @@ def parse_piped_commands(command):
     if SPACED_REDIRECT_NUMBER.search(command):
         raise ValueError("a number, a space and a redirection")
 
-    lexer = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
+    lexer = shlex.shlex(with_bang_clobber_as_pipe(command), posix=True, punctuation_chars="();<>|&\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -204,6 +216,15 @@ def parse_piped_commands(command):
     for token in lexer:
         reader.read(token)
     return reader.finish()
+
+
+def with_bang_clobber_as_pipe(command):
+    """The command with the `!` of each unquoted adjacent clobber operator (`>!`, `>>!`, `>&!`, `>>&!`) written as
+    `|`, so the lexer reads one operator. `> !name` is a `>` and a file named `!name`, and is left as it is."""
+    characters = list(command)
+    for found in unquoted_matches(ADJACENT_BANG_CLOBBER, command):
+        characters[found.end() - 1] = "|"
+    return "".join(characters)
 
 
 class _PipedCommandReader:
@@ -221,7 +242,7 @@ class _PipedCommandReader:
         characters = set(token)
         if token and characters <= SEPARATOR_CHARS:
             self._end_command(token)
-        elif token and (characters <= REDIRECT_CHARS or token == ">|"):
+        elif token and (characters <= REDIRECT_CHARS or CLOBBER_TOKEN.fullmatch(token)):
             self._start_redirection(token)
         elif token and characters <= SEPARATOR_CHARS | REDIRECT_CHARS:
             raise ValueError("unsorted operator characters: " + token)
@@ -570,8 +591,20 @@ def words_without_redirections(text):
     with it, or None when a quote never closes. A redirection is a blank-separated piece of the raw text that starts
     with its operator: a quoted or escaped look-alike (`'>&'`, `\\>`, `'2>'`) starts with a quote or a backslash, so it
     stays a word."""
-    quoted = quoted_positions(text)
     words = []
+    for raw_word in raw_words_without_redirections(text):
+        piece = closed_segment_words(raw_word)
+        if piece is None:
+            return None
+        words += piece
+    return words
+
+
+def raw_words_without_redirections(text):
+    """The blank-separated words of one command text with quotes kept and each redirection left out, the target of a
+    bare `>` with it."""
+    quoted = quoted_positions(text)
+    raw_words = []
     skip_target = False
     for raw_word in _raw_words(text, quoted):
         if skip_target:
@@ -580,11 +613,8 @@ def words_without_redirections(text):
         if is_redirect_word(raw_word):
             skip_target = redirect_takes_next_word(raw_word)
             continue
-        piece = closed_segment_words(raw_word)
-        if piece is None:
-            return None
-        words += piece
-    return words
+        raw_words.append(raw_word)
+    return raw_words
 
 
 def _raw_words(text, quoted):
@@ -673,108 +703,12 @@ def and_steps_or_whole(command):
     return and_steps(command) or [command.strip()]
 
 
-def quoted_positions(command, unclosed_is_quoted=True):
-    # The indexes of the characters that sit inside quotes, inside a comment (after its `#`, up to the newline) or
-    # right after a backslash outside single quotes. A quote that never closes covers the rest of the command, unless
-    # unclosed_is_quoted is False: then the text after it counts as unquoted, as a check that must not be hidden by a
-    # stray quote needs. A quote character inside a comment opens no quote. The text of a `$(...)` or backtick span
-    # inside double quotes is code the shell runs, so it is not quoted: it is read with its own quote state.
-    scan = _QuoteScan(command)
-    scan.run()
-    positions = scan.positions
-    if scan.levels[0]["quote"] is not None and not unclosed_is_quoted:
-        positions = {position for position in positions if position < scan.quote_opened_at}
-    return positions
-
-
-class _QuoteScan:
-    """The state of one quoted_positions pass over a command, one character at a time."""
-
-    def __init__(self, command):
-        self.command = command
-        self.positions = set()
-        # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, and its open `(` count.
-        self.levels = [{"quote": None, "closer": None, "depth": 0}]
-        self.quote_opened_at = 0
-        self.index = 0
-
-    def run(self):
-        while self.index < len(self.command):
-            character = self.command[self.index]
-            level = self.levels[-1]
-            if level["quote"] is None:
-                self._read_unquoted(character, level)
-            else:
-                self._read_quoted(character, level)
-            self.index += 1
-
-    def _read_unquoted(self, character, level):
-        if character in "'\"":
-            self._open_quote(character, level)
-        elif character == "\\":
-            self._hide_next_character()
-        elif character == "#" and self._starts_comment():
-            self._hide_comment()
-        else:
-            self._read_span_syntax(character, level)
-
-    def _read_span_syntax(self, character, level):
-        # Track the parentheses of an open `$(` span and the character that closes the span.
-        if character == "(" and level["closer"] == ")":
-            level["depth"] += 1
-        elif character == ")" and level["closer"] == ")" and level["depth"]:
-            level["depth"] -= 1
-        elif character == level["closer"]:
-            self.levels.pop()
-
-    def _read_quoted(self, character, level):
-        quote = level["quote"]
-        if character == quote:
-            level["quote"] = None
-        elif character == "\\" and quote == '"':
-            self._hide_next_character()
-        elif quote == '"' and self.command.startswith("$(", self.index):
-            self.levels.append({"quote": None, "closer": ")", "depth": 0})
-            self.index += 1
-        elif quote == '"' and character == "`":
-            self.levels.append({"quote": None, "closer": "`", "depth": 0})
-        else:
-            self.positions.add(self.index)
-
-    def _open_quote(self, character, level):
-        level["quote"] = character
-        if len(self.levels) == 1:
-            self.quote_opened_at = self.index
-
-    def _hide_next_character(self):
-        self.positions.add(self.index + 1)
-        self.index += 1
-
-    def _starts_comment(self):
-        return self.index == 0 or self.command[self.index - 1] in " \t\r\f\v\n;&|()"
-
-    def _hide_comment(self):
-        comment_end = self.command.find("\n", self.index)
-        if comment_end == -1:
-            comment_end = len(self.command)
-        self.positions.update(range(self.index + 1, comment_end))
-        # run() adds one after each character, so stop on the newline's predecessor.
-        self.index = comment_end - 1
-
-
-def unquoted_matches(pattern, text, extra_hidden=()):
-    """The matches of the compiled pattern in text whose start is not inside quotes, nor at a position in
-    extra_hidden. A quote that never closes hides nothing."""
+def substitution_bounds(text):
+    """(start, end) of the text inside each outermost `$(...)` and backtick pair in text that is not in single quotes,
+    a comment or after a backslash; one inside double quotes counts. A span that never closes runs to the end of the
+    text."""
     hidden = quoted_positions(text, unclosed_is_quoted=False)
-    hidden.update(extra_hidden)
-    return [match for match in pattern.finditer(text) if match.start() not in hidden]
-
-
-def substitution_spans(text):
-    """The text inside each outermost `$(...)` and backtick pair in text that is not in single quotes, a comment or
-    after a backslash; one inside double quotes counts. A span that never closes runs to the end of the text."""
-    hidden = quoted_positions(text, unclosed_is_quoted=False)
-    spans = []
+    bounds = []
     index = 0
     while index < len(text):
         if index in hidden:
@@ -782,37 +716,56 @@ def substitution_spans(text):
             continue
 
         if text.startswith("$(", index):
-            end = _parenthesis_span_end(text, index, hidden)
-            spans.append(text[index + 2:end])
+            close = matching_parenthesis(text, index + 1, hidden)
+            end = len(text) if close is None else close
+            bounds.append((index + 2, end))
             index = end
         elif text[index] == "`":
             end = _backtick_span_end(text, index)
-            spans.append(text[index + 1:end])
+            bounds.append((index + 1, end))
             index = end
         index += 1
-    return spans
+    return bounds
+
+
+def substitution_spans(text):
+    """The text inside each outermost `$(...)` and backtick pair in text that is not in single quotes, a comment or
+    after a backslash; one inside double quotes counts. A span that never closes runs to the end of the text."""
+    return [text[start:end] for start, end in substitution_bounds(text)]
+
+
+def without_substitution_bodies(text):
+    """The text with the inside of each outermost substitution (see substitution_spans) replaced by one `x`, so no
+    blank, glob character or quote of a body shows to a reader of the words around it."""
+    pieces = []
+    position = 0
+    for start, end in substitution_bounds(text):
+        pieces.append(text[position:start])
+        pieces.append("x")
+        position = end
+    pieces.append(text[position:])
+    return "".join(pieces)
 
 
 PARENTHESIS_DEPTH_CHANGE = {"(": 1, ")": -1}
 
 
-def _parenthesis_span_end(text, start, hidden):
-    # The index of the `)` that closes the `$(` at start, or the end of the text when it never closes.
+def matching_parenthesis(text, open_index, hidden):
+    """The index of the `)` closing the `(` at open_index, skipping hidden positions; None when it never closes."""
     depth = 0
-    for position in range(start + 1, len(text)):
-        change = 0 if position in hidden else PARENTHESIS_DEPTH_CHANGE.get(text[position], 0)
-        depth += change
+    for position in range(open_index, len(text)):
+        if position in hidden:
+            continue
+        depth += PARENTHESIS_DEPTH_CHANGE.get(text[position], 0)
         if depth == 0:
             return position
-    return len(text)
+    return None
 
 
 def _backtick_span_end(text, start):
     # The index of the backtick that closes the one at start, or the end of the text when it never closes.
     end = text.find("`", start + 1)
-    if end == -1:
-        return len(text)
-    return end
+    return len(text) if end == -1 else end
 
 
 def path_word(word):

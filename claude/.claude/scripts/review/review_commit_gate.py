@@ -140,13 +140,13 @@ from shell_command import (
     is_known_git_global_option,
     names_code_runner,
     parse_simple_commands,
-    quoted_positions,
     redirection_writes_file,
     resolved_command_words,
     runs_shell,
     split_simple_commands,
     substitution_spans,
 )
+from shell_quoting import quoted_positions, without_quote_characters
 
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 # A command that changes folder or repo (cd, pushd, popd, eval, source, or a git dir or work-tree option or variable;
@@ -167,8 +167,6 @@ COMMIT = re.compile(r"\bgit[ \t\r\f\v]+commit\b(?!-)")
 COMMITTING = re.compile(r"\bgit[ \t\r\f\v]+" + COMMITTING_CALL)
 # A closing quote, `+`, an opening quote: two string literals joined in a script's source.
 QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
-# Quotes and backslashes, which the shell drops from `git 'commit'` before git runs.
-QUOTES_AND_BACKSLASHES = re.compile(r"[\"'\\]")
 # An option's value: a quoted string, a `$( )` or backtick substitution, or a plain word.
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
@@ -378,7 +376,7 @@ def runs_text_as_shell(words):
 
 def reads_as_commit(reading):
     unsplit = QUOTED_STRING_JOIN.sub("", reading)
-    unquoted = QUOTES_AND_BACKSLASHES.sub("", unsplit)
+    unquoted = without_quote_characters(unsplit)
     texts = (reading, unsplit, unquoted)
     try:
         simple_commands = split_simple_commands(reading)

@@ -28,6 +28,7 @@ import re
 from collections import Counter, namedtuple
 
 import shell_command
+import shell_expansion
 import shell_statements
 from script_utils import ENV_NAME as NAME
 
@@ -81,9 +82,6 @@ SHELL_SET_NAMES = frozenset({"REPLY", "reply", "OPTARG", "OPTIND", "MAPFILE", "P
 # A named file descriptor (`{S}>file`) sets the variable to the descriptor number.
 NAMED_FD = re.compile(rf"\{{({NAME})\}}(?=[<>])")
 VARIABLE_REFERENCE = re.compile(rf"\$\{{({NAME})\}}|\$({NAME})")
-# A `(` or `<` right after a word character, and the run of word characters that ends a text.
-ATTACHED_OPENER = re.compile(r"(?<=[^\s;&|()<>])[(<]")
-WORD_TAIL = re.compile(r"[^\s;&|()<>]+$")
 # What may stay in a target once the references are removed: safe characters inside one pair of quotes, or none.
 REFERENCE_FREE_TARGET = re.compile(rf"([\"']?){SAFE_CHARS}*\1")
 # A `:` right after a reference starts a zsh modifier (`$S:h`).
@@ -146,20 +144,6 @@ def has_literal_dollar(step):
             return True
         if char == quote:
             quote = None
-    return False
-
-
-def has_attached_glob_syntax(step):
-    """True when a `(` or `<` sits against the word text before it (`$S/a(:h:h)`, `$S/a<->`, `S=(a b)`). zsh reads it as
-    a glob qualifier, a numeric range or an array, and the command parser cuts the word there, so a target word read
-    from the step stops short. A `$(`, a `<(`, a file descriptor before `<` (`2<in`) and a `(` or `<` inside a quoted
-    span (a sed script) are no such syntax."""
-    for match in shell_command.unquoted_matches(ATTACHED_OPENER, step):
-        opener = match.group(0)
-        run = WORD_TAIL.search(step[:match.start()]).group(0)
-        if run.endswith("$") or (opener == "<" and run.isdigit()):
-            continue
-        return True
     return False
 
 
@@ -350,7 +334,7 @@ def hides_subshell_or_glob(code, steps):
         return True
     if any(shell_statements.opens_shell_heredoc(line) for line in code.splitlines() if "<<" in line):
         return True
-    return any(opens_backtick_span(step) or has_attached_glob_syntax(step) for _, step in steps)
+    return any(opens_backtick_span(step) or shell_expansion.has_attached_glob_syntax(step) for _, step in steps)
 
 
 class ShellVariables:

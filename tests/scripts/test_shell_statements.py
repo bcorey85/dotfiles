@@ -7,7 +7,40 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 
-from shell_statements import opens_shell_heredoc, strip_comments, strip_heredocs
+from shell_statements import (
+    arithmetic_spans,
+    is_arithmetic_span,
+    opens_shell_heredoc,
+    split_on_pipe_both,
+    strip_comments,
+    strip_heredocs,
+)
+
+
+class SplitOnPipeBothTest(unittest.TestCase):
+    def test_each_unquoted_pipe_both_ends_a_part(self):
+        self.assertEqual(["a ", " b ", " c"], split_on_pipe_both("a |& b |& c"))
+        self.assertEqual(["a | b"], split_on_pipe_both("a | b"))
+
+    def test_a_quoted_or_escaped_pipe_both_stays_in_its_part(self):
+        for command in ("echo '|&' x", 'echo "|&" x', "echo \\|& x"):
+            self.assertEqual([command], split_on_pipe_both(command), command)
+
+
+class IsArithmeticSpanTest(unittest.TestCase):
+    def test_a_span_is_arithmetic_only_when_its_inner_paren_closes_at_the_last_character(self):
+        cases = {"(1+2)": True, "((1+2)*3)": True, "(a)+(b)": False, "(echo x) ": False, "(echo x > {a,b}) ": False,
+                 "(1+2": False, "(')')": True}
+        for span, expected in cases.items():
+            self.assertEqual(is_arithmetic_span(span), expected, span)
+
+
+class ArithmeticSpansTest(unittest.TestCase):
+    def test_a_span_is_kept_only_when_its_inner_paren_closes_at_the_last_character(self):
+        cases = {"x=$((1+2))": [(2, 10)], "((1+2))": [(0, 7)], "$((1+(2)))": [(0, 10)],
+                 "((echo hi) > f); echo $((1))": [(22, 28)], "$((echo hi) )": [], "echo '((1))'": []}
+        for text, expected in cases.items():
+            self.assertEqual(expected, arithmetic_spans(text), text)
 
 
 class StripCommentsTest(unittest.TestCase):

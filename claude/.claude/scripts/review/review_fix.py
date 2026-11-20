@@ -40,6 +40,7 @@ still judges.
                                          ruler's change.
                                          accepted: {accept_means}; rejected: {reject_means};
                                          applied: {applied_means}.
+                                         held: {held_means}.
                                          Logs one row per ask, once. With an ask accepted or modified it writes them
                                          to <git dir>/review-fix/ask-findings.md and prints `ACTION: redispatch`
                                          with the fix run's launch line (review_fix_asks.py). `ACTION: done` when
@@ -114,7 +115,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
-from ask_outcome_words import RELAY_USAGE
+from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_fix_asks import (
@@ -126,6 +127,7 @@ from review_fix_asks import (
     relaunch_line,
     required_packet_repo,
 )
+from review_fix_names import PACKET_IDENTITY_KEYS
 from review_fix_plan_impacts import APPLIED_KEEP_LINE, PLAN_ARG_NOTE, present_plan_impacts
 from review_fix_state import (
     ADD_DEVIATIONS_LINE,
@@ -316,6 +318,11 @@ def asks_done_line(asks, state):
             f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
             f"word: make that change instead; an optional ':<one line note>' after {review_asks.PLAIN_OUTCOMES_TEXT} "
             "is not stored)")
+    user_only = user_only_numbers(asks)
+    if user_only:
+        listed = ", ".join(str(number) for number in user_only)
+        line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
+                 f"{review_asks.HELD_MEANS}")
     conditional = conditional_ask_numbers(asks)
     if not conditional:
         return line
@@ -442,11 +449,13 @@ def new_state(options, packet, packet_id):
     same_run = previous.get("packet_id") == packet_id
     waiting_packets = [] if same_run else carried_waiting_packets(previous)
     fixed_paths = handback.fixed_paths(packet)
-    state = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
-             "review_round": packet["review_round"], "spec_iter": packet["spec_iter"], "status": packet["status"],
-             "branch": script_utils.current_branch(".") or "-", "packet_id": packet_id,
-             "source": options.source, "fixed_paths": fixed_paths,
-             "files_touched": [str(path) for path in packet["files_touched"]]}
+    identity = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
+                "review_round": packet["review_round"], "spec_iter": packet["spec_iter"],
+                "status": packet["status"], "branch": script_utils.current_branch(".") or "-",
+                "source": options.source, "fixed_paths": fixed_paths,
+                "files_touched": [str(path) for path in packet["files_touched"]]}
+    state = {key: identity[key] for key in PACKET_IDENTITY_KEYS}
+    state["packet_id"] = packet_id
     if options.relaunch_args:
         state["relaunch_args"] = options.relaunch_args
     if same_run:
@@ -949,6 +958,7 @@ def main():
         print(__doc__.format(outcomes=outcomes, modified=review_asks.MODIFIED,
                              accept_means=review_asks.ACCEPT_MEANS, reject_means=review_asks.REJECT_MEANS,
                              applied_means=review_asks.APPLIED_MEANS,
+                             held_means=review_asks.HELD_MEANS,
                              plain_outcomes=review_asks.PLAIN_OUTCOMES_TEXT,
                              relay_usage=RELAY_USAGE))
         return 2

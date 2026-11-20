@@ -9,7 +9,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 114 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-133 further findings are left out of this page.
+134 further findings are left out of this page.
 
 ## Rejected
 

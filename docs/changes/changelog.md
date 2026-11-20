@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-992 changes
+998 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,12 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [asks-done records session rulings while a user-only ask stays held](notes/2026-11-19-asks-done-records-session-rulings-while-a-user.md) [script/review-fix-asks, script/review-asks, script/approval-asks-store, script/ask-outcome-words] A session asks-done call takes held on each user-only ask, logs the plain asks and prints their fix run, and moves the held asks to a kept packet a later --by user call rules.
+* [review loop reverts a fix coder's approval-only edit and reports it](notes/2026-11-19-review-loop-reverts-a-fix-coder-s-approval-only.md) [script/review-loop-ruled, script/review-loop-coder, script/review-loop-script, script/full-check-gate, script/script-utils] The review loop restores a fix coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md to its pre-pass blob and reports it as a dropped ask, and a re-run files no ask for a saved path with no diff against HEAD.
+* [log-escape keeps miss_reason in the local escape text for every stage](notes/2026-11-19-log-escape-keeps-miss-reason-in-the-local-escape.md) [script/log-escape, script/log-escape-check, script/ledger-write, skill/escape] log-escape writes a local escape-text row for every row with a miss_reason, any stage, and its note names that file when the ledger refuses the field.
+* [refactor_flow takes untracked files and keeps its log input in the git dir](notes/2026-11-19-refactor-flow-takes-untracked-files-and-keeps-its.md) [script/refactor-flow, script/simplify-slices, skill/close-branch, skill/refactor] refactor simplify-prep lists untracked files of its target, the branch log input defaults to the repo's git dir, and close-branch Step 5 names the log --mode branch command.
+* [pull_keep_index pulls nothing when the upstream is in HEAD](notes/2026-11-19-pull-keep-index-pulls-nothing-when-the-upstream-is.md) [script/pull-keep-index] pull_keep_index skips the rebase pull when the upstream tip is an ancestor of HEAD, so a local merge of the integration branch keeps its hashes and the push needs no force.
+* [agent-model-guard passes a fork dispatch](notes/2026-11-19-agent-model-guard-passes-a-fork-dispatch.md) [script/agent-model-guard] agent-model-guard lets an Agent call with subagent_type fork through with no model pin, and still denies an unpinned or opus non-fork dispatch.
 * [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) [shared/review-fork-run] The review fork's stop footer asks a session that passes on the user's ruling to add a `user said: "<words>"` line, and the Resume step maps that line to `asks-done --by user --relayed-by <session> --quote "<words>"`, so a user-only ask closes through the fork.
 * [An ask the user accepted that is already in the tree is logged as accepted](notes/2026-11-19-an-ask-the-user-accepted-that-is-already-in-the.md) [script/review-asks, script/review-fix-asks, script/review-fix] asks-done takes a new outcome word, applied, for an accepted ask whose change is already in the tree. It logs as accepted and writes no finding, so the ruling log no longer shows such an ask as rejected.
 * [Asks-done removes a stale run-folder fix-findings file](notes/2026-11-19-asks-done-removes-a-stale-run-folder-fix-findings.md) [script/review-fix, script/review-launch] The fix run that asks-done prints now deletes a fix-findings.md an earlier run left in the run folder, so a failed new Write cannot make the launch read old findings.

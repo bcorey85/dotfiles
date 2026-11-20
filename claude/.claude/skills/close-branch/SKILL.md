@@ -65,6 +65,7 @@ On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` 
 
 1. Rerun `verify-prep`. Log every finding from Steps 2 to 4 with `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file>`, in the row shape `~/.claude/skills/verify-branch/SKILL.md` Step 1 gives (`actioned` `fixed`, `skipped_fp`, or `ask`). Rerun `verify-prep`; it must report the review as ran.
 2. Log the plan-verifier's verdicts with `verify-log --rows <file>`, as `~/.claude/skills/verify-branch/SKILL.md` Step 3 says, with each criterion the gate showed covered moved to `done` and its covering test as the evidence. On gaps, follow that file's Routing for gaps; on asks open, its Routing for asks.
+3. Log the smell-reviewer's run: write its findings to the input path `branch-prep` printed, in the input shape of `~/.claude/skills/refactor/SKILL.md` Step 5, with no `handoff` key; read `~/.claude/skills/_shared/escape-ratchet.md` for each escape's `miss_reason` and `guards`; then run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode branch --base <base> --input <that path>`. Skip the `NEXT:` line `log` prints and go on to Step 6.
 
 ## Step 6: recap
 

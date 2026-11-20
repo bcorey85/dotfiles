@@ -73,7 +73,9 @@ class LogEscapeTest(unittest.TestCase):
 
     def test_writes_review_escape_with_string_values(self):
         done = self.run_escape(*VALID_ARGS, "line=7", "lane=code")
-        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, "", ""))
+        self.assertEqual((done.returncode, done.stdout), (0, ""))
+        self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+        self.assertIn("escape-text.jsonl", done.stderr)
         rows = self.escape_rows()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["gate_missed"], "review")
@@ -231,7 +233,7 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual([row["desc"] for row in self.text_rows()], ["kept zq"])
 
-    def test_only_a_hand_catch_stage_writes_a_text_row(self):
+    def test_only_a_hand_catch_stage_keeps_its_desc_in_the_text_row(self):
         hand_stages = ("cc", "walkthrough", "pr-human", "peer-review", "prod", "other")
         other_stages = ("pr-bot", "plan-review", "phase-gate", "refactor", "verify", "q-verify")
         args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
@@ -239,12 +241,57 @@ class LogEscapeTest(unittest.TestCase):
             done = self.run_escape(*args, f"stage_found={stage}", f"desc=from {stage}".replace(" ", "-"),
                                    env=self.text_env())
             self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual([row["stage_found"] for row in self.text_rows()], list(hand_stages))
+        rows = self.text_rows()
+        self.assertEqual([row["stage_found"] for row in rows], list(hand_stages + other_stages))
+        stages_with_desc = [row["stage_found"] for row in rows if "desc" in row]
+        self.assertEqual(stages_with_desc, list(hand_stages))
 
-    def test_no_desc_writes_no_text_row(self):
-        done = self.run_escape(*VALID_ARGS, env=self.text_env())
+    def test_a_row_with_a_miss_reason_and_no_desc_writes_a_text_row_for_every_stage(self):
+        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
+        for stage in ("cc", "refactor", "plan-review", "pr-bot"):
+            done = self.run_escape(*args, f"stage_found={stage}", env=self.text_env())
+            self.assertEqual(done.returncode, 0, done.stderr)
+        rows = self.text_rows()
+        self.assertEqual([row["stage_found"] for row in rows], ["cc", "refactor", "plan-review", "pr-bot"])
+        self.assertEqual({row["miss_reason"] for row in rows}, {"overlooked"})
+
+    def test_an_eng_spec_row_with_no_miss_reason_and_no_desc_writes_no_text_row(self):
+        args = [arg for arg in VALID_ARGS
+                if not arg.startswith(("miss_reason=", "gate_missed=", "stage_found="))]
+        done = self.run_escape(*args, "gate_missed=eng-spec", "stage_found=plan-review", env=self.text_env())
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertFalse(self.text_file().exists())
+
+    def test_a_ledger_that_refuses_miss_reason_leaves_it_in_the_text_file_and_the_note_names_the_file(self):
+        env = self.text_env(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
+        done = self.run_escape(*args, "stage_found=refactor", env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("does not store miss_reason", done.stderr)
+        self.assertIn(f"the miss_reason is in {self.text_file()}", done.stderr)
+        self.assertNotIn("kept out of the ledger", done.stderr)
+        (row,) = self.text_rows()
+        self.assertEqual(row["miss_reason"], "overlooked")
+        self.assertNotIn("miss_reason", self.escape_rows()[0])
+
+    def test_the_refusal_note_does_not_claim_a_kept_row_when_the_text_append_fails(self):
+        blocker = self.temp_root / "blocker"
+        blocker.write_text("a file, not a folder\n")
+        env = self.environment(ESCAPE_TEXT_FILE=str(blocker / "escape-text.jsonl"),
+                               FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("could not append escape_text row", done.stderr)
+        self.assertNotIn("row appended to", done.stderr)
+
+    def test_the_refusal_note_does_not_claim_a_kept_row_when_the_append_fails_on_a_file_with_older_rows(self):
+        self.text_file().write_text('{"older": "row"}\n')
+        self.text_file().chmod(0o444)
+        env = self.text_env(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")
+        done = self.run_escape(*VALID_ARGS, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("could not append escape_text row", done.stderr)
+        self.assertNotIn("the miss_reason is in", done.stderr)
 
     def test_a_refused_call_with_desc_writes_no_text_row(self):
         bad_enum_args = [arg for arg in VALID_ARGS if not arg.startswith("miss_reason=")]
@@ -391,7 +438,8 @@ class LogEscapeTest(unittest.TestCase):
             with self.subTest(code=code):
                 done = self.run_escape(*VALID_ARGS, env=self.environment(FAKE_LEDGER_WRITE_EXIT=str(code)))
                 self.assertEqual(done.returncode, 0, done.stderr)
-                self.assertEqual(len(done.stderr.splitlines()), 1, done.stderr)
+                note_lines = [line for line in done.stderr.splitlines() if line.startswith("note:")]
+                self.assertEqual(len(note_lines), 1, done.stderr)
                 self.assertIn(f"ledger write exit {code}", done.stderr)
                 self.assertEqual(self.local_rows()[-1]["miss_reason"], "overlooked")
         self.assertEqual(len(self.local_rows()), 3)

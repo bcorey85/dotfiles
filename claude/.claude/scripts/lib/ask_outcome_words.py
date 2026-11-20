@@ -11,6 +11,9 @@ REJECTED = "rejected"
 # A review-fix outcome: the ruler accepted the ask and its change is already in the tree. It logs as ACCEPTED and
 # writes no finding.
 APPLIED = "applied"
+# A review-fix outcome valid only on a user-only ask in a session call: the ask is not ruled and waits for the user's
+# own `--by user` call. It logs nothing.
+HELD = "held"
 PHASE_ASKS_PATH = pathlib.Path(__file__).resolve().parent.parent / "review" / "phase_asks.py"
 LIST_COMMAND = f"python3 {PHASE_ASKS_PATH} list"
 # The word `rule_command` prints for each ask. A session that types it as it stands is refused with a pointer to it.

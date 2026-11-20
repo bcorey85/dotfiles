@@ -81,8 +81,9 @@
 #                       ${ESCAPE_TEXT_FILE:-~/.claude/escape-text.jsonl} on this machine
 #                       (file and branch raw) through `ledger-write --local escape_text`, only when desc
 #                       is non-empty and stage_found is a hand-catch stage (the `hand_catch_stages`
-#                       variable below); any other stage writes no text row.
-#                       Never sent to the ledger.
+#                       variable below); any other stage keeps no catch text.
+#                       Never sent to the ledger. A row with a miss_reason is written to the same file
+#                       at every stage, with or without a desc.
 #     file=path         sent to the ledger as path_key (a keyed hash); stored raw in
 #                       review-escapes.jsonl when there is no ledger or the ledger refuses or
 #                       fails on the row, and in the escape-text file
@@ -103,9 +104,10 @@
 # desc and scan_flagged are dropped from the ledger row, file becomes path_key and
 # branch becomes branch_key. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`)
 # `ledger-write` appends the row to ~/.claude/review-escapes.jsonl and prints one stderr line.
-# A call with a non-empty desc from a hand-catch stage prints one more stderr line, naming
-# the escape-text file. A ledger build that refuses
-# miss_reason gets the row without it, with one stderr note and exit 0. Any other refusal or failure
+# A call with a miss_reason, or a non-empty desc from a hand-catch stage, prints ledger-write's
+# line for the escape-text row (the file it was appended to, or why it was dropped). A ledger
+# build that refuses miss_reason gets the row without it, with one stderr note that names the escape text
+# file holding the miss_reason (ledger-write's own line is printed only when this call's row did not land in that file), and exit 0. Any other refusal or failure
 # of `ledger write` keeps the row in that file, with one stderr note and exit 0. gate_missed,
 # stage_found, class and guard are required, and stage_found and miss_reason must be on their
 # lists here; a call that breaks either rule exits 1.
@@ -196,17 +198,49 @@ fi
 [ -z "$check_only" ] || exit 0
 
 hand_catch_stages="cc walkthrough pr-human peer-review prod other"
+escape_text_note=""
+escape_text_kept=""
 
-# append_escape_text <row json> adds the catch text row to the local text file through ledger-write,
-# which prints one stderr line, and returns 0 even when the append fails: telemetry never blocks a caller.
+# file_byte_size <file> prints the size in bytes, 0 for no file name or a missing file.
+file_byte_size() {
+  if [ -z "$1" ] || [ ! -f "$1" ]; then
+    echo 0
+    return 0
+  fi
+  wc -c < "$1" | tr -d ' '
+}
+
+# append_escape_text <row json> adds the local text row through ledger-write, which prints one stderr
+# line (kept in escape_text_note) and exits 0 even when the append fails: telemetry never blocks a caller. A row with a
+# miss_reason is written for every stage; the catch text is kept only for a hand-catch stage.
+# A row with neither a miss_reason nor a hand-catch desc writes nothing.
 append_escape_text() {
   local row_json="$1"
-  local row_stage desc
+  local row_stage desc row_miss_reason keeps_desc=""
   row_stage=$(jq -r '.stage_found' <<< "$row_json")
-  [[ " $hand_catch_stages " == *" $row_stage "* ]] || return 0
   desc=$(jq -r '.desc // ""' <<< "$row_json")
-  [ -n "$desc" ] || return 0
-  jq -c 'del(.scan_flagged)' <<< "$row_json" | bash "$script_dir/ledger-write" --local escape_text
+  row_miss_reason=$(jq -r '.miss_reason // ""' <<< "$row_json")
+  if [[ " $hand_catch_stages " == *" $row_stage "* && -n "$desc" ]]; then
+    keeps_desc=1
+  fi
+  [ -n "$keeps_desc" ] || [ -n "$row_miss_reason" ] || return 0
+  if [ -z "$keeps_desc" ]; then
+    row_json=$(jq -c 'del(.desc)' <<< "$row_json")
+  fi
+  local text_file size_before size_after
+  text_file=$(bash "$script_dir/ledger-write" --local-path escape_text) || text_file=""
+  size_before=$(file_byte_size "$text_file")
+  escape_text_note=$(jq -c 'del(.scan_flagged)' <<< "$row_json" | bash "$script_dir/ledger-write" --local escape_text 2>&1) || true
+  size_after=$(file_byte_size "$text_file")
+  # The file growing is the only proof this call's append landed: older rows make a non-empty file prove nothing.
+  if [ "$size_after" -gt "$size_before" ]; then
+    escape_text_kept=1
+  fi
+}
+
+print_escape_text_note() {
+  [ -z "$escape_text_note" ] || printf '%s\n' "$escape_text_note" >&2
+  escape_text_note=""
 }
 
 if ! "$script_dir/telemetry_enabled.sh" 2>/dev/null; then
@@ -223,17 +257,27 @@ ledger_send_row "$script_dir/ledger-write" review_escape "$payload" || write_rc=
 
 # An older ledger build refuses miss_reason. The ledger never blocks a caller, so the row lands without it.
 if [ "$write_rc" -eq 2 ] && [[ $writer_stderr == *"field_unknown miss_reason"* ]]; then
-  echo "note: this ledger build does not store miss_reason; the row is logged without it" >&2
+  text_file=$(bash "$script_dir/ledger-write" --local-path escape_text) || text_file=""
+  if [ -n "$text_file" ] && [ -n "$escape_text_kept" ]; then
+    echo "note: this ledger build does not store miss_reason; the row is logged without it, and the miss_reason is in $text_file" >&2
+    escape_text_note=""
+  else
+    # The text append failed or no file is known: its own note says why, so no claim that the text was kept.
+    echo "note: this ledger build does not store miss_reason; the row is logged without it" >&2
+    print_escape_text_note
+  fi
   payload=$(jq -c 'del(.miss_reason)' <<< "$payload")
   write_rc=0
   ledger_send_row "$script_dir/ledger-write" review_escape "$payload" || write_rc=$?
 fi
 
 if [ "$write_rc" -eq 0 ]; then
+  print_escape_text_note
   [ -z "$writer_stderr" ] || printf '%s\n' "$writer_stderr" >&2
   exit 0
 fi
 
 # The ledger never stops a caller: a row it refused or failed on goes to the local file.
+print_escape_text_note
 kept_note=$(printf '%s\n' "$payload" | bash "$script_dir/ledger-write" --local review_escape 2>&1) || true
 echo "note: ledger write exit $write_rc (${writer_stderr//$'\n'/ }); $kept_note" >&2

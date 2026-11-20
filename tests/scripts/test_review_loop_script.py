@@ -29,6 +29,7 @@ import plan_format
 import review_asks
 import review_loop_calls
 import review_loop_closure
+import review_loop_coder
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
@@ -376,6 +377,46 @@ class ClosureCheckTest(unittest.TestCase):
         self.assertIn('escape every double quote inside the receipt as \\"', prompts[0])
 
 
+class WithoutRevertedTest(unittest.TestCase):
+    def test_a_mixed_pass_loses_only_the_reverted_path_and_its_fix_diff_stat(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        diff_files = {}
+        for name in ("app.py", "CLAUDE.md"):
+            diff_files[name] = pathlib.Path(folder.name) / f"{name}.diff"
+            diff_files[name].write_text("diff")
+            review_loop_closure.FIX_DIFF_STATS.append(
+                {"path": name, "added": 1, "removed": 0, "diff_file": str(diff_files[name])})
+        self.addCleanup(review_loop_closure.FIX_DIFF_STATS.clear)
+        result = review_loop_coder.CoderResult(
+            "Fixed 1.", ["--- a/app.py\n+++ b/app.py", "--- a/CLAUDE.md\n+++ b/CLAUDE.md"], ["app.py", "CLAUDE.md"])
+
+        kept = review_loop_coder.without_reverted(result, ["CLAUDE.md"], 0)
+
+        self.assertEqual(kept.changed, ["app.py"])
+        self.assertEqual(kept.diffs, ["--- a/app.py\n+++ b/app.py"])
+        self.assertEqual([stat["path"] for stat in review_loop_closure.FIX_DIFF_STATS], ["app.py"])
+        self.assertTrue(diff_files["app.py"].exists())
+        self.assertFalse(diff_files["CLAUDE.md"].exists())
+
+    def test_an_earlier_rounds_kept_stat_for_a_reverted_path_stays(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(review_loop_closure.FIX_DIFF_STATS.clear)
+        diff_files = [pathlib.Path(folder.name) / "kept.diff", pathlib.Path(folder.name) / "reverted.diff"]
+        for diff_file in diff_files:
+            diff_file.write_text("diff")
+            review_loop_closure.FIX_DIFF_STATS.append(
+                {"path": "CLAUDE.md", "added": 1, "removed": 0, "diff_file": str(diff_file)})
+        result = review_loop_coder.CoderResult("Fixed 1.", ["--- a/CLAUDE.md\n+++ b/CLAUDE.md"], ["CLAUDE.md"])
+
+        review_loop_coder.without_reverted(result, ["CLAUDE.md"], 1)
+
+        self.assertEqual([stat["diff_file"] for stat in review_loop_closure.FIX_DIFF_STATS], [str(diff_files[0])])
+        self.assertTrue(diff_files[0].exists())
+        self.assertFalse(diff_files[1].exists())
+
+
 class ReviewLoopHarness:
     """Mixin with no tests: the scratch repo, the stand-in `claude` and the readers of what a run stored."""
 
@@ -646,7 +687,13 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
         self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
-    def test_a_coder_edit_to_a_claude_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+    def assert_reverted_and_reported(self, packet, path):
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, packet["dropped_asks"][0])
+        self.assertIn(path, packet["dropped_asks"][0])
+
+    def test_a_coder_edit_to_a_claude_md_file_is_reverted_and_reported_as_a_dropped_ask(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
@@ -655,10 +702,53 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
-        self.assertIn("needs the user's approval", packet["ask"][0]["question"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+        self.assertEqual(len(packet["fixed"]), 1)
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
 
-    def test_a_coder_edit_to_an_agents_md_file_reaches_the_packet_as_an_ask_for_the_user(self):
+    def test_a_finding_whose_only_edit_was_a_reverted_claude_md_is_skipped_not_fixed(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual([entry["reason"] for entry in packet["skipped_fp"]],
+                         ["the coder made no change"])
+
+    CLAUDE_MD_FIX_REVIEW = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
+                                              "`CLAUDE.md:1` the rule is wrong for `limit`")
+
+    def test_a_finding_on_a_reverted_claude_md_stays_open_when_the_coder_also_changed_another_file(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fixed"], [], "the finding's fix was the reverted edit")
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+
+    def test_a_finding_on_a_reverted_claude_md_is_open_not_skipped_when_it_was_the_only_edit(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(len(packet["findings_remaining"]), 1, packet["findings_remaining"])
+
+    def test_a_coder_created_agents_md_file_is_removed_and_reported_as_a_dropped_ask(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "AGENTS.md": "# Rules\n"}}],
@@ -667,9 +757,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["AGENTS.md:1"])
+        self.assert_reverted_and_reported(packet, "AGENTS.md")
 
-    def test_a_coder_that_dies_after_editing_a_claude_md_file_still_files_the_ask(self):
+    def test_a_coder_that_dies_after_editing_a_claude_md_file_still_reports_the_reverted_edit(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],
             "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
@@ -678,9 +768,21 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "critical-blocker")
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+        self.assertNotIn("CLAUDE.md", packet["files_touched"])
 
-    def test_a_claude_md_file_edited_in_two_rounds_stays_one_ask(self):
+    def test_the_blocker_of_a_failed_coder_call_names_no_path_that_was_reverted(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}],
+            "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertNotIn("CLAUDE.md", packet["blockers"][0])
+        self.assertIn("Prompt is too long", packet["blockers"][0])
+
+    def test_a_claude_md_file_edited_in_two_rounds_is_reported_once(self):
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}},
@@ -690,7 +792,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["CLAUDE.md:1"])
+        self.assert_reverted_and_reported(packet, "CLAUDE.md")
 
     def test_a_coder_edit_to_a_claude_md_file_the_user_accepted_the_ask_for_files_no_new_ask(self):
         ask_text = accepted_approval_ask_text("CLAUDE.md")
@@ -1211,6 +1313,136 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(held_member, held_part)
         self.assertTrue(
             packet["class_closure"].startswith("class members still open, the class repair changed nothing"))
+
+    def test_a_class_member_whose_repair_was_a_reverted_claude_md_edit_stays_open_never_fixed(self):
+        member = "`CLAUDE.md:1` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "one member still open", "open": [member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [member])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(len(packet["fixed"]), 1, "only the app.py finding is fixed")
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
+
+    def test_a_class_repair_that_changes_other_files_but_reverts_every_member_claims_no_fix(self):
+        member = "`CLAUDE.md:1` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "one member still open", "open": [member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED + "# again\n", "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [member])
+        self.assertTrue(packet["class_closure"].startswith("the class repair fixed none of the class members"),
+                        packet["class_closure"])
+        self.assertIn("still open, their fix was an approval-only edit the loop reverted: " + member,
+                      packet["class_closure"])
+        self.assertNotIn("fixed these class members", packet["class_closure"])
+
+    def test_a_gate_or_lint_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+        on_code = finding_record.parse_finding("`app.py:2` the limit is wrong")
+
+        loop.mark_repaired([on_claude_md, on_code], ["app.py"], ["CLAUDE.md"])
+        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"])
+
+        self.assertEqual(loop.open_fixes, [on_claude_md], "open once, never twice")
+        self.assertEqual(loop.fixed, [on_code])
+        self.assertEqual(loop.skipped_fp, [])
+
+    def test_a_class_repair_that_changes_one_member_and_reverts_another_names_both_outcomes(self):
+        reverted_member = "`CLAUDE.md:1` the same limit is wrong here too"
+        fixed_member = "`app.py:4` the same limit is wrong here too"
+        closure = json.dumps({"receipt": "two members open", "open": [fixed_member, reverted_member]})
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_FIXED + "# again\n", "CLAUDE.md": "# Rules\n"}}],
+            "closure": [{"result": closure}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["open_classes"], [reverted_member])
+        self.assertTrue(packet["class_closure"].endswith(
+            "still open, their fix was an approval-only edit the loop reverted: " + reverted_member),
+            packet["class_closure"])
+        fixed_lines = [item["file_line"] for item in packet["fixed"]]
+        self.assertNotIn("CLAUDE.md:1", fixed_lines)
+        self.assertEqual(fixed_lines, ["app.py:2", "app.py:4"])
+
+    def test_a_prose_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+
+        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"], records_skip=False)
+
+        self.assertEqual(loop.open_fixes, [on_claude_md])
+        self.assertEqual(loop.fixed, [])
+        self.assertEqual(loop.skipped_fp, [])
+
+    def test_the_gate_and_lint_repairs_pass_the_reverted_paths_to_mark_repaired(self):
+        reverted_result = review_loop_coder.CoderResult("", [], ["c.py"], ["CLAUDE.md"])
+        loop_script = self.load_script_module()
+        gate = loop_script.full_check_gate
+        problem = [("ruff check app.py", "app.py:1:1: N802 bad name")]
+
+        lint_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        with mock.patch.object(gate.format_files, "lint_problems", side_effect=[problem, []]), \
+                mock.patch.object(loop_script.format_files, "run_formatters", return_value=[]), \
+                mock.patch.object(lint_loop, "review_scope", return_value=["a.py"]), \
+                mock.patch.object(lint_loop, "repair", return_value=reverted_result), \
+                mock.patch.object(lint_loop, "mark_repaired") as lint_marked, \
+                mock.patch.object(lint_loop, "run_check", return_value=""):
+            lint_loop.full_check_pass("true")
+        self.assertEqual(lint_marked.call_args.args[2:], (["CLAUDE.md"],), "the lint repair")
+
+        gate_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+
+        def failing_check(_command):
+            gate_loop.full_check = "failed (exit 1)"
+            return "boom"
+
+        with mock.patch.object(gate.format_files, "lint_problems", return_value=[]), \
+                mock.patch.object(gate_loop, "review_scope", return_value=["a.py"]), \
+                mock.patch.object(gate_loop, "repair", return_value=reverted_result), \
+                mock.patch.object(gate_loop, "mark_repaired") as gate_marked, \
+                mock.patch.object(gate_loop, "recheck_full_check"), \
+                mock.patch.object(gate_loop, "run_check", side_effect=failing_check):
+            gate_loop.full_check_pass("true")
+        self.assertEqual(gate_marked.call_args.args[2:], (["CLAUDE.md"],), "the gate repair")
+
+    def test_a_finding_on_a_reverted_claude_md_over_two_rounds_stays_one_open_finding(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": self.CLAUDE_MD_FIX_REVIEW},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}},
+                      {"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules two\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
+        reviewer_calls = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
+        second_round_prompt = reviewer_calls[1]["prompt"]
+        self.assertIn("status: skipped", second_round_prompt)
+        self.assertNotIn("status: fixed", second_round_prompt)
+        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, second_round_prompt)
 
     def test_a_nit_on_a_held_file_never_reaches_the_fix_coder(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
@@ -2367,7 +2599,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
                 mock.patch.object(loop_script.format_files, "run_formatters",
                                   return_value=list(formatted)) as formatters, \
                 mock.patch.object(loop, "review_scope", return_value=["a.py"]), \
-                mock.patch.object(loop, "repair", return_value=("", [], ["c.py"])) as repair, \
+                mock.patch.object(loop, "repair",
+                                  return_value=review_loop_coder.CoderResult("", [], ["c.py"])) as repair, \
                 mock.patch.object(loop, "mark_repaired") as mark_repaired, \
                 mock.patch.object(loop, "run_check", return_value="") as run_check:
             getattr(loop, step)(*self.LINT_STEPS[step])

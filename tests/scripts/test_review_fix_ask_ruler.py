@@ -15,6 +15,7 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import approval_asks_store
 import code_wait
+import fake_ledger
 import review_asks
 import review_fix
 import review_fix_asks
@@ -579,6 +580,245 @@ class ApprovalPathsRulingTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("approval-asks.json", output)
         self.assertIn("Nothing was logged", output)
+
+    def test_a_damaged_held_changes_file_stops_a_user_only_ruling_with_nothing_logged(self):
+        self.approval_packet()
+        held_file = approval_asks_store.held_changes_file(self.repo)
+        held_file.parent.mkdir(parents=True, exist_ok=True)
+        held_file.write_text("{")
+
+        code, output = self.run_script(["asks-done", "--by", "user", "rejected:keep the edit"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("held-approval-changes.json", output)
+        self.assertIn("Nothing was logged", output)
+
+
+THIRD_ASK = ask_entry("third", "three.ts:3", finding_id="a1b2c3d4e5f60033", question="third?", change="c3")
+USER_ONLY_SECOND_ASK = {**SECOND_ASK, "user_only": True}
+HELD_PACKET_ASKS = packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, USER_ONLY_SECOND_ASK, THIRD_ASK])
+
+
+class HeldAskTest(unittest.TestCase):
+    """A session call holds a user-only ask: the plain asks log and print their fix run, the held ask waits in a kept
+    packet for the user's own call."""
+    setUp = AskRulerTest.setUp
+    stop_launched_loops = AskRulerTest.stop_launched_loops
+    fake_command = AskRulerTest.fake_command
+    environment = AskRulerTest.environment
+    git = AskRulerTest.git
+    run_script = AskRulerTest.run_script
+    packet = AskRulerTest.packet
+    ledger_writes = AskRulerTest.ledger_writes
+    findings_file = AskRulerTest.findings_file
+    asks_done = AskRulerTest.asks_done
+    logged_outcomes = AskRulerTest.logged_outcomes
+    findings_lines = AskRulerTest.findings_lines
+    state_file = AskRulerTest.state_file
+
+    def stored_state(self):
+        return json.loads(self.state_file().read_text())
+
+    def hold_the_user_only_ask(self):
+        self.packet(HELD_PACKET_ASKS)
+        return self.asks_done("--by", "session", "accepted", "held", "accepted")
+
+    def test_a_session_call_logs_the_plain_asks_prints_the_fix_run_and_keeps_the_held_ask_waiting(self):
+        output = self.hold_the_user_only_ask()
+
+        self.assertEqual(self.logged_outcomes(), ["accepted", "accepted"])
+        self.assertIn("ACTION:", output)
+        self.assertEqual(len(self.findings_lines()), 2)
+        state = self.stored_state()
+        self.assertEqual(state["stage"], "done")
+        self.assertEqual([item["finding_id"] for item in state["asks"]],
+                         ["a1b2c3d4e5f60031", "a1b2c3d4e5f60033"])
+        [kept] = state["waiting_packets"]
+        self.assertNotEqual(kept["packet_id"], state["packet_id"])
+        self.assertEqual([item["finding_id"] for item in kept["asks"]], ["a1b2c3d4e5f60032"])
+        self.assertIn(f"--by user --packet {kept['packet_id']}", output)
+
+    def test_the_kept_packet_carries_the_parents_relaunch_args_and_its_own_id(self):
+        repo_args = ["--repo", str(self.repo)]
+        parent = {"packet_id": "p1", "relaunch_args": repo_args, "iter": 2, "asks": [{}], "asks_logged": [0]}
+        state = {}
+
+        kept = review_fix_asks.keep_held_packet(state, parent, [{"user_only": True, "change": "c"}])
+
+        self.assertEqual(kept["relaunch_args"], repo_args)
+        self.assertEqual(approval_asks_store.read_held_changes(self.repo), set(),
+                         "the held changes are written after the state is saved, never while the packet is built")
+        self.assertEqual(kept["iter"], 2)
+        self.assertNotEqual(kept["packet_id"], "p1")
+        self.assertNotIn("asks_logged", kept)
+        self.assertEqual(state["waiting_packets"], [kept])
+
+    def test_a_session_hold_call_writes_the_held_change_once_the_state_is_saved(self):
+        self.hold_the_user_only_ask()
+
+        self.assertEqual(approval_asks_store.read_held_changes(self.repo), {USER_ONLY_SECOND_ASK["change"]})
+
+    def test_a_damaged_held_changes_file_stops_a_session_hold_call_with_nothing_logged(self):
+        self.packet(HELD_PACKET_ASKS)
+        held_file = approval_asks_store.held_changes_file(self.repo)
+        held_file.parent.mkdir(parents=True, exist_ok=True)
+        held_file.write_text("{")
+        state_before = self.state_file().read_bytes()
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "held", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("held-approval-changes.json", output)
+        self.assertIn("Nothing was logged", output)
+        self.assertEqual(self.logged_outcomes(), [])
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+
+    def test_a_later_user_call_on_the_kept_packet_logs_the_held_ask(self):
+        self.hold_the_user_only_ask()
+        kept_id = self.stored_state()["waiting_packets"][0]["packet_id"]
+
+        self.asks_done("--by", "user", "--packet", kept_id, "rejected:keep it")
+
+        self.assertEqual(self.logged_outcomes(), ["accepted", "accepted", "rejected"])
+        deciders = [row["ask_decided_by"] for row in self.ledger_writes() if "ask_decided_by" in row]
+        self.assertEqual(deciders, ["session", "session", "user"])
+        self.assertEqual(self.stored_state()["waiting_packets"], [])
+
+    def assert_refused_with_nothing_logged(self, words, expected_text, packet_asks=HELD_PACKET_ASKS):
+        self.packet(packet_asks)
+        state_before = self.state_file().read_bytes()
+        code, output = self.run_script(["asks-done", *words])
+        self.assertEqual(code, 2, output)
+        self.assertIn(expected_text, output)
+        self.assertEqual(self.logged_outcomes(), [])
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+
+    def test_held_on_a_plain_ask_is_refused(self):
+        self.assert_refused_with_nothing_logged(
+            ["--by", "session", "held", "accepted", "accepted"], "ask 1: held is only for a user_only ask")
+
+    def test_held_in_a_user_call_is_refused(self):
+        self.assert_refused_with_nothing_logged(
+            ["--by", "user", "accepted", "held", "accepted"], "ask 2: held is for a session call")
+
+    def test_a_session_call_with_a_word_other_than_held_on_a_user_only_ask_names_held_in_the_refusal(self):
+        self.assert_refused_with_nothing_logged(
+            ["--by", "session", "accepted", "accepted", "accepted"], "A session call gives `held`")
+
+    def test_held_on_every_ask_is_refused(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[USER_ONLY_SECOND_ASK]))
+        state_before = self.state_file().read_bytes()
+        code, output = self.run_script(["asks-done", "--by", "session", "held"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("every ask is held", output)
+        self.assertEqual(self.logged_outcomes(), [])
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+
+    def test_a_refusal_names_the_ask_by_its_place_in_the_stop_when_an_earlier_ask_is_held(self):
+        user_only_first = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_first, USER_ONLY_SECOND_ASK, THIRD_ASK]))
+        code, output = self.run_script(["asks-done", "--by", "session", "held", "accepted", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+
+    def test_a_conditional_change_is_numbered_by_its_place_in_the_stop_when_earlier_asks_are_held(self):
+        user_only_first = {**FIRST_ASK, "user_only": True}
+        conditional_third = {**THIRD_ASK, "change": "if yes, drop it; if no, keep it"}
+        packet_asks = packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_first, USER_ONLY_SECOND_ASK, conditional_third])
+        self.assert_refused_with_nothing_logged(
+            ["--by", "session", "held", "held", "accepted"],
+            "ask 3 (three.ts:3) has a conditional proposed change", packet_asks)
+
+    def test_a_user_call_with_no_packet_rules_the_held_ask_after_a_hold(self):
+        self.hold_the_user_only_ask()
+
+        self.asks_done("--by", "user", "accepted")
+
+        self.assertEqual(self.logged_outcomes(), ["accepted", "accepted", "accepted"])
+        self.assertEqual(self.stored_state()["waiting_packets"], [])
+
+    def test_a_hold_on_a_kept_packet_prints_no_retry_sentence(self):
+        user_only_first = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, USER_ONLY_SECOND_ASK, THIRD_ASK]))
+        parent_id = self.stored_state()["packet_id"]
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_first]))
+
+        output = self.asks_done("--by", "session", "--packet", parent_id, "accepted", "held", "accepted")
+
+        self.assertIn("--by user --packet", output)
+        self.assertNotIn("A retry of this call", output)
+
+    def test_a_kept_parent_whose_plain_row_fails_to_log_prints_the_retry_call(self):
+        self.packet(HELD_PACKET_ASKS)
+        parent_id = self.stored_state()["packet_id"]
+        user_only_first = {**FIRST_ASK, "user_only": True}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[user_only_first]))
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 1
+
+        code, output = self.run_script(
+            ["asks-done", "--by", "session", "--packet", parent_id, "accepted", "held", "accepted"],
+            FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("call in the held line below", output)
+        self.assertIn(f"A retry of this call is `asks-done --by session --packet {parent_id}", output)
+
+    def test_a_retry_that_logs_nothing_new_reprints_a_waiting_held_ask_when_no_fix_run_was_stored(self):
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[FIRST_ASK, USER_ONLY_SECOND_ASK]))
+        self.asks_done("--by", "session", "rejected", "held")
+        kept_id = self.stored_state()["waiting_packets"][0]["packet_id"]
+
+        output = self.asks_done("--by", "session", "rejected")
+
+        self.assertIn("already logged", output)
+        self.assertIn(f"--by user --packet {kept_id}", output)
+
+    def test_held_on_a_retry_of_a_partly_logged_call_is_refused(self):
+        self.packet(HELD_PACKET_ASKS)
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted", "accepted"],
+                                       FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+        self.assertEqual(code, 0, output)
+        state_before = self.state_file().read_bytes()
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "held", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("a retry gives the outcomes already logged", output)
+        self.assertEqual(self.state_file().read_bytes(), state_before)
+
+    def assert_retry_prints_the_launch_line_again(self, *retry_words):
+        self.hold_the_user_only_ask()
+        kept_id = self.stored_state()["waiting_packets"][0]["packet_id"]
+
+        retry_output = self.asks_done(*retry_words)
+
+        self.assertIn("already logged", retry_output)
+        self.assertIn(review_fix_asks.PRINTED_RUN_LINE, retry_output)
+        self.assertIn(f"--by user --packet {kept_id}", retry_output)
+        self.assertEqual(self.logged_outcomes(), ["accepted", "accepted"])
+        self.assertEqual(self.stored_state()["waiting_packets"][0]["packet_id"], kept_id)
+
+    def test_a_retry_with_the_plain_outcomes_and_no_packet_prints_the_launch_line_again(self):
+        self.assert_retry_prints_the_launch_line_again("--by", "session", "accepted", "accepted")
+
+    def test_a_retry_naming_the_parent_packet_prints_the_launch_line_again(self):
+        self.packet(HELD_PACKET_ASKS)
+        parent_id = json.loads(self.state_file().read_text())["packet_id"]
+        self.asks_done("--by", "session", "accepted", "held", "accepted")
+        kept_id = self.stored_state()["waiting_packets"][0]["packet_id"]
+        output = self.asks_done("--by", "session", "--packet", parent_id, "accepted", "accepted")
+        self.assertIn("already logged", output)
+        self.assertIn(review_fix_asks.PRINTED_RUN_LINE, output)
+        self.assertEqual(self.logged_outcomes(), ["accepted", "accepted"])
+        self.assertEqual(self.stored_state()["waiting_packets"][0]["packet_id"], kept_id)
+
+    def test_held_is_an_unknown_word_to_a_correction(self):
+        self.packet(ONE_ASK)
+        self.asks_done("--by", "session", "accepted")
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "held"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("is not one of", output)
 
 
 if __name__ == "__main__":

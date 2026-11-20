@@ -563,13 +563,12 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       local heading1 role_extra bind grey exit_fg lit desc
       if [ "$2" = light ]; then
         bind="#433fa8"; grey="#4c5158"; exit_fg="#a80e62"; lit="#2a7000"; desc="#006c66"
-        cmt="#6d4a00"
       else
         bind="#8b92d6"; grey="#949494"; exit_fg="#d97d94"; lit="#8d9f43"; desc="#51a49c"
-        cmt="#af955f"
       fi
-      # Names are plain. Declaring keywords take the violet, flow keywords and types the teal,
-      # operators and brackets the grey.
+      # Names are plain. Every keyword takes the violet, types the teal; operators,
+      # brackets and comments the grey. exit_fg colours only the first markdown heading.
+      cmt="$grey"
       # fn stays violet for the markup lines below; function names go plain after them.
       fn="$bind"; cls="$text"; param="$text"; var="$text"
       call="$text"; bfn="$text"; mac="$text"; attr="$text"; pre="$bind"
@@ -589,13 +588,11 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "entity.other.attribute-name.tsx"   = "$lit"
 "entity.other.attribute-name.jsx"   = "$lit"
 "entity.other.attribute-name.html"  = "$lit"
-"keyword.control.conditional"       = "$desc"
-"keyword.control.loop"              = "$desc"
-"keyword.control.return.shell"      = "$exit_fg"
-"keyword.control.flow.ts"           = "$exit_fg"
-"keyword.control.flow.tsx"          = "$exit_fg"
-"keyword.control.flow.js"           = "$exit_fg"
-"keyword.control.trycatch.ts"       = "$desc"
+"keyword.control.return.shell"      = "$kw"
+"keyword.control.flow.ts"           = "$kw"
+"keyword.control.flow.tsx"          = "$kw"
+"keyword.control.flow.js"           = "$kw"
+"keyword.control.trycatch.ts"       = "$kw"
 "storage.type.sql"                  = "$desc"
 "heading.1.markdown entity.name.section.markdown" = "$heading1"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$heading1"

@@ -29,7 +29,7 @@ CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "makefile_t
                           "check_output.py", "check_scope.py", "numstat.py", "source_paths.py", "linked_installs.py",
                           "worktree_snapshot.py", "expected_red.py", "full_check_receipt.py", "reviewed_tree.py",
                           "pytest_config.py", "notes_paths.py", "ansi_text.py", "gate_env.py", "plan_format.py",
-                          "source_text.py", "collision_retry.py")
+                          "source_text.py", "collision_retry.py", "ask_outcome_words.py")
 
 
 def first_python_that_starts(names):

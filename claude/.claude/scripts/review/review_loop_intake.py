@@ -46,11 +46,10 @@ class TakenReview(typing.NamedTuple):
 class ReviewIntake:
     def tree_paths(self):
         """Every tracked and untracked, not ignored, path of the work tree. Raises when git fails."""
-        args = ("ls-files", "--cached", "--others", "--exclude-standard")
-        output = script_utils.git_output(self.repo, *args)
-        if output is None:
-            raise RuntimeError(f"`git {' '.join(args)}` failed in {self.repo}")
-        return output.splitlines()
+        paths = script_utils.repo_file_paths(self.repo)
+        if paths is None:
+            raise RuntimeError(f"`git ls-files --cached --others --exclude-standard` failed in {self.repo}")
+        return paths
 
     def take_review(self, agent, owned, review, tree_paths):
         """Takes in one reviewer's review of the files `owned`: drops what held and ruled-out files hold, splits it,

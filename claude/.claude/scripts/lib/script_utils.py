@@ -206,7 +206,9 @@ def top_level_sections(lines):
 
 
 def text_similarity(first, second):
-    """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic."""
+    """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic.
+
+    For two token lists or other sequences, use `sequence_similarity` (bounded edit distance, n-gram overlap)."""
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
@@ -450,6 +452,15 @@ def untracked_paths(directory):
     if listing is None:
         return None
     return sorted(name for name in listing.split("\0") if name)
+
+
+def repo_file_paths(directory):
+    """Sorted paths of the tracked files and the untracked files .gitignore does not hide, relative to directory, or
+    None when git fails. A tracked file deleted in the work tree is still listed."""
+    listing = git_output(directory, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    if listing is None:
+        return None
+    return sorted({name for name in listing.split("\0") if name})
 
 
 def read_text_lines(path):

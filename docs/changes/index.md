@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1034 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1035 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-20, [Branch-prep lists clone pairs on changed lines for the smell-reviewer](notes/2026-11-20-branch-prep-lists-clone-pairs-on-changed-lines-for.md).
+Latest change: 2026-11-20, [Branch-prep lists renamed copies, near matches and the nearest other functions of each added function](notes/2026-11-20-branch-prep-lists-renamed-copies-near-matches-and.md).
 
 ## Top gains
 

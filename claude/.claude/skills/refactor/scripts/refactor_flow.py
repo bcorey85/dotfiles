@@ -57,6 +57,7 @@ import handoff_files
 import numstat
 import plan_format
 import script_utils
+import shape_clones
 import simplify_slices
 import source_text
 
@@ -465,19 +466,24 @@ def _print_branch_report(span, base, base_source, opts_head, root, jscpd_timeout
     diff_files = parse_branch_diff(span.diff_text)
     matches = sweep_matches(diff_files) + untracked_matches(span.untracked)
     scope_head = f"head `{opts_head}`" if opts_head else "the work tree"
-    pairs, note = [], clone_pairs.HEAD_MODE_NOTE
-    if not opts_head:
+    if opts_head:
+        pairs, note = [], clone_pairs.HEAD_MODE_NOTE
+        shapes = shape_clones.skipped_result(clone_pairs.HEAD_MODE_NOTE)
+    else:
         pairs, note = clone_pairs.branch_pairs(diff_files, span.untracked, root, jscpd_timeout)
+        shapes = shape_clones.branch_shapes(diff_files, span.untracked, root)
     clone_line = clone_pairs.clone_summary_line(pairs, note, BRANCH_NO_PAIRS_TEXT, BRANCH_PAIR_SCOPE)
 
     print(f"## Branch audit scope (base `{base}` from {base_source}, {scope_head})")
     print(f"Changed files ({len(span.files)}); {span.shortstat}")
     print(clone_line)
+    print(shape_clones.shape_summary_line(shapes))
     print(f"\n{_sweep_text(matches)}\n")
     bound = _smell_bound(base, opts_head, span.diff_ref)
     _print_smell_prompt(span.files, bound, opts_head, root)
     if pairs:
         clone_pairs.print_candidate_pairs(pairs, BRANCH_CANDIDATES)
+    shape_clones.print_candidates(shapes)
     print()
     print(_branch_next(base, log_input))
 

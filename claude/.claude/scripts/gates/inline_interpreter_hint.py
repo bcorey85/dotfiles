@@ -20,6 +20,7 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import shell_command
 import shell_quoting
 import shell_statements
+import shell_steps
 
 INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
 INLINE = rf"\b(python3?|node|perl|ruby|php)\b[^;|&]*\s({INLINE_FLAGS})\b"
@@ -49,7 +50,7 @@ def grep(pattern, command):
 
 
 def runs_stdin_code(command):
-    command = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
+    command = shell_statements.shell_code(command)
     try:
         piped_commands = shell_command.parse_piped_commands(command)
     except ValueError:
@@ -64,7 +65,7 @@ def unparsed_runs_stdin_code(command):
     parse_piped_commands piece by piece, and split on whitespace only where that fails; a heredoc or here-string
     outside quotes ends the words of a piece split that way."""
     for operator, step in shell_command.split_command_steps(command):
-        core, tail = shell_command.step_parts(step)
+        core, tail = shell_steps.step_parts(step)
         for part_index, part in enumerate(shell_statements.split_on_pipe_both(core + " " + tail)):
             if part_reads_stdin_code(part, part_index > 0 or operator == "|"):
                 return True

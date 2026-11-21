@@ -27,7 +27,6 @@ from shell_command import (
     and_steps,
     and_steps_or_whole,
     attached_inline_code,
-    cd_folder,
     command_after_wrappers,
     contains_word_run,
     docker_forwarded_variables,
@@ -45,16 +44,14 @@ from shell_command import (
     names_code_runner,
     options_before_separator,
     parse_simple_commands,
-    path_word,
+    process_substitution_bounds,
     raw_words_without_redirections,
     redirect_takes_next_word,
     redirection_writes_file,
-    runs_only_after_success,
     segment_words,
     shell_code_argument,
     split_command_steps,
     split_simple_commands,
-    step_surely_ran,
     substitution_spans,
     unwrap_docker,
     without_assignments,
@@ -64,6 +61,8 @@ from shell_command import (
     words_by_blank,
     words_without_redirections,
 )
+from shell_directory import cd_folder, path_word
+from shell_steps import group_depth_change, runs_only_after_success, step_surely_ran
 
 # The gate's text pattern for `git`, then a call that makes a commit.
 GIT_THEN_CALL = r"\bgit[ \t]+" + COMMITTING_CALL
@@ -312,6 +311,12 @@ class GitCommitDirsTest(unittest.TestCase):
                 placed = git_commit_dirs(command, "/a", lambda words, _directory: "merge" in words)
                 self.assertEqual(["/a"], placed.commit_dirs)
                 self.assertEqual("git", placed.first_call_words[0])
+
+    def test_a_group_opened_after_an_operator_and_a_newline_reads_like_the_one_line_form(self):
+        one_line = plain_commit_dirs("true && (cd /tmp && git commit -m x)\ngit commit -m y", "/a")
+        broken = plain_commit_dirs("true &&\n(cd /tmp && git commit -m x)\ngit commit -m y", "/a")
+        self.assertEqual(["/tmp", "/a"], one_line)
+        self.assertEqual(one_line, broken)
 
     def test_find_without_exec_is_no_launcher(self):
         self.assertEqual([], plain_commit_dirs("find . -name git merge", "/a"))
@@ -634,6 +639,25 @@ class SplitCommandStepsTest(unittest.TestCase):
     def test_single_step_has_no_operator(self):
         self.assertEqual(split_command_steps("ls -la"), [("", "ls -la")])
 
+    def test_a_newline_after_a_list_operator_continues_the_list(self):
+        cases = {
+            "a &&\nb": [("", "a "), ("&&", "\nb")],
+            "a ||  \n\n b": [("", "a "), ("||", "  \n\n b")],
+            "a |\nb": [("", "a "), ("|", "\nb")],
+            "a |&\nb": [("", "a |&\nb")],
+            "a |& # c\nb": [("", "a |& # c\nb")],
+            "a && # c\nb": [("", "a "), ("&&", " # c\nb")],
+            "a && 'x # y'\nb": [("", "a "), ("&&", " 'x # y'"), (";", "b")],
+            "a &\nb": [("", "a "), ("&", ""), (";", "b")],
+            "a;\nb": [("", "a"), (";", ""), (";", "b")],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(split_command_steps(command), expected)
+
+    def test_an_input_descriptor_copy_is_no_lone_ampersand(self):
+        self.assertEqual(split_command_steps("cat <&3 | b"), [("", "cat <&3 "), ("|", " b")])
+
     def test_a_lone_ampersand_is_an_operator(self):
         self.assertEqual(split_command_steps("a & b &"), [("", "a "), ("&", " b "), ("&", "")])
 
@@ -675,6 +699,18 @@ class RunsOnlyAfterSuccessTest(unittest.TestCase):
         steps = split_command_steps("a && b && c")
         self.assertFalse(runs_only_after_success(steps, 1, 1))
         self.assertFalse(runs_only_after_success(steps, 2, 0))
+
+    def test_a_group_opened_on_the_line_after_an_operator_keeps_the_chain_inside_it(self):
+        for command in ("a &&\n{ b; c; }", "a &&\n(b; c)"):
+            steps = split_command_steps(command)
+            with self.subTest(command=command):
+                self.assertEqual(1, group_depth_change(steps[1][1]))
+                self.assertTrue(runs_only_after_success(steps, 0, 2), command)
+
+    def test_a_brace_group_after_an_operator_and_a_newline_opens_a_group(self):
+        self.assertEqual(1, group_depth_change("\n{ cd x"))
+        self.assertEqual(1, group_depth_change(" { cd x"))
+        self.assertEqual(1, group_depth_change("\n(cd x"))
 
     def test_pipes_after_the_first_and_keep_the_chain(self):
         steps = split_command_steps("a && b 2>&1 | tail && c | tail")
@@ -718,6 +754,10 @@ class StepSurelyRanTest(unittest.TestCase):
         steps = split_command_steps("cd x && source v && FOO=1 && export A=1 && pytest && eslint")
         self.assertEqual([step_surely_ran(steps, i, False) for i in range(6)],
                          [True, True, True, True, True, False])
+
+    def test_after_failure_a_setup_step_before_a_newline_continuation_does_not_hide_the_next_step(self):
+        steps = split_command_steps("cd /r &&\nsource env &&\nmake test")
+        self.assertEqual([step_surely_ran(steps, i, False) for i in range(3)], [True, True, True])
 
     def test_after_failure_and_or_both_hide_a_step(self):
         steps = split_command_steps("a && b; c")
@@ -989,6 +1029,20 @@ class OptionShapeTest(unittest.TestCase):
         for arguments, expected in cases.items():
             with self.subTest(arguments=arguments):
                 self.assertEqual(expected, list(options_before_separator(list(arguments))))
+
+
+class ProcessSubstitutionBoundsTest(unittest.TestCase):
+    def test_each_outermost_unquoted_process_substitution_gives_its_inner_bounds(self):
+        cases = {
+            "a >(b c": [(4, 7)],
+            "echo '>(x)'": [],
+            "echo \\>(x)": [],
+            "cat <(a) <(b)": [(6, 7), (11, 12)],
+            "x >(y >(z))": [(4, 10)],
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(process_substitution_bounds(command), expected)
 
 
 if __name__ == "__main__":

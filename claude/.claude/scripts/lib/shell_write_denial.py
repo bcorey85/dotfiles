@@ -13,10 +13,12 @@ CODER_REL_TARGET_CD = "coder_rel_target_cd"
 CODER_UNRESOLVED_VAR = "coder_unresolved_var"
 CODER_VAR_OUTSIDE_TEMP = "coder_var_outside_temp"
 CODER_NEW_FILE = "coder_new_file"
+CODER_COMPUTED_WRITE = "coder_computed_write"
 INPUT_PARSE_FAIL = "input_parse_fail"
 INTERNAL_ERROR = "internal_error"
 TAGS = (SCRIPT_WRITE_REL_CD, SCRIPT_WRITE, INPLACE_EDIT, TRACKED_TARGET, REL_TARGET_UNREAD_CD, CODER_REL_TARGET_CD,
-        CODER_UNRESOLVED_VAR, CODER_VAR_OUTSIDE_TEMP, CODER_NEW_FILE, INPUT_PARSE_FAIL, INTERNAL_ERROR)
+        CODER_UNRESOLVED_VAR, CODER_VAR_OUTSIDE_TEMP, CODER_NEW_FILE, CODER_COMPUTED_WRITE, INPUT_PARSE_FAIL,
+        INTERNAL_ERROR)
 
 DIRECTORY_CHANGE_HINT = ("This gate checks a relative path against the session cwd and each cd folder before it; "
                          "use an absolute path for the file you mean.")

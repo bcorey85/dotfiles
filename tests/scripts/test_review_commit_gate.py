@@ -16,6 +16,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 # The review modules come from the tree under test (the HOOK_SCRIPTS_DIR override), as the gate does.
 sys.path.insert(0, str(pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "review"))
+import review_commit_gate
 import script_utils
 import verify_common
 
@@ -24,7 +25,8 @@ INSTALLED_DIR = toolkit_paths.SCRIPTS_DIR
 STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), ("review", "handback_store.py"),
                 ("review", "capped_review.py"),
                 ("lib", "script_utils.py"), ("lib", "reviewed_tree.py"), ("lib", "hook_input.py"),
-                ("lib", "user_prompts.py"), ("lib", "shell_command.py"), ("lib", "plan_format.py"),
+                ("lib", "user_prompts.py"), ("lib", "shell_command.py"), ("lib", "shell_directory.py"),
+                ("lib", "shell_steps.py"), ("lib", "plan_format.py"),
                 ("lib", "shell_statements.py"), ("lib", "shell_quoting.py"), ("lib", "loop_transcript.py"),
                 ("lib", "expected_red.py"), ("review", "full_check.py"), ("lib", "check_scope.py"),
                 ("lib", "check_output.py"), ("lib", "check_parts.py"), ("lib", "collision_retry.py"),
@@ -216,6 +218,49 @@ class ReviewCommitGateTest(GateCase):
                         "cat <(git 'commit' -m x)", "echo x > >(git 'commit' -m x)",
                         """echo ";" && git "commit" -m y""",
                         "rg --hostname-bin=x -n git commit x.txt", "rg --hostname-bin x -n git commit x.txt"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_commit_after_a_comment_ending_in_a_backslash_is_denied(self):
+        self.dispatch()
+        for command in ("git status # note \\\ngit commit -m x", "ls # x\\\ngit commit -m x"):
+            with self.subTest(command=command):
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_commit_after_a_heredoc_body_with_an_apostrophe_or_hash_is_denied(self):
+        self.dispatch()
+        for command in ("grep x <<EOF\nit's\nEOF\necho ' #'; git commit -m x",
+                        "grep x <<'EOF'\nit's\nEOF\necho ' #'; git commit -m x",
+                        "cat <<EOF\n# $(git commit -m x)\nEOF",
+                        "cat <<EOF | wc\nx # $(git commit -m x)\nEOF",
+                        "echo x <<EOF\n# `git commit -m x`\nEOF"):
+            with self.subTest(command=command):
+                self.assertTrue(review_commit_gate.is_commit_command(command))
+                self.assert_commit_denied(self.bash(command))
+
+    def test_a_hash_after_a_glob_qualifier_or_a_substitution_hides_no_commit(self):
+        for command in ("ls *(#q.) ; git commit -m y", "echo $(true)#x; git commit -m y"):
+            with self.subTest(command=command):
+                self.assertTrue(review_commit_gate.is_commit_command(command))
+
+    def test_an_ansi_c_commit_word_after_a_heredoc_body_with_an_apostrophe_is_read(self):
+        command = "grep x <<EOF\nit's\nEOF\ngit $'commit' -m y"
+
+        self.assertTrue(review_commit_gate.is_commit_command(command))
+        self.assertIn("\ngit commit -m y", review_commit_gate.readable_command(command))
+
+    def test_a_commit_line_after_a_comment_ending_in_a_backslash_is_read_by_both_readers(self):
+        for command in ("git status # note \\\ngit commit -m x", "ls # x\\\ngit commit -m x"):
+            with self.subTest(command=command):
+                self.assertTrue(review_commit_gate.is_commit_command(command))
+                self.assertIn("\ngit commit -m x", review_commit_gate.readable_command(command))
+
+    def test_an_ansi_c_quoted_commit_word_or_option_is_denied_as_the_discipline_gate_reads_it(self):
+        self.dispatch()
+        for command in ("git $'commit' -m x", "git $'\\x63ommit' -m x", "git $'-C' . commit -m x",
+                        "git $'\\143ommit' -m x && ls", "echo $(git $'commit' -m x)",
+                        "echo '$' ; git $'commit' -m x", "echo 'a$' && git $'commit' -m x",
+                        "echo \"$'\"; git $'commit' -m x", "echo $$'a\\' ; git commit -m x #'"):
             with self.subTest(command=command):
                 self.assert_commit_denied(self.bash(command))
 
@@ -1121,6 +1166,14 @@ class ReviewedWorkCommitTest(GateCase):
         self.git(self.repo, "add", "docs/x.md")
 
         self.assert_silent(self.commit('git commit -q -m "notes"'))
+
+    def test_a_notes_only_commit_with_an_ansi_c_message_passes_while_phase_asks_are_open(self):
+        self.converged_with_open_phase_asks()
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "x.md").write_text("notes\n")
+        self.git(self.repo, "add", "docs/x.md")
+
+        self.assert_silent(self.commit("git commit -q -m $'msg\\nline'"))
 
     def test_a_no_review_order_passes_while_phase_asks_are_open(self):
         self.converged_with_open_phase_asks()

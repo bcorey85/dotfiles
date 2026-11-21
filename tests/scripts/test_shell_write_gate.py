@@ -13,7 +13,9 @@ import unittest
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.GATES_DIR))
 import shell_write_denial
+from shell_write_gate import code_texts
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
                       or toolkit_paths.GATES_DIR) / "shell_write_gate.py"
@@ -841,6 +843,230 @@ class ShellWriteGateTest(unittest.TestCase):
         script.write_text("import sys\nwith open(sys.argv[1], 'w') as f:\n    f.write('y')\n")
         self.assert_denied(f"python3 {script} tracked.txt")
 
+    # computed write targets (a coder's script that writes files it finds by listing or from argv)
+
+    INCIDENT_RENAME = ("import glob, pathlib, re\n"
+                       "for f in glob.glob('**/*.py', recursive=True):\n"
+                       "    text = pathlib.Path(f).read_text()\n"
+                       "    pathlib.Path(f).write_text(re.sub('[old]', 'new', text))\n")
+
+    def test_coder_script_writing_files_found_by_a_glob_is_denied_naming_the_rule_and_edit_or_lsp(self):
+        script = self.tmp / "rename.py"
+        script.write_text(self.INCIDENT_RENAME)
+        reason = self.assert_denied(f"python3 {script}", agent="coder")
+        self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+        self.assertIn("Edit", reason)
+        self.assertIn("LSP rename", reason)
+        self.assertNotIn("skip-shell-write-gate", reason)
+
+    def test_coder_script_run_by_relative_name_after_a_cd_is_denied_like_its_absolute_path(self):
+        script = self.tmp / "rename.py"
+        script.write_text(self.INCIDENT_RENAME)
+        for command in (f"python3 {script}", f"cd {self.tmp} && python3 rename.py"):
+            with self.subTest(command=command):
+                reason = self.assert_denied(command, agent="coder")
+                self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+
+    def test_a_tee_or_redirect_target_after_a_backslash_newline_is_read_as_one_command(self):
+        for command in ("echo hi | tee \\\n  tracked.txt", "echo hi > \\\n  tracked.txt"):
+            with self.subTest(command=command):
+                self.assertIn("[tracked_target]", self.assert_denied(command), command)
+                reason = self.assert_denied(command, agent="coder")
+                self.assertIn("tracked.txt", reason)
+
+    def test_main_session_script_writing_files_found_by_a_glob_keeps_its_verdict(self):
+        script = self.tmp / "rename.py"
+        script.write_text(self.INCIDENT_RENAME)
+        self.assert_allowed(f"python3 {script}")
+
+    def test_coder_script_writing_files_found_by_any_listing_call_is_denied(self):
+        listings = {
+            "iglob": "import glob\nfor f in glob.iglob('*.py'):\n    open(f, 'w').write('x')\n",
+            "rglob": "import pathlib\nfor f in pathlib.Path('.').rglob('*.py'):\n    f.write_text('x')\n",
+            "iterdir": "import pathlib\nfor f in pathlib.Path('.').iterdir():\n    f.write_text('x')\n",
+            "walk": "import os\nfor root, dirs, files in os.walk('.'):\n    for n in files:\n"
+                    "        open(os.path.join(root, n), 'w').write('x')\n",
+            "listdir": "import os\nfor n in os.listdir('.'):\n    open(n, 'w').write('x')\n",
+            "scandir": "import os\nfor e in os.scandir('.'):\n    open(e.path, 'w').write('x')\n",
+            "readdirSync": "const fs = require('fs');\nfor (const n of fs.readdirSync('.')) {\n"
+                           "  fs.writeFileSync(n, 'x');\n}\n",
+            "readdirSync forEach": "const fs = require('fs');\n"
+                                   "fs.readdirSync('.').forEach(n => fs.writeFileSync(n, 'x'));\n",
+            "readdirSync forEach pair": "const fs = require('fs');\n"
+                                        "fs.readdirSync('.').forEach((n, i) => fs.writeFileSync(n, 'x'));\n",
+            "readdirSync forEach function": "const fs = require('fs');\n"
+                                            "fs.readdirSync('.').forEach(function (n) {"
+                                            " fs.writeFileSync(n, 'x'); });\n",
+            "Dir.glob": "Dir.glob('*.rb').each do |f|\n  File.write(f, 'x')\nend\n",
+            "Dir.open": "Dir.open('.') { |d| d.each { |f| File.write(f, 'x') } }\n",
+            "Dir.new": "Dir.new('.').each_child { |f| File.write(f, 'x') }\n",
+            "perl glob": "for my $f (glob('*.pm')) {\n  open(my $h, '>', $f);\n}\n",
+        }
+        suffixes = {"readdirSync": ".js", "readdirSync forEach": ".js", "readdirSync forEach pair": ".js",
+                    "readdirSync forEach function": ".js", "Dir.glob": ".rb", "Dir.open": ".rb",
+                    "Dir.new": ".rb", "perl glob": ".pl"}
+        programs = {".js": "node", ".rb": "ruby", ".pl": "perl", ".py": "python3"}
+        for name, text in listings.items():
+            with self.subTest(name):
+                script = self.tmp / ("listing" + suffixes.get(name, ".py"))
+                script.write_text(text)
+                reason = self.assert_denied(f"{programs[script.suffix]} {script}", agent="coder")
+                self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+
+    def test_main_session_loop_over_a_literal_pair_list_that_reads_a_tracked_file_is_allowed(self):
+        script = self.tmp / "pairs.py"
+        script.write_text("for src, dst in [('tracked.txt', '/tmp/claude-1000/x.md')]:\n"
+                          "    open(dst, 'w').write(open(src).read())\n")
+        self.assert_allowed(f"python3 {script}")
+
+    def test_coder_script_writing_files_found_through_a_listing_program_is_denied(self):
+        scripts = {
+            "check_output": "import subprocess\n"
+                            "for f in subprocess.check_output(['git', 'ls-files']).decode().split():\n"
+                            "    open(f, 'w').write('x')\n",
+            "run": "import subprocess\n"
+                   "for f in subprocess.run(['find', '.', '-name', '*.py'], capture_output=True).stdout.split():\n"
+                   "    open(f, 'w').write('x')\n",
+            "popen": "import os\nfor f in os.popen('git grep -l old').read().split():\n"
+                     "    open(f, 'w').write('x')\n",
+            "multi-name loop": "import os\nfor f, n in enumerate(os.popen('ls').read().split()):\n"
+                               "    open(n, 'w').write('x')\n",
+        }
+        for name, text in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / "listed.py"
+                script.write_text(text)
+                reason = self.assert_denied(f"python3 {script}", agent="coder")
+                self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+
+    def test_main_session_script_writing_files_found_through_a_listing_program_keeps_its_verdict(self):
+        script = self.tmp / "listed.py"
+        script.write_text("import subprocess\n"
+                          "for f in subprocess.check_output(['git', 'ls-files']).decode().split():\n"
+                          "    open(f, 'w').write('x')\n")
+        self.assert_allowed(f"python3 {script}")
+
+    def test_coder_inline_code_writing_files_found_by_a_glob_is_denied(self):
+        code = "import glob; [open(f, 'w').write('x') for f in glob.glob('*.py')]"
+        reason = self.assert_denied(f"python3 -c \"{code}\"", agent="coder")
+        self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+
+    def test_coder_script_writing_files_listed_under_a_temp_folder_passes(self):
+        scripts = {
+            "mkdtemp": "import os, tempfile\nd = tempfile.mkdtemp()\nfor n in os.listdir(d):\n"
+                       "    open(os.path.join(d, n), 'w').write('x')\n",
+            "gettempdir": "import glob, os, tempfile\nbase = tempfile.gettempdir()\n"
+                          "for f in glob.glob(os.path.join(base, '*.txt')):\n    open(f, 'w').write('x')\n",
+            "literal": "import glob\nfor f in glob.glob('/tmp/work/*.txt'):\n    open(f, 'w').write('x')\n",
+        }
+        for name, text in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / f"{name}.py"
+                script.write_text(text)
+                self.assert_allowed(f"python3 {script}", agent="coder")
+
+    def test_coder_script_listing_a_temp_folder_and_writing_by_those_names_is_allowed(self):
+        # The trace treats a temp base anywhere in the target's traced text as proof, even when the write lands
+        # outside the listed folder. This pins that known gap.
+        scripts = {
+            "mkdtemp listing, relative write": "import os, tempfile\nfor n in os.listdir(tempfile.mkdtemp()):\n"
+                                               "    open(os.path.join('out', n), 'w').write('x')\n",
+            "tmp listing, relative write": "import os\nfor n in os.listdir('/tmp'):\n    open(n, 'w').write('x')\n",
+        }
+        for name, text in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / "outside.py"
+                script.write_text(text)
+                self.assert_allowed(f"python3 {script}", agent="coder")
+
+    def test_coder_script_with_a_hash_key_beside_a_listing_call_is_allowed(self):
+        scripts = {
+            "perl": ("perl", ".pl", "for my $f (glob('*.pm')) { my %o = (path => $f); }\n"
+                                    "my $path = 'out.txt';\nopen(my $h, '>', $path);\n"),
+            "ruby": ("ruby", ".rb", "Dir.glob('*').each { |f| h = { name => 1 } }\n"
+                                    "name = 'out'\nFile.write(name, 'x')\n"),
+        }
+        for name, (program, suffix, text) in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / ("hash_key" + suffix)
+                script.write_text(text)
+                self.assert_allowed(f"{program} {script}", agent="coder")
+
+    def test_coder_regex_alternation_beside_a_listing_call_binds_no_name(self):
+        scripts = {
+            "node": ("node", ".js", "const n = require('fs').readdirSync('.').filter(x => /a|out|b/.test(x));\n"
+                                    "const out = 'result.txt';\n"
+                                    "require('fs').writeFileSync(out, 'x');\n"),
+            "perl": ("perl", ".pl", "my @n = grep { /a|out|b/ } glob('*');\n"
+                                    "my $out = 'result.txt';\nopen(my $h, '>', $out);\n"),
+        }
+        for name, (program, suffix, text) in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / ("alternation" + suffix)
+                script.write_text(text)
+                self.assert_allowed(f"{program} {script}", agent="coder")
+
+    def test_an_escaped_blank_before_a_hash_does_not_start_a_comment(self):
+        self.assert_denied("echo x\\ #; echo hi > tracked.txt")
+
+    def test_coder_ruby_script_writing_under_a_temp_dir_or_with_no_listing_passes(self):
+        scripts = {
+            "Dir.tmpdir": "File.write(File.join(Dir.tmpdir, 'x.txt'), 'x')\n",
+            "Dir.mktmpdir block": "Dir.mktmpdir { |d| File.write(File.join(d, 'x.txt'), 'x') }\n",
+            "Dir.mktmpdir assigned": "d = Dir.mktmpdir\nFile.write(File.join(d, 'x.txt'), 'x')\n",
+            "Dir.pwd single write": "File.write(File.join(Dir.pwd, 'new.txt'), 'x')\n",
+        }
+        for name, text in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / "write.rb"
+                script.write_text(text)
+                self.assert_allowed(f"ruby {script}", agent="coder")
+
+    def test_coder_script_whose_target_is_no_listing_or_argv_passes(self):
+        scripts = {
+            "str.replace with long literals": "p = '/tmp/x.rs'\ns = open(p).read()\n"
+                                              "s = s.replace('''fn a() {\n  \"x\"''', '''fn b() {\n  \"y\"''')\n"
+                                              "open(p, 'w').write(s)\n",
+            "script's own argv[0]": "import pathlib, shutil, sys\nhere = pathlib.Path(sys.argv[0]).resolve().parent\n"
+                                    "shutil.rmtree(here / 'build')\n",
+            "name nothing binds": "def save(handle):\n    open(path, 'w').write('x')\n",
+        }
+        for name, text in scripts.items():
+            with self.subTest(name):
+                script = self.tmp / "plain.py"
+                script.write_text(text)
+                self.assert_allowed(f"python3 {script}", agent="coder")
+
+    def test_coder_script_listing_files_it_only_reads_passes(self):
+        script = self.tmp / "count.py"
+        script.write_text("import glob\nfor f in glob.glob('*.py'):\n    print(open(f).read())\n"
+                          "open('/tmp/out.txt', 'w').write('x')\n")
+        self.assert_allowed(f"python3 {script}", agent="coder")
+
+    def test_coder_script_writing_argv_paths_is_denied_unless_every_argv_is_a_temp_path(self):
+        script = self.tmp / "argv_writer.py"
+        script.write_text("import sys\nfor p in sys.argv[1:]:\n    open(p, 'w').write('x')\n")
+        outside = self.make_outside_dir()
+        reason = self.assert_denied(f"python3 {script} {outside}/a.txt", agent="coder")
+        self.assertEqual(self.denial_tag(reason), "coder_computed_write")
+        self.assert_denied(f"python3 {script} {self.tmp}/a.txt {outside}/b.txt", agent="coder")
+        self.assert_denied(f"python3 {script}", agent="coder")
+        self.assert_allowed(f"python3 {script} {self.tmp}/a.txt {self.tmp}/b.txt", agent="coder")
+
+    def test_coder_argv_path_is_read_against_the_folder_the_step_runs_in(self):
+        script = self.tmp / "argv_writer.py"
+        script.write_text("import sys\nfor p in sys.argv[1:]:\n    open(p, 'w').write('x')\n")
+        outside = self.make_outside_dir()
+        self.assert_allowed(f"cd {self.tmp} && python3 {script} out.txt", agent="coder", cwd=str(outside))
+        self.assert_denied(f"python3 {script} out.txt", agent="coder", cwd=str(outside))
+        self.assert_denied(f"cd {outside} && python3 {script} out.txt", agent="coder", cwd=str(self.tmp))
+
+    def test_main_session_script_writing_argv_paths_keeps_its_verdict(self):
+        script = self.tmp / "argv_writer.py"
+        script.write_text("import sys\nfor p in sys.argv[1:]:\n    open(p, 'w').write('x')\n")
+        outside = self.make_outside_dir()
+        self.assert_allowed(f"python3 {script} {outside}/a.txt")
+
     def test_untracked_script_whose_write_target_comes_from_argv_is_denied(self):
         scripts = {
             "rewrite.py": "import sys\nsrc, dst = sys.argv[1:3]\nopen(dst, 'w').write(open(src).read())\n",
@@ -1286,6 +1512,26 @@ class ShellWriteGateTest(unittest.TestCase):
             self.assertIn("[coder_new_file]", self.coder_denied(command), command)
         self.assertIn("tracked.txt", self.assert_denied("x=$((echo x > {tracked,c}.txt) )"))
 
+    def test_a_tee_inside_a_process_substitution_is_read_as_gate_text(self):
+        for command in ("echo x > >(tee tracked.txt)", "cat <(echo x | tee tracked.txt)",
+                        "echo x > >(cat | tee tracked.txt)", "echo $(echo x > >(tee tracked.txt))"):
+            with self.subTest(command=command):
+                self.assertIn("[tracked_target]", self.assert_denied(command), command)
+
+    def test_a_coder_tee_inside_a_process_substitution_with_an_expanding_target_is_denied(self):
+        for command in ("echo x > >(tee /tmp/claude-1000/{a,b})", "echo x > >(cat > >(tee /tmp/claude-1000/*.log))"):
+            with self.subTest(command=command):
+                self.assertIn("zsh expands", self.coder_denied(command), command)
+
+    def test_a_process_substitution_inside_a_command_substitution_is_one_gate_text(self):
+        texts = code_texts("echo $(echo x > >(tee a))")
+
+        self.assertEqual(texts, ["echo $(echo x > >(tee a))", "echo x > >(tee a)", "tee a"])
+
+    def test_a_process_substitution_in_quotes_or_with_a_plain_target_is_no_new_text(self):
+        self.assert_allowed("echo '>(tee tracked.txt)'")
+        self.assert_allowed("echo x > >(tee untracked.txt)")
+
     def test_a_real_arithmetic_span_is_still_allowed(self):
         self.coder_allowed("x=$((1+2))")
         self.assert_allowed("x=$((1+2))")
@@ -1479,6 +1725,11 @@ class ShellWriteGateTest(unittest.TestCase):
         (outside / ".git").mkdir()
         for command in ("echo x > !.git", "echo x > !newfile"):
             self.assertIn("[coder_new_file]", self.assert_denied(command, agent="coder", cwd=str(outside)), command)
+
+    def test_an_escaped_backslash_before_a_newline_joins_no_lines(self):
+        command = "echo a\\\\\ntee tracked.txt </dev/null"
+
+        self.assertIn("[tracked_target]", self.assert_denied(command))
 
     def test_a_non_coder_brace_list_with_a_quoted_or_escaped_operator_checks_each_alternative(self):
         for command in ("echo x > {a\\;b,tracked.txt}", "echo x > {';',tracked.txt}",
@@ -1872,6 +2123,8 @@ class ShellWriteGateTest(unittest.TestCase):
     def test_every_deny_carries_one_listed_tag(self):
         outside = str(self.make_outside_dir())
         script = self.interpreter_script("open('tracked.txt', 'w').write('x')\n")
+        rename_script = self.tmp / "rename.py"
+        rename_script.write_text(self.INCIDENT_RENAME)
         cases = {
             "script_write_rel_cd": (f"cd {self.repo} && python3 {script}", None, outside),
             "script_write": (f"python3 {script}", None, None),
@@ -1882,6 +2135,7 @@ class ShellWriteGateTest(unittest.TestCase):
             "coder_unresolved_var": ("echo hi > $UNSET/a.log", "coder", outside),
             "coder_new_file": ("echo hi > helper.py", "coder", outside),
             "coder_var_outside_temp": ("S=/etc; echo hi > $S/passwd", "coder", outside),
+            "coder_computed_write": (f"python3 {rename_script}", "coder", None),
         }
         seen = set()
         for tag, (command, agent, cwd) in cases.items():

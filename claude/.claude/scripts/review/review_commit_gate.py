@@ -154,10 +154,8 @@ from git_commit_calls import (
 )
 from hook_input import EMPTY_INPUT, JqError, jq_field, jq_get, prune_old_state_files
 from shell_command import (
-    DIRECTORY_MOVE_WORDS,
     GIT_VALUE_OPTIONS,
     GROUP_WORDS,
-    LINE_CONTINUATION,
     command_after_wrappers,
     git_options,
     git_subcommand,
@@ -171,7 +169,8 @@ from shell_command import (
     split_simple_commands,
     substitution_spans,
 )
-from shell_quoting import quoted_positions, without_quote_characters
+from shell_directory import DIRECTORY_MOVE_WORDS
+from shell_quoting import join_line_continuations, quoted_positions, strip_comments, without_quote_characters
 
 AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
@@ -377,12 +376,22 @@ def commit_follows_git(words, git_index):
     return unknown_option and "commit" in words[index:]
 
 
+def uncommented_outside_heredocs(command):
+    """The command with each `$'...'` word decoded and each comment cut, on every line but heredoc body and
+    terminator lines, which stay as written (an apostrophe in a body opens no quote)."""
+    def decode_and_uncomment(text):
+        return strip_comments(shell_statements.without_ansi_c_quotes(text))
+
+    return shell_statements.outside_heredoc_bodies(command, decode_and_uncomment)
+
+
 def is_commit_command(command):
     """True when the command commits, as the module docstring defines it. Line continuations are removed and each
     substitution span is read both as written and shrunk. The body of a heredoc (quoted or not) that only stores text
     (cat or tee writing a file, or a script run) is not read, except the substitution spans of an unquoted body."""
     unstored = shell_statements.strip_stored_heredocs(command)
-    joined = LINE_CONTINUATION.sub("", unstored)
+    uncommented = uncommented_outside_heredocs(unstored)
+    joined = join_line_continuations(uncommented)
     shrunk = SUBSTITUTION_SPAN.sub("$S", joined)
     return any(reads_as_commit(reading) for reading in {joined, shrunk})
 
@@ -460,7 +469,7 @@ def command_pathspecs(command):
     """(add pathspecs, commit pathspecs) of a command that holds exactly one `git commit` and nothing that changes
     the repo, the directory or the index in a way this reading cannot follow; None for any other command."""
     try:
-        simple_commands = parse_simple_commands(command)
+        simple_commands = parse_simple_commands(shell_statements.without_ansi_c_quotes(command))
     except ValueError:
         return None
     if not all(simple_command_is_safe(words, redirections) for words, redirections in simple_commands):
@@ -723,9 +732,12 @@ def user_ordered_no_review(root):
 
 
 def readable_command(command):
-    """The command text with each double-quoted quoted-heredoc message emptied, then line continuations removed (a
-    backslash-newline in a quoted heredoc body is literal)."""
-    return LINE_CONTINUATION.sub("", empty_heredoc_messages(command))
+    """The command text with each double-quoted quoted-heredoc message emptied, each `$'...'` word decoded and
+    shell-quoted, comments cut, then line continuations removed (a backslash-newline in a quoted heredoc body is
+    literal; one ending a comment line is literal too). Heredoc bodies keep any `#` and quote as written."""
+    emptied = empty_heredoc_messages(command)
+    uncommented = uncommented_outside_heredocs(emptied)
+    return join_line_continuations(uncommented)
 
 
 def empty_heredoc_messages(command):

@@ -129,7 +129,7 @@ def count_pull_push_pairs(command):
     the push run after a failed pull.
     Counting per step pair, never by position in the command's git calls, keeps `$(...)` calls (listed last by
     git_calls) from shifting the result."""
-    normalized = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
+    normalized = shell_statements.shell_code(command)
     steps = shell_command.split_command_steps(normalized)
     allowed = 0
     for (_before, pull_step), (operator, push_step) in itertools.pairwise(steps):

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1033 changes
+1038 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -25,6 +25,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Command steps continue across a newline after an operator and read a backslash continuation](notes/2026-11-20-command-steps-continue-across-a-newline-after-an.md) [script/shell-command, script/shell-steps, script/git-discipline-gate, script/quality-check-cap, script/rg-path-gate, script/shell-variables, script/git-commit-calls, script/check-scope, script/inline-interpreter-hint, script/git-calls, script/shell-write-gate, script/review-commit-gate, script/shell-statements] split_command_steps keeps a step going across a newline after &&, || or | (and after a trailing |&), and the gates that read steps join a backslash-newline first.
+* [Comment stripping keeps an escaped blank before a hash](notes/2026-11-20-comment-stripping-keeps-an-escaped-blank-before-a.md) [script/shell-write-gate, script/shell-quoting, script/shell-statements] A # after a backslash-escaped blank is part of its word, so strip_comments no longer cuts the rest of the line as a comment.
+* [Shell write gate reads a process-substitution tee target](notes/2026-11-20-shell-write-gate-reads-a-process-substitution-tee.md) [script/shell-write-gate] A tee or redirect inside a >(...) or <(...) span is read as gate text, so it is checked like a tee at the top of the command.
+* [Commit gates read dollar-quoted words, input duplication and a backgrounded cd chain](notes/2026-11-20-commit-gates-read-dollar-quoted-words-input.md) [script/git-discipline-gate, script/review-commit-gate, script/shell-command, script/git-calls, script/shell-statements, script/shell-quoting] The review commit gate reads $'...' words as the shell runs them; the shared parsing treats <& as no background operator and reads a cd chain that a trailing & ends as conditional.
+* [Shell write gate denies a coder script that writes computed paths outside temp](notes/2026-11-20-shell-write-gate-denies-a-coder-script-that-writes.md) [script/shell-write-gate] A coder's interpreter step whose file write target comes from a glob, a directory listing, argv or a loop over one is denied unless the path is proven under a temp dir.
 * [an adopted plan impact reaches the resume round's fix coder](notes/2026-11-19-an-adopted-plan-impact-reaches-the-resume-round-s.md) [script/review-fix, script/review-loop-script] A resume that adopts a plan impact puts it in that round's fix-coder list before any test or reviewer runs, and a coder that skips it or leaves no diff ends the round with a blocker naming the ruling and no reviewer.
 * [code_review_start accepts an ancestor base on resume and leaves merges out](notes/2026-11-19-code-review-start-accepts-an-ancestor-base-on.md) [script/code-step, skill/code] code_review_start accepts a --base that is an ancestor of the recorded head, or the current HEAD when the recorded head is an ancestor of it, refuses another base naming the flag, and leaves merge commits from the integration branch out of the review diff through a merge-free synthetic base.
 * [asks-done records session rulings while a user-only ask stays held](notes/2026-11-19-asks-done-records-session-rulings-while-a-user.md) [script/review-fix-asks, script/review-asks, script/approval-asks-store, script/ask-outcome-words] A session asks-done call takes held on each user-only ask, logs the plain asks and prints their fix run, and moves the held asks to a kept packet a later --by user call rules.

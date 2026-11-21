@@ -57,13 +57,12 @@ from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_
 from shell_command import (
     git_subcommand,
     parse_simple_commands,
-    path_word,
     redirection_writes_file,
-    runs_only_after_success,
     split_command_steps,
-    step_surely_ran,
 )
-from shell_statements import strip_comments, strip_heredocs
+from shell_directory import path_word
+from shell_statements import shell_code
+from shell_steps import runs_only_after_success, step_surely_ran
 
 SIGNAL_EXIT_CODES = range(129, 193)
 # 126 (not executable) and 127 (command not found): the shell never started the check.
@@ -493,7 +492,7 @@ def run(raw, state):
     skipped = event == "PreToolUse" and "#skip-quality-cap" in command
     command = command.replace("#skip-quality-cap", "")
 
-    steps = split_command_steps(strip_comments(strip_heredocs(command)))
+    steps = split_command_steps(shell_code(command))
     succeeded = event == "PostToolUse"
     checks = []
     format_indexes = []

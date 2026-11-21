@@ -6,18 +6,16 @@ import re
 import shlex
 
 from code_text import SP
-from shell_quoting import quoted_positions, unquoted_matches
+from shell_directory import path_word
+from shell_quoting import join_line_continuations, quoted_positions, strip_comments, unquoted_matches
 
-SETUP_STEP = re.compile(r"^[ \t(]*(cd[ \t]|source[ \t]|\.[ \t]|export[ \t]|([^\W\d]\w*=[^ \t]*[ \t]*)+$)")
 # `>|` and `>&|` (clobber redirection) are not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`;
-# a lone `&` sends the step before it to the background.
-OPERATOR = re.compile(r"(\|\||&&|(?<!>)(?<!>&)\|(?!&)|(?<![>&|])&(?![&>])|;|\n)")
-LINE_CONTINUATION = re.compile(r"\\\r?\n")
-LEADING_BRACES = re.compile(r"(?:[ \t]*\{(?=[ \t]|$))*")
-TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t])\}[ \t]*)+$")
+# a lone `&` sends the step before it to the background. `<&` (duplicate an input descriptor) is no lone `&` either.
+# The group does not capture, so a pattern built on this one keeps its own groups.
+OPERATOR = re.compile(r"(?:\|\||&&|(?<!>)(?<!>&)\|(?!&)|(?<![<>&|])&(?![&>])|;|\n)")
+# The operators after which a newline continues the list: the next line is the right side of the operator.
+LINE_CONTINUING_OPERATORS = ("&&", "||", "|")
 SEPARATOR_CHARS = set("();|&\n")
-# The words that change the shell's working directory; every gate follows or flags the same set.
-DIRECTORY_MOVE_WORDS = ("cd", "pushd", "popd")
 REDIRECT_CHARS = set("<>&")
 # shlex drops the quotes and escapes, so a quoted or escaped operator character would read as a real operator.
 HIDDEN_OPERATOR = re.compile(r"""\\[();|&<>\n]|(["'])\s*[();|&<>\n][\s();|&<>]*\1""")
@@ -650,7 +648,7 @@ def resolved_command_words(command):
     """The words of each simple command, quotes and escapes resolved and wrapper words (`builtin`, `command`, `{`)
     dropped; empty when shlex cannot read the command."""
     try:
-        simple_commands = split_simple_commands(LINE_CONTINUATION.sub("", command))
+        simple_commands = split_simple_commands(join_line_continuations(command))
     except ValueError:
         return []
     return peeled_commands(simple_commands)
@@ -766,10 +764,20 @@ def _code_after_option(words, index):
     return re.sub(r"\\([$`])", r"\1", words[index + 1])
 
 
+def continues_list(operator, code_text):
+    """True when a newline after the step text (comments cut) goes on with the list: the step ends in `|&` (no
+    operator here, so it ends its step's text), or it is blank after an operator that takes a right side."""
+    if code_text.rstrip().endswith("|&"):
+        return True
+    return operator in LINE_CONTINUING_OPERATORS and not code_text.strip()
+
+
 def split_command_steps(command):
     """Split a shell command on ||, &&, | ; newline and a lone & into (operator, step) pairs. The operator is the one
-    that comes before the step; the first step has "". A newline counts as ";". An operator inside single or double
-    quotes, or after a backslash, stays in its step."""
+    that comes before the step; the first step has "". A newline counts as ";", except right after `&&`, `||` or `|`
+    (only blanks or a comment between): there the next line continues the list, so the step goes on across it. A step
+    that ends in `|&` also goes on across the newline. An operator inside single or double quotes, or after a
+    backslash, stays in its step."""
     quoted = quoted_positions(command)
     steps = []
     operator = ""
@@ -777,7 +785,10 @@ def split_command_steps(command):
     for match in OPERATOR.finditer(command):
         if match.start() in quoted:
             continue
-        steps.append((operator, command[step_start:match.start()]))
+        step_text = command[step_start:match.start()]
+        if match.group() == "\n" and continues_list(operator, strip_comments(step_text)):
+            continue
+        steps.append((operator, step_text))
         operator = ";" if match.group() == "\n" else match.group()
         step_start = match.end()
     steps.append((operator, command[step_start:]))
@@ -823,6 +834,26 @@ def substitution_bounds(text):
     return bounds
 
 
+def process_substitution_bounds(text):
+    """(start, end) of the text inside each outermost `>(...)` and `<(...)` pair in text that is not quoted, in a
+    comment or after a backslash. The shell runs that text as a command. A span that never closes runs to the end of
+    the text."""
+    hidden = quoted_positions(text, unclosed_is_quoted=False)
+    bounds = []
+    index = 0
+    while index < len(text) - 1:
+        opens_process = text[index] in "<>" and text[index + 1] == "("
+        if index in hidden or not opens_process:
+            index += 1
+            continue
+
+        close = matching_parenthesis(text, index + 1, hidden)
+        end = len(text) if close is None else close
+        bounds.append((index + 2, end))
+        index = end + 1
+    return bounds
+
+
 def substitution_spans(text):
     """The text inside each outermost `$(...)` and backtick pair in text that is not in single quotes, a comment or
     after a backslash; one inside double quotes counts. A span that never closes runs to the end of the text."""
@@ -863,44 +894,6 @@ def _backtick_span_end(text, start):
     return len(text) if end == -1 else end
 
 
-def path_word(word):
-    """The path a shell word names: a quote left at either end is dropped and a leading `~` or `~user` is replaced by
-    that home directory. A `~user` that names no user stays as it is."""
-    for quote in ('"', "'"):
-        if word.endswith(quote):
-            word = word[:-1]
-        if word.startswith(quote):
-            word = word[1:]
-    return os.path.expanduser(word)
-
-
-def path_word_is_absolute(raw):
-    """True when the path a shell word names (see path_word) starts with `/`, outer blanks ignored."""
-    return path_word(raw.strip(" \t\n\r\f\v")).startswith("/")
-
-
-CD_OPTION = re.compile(r"-[LPe@]+|--")
-# A folder word the shell expands or looks up: a parameter, a substitution, a glob or brace, or `~user`.
-UNREAD_FOLDER = re.compile(r"[$`*?\[{]|^~[^/]")
-# A directory-stack index (`pushd +1`, `cd -1`), not a folder name.
-STACK_INDEX = re.compile(r"[+-]\d+")
-
-
-def cd_folder(words):
-    """The folder a `cd` or `pushd` call names (`~` for a bare `cd`), or None for a `popd`, a bare `pushd`, `cd -`,
-    zsh's two-word `cd old new`, a directory-stack index, or a folder the shell expands."""
-    arguments = [word for word in words[1:] if not CD_OPTION.fullmatch(word)]
-    if words[0] == "popd" or len(arguments) > 1:
-        return None
-    if not arguments:
-        return "~" if words[0] == "cd" else None
-
-    folder = arguments[0]
-    if folder == "-" or STACK_INDEX.fullmatch(folder) or UNREAD_FOLDER.search(folder):
-        return None
-    return folder
-
-
 # The `-c` settings that move no directory, in lower case: git reads section and key names without case.
 DIRECTORY_FREE_CONFIG = ("alias.", "core.editor=", "sequence.editor=")
 
@@ -922,56 +915,6 @@ def git_c_directory(words, directory):
         if not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree", "--config-env")):
             return None
     return directory
-
-
-def group_closes(step):
-    """(opened, closed): how many `(` the step opens before its first command, and how many `)` it closes beyond the
-    ones its own text opens after that. A parenthesis in quotes is no group."""
-    quoted = quoted_positions(step, unclosed_is_quoted=False)
-    opened = step[:len(step) - len(step.lstrip(" \t({"))].count("(")
-    unquoted_opens = sum(1 for index, char in enumerate(step) if char == "(" and index not in quoted)
-    unquoted_closes = sum(1 for index, char in enumerate(step) if char == ")" and index not in quoted)
-    return opened, max(0, unquoted_closes - (unquoted_opens - opened))
-
-
-class ShellDirectory:
-    """The directory a shell is in as a command runs, moved by `cd`, `pushd`, `popd` and `cd -`. `current` is None
-    once the shell is somewhere unknown: a target the shell expands, a `popd` or `cd -` with nothing to return to."""
-
-    def __init__(self, current):
-        self.current = current
-        self.previous = None
-        self.stack = []
-
-    def saved(self):
-        """The state a `( ... )` group restores when it closes."""
-        return (self.current, self.previous, tuple(self.stack))
-
-    def restore(self, saved):
-        self.current, self.previous, stack = saved
-        self.stack = list(stack)
-
-    def move_to(self, new_directory):
-        self.previous = self.current
-        self.current = new_directory
-
-    def apply(self, words):
-        """Moves by the `cd`, `pushd` or `popd` call in `words`."""
-        command = words[0]
-        arguments = [word for word in words[1:] if not CD_OPTION.fullmatch(word)]
-        if command == "popd":
-            self.move_to(self.stack.pop() if self.stack else None)
-            return
-        if command == "cd" and arguments == ["-"]:
-            self.current, self.previous = self.previous, self.current
-            return
-        folder = cd_folder(words)
-        if command == "pushd":
-            self.stack.append(self.current)
-        if folder is None or self.current is None:
-            self.move_to(None)
-            return
-        self.move_to(os.path.normpath(os.path.join(self.current, path_word(folder))))
 
 
 def word_moves_directory(word, move_letter, wrapper):
@@ -998,108 +941,3 @@ def wrapper_moves_directory(words):
             return True
     return False
 
-
-def step_parts(step):
-    """(core, tail) of a step: the command text after the `(` groups it opens, up to the first `)` that closes no `(`
-    of its own, and the text after the last such `)` (a redirection or pipe that applies to the closed group). A
-    quoted parenthesis is part of the command."""
-    quoted = quoted_positions(step, unclosed_is_quoted=False)
-    start = 0
-    while start < len(step) and step[start] in " \t({" and start not in quoted:
-        start += 1
-    depth = 0
-    closing = []
-    for index in range(start, len(step)):
-        if index in quoted:
-            continue
-        if step[index] == "(":
-            depth += 1
-            continue
-        if step[index] != ")":
-            continue
-        if depth:
-            depth -= 1
-            continue
-        closing.append(index)
-    if not closing:
-        return step[start:], ""
-    return step[start:closing[0]], step[closing[-1] + 1:]
-
-
-def paren_depth_change(step):
-    """How many `( ... )` subshells the step text opens, minus how many it closes. A quoted parenthesis counts for
-    nothing."""
-    quoted = quoted_positions(step, unclosed_is_quoted=False)
-    unquoted = [char for index, char in enumerate(step) if index not in quoted]
-    return unquoted.count("(") - unquoted.count(")")
-
-
-def closes_brace_group(step):
-    """True when the step ends in a `}` that closes a `{ ...; }` group."""
-    return TRAILING_BRACES.search(step) is not None
-
-
-def group_depth_change(step):
-    """How many `( ... )` and `{ ...; }` groups the step text opens, minus how many it closes. A quoted parenthesis
-    opens and closes nothing."""
-    change = paren_depth_change(step)
-    change += LEADING_BRACES.match(step).group().count("{")
-    trailing = TRAILING_BRACES.search(step)
-    return change - (trailing.group().count("}") if trailing else 0)
-
-
-def step_may_be_skipped(steps, index):
-    """True when an `||` before the step, in the same list (after the last `;`, newline or `&`), can skip it."""
-    for position in range(index, 0, -1):
-        operator = steps[position][0]
-        if operator in (";", "&"):
-            return False
-        if operator == "||":
-            return True
-    return False
-
-
-def runs_only_after_success(steps, earlier, later):
-    """True when the step at `later` comes after the step at `earlier`, which itself is not skipped by an `||`, and
-    runs only if `earlier` succeeded. The step right after `earlier` must be joined by `&&`; after that `&&` and `|`
-    keep the chain (a pipe binds tighter than `&&`). A `;`, newline, `||` or `&` ends it, except inside a `( )` or
-    `{ }` group that the chain entered. Limit: a group closed and another one opened in one step is not tracked."""
-    if later <= earlier or step_may_be_skipped(steps, earlier):
-        return False
-    depth = 0
-    for position in range(earlier + 1, later + 1):
-        operator = steps[position][0]
-        if position == earlier + 1 and operator != "&&":
-            return False
-        if depth == 0 and operator not in ("&&", "|"):
-            return False
-        depth = max(0, depth + group_depth_change(steps[position][1]))
-    return True
-
-
-def step_runs_in_background(steps, index):
-    """True when the `&&`/`||`/`|` list holding the step at `index` is ended by a lone `&`: bash runs that whole
-    list in the background."""
-    for position in range(index + 1, len(steps)):
-        operator = steps[position][0]
-        if operator not in ("|", "&&", "||"):
-            return operator == "&"
-    return False
-
-
-def step_surely_ran(steps, index, succeeded):
-    """True when the step at `index` must have run, given only whether the whole command succeeded. After a
-    success every `&&` step ran, but a step behind `||` may have been skipped. After a failure the command stopped
-    somewhere unknown, so a step behind `&&` or `||` may never have started, unless every step before that
-    operator only sets up the shell (cd, source, export, a bare assignment), which is taken to succeed. A step sent
-    to the background with `&` never counts: the command's result says nothing about it."""
-    if step_runs_in_background(steps, index):
-        return False
-    skipping = ("||",) if succeeded else ("&&", "||")
-    for position in range(index + 1):
-        operator = steps[position][0]
-        if operator not in skipping:
-            continue
-        if succeeded or not SETUP_STEP.match(steps[position - 1][1]):
-            return False
-    return True

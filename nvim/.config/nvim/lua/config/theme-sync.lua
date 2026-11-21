@@ -88,12 +88,12 @@ local FAMILIES = {
     -- Comments are tuned in APCA and mirrored in hunk; the WCAG floor would
     -- split them from docstrings and from hunk.
     own_comment_contrast = true,
-    -- Comments are mustard; the theme sets its own grey for picker paths.
+    -- The theme sets its own grey for picker paths.
     own_picker_dir = true,
     accents = {
-      -- H1 takes the exit magenta; H2-H6 the bind violet.
-      dark = { heading1 = "#d97d94", heading = "#8b92d6", bullet = "#a1a1a1" },
-      light = { heading1 = "#a80e62", heading = "#433fa8", bullet = "#4e5158" },
+      -- Every heading takes the literal mustard.
+      dark = { heading1 = "#cd9728", heading = "#cd9728", bullet = "#a1a1a1" },
+      light = { heading1 = "#b46e00", heading = "#b46e00", bullet = "#5b5851" },
     },
   },
   ["kanagawa"] = {

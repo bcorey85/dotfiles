@@ -439,6 +439,18 @@ class QualityCheckCapTest(unittest.TestCase):
         self.fire("PostToolUseFailure", command="pytest tests/test_x.py", error=error)
         self.assert_denied(self.pre("pytest tests/test_x.py"))
 
+    def test_a_failed_run_after_setup_steps_joined_by_newline_continuations_is_recorded(self):
+        command = f"cd {self.work} &&\nsource env &&\nmake test"
+        error = "Exit code 2\nFAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s =="
+        self.fire("PostToolUseFailure", command=command, error=error)
+        self.assert_denied(self.pre(command))
+
+    def test_a_failed_run_after_a_backslash_newline_continuation_is_recorded(self):
+        command = f"cd {self.work} && \\\npytest tests/test_x.py"
+        error = "Exit code 1\nFAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s =="
+        self.fire("PostToolUseFailure", command=command, error=error)
+        self.assert_denied(self.pre(command))
+
     def test_an_interrupted_run_records_nothing(self):
         payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",
                    "cwd": str(self.work), "tool_input": {"command": "pytest"}, "is_interrupt": True,

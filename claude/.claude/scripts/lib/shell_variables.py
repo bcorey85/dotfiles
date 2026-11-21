@@ -30,6 +30,7 @@ from collections import Counter, namedtuple
 import shell_command
 import shell_expansion
 import shell_statements
+import shell_steps
 from script_utils import ENV_NAME as NAME
 
 # The characters a value or loop word may hold: nothing the shell expands, splits or quotes. No `=`: zsh expands `=cmd`
@@ -364,11 +365,11 @@ class ShellVariables:
             blocks.read_step(index, step)
             if not blocks.open and not group_depth and self.usable_assignment(index, operator):
                 self.record_assignment(index, step)
-            group_depth = max(0, group_depth + shell_command.group_depth_change(step))
-            paren_depth = max(0, paren_depth + shell_command.paren_depth_change(step))
+            group_depth = max(0, group_depth + shell_steps.group_depth_change(step))
+            paren_depth = max(0, paren_depth + shell_steps.paren_depth_change(step))
             # A `}` closes only a `{` group. Inside a `( ... )` subshell it is a plain word (bash), so the depth
             # counter would drop the subshell too early.
-            if paren_depth and shell_command.closes_brace_group(step):
+            if paren_depth and shell_steps.closes_brace_group(step):
                 self.readable = False
         if blocks.open or not blocks.readable:
             self.readable = False
@@ -379,7 +380,7 @@ class ShellVariables:
         if operator not in ("", ";", "&&"):
             return False
         following = self.steps[index + 1][0] if index + 1 < len(self.steps) else ""
-        return following != "|" and not shell_command.step_runs_in_background(self.steps, index)
+        return following != "|" and not shell_steps.step_runs_in_background(self.steps, index)
 
     def record_assignment(self, index, step):
         if not ASSIGNMENT_STEP.match(step):
@@ -394,7 +395,7 @@ class ShellVariables:
         if found is None or self.mentions[name] != 1 or name in self.loop_names or found.step >= step_index:
             return None
         starts_chain = self.steps[found.step][0] != "&&"
-        if not starts_chain and not shell_command.runs_only_after_success(self.steps, found.step, step_index):
+        if not starts_chain and not shell_steps.runs_only_after_success(self.steps, found.step, step_index):
             return None
         if ".." in found.value.split("/"):
             return None

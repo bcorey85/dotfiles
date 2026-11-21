@@ -38,6 +38,7 @@ class RgPathGateTest(unittest.TestCase):
             ("rg 'foo bar'", "rg 'foo bar' ."),
             ("rg foo | head", "rg foo ."),
             ("cd /tmp && rg foo", "rg foo ."),
+            ("ls && \\\nrg foo", "rg foo ."),
             ("rg foo -g '*.py'", "rg foo -g '*.py' ."),
             ("rg -e pat", "rg -e pat ."),
             ("rg --regexp pat", "rg --regexp pat ."),

@@ -2,7 +2,8 @@
 `unquoted_word` and `without_subshell_closers`."""
 import os
 
-from shell_command import closed_segment_words, command_after_wrappers, paren_depth_change
+from shell_command import closed_segment_words, command_after_wrappers
+from shell_steps import paren_depth_change
 
 
 def unquoted_word(raw_word):

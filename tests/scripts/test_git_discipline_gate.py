@@ -183,6 +183,16 @@ class GitDisciplineGateTest(GateCaseBase):
             with self.subTest(command=command):
                 self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
 
+    def test_an_ansi_c_quoted_amend_already_held_before_the_change(self):
+        """Pins a verdict that held before the review commit gate read `$'...'`: this gate decodes the words itself."""
+        for command in ("git $'commit' --amend", "git commit $'\\x2d\\x2damend'", "git $'\\143ommit' $'--amend'",
+                        "echo '$' ; git $'commit' --amend"):
+            self.assert_denied(command, "[git-discipline-gate] git commit --amend is blocked")
+
+    def test_an_amend_after_a_comment_ending_in_a_backslash_is_denied(self):
+        command = "git status # note \\\ngit commit --amend"
+        self.assert_denied(command, "[git-discipline-gate] git commit --amend is blocked")
+
     def test_amend_denied(self):
         for command in ("git commit --amend", "git commit -m x --amend --no-edit", "git commit --amend -m x"):
             reason = self.assert_denied(command, "[git-discipline-gate] git commit --amend is blocked")

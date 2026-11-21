@@ -48,9 +48,11 @@ import hook_input
 import script_utils
 import shell_command
 import shell_command_words
+import shell_directory
 import shell_expansion
 import shell_quoting
 import shell_statements
+import shell_steps
 from code_text import SP, SPC, trim
 from hook_input import (
     JqError,
@@ -62,10 +64,11 @@ from hook_input import (
     jq_str,
 )
 from inplace_edit import PERL_I_FLAG, file_operands, find_editor_word, has_unseen_files, is_inplace
-from interpreter_writes import interpreter_written_target
-from shell_statements import arithmetic_positions, strip_comments, strip_heredocs
+from interpreter_writes import computed_write_target, interpreter_code, interpreter_written_target
+from shell_statements import arithmetic_positions, shell_code
 from shell_variables import ShellVariables
 from shell_write_denial import (
+    CODER_COMPUTED_WRITE,
     CODER_NEW_FILE,
     CODER_REL_TARGET_CD,
     CODER_UNRESOLVED_VAR,
@@ -92,7 +95,7 @@ TEE = re.compile(r"(^|" + SPC + r")tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+" +
 TEE_PREFIX = re.compile(r"^" + SPC + r"*tee(" + SPC + r"+-[a-zA-Z-]+)*" + SPC + "+")
 PRECHECK = re.compile("(" + PERL_I_FLAG + "|inplace|>|tee)")
 DIRECTORY_COMMAND_TEXT = re.compile(
-    r"(^|[\s;&|(){`])(" + "|".join(shell_command.DIRECTORY_MOVE_WORDS) + r")(\s|$|[;&|)])")
+    r"(^|[\s;&|(){`])(" + "|".join(shell_directory.DIRECTORY_MOVE_WORDS) + r")(\s|$|[;&|)])")
 # The variables a redirect or tee target takes from the environment.
 ENV_NAMES = ("TMPDIR", "HOME")
 
@@ -152,7 +155,7 @@ def simple_command_texts(step):
     try:
         commands = shell_command.parse_simple_commands(step)
     except ValueError:
-        core = trim(shell_command.step_parts(step)[0])
+        core = trim(shell_steps.step_parts(step)[0])
         return [core] if core else []
     texts = []
     for words, _redirections in commands:
@@ -174,9 +177,9 @@ def directory_changes(step):
     folders = []
     for words, _redirections, _piped in commands:
         words = shell_command.command_after_wrappers(words)
-        if words and words[0] in shell_command.DIRECTORY_MOVE_WORDS:
+        if words and words[0] in shell_directory.DIRECTORY_MOVE_WORDS:
             expanded_words = [expand_env_names(word, ENV_NAMES) for word in words]
-            folders.append(shell_command.cd_folder(expanded_words))
+            folders.append(shell_directory.cd_folder(expanded_words))
     return folders
 
 
@@ -219,10 +222,11 @@ def step_targets(code, cwd, in_span):
 
 
 def code_texts(code):
-    """The command text and the text of each `$(...)` and backtick span in it, at any depth: the shell runs the
-    spans, also inside double quotes. The body of a `$((...))` is arithmetic, not code that redirects: it is not a
-    text, though a span inside it still is. A `$((cmd) )` whose inner `(` closes before the last character is a
-    command substitution and is a text."""
+    """The command text and the text of each `$(...)`, backtick, `>(...)` and `<(...)` span in it, at any depth: the
+    shell runs the spans (the first two also inside double quotes). The body of a `$((...))` is arithmetic, not code
+    that redirects: it is not a text, though a span inside it still is. A `$((cmd) )` whose inner `(` closes before
+    the last character is a command substitution and is a text. A span found twice (a `>(...)` inside a `$(...)`
+    is seen from both texts) is one text."""
     texts = [code]
     pending = [code]
     for text in pending:
@@ -232,7 +236,11 @@ def code_texts(code):
             pending.append(span)
             if start - 2 not in arithmetic_begins:
                 texts.append(span)
-    return texts
+        for start, end in shell_command.process_substitution_bounds(text):
+            span = text[start:end]
+            pending.append(span)
+            texts.append(span)
+    return list(dict.fromkeys(texts))
 
 
 def text_segments(text, cwd):
@@ -271,7 +279,8 @@ def run(raw):
         return
 
     command = request.command
-    code = strip_comments(strip_heredocs(command))
+    # The shell joins a backslash-newline before it reads the words, so `tee \<newline> file` names `file`.
+    code = shell_code(command)
     texts = code_texts(code)
     request = request._replace(variables=ShellVariables(code) if request.coder else None)
     segment_folders = []
@@ -422,15 +431,37 @@ def check_brace_list(raw_word, folders, unread_change, request):
         check_written_target(target, request)
 
 
+def check_computed_writes(found, folders, request):
+    """Deny a coder's interpreter step whose file write target is computed (a glob or listing, argv, or a loop over
+    one) with no proof that it is under a temp dir. A relative argument is read against the folder the step runs in,
+    the last of folders. The caller runs it for a coder only; the main session is not held to it."""
+    source = computed_write_target(found, folders[-1])
+    if source is None:
+        return
+
+    raise DenyError(deny_text(CODER_COMPUTED_WRITE,
+                              "a script that writes files whose paths it computes from " + source + ", with no proof "
+                              "they sit under a temp dir, can rewrite many repo files with no backup. For a rename "
+                              "use the LSP rename; otherwise change each file with the Edit tool.",
+                              request.cannot_skip))
+
+
 def check_script_writes(segment, folders, written_paths, request):
     """Deny an interpreter step whose code writes a git-tracked file."""
-    written = interpreter_written_target(segment, folders, written_paths, request.command)
+    found = interpreter_code(segment, folders[0], written_paths, request.command)
+    # The computed-write check reads a relative script path in the folder the step runs in, as `cd d && python3 r.py`
+    # does; the tracked-target check keeps the session folder so a main-session verdict does not change.
+    if request.coder:
+        same_folder = folders[-1] == folders[0]
+        step_found = found if same_folder else interpreter_code(segment, folders[-1], written_paths, request.command)
+        check_computed_writes(step_found, folders, request)
+    written = interpreter_written_target(found, folders)
     if written is None:
         return
 
     raw_target, target = written
     cannot_skip = request.cannot_skip
-    if len(folders) > 1 and not shell_command.path_word_is_absolute(raw_target):
+    if len(folders) > 1 and not shell_directory.path_word_is_absolute(raw_target):
         raise DenyError(deny_text(SCRIPT_WRITE_REL_CD,
                                   "a script run after a cd to " + folders[-1] + " writes the relative path "
                                   + raw_target + ", which is git-tracked under the session cwd or a cd folder. "
@@ -568,7 +599,7 @@ def check_literal_target(target, request):
     raw_target = target.raw
     cwd = folders[0]
     expanded = env_expanded(target, request)
-    relative = not shell_command.path_word_is_absolute(expanded)
+    relative = not shell_directory.path_word_is_absolute(expanded)
     after_directory_change = relative and (target.unread_change or len(folders) > 1)
 
     for folder in folders if relative else [cwd]:

@@ -30,6 +30,7 @@ from shell_command import (
     without_assignments,
     without_flag_values,
 )
+from shell_quoting import join_line_continuations
 
 PYTHON_PROGRAM = re.compile(r"python(3(\.\d+)?)?")
 # `manage.py test` options that take the next word as their value, which is not a test label.
@@ -615,7 +616,7 @@ def step_check_scope(step, cwd):
     test commands is targeted, since the scan keeps only the widest scope and a whole lint would hide a test run on
     one file. Each piece is judged in the directory the earlier `cd X` pieces moved to."""
     piece_cwd = cwd
-    for _operator, piece in split_command_steps(step):
+    for _operator, piece in split_command_steps(join_line_continuations(step)):
         piece = piece.strip()
         if runs_tests(piece) and command_check_scope(piece, piece_cwd) == "targeted":
             return "targeted"

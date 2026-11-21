@@ -8,6 +8,7 @@ from collections import Counter, namedtuple
 
 import script_utils
 import shell_command
+import shell_directory
 from code_text import (
     SP,
     STRING_LITERAL,
@@ -23,6 +24,7 @@ from code_text import (
     tuple_fields,
     without_comments,
 )
+from hook_input import is_under_temp_dir
 from inplace_edit import is_inplace
 from shell_write_paths import is_git_tracked, resolve_target
 
@@ -117,6 +119,23 @@ MAX_BASE_HOPS = 8
 # The other names a for loop's target list may hold beside the traced one (`for path, old, new in EDITS`).
 LOOP_TARGETS = r"[\w\s,()\[\]]*?"
 MAX_SCRIPT_BYTES = 1_000_000
+# A call that lists files: python glob and Path listings, os walks and listings, node readdir, ruby Dir, perl glob.
+LISTING_CALL = re.compile(r"\b(?:i?glob|rglob|iterdir|walk|listdir|scandir|readdirSync|readdir)\s*\("
+                          r"|\bDir\s*(?:\.(?:glob|entries|children|each_child|foreach|new|open)\b|\[)")
+# A python call that runs a program that lists files (`git ls-files`, `git grep -l`, `find`, `ls`).
+LISTING_COMMAND_CALL = re.compile(r"\b(?:subprocess\.(?:run|check_output|Popen)|os\.popen)\s*\("
+                                  r"[^)]*?(?<![\w-])(?:ls-files|grep|find|ls)(?![\w-])")
+# A ruby block's parameters (`|f|`), a node callback's parameters (`n =>`, `(a, b) =>`, `function (n)`), and the
+# variable of a perl loop.
+BLOCK_PARAMETERS = re.compile(r"\|([\w\s,]+)\||(\w+)\s*=>|\(([\w\s,]+)\)\s*=>|function\s*\(([\w\s,]*)\)")
+PERL_LOOP_VARIABLE = re.compile(r"\bfor(?:each)?\s+(?:my\s+|our\s+)?(\$\w+)")
+# The script's own path in python's argv (`sys.argv[0]`), no argument. Node's `process.argv[0]` is the node binary;
+# its script path `process.argv[1]` stays an argv source.
+SCRIPT_ARGV = re.compile(r"\b(?:sys\.)?argv\[0\]")
+# A call that makes a temp folder or names the temp root; the NEW_ROOT_FUNCTIONS, their node and file forms,
+# and ruby's Dir.tmpdir and Dir.mktmpdir.
+TEMP_BASE_CALL = re.compile(r"\b(?:" + "|".join(sorted(NEW_ROOT_FUNCTIONS - {"home"}))
+                            + r"|mkdtemp\w*|tmpdir)\s*\(|\bDir\.(?:tmpdir|mktmpdir)\b")
 
 
 # The code an interpreter step runs, the arguments passed to it, and its family name.
@@ -245,14 +264,17 @@ def untracked_script_text(script):
         return None
 
 
-def write_statements(code, family):
+def write_statements(code, family, include_method_replace=True):
     """(statement, target) for each file write in code of the interpreter family ("python", "node", "ruby" or "perl").
     The statement is the `;`-separated part of the write's line, extended through the close of any bracket the write
     opens, so a tracked file the code only reads elsewhere does not count. The target is the part of it that names the
-    written file. A backtick runs a command only in perl and ruby."""
+    written file. A backtick runs a command only in perl and ruby. A `.replace(` is a string method as often as a path
+    move; include_method_replace False leaves it out."""
     writes = []
     for match in FILE_WRITE.finditer(code):
         if match.group(0) == "`" and family not in BACKTICK_FAMILIES:
+            continue
+        if match.group(0).startswith(".replace") and not include_method_replace:
             continue
 
         statement, statement_start = statement_around(code, match)
@@ -354,14 +376,30 @@ def binding_texts(code, name):
     return texts
 
 
-def loop_binding_texts(code, name, word):
-    """The iterable of each for loop whose target list holds `name` (`word` is its regex-escaped form)."""
+def loop_matches(code, word):
+    """Each for loop whose target list holds the name `word` (regex-escaped)."""
     loop = re.compile(rf"\bfor\s*\(?\s*(?:(?:const|let|var|my)\s+)?(?P<targets>{LOOP_TARGETS}\b{word}\b{LOOP_TARGETS})"
                       r"\s(?:in|of)\s")
+    return list(loop.finditer(code))
+
+
+def loop_binding_texts(code, name, word):
+    """The iterable of each for loop whose target list holds `name` (`word` is its regex-escaped form)."""
     texts = []
-    for match in loop.finditer(code):
+    for match in loop_matches(code, word):
         texts += one_loop_texts(code, name, match)
     return texts
+
+
+def loop_iterable_texts(code, texts):
+    """The whole iterable of each for loop whose target list holds a name used in texts, so a listing call in a
+    multi-name loop (`for a, b in os.walk(...)`) stays visible beside the per-position fields the trace follows."""
+    names = {name.lstrip("$") for text in texts for name in CODE_NAME.findall(text)}
+    iterables = []
+    for name in sorted(names):
+        for match in loop_matches(code, re.escape(name)):
+            iterables.append(",".join(split_arguments(code, match.end())))
+    return iterables
 
 
 def one_loop_texts(code, name, match):
@@ -680,15 +718,14 @@ def candidates_on_root(code, statement, target, root):
                     for literal in own + named]
 
 
-def interpreter_written_target(segment, folders, written_paths, command):
+def interpreter_written_target(found, folders):
     """(raw path, path) of the git-tracked file an interpreter step opens for writing, else None: code with a file
     write whose statement names a tracked file as a string literal, whose target is a name bound (through
     assignments, for loops and function calls) to a tracked file's literal or to literals that join into one, or a
     tracked file passed as an argument unless the trace finds that no write target comes from argv. folders holds the
     session cwd, then each literal cd folder before the step, and a relative path counts when it names a tracked
-    file under any of them. A path the code builds any other way is not seen."""
-    cwd = folders[0]
-    found = interpreter_code(segment, cwd, written_paths, command)
+    file under any of them. A path the code builds any other way is not seen. found is the interpreter_code result
+    of the step."""
     if found is None:
         return None
 
@@ -714,9 +751,101 @@ def interpreter_written_target(segment, folders, written_paths, command):
     return None
 
 
+def argv_is_all_temp(arguments, cwd):
+    """Whether the step has arguments and every one is a path under a temp dir."""
+    if not arguments:
+        return False
+    for argument in arguments:
+        argument_path = resolve_target(argument, cwd)
+        if argument_path is None or not is_under_temp_dir(argument_path):
+            return False
+    return True
+
+
+def names_temp_base(texts):
+    """Whether any text makes a temp folder (a NEW_ROOT_FUNCTIONS-style call that returns one) or holds an absolute
+    literal path under a temp dir."""
+    for text in texts:
+        if TEMP_BASE_CALL.search(code_outside_strings(text)):
+            return True
+        for literal in literals_in(text):
+            if literal.startswith("/") and is_under_temp_dir(literal):
+                return True
+    return False
+
+
+def names_bound_by_listing(code, family):
+    """The names a perl loop variable, a ruby block parameter or a node callback parameter takes from a listing call
+    on the same line (`for my $f (glob(...))`, `Dir.glob(...).each do |f|`, `fs.readdirSync(...).forEach(n => ...)`).
+    The `|f|` form counts only for ruby: elsewhere `|` is a regex alternation. The arrow and `function (...)` forms
+    count only for node: in perl and ruby `=>` pairs a hash key. The trace binds
+    python loop names and node `for ... of` names itself."""
+    names = set()
+    for line in code.splitlines():
+        if not LISTING_CALL.search(code_outside_strings(line)):
+            continue
+        for groups in BLOCK_PARAMETERS.findall(line):
+            block_group = groups[0] if family == "ruby" else ""
+            callback_groups = groups[1:] if family == "node" else ()
+            parameters = ",".join((block_group, *callback_groups))
+            names.update(name.strip().lstrip("$") for name in parameters.split(",") if name.strip())
+        names.update(match.lstrip("$") for match in PERL_LOOP_VARIABLE.findall(line))
+    return names
+
+
+def reads_listing_name(texts, listing_names):
+    """Whether any text uses a name in listing_names."""
+    return any(name.lstrip("$") in listing_names for text in texts for name in CODE_NAME.findall(text))
+
+
+def computed_write_source(code, writes, family, arguments, cwd):
+    """What a write target of the code is computed from ("a glob or directory listing" or "argv"), else None. Each
+    write's target is traced through the names that bind it, so a loop over a listing counts, a listing program run
+    through subprocess or os.popen (`git ls-files`, `find`, `ls`, `grep`) included. A write whose traced
+    text holds a temp base is proven temp; an argv-sourced write is proven only when every argument is a temp path.
+    A name that nothing binds is no source: only a listing or argv the trace reaches counts. Python's `sys.argv[0]` is
+    the script's own path, read as `__file__`; node's `process.argv[1]` still counts as argv.
+    `code` has SCRIPT_ARGV replaced already, and `writes` is its
+    write_statements(code, family, include_method_replace=False)."""
+    listing_names = names_bound_by_listing(code, family)
+    for _statement, target in writes:
+        texts = named_texts(code, target)
+        if names_temp_base(texts):
+            continue
+        code_only = [code_outside_strings(text) for text in texts]
+        listing_texts = texts + loop_iterable_texts(code, texts)
+        # A listing program's name is a string literal, so the raw text is read.
+        if any(LISTING_COMMAND_CALL.search(text) for text in listing_texts):
+            return "a glob or directory listing"
+        listing_code = [code_outside_strings(text) for text in listing_texts]
+        if any(LISTING_CALL.search(text) for text in listing_code) or reads_listing_name(code_only, listing_names):
+            return "a glob or directory listing"
+        reaches_argv = any(ARGV_SOURCE.search(text) for text in code_only)
+        if reaches_argv and not argv_is_all_temp(arguments, cwd):
+            return "argv"
+    return None
+
+
+def computed_write_target(found, cwd):
+    """What the file write of an interpreter step computes its target from (see computed_write_source), else None.
+    found is the interpreter_code result of the step: inline code or an untracked script file."""
+    if found is None:
+        return None
+
+    raw_code, arguments, family = found
+    # A comment's bracket or quote cuts a literal and makes a bound name read as unbound, so the code is read without
+    # its comments; the raw text is used only when that leaves no write (a `#` that starts no comment cut the code).
+    code = SCRIPT_ARGV.sub("__file__", without_comments(raw_code))
+    writes = write_statements(code, family, include_method_replace=False)
+    if not writes:
+        code = SCRIPT_ARGV.sub("__file__", raw_code)
+        writes = write_statements(code, family, include_method_replace=False)
+    return computed_write_source(code, writes, family, arguments, cwd)
+
+
 def tracked_candidate_path(candidate, folders):
     """The git-tracked file a candidate path names under the session cwd (folders[0]) or, when relative, any folder."""
-    candidate_folders = [folders[0]] if shell_command.path_word_is_absolute(candidate) else folders
+    candidate_folders = [folders[0]] if shell_directory.path_word_is_absolute(candidate) else folders
     for folder in candidate_folders:
         path = resolve_target(candidate, folder)
         path = os.path.normpath(path) if path else path

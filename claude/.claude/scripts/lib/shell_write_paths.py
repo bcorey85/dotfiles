@@ -4,7 +4,7 @@ Toolkit scripts import it after putting scripts/lib on sys.path."""
 import os
 import subprocess
 
-import shell_command
+import shell_directory
 from code_text import trim
 from hook_input import bash_basename, bash_dirname
 
@@ -18,10 +18,10 @@ def is_stream_or_device(word):
 
 def resolve_target(raw, cwd):
     """The path a write target word names against cwd, or None for a stream (`&1`), an option or a /dev file."""
-    path = shell_command.path_word(trim(raw))
+    path = shell_directory.path_word(trim(raw))
     if not path or path.startswith("-") or is_stream_or_device(path):
         return None
-    if not shell_command.path_word_is_absolute(raw):
+    if not shell_directory.path_word_is_absolute(raw):
         path = cwd + "/" + path
     return path
 

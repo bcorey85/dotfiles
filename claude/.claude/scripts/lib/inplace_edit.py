@@ -4,6 +4,7 @@ The shell write gate imports it after putting scripts/lib on sys.path."""
 import re
 
 import shell_command
+import shell_quoting
 from code_text import SPC
 from script_utils import ENV_ASSIGNMENT_NAME
 
@@ -121,7 +122,7 @@ def file_operands(segment, editor):
     """The words an in-place editor step reads as files: what follows the editor once its options and its script (the
     first word that is no option, unless an option gave the script) are dropped. Empty when none can be found."""
     # A backslash at a line end joins two lines; shlex would hand it back as a one-newline word.
-    joined_lines = shell_command.LINE_CONTINUATION.sub(" ", segment)
+    joined_lines = shell_quoting.join_line_continuations(segment)
     words = shell_command.words_without_redirections(joined_lines)
     if words is None:
         return []

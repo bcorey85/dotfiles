@@ -530,7 +530,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         addedBg="#d6eacc"; removedBg="#f4dcd5"; ctxBg="#f2edd8"
         sAdd="#13702f"; sRem="#a03e43"; badgeNeu="#846322"
         bright="#24211b"; quote="#504d46"; bullet="#5b5851"
-        kw="#637200"; grey="#7b786f"; remark="#50686e"; lit="#9d7200"; desc="#238682"; define="#296caa"
+        kw="#127900"; grey="#7b786f"; remark="#50686e"; lit="#b05a12"; desc="#00737e"; define="#334db0"
         link="#5a5fb4"; wine="#8f3d5e"
       else
         bg="#0b191c"; panel="#061416"; panelAlt="#18272a"; border="#334345"; note="#061416"

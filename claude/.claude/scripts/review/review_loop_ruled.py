@@ -433,11 +433,11 @@ class RuledFindings:
         self.approval_head_before = script_utils.head_commit(self.repo)
         self.approval_unhashed = set()
         self.approval_snapshot_ok = False
-        listing = script_utils.git_output(self.repo, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+        listing = script_utils.repo_file_paths(self.repo)
         if listing is None:
             return
         self.approval_snapshot_ok = True
-        for path in approval_only_paths(listing.split("\0")):
+        for path in approval_only_paths(listing):
             blob = script_utils.work_tree_blob(self.repo, path, keep_object=True)
             if blob is None and (pathlib.Path(self.repo) / path).is_file():
                 self.approval_unhashed.add(path)

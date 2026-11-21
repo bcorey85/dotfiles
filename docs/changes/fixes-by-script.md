@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-655 fix notes
+657 fix notes
 
 Recent: the 7 days up to 2026-11-20, the newest note.
 
@@ -36,11 +36,11 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/verify-log | 13 | 2 |
 | script/log-review-finding | 12 | 1 |
 | script/pull-keep-index | 12 | 1 |
+| script/refactor-flow | 11 | 4 |
 | script/code-wait | 10 | 3 |
 | script/log-escape | 10 | 2 |
 | script/verify-common | 10 | 2 |
 | script/criteria-dry-run | 9 | 2 |
-| script/refactor-flow | 9 | 2 |
 | script/review-asks | 9 | 8 |
 | script/check-output | 8 | 4 |
 | script/code-review-start | 8 | 1 |
@@ -125,6 +125,7 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/ask-outcome-words | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
+| script/clone-pairs | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
@@ -161,6 +162,7 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/rule-anchors | 1 | 0 |
 | script/ruled-change-text | 1 | 1 |
 | script/ruling-relay | 1 | 1 |
+| script/shape-clones | 1 | 1 |
 | script/shell-steps | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |

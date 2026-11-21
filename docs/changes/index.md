@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1038 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1040 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-20, [Command steps continue across a newline after an operator and read a backslash continuation](notes/2026-11-20-command-steps-continue-across-a-newline-after-an.md).
 

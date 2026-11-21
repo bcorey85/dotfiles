@@ -71,29 +71,6 @@ return {
       -- Not the default gS: vtsls maps that to go-to-source-definition.
       require("mini.splitjoin").setup({ mappings = { toggle = "<leader>j" } })
 
-      -- ── mini.hipatterns ────────────────────────────────────────────────────
-      -- Hex colors as swatches, and TODO-style words outside org files, where
-      -- orgmode colors its own TODO keywords.
-      local hipatterns = require("mini.hipatterns")
-      local function keyword_pattern(word)
-        return function(buf_id)
-          if vim.bo[buf_id].filetype == "org" then
-            return nil
-          end
-          return "%f[%w]()" .. word .. "()%f[%W]"
-        end
-      end
-
-      hipatterns.setup({
-        highlighters = {
-          fixme = { pattern = keyword_pattern("FIXME"), group = "MiniHipatternsFixme" },
-          hack = { pattern = keyword_pattern("HACK"), group = "MiniHipatternsHack" },
-          todo = { pattern = keyword_pattern("TODO"), group = "MiniHipatternsTodo" },
-          note = { pattern = keyword_pattern("NOTE"), group = "MiniHipatternsNote" },
-          hex_color = hipatterns.gen_highlighter.hex_color(),
-        },
-      })
-
       -- ── mini.pairs ─────────────────────────────────────────────────────────
       -- command-mode pairs are off: auto-inserting a closing )/}/] mid-pattern
       -- fights regex/substitution typing (:%s/(foo)/(bar)/, :g/{/). Insert mode

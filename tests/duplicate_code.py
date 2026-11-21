@@ -8,7 +8,7 @@ token clone between two places.
 jscpd runs through npx at a pinned version. Without npx the clone check is skipped with a note, as run.sh skips ruff."""
 import argparse
 import ast
-import json
+import os
 import pathlib
 import re
 import shutil
@@ -19,7 +19,9 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "scripts"))
 import toolkit_paths
 
-JSCPD = "jscpd@4.0.5"
+sys.path.insert(0, str(toolkit_paths.CLAUDE_DIR / "skills" / "refactor" / "scripts"))
+import clone_pairs
+
 # The hook handler that a script's main() calls: every gate names it one of these.
 HANDLER_NAMES = {"check", "run", "decide"}
 # A CLI verb handler: command_<verb>. Two scripts that share a verb each handle it their own way.
@@ -69,10 +71,15 @@ def same_name_functions(root):
 
 
 def import_preamble_lines(path):
-    """Line numbers of the top-level imports and `sys.path` assignments in a Python file, and of its blank lines."""
+    """Line numbers of the module docstring, the top-level imports and `sys.path` assignments in a Python file, and of
+    its blank lines."""
     source = path.read_text()
     preamble_lines = {number for number, line in enumerate(source.splitlines(), 1) if not line.strip()}
-    for node in ast.parse(source, filename=str(path)).body:
+    tree = ast.parse(source, filename=str(path))
+    body = tree.body
+    if ast.get_docstring(tree, clean=False) is not None:
+        preamble_lines.update(range(body[0].lineno, body[0].end_lineno + 1))
+    for node in body:
         is_import = isinstance(node, ast.Import | ast.ImportFrom)
         is_sys_path = isinstance(node, ast.Assign) and "sys.path" in ast.unparse(node.targets[0])
         if is_import or is_sys_path:
@@ -80,13 +87,13 @@ def import_preamble_lines(path):
     return preamble_lines
 
 
-def is_import_preamble(root, fragment):
+def is_import_preamble(root, site):
     # jscpd's first and last lines can be partial, so only the lines between them must be preamble.
-    path = root / fragment["name"]
+    path = root / site.path
     if path.suffix != ".py":
         return False
 
-    interior_lines = range(fragment["start"] + 1, fragment["end"])
+    interior_lines = range(site.first_line + 1, site.last_line)
     return set(interior_lines) <= import_preamble_lines(path)
 
 
@@ -104,20 +111,24 @@ def jscpd_clones(root):
         return None
 
     with tempfile.TemporaryDirectory() as report_dir:
-        command = ["npx", "--yes", JSCPD, "--format", "python,bash", "--reporters", "json", "--output", report_dir,
-                   "--ignore", ",".join(GENERATED_HOOKS), "--silent", *scan_dirs(root)]
+        # --absolute: jscpd 5 writes names relative to a scan-dependent base, so ask for paths that need no base.
+        command = ["npx", "--yes", clone_pairs.JSCPD_PACKAGE, "--format", "python,bash", "--reporters", "json",
+                   "--output", report_dir, "--ignore", ",".join(GENERATED_HOOKS), "--silent", "--absolute",
+                   *scan_dirs(root)]
         subprocess.run(command, cwd=root, check=True, stdout=subprocess.DEVNULL)
-        report_path = pathlib.Path(report_dir) / "jscpd-report.json"
-        report = json.loads(report_path.read_text())
+        report_path = pathlib.Path(report_dir) / clone_pairs.REPORT_NAME
+        pairs, note = clone_pairs.read_pairs(report_path)
+
+    if note:
+        sys.exit(f"duplicate code: {note}")
 
     clones = []
-    for duplicate in report["duplicates"]:
-        fragments = [duplicate["firstFile"], duplicate["secondFile"]]
+    for pair in pairs:
         # Both sides hold the same tokens, so one side of only imports makes the clone imports; jscpd's line span on
         # the other side can reach past them.
-        if any(is_import_preamble(root, fragment) for fragment in fragments):
+        if any(is_import_preamble(root, site) for site in pair.sites):
             continue
-        places = [f"{fragment['name']}:{fragment['start']}-{fragment['end']}" for fragment in fragments]
+        places = [f"{os.path.relpath(site.path, root)}:{site.first_line}-{site.last_line}" for site in pair.sites]
         clones.append(" and ".join(places))
     return sorted(clones)
 

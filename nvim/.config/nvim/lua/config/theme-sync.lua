@@ -93,7 +93,7 @@ local FAMILIES = {
     accents = {
       -- Every heading takes the literal mustard.
       dark = { heading1 = "#af8931", heading = "#af8931", bullet = "#858990" },
-      light = { heading1 = "#b46e00", heading = "#b46e00", bullet = "#5b5851" },
+      light = { heading1 = "#9d7200", heading = "#9d7200", bullet = "#5b5851" },
     },
   },
   ["kanagawa"] = {

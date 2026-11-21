@@ -522,7 +522,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       # Match nvim's tree-sitter colours where the base theme's own selectors
       # out-rank the generic table. Headings and bullet mirror theme-sync's markdown.
       # bright = markdown bold; hunk's scope table carries colour only, no weight.
-      local bright quote bullet role_extra grey remark lit desc define link
+      local bright quote bullet role_extra grey remark lit desc define link wine
       if [ "$2" = light ]; then
         bg="#f2edd8"; panel="#ede7d1"; panelAlt="#eae4ce"; border="#cdc8b2"; note="#ede7d1"
         accent="#005751"; accentMuted="#cdc8b2"; text="#302e27"; muted="#5b5851"; lnFg="#66635c"
@@ -530,32 +530,32 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
         addedBg="#d6eacc"; removedBg="#f4dcd5"; ctxBg="#f2edd8"
         sAdd="#13702f"; sRem="#a03e43"; badgeNeu="#846322"
         bright="#24211b"; quote="#504d46"; bullet="#5b5851"
-        kw="#aa4600"; grey="#5b5851"; remark="#50686e"; lit="#9d7200"; desc="#238682"; define="#637200"
-        link="#5a5fb4"
+        kw="#637200"; grey="#7b786f"; remark="#50686e"; lit="#9d7200"; desc="#238682"; define="#296caa"
+        link="#5a5fb4"; wine="#8f3d5e"
       else
         bg="#0b191c"; panel="#061416"; panelAlt="#18272a"; border="#334345"; note="#061416"
-        accent="#51a49c"; accentMuted="#334345"; text="#a0adb4"; muted="#858990"; lnFg="#627078"
+        accent="#51a49c"; accentMuted="#334345"; text="#96a3aa"; muted="#858990"; lnFg="#627078"
         # Words sit 30 from the line wash, counted as hunk does (the summed
         # r, g, b differences). Under 28 hunk swaps in its own blend.
-        addWord="#123047"; remWord="#3e252d"
+        addWord="#153028"; remWord="#32272b"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
-        addedBg="#0d2638"; removedBg="#2b2026"; ctxBg="#0b191c"
-        sAdd="#5a98cb"; sRem="#e68485"; badgeNeu="#eed286"
+        addedBg="#0d241d"; removedBg="#241d22"; ctxBg="#0b191c"
+        sAdd="#4d8c5a"; sRem="#b9686e"; badgeNeu="#eed286"
         bright="#c8d5dc"; quote="#a8b5bc"; bullet="#858990"
-        kw="#bd5f2f"; grey="#737d84"; remark="#7d9094"; lit="#af8931"; desc="#2e9890"; define="#849900"
-        link="#6c71c4"
+        kw="#849831"; grey="#58666d"; remark="#7d9094"; lit="#af8931"; desc="#2e9890"; define="#278bd3"
+        link="#6c71c4"; wine="#8f3d5e"
       fi
       badgeAdd="$sAdd"; badgeRem="$sRem"
       fRename="$sAdd"; fMod="$sAdd"; fUntracked="$sAdd"
       # Names are plain; function and class names take $define where they are defined.
-      # Brackets are grey; keywords, operators, separators and string escapes take $kw
-      # and comments $remark. Types take $desc; literals and markdown headings $lit.
-      # Markdown links take $link.
-      cmt="$remark"; punct="$grey"; op="$kw"; tag="$kw"; imp="$kw"; pre="$kw"
+      # Brackets and separators are grey; keywords take $kw, operators and string
+      # escapes $wine, and comments $remark. Types take $desc; literals and markdown
+      # headings $lit. Markdown links take $link.
+      cmt="$remark"; punct="$grey"; op="$wine"; tag="$kw"; imp="$kw"; pre="$kw"
       fn="$define"; cls="$text"; param="$text"; var="$text"; key="$text"
       call="$text"; bfn="$text"; mac="$text"; attr="$text"
-      num="$lit"; konst="$lit"; esc="$kw"; lang="$lit"; str="$lit"
+      num="$lit"; konst="$lit"; esc="$wine"; lang="$lit"; str="$lit"
       typ="$desc"; prim="$desc"
       vbi="$text"; ns="$text"; use="$text"; mem="$text"
       role_extra=$(cat <<EOF
@@ -584,17 +584,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
 "markup.heading punctuation.definition.heading.markdown" = "$lit"
 "heading.1.markdown entity.name.section.markdown" = "$lit"
 "heading.1.markdown punctuation.definition.heading.markdown" = "$lit"
-"punctuation.separator.key-value"   = "$op"
-"punctuation.separator.key-value.mapping.yaml" = "$op"
-"punctuation.separator.list.comma"  = "$op"
-"punctuation.separator.delimiter"   = "$op"
-"punctuation.separator.arguments"   = "$op"
-"punctuation.separator.element"     = "$op"
-"punctuation.separator.period"      = "$op"
-"punctuation.separator.list.comma.css" = "$op"
-"punctuation.separator.arguments.python" = "$op"
-"punctuation.separator.period.python" = "$op"
-"punctuation.separator.element.python" = "$op"
+"punctuation.separator.key-value.mapping.yaml" = "$punct"
 "markup.underline.link.markdown"    = "$link"
 EOF
       )
@@ -1670,9 +1660,9 @@ herdr_palette() { # <family> <mode> -> the [theme] + [theme.custom] TOML block
       accent="#51a49c" panel_bg="#061416" surface_dim="#18272a"
       surface0="#263638" surface1="#334345"
       overlay0="#47575a" overlay1="#858990"
-      text="#a0adb4" subtext0="#858990"
+      text="#96a3aa" subtext0="#858990"
       green="#5ba768" yellow="#eed286" red="#f54b43"
-      blue="#c85993" teal="#51a49c" peach="#d97d94"
+      blue="#ad6396" teal="#51a49c" peach="#d97d94"
       ;;
     kanagawa:light)
       # kanagawa lotus (#f2ecbc).

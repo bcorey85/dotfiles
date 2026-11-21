@@ -526,7 +526,7 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       if [ "$2" = light ]; then
         bg="#f2edd8"; panel="#ede7d1"; panelAlt="#eae4ce"; border="#cdc8b2"; note="#ede7d1"
         accent="#005751"; accentMuted="#cdc8b2"; text="#302e27"; muted="#5b5851"; lnFg="#66635c"
-        addWord="#b6dead"; remWord="#f8bcbb"
+        addWord="#cae4c0"; remWord="#f3c7c6"
         addedBg="#d6eacc"; removedBg="#f5d5d4"; ctxBg="#f2edd8"
         sAdd="#13702f"; sRem="#a03e43"; badgeNeu="#846322"
         bright="#24211b"; quote="#504d46"; bullet="#5b5851"
@@ -534,9 +534,9 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       else
         bg="#1c1c1c"; panel="#161616"; panelAlt="#292929"; border="#454545"; note="#161616"
         accent="#51a49c"; accentMuted="#454545"; text="#c0c0c0"; muted="#a1a1a1"; lnFg="#707070"
-        # Words must stay >= RGB distance 28 from the line wash, or hunk
-        # replaces them with its own blend of the sign colour.
-        addWord="#234024"; remWord="#572729"
+        # Words sit 30 from the line wash, counted as hunk does (the summed
+        # r, g, b differences). Under 28 hunk swaps in its own blend.
+        addWord="#21351e"; remWord="#412222"
         # hunk also colours line numbers and rails with the sign colour, and dims
         # unselected rails to 35% of it.
         addedBg="#1a2517"; removedBg="#2f1c1c"; ctxBg="#1c1c1c"

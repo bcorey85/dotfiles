@@ -45,5 +45,6 @@ When you compact, keep decisions with their reasons, every measured number, open
 
 - **Lay out code for the person who debugs it.** Keep a lookup next to the guard that checks it. Return early in place of a nested `if`. Never pass a call's result straight into a call that is itself an argument. Put the inner result in a named variable first. Follow this even when the surrounding code is denser.
 - **Build the design the code needs now.** Never defer a helper, a type, a module split or a folder layout to a later caller or a bigger codebase. Small size today is no reason to wait: a structure change costs more each week it waits. Place logic by what it knows, not by its caller count. Cut only features that nobody asked for.
+- **Use a package when someone has already solved the problem.** Before you write a parser, formatter or other general-purpose helper, look for a maintained package that does the job, and test it against the real edge cases. A new dependency is rarely a blocker: it costs less than custom code you must maintain. Write your own only when no package passes those cases. Never add a package on your own: name it, its license and the edge cases it passed, and wait for the user's yes.
 
 @~/.claude/CLAUDE.local.md

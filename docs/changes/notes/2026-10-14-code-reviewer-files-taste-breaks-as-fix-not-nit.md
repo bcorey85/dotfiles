@@ -35,6 +35,8 @@ Kept; `code-reviewer-taste-as-fix` closed at NO CHANGE (ruled by agent-evals-5e)
 duplication escapes past plan review fell 0.32 → 0.10 (4 of 39), inside the before range; it moved the way the edit
 aims and nothing in the work rows argues for a revert.
 
+Reading 2026-11-21: `code-reviewer-taste-as-fix` NO CHANGE, kept. User-caught share of smell and duplication escapes past plan review: 0.32 median before (range 0.09-0.50), 0.21 after (16 of 76, through 2026-11-13). Cannot be separated from `ticket-acs-are-the-contract`.
+
 ## Back-out
 
 restore the old line, "Naming and dead weight that don't obscure intent and break no written rule → `nit`."

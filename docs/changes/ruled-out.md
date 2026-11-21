@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-114 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+116 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 135 further findings are left out of this page.
 
@@ -58,6 +58,10 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-21 [Outside write-less skills and code-health tools did not make a coder trim a toolkit script more than a plain coder](../../../agent-evals/findings/2026-11-21-outside-write-less-skills-and-code-health-tools.md) - HOLD: One coder run per brief on one 1,040-line toolkit script and its 6,847 test lines: a plain coder cut 33 script lines and 41 test lines, and the ponytail text, the ub-mode text and ub-mode with crapper and mutator each cut the same or less. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-21 [A plan test budget halves new tests but cuts test lines only 15 percent](../../../agent-evals/findings/2026-11-21-a-plan-test-budget-halves-new-tests-but-cuts-test.md) - HOLD: One full Sonnet build per toolkit on the warehouse ticket: a plan that names its tests cut new tests 56% (319 to 141) but test lines only 15% (6,959 to 5,896), and the build caught 10 fewer planted bugs. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-19 [Review resume relay: the user said line maps to the relay flags](../../../agent-evals/findings/2026-11-19-review-resume-relay-the-user-said-line-maps-to-the.md) - HOLD: Rule-meter check, Sonnet: the Resume step's sentence mapping a `user said: "<words>"` line to `asks-done --by user --relayed-by <session> --quote "<words>"` holds 9/9 against 0/9 without it (RF05). [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-16 [A Sonnet plan runner gains nothing on the harder WH-200 fixture: 36 of 37 keys like Opus, Opus cache read up 27% (37.7M → 47.9M)](../../../agent-evals/findings/2026-11-16-a-sonnet-main-session-runs-the-frozen-opus-wh-200.md) - HOLD: From one frozen Opus plan on a three-part InvenTree ticket (37 hidden keys: 33 backend, 4 browser), an Opus-main /code run and a Sonnet-main run each pass 36 of 37 keys and miss the same one. The Sonnet run did not cut Opus use: Opus cache read rose 37.7M → 47.9M and Opus output 487k → 709k, cost rose $53.10 → $65.83, and it stopped for the human 4 times against 1. The fixture also missed its own bar (Opus at most 29 of 37). [watch: no watch]

@@ -47,6 +47,8 @@ The share of escapes past plan review that the user catches, from 2026-10-19. A 
 
 Reading, 2026-11-15: `ticket-acs-are-the-contract` BETTER, closed, kept. User-caught share of escapes past plan review: 0.61 median before (range 0.45-0.64), 0.04 after (2 of 55). One review edit of the same week shares the reading. Rows counted: work repos and agent-ledger-dev only.
 
+Reading 2026-11-21: `ticket-acs-are-the-contract` BETTER again, kept. User-caught share of escapes past plan review: 0.61 median before (range 0.45-0.64), 0.21 after (15 of 70, 2026-10-19..2026-11-13). The 11-15 figure (2 of 55) rose as late-dated hand catches arrived; the last bin reads 0.41 (15 of 37), so the gap is narrower than first read but still outside the before range. It cannot be separated from `code-reviewer-taste-as-fix`. Pr-bot rows (30 of 70) move the share.
+
 ## Back-out
 
 Revert the `CLAUDE.md`, `plan-verifier.md` and `verify/SKILL.md` hunks of dotfiles commit `88b5f73d`.

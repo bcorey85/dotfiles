@@ -36,6 +36,8 @@ Rule-meter, 8 runs with the text and 8 without, under a brief that pulls the oth
 
 Reading, 2026-11-15: `coder-readability-first-findings` WORSE, closed, kept. Smell, duplication and complexity findings per code-reviewer run: 0.55 median before (range 0.28-0.92), 1.07 after (638 of 599 runs, 8 days). Kept, because the rise came before this edit: in the work rows alone the rate went 0.64 to 1.18 in the week of 2026-11-02, when round-one review split by lens, and read 1.25 the week after this edit. The edit shows no fall in that one week; it is not the cause of the rise. Rows counted: work repos and agent-ledger-dev only.
 
+Reading 2026-11-21: `coder-readability-first-coder-cost` NO CHANGE, watch closed, kept. Sonnet coder cache read per dispatch: 2.72M median before (range 0.81M-5.38M), 2.25M after (559 dispatches, 2026-11-08..2026-11-16). Four other coder edits share the window. No Claude Code version switch is visible in the window.
+
 ## Back-out
 
 Delete the section from `skills/coder-core/SKILL.md` and its anchor row.

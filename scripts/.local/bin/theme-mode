@@ -526,8 +526,8 @@ hunk_custom_theme() { # <family> <mode> <base> -> a [custom_theme] TOML table, o
       if [ "$2" = light ]; then
         bg="#f2edd8"; panel="#ede7d1"; panelAlt="#eae4ce"; border="#cdc8b2"; note="#ede7d1"
         accent="#005751"; accentMuted="#cdc8b2"; text="#302e27"; muted="#5b5851"; lnFg="#66635c"
-        addWord="#cae4c0"; remWord="#f3c7c6"
-        addedBg="#d6eacc"; removedBg="#f5d5d4"; ctxBg="#f2edd8"
+        addWord="#cae4c0"; remWord="#f2cec7"
+        addedBg="#d6eacc"; removedBg="#f4dcd5"; ctxBg="#f2edd8"
         sAdd="#13702f"; sRem="#a03e43"; badgeNeu="#846322"
         bright="#24211b"; quote="#504d46"; bullet="#5b5851"
         kw="#66635c"; grey="#5b5851"; lit="#b46e00"; desc="#238682"; define="#c52b75"

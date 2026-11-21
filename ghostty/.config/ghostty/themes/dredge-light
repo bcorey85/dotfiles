@@ -1,24 +1,24 @@
 # dredge light — personal family (nvim colors/dredge.lua).
 # Bright slots are deeper shades, as in solarized-osaka light.
-palette = 0=#25292f
+palette = 0=#24211b
 palette = 1=#962929
 palette = 2=#0e5e2c
 palette = 3=#6b4b00
 palette = 4=#07538f
 palette = 5=#a0005c
 palette = 6=#005b55
-palette = 7=#4d5158
-palette = 8=#4b4f56
+palette = 7=#5b5851
+palette = 8=#504d46
 palette = 9=#860914
 palette = 10=#004c15
 palette = 11=#5b3a00
 palette = 12=#00417d
 palette = 13=#82004b
 palette = 14=#004a44
-palette = 15=#25292f
-background = #c8d0d3
-foreground = #1f2d37
-cursor-color = #131820
-cursor-text = #c8d0d3
-selection-background = #a0a2b3
-selection-foreground = #131820
+palette = 15=#24211b
+background = #f2edd8
+foreground = #302e27
+cursor-color = #24211b
+cursor-text = #f2edd8
+selection-background = #d8c9aa
+selection-foreground = #24211b

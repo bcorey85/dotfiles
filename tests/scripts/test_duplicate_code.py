@@ -1,4 +1,5 @@
 """Checks for tests/duplicate_code.py, the run.sh check that fails when the toolkit scripts hold duplicate code."""
+import importlib.util
 import os
 import pathlib
 import shutil
@@ -6,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = pathlib.Path(os.environ.get("DUPLICATE_CODE_SCRIPT")
                       or pathlib.Path(__file__).resolve().parents[1] / "duplicate_code.py")
@@ -122,6 +124,33 @@ class DuplicateCodeTest(unittest.TestCase):
         self.write_script("review/other_gate.py", IMPORT_PREAMBLE + "\nLIMIT = 3\n")
         finished = self.run_check(with_npx=True)
         self.assertEqual(finished.returncode, 0, finished.stderr)
+
+    @unittest.skipIf(shutil.which("npx") is None, "npx not installed")
+    def test_shared_imports_after_a_module_docstring_are_not_a_clone(self):
+        docstring = '"""First line of the module docstring.\n\nSecond paragraph of the docstring.\n"""\n'
+        self.write_script("gates/some_gate.py", docstring + IMPORT_PREAMBLE + HOOK_HANDLER)
+        self.write_script("review/other_gate.py", docstring + IMPORT_PREAMBLE + "\nLIMIT = 3\n")
+        finished = self.run_check(with_npx=True)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+
+    def test_an_unparseable_jscpd_report_stops_the_gate(self):
+        module_spec = importlib.util.spec_from_file_location("duplicate_code_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(gate)
+
+        def write_bad_report(command, **_options):
+            self.assertIn("--absolute", command)
+            report_dir = pathlib.Path(command[command.index("--output") + 1])
+            (report_dir / gate.clone_pairs.REPORT_NAME).write_text("{not json")
+
+        with (
+            mock.patch.object(gate.shutil, "which", return_value="/usr/bin/npx"),
+            mock.patch.object(gate.subprocess, "run", side_effect=write_bad_report),
+            self.assertRaises(SystemExit) as stopped,
+        ):
+            gate.jscpd_clones(self.root)
+
+        self.assertTrue(str(stopped.exception).startswith("duplicate code: jscpd output did not parse"))
 
 
 if __name__ == "__main__":

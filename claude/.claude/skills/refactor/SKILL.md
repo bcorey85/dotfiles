@@ -37,7 +37,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 3. **Branch audit (default)**: target = entire branch diff. Do NOT ask focus, do NOT read changed files.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list: committed, uncommitted and untracked changes against the merge base (deleted, renamed, binary and untracked files marked). `STOP:` when the branch diff, the uncommitted changes and the untracked files are all empty, a base with no shared history, or no base found.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, a one-line count of the jscpd clone pairs (markdown and text pairs left out) that have a site on a changed line (work tree only; a note says when detection is skipped or fails), a one-line count of the renamed-copy pairs (same body once names, attribute names and literals are stripped) and near-match pairs (a few tokens apart) between each changed Python or TypeScript function and every function in the repo (a note says when TypeScript is not read), and the finder prompt with the changed-file list: committed, uncommitted and untracked changes against the merge base (deleted, renamed, binary and untracked files marked), followed by those pairs, the shape pairs, and each added function's nearest other functions. `STOP:` when the branch diff, the uncommitted changes and the untracked files are all empty, a base with no shared history, or no base found.
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
@@ -106,7 +106,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only") and prints the finder prompt, with the candidate clone pairs when there are any.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only", or the `jscpd output did not parse` note) and prints the finder prompt, with the candidate clone pairs when there are any.
 
    b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with the printed prompt.
 

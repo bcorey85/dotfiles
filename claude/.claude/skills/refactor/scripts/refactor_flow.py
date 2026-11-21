@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """refactor-flow: the fixed steps of the /refactor skill, one call per mode.
 
-  refactor_flow.py branch-prep [--head REF] [--base REF]
+  refactor_flow.py branch-prep [--head REF] [--base REF] [--jscpd-timeout SECONDS]
   refactor_flow.py audit-prep <dir> [--jscpd-timeout SECONDS]
   refactor_flow.py simplify-prep <dir|file...> [--slice N]
   refactor_flow.py log --mode branch|targeted|audit|simplify --input FILE.json [--base REF]
@@ -42,8 +42,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -54,11 +52,12 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import ansi_text
+import clone_pairs
 import handoff_files
 import numstat
 import plan_format
 import script_utils
+import shape_clones
 import simplify_slices
 import source_text
 
@@ -69,7 +68,6 @@ BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "
 
 FINDERS = {"smell-reviewer", "complexity-reviewer"}
 MAX_SIMPLIFY_FILES = 25
-MAX_CLONE_PAIRS = 40
 MAX_STATE_INPUTS = 50
 MAX_LOG_INPUTS = MAX_STATE_INPUTS
 LOG_INPUT_PREFIX = "refactor-flow-"
@@ -82,7 +80,6 @@ LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPU
 SWEEP_MARKERS = re.compile(r"\b(?:TODO|FIXME|XXX|HACK)s?\b|\bconsole\.(?:log|debug)\b|\bdebugger\b|\bbinding\.pry\b"
                            r"|(?<![\w.])p?print\(|\bpprint\.pprint\(")
 SWEEP_COMMENTED_CODE = re.compile(r"^\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )")
-CLONE_SITE = re.compile(r"^\s+(?:- )?(.+?) (\[\d+:\d+ - \d+:\d+\])\s*$")
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
                "not a phase diff.")
@@ -108,6 +105,12 @@ AUDIT_ASK = ("Find duplication across files, pattern/idiom drift between sibling
              "consolidations or anything moving a public contract are `[design-decision]`.")
 AUDIT_CANDIDATES = ("Judge each candidate against the anti-churn line — must-stay-in-sync (flag, name the "
                     "extraction) vs looks-a-bit-similar (suppress).")
+AUDIT_NO_PAIRS_TEXT = "jscpd ran and found no clone pairs"
+BRANCH_PAIR_SCOPE = " on changed lines"
+BRANCH_NO_PAIRS_TEXT = "jscpd found no clone pair on changed lines"
+BRANCH_CANDIDATES = ("Each pair has a site on a line this branch changed. A new helper that repeats a helper "
+                     "elsewhere in the repo is a duplication finding: name the existing one to reuse. "
+                     "Apply the anti-churn line before you flag a pair.")
 SIMPLIFY_BOUND = ("Simplify mode: your bound is the whole existing code of `{target}`. Pre-existing shape IS "
                   "the target.")
 SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped differently: branching a data model "
@@ -186,13 +189,16 @@ def diff_output(span, *args, pathspecs=()):
     raise RefactorFlowError(f"`git diff {span}` failed: {done.stderr.strip()}")
 
 
-def sweep_matches(diff_text):
-    """Added lines that match the two mechanical-sweep patterns, as (path, line, kind, text)."""
+def parse_branch_diff(diff_text):
+    """The parsed diff files (source_text.FileDiff) of the branch diff."""
     try:
-        diff_files = source_text.parse_unified_diff(diff_text)
+        return source_text.parse_unified_diff(diff_text)
     except ValueError as error:
         raise RefactorFlowError(f"cannot parse the branch diff: {error}") from error
 
+
+def sweep_matches(diff_files):
+    """Added lines that match the two mechanical-sweep patterns, as (path, line, kind, text)."""
     matches = []
     for diff_file in diff_files:
         for hunk in diff_file.hunks:
@@ -451,20 +457,33 @@ def branch_prep(opts):
         print("STOP: tell the user the branch diff is empty. Dispatch nothing.")
         return 0
 
-    _print_branch_report(span, base, base_source, opts.head, root)
+    _print_branch_report(span, base, base_source, opts.head, root, opts.jscpd_timeout)
     return 0
 
 
-def _print_branch_report(span, base, base_source, opts_head, root):
+def _print_branch_report(span, base, base_source, opts_head, root, jscpd_timeout):
     log_input = fresh_log_input()
-    matches = sweep_matches(span.diff_text) + untracked_matches(span.untracked)
+    diff_files = parse_branch_diff(span.diff_text)
+    matches = sweep_matches(diff_files) + untracked_matches(span.untracked)
     scope_head = f"head `{opts_head}`" if opts_head else "the work tree"
+    if opts_head:
+        pairs, note = [], clone_pairs.HEAD_MODE_NOTE
+        shapes = shape_clones.skipped_result(clone_pairs.HEAD_MODE_NOTE)
+    else:
+        pairs, note = clone_pairs.branch_pairs(diff_files, span.untracked, root, jscpd_timeout)
+        shapes = shape_clones.branch_shapes(diff_files, span.untracked, root)
+    clone_line = clone_pairs.clone_summary_line(pairs, note, BRANCH_NO_PAIRS_TEXT, BRANCH_PAIR_SCOPE)
 
     print(f"## Branch audit scope (base `{base}` from {base_source}, {scope_head})")
     print(f"Changed files ({len(span.files)}); {span.shortstat}")
+    print(clone_line)
+    print(shape_clones.shape_summary_line(shapes))
     print(f"\n{_sweep_text(matches)}\n")
     bound = _smell_bound(base, opts_head, span.diff_ref)
     _print_smell_prompt(span.files, bound, opts_head, root)
+    if pairs:
+        clone_pairs.print_candidate_pairs(pairs, BRANCH_CANDIDATES)
+    shape_clones.print_candidates(shapes)
     print()
     print(_branch_next(base, log_input))
 
@@ -477,47 +496,6 @@ def _branch_next(base, log_input):
                      f"for each distinct class, write the log input to {log_input}, and call "
                      f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
                      "`log` empty-handed and stop.")
-
-
-def run_jscpd(target, timeout):
-    """Returns (clone_pairs, note); a pair is its `Clone found` line plus its site lines.
-    Never raises: detector failure is a note, not a stop."""
-    no_detection = "no mechanical detection — agent prior-art search only"
-    override = os.environ.get("REFACTOR_JSCPD_CMD")
-    if override:
-        command = shlex.split(override)
-    elif shutil.which("npx"):
-        command = ["npx", "--yes", "jscpd"]
-    else:
-        return [], no_detection
-
-    with tempfile.TemporaryDirectory() as work_dir:
-        try:
-            done = subprocess.run([*command, target, "--min-tokens", "70", "--reporters", "consoleFull",
-                                   "--output", work_dir],
-                                  capture_output=True, text=True, timeout=timeout)
-        except (subprocess.TimeoutExpired, OSError):
-            return [], no_detection
-    if done.returncode not in (0, 1):
-        return [], no_detection
-
-    # jscpd prints site paths relative to the target directory.
-    prefix = target if Path(target).is_dir() else ""
-    pairs = []
-    in_clone = False
-    plain = ansi_text.strip_ansi(done.stdout)
-    for line in plain.splitlines():
-        if line.startswith("Clone found"):
-            in_clone = True
-            pairs.append([line])
-            continue
-        site = CLONE_SITE.match(line) if in_clone and " │ " not in line else None
-        if site:
-            site_path = os.path.join(prefix, site.group(1)) if prefix else site.group(1)
-            pairs[-1].append(f"- {site_path} {site.group(2)}")
-        else:
-            in_clone = False
-    return pairs, ""
 
 
 def ls_files(targets, *flags):
@@ -536,15 +514,6 @@ def target_files(target):
     return ls_files(target, "--cached", "--others")
 
 
-def _print_candidate_pairs(listed_pairs, unlisted_count):
-    print("Candidate clone pairs (jscpd):")
-    for pair in listed_pairs:
-        print("\n".join(pair))
-    if unlisted_count:
-        print(f"{unlisted_count} more pair(s) not listed")
-    print(AUDIT_CANDIDATES)
-
-
 def audit_prep(opts):
     require_repo()
     target = opts.target
@@ -553,24 +522,17 @@ def audit_prep(opts):
         print(f"STOP: `{target}` holds no tracked or untracked (not ignored) file; ask the user for a dir or module.")
         return 0
     log_input = fresh_log_input()
-    pairs, note = run_jscpd(target, opts.jscpd_timeout)
-    listed_pairs = pairs[:MAX_CLONE_PAIRS]
-    unlisted_count = len(pairs) - len(listed_pairs)
+    pairs, note = clone_pairs.run_jscpd(target, opts.jscpd_timeout)
 
     print(f"## Audit target `{target}` ({len(files)} file(s))")
     print()
-    print("## Mechanical clone detection (jscpd, --min-tokens 70)")
-    if note:
-        print(f"- {note}")
-    elif pairs:
-        print(f"- {len(pairs)} clone pair(s); {len(listed_pairs)} listed in the dispatch prompt below")
-    else:
-        print("- jscpd ran and found no clone pairs")
+    print(f"## Mechanical clone detection (jscpd, --min-tokens {clone_pairs.AUDIT_MIN_TOKENS})")
+    print(clone_pairs.clone_summary_line(pairs, note, AUDIT_NO_PAIRS_TEXT))
     print()
     print("## smell-reviewer dispatch prompt (omit `model` unless +fast)")
     print(AUDIT_BOUND.format(target=target))
-    if listed_pairs:
-        _print_candidate_pairs(listed_pairs, unlisted_count)
+    if pairs:
+        clone_pairs.print_candidate_pairs(pairs, AUDIT_CANDIDATES)
     print(AUDIT_ASK)
     print()
     print(next_line("dispatch ONE smell-reviewer with the prompt above; report the work list with each "
@@ -1116,9 +1078,10 @@ def parse_arguments():
     branch = sub.add_parser("branch-prep")
     branch.add_argument("--head")
     branch.add_argument("--base")
+    branch.add_argument("--jscpd-timeout", type=int, default=clone_pairs.JSCPD_TIMEOUT_SECONDS)
     audit = sub.add_parser("audit-prep")
     audit.add_argument("target")
-    audit.add_argument("--jscpd-timeout", type=int, default=120)
+    audit.add_argument("--jscpd-timeout", type=int, default=clone_pairs.JSCPD_TIMEOUT_SECONDS)
     simplify = sub.add_parser("simplify-prep")
     simplify.add_argument("target", nargs="+")
     simplify.add_argument("--slice", type=int, default=1)

@@ -101,14 +101,14 @@ Singleton {
         "dredge-dark": {
             bg: "#0b191c", panel: "#061416", border: "#334345",
             fg: "#96a3aa", muted: "#858990",
-            green: "#5ba768", red: "#c55865", teal: "#51a49c",
-            orange: "#d68356", yellow: "#af8931", magenta: "#ad6396"
+            green: "#5ba768", red: "#ce4f61", teal: "#41a69d",
+            orange: "#de7e49", yellow: "#b4870e", magenta: "#b35d99"
         },
         "dredge-light": {
             bg: "#f2edd8", panel: "#ede7d1", border: "#cdc8b2",
             fg: "#302e27", muted: "#5b5851",
-            green: "#13702f", red: "#a6344c", teal: "#005751",
-            orange: "#872f00", yellow: "#9d7200", magenta: "#c52b75"
+            green: "#00712a", red: "#ae2648", teal: "#005751",
+            orange: "#872e00", yellow: "#9d7200", magenta: "#cf0075"
         },
         "kanagawa-dark": {
             bg: "#1f1f28", panel: "#16161d", border: "#363646",

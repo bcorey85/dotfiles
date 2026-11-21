@@ -92,7 +92,7 @@ local FAMILIES = {
     own_picker_dir = true,
     accents = {
       -- Every heading takes the literal mustard.
-      dark = { heading1 = "#cd9728", heading = "#cd9728", bullet = "#a1a1a1" },
+      dark = { heading1 = "#af8931", heading = "#af8931", bullet = "#858990" },
       light = { heading1 = "#b46e00", heading = "#b46e00", bullet = "#5b5851" },
     },
   },

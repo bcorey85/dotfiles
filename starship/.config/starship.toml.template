@@ -15,7 +15,8 @@
 # whole `<family>-<mode>` token, never just the mode half.
 #
 # `branch` colours the git branch: each family's blue, except dredge's definition
-# pink. Every palette needs the key, or the branch prints uncoloured.
+# colour (green in dark, pink in light). Every palette needs the key, or the branch
+# prints uncoloured.
 #
 # NOTE: the root `palette`/`format` keys MUST come before any [palettes.*] table
 # header — any key after a table header belongs to that table. Placed below a
@@ -233,17 +234,17 @@ grey = "#837a72"
 
 # dredge (bcorey85/dredge.nvim).
 [palettes.dredge-dark]
-red = "#d15e47"
+red = "#c55865"
 orange = "#d68356"
-yellow = "#cd9728"
+yellow = "#af8931"
 green = "#5ba768"
 blue = "#529ecd"
-branch = "#c85993"
+branch = "#849900"
 teal = "#51a49c"
 purple = "#d97d94"
-fg = "#c0c0c0"
-bg = "#1c1c1c"
-grey = "#a1a1a1"
+fg = "#a0adb4"
+bg = "#0b191c"
+grey = "#858990"
 
 [palettes.dredge-light]
 red = "#a8260a"

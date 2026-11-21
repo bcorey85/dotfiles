@@ -769,6 +769,33 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("- no mechanical detection — agent prior-art search only", done.stdout)
         self.assertEqual(self.last_line(done)[:5], "NEXT:")
 
+    # ----------------------------------------------- branch-prep shape clones
+    SHAPE_FIND = ("def find_by_key(items, wanted):\n    if not items:\n        return None\n"
+                  "    for item in items:\n        if item.id == wanted:\n            return item\n    return None\n")
+    SHAPE_COPY = ("def get_node_from_plan(plan_nodes, node_id):\n    if not plan_nodes:\n        return None\n"
+                  "    for node in plan_nodes:\n        if node.key == node_id:\n            return node\n"
+                  "    return None\n")
+
+    def test_branch_prep_lists_a_renamed_copy_of_an_existing_function(self):
+        self.write("lib/finders.py", self.SHAPE_FIND)
+        self.commit_all("finders")
+        self.branch_with({"plan/nodes.py": self.SHAPE_COPY})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- 1 renamed-copy and 0 near-match pair(s) on changed functions", done.stdout)
+        prompt = done.stdout.split("dispatch prompt", 1)[1]
+        self.assertIn("plan/nodes.py:1-7 get_node_from_plan(plan_nodes, node_id) ~ "
+                      "lib/finders.py:1-7 find_by_key(items, wanted)", prompt)
+        self.assertLess(prompt.index("Candidate shape clones"), prompt.index("NEXT:"))
+
+    def test_branch_prep_with_head_skips_shape_clones_and_says_so(self):
+        self.write("lib/finders.py", self.SHAPE_FIND)
+        self.commit_all("finders")
+        self.branch_with({"plan/nodes.py": self.SHAPE_COPY})
+        done = self.flow("branch-prep", "--head", "feature")
+        self.assertIn("- shape clones: clone detection reads the work tree only; skipped with --head", done.stdout)
+        self.assertNotIn("Candidate shape clones", done.stdout)
+
     def test_branch_prep_with_head_skips_clone_detection_and_says_so(self):
         self.branch_with({"a.py": "x = 1\n"})
         env = self.clone_stub([(("a.py", 1, 1), ("b.py", 1, 1))])

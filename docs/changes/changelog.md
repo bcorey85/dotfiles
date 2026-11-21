@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1034 changes
+1035 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Branch-prep lists renamed copies, near matches and the nearest other functions of each added function](notes/2026-11-20-branch-prep-lists-renamed-copies-near-matches-and.md) [skill/refactor, agent/smell-reviewer, script/refactor-flow, script/shape-clones] refactor_flow branch-prep compares each changed Python or TypeScript function with every function in the repo once names, attribute names and literals are stripped, and lists the nearest other functions of each added function.
 * [A user ruling given to another session is relayed with --relayed-by and --quote and checked against that session's transcript](notes/2026-11-17-a-user-ruling-given-to-another-session-is-relayed.md) [script/review-fix-asks, script/phase-asks, script/review-asks] asks-done and phase_asks.py rule take --by user --relayed-by <session name> --quote <words>; the script needs a real user turn of that live session whose whole text is the quote, typed after the asks were filed, and refuses otherwise.
 * [A fail-closed gate that crashes on import blocks the call and names itself](notes/2026-11-17-a-fail-closed-gate-that-crashes-on-import-blocks.md) [script/review-commit-gate, script/quality-check-cap, script/git-discipline-gate, script/shell-write-gate, script/fork-write-scope, script/coder-gate, script/handback] `lib/import_guard.py` makes `review_commit_gate.py`, `quality_check_cap.py`, `git_discipline_gate.py`, `shell_write_gate.py`, `fork_write_scope.py` and `coder_gate.py` exit 2 with the gate's name and the recovery step when an import crashes, where the call ran before. The omp bridge denies on a PreToolUse gate crash.
 * [The git discipline gate denies destructive git in a main checkout, read past git's global options](notes/2026-11-17-the-git-discipline-gate-denies-destructive-git-in.md) [script/git-discipline-gate] `git_discipline_gate.py` rule 7 denies a forced push, a push naming main or master, `reset --hard`, `clean -f`, a whole-tree discard and `--no-verify` in a main checkout, read past `-C`, `-c`, `--no-pager`, `--git-dir`, `--work-tree` and `-q`; aliases are not read. Rule 7 passes a linked worktree; `bash-safety-gate.sh` still denies the plain spellings everywhere.

@@ -17,9 +17,14 @@ class NamedTestsLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.commit_files({TEST_FILE: WITH_NAMED_TEST})
         self.gate_commands = [GATE_COMMAND]
 
+    def put_named_test_file_under_review(self):
+        """Changes the named test file in the work tree, so it is part of the change under review."""
+        (self.repo / TEST_FILE).write_text(WITH_NAMED_TEST + "\n\ndef test_added():\n    assert True\n")
+
     def run_with_coders(self, *coders):
         scenario = {
-            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": loop_tests.CLEAN_REVIEW}],
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": loop_tests.CLEAN_REVIEW},
+                              {"result": loop_tests.CLEAN_REVIEW}],
             "coder": list(coders),
             "closure": [{"result": loop_tests.CLOSED}],
         }
@@ -33,6 +38,7 @@ class NamedTestsLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertIn(f"Tests the plan runs by name; never delete or rename them: {TARGET}", coder_prompts[0])
 
     def test_a_fix_pass_that_deletes_a_plan_named_test_gets_one_restore_pass(self):
+        self.put_named_test_file_under_review()
         deleting = {"result": "Fixed 1.",
                     "edits": {"app.py": loop_tests.APP_FIXED, TEST_FILE: WITHOUT_NAMED_TEST}}
         restoring = {"result": "Restored.\nSKIPPED 1: needs the user", "edits": {TEST_FILE: WITH_NAMED_TEST}}
@@ -47,6 +53,7 @@ class NamedTestsLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertNotIn("removed plan-named test", " ".join(packet["blockers"]))
 
     def test_a_fix_pass_that_renames_a_plan_named_test_gets_one_restore_pass(self):
+        self.put_named_test_file_under_review()
         renaming = {"result": "Fixed 1.",
                     "edits": {"app.py": loop_tests.APP_FIXED,
                               TEST_FILE: WITH_NAMED_TEST.replace("test_limit", "test_limit_new")}}
@@ -58,6 +65,7 @@ class NamedTestsLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertIn(RESTORE_TEXT, coder_prompts[1])
 
     def test_a_second_deletion_stops_with_the_named_test_blocker_not_a_scoped_test_failure(self):
+        self.put_named_test_file_under_review()
         deleting = {"result": "Fixed 1.",
                     "edits": {"app.py": loop_tests.APP_FIXED, TEST_FILE: WITHOUT_NAMED_TEST}}
         still_deleted = {"result": "Done.", "edits": {TEST_FILE: WITHOUT_NAMED_TEST}}
@@ -69,6 +77,16 @@ class NamedTestsLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn(f"the fix pass removed plan-named test {TARGET}", packet["blockers"][0])
         self.assertNotIn("failed:", packet["scoped_tests"])
+
+    def test_a_fix_pass_that_deletes_a_named_test_file_outside_the_review_scope_has_it_put_back(self):
+        deleting = {"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}, "deletes": [TEST_FILE]}
+
+        coder_prompts = self.run_with_coders(deleting)
+
+        self.assertEqual(len(coder_prompts), 1)
+        self.assertEqual((self.repo / TEST_FILE).read_text(), WITH_NAMED_TEST)
+        _row, packet = self.stored_packet()
+        self.assertIn(TEST_FILE, packet["tool_fault"])
 
     def test_a_failed_restore_pass_still_records_the_files_the_first_pass_edited(self):
         deleting = {"result": "Fixed 1.",

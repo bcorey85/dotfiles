@@ -15,6 +15,7 @@ import test_review_loop_script as loop_tests
 
 DOC_BEFORE = "| rule | anchor |\n"
 DOC_REWRITTEN = "| rule | anchor | rewritten |\n"
+MOVED_PATHS = ("old.txt", "staged_rm.txt", "ren_src.txt", "ren_dst.txt")
 
 
 def git(cwd, *args):
@@ -48,6 +49,12 @@ class ScopeGuardTest(unittest.TestCase):
 
     def text(self, name):
         return (self.repo / name).read_text()
+
+    def moved_paths_status(self):
+        """`git status --short` for the paths the deletion and rename test moves: the index and work tree state."""
+        status = subprocess.run(["git", "status", "--short", "--", *MOVED_PATHS], cwd=self.repo,
+                                capture_output=True, text=True, check=True)
+        return status.stdout
 
     def test_a_clean_file_outside_the_scope_is_put_back_and_named(self):
         guard = self.guard()
@@ -83,6 +90,25 @@ class ScopeGuardTest(unittest.TestCase):
         guard.undo()
 
         self.assertEqual(self.text("tests.py"), "t = 1\n")
+
+    def test_a_deletion_or_rename_made_before_the_pass_stays_and_is_not_blamed(self):
+        for name in ("old.txt", "staged_rm.txt", "ren_src.txt"):
+            (self.repo / name).write_text(f"{name}\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-qm", "more files")
+        (self.repo / "old.txt").unlink()
+        git(self.repo, "rm", "-q", "staged_rm.txt")
+        git(self.repo, "mv", "ren_src.txt", "ren_dst.txt")
+        index_before = self.moved_paths_status()
+        guard = self.guard()
+        (self.repo / "app.py").write_text("x = 3\n")
+
+        guard.undo()
+
+        for name in ("old.txt", "staged_rm.txt", "ren_src.txt"):
+            self.assertFalse((self.repo / name).exists(), name)
+        self.assertEqual(self.moved_paths_status(), index_before)
+        self.assertEqual(review_loop_scope_guard.SCOPE_FAULTS, [])
 
     def test_a_dirty_file_outside_the_scope_returns_to_its_text_before_the_pass(self):
         (self.repo / "tests.py").write_text("t = 2\n")

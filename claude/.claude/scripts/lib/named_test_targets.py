@@ -25,15 +25,10 @@ def definition_pattern(name):
     return re.compile(rf"""\b(?:def|fn|class)\s+{escaped}\b|\btest\(\s*['"`]{escaped}['"`]""")
 
 
-def target_file(target):
-    """The test file path of a target: the target itself, or the part before the first node of a node id."""
-    return target.partition(check_scope.NODE_SEPARATOR)[0]
-
-
 def target_is_missing(target, repo):
     """Whether the target's file is gone, or it names a test whose definition is absent from the file."""
-    _path, _separator, nodes = target.partition(check_scope.NODE_SEPARATOR)
-    test_file = pathlib.Path(repo) / target_file(target)
+    path, _separator, nodes = target.partition(check_scope.NODE_SEPARATOR)
+    test_file = pathlib.Path(repo) / path
     if not test_file.is_file():
         return True
     if not nodes:

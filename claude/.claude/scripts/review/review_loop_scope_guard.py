@@ -8,7 +8,7 @@ import typing
 import file_backup
 import script_utils
 import worktree_snapshot
-from review_loop_ruled_out import BACKUP_FOLDER, PATH_TOKEN_END, PATH_TOKEN_START
+from review_loop_ruled_out import BACKUP_FOLDER, PATH_TOKEN_END, PATH_TOKEN_START, texts_relative_to
 
 # One note per coder pass that changed a file outside the review scope, for the packet's tool_fault.
 SCOPE_FAULTS = []
@@ -17,8 +17,7 @@ SCOPE_FAULTS = []
 def findings_name(finding_texts, path, root):
     """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
     pattern = re.compile(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}")
-    root_prefix = f"{root}/"
-    return any(pattern.search(text.replace(root_prefix, "")) for text in finding_texts)
+    return any(pattern.search(text) for text in texts_relative_to(finding_texts, root))
 
 
 class PassScope(typing.NamedTuple):
@@ -37,15 +36,28 @@ class PassScope(typing.NamedTuple):
         return findings_name(self.finding_texts, path, self.root)
 
 
-class ScopeGuard:
-    """The files outside one coder pass's `scope`. `backup` copies the ones that were already dirty before the pass;
-    `head` is the commit HEAD named then, which holds the text of every other tracked file."""
+def paths_differing_from_head(repo, head):
+    """The paths whose work tree or index text differs from `head` (a deleted file and both sides of a rename
+    included), as a set. A rename is listed by both paths because renames are not detected."""
+    if head is None:
+        return set()
+    listing = script_utils.git_output(repo, "diff", "--name-only", "-z", "--no-renames", head)
+    if listing is None:
+        raise RuntimeError(f"scope guard: `git diff {head}` failed in {repo}")
+    return {path for path in listing.split("\0") if path}
 
-    def __init__(self, role, scope, backup, head):
+
+class ScopeGuard:
+    """The files outside one coder pass's `scope`. `backup` copies the dirty ones among them; `dirty_before` holds
+    every path that already differed from `head` before the pass; `head` is the commit HEAD named then, which holds
+    the text of every other tracked file."""
+
+    def __init__(self, role, scope, backup, head, dirty_before):
         self.repo = scope.root
         self.role = role
         self.scope = scope
         self.backup = backup
+        self.dirty_before = dirty_before
         # Dirty files the backup could not copy: the hash each had before the pass, to tell a change afterwards.
         self.unsaved_hashes = {path: worktree_snapshot.file_hash(self.repo, path) for path in backup.unsaved}
         self.head = head
@@ -58,8 +70,7 @@ class ScopeGuard:
                                           "--diff-filter=MDT", self.head)
         if listing is None:
             raise RuntimeError(f"scope guard: `git diff {self.head}` failed in {self.repo}")
-        dirty_before = set(self.backup.saved) | set(self.backup.unsaved)
-        changed = [path for path in listing.split("\0") if path and path not in dirty_before]
+        changed = [path for path in listing.split("\0") if path and path not in self.dirty_before]
         return sorted(path for path in changed if not self.scope.holds(path))
 
     def put_back_clean_files(self):
@@ -97,4 +108,5 @@ def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
     scope = PassScope(root, frozenset(allowed), has_own_guard, tuple(finding_texts))
     dirty = [path for path in worktree_snapshot.status_codes(root) if not scope.holds(path)]
     backup = file_backup.save_files(root, dirty, pathlib.Path(out) / BACKUP_FOLDER / role / "out-of-scope")
-    return ScopeGuard(role, scope, backup, script_utils.head_commit(root))
+    head = script_utils.head_commit(root)
+    return ScopeGuard(role, scope, backup, head, paths_differing_from_head(root, head))

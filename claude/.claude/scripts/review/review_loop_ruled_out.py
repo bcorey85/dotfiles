@@ -57,6 +57,12 @@ def skip_ruled_out(items, ruled_out, skipped_fp, repo):
     return RuledOutSplit(kept, ruled, recorded)
 
 
+def texts_relative_to(finding_texts, root):
+    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    root_prefix = f"{root}/"
+    return [text.replace(root_prefix, "") for text in finding_texts]
+
+
 def names_deletion(finding_texts, path, root):
     """Whether one of the finding texts asks to delete, remove, move or rename `path`: such a word, then the path as a
     whole token, or the path followed by "is/should be/can be deleted/removed". A path under `root` counts as `path`."""
@@ -64,8 +70,7 @@ def names_deletion(finding_texts, path, root):
     as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?{PATH_TOKEN_START}{escaped}`?{PATH_TOKEN_END}"
     as_subject = rf"{PATH_TOKEN_START}{escaped}`?\s+(?:is|should\s+be|can\s+be)\s+{DELETION_WORD}"
     pattern = re.compile(f"{as_object}|{as_subject}", re.IGNORECASE)
-    root_prefix = f"{root}/"
-    return any(pattern.search(text.replace(root_prefix, "")) for text in finding_texts)
+    return any(pattern.search(text) for text in texts_relative_to(finding_texts, root))
 
 
 class PassGuard:

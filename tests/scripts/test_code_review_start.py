@@ -383,6 +383,22 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertNotIn("forgotten_by_git", handoff)
         self.assertIn("      why:\n        - lines: 1-1\n          note: kept\n  tests-run: none", handoff)
 
+    def test_the_handoff_files_leave_out_the_plan_folder(self):
+        base = self.commit_base()
+        (self.repo / "src").mkdir()
+        (self.repo / "src/one.py").write_text("a = 1\n")
+        (self.repo / "docs/plans/p/spec.md").write_text(PLAN + "edited\n")
+        (self.repo / "docs/plans/p/research.md").write_text("notes\n")
+        (self.repo / "handoff.txt").write_text("handoff:\n  files:\n    - path: src/one.py\n  iter: 0\n")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1", "handoff.txt",
+                               "--base", base, "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        handoff = done.stdout.partition("\n\n")[2]
+        paths = [line.split("path: ")[1] for line in handoff.splitlines() if "path: " in line]
+        self.assertEqual(["handoff.txt", "src/one.py"], paths)
+
     def test_a_dry_run_records_no_handoff_phase(self):
         done = self.start("--dry-run")
 

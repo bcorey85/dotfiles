@@ -1217,6 +1217,30 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertEqual("## Phase 1: Build\n\nbuild text\n", plan_format.phase_text(lines, "1"))
         self.assertIsNone(plan_format.phase_text(lines, "4"))
 
+    def test_the_phase_line_range_counts_from_1_and_matches_the_phase_text(self):
+        lines = CLOSING_PLAN.split("\n")
+        first, last = plan_format.phase_line_range(lines, "1")
+        self.assertEqual("## Phase 1: Build", lines[first - 1])
+        self.assertEqual(plan_format.phase_text(lines, "1"), "\n".join(lines[first - 1:last]))
+        self.assertIsNone(plan_format.phase_line_range(lines, "4"))
+
+    def test_the_plan_folder_is_the_plans_own_folder_and_no_folder_for_a_plan_with_none(self):
+        self.assertEqual("docs/plans/p/", plan_format.plan_folder("docs/plans/p/spec.md"))
+        for plan in ("", "-", "spec.md", "/abs/docs/plans/p/spec.md", "docs/foo.md", "docs/plans/foo.md"):
+            with self.subTest(plan=plan):
+                self.assertEqual("", plan_format.plan_folder(plan))
+                self.assertEqual("", plan_format.plan_folder_exclude(plan))
+        self.assertEqual(":(exclude)docs/plans/p/", plan_format.plan_folder_exclude("docs/plans/p/spec.md"))
+
+    def test_paths_under_the_plan_folder_are_left_out_in_the_same_shape(self):
+        plan = "docs/plans/p/spec.md"
+        paths = ["docs/plans/p/research/a.md", "docs/plans/p/spec.md", "docs/plans/p2/spec.md", "src/a.py"]
+        self.assertEqual(["docs/plans/p2/spec.md", "src/a.py"], plan_format.outside_plan_folder(paths, plan))
+        entries = dict.fromkeys(paths, "entry")
+        self.assertEqual({"docs/plans/p2/spec.md": "entry", "src/a.py": "entry"},
+                         plan_format.outside_plan_folder(entries, plan))
+        self.assertEqual(paths, plan_format.outside_plan_folder(paths, "-"))
+
     def test_the_failure_rows_name_the_plan_line_kind_and_detail(self):
         plan = {"failures": [{"line": 4, "kind": "duplicate-id", "detail": "Phase 1 twice"}]}
         self.assertEqual(["spec.md:4: duplicate-id: Phase 1 twice"], plan_format.plan_failure_rows(plan, "spec.md"))

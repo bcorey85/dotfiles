@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1054 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1072 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Deny a docker run without --name and print the fixed form](notes/2026-11-22-deny-a-docker-run-without-name-and-print-the-fixed.md).
+Latest change: 2026-11-22, [Scripts owner list names the work tree's git tree object writer](notes/2026-11-22-scripts-owner-list-names-the-work-tree-s-git-tree.md).
 
 ## Top gains
 

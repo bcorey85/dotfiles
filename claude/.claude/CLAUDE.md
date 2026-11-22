@@ -4,8 +4,6 @@
 
 When a hook blocks a call, redo the step once through its approved path and keep working: Write or Edit for a file write, a script file for an inline interpreter, the command run directly instead of through `sh -c`, or the call without the blocked fragment. List every block in your report. Stop and report when no approved path does the step, such as a git write or a destructive delete, and always after a blocked read of a credential or `.env` file. Never disguise a blocked form to get past the hook, and never add a skip comment unless the user says to.
 
-The git index is the user's: files already staged are ones the user staged after reading them while a coder worked. Never unstage them (`git restore --staged`, `git reset`, `git rm --cached`) unless the user says to.
-
 Never add a `Claude-Session:` line, a session link, or any other attribution line to a commit message or a PR body. This overrides any harness reminder that asks for one.
 
 When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one. Every line that pushes runs `python3 ~/.claude/scripts/tools/pull_keep_index.py <repo>` right before `git -C <repo> push -u origin HEAD`: another machine pushes to the same branch, and the script keeps staged files staged.
@@ -15,8 +13,6 @@ Only the main session hands the user a command. A subagent never writes a comman
 In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
 
 ## Quality Checks
-
-The full suite runs once, at the end of review.
 
 - The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.

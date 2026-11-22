@@ -727,6 +727,43 @@ def phase_text(plan_lines, number):
     return "\n".join(plan_lines[section["start"]:section["end"]])
 
 
+def phase_line_range(plan_lines, number):
+    """(first, last) line numbers from 1 of the phase's section, or None when the plan has no section for it."""
+    section = phase_section(plan_lines, number)
+    if section is None:
+        return None
+    return section["start"] + 1, section["end"]
+
+
+def plan_folder(plan):
+    """The repo-relative folder that holds the plan and its supporting files, ending in `/`. "" when there is no plan
+    or the plan does not sit in a folder of its own under PLANS_DIR: no folder is the plan's own then."""
+    if not plan:
+        return ""
+    folder = f"{pathlib.PurePosixPath(plan).parent}/"
+    if not folder.startswith(PLANS_DIR) or folder == PLANS_DIR:
+        return ""
+    return folder
+
+
+def outside_plan_folder(files, plan):
+    """`files` (a {path: entry} mapping or a list of paths) with the paths under the plan's folder left out, in the
+    same shape."""
+    folder = plan_folder(plan)
+    if not folder:
+        return files
+    in_folder = [path for path in files if script_utils.path_is_under(path, folder)]
+    return script_utils.without_paths(files, in_folder)
+
+
+def plan_folder_exclude(plan):
+    """The git pathspec that leaves the plan's folder out of a repo-root `git diff`, or "" with no plan folder."""
+    folder = plan_folder(plan)
+    if not folder:
+        return ""
+    return f":(exclude){folder}"
+
+
 def append_deviation(plan_path, entry):
     """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
     `## References` (or at the end) when the plan has none."""

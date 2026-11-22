@@ -4,6 +4,7 @@ set -euo pipefail
 # Version: 0.1.6
 # ==========
 # GENERATED — do not edit directly
+# PILOT gate-pilot-2: built by gate_pilot/pilot.py from the gate with sha256 735b49487fdc85d7101a0429b9727afed60fbe49911dc438b1de930ed82ba2f9
 # PreToolUse hook: bash-safety-gate
 if [[ -n "${BASH_TRACE_OUT:-}" ]]; then
     exec {__trace_fd}>>"${BASH_TRACE_OUT}"
@@ -16,7 +17,65 @@ trap 'printf '"'"'{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissio
 HOOK_LOGGING=1  # set to 1 via: ./unix/install.sh --add-logging
 INPUT=$(cat)
 
+# PILOT: under auto mode a match by a rule that moved-rules.json names is written to the
+# shadow log and does not block.
+# The command goes on to the gate's other rules, the permission rules and the classifier.
+# A match that cannot be recorded blocks as before. Off switch: touch ~/.claude/security-pilot-off
+pilot_shadow() {
+    [[ -e "$HOME/.claude/security-pilot-off" ]] && return 1
+    command -v jq &>/dev/null || return 1
+    local _mode _row _ts
+    _mode=$(printf '%s' "$INPUT" | jq -r '.permission_mode // empty' 2>/dev/null) || return 1
+    [[ "$_mode" == "auto" ]] || return 1
+    _ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || printf "unknown")
+    _row=$(printf '%s' "$INPUT" | jq -c --arg ts "$_ts" --arg reason "$1" \
+        '{ts:$ts,hook:"bash-safety-gate",reason:$reason,value:(.tool_input.command // ""),
+          mode:.permission_mode,session_id:(.session_id // null),tool_use_id:(.tool_use_id // null),
+          transcript_path:(.transcript_path // null),agent_id:(.agent_id // null)}' 2>/dev/null) || return 1
+    printf '%s\n' "$_row" >> "$HOME/.claude/security-hook-shadow-log.jsonl" 2>/dev/null || return 1
+    return 0
+}
+
+# PILOT: true while ~/.claude/settings.json holds every entry the build put under the
+# named key. A rule whose stand-in is a settings entry blocks as before once an entry is gone.
+pilot_settings_hold() {
+    command -v jq &>/dev/null || return 1
+    local _need
+    case "$1" in
+        permissions.deny) _need='["Bash(sudo *)", "Bash(*/sudo *)", "Bash(git push --force*)", "Bash(git push * --force*)", "Bash(git push -f*)", "Bash(git push * -f*)", "Bash(git * push --force*)", "Bash(git * push * --force*)", "Bash(git * push -f*)", "Bash(git * push * -f*)", "Bash(git push * +*)", "Bash(git * push * +*)", "Bash(git push * --delete *)", "Bash(git push * main)", "Bash(git push * main *)", "Bash(git push * master)", "Bash(git push * master *)", "Bash(git push *:main*)", "Bash(git push *:master*)", "Bash(git * push * main)", "Bash(git * push * main *)", "Bash(git * push * master)", "Bash(git * push * master *)", "Bash(git * push *:main*)", "Bash(git * push *:master*)", "Bash(git * --no-verify*)", "Bash(git commit -n *)", "Bash(git commit * -n *)"]' ;;
+        *) return 1 ;;
+    esac
+    jq -e --argjson need "$_need" --arg key "$1" \
+        '(getpath($key | split(".")) // []) as $have | all($need[]; . as $entry | any($have[]; . == $entry))' \
+        "$HOME/.claude/settings.json" &>/dev/null
+}
+
+# PILOT: true when a program that runs another command, handed to it as an argument or a
+# string, starts one of the command's parts. A permission rule does not read inside one, so
+# a rule whose stand-in is a permission rule blocks as before. Heredoc bodies are data, not
+# commands: they are dropped before the test.
+pilot_runs_inner_command() {
+    local _parts
+    _parts=$(awk '
+        tag != "" { line = $0; sub(/^\t+/, "", line); if (line == tag) tag = ""; next }
+        { print }
+        match($0, /(^|[^<])<<-?[[:space:]]*["\047\\]?[A-Za-z_][A-Za-z0-9_]*/) {
+            tag = substr($0, RSTART, RLENGTH)
+            sub(/^.?<<-?[[:space:]]*["\047\\]?/, "", tag)
+        }
+    ' <<< "$CMD") || return 0
+    grep -qE '(^|[;&|({`!]|\$\()[[:space:]]*((timeout|time|nice|nohup|stdbuf|command|builtin|noglob|then|do|else|exec)[[:space:]]+([^[:space:];&|]+[[:space:]]+){0,3})*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*["\\]*([^[:space:];&|]*/)?(sh|bash|zsh|dash|ksh|eval|env|exec|su|doas|ssh|watch|setsid|flock|script|parallel|xargs|find)["\\]?([[:space:]]|$)' <<< "$_parts"
+}
+
 block() {
+    case "$1" in
+        "[indirect_shell]"*|"[eval]"*|"[exec_shell]"*|"[source_dot]"*|"[interpreter_inline]"*|"[interpreter_stdin]"*|"[grep_cred_patterns]"*|"[xargs_exec]"*|"[find_exec]"*|"[awk_system]"*|"[sed_execute]"*|"[here_string_shell]"*)
+            if pilot_shadow "$1"; then return 0; fi ;;
+        "[git_push_main]"*|"[git_force_push]"*|"[git_no_verify]"*|"[sudo]"*)
+            if ! pilot_runs_inner_command && pilot_settings_hold 'permissions.deny' && pilot_shadow "$1"; then return 0; fi ;;
+        "[rm_recursive_force]"*|"[git_reset_clean]"*|"[find_delete]"*|"[db_drop_truncate]"*|"[dd_write]"*|"[env_dump_piped]"*|"[curl_upload]"*|"[wget_post]"*|"[dns_exfiltration]"*|"[raw_network_tools_nc]"*|"[raw_network_tools_never]"*|"[ssh_scp_rsync]"*|"[rsync_remote]"*|"[cmd_sub_network_dollar]"*|"[cmd_sub_network_backtick]"*|"[pipe_shell]"*|"[download_then_execute]"*|"[pkg_install_url]"*|"[persistence_mechanisms]"*|"[anthropic_env]"*|"[lifecycle_scripts]"*|"[git_config_alias]"*|"[git_config_hooks_path]"*|"[sed_inplace_protected]"*|"[tee_redirect_protected]"*|"[scripted_write_protected]"*|"[curl_download_write]"*|"[wget_download_write]"*|"[chmod_protected_paths]"*|"[chmod_world_writable]"*|"[cat_creds]"*|"[shell_history_read]"*)
+            if pilot_shadow "$1"; then return 0; fi ;;
+    esac
     local reason
     reason=$(printf '%s' "$1" | sed 's/"/\\"/g')
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$reason"
@@ -344,7 +403,7 @@ if grep -qiE 'wget\b.*(-O\b|--output-document\b)' <<< "$CMD" && \
     block "[wget_download_write] [threat:5] wget download to protected paths can overwrite critical config files"
 fi
 # Privilege escalation commands
-if grep -qiE '\bsudo\b' <<< "$CMD"; then
+if grep -qiE '\bsudo\b' <<< "$CMD_UNQUOTED"; then
     block "[sudo] [threat:7] Running commands as root is not allowed"
 fi
 # Dangerous chmod modes

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-667 fix notes
+668 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -15,13 +15,13 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | --- | --- | --- |
 | script/code-step | 171 | 5 |
 | script/review-fix | 72 | 13 |
-| script/review-loop-script | 69 | 11 |
+| script/review-loop-script | 70 | 12 |
 | script/handback | 56 | 2 |
 | script/review-commit-gate | 46 | 8 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 28 | 6 |
 | script/full-check | 28 | 4 |
-| script/plan-format | 25 | 5 |
+| script/plan-format | 26 | 6 |
 | script/script-utils | 25 | 4 |
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
@@ -41,9 +41,9 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-escape | 10 | 2 |
 | script/verify-common | 10 | 0 |
 | script/check-output | 9 | 4 |
+| script/code-review-start | 9 | 2 |
 | script/criteria-dry-run | 9 | 2 |
 | script/review-asks | 9 | 5 |
-| script/code-review-start | 8 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/check-scope | 7 | 2 |
 | script/herdr-worktree | 7 | 1 |

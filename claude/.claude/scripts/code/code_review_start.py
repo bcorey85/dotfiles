@@ -98,9 +98,10 @@ def coder_why_blocks(entry_lines):
     return why_by_path
 
 
-def handoff_with_git_files(repo, base_commit, handoff, held=()):
+def handoff_with_git_files(repo, base_commit, handoff, held=(), plan=NO_PLAN):
     # The handoff's `files:` list is the files git shows changed since base (tracked changes plus untracked files),
-    # less the held files. The coder's own list is dropped; only its `why:` lines are kept, under the matching path.
+    # less the held files and the files under the plan's folder, which are plan documents and not the change. The
+    # coder's own list is dropped; only its `why:` lines are kept, under the matching path.
     lines = handoff.splitlines()
     starts = [at for at, line in enumerate(lines) if line.rstrip() == HANDOFF_FILES_LINE]
     if not starts:
@@ -114,7 +115,8 @@ def handoff_with_git_files(repo, base_commit, handoff, held=()):
             break
 
     why_by_path = coder_why_blocks(lines[start + 1:end])
-    changed = script_utils.without_paths(coder_gate.changed_files(repo, base_commit), held)
+    not_held = script_utils.without_paths(coder_gate.changed_files(repo, base_commit), held)
+    changed = plan_format.outside_plan_folder(not_held, plan)
     if not changed:
         return "\n".join([*lines[:start], f"{HANDOFF_FILES_LINE} []", *lines[end:]]) + "\n"
 
@@ -226,7 +228,7 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     holders = phase_held_files(repo, base_commit, plan, phase, notes)
     held_paths = [holder["path"] for holder in holders]
     review_base = diff_base(repo, base_commit)
-    handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths)
+    handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
     return ReviewScope(holders, handoff, phase_changed, review_base, notes)
 

@@ -189,7 +189,7 @@ class RunGateTest(HookRunTest):
     PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
               "git-discipline-gate", "log-agent-usage", "quality-check-cap",
-              "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
+              "spec-budget-gate", "stale-citation-gate")
     GATES = ("quality-check-cap", "git-discipline-gate",
              "comment-bloat-gate", "spec-budget-gate")
 

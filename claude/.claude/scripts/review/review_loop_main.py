@@ -114,7 +114,7 @@ def default_check_could_not_run(session, repo):
 def build_loop(request):
     """The LoopRun for one request, with the settings its prompt header gives. Returns (loop, check_command)."""
     header, handoff, repo = request.header, request.handoff, request.repo
-    brief = reviewer_brief(header, handoff)
+    brief = reviewer_brief(header, handoff, repo)
     gate_env = plan_format.gate_env_words_in(handoff)
     loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get("plan", ""))
     loop.reviewers = request.reviewers

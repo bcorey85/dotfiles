@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep]
 
 # Audit
 
-One entry point for the read-side telemetry reports. Pick the lane, read ONLY
+One entry point for the read-side telemetry reports. Pick the lane, read only
 that lane's file (same directory as this skill), and follow it. Remaining
 arguments after the lane pass through to the lane (e.g. a repo filter, a date
 range).

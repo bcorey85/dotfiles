@@ -5,6 +5,7 @@ Any `file:line`-anchored walkthrough drives the editor to each anchor as present
 ```
 nvim-jump --note "TEXT" <path>:<line>[-<end>] [--note "TEXT" <path>:<line>[-<end>] ...]
                                # opens the first in the nvim whose cwd contains it; ]v/[v step the rest
+                               # no nvim there: posts the list as notes in the repo's live hunk session
 ```
 
 Rules:

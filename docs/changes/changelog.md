@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1046 changes
+1047 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -26,6 +26,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Remove shell-write-gate](notes/2026-11-21-remove-shell-write-gate.md) [script/shell-write-gate] The PreToolUse(Bash) shell-write-gate is deleted with the five libs only it used. bash-safety-gate still blocks in-place edits, inline interpreter writes and redirects into the protected toolkit paths.
 * [Replace review-commit-gate with a push-time reviewed-tree check](notes/2026-11-21-replace-review-commit-gate-with-a-push-time.md) [script/review-commit-gate, script/commit-gate-dirty, script/git-discipline-gate, script/reviewed-tree] review-commit-gate and its dirty tracking are deleted; git-discipline-gate denies a git push or gh pr create whose HEAD tree holds code changed after the repo's last converged review, passes a notes-only change, and passes a repo with no review record.
 
 ### Fixed

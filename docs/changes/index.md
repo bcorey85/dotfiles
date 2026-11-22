@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1093 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1094 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [hunk-review-pane names its own herdr pane review](notes/2026-11-22-hunk-review-pane-names-its-own-herdr-pane-review.md).
+Latest change: 2026-11-22, [Test that every mcp tool name in the toolkit names a registered server](notes/2026-11-22-test-that-every-mcp-tool-name-in-the-toolkit-names.md).
 
 ## Top gains
 

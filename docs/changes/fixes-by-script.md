@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-666 fix notes
+667 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -113,6 +113,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
 | skill/branch-recap | 2 | 0 |
+| skill/stage | 2 | 1 |
 | agent/code-reviewer | 1 | 0 |
 | agent/mutation-tester | 1 | 0 |
 | agent/plan-verifier | 1 | 0 |
@@ -180,4 +181,3 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | shared/reviewer-calibration | 1 | 0 |
 | skill/close-branch | 1 | 0 |
 | skill/pr-comments | 1 | 0 |
-| skill/stage | 1 | 0 |

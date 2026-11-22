@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1071 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1072 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md).
+Latest change: 2026-11-22, [Stage skips added-line tripwires on prose files](notes/2026-11-22-stage-skips-added-line-tripwires-on-prose-files.md).
 
 ## Top gains
 

@@ -258,6 +258,20 @@ class StageRunTest(unittest.TestCase):
         result = self.run_stage("--json")
         self.assertEqual(json.loads(result.stdout), {"escalate": [], "read": [], "skim": [], "safe": [], "staged": []})
 
+    def reasons_by_path(self, data):
+        entries = data["escalate"] + data["read"] + data["skim"] + data["safe"]
+        return {entry["path"]: entry.get("reasons", []) for entry in entries}
+
+    def test_prose_naming_a_suppression_raises_no_tripwire_and_code_still_does(self):
+        self.write("docs/plan.md", "Remove the `// @ts-ignore` comment and the eslint-disable line.\n")
+        self.write("src/service.ts", "// @ts-ignore\nexport const x: number = 'y';\n")
+        result = self.run_stage("--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reasons = self.reasons_by_path(json.loads(result.stdout))
+        self.assertNotIn("type suppression added", reasons["docs/plan.md"])
+        self.assertNotIn("lint suppression added", reasons["docs/plan.md"])
+        self.assertIn("type suppression added", reasons["src/service.ts"])
+
 
 if __name__ == "__main__":
     unittest.main()

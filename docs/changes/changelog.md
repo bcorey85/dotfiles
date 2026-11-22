@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1107 changes
+1108 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -82,6 +82,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Unpinned web-fetch calls run on haiku instead of being denied](notes/2026-11-22-unpinned-web-fetch-calls-run-on-haiku-instead-of.md) [script/agent-model-guard, agent/web-fetch] The model guard rewrites an unpinned web-fetch call to model haiku and lets it run, so a page fetch no longer costs a denied call and a retry.
 * [Stage skips added-line tripwires on prose files](notes/2026-11-22-stage-skips-added-line-tripwires-on-prose-files.md) [skill/stage] Stage no longer tags a markdown or text file as a suppression or bypass when its prose only names one, so the tag keeps meaning a real suppression in code.
 * [Code runs the coder checks itself when a coder skips the hand-back](notes/2026-11-22-code-runs-the-coder-checks-itself-when-a-coder.md) [script/coder-gate, skill/code] A coder that ends without handing back through the gate no longer sends failing checks to review: /code runs the gate's checks itself and sends any failure back to the coder.
+* [A stopped code-fork's live children are named, and a TaskStop of a code-fork with live children is refused once](notes/2026-11-22-a-stopped-code-fork-s-live-children-are-named-and.md) [skill/code, script/fork-children] A cancel of a code-fork now names the coders and reviewers still running, so none keeps writing after the stop.
 * [A quoted path:line later in a finding is not its location](notes/2026-11-22-a-quoted-path-line-later-in-a-finding-is-not-its.md) [script/finding-record, script/script-utils] parse_finding takes the first path a finding names as its location and skips a path:line inside a quoted span.
 * [verify-prep keeps a branch review current when only change notes were added](notes/2026-11-22-verify-prep-keeps-a-branch-review-current-when.md) [script/verify-prep, script/verify-common] verify-prep and verify-log leave committed change-note paths out of the tree fingerprint, so notes written after the branch review do not ask for a second review.
 * [The inline interpreter hint docstring says the gate blocks stdin code](notes/2026-11-22-the-inline-interpreter-hint-docstring-says-the.md) [script/inline-interpreter-hint] The inline-interpreter hint's docstring said the Bash gate does not block code fed on stdin to a bare interpreter; the gate does block it, and the docstring now says so.

@@ -186,6 +186,8 @@ class GuidanceRulesTest(unittest.TestCase):
         skill_text = guidance_text("skills/code/SKILL.md")
         self.assertIn("To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork "
                       "only after that stop names every agent it dispatched as stopped.", skill_text)
+        self.assertIn("When it does not stop, run `python3 ~/.claude/scripts/code/fork_children.py <code-fork id>` and "
+                      "TaskStop each child it names, then the code-fork.", skill_text)
         fork_text = guidance_text("agents/code-fork.md")
         self.assertIn("When a message the user or the outside session sent says stop or cancel, TaskStop every agent "
                       "you dispatched that still runs, then end the run with a stop that names each agent id and "

@@ -19,6 +19,9 @@ FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
 PRINTED_FINDING_ID = re.compile(r"(?m)^finding_id=(" + FINDING_ID_PATTERN.pattern + r")\s*$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 ASYNC_LAUNCH = "Async agent launched"
+# The text of the user record that ends a stopped subagent's transcript, in two shapes:
+# `[Request interrupted by user]` and `[Request interrupted by user for tool use]`.
+INTERRUPT_PREFIX = "[Request interrupted by user"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 # The statuses whose protocol ends the loop for a human ruling in place of Step 6's full check,
@@ -376,10 +379,15 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
+def agent_meta(transcript_path):
+    """The parsed meta file beside an agent's transcript, {} when there is none, it is torn (an agent part-way through
+    a write) or it is not an object."""
+    return script_utils.read_json_object(pathlib.Path(transcript_path).with_suffix(script_utils.SUBAGENT_META_SUFFIX))
+
+
 def finished_by_meta(transcript_path):
     """Whether the transcript's meta file says the subagent finished."""
-    meta_path = pathlib.Path(transcript_path).with_suffix(".meta.json")
-    return meta_path.exists() and bool(json.loads(meta_path.read_text()).get("finished"))
+    return bool(agent_meta(transcript_path).get("finished"))
 
 
 def agent_finished(transcript_path):
@@ -393,6 +401,27 @@ def agent_finished(transcript_path):
     if finished_by_meta(transcript_path):
         return True
     return bool(LoopTranscript(transcript_path).handback_lines)
+
+
+def block_texts(content):
+    """The text of each text block of a message's content; a plain string is one text."""
+    if isinstance(content, str):
+        return [content]
+    text_blocks = [block for block in content or [] if isinstance(block, dict) and block.get("type") == "text"]
+    return [str(block.get("text") or "") for block in text_blocks]
+
+
+def agent_interrupted(transcript_path):
+    """Whether the subagent whose transcript this is was stopped: its last record is a user record whose text starts
+    with INTERRUPT_PREFIX. A stopped agent writes nothing after that record. False for a transcript that is not
+    written yet."""
+    last_record = script_utils.last_transcript_record(transcript_path)
+    if last_record is None:
+        return False
+    if last_record.get("type") != "user":
+        return False
+    texts = block_texts((last_record.get("message") or {}).get("content"))
+    return any(text.startswith(INTERRUPT_PREFIX) for text in texts)
 
 
 def last_coder_step(transcript):

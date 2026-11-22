@@ -32,7 +32,7 @@ def read_keys(folder):
     for entry in sorted(folder.iterdir()):
         if not entry.name.endswith(RECORD_NAME_ENDINGS):
             continue
-        keys_by_file[entry.name] = sorted(reviewed_tree.read_json_object(entry))
+        keys_by_file[entry.name] = sorted(script_utils.read_json_object(entry))
     return keys_by_file
 
 

@@ -9,6 +9,9 @@ command it judges read-only; on other commands the gate matches the raw text. So
 `-c` flag denies nothing. It also blocks code fed on stdin to a bare interpreter (`python3 -`, a heredoc or
 here-string, a pipe in, also into `manage.py shell`), which the gate also blocks. It denies with text that says
 what to do instead. An error while reading the input or judging the command exits 0 with no output.
+
+The same hook also denies a test run that is not inside a memory-capped systemd scope (lib/memory_cap_scope.py), with
+the capped form to run, on a machine that can run one; any error there passes the call.
 """
 import json
 import os
@@ -18,6 +21,7 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import memory_cap_scope
 import shell_command
 import shell_quoting
 import shell_statements
@@ -191,14 +195,21 @@ def pilot_passes(payload, command):
     return True
 
 
+def emit_deny(reason):
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}))
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read())
         command = (payload.get("tool_input") or {}).get("command")
-        if (not os.environ.get("CLAUDE_SKIP_HOOKS") and isinstance(command, str) and blocked(command)
-                and not pilot_passes(payload, command)):
-            sys.stdout.write(json.dumps({"hookSpecificOutput": {
-                "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": TEXT}}))
+        if os.environ.get("CLAUDE_SKIP_HOOKS") or not isinstance(command, str):
+            sys.exit(0)
+        if blocked(command) and not pilot_passes(payload, command):
+            emit_deny(TEXT)
+        elif memory_cap_scope.cap_available() and memory_cap_scope.uncapped_test_run(command):
+            emit_deny(memory_cap_scope.DENY_TEXT)
     except Exception:
         pass
     sys.exit(0)

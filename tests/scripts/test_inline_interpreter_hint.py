@@ -108,7 +108,7 @@ ALLOWED_COMMANDS = {
     "script_file": "python3 script.py",
     "script_file_with_heredoc_data": "python3 script.py <<'EOF'\nsome data\nEOF",
     "script_file_after_a_pipe": "cat x | python3 script.py",
-    "module": "python3 -m unittest -q test_a",
+    "module": "python3 -m http.server 8000",
     "version": "python3 --version",
     "version_after_a_pipe": "echo | python3 --version",
     "node_script_file": "node build.js",

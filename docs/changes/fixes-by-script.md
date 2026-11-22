@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-669 fix notes
+670 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -51,11 +51,11 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-fix-asks | 7 | 4 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
+| script/inline-interpreter-hint | 6 | 3 |
 | script/ledger-write | 6 | 2 |
 | script/pipe-shell-check | 6 | 0 |
 | script/review-launch | 6 | 1 |
 | script/deferred-push-check | 5 | 0 |
-| script/inline-interpreter-hint | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 0 |
 | script/phase-asks | 5 | 2 |
@@ -150,6 +150,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
 | script/mcp-ledger | 1 | 0 |
+| script/memory-cap-scope | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |

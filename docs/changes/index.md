@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1074 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1075 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Unpinned web-fetch calls run on haiku instead of being denied](notes/2026-11-22-unpinned-web-fetch-calls-run-on-haiku-instead-of.md).
+Latest change: 2026-11-22, [A test run outside a memory-capped scope is denied with the capped form](notes/2026-11-22-a-test-run-outside-a-memory-capped-scope-is-denied.md).
 
 ## Top gains
 

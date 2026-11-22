@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-666 fix notes
+667 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -21,16 +21,16 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 28 | 6 |
 | script/full-check | 28 | 4 |
+| script/plan-format | 25 | 5 |
 | script/script-utils | 25 | 4 |
-| script/plan-format | 24 | 4 |
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 18 | 1 |
 | script/review-loop | 17 | 1 |
+| script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
-| script/shell-command | 16 | 8 |
-| script/git-discipline-gate | 15 | 6 |
+| script/git-discipline-gate | 16 | 7 |
 | script/verify-prep | 15 | 1 |
 | script/pull-keep-index | 13 | 2 |
 | script/staged-claim-gate | 13 | 1 |
@@ -97,6 +97,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
+| script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 1 |
 | script/git-calls | 2 | 2 |
@@ -134,7 +135,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 0 |
-| script/directory-emptying-deletes | 1 | 1 |
+| script/docker-run-names | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
 | script/fix-diff | 1 | 1 |
@@ -167,6 +168,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/ruled-change-text | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |
+| script/shell-command-words | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |

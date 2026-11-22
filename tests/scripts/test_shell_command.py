@@ -800,6 +800,8 @@ class UnwrapDockerTest(unittest.TestCase):
             "docker exec -it web ls": ["ls"],
             "docker container run image echo hi": ["echo", "hi"],
             "docker run image": [],
+            "docker run -dp 80:80 img cmd": ["cmd"],
+            "docker run -h box --name n img cmd": ["cmd"],
         }
         for command, expected in cases.items():
             with self.subTest(command=command):

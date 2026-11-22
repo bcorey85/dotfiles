@@ -20,7 +20,7 @@ unmeasured: ""
 - New `lib/directory_emptying_deletes.py`, the owner of which directories a command's plain `rm` calls would empty: `emptied_directories(command, directory)`. Each simple command is placed through `lib/shell_steps.py` `placed_commands` (a `cd` moves later calls; a `cd` to an unread folder leaves them unplaced), its raw words come from `lib/shell_command.py` `parse_raw_simple_commands`, globs expand in the call's folder, and a directory is reported when it exists and every `os.listdir` entry is a target. Recursive `rm` is left to bash-safety-gate. Not reported: a folder under a temp root, a folder whose path holds a name in `SAFE_FOLDER_NAMES` (the same allowances as bash-safety-gate's `rm_recursive_force` safe list), a target with a mark the gate does not read (`$`, backtick, `~user`, braces), and a folder that cannot be listed (that part fails open, with a comment).
 - `gates/git_discipline_gate.py` rule 9 raises `DenyError` opening `[git-discipline-gate] rm of every entry in <dir> empties it:` and says that a blocked delete is never split or disguised: leave the files and report a stop so the user runs `rm -r <dir>`.
 - Known limits, in the module docstring, no code: brace targets (`rm d/{a,b}`), a `cd` inside a subshell, and a folder named as a target.
-- Owners line in `claude/.claude/scripts/CLAUDE.md`; the module in both lib lists of `docs/toolkit-script-rules.md`.
+- The module docstring names it the owner of its fact (`claude/.claude/scripts/CLAUDE.md` is unchanged: a CLAUDE.md edit needs the user's own yes); the module in both lib lists of `docs/toolkit-script-rules.md`.
 
 ## Evidence
 

@@ -1076,5 +1076,30 @@ class DirectoryEmptyingGateTest(GateCaseBase):
         self.assert_denied("rm d/b", self.DENIED, cwd=self.root)
 
 
+class UnnamedDockerRunGateTest(GateCaseBase):
+    """Rule 10: a `docker run` with no `--name` is denied with the fixed form."""
+
+    DENIED = "[git-discipline-gate] docker run without --name"
+
+    def test_an_unnamed_run_is_denied_with_the_fixed_form(self):
+        reason = self.assert_denied("docker run image", self.DENIED)
+        self.assertIn("Run it as: docker run --rm --name", reason)
+        self.assertIn("--rm removes the container at exit", reason)
+
+    def test_a_wrapped_run_keeps_its_wrapper_in_the_fixed_form(self):
+        reason = self.assert_denied("timeout 60 docker run image", self.DENIED)
+        self.assertIn("Run it as: timeout 60 docker run --rm --name", reason)
+
+    def test_a_non_docker_command_with_an_unclosable_quote_passes(self):
+        self.assert_allowed('git log --format="%h %s " -3')
+
+    def test_a_named_run_passes(self):
+        self.assert_allowed("docker run --name x image")
+
+    def test_compose_and_exec_pass(self):
+        self.assert_allowed("docker compose run web pytest")
+        self.assert_allowed("docker exec c cmd")
+
+
 if __name__ == "__main__":
     unittest.main()

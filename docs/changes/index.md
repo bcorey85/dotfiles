@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1053 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1054 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Deny a run of plain rm calls that empties a directory like the recursive form](notes/2026-11-22-deny-a-run-of-plain-rm-calls-that-empties-a.md).
+Latest change: 2026-11-22, [Deny a docker run without --name and print the fixed form](notes/2026-11-22-deny-a-docker-run-without-name-and-print-the-fixed.md).
 
 ## Top gains
 

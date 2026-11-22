@@ -4,6 +4,7 @@ import os
 import posixpath
 import re
 import shlex
+from typing import NamedTuple
 
 from code_text import SP
 from shell_directory import path_word
@@ -34,13 +35,24 @@ ADJACENT_BANG_CLOBBER = re.compile(_REDIRECT_BASE + "!")
 CLOBBER_TOKEN = re.compile(r"(?:&?>>?|>>?&)\|")
 # A bare redirect word (`>`, `2>`, `&>>`) takes the next word as its target; `2>&1` and `>out` carry theirs.
 BARE_REDIRECT_WORD = re.compile(r"^(\d*(?:[<>]{1,2}|>>?[|!])&?|\d*>>?&[|!]|&>{1,2}[|!]?)$")
-# docker and docker compose options that take the next word as their value. `--opt=value` is one word, read as a flag.
+# docker, podman and docker compose options that take the next word as their value.
+# `--opt=value` is one word, read as a flag.
 DOCKER_VALUE_OPTIONS = {
     "-e", "--env", "-w", "--workdir", "-u", "--user", "--entrypoint", "-v", "--volume", "--name", "-p", "--publish",
     "--network", "--env-file", "-f", "--file", "--project-name", "--project-directory", "--profile", "-l", "--label",
     "--mount", "--add-host", "--cap-add", "--cap-drop", "--hostname", "--platform", "--context", "--volumes-from",
     "-m", "--memory", "--cpus", "--gpus", "--shm-size", "--ulimit", "--tmpfs", "--device", "--restart", "--pull",
     "--security-opt", "--log-opt", "--index", "--ansi", "--progress",
+    "--log-driver", "--cidfile", "--ipc", "--pid", "--cgroupns", "--systemd", "--stop-signal", "--detach-keys",
+    "--net", "--pod", "--userns", "--uts", "--cgroup-parent", "--dns", "--dns-search", "--dns-option", "--group-add",
+    "--health-cmd", "--health-interval", "--health-retries", "--health-timeout", "--stop-timeout", "--ip", "--ip6",
+    "--mac-address", "--label-file", "--pids-limit", "--memory-swap", "--cpu-shares", "--cpuset-cpus",
+    "--blkio-weight", "--runtime", "--sysctl", "--storage-opt", "--volume-driver", "--domainname", "--expose",
+    "--link", "--network-alias", "--isolation", "--kernel-memory", "--oom-score-adj", "--attach", "-a",
+    "-H", "--host", "-c", "--config", "--log-level", "--tlscacert", "--tlscert", "--tlskey", "--connection", "--url",
+    "--identity", "--root", "--runroot", "--storage-driver",
+    "-h", "--memory-reservation", "--cpu-period", "--cpu-quota", "--cpuset-mems", "--device-cgroup-rule",
+    "--device-read-bps", "--device-write-bps", "--annotation", "--tz", "--secret",
 }
 GROUP_WORDS = {"{", "!", "if", "then", "elif", "else", "while", "until", "do"}
 SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
@@ -379,15 +391,45 @@ def docker_command_start(words):
     if not words or words[0] not in ("docker", "docker-compose"):
         return None
 
-    index = skip_options(words, 1, DOCKER_VALUE_OPTIONS)
-    if words[0] == "docker" and index < len(words) and words[index] in ("compose", "container"):
-        index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS)
-    if index >= len(words) or words[index] not in ("exec", "run"):
+    group_words = ("compose", "container") if words[0] == "docker" else ()
+    found = container_subcommand(words, ("docker", "docker-compose"), group_words, ("exec", "run"))
+    if found is None:
         return None
-
     # The word after the options is the service, container or image; the rest is the command.
-    index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS)
-    return min(index + 1, len(words))
+    return min(found[1] + 1, len(words))
+
+
+def container_subcommand(words, programs, group_words, verbs):
+    """(verb_index, target_index) of a docker or podman call whose words start at the program: the index of the verb
+    after the global options and an optional group word, and the index of the service, container or image after the
+    verb's own options (len(words) when the call names none). None when the program is not in `programs` or the verb
+    is not in `verbs`."""
+    if not words or words[0] not in programs:
+        return None
+    index = skip_options(words, 1, DOCKER_VALUE_OPTIONS, clusters_take_values=True)
+    if index < len(words) and words[index] in group_words:
+        index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS, clusters_take_values=True)
+    if index >= len(words) or words[index] not in verbs:
+        return None
+    target_index = skip_options(words, index + 1, DOCKER_VALUE_OPTIONS, clusters_take_values=True)
+    return index, target_index
+
+
+class ContainerRun(NamedTuple):
+    """Where a container run call sits in its words: `run_index` is the index of the `run` word, `image_index` the
+    index of the image word, len(words) when the call names none."""
+    run_index: int
+    image_index: int
+
+
+def container_run(words):
+    """Where the `run` word and the image sit in a docker or podman `run` or `container run` call whose words start
+    at the program, as a ContainerRun; image_index is len(words) when the call names no image. None when the words
+    are not such a call."""
+    found = container_subcommand(words, CONTAINER_PROGRAMS, ("container",), ("run",))
+    if found is None:
+        return None
+    return ContainerRun(*found)
 
 
 def docker_forwarded_variables(words):

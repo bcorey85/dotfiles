@@ -20,7 +20,7 @@ a command.
 ## Phase Status
 
 - [x] Phase 1: a run of plain `rm` calls that empties a directory is denied like the recursive form (risk: medium)
-- [ ] Phase 2: a `docker run` without `--name` is denied with the fixed form (risk: low)
+- [x] Phase 2: a `docker run` without `--name` is denied with the fixed form (risk: low)
 
 ## Phase 1: a run of plain `rm` calls that empties a directory is denied like the recursive form
 
@@ -57,16 +57,16 @@ it, and that is the recursive form split into files.
 
 #### Automated Verification
 
-- [ ] New `tests/scripts/test_directory_emptying_deletes.py`: a fixture directory with two files; `rm d/a d/b` reports
+- [x] New `tests/scripts/test_directory_emptying_deletes.py`: a fixture directory with two files; `rm d/a d/b` reports
   `d`; `rm d/a` alone with `b` still present reports nothing; `rm d/*` reports `d`; `cd d && rm a b` reports `d`;
   `rm d/a; rm d/b` in one command reports `d`; `rm -r d` reports nothing (left to bash-safety-gate); a directory
   under `/tmp` reports nothing; a `node_modules` directory reports nothing; a target holding `$VAR` reports nothing;
   `git rm d/a d/b` reports nothing; an rm in a heredoc body or a comment reports nothing.
-- [ ] `tests/scripts/test_git_discipline_gate.py`: a new test class: the deny text for `rm d/a d/b` on a fixture
+- [x] `tests/scripts/test_git_discipline_gate.py`: a new test class: the deny text for `rm d/a d/b` on a fixture
   directory starts with `[git-discipline-gate] rm of every entry in`; `rm d/a` with `d/b` present passes;
   the last `rm d/b` after `d/a` is gone is denied (the cross-call shape: run the gate twice with the file system
   changed between).
-- [ ] `python3 tests/parallel_tests.py test_directory_emptying_deletes.py test_git_discipline_gate.py` passes;
+- [x] `python3 tests/parallel_tests.py test_directory_emptying_deletes.py test_git_discipline_gate.py` passes;
   `bash tests/lint.sh` on the changed `.py` files passes.
 
 ## Phase 2: a `docker run` without `--name` is denied with the fixed form
@@ -91,16 +91,16 @@ process hung and the container ran for days with nothing tying it to a ticket or
 
 #### Automated Verification
 
-- [ ] New `tests/scripts/test_docker_run_names.py`: `docker run image cmd` gives
+- [x] New `tests/scripts/test_docker_run_names.py`: `docker run image cmd` gives
   `docker run --rm --name <ticket>-<purpose> image cmd`; `docker run --rm -v /a:/b image` gives one `--rm`;
   `docker run --name x image` and `docker run --name=x image` give nothing; `docker container run image` is read;
   `docker compose run web pytest` gives nothing; `docker exec c cmd` gives nothing; `timeout 60 docker run image`
   is read through the wrapper; a branch `ABC-12-desc` gives `ABC-12-<purpose>`; `echo "docker run image"` (quoted
   text, not a call) gives nothing.
-- [ ] `tests/scripts/test_git_discipline_gate.py`: `docker run image` is denied with text that starts with
+- [x] `tests/scripts/test_git_discipline_gate.py`: `docker run image` is denied with text that starts with
   `[git-discipline-gate] docker run without --name` and holds `Run it as: docker run --rm --name`;
   `docker run --name x image` passes.
-- [ ] `python3 tests/parallel_tests.py test_docker_run_names.py test_git_discipline_gate.py` passes; lint passes.
+- [x] `python3 tests/parallel_tests.py test_docker_run_names.py test_git_discipline_gate.py` passes; lint passes.
 
 ## Testing Strategy
 
@@ -121,3 +121,9 @@ not by a coder.
 - ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): SAFE_FOLDER_NAMES drops __pycache__ to match bash-safety-gate.sh; no list is shared with the generated file. AC1 unchanged.
 - ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): rejected the plan impact that would deny only when the emptied directory holds an untracked or modified entry; AC1 and AC2 stay as written.
 - ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): brace targets (rm d2/{a,b}), a cd inside a subshell and folder targets are known limits recorded in the module docstring of lib/directory_emptying_deletes.py; no code.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): docker_run_names skips shell group words (`do`, `then`, `{`) at the start of the step text, so the fixed form is the docker command alone.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): CLAUDE.md Owners lines ruled no by the user; the owner of directory_emptying_deletes, docker_run_names and shell_command_words.placed_raw_words is stated in each module docstring. A reviewer finding asking for a CLAUDE.md line is ruled no.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): docker_run_names takes its ticket-key pattern from lib/plan_format.py TICKET_KEY (MOVED_TARGET and adr_flow.py unchanged) and its boolean option table from lib/shell_command.py DOCKER_RUN_BOOLEAN_OPTIONS, beside DOCKER_VALUE_OPTIONS.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): docker global options before `run` (`docker --context x run img`) are a known limit stated in the docker_run_names docstring; no code.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): reword only, no criterion changed: Phase 2 step 1's "joined with `shlex.join`" is read as "spliced into the step's own text", so quoting, expansions and redirections of the original step survive and the `<ticket>-<purpose>` placeholder stays unquoted.
+- ruling, 2026-11-22, session (lane dotfiles-gates-nov22, criteria owner plan): supersedes the "MOVED_TARGET and adr_flow.py unchanged" note: TICKET_KEY (`[A-Z][A-Z0-9]+-\d+`) is the one ticket-key grammar; adr_flow.py's TICKET_KEY_PATTERN is built from it with its behaviour unchanged, and MOVED_TARGET now needs a two-character key, matching adr_flow and `_shared/jira-ticket.md`. Branch-prefix handling (`feature/KEY-1`) stays separate in each reader; no session hit the difference.

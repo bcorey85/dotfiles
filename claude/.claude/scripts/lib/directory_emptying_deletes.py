@@ -5,6 +5,8 @@ file, gives the same result and passes that check. A hook keeps no state between
 system: a directory is emptied when the targets of the command's plain `rm` calls cover every entry it holds now.
 A recursive `rm` is left to the gate that denies it.
 
+Owner of which plain `rm` targets empty a directory: import it, never add a second copy.
+
 Known limits, with no code for them: a brace target (`rm d2/{a,b}`) is skipped as an unread mark, so it never counts
 toward emptying; a `cd` inside `$( ... )` is followed and stays in force after the substitution closes, while a
 `cd` inside backticks is not followed; a folder named as a target (`rm d/a d/sub d/b`) counts as an entry removed,
@@ -14,11 +16,9 @@ import glob
 import os
 import pathlib
 import re
-import shlex
 
 import hook_input
 import script_utils
-import shell_command
 import shell_command_words
 import shell_directory
 import shell_expansion
@@ -102,22 +102,10 @@ def step_target_paths(raw_words, directory):
     return paths
 
 
-def placed_raw_words(placed):
-    """The raw words of the placed simple command, quotes kept and redirections left out: the raw command of its step
-    whose words, unquoted, are the placed command's. When none matches (a word that glues a quoted part to more text
-    is cut differently), the placed command's resolved words stand in for them, quoted again so that unquoting them
-    gives each word back whole."""
-    for raw_words in shell_command.parse_raw_simple_commands(placed.step):
-        unquoted = [shell_command_words.unquoted_word(raw_word) for raw_word in raw_words]
-        if unquoted == placed.simple_command:
-            return raw_words
-    return [shlex.quote(word) for word in placed.simple_command]
-
-
 def rm_raw_words(placed):
     """The words of the `rm` call of the placed simple command, from the `rm` word on; None when its command is not
     `rm`."""
-    raw_words = placed_raw_words(placed)
+    raw_words = shell_command_words.placed_raw_words(placed)
     index = shell_command_words.command_word_index(raw_words, RM_COMMAND)
     if index is None:
         return None

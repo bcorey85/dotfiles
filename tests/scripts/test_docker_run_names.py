@@ -128,6 +128,30 @@ class UnnamedDockerRunsTest(unittest.TestCase):
                          ["docker run --rm --name <ticket>-<purpose> a",
                           "docker run --rm --name <ticket>-<purpose> c"])
 
+    def test_a_run_inside_a_named_run_gets_a_form_for_the_inner_run(self):
+        forms = self.unnamed("docker run --name x img1 $(docker run img2)")
+        self.assertEqual(forms, ["docker run --rm --name <ticket>-<purpose> img2"])
+
+    def test_an_unnamed_run_with_a_run_nested_in_it_gets_a_form_for_each(self):
+        forms = self.unnamed("docker run img1 $(docker run img2) > out.txt")
+        self.assertEqual(forms, ["docker run --rm --name <ticket>-<purpose> img1 $(docker run img2) > out.txt",
+                                 "docker run --rm --name <ticket>-<purpose> img2"])
+
+    def test_an_outer_image_that_prefixes_the_inner_image_keeps_its_own_form(self):
+        forms = self.unnamed("docker run ubuntu $(docker run ubuntu:22.04)")
+        self.assertEqual(forms, ["docker run --rm --name <ticket>-<purpose> ubuntu $(docker run ubuntu:22.04)",
+                                 "docker run --rm --name <ticket>-<purpose> ubuntu:22.04"])
+
+    def test_an_inner_image_ending_in_a_variable_does_not_hide_the_outer_form(self):
+        forms = self.unnamed("docker run app $(docker run app$TAG)")
+        self.assertEqual(forms, ["docker run --rm --name <ticket>-<purpose> app $(docker run app$TAG)",
+                                 "docker run --rm --name <ticket>-<purpose> app$TAG"])
+
+    def test_a_nested_run_with_the_outer_image_is_built_from_its_words(self):
+        forms = self.unnamed("docker run img $(docker run img)")
+        self.assertEqual(len(forms), 2)
+        self.assertEqual(forms[1], "docker run --rm --name <ticket>-<purpose> img")
+
     def test_a_group_word_is_no_part_of_the_fixed_form(self):
         cases = {
             "for x in 1; do docker run img; done": "docker run --rm --name <ticket>-<purpose> img",

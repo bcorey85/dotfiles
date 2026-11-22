@@ -118,8 +118,7 @@ def placed_raw_words(placed):
         raw_commands = parse_raw_simple_commands(placed.step)
     except ValueError as error:
         # A quote that the raw reader cannot close (`--x="a "`) leaves only the resolved words to go on.
-        print(f"placed_raw_words: raw words of {placed.step!r} unreadable ({error}); using resolved words",
-              file=sys.stderr)
+        sys.stderr.write(f"placed_raw_words: raw words of {placed.step!r} unreadable ({error}); using resolved words\n")
         raw_commands = []
     for raw_words in raw_commands:
         joined = joined_raw_words(raw_words, placed.simple_command, placed.step)

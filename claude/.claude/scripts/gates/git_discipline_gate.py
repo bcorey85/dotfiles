@@ -429,11 +429,14 @@ def check_docker_run_names(command, payload_cwd):
 
 def check_directory_emptying(command, payload_cwd):
     """Rule 9: plain `rm` calls whose targets cover every entry of an existing directory."""
-    for folder in directory_emptying_deletes.emptied_directories(command, payload_cwd):
-        raise DenyError(f"[git-discipline-gate] rm of every entry in {folder} empties it: this is the recursive "
-                        "delete bash-safety-gate denies as rm_recursive_force, split into files. A blocked delete "
-                        "is never split or disguised. Leave the files and report the delete as a stop, so the user "
-                        f"can run `rm -r {shlex.quote(folder)}` themselves.")
+    folders = directory_emptying_deletes.emptied_directories(command, payload_cwd)
+    if not folders:
+        return
+    folder = folders[0]
+    raise DenyError(f"[git-discipline-gate] rm of every entry in {folder} empties it: this is the recursive "
+                    "delete bash-safety-gate denies as rm_recursive_force, split into files. A blocked delete "
+                    "is never split or disguised. Leave the files and report the delete as a stop, so the user "
+                    f"can run `rm -r {shlex.quote(folder)}` themselves.")
 
 
 def opens_pull_request(command):

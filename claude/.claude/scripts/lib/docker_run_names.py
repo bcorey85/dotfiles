@@ -9,7 +9,9 @@ Owner of the docker and podman `run` name check: import it, never add a second c
 Known limit: the image is found by `shell_command.container_run`, which skips the value of each option in
 DOCKER_VALUE_OPTIONS. A missing global option skips the whole call; a missing run option reads its value as the image.
 A trailing `&` is not part of the step text, so the fixed form leaves it off. A run inside backticks or inside a
-double-quoted `$( ... )` is never read, so the gate passes it.
+double-quoted `$( ... )` is never read, so the gate passes it. When the call's words and image match the step text in
+zero places or in more than one place, the fixed form is rebuilt from the words, drops the step's redirections, and cuts
+an outer run's `$( ... )` to `$`: `docker run img echo docker run img > o` loses its `> o`.
 """
 import os
 import re
@@ -33,8 +35,10 @@ BRANCH_TICKET = re.compile(rf"^({plan_format.TICKET_KEY})")
 
 
 class RunSpan(NamedTuple):
-    """Word positions of one run step in its raw words: `first` is the docker word, `run_end` the index after `run`,
-    `image_end` the index of the image (the words between `run_end` and `image_end` are the run's options)."""
+    """Word positions of one run step in its raw words: `first` is the count of leading group words (`do`, `then`,
+    `{`), so it is where the step's command starts, wrappers such as `sudo` or `env` included; `run_end` is the index
+    after `run`; `image_end` is the index of the image (the words between `run_end` and `image_end` are the run's
+    options)."""
     first: int
     run_end: int
     image_end: int
@@ -121,11 +125,14 @@ def dropped_option_indexes(options):
 
 
 def fixed_form(step, raw_words, span, directory):
-    """The step's own text from its first docker word on, with `--rm --name <ticket>-<purpose>` inserted right after
+    """The step's own text from the first word after the leading group words (`do`, `then`, `{`), so wrappers such as
+    `timeout 60` stay in the form, with `--rm --name <ticket>-<purpose>` inserted right after
     `run`, so redirections, quoting and `$( ... )` words survive. `--rm` is inserted unless the options hold `--rm` or
     `--rm=true`; every `--name` option and each other `--rm=<value>` word is left out, as it would override the
     inserted one. When the step text does not match the resolved raw words, the form is built from those words
-    joined by single blanks, and the step's redirections are left out."""
+    joined by single blanks, and the step's redirections are left out. The same holds when the call's words and image
+    match the step text in more than one place (`docker run img $(docker run img)`); for the outer call that form
+    ends at a cut-off `$`, a known limit."""
     option_raw_words = raw_words[span.run_end:span.image_end]
     options = [shell_command_words.unquoted_word(word) for word in option_raw_words]
     dropped = dropped_option_indexes(options)
@@ -136,9 +143,16 @@ def fixed_form(step, raw_words, span, directory):
     inserted.append(f"{branch_ticket(directory)}-{PURPOSE_PLACEHOLDER}")
     kept_indexes = [index for index in range(len(option_raw_words)) if index not in dropped]
     # One group per word up to the image, so a dropped word is cut by its own position in the text.
-    prefix = re.compile(r"\s+".join("(" + re.escape(word) + ")" for word in raw_words[span.first:span.image_end]))
+    pattern = r"\s+".join("(" + re.escape(word) + ")" for word in raw_words[span.first:span.image_end])
+    # The image word after the options tells an outer run from the run nested in its `$( )`.
+    if span.image_end < len(raw_words):
+        pattern += r"(?=\s+" + re.escape(raw_words[span.image_end]) + r"(?=[\s;&|()<>`]|$))"
+    prefix = re.compile(pattern)
     text = step.strip()
-    matched = prefix.search(text)
+    matches = list(prefix.finditer(text))
+    # With more than one match the text cannot say which one is this call (the same words and image in an outer run
+    # and the run nested in its `$( )`), so the form is built from the resolved words.
+    matched = matches[0] if len(matches) == 1 else None
     if matched is None:
         kept = [option_raw_words[index] for index in kept_indexes]
         rebuilt = " ".join(raw_words[span.first:span.run_end] + inserted + kept + raw_words[span.image_end:])
@@ -150,6 +164,11 @@ def fixed_form(step, raw_words, span, directory):
     return head + " " + " ".join(inserted + kept) + tail
 
 
+def names_container_program(word):
+    """True when the word is the docker or podman command, by its basename."""
+    return any(shell_command_words.word_names_command(word, name) for name in shell_command.CONTAINER_PROGRAMS)
+
+
 def unnamed_docker_runs(command, directory):
     """The fixed form of each docker or podman `run` step of the command that names no container, `directory` being
     where the command starts. A `--help` call starts no container and is left out. This check fails open: a step the
@@ -159,7 +178,7 @@ def unnamed_docker_runs(command, directory):
                                                skip_unread=True)
     forms = []
     for placed in placed_calls:
-        if not placed.words or os.path.basename(placed.words[0]) not in shell_command.CONTAINER_PROGRAMS:
+        if not placed.words or not names_container_program(placed.words[0]):
             continue
         raw_words = shell_command_words.placed_raw_words(placed)
         found = find_container_run(raw_words)

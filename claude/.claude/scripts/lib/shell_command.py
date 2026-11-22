@@ -61,6 +61,8 @@ SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
 # Container programs: `exec` and `run` run the command named after them inside a container.
 CONTAINER_PROGRAMS = ("docker", "podman")
+# Programs whose `exec` and `run` take a service, container or image (`docker` itself, and the compose launcher).
+COMPOSE_PROGRAMS = ("docker", "docker-compose")
 # Other programs that run their arguments as commands, locally or on another host.
 ARGUMENT_RUNNER_PROGRAMS = ("eval", "su", "script", "ssh")
 # A command text that names one of these as a word may run code the parser does not read: a shell's `-c` text, an
@@ -388,11 +390,11 @@ def unwrap_docker(words):
 def docker_command_start(words):
     # The index in words where the command run inside the container starts, or None when the words are not a docker
     # exec or run call.
-    if not words or words[0] not in ("docker", "docker-compose"):
+    if not words:
         return None
 
     group_words = ("compose", "container") if words[0] == "docker" else ()
-    found = container_subcommand(words, ("docker", "docker-compose"), group_words, ("exec", "run"))
+    found = container_subcommand(words, COMPOSE_PROGRAMS, group_words, ("exec", "run"))
     if found is None:
         return None
     # The word after the options is the service, container or image; the rest is the command.

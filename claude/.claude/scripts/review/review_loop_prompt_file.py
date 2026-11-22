@@ -21,6 +21,7 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
                             skip
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
+  coder-model: <model>      the model the fix coder runs on; with no line the coder runs on its agent's own model
   iter: <n>                 review rounds an earlier run of the same review already used
 """
 import json
@@ -49,6 +50,7 @@ USER_RULED_AT_KEY = "user-ruled-at"
 SESSION_RULED_HEADER_KEY = "session-ruled"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
+CODER_MODEL_KEY = "coder-model"
 ITER_KEY = "iter"
 LIST_SEPARATOR = ", "
 YES = "yes"

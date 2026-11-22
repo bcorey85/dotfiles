@@ -7,7 +7,7 @@
 The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
 block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
 `no-review: yes` then plans no reviewer. `base:` reviews every change since that commit, `files:` only the named files,
-`reviewer-model:` runs each reviewer on that model, and `iter:` counts the rounds an earlier run already used.
+`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one, and `iter:` counts the rounds an earlier run already used.
 The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
@@ -379,6 +379,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         self.change = None  # ChangeUnderReview: the lines the change adds, which the fix passes must not remove
         self.reviewers = REVIEWERS_HEADLESS  # who runs the reviewers: REVIEWERS_HEADLESS or REVIEWERS_MAIN
         self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
+        self.coder_model = ""  # the model the fix coder runs on; "" leaves the agent's own
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
         self.only_files = []  # the files the caller scoped the review to; [] is every changed file
         self.gate_commands = []  # the caller's scoped test commands, which name the tests no fix pass may remove
@@ -570,7 +571,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
             self.put_back_findings = []
         try:
-            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard)
+            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
+                                 model=self.coder_model)
         except CoderCallError as error:
             put_back = self.undo_signoff_pass(signoffs, findings, self.coder_held_files())
             changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]

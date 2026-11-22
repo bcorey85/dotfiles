@@ -323,9 +323,20 @@ function reloadWorkingTreeReview(
         );
         return;
       }
+      // A reload replaces the session's options, so a bare `diff` turns watch
+      // mode off for the rest of the session.
+      const watchFlag = process.argv.includes("--watch") ? ["--watch"] : [];
       const child = spawn(
         command,
-        [...args, "session", "reload", own.sessionId, "--", "diff"],
+        [
+          ...args,
+          "session",
+          "reload",
+          own.sessionId,
+          "--",
+          "diff",
+          ...watchFlag,
+        ],
         { detached: true, stdio: "ignore" },
       );
       child.on("error", () =>

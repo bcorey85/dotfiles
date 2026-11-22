@@ -90,20 +90,22 @@ def failed_call_error(error, changed):
     return CoderCallError(message, changed, str(error))
 
 
-def coder_call(role, prompt, repo, out, held, pass_guard):
+def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
     """The fix coder. Returns a CoderResult (report, diffs, changed): the diffs of what it changed feed the round-two
     brief, and one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the
     class-closure check; changed lists the paths whose text differs. A held file that changed during the call is
     left as it is and noted, and never counts as changed. `pass_guard` (a review_loop_ruled_out.PassGuard) undoes
     the pass's edits to ruled-out files and its unnamed deletions before the tree is read again. A commit the coder
     made during the call is kept; its changes count against the commit HEAD named before the call. A failed call
-    raises CoderCallError naming the files it changed before it died."""
+    raises CoderCallError naming the files it changed before it died. `model` is the model the coder runs on; ""
+    leaves the agent's own."""
     head_before = script_utils.head_commit(repo)
     before = script_utils.without_paths(file_texts(repo), held)
     untracked = review_loop_untracked.unheld_untracked(repo, held)
     held_before = review_loop_held.digests(repo, held)
     try:
-        report = claude_call(role, prompt, repo, out, agent="coder", deletable=pass_guard.deletions)
+        report = claude_call(role, prompt, repo, out, agent="coder", model=model or None,
+                             deletable=pass_guard.deletions)
     except RuntimeError as error:
         pass_guard.undo()
         review_loop_untracked.record_loop_written(repo, held, untracked)

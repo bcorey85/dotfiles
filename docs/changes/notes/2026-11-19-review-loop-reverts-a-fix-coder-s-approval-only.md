@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/review-loop-ruled", "script/review-loop-coder", "script/review-loop-script", "script/full-check-gate", "script/script-utils"]
 evidence: ["review-re-run-files-a-user-only-claude-md-ask-for"]
 watches: []
-test: "tests/scripts/test_review_loop_ruled.py::ApprovalEditRevertTest::test_an_edit_to_claude_md_is_reverted_reported_and_files_no_ask"
+test: "tests/scripts/test_review_loop_ruled.py::ApprovalEditRevertTest::test_an_edit_to_claude_md_no_finding_names_is_reverted_and_reported_with_no_ask"
 asked: ""
 proof: []
 unmeasured: ""
@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`ask_for_approval_only_edits` calls `revert_approval_edit`: each approval-only file the pass changed goes back to its pre-pass blob (a created file is removed) and lands in `dropped_asks` with `REVERTED_APPROVAL_EDIT_REASON`. A file that cannot be hashed or restored is still filed as an ask. `resume_approval_asks` skips a saved path that matches HEAD or a kept held packet holds. `without_reverted` drops the reverted file from the pass's diff stat. A finding filed on a reverted approval-only path stays an open fix on every repair path (round, coder0, class, prose, gate, lint), never fixed or skipped_fp; a class member left open this way counts in `open_classes`.
+`ask_for_approval_only_edits` calls `revert_approval_edit`: each approval-only file the pass changed goes back to its pre-pass blob (a created file is removed) and lands in `dropped_asks` with `REVERTED_APPROVAL_EDIT_REASON`. A file that cannot be hashed or restored is still filed as an ask. `resume_approval_asks` skips a saved path that matches HEAD or a kept held packet holds. `without_reverted` drops the reverted file from the pass's diff stat. A later change (review asks round two) files a user-only ask carrying the wanted change for each finding filed on a reverted approval-only path (or drops it as a repeat of an ask the session rejected; a reverted edit that no finding names stays report-only, in the dropped asks), and drops the finding from open fixes on every repair path.
 
 ## Evidence
 

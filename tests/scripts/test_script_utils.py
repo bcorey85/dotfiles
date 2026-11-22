@@ -22,6 +22,13 @@ script_utils = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(script_utils)
 
 
+class ItemsMissingByKeyTest(unittest.TestCase):
+    def test_returns_the_items_whose_key_no_other_item_has(self):
+        missing = script_utils.items_missing_by_key({"a 1", "b 2"}, ["a 9"], lambda text: text[0])
+
+        self.assertEqual({"b 2"}, missing)
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))

@@ -27,6 +27,7 @@ import handback_store
 import phase_asks
 import review_asks
 import reviewed_tree
+import script_utils
 
 SCRIPT = pathlib.Path(os.environ.get("PHASE_ASKS_SCRIPT") or toolkit_paths.REVIEW_DIR / "phase_asks.py")
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or toolkit_paths.CLAUDE_DIR)
@@ -89,6 +90,18 @@ class StoreCase(unittest.TestCase):
     def store_rows(self, kind):
         return handback_store.session_rows(SESSION, kind)
 
+    def environment(self, **extra):
+        return {**os.environ, **GIT_ENV, **self.ledger_env, "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
+                "CLAUDE_TOOLKIT_TELEMETRY": "1", **extra}
+
+    def run_script(self, *args, **extra):
+        done = subprocess.run(["python3", "-I", str(SCRIPT), *args], cwd=self.repo, text=True, capture_output=True,
+                              env=self.environment(**extra))
+        return done.returncode, done.stdout, done.stderr
+
+    def outcome_rows(self):
+        return [row for row in fake_ledger.recorded_rows(self.ledger_env) if "ask_outcome" in row]
+
 
 class ScriptRunCase(StoreCase):
     """A store holding one open row of ASKS, and helpers that run phase_asks.py against it."""
@@ -101,18 +114,6 @@ class ScriptRunCase(StoreCase):
     def open_asks(self, asks):
         handback_store.record_phase_asks_open(SESSION, self.repo_top, [dict(item) for item in asks], CONTEXT,
                                               "loop-a:2")
-
-    def environment(self, **extra):
-        return {**os.environ, **GIT_ENV, **self.ledger_env, "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
-                "CLAUDE_TOOLKIT_TELEMETRY": "1", **extra}
-
-    def run_script(self, *args, **extra):
-        done = subprocess.run(["python3", "-I", str(SCRIPT), *args], cwd=self.repo, text=True, capture_output=True,
-                              env=self.environment(**extra))
-        return done.returncode, done.stdout, done.stderr
-
-    def outcome_rows(self):
-        return [row for row in fake_ledger.recorded_rows(self.ledger_env) if "ask_outcome" in row]
 
 
 class PhaseAsksCommandTest(ScriptRunCase):
@@ -567,8 +568,8 @@ class ConcurrentPhaseAsksTest(ScriptRunCase):
         self.assertEqual(len(self.store_rows(handback_store.PHASE_ASKS_OPEN)), rows_before)
 
 
-class OpenPhaseAsksTest(StoreCase):
-    """`code_wait.py review` opens the asks of the phase packet once."""
+class WaitCase(StoreCase):
+    """A repo with a finished phase review loop, and `wait` to run `code_wait.py review` over a packet."""
 
     def setUp(self):
         super().setUp()
@@ -591,6 +592,10 @@ class OpenPhaseAsksTest(StoreCase):
         with contextlib.redirect_stdout(output):
             code = self.code_wait.wait_review(self.repo)
         return code, output.getvalue()
+
+
+class OpenPhaseAsksTest(WaitCase):
+    """`code_wait.py review` opens the asks of the phase packet once."""
 
     def test_a_packet_with_finding_asks_opens_one_row_however_often_the_wait_runs(self):
         for _call in range(2):
@@ -875,7 +880,7 @@ class UserOnlyAskTest(ScriptRunCase):
         self.assertEqual(code, 0, error)
         self.assertIn("1. [user only] ", output)
         self.assertIn("rule --by user ", output)
-        self.assertIn("hand ask(s) 1 to the user", output)
+        self.assertIn("hand ask(s) 1 (a fix coder edited an approval-only file) to the user", output)
 
     def test_by_may_follow_the_outcome_words(self):
         code, _, error = self.run_script("rule", "rejected:keep the edit", "--by", "user")
@@ -939,13 +944,60 @@ class UserOnlyAskTest(ScriptRunCase):
 
     def test_a_user_rejection_drops_the_path_even_with_a_space_in_a_folder_name(self):
         self.open_approval_ask_for("docs dir/CLAUDE.md")
-        approval_asks_store.write_approval_paths(self.repo_top, {"docs dir/CLAUDE.md": None, "AGENTS.md": None})
+        approval_asks_store.write_saved_asks(self.repo_top, {"docs dir/CLAUDE.md": None, "AGENTS.md": None}, [])
 
         # Every open ask is rejected: the ask carried from setUp's row names no saved path.
         code, _, error = self.run_script("rule", "--by", "user", "rejected:keep", "rejected:keep")
 
         self.assertEqual(code, 0, error)
         self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo_top)), ["AGENTS.md"])
+
+    def save_pre_pass_base_then_edit(self, base=None):
+        """CLAUDE.md holds an uncommitted user line and a coder line; the saved path names the blob of the user line
+        text, or `base`."""
+        claude_md = self.repo / "CLAUDE.md"
+        claude_md.write_text("rules\nuser line\n")
+        pre_pass_blob = script_utils.work_tree_blob(self.repo_top, "CLAUDE.md", keep_object=True)
+        claude_md.write_text("rules\nuser line\ncoder line\n")
+        approval_asks_store.write_saved_asks(self.repo_top, {"CLAUDE.md": base or pre_pass_blob}, [])
+        return claude_md
+
+    def test_a_user_acceptance_restores_the_pre_pass_text_and_keeps_the_user_lines(self):
+        self.open_approval_ask_for("CLAUDE.md")
+        claude_md = self.save_pre_pass_base_then_edit()
+
+        # Every open ask is ruled: the ask carried from setUp's row names no saved path.
+        code, output, error = self.run_script("rule", "--by", "user", "accepted:revert it", "accepted:revert it")
+
+        self.assertEqual(code, 0, error)
+        self.assertIn("Restored `CLAUDE.md` to its text from before the fix pass; "
+                      "commit it with the rest of the change.", output)
+        self.assertEqual(claude_md.read_text(), "rules\nuser line\n")
+        self.assertEqual(approval_asks_store.read_approval_paths(self.repo_top), {})
+
+    def test_an_unknown_base_is_left_for_the_coder_on_acceptance(self):
+        self.open_approval_ask_for("CLAUDE.md")
+        claude_md = self.save_pre_pass_base_then_edit(approval_asks_store.UNKNOWN_BASE)
+
+        code, _, error = self.run_script("rule", "--by", "user", "accepted:revert it", "accepted:revert it")
+
+        self.assertEqual(code, 0, error)
+        self.assertEqual(claude_md.read_text(), "rules\nuser line\ncoder line\n")
+
+    def test_a_restore_that_fails_exits_non_zero_naming_the_file_and_logs_nothing(self):
+        self.open_approval_ask_for("CLAUDE.md")
+        missing_blob = "0123456789abcdef0123456789abcdef01234567"
+        claude_md = self.save_pre_pass_base_then_edit(missing_blob)
+        rows_before = self.outcome_rows()
+
+        code, _, error = self.run_script("rule", "--by", "user", "accepted:revert it", "accepted:revert it")
+
+        self.assertEqual(code, 1)
+        self.assertIn("CLAUDE.md", error)
+        self.assertIn(missing_blob, error)
+        self.assertEqual(self.outcome_rows(), rows_before)
+        self.assertEqual(claude_md.read_text(), "rules\nuser line\ncoder line\n")
+        self.assertIsNotNone(handback_store.unruled_phase_asks(self.repo_top))
 
     def test_a_damaged_saved_file_stops_a_rejection_with_nothing_logged(self):
         self.open_approval_ask_for("CLAUDE.md")
@@ -960,6 +1012,211 @@ class UserOnlyAskTest(ScriptRunCase):
         self.assertIn("approval-asks.json", error)
         self.assertEqual(self.outcome_rows(), rows_before)
         self.assertIsNotNone(handback_store.unruled_phase_asks(self.repo_top))
+
+
+CRITERION_QUESTION = "Should the retry count change what AC2 asks for?"
+
+
+class CriterionAskTest(WaitCase):
+    """A phase ask that names a criterion id of the plan's acceptance-criteria.md is held for the user when the user
+    owns the criteria."""
+
+    def write_plan(self, ticket):
+        plan_folder = self.repo / "docs" / "plans" / "p"
+        plan_folder.mkdir(parents=True)
+        (plan_folder / "plan.md").write_text("# Plan\n")
+        (plan_folder / "acceptance-criteria.md").write_text("- **AC1** — first\n- **AC2** — second\n")
+        if ticket:
+            (plan_folder / "00-ticket.md").write_text("# Ticket\n\n## Acceptance criteria\n\n- the retry works\n")
+        self.code_wait.write_phase_run(self.repo, "code", "3", plan="docs/plans/p/plan.md")
+
+    def open_criterion_ask(self, question=CRITERION_QUESTION):
+        code, output = self.wait([ask(question, FIRST_ID, 3)])
+        self.assertEqual(code, 0)
+        return output
+
+    def test_the_run_record_carries_the_plan_path(self):
+        self.write_plan(ticket=True)
+
+        self.assertEqual(self.code_wait.read_phase_run(self.repo)["plan"], "docs/plans/p/plan.md")
+
+    def test_an_ask_naming_a_user_owned_criterion_opens_user_only_with_the_ids(self):
+        self.write_plan(ticket=True)
+
+        output = self.open_criterion_ask()
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertTrue(opened[ask_outcome_words.USER_ONLY_KEY])
+        self.assertEqual(opened["criteria"], ["AC2"])
+        self.assertIn("AC2", output)
+
+    def test_an_already_user_only_ask_that_names_a_criterion_passes_through_unchanged(self):
+        self.write_plan(ticket=True)
+        asked = {**user_only_ask("CLAUDE.md", FIRST_ID, 3), "question": CRITERION_QUESTION}
+        self.wait([asked])
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertEqual(opened, asked)
+        code, output, _ = self.run_script("list")
+        self.assertEqual(code, 0)
+        self.assertIn("a fix coder edited an approval-only file", output)
+        self.assertNotIn("ask 1 names", output)
+
+    def test_a_plan_with_no_criteria_file_opens_the_ask_plain_and_the_wait_exits_zero(self):
+        self.write_plan(ticket=True)
+        (self.repo / "docs" / "plans" / "p" / "acceptance-criteria.md").unlink()
+
+        output = self.open_criterion_ask()
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
+        self.assertNotIn("criteria", opened)
+        self.assertNotIn("names AC2", output)
+
+    def test_the_change_text_counts_as_naming_the_criterion(self):
+        self.write_plan(ticket=True)
+        asked = ask("Should the retry count change?", FIRST_ID, 3)
+        asked["change"] = "reword AC1 to say three tries"
+        self.wait([asked])
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertEqual(opened["criteria"], ["AC1"])
+
+    def test_list_marks_the_ask_user_only_names_the_ids_and_the_next_step(self):
+        self.write_plan(ticket=True)
+        self.open_criterion_ask()
+
+        code, output, _ = self.run_script("list")
+
+        self.assertEqual(code, 0)
+        self.assertIn("[user only]", output)
+        self.assertIn("Names criteria: AC2.", output)
+        self.assertIn("ask 1 names AC2", output)
+        self.assertIn("it names user-owned criteria AC2", output)
+        self.assertIn("Do not rule this ask: put it on the phase-end list with its question and criteria; the user "
+                      "rules it with `phase_asks.py rule --by user`.", output)
+
+    def test_only_the_ask_that_names_a_criterion_is_held_and_numbered_by_position(self):
+        self.write_plan(ticket=True)
+        plain = ask("Should the cap be 3?", SECOND_ID, 9)
+
+        code, output = self.wait([plain, ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 0)
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"]
+        self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened[0])
+        self.assertNotIn("criteria", opened[0])
+        self.assertTrue(opened[1][ask_outcome_words.USER_ONLY_KEY])
+        self.assertEqual(opened[1]["criteria"], ["AC2"])
+        self.assertIn("ask 2 names AC2", output)
+        self.assertNotIn("ask 1 names", output)
+        code, _, error = self.run_script("rule", "accepted:a", "accepted:b")
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 2 are user_only", error)
+        self.assertEqual(self.outcome_rows(), [])
+
+    def test_criteria_the_plan_reader_cannot_parse_fail_the_wait_naming_the_file_and_open_no_row(self):
+        self.write_plan(ticket=True)
+        criteria_file = self.repo / "docs" / "plans" / "p" / "acceptance-criteria.md"
+        criteria_file.write_text("- **AC2** — second\n- **AC2** — again\n")
+
+        code, output = self.wait([ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 1)
+        self.assertIn(str(criteria_file), output)
+        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+
+    def test_the_unreadable_criteria_failure_tells_the_session_to_stop_and_name_the_file(self):
+        self.write_plan(ticket=True)
+        criteria_file = self.repo / "docs" / "plans" / "p" / "acceptance-criteria.md"
+        criteria_file.write_text("- **AC2** — second\n- **AC2** — again\n")
+
+        code, output = self.wait([ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("end the run with a stop to the user that names the file above", output)
+        self.assertNotIn("Fix that file", output)
+
+    def test_a_criteria_file_the_run_cannot_open_fails_the_wait_naming_it_and_opens_no_row(self):
+        self.write_plan(ticket=True)
+        criteria_file = self.repo / "docs" / "plans" / "p" / "acceptance-criteria.md"
+        criteria_file.chmod(0o000)
+        self.addCleanup(criteria_file.chmod, 0o644)
+
+        code, output = self.wait([ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 1)
+        self.assertIn(str(criteria_file), output)
+        self.assertIn("end the run with a stop to the user that names the file above", output)
+        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+
+    def test_a_plan_folder_with_two_tickets_fails_the_wait_naming_the_owner_read_and_opens_no_row(self):
+        self.write_plan(ticket=False)
+        plan_folder = self.repo / "docs" / "plans" / "p"
+        for name in ("a-00-ticket.md", "b-00-ticket.md"):
+            (plan_folder / name).write_text("# Ticket\n")
+
+        code, output = self.wait([ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("the criteria owner of", output)
+        self.assertIn("several tickets", output)
+        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+
+    def test_a_recorded_plan_that_is_not_a_file_fails_the_wait_naming_it_and_opens_no_row(self):
+        self.code_wait.write_phase_run(self.repo, "code", "3", plan="docs/plans/missing/plan.md")
+
+        code, output = self.wait([ask(CRITERION_QUESTION, FIRST_ID, 3)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("docs/plans/missing/plan.md", output)
+        self.assertIn(self.code_wait.PHASE_RESTART_STEP, output)
+        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+
+    def test_a_session_ruling_is_refused_and_logs_nothing(self):
+        self.write_plan(ticket=True)
+        self.open_criterion_ask()
+
+        code, _, error = self.run_script("rule", "accepted:fine")
+
+        self.assertEqual(code, 2)
+        self.assertIn("user_only", error)
+        self.assertEqual(self.outcome_rows(), [])
+
+    def test_a_user_ruling_logs_the_row_decided_by_the_user_and_the_asks_read_as_ruled(self):
+        self.write_plan(ticket=True)
+        self.open_criterion_ask()
+
+        code, _, error = self.run_script("rule", "--by", "user", "rejected:keep AC2")
+
+        self.assertEqual(code, 0, error)
+        row = self.outcome_rows()[-1]
+        self.assertEqual((row["ask_outcome"], row["ask_decided_by"]), ("rejected", "user"))
+        self.assertIn("ts", self.store_rows(handback_store.PHASE_ASKS_RULED)[0])
+        self.assertIsNone(handback_store.unruled_phase_asks(self.repo_top))
+
+    def test_criteria_owned_by_the_plan_open_a_plain_ask(self):
+        self.write_plan(ticket=False)
+
+        self.open_criterion_ask()
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
+        self.assertNotIn("criteria", opened)
+
+    def test_an_id_the_criteria_file_does_not_hold_opens_a_plain_ask(self):
+        self.write_plan(ticket=True)
+
+        self.open_criterion_ask("Should AC9 change?")
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
+
+    def test_a_run_with_no_plan_opens_a_plain_ask(self):
+        self.open_criterion_ask()
+
+        opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
+        self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
 
 
 if __name__ == "__main__":

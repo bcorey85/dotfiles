@@ -282,5 +282,20 @@ class NormalizedBlockCommasTest(unittest.TestCase):
                 self.assertEqual(expected, source_text.has_tuple_syntax(path))
 
 
+class CommentEntriesTest(unittest.TestCase):
+    def test_python_docstring_lines_are_not_comment_entries(self):
+        text = 'def f():\n    """Doc.\n    More.\n    """\n    # real\n    return 1\n'
+
+        self.assertEqual(source_text.file_comment_entries("a.py", text), [(5, "# real")])
+
+    def test_a_form_feed_line_counts_as_a_line_the_way_str_splitlines_counts_it(self):
+        text = "x = 1\n\f\n# keep me\ny = 2\n"
+
+        self.assertEqual(source_text.file_comment_entries("a.py", text), [(4, "# keep me")])
+
+    def test_a_suffix_with_no_comment_style_has_no_entries(self):
+        self.assertEqual(source_text.file_comment_entries("a.json", "# x\n"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

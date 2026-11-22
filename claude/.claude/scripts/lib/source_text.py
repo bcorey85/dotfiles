@@ -297,13 +297,15 @@ def _slash_comment_numbers(lines):
     return numbers
 
 
-def _hash_comment_numbers(lines, triple_quotes):
+def _hash_comment_numbers(lines, triple_quotes, comments_only=False):
+    """The comment line numbers; with `comments_only`, triple-quoted string lines are tracked but not counted."""
     numbers = set()
     open_quote = None
     for number, line in enumerate(lines, 1):
         stripped = line.strip()
         if open_quote:
-            numbers.add(number)
+            if not comments_only:
+                numbers.add(number)
             open_quote = None if line.count(open_quote) % 2 == 1 else open_quote
             continue
         if stripped.startswith("#"):
@@ -314,7 +316,7 @@ def _hash_comment_numbers(lines, triple_quotes):
 
         opened = _opened_triple_quote(line, stripped)
         open_quote = opened.quote
-        if opened.is_text_line:
+        if opened.is_text_line and not comments_only:
             numbers.add(number)
     return numbers
 
@@ -392,6 +394,21 @@ def comment_line_numbers(lines, style):
     if style in ("hash", "hash_triple"):
         return _hash_comment_numbers(lines, style == "hash_triple")
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
+
+
+def file_comment_entries(path, text):
+    """The (line number, stripped text) entries of the real comment lines of the file `path` with text `text`: string
+    and docstring lines are not comments. No entries for a file whose suffix has no comment style."""
+    style = comment_style_of(path)
+    if style is None:
+        return []
+    # The same splitter as `protected_lines.restore_protected_lines`, so a line number names the same line in both.
+    lines = text.splitlines()
+    if style == "hash_triple":
+        numbers = _hash_comment_numbers(lines, True, comments_only=True)
+    else:
+        numbers = comment_line_numbers(lines, style)
+    return [(number, lines[number - 1].strip()) for number in sorted(numbers)]
 
 
 def _closing_backtick(line):

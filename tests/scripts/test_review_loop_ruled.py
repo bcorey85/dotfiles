@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 import pathlib
@@ -13,9 +14,12 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
+import approval_restore
+import finding_record
 import handback
 import handback_store
 import plan_format
+import review_asks
 import review_fix_asks
 import review_loop_findings
 import review_loop_packet
@@ -180,6 +184,268 @@ class ApprovalAskResumeTest(unittest.TestCase):
     def saved_paths(self):
         return list(approval_asks_store.read_approval_paths(self.repo))
 
+    def test_a_reverted_claude_md_edit_for_a_finding_becomes_a_user_only_ask_carrying_its_change(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+        host.open_fixes = []
+
+        reverted = host.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        kept_open = host.findings_on_reverted_paths([finding], reverted)
+
+        self.assertEqual(reverted, ["CLAUDE.md"])
+        self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\n")
+        self.assertEqual(len(host.asks), 1)
+        self.assertIn(host.asks[0], host.user_only_asks)
+        self.assertEqual(host.asks[0].path, "CLAUDE.md")
+        self.assertIn("add the new rule to the list.", host.asks[0].text)
+        self.assertEqual(kept_open, [finding], "the finding is still held out of the fixed and skipped sets")
+        self.assertEqual(host.open_fixes, [], "the finding is an ask, not an open fix")
+
+    def test_a_reverted_claude_md_edit_no_finding_names_is_reported_as_dropped_and_files_no_ask(self):
+        other_finding = parse_finding("`app.py:2` [bug] Proposed change: guard the limit.")
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [other_finding])
+
+        self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\n")
+        self.assertEqual(host.asks, [])
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual([(ask.path, reason) for ask, reason in host.dropped_asks],
+                         [("CLAUDE.md", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
+        self.assertEqual(approval_asks_store.read_saved_asks(self.repo), ({}, []))
+
+    def test_each_finding_on_the_file_gets_its_own_question_naming_the_file_and_the_finding(self):
+        first = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        second = parse_finding("`CLAUDE.md:5` [bug] Proposed change: drop the stale rule from the list.")
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [first, second])
+
+        questions = [review_loop_findings.ask_parts(ask.text).question for ask in host.asks]
+        self.assertEqual(len(set(questions)), 2, "one distinct question per finding")
+        for question, finding in zip(questions, (first, second), strict=True):
+            self.assertIn("`CLAUDE.md`", question)
+            self.assertIn(finding.title, question)
+
+    def stored_rejection(self, ask):
+        """The record of `ask` as asks-done stores it when the user rejects it."""
+        question = review_loop_findings.ask_parts(ask.text).question
+        item = {"question": question, "file_line": f"{ask.path}:{ask.line}"}
+        return parse_finding(review_asks.rejected_ask_text(item))
+
+    def filed_wanted_ask(self, finding):
+        """The wanted-change ask a reverted edit for `finding` files, from a throwaway host."""
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        return host.asks[0]
+
+    def test_a_rejected_wanted_change_ask_is_dropped_when_it_comes_again(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        rejection = self.stored_rejection(self.filed_wanted_ask(finding))
+        self.edit_claude_md()
+        host = self.host(rejected=[rejection], reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+
+        self.assertEqual(host.asks, [])
+        self.assertIn(review_loop_findings.REJECTED_ASK_REASON, [reason for _ask, reason in host.dropped_asks])
+
+    def test_a_rejection_on_one_claude_md_leaves_the_same_finding_on_another_folders_claude_md_filed(self):
+        nested = pathlib.Path(self.repo) / "sub" / "CLAUDE.md"
+        nested.parent.mkdir()
+        nested.write_text("sub rules\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "sub")
+        root_finding = parse_finding("`CLAUDE.md:2` [docs] stale path — update it")
+        sub_finding = parse_finding("`sub/CLAUDE.md:2` [docs] stale path — update it")
+        rejection = self.stored_rejection(self.filed_wanted_ask(root_finding))
+        host = self.host(rejected=[rejection], reverts=True)
+        host.snapshot_approval_blobs()
+        nested.write_text("sub rules\nnew\n")
+
+        host.ask_for_approval_only_edits(["sub/CLAUDE.md"], [sub_finding])
+
+        self.assertEqual([ask.path for ask in host.asks], ["sub/CLAUDE.md"])
+
+    def test_a_rejected_revert_ask_does_not_drop_the_wanted_change_ask(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        revert_rejection = parse_finding(review_loop_ruled.approval_ask_text("CLAUDE.md"))
+        self.edit_claude_md()
+        host = self.host(rejected=[revert_rejection], reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+
+        self.assertEqual(len(host.asks), 1)
+
+    def test_rejecting_one_wanted_ask_keeps_another_short_titled_finding_on_the_same_file(self):
+        rejected_finding = parse_finding("`CLAUDE.md:3` [docs] stale path — update it")
+        other_finding = parse_finding("`CLAUDE.md:9` [docs] typo — fix it")
+        rejection = self.stored_rejection(self.filed_wanted_ask(rejected_finding))
+        self.edit_claude_md()
+        host = self.host(rejected=[rejection], reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [rejected_finding, other_finding])
+
+        self.assertEqual([entry["title"] for entry in host.wanted_entries], [other_finding.title])
+        self.assertEqual(len(host.wanted_entries), 1)
+
+    def test_a_rejected_wanted_ask_stays_rejected_when_the_finding_comes_again_on_another_line(self):
+        rejected_finding = parse_finding("`CLAUDE.md:3` [docs] stale path — update it")
+        moved_finding = parse_finding("`CLAUDE.md:4` [docs] stale path — update it")
+        rejection = self.stored_rejection(self.filed_wanted_ask(rejected_finding))
+        self.edit_claude_md()
+        host = self.host(rejected=[rejection], reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [moved_finding])
+
+        self.assertEqual(host.asks, [], "the user already rejected this finding")
+
+    def test_a_later_round_that_reverts_the_same_finding_files_one_ask(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        moved = parse_finding("`CLAUDE.md:7` [bug] Proposed change: add the new rule to the list.")
+        host = self.host(reverts=True)
+        for round_finding in (finding, moved):
+            self.edit_claude_md()
+            host.ask_for_approval_only_edits(["CLAUDE.md"], [round_finding])
+
+        self.assertEqual(len(host.asks), 1)
+        self.assertEqual(len(host.wanted_entries), 1)
+
+    def test_a_finding_with_no_line_on_a_nested_claude_md_files_its_ask_at_line_one(self):
+        nested = pathlib.Path(self.repo) / "docs" / "CLAUDE.md"
+        nested.parent.mkdir()
+        nested.write_text("docs rules\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "docs")
+        host = self.host(reverts=True)
+        host.snapshot_approval_blobs()
+        nested.write_text("docs rules\nnew\n")
+        finding = parse_finding("`docs/CLAUDE.md` [docs] missing rule — add it")
+
+        host.ask_for_approval_only_edits(["docs/CLAUDE.md"], [finding])
+
+        self.assertEqual([(ask.path, ask.line) for ask in host.asks], [("docs/CLAUDE.md", 1)])
+        self.assertEqual(nested.read_text(), "docs rules\n")
+
+    def test_a_conditional_branch_kept_in_a_finding_change_does_not_move_the_ask_split(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Is it needed? Change if yes: add A. Change if no: add B")
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+
+        change = review_loop_findings.ask_parts(host.asks[0].text).change
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+        self.assertTrue(change.startswith("add A."), change)
+        self.assertIn("add B", change)
+        self.assertTrue(change.endswith(target), change)
+        self.assertTrue(review_asks.is_conditional_change(change), change)
+
+    def test_an_accepted_wanted_ask_for_a_folder_with_a_space_is_not_reverted_again(self):
+        folder = pathlib.Path(self.repo) / "sub dir"
+        folder.mkdir()
+        target = folder / "CLAUDE.local.md"
+        target.write_text("mine\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "local")
+        filing = self.host(reverts=True)
+        filing.snapshot_approval_blobs()
+        target.write_text("mine\ncoder\n")
+        # The finding parser reads no path with a space, so the finding takes its location by hand.
+        located_finding = parse_finding("`x.md:1` [docs] stale rule. Proposed change: drop it.")
+        finding = dataclasses.replace(located_finding, path="sub dir/CLAUDE.local.md", line=1)
+        filing.ask_for_approval_only_edits(["sub dir/CLAUDE.local.md"], [finding])
+        item = review_loop_packet.ask_entry(filing.asks[0], "coder", None, user_only=True)
+        accepted = review_fix_asks.ask_finding_text(item)
+
+        later = approval_host(user_ruled=[accepted], reverts=True)
+        later.repo = self.repo
+        later.snapshot_approval_blobs()
+        target.write_text("mine\ncoder\n")
+        later.ask_for_approval_only_edits(["sub dir/CLAUDE.local.md"], [parse_finding(accepted)])
+
+        self.assertEqual(target.read_text(), "mine\ncoder\n", "the user's approval keeps the edit")
+        self.assertEqual(later.asks, [])
+
+    def test_a_wanted_ask_a_kept_held_packet_waits_on_is_not_filed_again_on_resume(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        self.edit_claude_md()
+        self.host(reverts=True).ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        _paths, wanted = approval_asks_store.read_saved_asks(self.repo)
+
+        resumed = self.host()
+        resumed.resume_wanted_asks(wanted, {wanted[0]["change"]})
+
+        self.assertEqual(resumed.asks, [])
+
+    def test_a_later_pass_files_no_second_ask_for_a_wanted_ask_a_kept_held_packet_waits_on(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        self.edit_claude_md()
+        self.host(reverts=True).ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        _paths, wanted = approval_asks_store.read_saved_asks(self.repo)
+        resumed = self.host(reverts=True)
+        resumed.resume_wanted_asks(wanted, {wanted[0]["change"]})
+
+        resumed.snapshot_approval_blobs()
+        self.edit_claude_md()
+        resumed.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        resumed.save_approval_paths()
+
+        self.assertEqual(resumed.asks, [], "the held ask is not filed a second time")
+        self.assertEqual(approval_asks_store.read_saved_asks(self.repo)[1], wanted,
+                         "the held ask stays saved while its packet waits")
+
+    def test_a_wanted_change_ask_survives_a_run_that_died_and_leaves_the_file_when_ruled(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
+        self.edit_claude_md()
+        self.host(reverts=True).ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+
+        self.assertEqual(len(resumed.asks), 1)
+        self.assertIn("add the new rule to the list.", resumed.asks[0].text)
+        self.assertIn(resumed.asks[0], resumed.user_only_asks)
+        ruled = {"question": "q", "file_line": "CLAUDE.md:2", "user_only": True,
+                 "change": review_loop_findings.ask_parts(resumed.asks[0].text).change}
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [ruled])
+        later = self.host()
+        later.resume_approval_asks([])
+        self.assertEqual(later.asks, [])
+
+    def test_the_saved_file_reads_an_older_flat_object_and_round_trips_paths_and_wanted_asks(self):
+        saved = approval_asks_store.approval_paths_file(self.repo)
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_text('{"CLAUDE.md": null}')
+        self.assertEqual(approval_asks_store.read_saved_asks(self.repo), ({"CLAUDE.md": None}, []))
+
+        entry = {"text": "`CLAUDE.md:1` [other] q Change: c", "change": "c", "path": "CLAUDE.md", "line": 1,
+                 "title": ""}
+        approval_asks_store.write_saved_asks(self.repo, {"AGENTS.md": None}, [entry])
+
+        self.assertEqual(approval_asks_store.read_saved_asks(self.repo), ({"AGENTS.md": None}, [entry]))
+        saved.write_text('{"paths": {}, "wanted": [{"text": 1}]}')
+        with self.assertRaises(approval_asks_store.ApprovalAsksFileError):
+            approval_asks_store.read_saved_asks(self.repo)
+
+    def test_a_merged_finding_on_a_reverted_claude_md_becomes_one_ask_carrying_every_part_change(self):
+        first = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add rule A.")
+        second = parse_finding("`CLAUDE.md:2` [bug] Proposed change: fix typo B.")
+        merged = finding_record.combine([first, second])
+        self.edit_claude_md()
+        host = self.host(reverts=True)
+        host.open_fixes = []
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [merged])
+
+        self.assertEqual(len(host.asks), 1)
+        self.assertIn("add rule A.", host.asks[0].text)
+        self.assertIn("fix typo B.", host.asks[0].text)
+
     def test_a_ruled_user_only_ask_leaves_the_saved_paths_whatever_the_outcome(self):
         self.edit_claude_md()
         self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
@@ -212,6 +478,97 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertEqual(second_loop.asks, [], "the ruled ask is not filed again")
         self.assertEqual(self.saved_paths(), [])
 
+    def file_the_coder_edit_over_user_lines(self, snapshot_ok=True):
+        """CLAUDE.md holds an uncommitted user line before the pass; the pass appends a coder line and the loop files
+        its approval ask. Returns the filed ask as asks-done receives it."""
+        claude_md = pathlib.Path(self.repo) / "CLAUDE.md"
+        claude_md.write_text("rules\nuser line\n")
+        host = approval_host()
+        host.repo = self.repo
+        host.snapshot_approval_blobs()
+        host.approval_snapshot_ok = snapshot_ok
+        claude_md.write_text("rules\nuser line\ncoder line\n")
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+        return {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
+                "change": approval_asks_store.approval_change("CLAUDE.md")}
+
+    def test_an_accepted_approval_ask_restores_the_pre_pass_text_and_not_head(self):
+        ask = self.file_the_coder_edit_over_user_lines()
+
+        restored = approval_restore.restore_accepted_approvals(self.repo, [ask], ["accepted"])
+
+        self.assertEqual(restored, [approval_restore.RestoredApproval(0, "CLAUDE.md")])
+        self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\nuser line\n")
+
+    def test_a_saved_none_base_for_a_tracked_file_is_not_deleted(self):
+        ask = self.file_the_coder_edit_over_user_lines()
+        approval_asks_store.write_saved_asks(self.repo, {"CLAUDE.md": None}, [])
+
+        restored = approval_restore.restore_accepted_approvals(self.repo, [ask], ["accepted"])
+
+        self.assertEqual(restored, [])
+        self.assertTrue((pathlib.Path(self.repo) / "CLAUDE.md").exists())
+
+    def test_a_file_the_pass_created_is_deleted_on_acceptance(self):
+        agents_md = pathlib.Path(self.repo) / "AGENTS.md"
+        agents_md.write_text("coder rules\n")
+        approval_asks_store.write_saved_asks(self.repo, {"AGENTS.md": None}, [])
+        ask = {"question": "q", "file_line": "AGENTS.md:1", "user_only": True,
+               "change": approval_asks_store.approval_change("AGENTS.md")}
+
+        restored = approval_restore.restore_accepted_approvals(self.repo, [ask], ["accepted"])
+
+        self.assertEqual(restored, [approval_restore.RestoredApproval(0, "AGENTS.md")])
+        self.assertFalse(agents_md.exists())
+
+    def test_an_ask_matching_no_saved_path_restores_nothing_and_indexes_follow_ask_order(self):
+        ask = self.file_the_coder_edit_over_user_lines()
+        stranger = {"question": "q", "file_line": "x.md:1", "user_only": True,
+                    "change": approval_asks_store.approval_change("x.md")}
+
+        restored = approval_restore.restore_accepted_approvals(self.repo, [stranger, ask], ["accepted", "accepted"])
+
+        self.assertEqual(restored, [approval_restore.RestoredApproval(1, "CLAUDE.md")])
+
+    def test_an_approval_ask_ruled_rejected_modified_or_applied_is_not_restored(self):
+        ask = self.file_the_coder_edit_over_user_lines()
+
+        for outcome in ("rejected", "modified", "applied"):
+            with self.subTest(outcome=outcome):
+                restored = approval_restore.restore_accepted_approvals(self.repo, [ask], [outcome])
+
+                self.assertEqual(restored, [])
+                self.assertEqual(
+                    (pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\nuser line\ncoder line\n")
+
+    def test_an_unknown_base_is_saved_as_its_own_value_and_is_not_restored(self):
+        ask = self.file_the_coder_edit_over_user_lines(snapshot_ok=False)
+
+        saved = approval_asks_store.read_approval_paths(self.repo)
+        restored = approval_restore.restore_accepted_approvals(self.repo, [ask], ["accepted"])
+
+        self.assertEqual(saved, {"CLAUDE.md": approval_asks_store.UNKNOWN_BASE})
+        self.assertEqual(restored, [], "the coder still reverts an ask with an unknown base")
+        self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\nuser line\ncoder line\n")
+
+    def test_an_unknown_base_files_the_ask_again_on_resume(self):
+        self.file_the_coder_edit_over_user_lines(snapshot_ok=False)
+        resumed = self.host()
+        resumed.resume_approval_asks([])
+        self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
+
+    def test_a_restore_that_fails_names_the_file_and_the_blob(self):
+        ask = self.file_the_coder_edit_over_user_lines()
+        missing_blob = "0123456789abcdef0123456789abcdef01234567"
+        approval_asks_store.write_saved_asks(self.repo, {"CLAUDE.md": missing_blob}, [])
+
+        with self.assertRaises(approval_restore.ApprovalRestoreError) as raised:
+            approval_restore.restore_accepted_approvals(self.repo, [ask], ["accepted"])
+
+        self.assertIn("CLAUDE.md", str(raised.exception))
+        self.assertIn(missing_blob, str(raised.exception))
+        self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\nuser line\ncoder line\n")
+
     def hold_the_approval_ask(self):
         """Keeps the ask for CLAUDE.md in a held packet of a session whose own repo is another one, so the fix state
         is not saved under this repo; returns the held ask. Only the packet repo's approval store can tell the loop."""
@@ -233,6 +590,7 @@ class ApprovalAskResumeTest(unittest.TestCase):
         resumed.resume_approval_asks([])
 
         self.assertEqual(resumed.asks, [], "the kept packet owns the ask, so the loop files none")
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "the saved base stays until the user rules")
 
         approval_asks_store.forget_ruled_approval_paths(self.repo, [held_ask])
         self.assertEqual(self.saved_paths(), [], "the user's ruling on the kept packet drops the path")
@@ -262,16 +620,17 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md"])
         self.assertEqual(self.saved_paths(), ["CLAUDE.md"])
 
-    def test_a_resumed_run_files_no_ask_for_a_reverted_edit(self):
+    def test_a_resumed_run_files_the_wanted_ask_of_a_reverted_edit_but_no_revert_ask(self):
+        finding = parse_finding("`CLAUDE.md:2` [bug] Proposed change: add the new rule to the list.")
         self.edit_claude_md()
         reverting = self.host(reverts=True)
-        reverting.ask_for_approval_only_edits(["CLAUDE.md"], [])
-        self.assertEqual(reverting.asks, [])
+        reverting.ask_for_approval_only_edits(["CLAUDE.md"], [finding])
+        self.assertEqual(len(reverting.asks), 1)
 
         resumed = self.host()
         resumed.resume_approval_asks([])
 
-        self.assertEqual(resumed.asks, [])
+        self.assertEqual([ask.text for ask in resumed.asks], [ask.text for ask in reverting.asks])
         self.assertEqual(self.saved_paths(), [])
 
     def test_a_saved_path_whose_file_was_reverted_to_head_by_a_session_files_no_ask(self):
@@ -641,7 +1000,7 @@ class ApprovalEditRevertTest(unittest.TestCase):
         self.assertEqual([(ask.path, reason) for ask, reason in host.dropped_asks],
                          [("CLAUDE.md", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
 
-    def test_an_edit_to_claude_md_is_reverted_reported_and_files_no_ask(self):
+    def test_an_edit_to_claude_md_no_finding_names_is_reverted_and_reported_with_no_ask(self):
         host = self.coder_pass(lambda: self.claude_md.write_text("rules\nnew rule\n"), ["CLAUDE.md"])
 
         self.assertEqual(self.claude_md.read_text(), "rules\n")
@@ -649,7 +1008,7 @@ class ApprovalEditRevertTest(unittest.TestCase):
         self.assertEqual(host.user_only_asks, [])
         self.assertEqual([(ask.path, reason) for ask, reason in host.dropped_asks],
                          [("CLAUDE.md", review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON)])
-        self.assertFalse(approval_asks_store.approval_paths_file(str(self.repo)).exists())
+        self.assertEqual(approval_asks_store.read_saved_asks(str(self.repo)), ({}, []))
 
     def test_the_packet_names_the_reverted_file_in_its_dropped_asks(self):
         host = self.coder_pass(lambda: self.claude_md.write_text("rules\nnew rule\n"), ["CLAUDE.md"])

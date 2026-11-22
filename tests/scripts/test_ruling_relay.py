@@ -127,7 +127,7 @@ class AsksDoneRelayCase(RelayTranscriptMixin, unittest.TestCase):
         self.make_home()
         self.packet_message = fix_fixture.packet_text(fix_fixture.CLEAN_EMPTY_FIELDS, ask=self.entries())
         self.packet(self.packet_message)
-        approval_asks_store.write_approval_paths(self.repo, {USER_ONLY_PATH: None, "AGENTS.md": None})
+        approval_asks_store.write_saved_asks(self.repo, {USER_ONLY_PATH: None, "AGENTS.md": None}, [])
 
     def entries(self):
         return [self.user_only_entry()]
@@ -181,7 +181,9 @@ class AsksDoneMixedBatchTest(AsksDoneRelayCase):
         self.assertEqual(self.relay_rows()[0]["finding_ids"], [USER_ONLY_ID])
 
     def test_a_relayed_correct_records_only_the_corrected_user_only_finding(self):
-        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], **self.home_env)
+        code, output = self.run_script(
+            ["asks-done", "--by", "user", f"modified:tighten the check in {USER_ONLY_PATH}", "accepted"],
+            **self.home_env)
         self.assertEqual(code, 0, output)
         self.say(QUOTE, HUMAN)
 
@@ -207,7 +209,9 @@ class AsksDoneMixedBatchTest(AsksDoneRelayCase):
         self.assertEqual([row["finding_ids"] for row in self.relay_rows()], [[USER_ONLY_ID]])
 
     def test_a_relayed_correct_whose_ordinary_row_fails_still_records_the_user_only_finding(self):
-        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"], **self.home_env)
+        code, output = self.run_script(
+            ["asks-done", "--by", "user", f"modified:tighten the check in {USER_ONLY_PATH}", "accepted"],
+            **self.home_env)
         self.assertEqual(code, 0, output)
         self.say(QUOTE, HUMAN)
 
@@ -384,7 +388,8 @@ class AsksDoneRelayTest(AsksDoneRelayCase):
         self.assertEqual(len(self.relay_rows()), 1)
 
     def test_a_relayed_correct_with_a_quote_no_turn_holds_is_refused_and_logs_nothing(self):
-        code, output = self.run_script(["asks-done", "--by", "user", "accepted"], **self.home_env)
+        code, output = self.run_script(["asks-done", "--by", "user", f"modified:tighten the check in {USER_ONLY_PATH}"],
+                                       **self.home_env)
         self.assertEqual(code, 0, output)
         rows_before = self.logged_outcome_rows()
         self.say("something else entirely", HUMAN)
@@ -442,7 +447,7 @@ class PhaseRuleRelayTest(RelayTranscriptMixin, phase_fixture.ScriptRunCase):
         open_ask["change"] = approval_asks_store.approval_change(USER_ONLY_PATH)
         handback_store.record_phase_asks_open(phase_fixture.SESSION, self.repo_top, [open_ask], phase_fixture.CONTEXT,
                                               "loop-r:6")
-        approval_asks_store.write_approval_paths(self.repo_top, {USER_ONLY_PATH: None, "AGENTS.md": None})
+        approval_asks_store.write_saved_asks(self.repo_top, {USER_ONLY_PATH: None, "AGENTS.md": None}, [])
         self.rows_before = self.outcome_rows()
 
     def relay(self, *outcome_words, name=RELAY_NAME, quote=QUOTE, by="user", **env):

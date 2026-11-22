@@ -56,7 +56,6 @@ SETTLE_SECONDS = 3
 SETTLE_POLL_SECONDS = 0.25
 STILL_WORKING = "Still working. Run the same command again."
 NO_REPORT = "The agent finished with no report."
-LOOP_GONE = "The review loop process is not running, but these reviewer requests have no report:"
 PHASE_RESTART_STEP = "Run this phase's `code_review_start.py ... --detach` line again, then this wait."
 PHASE_STOPPED = "Its process was stopped before the loop finished."
 LAUNCHED_RESTART = ("Its process was stopped before the loop finished. Run the skill's launch line with --detach "
@@ -71,12 +70,13 @@ PID_FILE = "pid"
 HANDOFF_FILE = "handoff.txt"  # the phase's hand-off block, in the run folder
 PREVIOUS_HANDOFF_FILE = "handoff.prev.txt"  # where phase_start.py moves the last phase's hand-off
 REVIEW_OUTPUT = "review.out"
-PHASE_RUN_FILE = "run.json"  # the lane and phase of the last started phase review
+PHASE_RUN_FILE = "run.json"  # the lane, phase, loop folder and plan path of the last started phase review
 LOOP_FOLDER_KEY = "loop_dir"  # the key of PHASE_RUN_FILE that holds this phase's loop folder
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
 PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last phase's loop-dir
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
+CODE_WAIT_WRITES_NOTE = "(written by `code_wait.py review`, never by the reviewer)"
 
 
 class UsageError(Exception):
@@ -192,19 +192,23 @@ def loop_dir(repo):
         return None
 
 
-def write_phase_run(repo, lane, phase, loop_folder=None):
+def write_phase_run(repo, lane, phase, loop_folder=None, plan=None):
     """Records the lane and phase of the phase review that code_review_start.py runs, where the ask rows read them,
-    and the folder of its loop when it names one: `code_wait.py review` returns no other folder's packet."""
+    the folder of its loop when it names one (`code_wait.py review` returns no other folder's packet), and the plan
+    path when the run has a plan (`phase_asks.record_open` reads the plan's criteria from it)."""
     folder = phase_dir(repo)
     folder.mkdir(exist_ok=True)
     record = {"lane": lane, "phase": phase}
     if loop_folder is not None:
         record[LOOP_FOLDER_KEY] = str(loop_folder)
+    if plan is not None:
+        record[phase_asks.PLAN_KEY] = plan
     script_utils.write_text_atomically(folder / PHASE_RUN_FILE, json.dumps(record) + "\n")
 
 
 def read_phase_run(repo):
-    """{"lane", "phase"} of the phase review in <git dir>/code-phase, {} when no run left the record."""
+    """{"lane", "phase"} of the phase review in <git dir>/code-phase, with "loop_dir" and "plan" when the run named
+    them; {} when no run left the record."""
     run_file = phase_dir(repo) / PHASE_RUN_FILE
     if not run_file.is_file():
         return {}
@@ -244,7 +248,7 @@ def phase_asks_notice(repo):
     """The lines that tell the session to rule on the finding asks of the phase packet the loop left, after opening
     them in the hand-back store. Empty when the loop left no packet, the packet does not parse, or
     `phase_asks.record_open` opens nothing. Raises what `phase_asks.record_open` raises when the asks cannot be
-    opened; `wait_review` fails the wait on it."""
+    opened (a damaged store, or criteria that cannot be read); `wait_review` fails the wait on it."""
     folder = loop_dir(repo)
     if folder is None:
         return []
@@ -456,7 +460,7 @@ def unanswered_requests(run, pairs):
 
 
 def reviewer_dispatch_lines(run, pending):
-    return [*reviewer_dispatch.request_lines(pending),
+    return [*reviewer_dispatch.request_lines(pending, CODE_WAIT_WRITES_NOTE),
             f"Then run `{run.command} <agentId> <report file>`, with one agentId and its line's report file "
             "for each agent you dispatched, every one written out as its own word."]
 
@@ -484,6 +488,23 @@ def wait_review(repo, words=(), launched_folder=None):
     return follow_run(repo, phase_review(repo), words, None)
 
 
+def phase_asks_notice_or_report(repo, run):
+    """The phase asks notice lines, or None after printing why the asks could not be opened for ruling."""
+    opening_failed = "code_wait: the finding asks of the phase packet could not be opened for ruling:"
+    try:
+        return phase_asks_notice(repo)
+    except phase_asks.MissingPlanError as error:
+        print(f"{opening_failed} {error}")
+        print(PHASE_RESTART_STEP)
+    except phase_asks.CriteriaUnreadableError as error:
+        print(f"{opening_failed} {error}")
+        print("The plan's criteria cannot be read: end the run with a stop to the user that names the file above.")
+    except (handback_store.PhaseAskRowError, OSError) as error:
+        print(f"{opening_failed} {error}")
+        print(f"Run `{run.command}` again to open them for ruling.")
+    return None
+
+
 def follow_run(repo, run, words, launched_folder):
     pairs = reviewer_pairs(run, list(words))
     empty = []
@@ -505,11 +526,8 @@ def follow_run(repo, run, words, launched_folder):
         code = print_ended_loop(run)
         if code != 0 or launched_folder is not None:
             return code
-        try:
-            notice = phase_asks_notice(repo)
-        except (handback_store.PhaseAskRowError, OSError) as error:
-            print(f"code_wait: the finding asks of the phase packet could not be opened for ruling: {error}")
-            print(f"Run `{run.command}` again to open them for ruling.")
+        notice = phase_asks_notice_or_report(repo, run)
+        if notice is None:
             return 1
         if notice:
             print("\n".join(notice))
@@ -542,8 +560,8 @@ def print_ended_loop(run):
     open_requests = open_reviewer_requests(run)
     if open_requests:
         folder = run.loop_folder()
-        print("\n".join([LOOP_GONE, *reviewer_dispatch.request_lines(open_requests)[1:], f"Loop folder: {folder}",
-                         run.restart]))
+        request_lines = reviewer_dispatch.open_request_lines(open_requests)
+        print("\n".join([reviewer_dispatch.LOOP_GONE, *request_lines, f"Loop folder: {folder}", run.restart]))
         return 1
 
     print(f"{run.no_output()} {run.restart}")

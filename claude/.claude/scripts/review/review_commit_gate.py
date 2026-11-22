@@ -92,7 +92,8 @@ subagent that logs a review it never ran gets the credit:
     equal to the tree's fingerprint now, and an empty `reviewAsks` (or `reviewAsksRuledTree` equal to
     `reviewLoggedTree`, saved when a verify-log `--asks-ruled` run printed CLEAN). The fingerprint leaves out the
     context's `excludeRel` (the task dir, or the plan file in flat mode; nothing for a ticket-only run), so an
-    edit there after the log keeps the credit
+    edit there after the log keeps the credit, and an edit to a notes path (Markdown under docs/ or at an entry of
+    the context's saved `notesEntries`; notes_paths.py) keeps it too, for a context saved with `notesEntries`
 The last four credits go to the repo each `git commit` in the command runs in: the hook input's cwd, moved by each
 `git -C <dir>` (every -C joined). A command that changes folder or repo (a cd, pushd, popd, eval, source, ., or a git
 dir or work-tree option or variable, quotes and escapes resolved; a `.` counts after `if`, `then`, `elif`, `else`,

@@ -1,7 +1,8 @@
 """review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
-a coder's edit to an approval-only file (it reverts the edit and reports it), as a mixin for `LoopRun`. The host
-class holds asks, plan_impacts, resolved_texts, files_touched, repo and plan (the plan's path in repo, or ""), and
-provides `add_ask`."""
+a coder's edit to an approval-only file (it reverts the edit and reports it; each finding on that file becomes a
+user-only ask carrying the wanted change), as a mixin for `LoopRun`. The host class holds asks, plan_impacts,
+resolved_texts, files_touched, repo and plan (the plan's path in repo, or ""), and provides `add_ask`."""
+import dataclasses
 import pathlib
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -13,18 +14,24 @@ import review_loop_ruled_out
 import script_utils
 import standing_rulings
 from approval_asks_store import (
+    UNKNOWN_BASE,
     approval_change,
-    read_approval_paths,
     read_held_changes,
-    write_approval_paths,
+    read_saved_asks,
+    wanted_edit_target,
+    wanted_entry,
+    write_saved_asks,
 )
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
+from review_asks import rejected_ask_text
 from review_loop_findings import (
     NOTE_ASK_REASON,
     REJECTED_ASK_REASON,
     REPEATED_ASK_REASON,
     REVERTED_APPROVAL_EDIT_REASON,
+    ask_parts,
+    inert_change_marks,
     near_title,
     pass_note_split,
     plan_change_items,
@@ -205,6 +212,12 @@ class RuledFindings:
         self.approval_head_before = None  # the commit HEAD named before the latest coder pass
         self.approval_snapshot_ok = False  # whether the latest snapshot could list the repo's files
         self.approval_unhashed = set()  # the existing approval-only files the latest snapshot could not hash
+        # each wanted-change ask on the list, saved with the paths (shape: `read_saved_asks`)
+        self.wanted_entries = []
+        # the saved wanted-change entries that a kept held packet waits on; no ask is filed for them
+        self.kept_held_wanted = []
+        # path -> base of each saved approval path that a kept held packet waits on; no ask is filed for it
+        self.kept_held_bases = {}
         self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
@@ -353,26 +366,96 @@ class RuledFindings:
     def ask_for_approval_only_edits(self, changed, findings):
         """After a coder pass on `findings`: reverts the pass's edit to each approval-only file (see
         `approval_only_paths`) and reports it in the dropped asks (see `revert_approval_edit`). Returns the paths it
-        reverted. Only an edit that cannot be reverted files an ask for the user. That ask rides the packet's ask
+        reverted. A reverted edit files one user-only ask per finding on that path (see `ask_for_wanted_changes`); an
+        edit that cannot be reverted files the revert ask for the user. Both ride the packet's ask
         list like a reviewer ask: a /code phase review's commit gate holds the commit until it is ruled; the run's
-        status is unchanged. The same file in a later round stays one ask. A file that a finding the user ruled on
-        names by its repo-relative (or absolute) path is left as edited: the ruling is the approval, and a same-named
-        file in another folder still is reverted. A session's ruling is no approval, except on this ask itself (a
-        revert), which would otherwise be filed again."""
+        status is unchanged. The revert ask for the same file in a later round stays one ask; a wanted-change ask
+        stays one per finding and file, and a repeat of a rejected one is dropped, not filed. A file that a finding
+        the user ruled on names by its repo-relative (or absolute) path, or a wanted-change ask the user accepted
+        names (see `wanted_edit_target`), is left as edited: the ruling is the approval, and a same-named file in
+        another folder still is reverted.
+        A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
+        again."""
         ruled_paths = self.approval_ruled_paths(findings)
         filed = False
         reverted = []
         for path in approval_only_paths(changed):
-            if path in ruled_paths:
+            if path in ruled_paths or self.names_ruled_wanted_target(path, findings):
                 continue
             if self.revert_approval_edit(path):
                 reverted.append(path)
                 continue
-            self.file_approval_ask(path, self.approval_blobs.get(path))
+            self.file_approval_ask(path, self.approval_base(path))
             filed = True
-        if filed:
+        wanted_filed = self.ask_for_wanted_changes(findings, reverted)
+        if filed or wanted_filed:
             self.save_approval_paths()
         return reverted
+
+    def ask_for_wanted_changes(self, findings, reverted):
+        """Files a user-only ask for each finding on a reverted approval-only path, carrying the finding's proposed
+        change: the file stays at its pre-pass text, so the user decides whether the wanted edit is made. Each
+        question names the file and the finding. The asks have no saved base: nothing of the file is left to
+        restore. A reverted edit that no finding names files no ask: it stays in the dropped asks. A change ends
+        with `wanted_edit_target`, which names the exact path. Returns whether it filed any."""
+        filed = False
+        for finding in self.findings_on_reverted_paths(findings, reverted):
+            path = held_path_in_repo(finding.path, self.repo)
+            changes = []
+            for part in finding.each_part:
+                part_change = ask_parts(part.text).change
+                changes.append(inert_change_marks(part_change))
+            change = "; ".join(changes)
+            line = finding.line or 1
+            ask = parse_finding(f"`{path}:{line}` [{finding.finding_class}] A fix coder wants to edit "
+                                f"`{path}` for the finding \"{finding.title}\", which needs the user's approval. "
+                                f"Change: {change} {wanted_edit_target(path)}")
+            filed = self.file_wanted_ask(ask, path, line, finding.title) or filed
+        return filed
+
+    def file_wanted_ask(self, ask, path, line, title):
+        """Files `ask`, for the exact repo-relative `path` at `line` and the finding `title`, as a
+        user-only ask the loop saves. The ask's location is set from `path` and `line`, because the location parser
+        reads no path with a space in a folder name. Nothing is filed when the list, or the asks saved for a kept held
+        packet (`kept_held_wanted`), hold an ask for the same finding on the file already (a later round's pass
+        edits the same file again, whatever the line), or when the session rejected the same ask (see
+        `rejected_a_wanted_ask`). Returns whether it was filed."""
+        if self.repeats_a_wanted_ask(path, title):
+            return False
+        ask = dataclasses.replace(ask, path=path, line=line)
+        if self.rejected_a_wanted_ask(ask, title):
+            self.drop_asks([ask], REJECTED_ASK_REASON)
+            return False
+        self.add_ask(CODER_GATE, ask)
+        if ask not in self.user_only_asks:
+            self.user_only_asks.append(ask)
+        entry = wanted_entry(ask.text, ask_parts(ask.text).change, path, line, title)
+        if entry not in self.wanted_entries:
+            self.wanted_entries.append(entry)
+        return True
+
+    def repeats_a_wanted_ask(self, path, title):
+        """Whether a wanted-change ask on the list, or saved for a kept held packet (`kept_held_wanted`), names
+        `path` and the same finding `title`. The title must be equal: a near match would merge two short unrelated
+        findings into one ask and lose one."""
+        listed = self.wanted_entries + self.kept_held_wanted
+        return any(entry["path"] == path and entry["title"] == title for entry in listed)
+
+    def rejected_a_wanted_ask(self, ask, title):
+        """Whether the session rejected this wanted-change ask: a rejection has the same title, whatever the line the
+        finding sits on. The title is built from the question, which names the file, so the stored location is not
+        compared (it is UNLOCATED for a path whose folder holds a space). The question is mostly fixed wording, so a
+        near match would drop another finding's ask."""
+        stored = rejected_ask_text({"question": ask_parts(ask.text).question, "file_line": located(ask)})
+        stored_title = parse_finding(stored).title
+        return any(rejected.title == stored_title for rejected in self.rejected_asks)
+
+    def approval_base(self, path):
+        """The base a filed ask for `path` saves: its pre-pass blob id, None for a file the pass created, or
+        `UNKNOWN_BASE` when the snapshot could not list the files or hash this one."""
+        if not self.approval_snapshot_ok or path in self.approval_unhashed:
+            return UNKNOWN_BASE
+        return self.approval_blobs.get(path)
 
     def revert_approval_edit(self, path):
         """Puts approval-only file `path` back to its pre-pass blob (deletes a file the pass created) and records the
@@ -383,9 +466,9 @@ class RuledFindings:
         The index entry goes back to its pre-pass entry when the pass changed it (a `git add` of the edit). When the
         pass committed the edit, the work tree goes back as above and the path joins `files_touched`, so the session
         commits the revert."""
-        if not self.approval_snapshot_ok or path in self.approval_unhashed:
+        base = self.approval_base(path)
+        if base == UNKNOWN_BASE:
             return False
-        base = self.approval_blobs.get(path)
         content_changed = script_utils.content_changed_since(self.repo, path, base)
         index_before = self.approval_index_entries.get(path)
         index_changed = script_utils.index_entry(self.repo, path) != index_before
@@ -406,13 +489,6 @@ class RuledFindings:
         put back, so none of them is fixed."""
         reverted_paths = set(reverted)
         return [finding for finding in findings if held_path_in_repo(finding.path, self.repo) in reverted_paths]
-
-    def keep_reverted_open(self, findings, reverted):
-        """Adds each finding on a reverted path to `open_fixes` once, and returns them. The caller leaves them out of
-        its fixed and skipped sets."""
-        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
-        self.open_fixes += [item for item in reverted_findings if item not in self.open_fixes]
-        return reverted_findings
 
     def committed_during_pass(self, path):
         """Whether the latest coder pass committed a change to `path`: HEAD holds another blob for it than the commit
@@ -450,8 +526,16 @@ class RuledFindings:
         ruling_findings = [finding for finding in findings if self.is_approval_ruling(finding)]
         return {held_path_in_repo(finding.path, self.repo) for finding in ruling_findings}
 
+    def names_ruled_wanted_target(self, path, findings):
+        """True when a finding the user ruled on is an accepted wanted-change ask for exactly `path`. The finding's
+        own location is empty (UNLOCATED) for a path whose folder holds a space, so the run reads the path from these
+        words and `approval_ruled_paths` misses that path."""
+        target = wanted_edit_target(path)
+        return any(self.is_approval_ruling(finding) and target in finding.text for finding in findings)
+
     def file_approval_ask(self, path, base):
-        """Files the user-only ask for approval-only file `path`, whose edit is measured against blob id `base`."""
+        """Files the user-only ask for approval-only file `path`, whose edit is measured against `base`, as
+        `approval_base` returns it."""
         ask = parse_finding(approval_ask_text(path))
         self.add_ask(CODER_GATE, ask)
         if ask not in self.user_only_asks:
@@ -462,26 +546,35 @@ class RuledFindings:
         self.user_only_bases.setdefault(path, base)
 
     def save_approval_paths(self):
-        """Saves the paths of the user-only asks on the list, so a run that dies before its packet leaves them for the
-        resumed run."""
-        write_approval_paths(self.repo, {path: self.user_only_bases[path] for path in self.user_only_paths})
+        """Saves the paths of the user-only approval asks and the wanted-change asks on the list, so a run that dies
+        before its packet leaves them for the resumed run. The paths of the asks a kept held packet waits on stay,
+        with their bases, and so do the wanted-change entries it waits on (`kept_held_wanted`): the user's ruling on
+        that packet restores the file from its base."""
+        paths = {**self.kept_held_bases, **{path: self.user_only_bases[path] for path in self.user_only_paths}}
+        write_saved_asks(self.repo, paths, self.kept_held_wanted + self.wanted_entries)
 
     def resume_approval_asks(self, findings):
         """At the start of a run: files again each approval ask an earlier run saved whose content still differs
-        from its saved base blob, that no ruling in `findings` settles, and that the session has not rejected, and
-        whose file still differs from HEAD (a file that matches HEAD, reverted or committed, files no ask), and that no
-        kept held packet waits on. Reads only the saved paths, never the change. Rewrites the saved paths with the
-        ones filed again, so a settled path leaves the file; with nothing saved, writes nothing."""
-        saved = read_approval_paths(self.repo)
-        if not saved:
+        from its saved base blob (an unknown base counts as changed), that no ruling in `findings` settles, and that
+        the session has not rejected, and whose file still differs from HEAD (a file that matches HEAD, reverted or
+        committed, files no ask), and that no kept held packet waits on. It also files again the saved
+        wanted-change asks (see `resume_wanted_asks`), reading their change. Rewrites both the saved paths and the
+        saved wanted asks with the ones filed again, so a settled one leaves the file; a path or wanted-change ask a
+        kept held packet waits on stays saved (a path with its base). With nothing saved, writes nothing."""
+        saved, wanted = read_saved_asks(self.repo)
+        if not saved and not wanted:
             return
         ruled_paths = self.approval_ruled_paths(findings)
         # The kept packet owns a held change, and the user's ruling on that packet drops it from the record.
         held_changes = read_held_changes(self.repo)
+        self.resume_wanted_asks(wanted, held_changes)
         for path, base in saved.items():
             if approval_change(path) in held_changes:
+                self.kept_held_bases[path] = base
                 continue
-            if path in ruled_paths or not script_utils.content_changed_since(self.repo, path, base):
+            if path in ruled_paths:
+                continue
+            if base != UNKNOWN_BASE and not script_utils.content_changed_since(self.repo, path, base):
                 continue
             if script_utils.matches_head(self.repo, path):
                 continue
@@ -489,6 +582,16 @@ class RuledFindings:
             if self.without_rejected([ask]):
                 self.file_approval_ask(path, base)
         self.save_approval_paths()
+
+    def resume_wanted_asks(self, wanted, held_changes):
+        """Files again each saved wanted-change ask (see `ask_for_wanted_changes`) that no kept held packet waits on
+        and that the session has not rejected. A ruled one left the saved file when it was ruled. A held one stays
+        saved in `kept_held_wanted`, so a later pass does not file it a second time."""
+        for entry in wanted:
+            if entry["change"] in held_changes:
+                self.kept_held_wanted.append(entry)
+                continue
+            self.file_wanted_ask(parse_finding(entry["text"]), entry["path"], entry["line"], entry["title"])
 
     def is_approval_ruling(self, finding):
         """True when the user ruled on `finding`, or a session accepted the approval ask for its path

@@ -24,8 +24,9 @@ A run with no gaps prints ASKS OPEN in place of CLEAN while the branch review of
 it only as "the asks are ruled"; credit still needs the logged tree to equal the current tree);
 a new `review` log clears it.
 
-review: logs the branch-wide code-reviewer run row (stamped with a fingerprint of the tree as it stands, so prep can
-tell a later change) and one finding row per reviewer finding. --rows is a JSON list of
+review: logs the branch-wide code-reviewer run row (stamped with a fingerprint of the tree as it stands,
+notes paths left out (`lib/notes_paths.py`; a context saved before `notesEntries` existed keeps the old
+fingerprint), so prep can tell a later code change) and one finding row per reviewer finding. --rows is a JSON list of
 {"desc","file","line","actioned", optional "class","disposition"}; `actioned` is required and must be `fixed` or
 `skipped_fp`, except that an `ask` finding the user must rule on may stay `ask`. --findings, when given, must equal
 its length.

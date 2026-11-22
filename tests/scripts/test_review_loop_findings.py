@@ -1,6 +1,7 @@
 """A reviewer's pass note in the Ask section is no ask, and an ask that repeats an earlier ask is dropped."""
 import pathlib
 import sys
+import tempfile
 import unittest
 
 import toolkit_paths
@@ -74,6 +75,28 @@ class PassNotesAreNoAskTest(unittest.TestCase):
 
         self.assertEqual([ask.text for ask in kept], [REAL_ASKS["a question to the user"]])
         self.assertEqual([note.text for note in notes], ["I checked the claim and it holds."])
+
+
+class DottedSymbolIsNotALocationTest(unittest.TestCase):
+    def test_a_called_dotted_symbol_before_the_real_location_is_not_the_location(self):
+        cases = [
+            ("[bug] calls lib/file_lock.acquire() before review/x.py:40", ("review/x.py", 40)),
+            ("[bug] calls lib/x.py.run() before review/x.py:40", ("review/x.py", 40)),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                found = finding_record.parse_finding(text)
+                self.assertEqual((found.path, found.line), expected)
+
+    def test_a_bare_path_with_any_extension_or_case_is_a_location_with_line_zero(self):
+        cases = [
+            ("[nit] docs/guide.mdx is stale", ("docs/guide.mdx", 0)),
+            ("[nit] docs/README.MD is stale", ("docs/README.MD", 0)),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                found = finding_record.parse_finding(text)
+                self.assertEqual((found.path, found.line), expected)
 
 
 class RepeatedAskTest(unittest.TestCase):
@@ -465,6 +488,183 @@ class AskChangeMarkShapesTest(unittest.TestCase):
 
     def test_a_change_if_not_accepted_ask_states_an_ask(self):
         self.assertTrue(review_loop_findings.states_an_ask(f"Remove it. Change if not accepted: {self.CHANGE}"))
+
+
+class FindingLocationTest(unittest.TestCase):
+    QUOTED_FIXTURE = ('— the test passes with the bug in place. FINDING ("a.py:1 [plan-drift] PLAN-IMPACT: the '
+                      'plan changes")')
+
+    def test_a_bare_path_first_is_the_location_not_a_quoted_path_line_after_it(self):
+        text = f"[test-gap] /home/u/repo/tests/scripts/test_x.py (test_name) {self.QUOTED_FIXTURE}"
+
+        finding = finding_record.parse_finding(text)
+
+        self.assertEqual((finding.path, finding.line), ("/home/u/repo/tests/scripts/test_x.py", 0))
+        self.assertEqual(finding.finding_class, "test-gap")
+
+    def test_a_class_tag_inside_a_backtick_span_is_not_the_class(self):
+        finding = finding_record.parse_finding("lib/a.py:3 [bug] the doc says `[plan-drift]` is routed")
+
+        self.assertEqual(finding.finding_class, "bug")
+
+    def test_a_class_tag_before_the_location_is_the_class(self):
+        finding = finding_record.parse_finding("[bug] lib/a.py:3 wrong")
+
+        self.assertEqual(finding.finding_class, "bug")
+
+    def test_a_path_line_before_an_approximate_pointer_is_the_location(self):
+        finding = finding_record.parse_finding("lib/a.py:5 [bug] see `tests/x.py:~40`")
+
+        self.assertEqual((finding.path, finding.line), ("lib/a.py", 5))
+
+    def test_a_path_line_inside_a_multi_line_backtick_span_is_no_location(self):
+        finding = finding_record.parse_finding("the snippet `run(\n a.py:1)` is wrong")
+
+        self.assertEqual((finding.path, finding.line), ("", 0))
+
+    def test_a_leading_pointer_with_a_spaced_line_list_or_an_approximate_line_is_the_location(self):
+        cases = {
+            "spaced list": ("- fix: [weak-assertion] `frontend/app/utils/markdown.test.ts:8-12, 20-31` — gap",
+                            ("frontend/app/utils/markdown.test.ts", 8)),
+            "spaced list then a later path": (
+                "`features/imports/ImportForm.vue:92-93, 101` [duplication]: dup (features/imports/limits.ts:2)",
+                ("features/imports/ImportForm.vue", 92)),
+            "approximate line": ("[test-gap] `tests/a/test_x.py:~40` — the helper at lib/y.py:30",
+                                 ("tests/a/test_x.py", 0)),
+            "approximate line, no directory": ("[test-gap] `test_x.py:~40` — the helper at lib/y.py:30",
+                                               ("test_x.py", 0)),
+            "closing backtick before the line": ("`/abs/dir/markdown.test.ts`:4-48 — gap",
+                                                 ("/abs/dir/markdown.test.ts", 4)),
+        }
+        for name, (text, expected) in cases.items():
+            with self.subTest(name):
+                finding = finding_record.parse_finding(text)
+
+                self.assertEqual((finding.path, finding.line), expected, name)
+
+    def test_a_path_line_first_beats_a_bare_path_of_another_file_after_it(self):
+        finding = finding_record.parse_finding("src/a.py:5 is wrong, see also docs/other.md")
+
+        self.assertEqual((finding.path, finding.line), ("src/a.py", 5))
+
+    def test_a_bare_path_guards_leave_route_paths_and_paths_with_a_trailing_part_alone(self):
+        cases = {
+            "preceding bracket": "the route [id]/page/edit.vue is wrong",
+            "path followed by a slash": "see src/a.py/extra for it",
+            "preceding colon": "key:src/a.py is wrong",
+            "preceding closing bracket": "x]src/a.py is wrong",
+            "home-relative path": "[docs] ~/x/y.md — stale",
+            "home-relative path with a line": "see ~/x/y.md:12 — stale",
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                finding = finding_record.parse_finding(text)
+
+                self.assertEqual((finding.path, finding.line), ("", 0), name)
+
+    def test_a_bare_path_in_a_backtick_span_without_a_line_is_the_location(self):
+        cases = {
+            "alone": "`src/a.py` is wrong",
+            "before a path line of another file": "`src/a.py` is wrong, see lib/b.py:3",
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                finding = finding_record.parse_finding(text)
+
+                self.assertEqual((finding.path, finding.line), ("src/a.py", 0), name)
+
+    def test_a_bare_path_with_a_further_extension_is_not_cut_at_the_first_one(self):
+        finding = finding_record.parse_finding("see src/a.py.bak for it")
+
+        self.assertEqual((finding.path, finding.line), ("src/a.py.bak", 0))
+
+    def test_an_apostrophe_in_a_word_does_not_open_a_quote(self):
+        finding = finding_record.parse_finding("I don't see a.py:1 here, and it isn't wrong")
+
+        self.assertEqual((finding.path, finding.line), ("a.py", 1))
+
+    def test_a_dotted_file_name_with_a_line_is_not_cut_at_its_first_extension(self):
+        finding = finding_record.parse_finding("src/services/user-status.service.ts:862 — the call is wrong")
+
+        self.assertEqual((finding.path, finding.line), ("src/services/user-status.service.ts", 862))
+
+    def test_the_loop_does_not_skip_that_finding_as_absent_from_the_tree(self):
+        with tempfile.TemporaryDirectory() as repo:
+            test_file = pathlib.Path(repo) / "tests" / "scripts" / "test_x.py"
+            finding = finding_record.parse_finding(f"[test-gap] {test_file} (test_name) {self.QUOTED_FIXTURE}")
+
+            absent = review_loop_findings.names_absent_file(repo, [], finding)
+
+        self.assertEqual(finding.line, 0)
+        self.assertFalse(absent)
+
+    def test_a_bare_path_of_a_file_the_finding_asks_for_is_not_absent(self):
+        with tempfile.TemporaryDirectory() as repo:
+            text = "[test-gap] tests/scripts/test_new.py (new test needed; source lib/new.py:73) — no test"
+            finding = finding_record.parse_finding(text)
+
+            absent = review_loop_findings.names_absent_file(repo, [], finding)
+
+        self.assertFalse(absent)
+
+    def test_an_absent_file_is_skipped_for_a_path_line_and_an_approximate_line_but_not_a_bare_path(self):
+        cases = [
+            ("lib/gone.py:7 [bug] wrong", True),
+            ("`lib/gone.py:~7` [bug] wrong", True),
+            ("lib/gone.py:~7 [bug] wrong", True),
+            ("lib/gone.py is wrong at lib/gone.py:7 [bug]", True),
+            ("[test-gap] lib/gone.py has no test", False),
+        ]
+        with tempfile.TemporaryDirectory() as repo:
+            for text, expected in cases:
+                with self.subTest(text=text):
+                    finding = finding_record.parse_finding(text)
+
+                    absent = review_loop_findings.names_absent_file(repo, [], finding)
+
+                    self.assertEqual(absent, expected)
+
+    def test_a_merged_finding_keeps_the_bare_flag_of_its_first_part(self):
+        cases = [
+            ("[test-gap] lib/gone.py has no test", False),
+            ("lib/gone.py:7 [bug] wrong", True),
+        ]
+        with tempfile.TemporaryDirectory() as repo:
+            for first_text, expected in cases:
+                with self.subTest(text=first_text):
+                    parts = [finding_record.parse_finding(first_text), finding_record.parse_finding("[bug] other")]
+                    merged = finding_record.combine(parts)
+
+                    absent = review_loop_findings.names_absent_file(repo, [], merged)
+
+                    self.assertEqual(absent, expected)
+
+    def test_a_path_line_inside_quotes_or_a_longer_backtick_span_is_no_location(self):
+        cases = {
+            "double quotes": 'the message says "see a.py:1 for it" and nothing else',
+            "single quotes": "the message says 'see a.py:1 for it' and nothing else",
+            "a longer backtick span": "the call `run(a.py:1)` is wrong",
+        }
+        for name, text in cases.items():
+            with self.subTest(name):
+                finding = finding_record.parse_finding(text)
+
+                self.assertEqual((finding.path, finding.line), ("", 0), name)
+
+    def test_a_path_line_after_a_quoted_one_is_the_location(self):
+        finding = finding_record.parse_finding('"a.py:1" is quoted, the bug is at `b/c.py:7` [bug] wrong')
+
+        self.assertEqual((finding.path, finding.line), ("b/c.py", 7))
+
+    def test_a_leading_backticked_path_line_is_still_the_location(self):
+        finding = finding_record.parse_finding(f"`lib/reviewed_tree.py:315` [test-gap] gap {self.QUOTED_FIXTURE}")
+
+        self.assertEqual((finding.path, finding.line), ("lib/reviewed_tree.py", 315))
+
+    def test_a_bare_path_then_a_path_line_of_the_same_file_keeps_the_line(self):
+        finding = finding_record.parse_finding("tests/x.py is wrong at tests/x.py:12 [bug] it fails")
+
+        self.assertEqual((finding.path, finding.line), ("tests/x.py", 12))
 
 
 if __name__ == "__main__":

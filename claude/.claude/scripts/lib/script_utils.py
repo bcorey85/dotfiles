@@ -20,11 +20,24 @@ from collections import namedtuple
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
-PATH_TEXT = r"[\w@./-]+\.\w+"
-PATH_LINE = re.compile(rf"`?({PATH_TEXT}:\d+(?:[-,]\d+)*)`?")
+PATH_CHARS = r"\w@.\-"
+PATH_TEXT = rf"[{PATH_CHARS}/]+\.\w+"
+
+
+def line_suffix(approx="", gap=""):
+    """The regex of a `:12-20, 30` line part; `approx` and `gap` let each number take a `~` and the list take spaces."""
+    return rf":{approx}\d+(?:[-,]{gap}{approx}\d+)*"
+
+
+# A backtick may close between the path and the line (`path`:12).
+PATH_LINE = re.compile(rf"`?({PATH_TEXT}`?{line_suffix()})`?")
 # The code-reviewer's blocker tag, bold or plain; callers anchor it and pick the case rule.
 BLOCKER_TAG_PATTERN = r"\*{0,2}\[blocker\]\*{0,2}"
 FILE_NAME = re.compile(rf"^{PATH_TEXT}(?::\d|$)")
+# A quoted span of a reviewer finding. It differs from `message_text.QUOTED_SPAN`: straight double quotes only,
+# single quotes bounded by non-word characters (an apostrophe inside a word opens none), and a backtick span that
+# may run over lines.
+FINDING_QUOTED_SPAN = re.compile(r"\"[^\"\n]*\"|(?<!\w)'[^'\n]*'(?!\w)|`[^`]*`")
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
@@ -1118,6 +1131,94 @@ def locations_named(text):
     return [split_location(hit) for hit in PATH_LINE.findall(text)]
 
 
+# A backtick span that holds only a path or a location is a pointer, not a quotation.
+# The pointer's line part also takes an approximate line (`~497`) and a list with spaces (`12-14, 16`).
+LOOSE_LINE_PART = line_suffix("~?", r"\s*")
+LOCATION_ALONE = re.compile(rf"{PATH_TEXT}(?:{LOOSE_LINE_PART})?")
+# A `~/x.py:3` is home-relative; matching from its `/` would name a wrong absolute path.
+UNHOMED_PATH_LINE = re.compile(rf"(?<![~{PATH_CHARS}/])" + PATH_LINE.pattern)
+# A path with a directory part and an extension, not followed by an exact line number, more path, or a call paren: a
+# dotted symbol that is called (`lib/file_lock.acquire()`) is no path.
+BARE_PATH = re.compile(
+    rf"(?<![{PATH_CHARS}/:\[\]~])(/?(?:[{PATH_CHARS}]+/)+[{PATH_CHARS}]+\.\w+)"
+    r"(?!\w|\.\w|:\d|/|\()"
+)
+# A path written with a leading `./`, with or without an extension (`./Makefile`, `./install/deps`): the one way to
+# name a root or extensionless file. A `../x` is no match.
+DOT_SLASH_PATH = re.compile(rf"(?<![{PATH_CHARS}/~])\./[{PATH_CHARS}]+(?:/[{PATH_CHARS}]+)*")
+# BARE_PATH's `:\d` lookahead leaves only the `:~` form of an approximate line to reach this pattern.
+APPROXIMATE_LINE_PART = re.compile(LOOSE_LINE_PART)
+TextLocation = namedtuple("TextLocation", "path line end bare")
+
+
+def _is_pointer(span_text):
+    """Whether a quoted span is a backtick span that holds only a path or a location."""
+    return span_text.startswith("`") and bool(LOCATION_ALONE.fullmatch(span_text[1:-1]))
+
+
+def _quoting_spans(text):
+    """(start, end) of each span of the text that quotes other text."""
+    spans = []
+    for span in FINDING_QUOTED_SPAN.finditer(text):
+        if not _is_pointer(span.group()):
+            spans.append((span.start(), span.end()))
+    return spans
+
+
+def _inside_a_span(position, spans):
+    return any(span_start <= position < span_end for span_start, span_end in spans)
+
+
+def first_unquoted_match(pattern, text, start=0):
+    """The first match of the compiled pattern in the text, from index `start`, that does not begin inside a quoted
+    span, or None."""
+    quoting = _quoting_spans(text)
+    for hit in pattern.finditer(text, start):
+        if not _inside_a_span(hit.start(), quoting):
+            return hit
+    return None
+
+
+def _first_pointer(text):
+    """The first backtick pointer with a line part (`a.py:~40`) outside any quoted span, or None."""
+    # The spans do not overlap, so a pointer never sits inside another span.
+    for span in FINDING_QUOTED_SPAN.finditer(text):
+        if _is_pointer(span.group()) and ":" in span.group():
+            return span
+    return None
+
+
+def first_location(text):
+    """The first location a free-text finding names, as a TextLocation (end is where its text stops; bare is True
+    for a path with no line part), or None.
+    A `path:line` or path inside a quoted span is not a location, except a backtick span that holds only a path
+    or a location. A backticked approximate line (`a.py:~40`), or an unbackticked one on a path with a directory
+    part, gives its path with line 0 and bare False.
+    A home-relative `~/…:N` is never a location. A bare path with a directory part and an extension that comes
+    before any `path:line` is the location with line 0, unless the first `path:line` after it names the same
+    file."""
+    with_line = first_unquoted_match(UNHOMED_PATH_LINE, text)
+    pointer = _first_pointer(text)
+    if pointer and (not with_line or pointer.start() < with_line.start()):
+        with_line = pointer
+    bare = first_unquoted_match(BARE_PATH, text)
+    with_line_location = None
+    if with_line:
+        path, line = split_location(with_line.group())
+        with_line_location = TextLocation(path, line, with_line.end(), False)
+    if not bare:
+        return with_line_location
+
+    bare_path = normalize_path(bare.group(1))
+    if with_line_location and (with_line.start() < bare.start() or with_line_location.path == bare_path):
+        return with_line_location
+    # An unquoted approximate line (`a.py:~7`) is a line part, so the path is not bare.
+    approximate = APPROXIMATE_LINE_PART.match(text, bare.end())
+    if approximate:
+        return TextLocation(bare_path, 0, approximate.end(), False)
+    return TextLocation(bare_path, 0, bare.end(), True)
+
+
 def paths_named(*texts):
     """Every normalized path that the texts name, each once, in order: a text that starts with a file name, then
     every `path:line` token inside it."""
@@ -1130,6 +1231,16 @@ def paths_named(*texts):
         if path and path not in paths:
             paths.append(path)
     return paths
+
+
+def names_a_file(text):
+    """True when the text holds a `path:line`, a path with a folder part and an extension, or a path written with a
+    leading `./` (`./name.ext`, or `./Makefile` for a root or extensionless file), quoted or not. A bare `~/`
+    path with no line number is no match."""
+    # Raw text, not first_location: a path in quotes still names the file to edit.
+    raw = str(text or "")
+    patterns = (PATH_LINE, BARE_PATH, DOT_SLASH_PATH)
+    return any(pattern.search(raw) is not None for pattern in patterns)
 
 
 def _path_candidates(text):
@@ -1323,3 +1434,9 @@ def is_executable_file_inside(root_directory, relative_path):
         return False
 
     return given.is_file() and os.access(given, os.X_OK)
+
+
+def items_missing_by_key(items, others, key):
+    """The items whose `key` no item of `others` has."""
+    other_keys = {key(other) for other in others}
+    return {item for item in items if key(item) not in other_keys}

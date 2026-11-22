@@ -25,6 +25,7 @@ import handback
 import handback_store
 import plan_format
 import process_group
+import review_asks
 import review_fix
 import review_fix_asks
 import review_fix_names
@@ -1486,7 +1487,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_the_conditional_ask_list_skips_a_converted_ask_whose_change_holds_an_if(self):
         converted = {**ask_entry("conv", "src/a.ts:1", change="deny it if the flag is off"),
                      review_fix_asks.USER_RULED_KEY: True}
-        self.assertEqual(review_fix_asks.conditional_ask_numbers([converted]), [])
+        self.assertEqual(review_asks.conditional_ask_numbers([converted]), [])
 
     def test_the_ask_presentation_has_no_conditional_instruction_when_no_ask_is_conditional(self):
         code, output = self.packet(WITH_ASK, "--scope", "branch-exit")
@@ -1666,8 +1667,9 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("2 ask(s) waiting but 1 outcome(s) given", output)
         self.assertEqual(self.ledger_writes(), [])
 
-    def test_asks_done_logs_the_outcome_of_an_ask_that_names_no_file(self):
-        unlocated_ask = packet_text(WITH_ASK_FIELDS, ask=[{**RETRY_ASK, "file_line": "unlocated"}])
+    def test_asks_done_logs_the_outcome_of_an_ask_with_no_file_line_whose_change_names_a_file(self):
+        ask_with_no_file_line = {**RETRY_ASK, "file_line": "unlocated", "change": "cap retries at 3 in src/retry.ts"}
+        unlocated_ask = packet_text(WITH_ASK_FIELDS, ask=[ask_with_no_file_line])
         self.packet(unlocated_ask)
         code, output = self.run_script(["asks-done", "--by", "user", "accepted"])
         self.assertEqual(code, 0, output)
@@ -1675,8 +1677,16 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual([row["ask_outcome"] for row in self.ledger_writes()], ["accepted"])
 
     def test_a_json_packet_with_n_asks_some_without_file_line_logs_n_outcome_rows(self):
-        asks = [{"question": f"question {number}?", "change": "edit", "gate": "code-reviewer", "class": "smell",
-                 **({"file_line": f"src/a{number}.ts:1"} if number % 2 == 0 else {})} for number in range(4)]
+        asks = [
+            {
+                "question": f"question {number}?",
+                "change": "edit src/a.ts",
+                "gate": "code-reviewer",
+                "class": "smell",
+                **({"file_line": f"src/a{number}.ts:1"} if number % 2 == 0 else {}),
+            }
+            for number in range(4)
+        ]
         message = json.dumps({"status": "converged", "iter": 1, "fixed": [], "ask": asks,
                               "class_closure": "n/a - fixed[] empty"})
         code, output = self.packet(message)
@@ -2940,7 +2950,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_file.write_text(json.dumps(record))
         code, output = self.run_script(packet_args, HOME=home)
         self.assertNotEqual(code, 0, output)
-        self.assertIn("user_ruled is not a list of finding texts", output)
+        self.assertIn("user_ruled is 'false'; expected a list of strings", output)
 
     def test_a_launch_record_that_is_not_an_object_stops_naming_the_file(self):
         home = str(self.temp_root / "home")
@@ -3056,6 +3066,14 @@ class ReviewFixScriptTest(unittest.TestCase):
                 state = {"asks": asks, "ask_outcomes": outcomes, review_fix_asks.ASKS_DECIDED_BY_KEY: deciders}
                 actual = review_fix_asks.ruled_numbers(state, plan_format.USER_RULING)
                 self.assertEqual(expected, actual, message)
+
+    def test_a_restored_ask_takes_no_position_in_the_user_ruled_numbers(self):
+        ordinary = {"question": "cap?", "finding": "cap"}
+        state = {"asks": [ordinary, ordinary], "ask_outcomes": ["accepted", "accepted"],
+                 review_fix_asks.ASKS_DECIDED_BY_KEY: ["user", "user"],
+                 review_fix_names.RESTORED_INDEXES_KEY: [0]}
+        actual = review_fix_asks.ruled_numbers(state, plan_format.USER_RULING)
+        self.assertEqual([1], actual, "the restored ask is not in the findings file, so the second ask is finding 1")
 
     def test_ask_deciders_rejects_a_saved_value_that_is_not_a_list_of_one_entry_per_ask(self):
         import review_fix_asks
@@ -4079,8 +4097,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         lines = output.splitlines()
         self.assertIn("ACTION: dispatch-reviewer", lines)
         request = next(line for line in lines if line.startswith("- agent code-reviewer; prompt "))
-        prompt_file = pathlib.Path(request.split("; prompt ")[1].split("; report ")[0])
-        report_file = pathlib.Path(request.split("; report ")[1])
+        prompt_head, prompt_tail = reviewer_dispatch.AGENT_PROMPT.split("{prompt_file}")
+        prompt_file = pathlib.Path(request.split(f'; prompt "{prompt_head}')[1].split(prompt_tail)[0])
+        report_file = pathlib.Path(
+            request.split("; report ")[1].split(f" {reviewer_dispatch.SESSION_WRITES_NOTE}")[0])
         self.assertEqual(prompt_file.read_text(), "review it")
         loop_dir = report_file.parent.parent
         self.assertIn(f"reviewer_dispatch.py wait {loop_dir}", lines[-1])

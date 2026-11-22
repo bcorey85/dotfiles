@@ -3,8 +3,12 @@ library: it keeps the commit gate from importing `phase_asks`."""
 import pathlib
 
 ACCEPTED = "accepted"
-# The ask entry key that marks an ask only the user rules (a coder's edit to an approval-only file).
+# The ask entry key that marks an ask only the user rules: a coder's edit to an approval-only file, or an ask that
+# names a user-owned criterion (it then also carries CRITERIA_KEY).
 USER_ONLY_KEY = "user_only"
+# The ask entry key that lists the criterion ids a user-only phase ask names.
+CRITERIA_KEY = "criteria"
+APPROVAL_REASON = "a fix coder edited an approval-only file"
 # The mark a listing prints in front of or after a `user_only` ask.
 USER_ONLY_MARK = "[user only]"
 REJECTED = "rejected"
@@ -40,12 +44,20 @@ def user_only_numbers(asks):
     return [number for number, item in enumerate(asks, 1) if item.get(USER_ONLY_KEY)]
 
 
+def user_only_reason(item):
+    """Why the user alone rules the `user_only` ask `item`: the criteria it names, else an approval-only edit."""
+    criteria = item.get(CRITERIA_KEY)
+    if not criteria:
+        return APPROVAL_REASON
+    return f"it names user-owned criteria {', '.join(criteria)}"
+
+
 def rule_instruction(asks):
     """The text that says which `rule` line records the ruling on `asks`: the session's own line, or, when an ask is
     marked `user_only`, a hand-off to the user and the `--by user` line."""
     numbers = user_only_numbers(asks)
     if not numbers:
         return f"`{rule_command(len(asks))}`"
-    listed = ", ".join(str(number) for number in numbers)
-    return (f"hand ask(s) {listed} to the user (a fix coder edited an approval-only file) and record the user's "
+    listed = ", ".join(f"{number} ({user_only_reason(asks[number - 1])})" for number in numbers)
+    return (f"hand ask(s) {listed} to the user and record the user's "
             f"outcomes with `{rule_command(len(asks), by_user=True)}`")

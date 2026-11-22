@@ -618,6 +618,72 @@ class PrepTest(VerifyBranchBase):
         self.write("docs/plans/LED-9-thing/notes.md", "scratch\n")
         self.assertIn("REVIEW: ran", self.prep().stdout)
 
+    def test_a_change_note_written_after_the_review_keeps_it_current_and_a_code_edit_stales_it(self):
+        self.reviewed_tree()
+        self.write("docs/changes/notes/x.md", "---\ntype: \"Change\"\n---\n\nA note.\n")
+        self.assertIn("REVIEW: ran", self.prep().stdout)
+
+        self.write("src/a.py", "print(2)\n")
+        self.assertIn("NOT run", self.prep().stdout)
+
+    def test_a_note_written_after_prep_lets_the_review_be_logged(self):
+        self.task_dir()
+        self.commit_all("plan")
+        self.assertEqual(self.prep().returncode, 0)
+        self.write("docs/changes/notes/x.md", "A note.\n")
+
+        logged = self.log_review()
+
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.temp_root / "state")}):
+            covers = load_common().branch_review_covers(self.repo)
+        self.assertTrue(covers.covers, covers.problem)
+
+    def test_a_note_at_a_committed_notes_path_written_after_prep_lets_the_review_be_logged(self):
+        self.write(".claude/notes-paths", "extra/\n")
+        self.task_dir()
+        self.commit_all("plan and list")
+        self.assertEqual(self.prep().returncode, 0)
+        self.write("extra/n.md", "A note.\n")
+
+        logged = self.log_review()
+
+        self.assertEqual(logged.returncode, 0, logged.stderr)
+
+    def test_a_bad_committed_notes_paths_list_fails_prep_and_saves_no_context(self):
+        self.task_dir()
+        self.write(".claude/notes-paths", "src/*.md\n")
+        self.commit_all("bad list")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 2, done.stdout)
+        self.assertIn("bad notes-paths list", done.stderr)
+        self.assertIn(".claude/notes-paths", done.stderr)
+        self.assertEqual(list((self.temp_root / "state").glob("*.json")), [])
+
+    def test_a_note_at_a_committed_notes_path_keeps_the_review_and_one_outside_it_stales_it(self):
+        self.write(".claude/notes-paths", "extra/\n")
+        self.reviewed_tree()
+
+        self.write("extra/n.md", "A note.\n")
+        self.assertIn("REVIEW: ran", self.prep().stdout)
+
+        self.write("other/n.md", "Not listed.\n")
+        self.assertIn("NOT run", self.prep().stdout)
+
+    def test_a_context_saved_without_notes_entries_still_credits_the_logged_tree(self):
+        self.reviewed_tree()
+        context_file = next((self.temp_root / "state").glob("*.json"))
+        context = json.loads(context_file.read_text())
+        del context["notesEntries"]
+        context_file.write_text(json.dumps(context))
+
+        with mock.patch.dict(os.environ, {"VERIFY_STATE_DIR": str(self.temp_root / "state")}):
+            covers = load_common().branch_review_covers(self.repo)
+
+        self.assertTrue(covers.covers, covers.problem)
+
     def test_a_converged_review_of_the_edited_tree_keeps_the_logged_branch_review_counting(self):
         self.reviewed_tree()
         self.write("src/a.py", "print(2)\n")

@@ -247,9 +247,24 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
         header.append(f"{HELD_BY_KEY}: {json.dumps(list(holders))}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
-    assignments = gate_env.repo_gate_env(repo, None if plan == NO_PLAN else plan)
+    assignments = gate_env.repo_gate_env(repo, plan_or_none(plan))
     gate_env_text = plan_format.gate_env_text(assignments)
     return f"{prompt}\n\n{gate_env_text}\n" if gate_env_text else prompt + "\n"
+
+
+def plan_or_none(plan):
+    """The plan path, or None for the no-plan word."""
+    if plan == NO_PLAN:
+        return None
+    return plan
+
+
+def recorded_plan_path(repo, plan):
+    """The plan path to record in the run record, or None for the no-plan word."""
+    plan = plan_or_none(plan)
+    if plan is None:
+        return None
+    return str((pathlib.Path(repo) / plan).resolve())
 
 
 def phase_gate_commands(repo, plan, phase, base, handoff=""):
@@ -257,7 +272,7 @@ def phase_gate_commands(repo, plan, phase, base, handoff=""):
     # the whole plan. The stale-prose pass runs only for a phase the plan has an entry for.
     # With no plan, the files come from the handoff block.
     # The checks run with the gate assignments, so the runner is picked from that same environment.
-    assignments = gate_env.repo_gate_env(repo, None if plan == NO_PLAN else plan)
+    assignments = gate_env.repo_gate_env(repo, plan_or_none(plan))
     check_environment = {**os.environ, **script_utils.environment_from_assignments(assignments)}
     if plan == NO_PLAN:
         handoff_files = HANDOFF_FILE_PATH.findall(handoff)
@@ -403,7 +418,8 @@ def main(argv):
                                   reviewers=REVIEWERS_MAIN)
     # After detach's running-loop refusal, so a refused start leaves the running loop's record as it was. The run
     # record names the loop folder before loop-dir does, so a waiter never sees a folder the record lacks.
-    code_wait.write_phase_run(repo, lane, phase, prompt_file.parent)
+    # Absolute, because the wait that reads it runs from the repo top, not from the folder this start ran in.
+    code_wait.write_phase_run(repo, lane, phase, prompt_file.parent, plan=recorded_plan_path(repo, plan))
     script_utils.write_text_atomically(folder / LOOP_DIR_FILE, f"{prompt_file.parent}\n")
     with log_path.open("w") as log:
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)

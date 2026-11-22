@@ -4,7 +4,7 @@
 
 **Launch.** Run the skill's launch line with `--detach`, in the foreground. Then run the `code_wait.py review --loop <loop dir>` command it prints, again while it prints `Still working`. On exit 1 of this call or of any later `code_wait.py review` call, do the step its last line names.
 
-**Reviewers.** On `ACTION: dispatch-reviewer`: in one message, dispatch one `Agent` per listed line, `subagent_type` its agent, `model` only when the line names one, prompt `Read <prompt file> whole and do that task.` Then run `python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> <agentId> <report file> ...`, one pair per agent, each id and path written out as its own word (no shell variable, loop or function), again while it prints `Still working`; it writes each report as its agent finishes. Handle its output the same way. When it says the loop finished, run the packet command it printed.
+**Reviewers.** On `ACTION: dispatch-reviewer`: in one message, dispatch one `Agent` per listed line, `subagent_type` its agent, `model` only when the line names one, prompt the line's quoted prompt word for word. The reviewers write no file. Then run `python3 ~/.claude/scripts/code/code_wait.py review --loop <loop dir> <agentId> <report file> ...`, one pair per agent, each id and path written out as its own word (no shell variable, loop or function), again while it prints `Still working`; it writes each report as its agent finishes. Handle its output the same way. When it says the loop finished, run the packet command it printed.
 
 **The packet's ACTION lines.** Do what they say, with these readings:
 

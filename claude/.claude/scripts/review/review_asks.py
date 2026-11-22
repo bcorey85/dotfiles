@@ -14,16 +14,19 @@ import plan_format
 from ask_outcome_words import (
     ACCEPTED,
     APPLIED,
+    CRITERIA_KEY,
     HELD,
     REJECTED,
     RELAY_USAGE,
     USER_ONLY_KEY,
     USER_ONLY_MARK,
     user_only_numbers,
+    user_only_reason,
 )
 from review_fix_names import FILED_AT_KEY
+from review_fix_state import UsageError
 from review_loop_findings import CHANGE_IF_LABEL_PATTERN
-from script_utils import ask_text, hanging_indent_lines, one_line, or_list, run_command
+from script_utils import ask_text, hanging_indent_lines, names_a_file, one_line, or_list, run_command
 
 MODIFIED = "modified"
 ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED, APPLIED)
@@ -46,7 +49,8 @@ USER_RULED_KEY = "user_ruled"
 # user never chose. A condition inside ordinary code, such as "Return 202 if accepted by the queue" or "Show the banner
 # if the user is an admin", is not one. Nor is `If accepted, X`: it means X once accepted. A `Change if <answer>:`
 # label inside a change marks a second branch of an ask (`Change if yes: A. Change if no: B`): an ask with two such
-# labels splits at the first, so the labels left in its change are its branches.
+# labels splits at the first, so the labels left in its change are its branches. The label also matches with a space
+# before its colon (`Change if yes :`), the form `inert_change_marks` leaves in quoted text.
 CONDITIONAL_CHANGE = re.compile(
     r"^\s*(if not|if no(?!-)|unless|otherwise|if the user)\b"
     r"|\bif yes\b|\bif no,|\bif (not )?(confirmed|approved)\b"
@@ -124,6 +128,76 @@ def is_conditional_change(text):
     return CONDITIONAL_CHANGE.search(text) is not None
 
 
+def is_unlocated_change(item):
+    """True when a finding ask has no location and its change names no file, so a coder given the change alone could
+    not tell what to edit."""
+    if handback.is_plan_impact_ask(item):
+        return False
+    file_line = item.get("file_line") or ""
+    if file_line and file_line != handback.UNLOCATED:
+        return False
+    return not names_a_file(item.get("change") or "")
+
+
+# The extra steps for an ask whose change names no file.
+UNLOCATED_CHANGE_ADVICE = (" (write a root or extensionless file as `./name`; when no file is known, end the run with "
+                           "a stop that names the ask and asks which file and edit, keep the `To go on:` line "
+                           f"last, and answer the resume with '{MODIFIED}:<change naming the file>')")
+
+
+def refuse_unlocated_changes(asks, outcomes, notes, rerun_command):
+    """Refuses an `accepted` outcome on a finding ask with no location whose change names no file, and a `modified`
+    outcome on one whose note names no file: the coder would get the change with nothing to edit. `rerun_command`
+    is the call that answers the asks again."""
+    problems = []
+    for number, (item, outcome, note) in enumerate(zip(asks, outcomes, notes, strict=True), 1):
+        if outcome not in (ACCEPTED, MODIFIED) or not is_unlocated_change(item):
+            continue
+        if outcome == MODIFIED and names_a_file(note):
+            continue
+        if outcome == MODIFIED:
+            problems.append(f"ask {number} (no file:line): the modified change names no file: "
+                            f"{one_line(note, 160)}")
+            continue
+        change = item.get("change") or ""
+        problems.append(f"ask {number} (no file:line) has a proposed change that names no file: "
+                        f"{one_line(change, 160)}")
+    modified_answer_refusal(problems, "the change, naming the file and the edit", rerun_command,
+                            advice=UNLOCATED_CHANGE_ADVICE)
+
+
+def conditional_ask_numbers(asks):
+    """The 1-based numbers of the asks whose proposed change hangs on the answer. A converted ask's change is the
+    skipped finding line the user already accepted; any "if" in it is not a branch for the user to pick."""
+    return [number for number, item in enumerate(asks, 1)
+            if not item.get(USER_RULED_KEY) and is_conditional_change(item.get("change") or "")]
+
+
+def refuse_conditional_changes(asks, outcomes, rerun_command):
+    """Refuses any outcome but modified on an ask whose proposed change is conditional: no other word says
+    which branch the ruler chose. A modified outcome carries the ruler's own change and is never refused.
+    `rerun_command` is the call that answers the asks again."""
+    problems = []
+    conditional = conditional_ask_numbers(asks)
+    for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
+        if outcome == MODIFIED or number not in conditional:
+            continue
+        change = item.get("change") or ""
+        problems.append(f"ask {number} ({item.get('file_line') or 'no file:line'}) has a conditional proposed "
+                        f"change: {one_line(change, 160)}")
+    modified_answer_refusal(problems, "the change to make, with no condition", rerun_command)
+
+
+def modified_answer_refusal(problems, wanted_change, rerun_command, advice=""):
+    """Raises the refusal that asks for a `modified:` answer to each problem ask; does nothing with no problems.
+    `rerun_command` is the call that answers the asks again."""
+    if not problems:
+        return
+    raise UsageError("\n".join(problems) + "\nNothing was logged. Answer each of these asks with "
+                     f"'{MODIFIED}:<{wanted_change}>', quoted as one shell word{advice}, and run "
+                     f"`{rerun_command}` again.")
+
+
 def accept_reject_lines(change):
     """The lines that state a proposed change with what accepting and rejecting it do, as every ask listing shows it."""
     change_text = str(change).rstrip().rstrip(".")
@@ -138,15 +212,17 @@ def user_only_refusal(asks, ruler, user_command, holdable=False):
     call gives such an ask."""
     if ruler == plan_format.USER_RULING:
         return None
-    numbers = [str(number) for number in user_only_numbers(asks)]
+    numbers = user_only_numbers(asks)
     if not numbers:
         return None
+    reasons = "; ".join(f"ask {number}: {user_only_reason(asks[number - 1])}" for number in numbers)
+    listed = ", ".join(str(number) for number in numbers)
     held_text = ""
     if holdable:
         held_text = (f" A session call gives `{HELD}` for each of them and an outcome for each plain ask: "
                      f"{HELD}: {HELD_MEANS}.")
-    return (f"ask(s) {', '.join(numbers)} are user_only: only the user rules them, never the session (a fix coder "
-            f"edited an approval-only file).{held_text} Hand them to the user, and when the user has ruled, record "
+    return (f"ask(s) {listed} are user_only: only the user rules them, never the session ({reasons}).{held_text}"
+            f" Hand them to the user, and when the user has ruled, record "
             f"the user's outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to "
             f"another session is recorded with `{RELAY_USAGE}` added to that call")
 
@@ -182,6 +258,8 @@ def numbered_ask_lines(asks, detail=False):
         else:
             user_prefix = f"{USER_ONLY_MARK} " if is_user_only else ""
             lines += hanging_indent_lines(f"{number}. {user_prefix}", ask_text(item))
+        if item.get(CRITERIA_KEY):
+            lines.append(f"   Names criteria: {', '.join(item[CRITERIA_KEY])}.")
         if item.get("change"):
             lines += accept_reject_lines(item["change"])
     return lines

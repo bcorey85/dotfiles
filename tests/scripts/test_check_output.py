@@ -888,6 +888,41 @@ class CommandClassificationTest(unittest.TestCase):
                 self.assertFalse(check_scope.names_cargo_test_target(command))
 
 
+class PytestTestNameTest(unittest.TestCase):
+    def test_names_reduce_to_pytest_header_form(self):
+        rows = [
+            ("tests/t.py::TestA::test_x[1.5]", "TestA.test_x[1.5]"),
+            ("TestA.test_x[a.b]", "TestA.test_x[a.b]"),
+            ("ERROR at teardown of test_x", "test_x"),
+            ("ERROR at setup of tests/t.py::test_x", "test_x"),
+            ("ERROR collecting tests/b.py", "tests/b.py"),
+            ("tests/t.py::test_x[a b]", "test_x[a b]"),
+        ]
+        for name, expected in rows:
+            with self.subTest(name=name):
+                self.assertEqual(expected, check_output.pytest_header_name(name))
+
+    def test_a_failing_line_gives_its_test_name(self):
+        rows = [
+            ("FAILED t.py::test_x[a b] - r", "test_x[a b]"),
+            ("FAILED t.py::TestA::test_x", "TestA.test_x"),
+            ("ERROR tests/b.py - ImportError", "tests/b.py"),
+            ("FAILED", None),
+        ]
+        for line, expected in rows:
+            with self.subTest(line=line):
+                self.assertEqual(expected, check_output.failing_line_test_name(line))
+
+    def test_lines_are_owned_by_the_header_above_them(self):
+        log = ["before", "___ TestA.test_x ___", "E   boom", "=== short test summary info ===", "after",
+               "\x1b[31m___ test_y ___\x1b[0m", "E   bang"]
+
+        owners = list(check_output.lines_by_pytest_test(log))
+
+        self.assertEqual([None, "TestA.test_x", "TestA.test_x", None, None, "test_y", "test_y"],
+                         [owner for owner, _line in owners])
+
+
 class CheckOutputMissingToolTest(unittest.TestCase):
     def test_the_tool_a_shell_or_shim_could_not_find_is_named(self):
         cases = [

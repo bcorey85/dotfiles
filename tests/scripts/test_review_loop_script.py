@@ -31,10 +31,12 @@ import finding_record
 import handback
 import handback_store
 import plan_format
+import protected_lines
 import review_asks
 import review_loop_calls
 import review_loop_closure
 import review_loop_coder
+import review_loop_comment_removal
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
@@ -882,6 +884,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
 
     def assert_reverted_and_reported(self, packet, path):
+        """The reverted edit no finding names is reported once as dropped, and files no ask."""
         self.assertEqual(packet["ask"], [])
         self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
         self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, packet["dropped_asks"][0])
@@ -916,7 +919,46 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     CLAUDE_MD_FIX_REVIEW = FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`",
                                               "`CLAUDE.md:1` the rule is wrong for `limit`")
 
-    def test_a_finding_on_a_reverted_claude_md_stays_open_when_the_coder_also_changed_another_file(self):
+    def assert_one_user_only_ask_on_claude_md(self, packet):
+        """The reverted approval-file edit is one user-only ask carrying the finding's change, never an open fix."""
+        self.assertEqual([(entry["file_line"], entry.get("user_only")) for entry in packet["ask"]],
+                         [("CLAUDE.md:1", True)])
+        self.assertIn("the rule is wrong for `limit`", packet["ask"][0]["change"])
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(packet["fixed"], [])
+        claude_md_rows = [row for row in self.finding_rows() if "CLAUDE.md" in json.dumps(row)]
+        self.assertEqual([row["actioned"] for row in claude_md_rows[:1]], ["none"])
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
+
+    def test_a_coder_failure_that_edited_claude_md_leaves_one_user_only_ask_not_an_open_fix(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}],
+            "coder": [{"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assert_one_user_only_ask_on_claude_md(packet)
+
+    def test_a_claude_md_finding_left_open_by_a_plan_held_skip_leaves_no_open_fix_when_a_later_coder_failure_reverts_it(
+            self):
+        plan_held_skip = ("Skipped 1: needs the user's sign-off.\nPLAN-IMPACT:\n  assumed: AC2 as written\n"
+                          "  found: the rule is wrong for `limit`\n  changes: the wording\n"
+                          "  acceptance_criteria: AC2\n  cause: plan\nPLAN-IMPACT: yes")
+        completed = self.run_script({
+            "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": self.CLAUDE_MD_FIX_REVIEW}],
+            "coder": [{"result": plan_held_skip},
+                      {"result": "Prompt is too long", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual([(entry["file_line"], entry.get("user_only")) for entry in packet["ask"]],
+                         [("CLAUDE.md:1", True)])
+
+    def test_a_finding_on_a_reverted_claude_md_becomes_a_user_only_ask_when_the_coder_also_changed_another_file(self):
         completed = self.run_script({
             "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
@@ -925,12 +967,11 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["fixed"], [], "the finding's fix was the reverted edit")
-        self.assertEqual(packet["skipped_fp"], [])
-        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
-        self.assert_reverted_and_reported(packet, "CLAUDE.md")
+        self.assert_one_user_only_ask_on_claude_md(packet)
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, packet["dropped_asks"][0])
 
-    def test_a_finding_on_a_reverted_claude_md_is_open_not_skipped_when_it_was_the_only_edit(self):
+    def test_a_finding_on_a_reverted_claude_md_is_a_user_only_ask_not_skipped_when_it_was_the_only_edit(self):
         completed = self.run_script({
             "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"CLAUDE.md": "# Rules\n"}}],
@@ -939,8 +980,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["skipped_fp"], [])
-        self.assertEqual(len(packet["findings_remaining"]), 1, packet["findings_remaining"])
+        self.assert_one_user_only_ask_on_claude_md(packet)
 
     def test_a_coder_created_agents_md_file_is_removed_and_reported_as_a_dropped_ask(self):
         completed = self.run_script({
@@ -1540,7 +1580,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertTrue(
             packet["class_closure"].startswith("class members still open, the class repair changed nothing"))
 
-    def test_a_class_member_whose_repair_was_a_reverted_claude_md_edit_stays_open_never_fixed(self):
+    def test_a_class_member_whose_repair_was_a_reverted_claude_md_edit_is_a_user_only_ask_never_open(self):
         member = "`CLAUDE.md:1` the same limit is wrong here too"
         closure = json.dumps({"receipt": "one member still open", "open": [member]})
         completed = self.run_script({
@@ -1552,10 +1592,17 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["open_classes"], [member])
+        self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
+        self.assertEqual([(entry["file_line"], entry.get("user_only")) for entry in packet["ask"]],
+                         [("CLAUDE.md:1", True)])
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(len(packet["fixed"]), 1, "only the app.py finding is fixed")
         self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
+        self.assertEqual(
+            packet["class_closure"],
+            "the class repair fixed none of the class members the closure check found open"
+            "; filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "edit the loop reverted: " + member)
 
     def test_a_class_repair_that_changes_other_files_but_reverts_every_member_claims_no_fix(self):
         member = "`CLAUDE.md:1` the same limit is wrong here too"
@@ -1569,23 +1616,25 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["open_classes"], [member])
+        self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].startswith("the class repair fixed none of the class members"),
                         packet["class_closure"])
-        self.assertIn("still open, their fix was an approval-only edit the loop reverted: " + member,
-                      packet["class_closure"])
+        self.assertIn("filed as a user-only ask unless it repeats one the session rejected, their fix was an "
+                      "approval-only edit the loop reverted: " + member, packet["class_closure"])
         self.assertNotIn("fixed these class members", packet["class_closure"])
 
-    def test_a_gate_or_lint_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+    def test_a_gate_or_lint_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_to_the_user_ask(self):
         loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
         on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
         on_code = finding_record.parse_finding("`app.py:2` the limit is wrong")
 
-        loop.mark_repaired([on_claude_md, on_code], ["app.py"], ["CLAUDE.md"])
-        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"])
+        first = loop.mark_repaired([on_claude_md, on_code], ["app.py"], ["CLAUDE.md"])
+        second = loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"])
 
-        self.assertEqual(loop.open_fixes, [on_claude_md], "open once, never twice")
+        self.assertEqual(first, [on_claude_md], "handed back for the user-only ask")
+        self.assertEqual(second, [on_claude_md])
+        self.assertEqual(loop.open_fixes, [], "an ask, never an open fix")
         self.assertEqual(loop.fixed, [on_code])
         self.assertEqual(loop.skipped_fp, [])
 
@@ -1602,24 +1651,60 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual(packet["open_classes"], [reverted_member])
+        self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].endswith(
-            "still open, their fix was an approval-only edit the loop reverted: " + reverted_member),
+            "filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "edit the loop reverted: " + reverted_member),
             packet["class_closure"])
         fixed_lines = [item["file_line"] for item in packet["fixed"]]
         self.assertNotIn("CLAUDE.md:1", fixed_lines)
         self.assertEqual(fixed_lines, ["app.py:2", "app.py:4"])
 
-    def test_a_prose_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_open(self):
+    def test_a_prose_repair_that_only_reverted_a_claude_md_edit_leaves_its_finding_to_the_user_ask(self):
         loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
         on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
 
-        loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"], records_skip=False)
+        reverted_findings = loop.mark_repaired([on_claude_md], [], ["CLAUDE.md"], records_skip=False)
 
-        self.assertEqual(loop.open_fixes, [on_claude_md])
+        self.assertEqual(reverted_findings, [on_claude_md])
+        self.assertEqual(loop.open_fixes, [])
         self.assertEqual(loop.fixed, [])
         self.assertEqual(loop.skipped_fp, [])
+
+    def test_record_skips_leaves_a_reverted_finding_the_coder_skipped_out_of_the_skipped_list(self):
+        loop_script = self.load_script_module()
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+        on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+        on_app = finding_record.parse_finding("`app.py:2` the limit is wrong")
+        skips = {1: "Skipped 1: not needed", 2: "Skipped 2: not needed"}
+
+        skipped, open_fixes = loop.record_skips([on_claude_md, on_app], skips, ["app.py"], False, [on_claude_md])
+
+        self.assertEqual(skipped, [on_app], "a reverted finding is excluded from the list the second round plans on")
+        self.assertEqual(open_fixes, [])
+        self.assertEqual([entry["item"] for entry in loop.skipped_fp], [on_app])
+
+    def test_record_skips_keeps_a_reverted_finding_out_of_every_list_with_no_change_and_with_a_plan_held(self):
+        cases = [
+            ("a pass that changed nothing", [], False, [], [{"item": "app"}]),
+            ("a plan impact held", ["app.py"], True, ["app"], []),
+        ]
+        for label, changed, plan_held, expected_open, expected_fp in cases:
+            with self.subTest(label):
+                loop_script = self.load_script_module()
+                loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})
+                on_claude_md = finding_record.parse_finding("`CLAUDE.md:1` the rule is wrong")
+                on_app = finding_record.parse_finding("`app.py:2` the limit is wrong")
+                skips = {1: "Skipped 1: not needed", 2: "Skipped 2: not needed"}
+
+                skipped, open_fixes = loop.record_skips([on_claude_md, on_app], skips, changed, plan_held,
+                                                        [on_claude_md])
+
+                self.assertEqual(skipped, [on_app], f"{label}: the reverted finding is not in the skipped list")
+                self.assertEqual(open_fixes, [on_app] if expected_open else [], f"{label}: open fixes")
+                skipped_items = [entry["item"] for entry in loop.skipped_fp]
+                self.assertEqual(skipped_items, [on_app] if expected_fp else [], f"{label}: skipped_fp")
 
     def test_the_gate_and_lint_repairs_pass_the_reverted_paths_to_mark_repaired(self):
         reverted_result = review_loop_coder.CoderResult("", [], ["c.py"], ["CLAUDE.md"])
@@ -1652,7 +1737,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             gate_loop.full_check_pass("true")
         self.assertEqual(gate_marked.call_args.args[2:], (["CLAUDE.md"],), "the gate repair")
 
-    def test_a_finding_on_a_reverted_claude_md_over_two_rounds_stays_one_open_finding(self):
+    def test_a_finding_on_a_reverted_claude_md_over_two_rounds_files_one_user_only_ask(self):
         completed = self.run_script({
             "code-reviewer": [{"result": self.CLAUDE_MD_FIX_REVIEW}, {"result": self.CLAUDE_MD_FIX_REVIEW},
                               {"result": CLEAN_REVIEW}],
@@ -1663,12 +1748,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         _row, packet = self.stored_packet()
-        self.assertEqual([entry["file_line"] for entry in packet["findings_remaining"]], ["CLAUDE.md:1"])
+        self.assert_one_user_only_ask_on_claude_md(packet)
         reviewer_calls = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
-        second_round_prompt = reviewer_calls[1]["prompt"]
-        self.assertIn("status: skipped", second_round_prompt)
-        self.assertNotIn("status: fixed", second_round_prompt)
-        self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, second_round_prompt)
+        self.assertEqual(len(reviewer_calls), 1, "a reverted file does not send a second-round reviewer back to it")
 
     def test_a_nit_on_a_held_file_never_reaches_the_fix_coder(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
@@ -4916,7 +4998,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         for number, (name, finding) in enumerate(rewordings.items()):
             with self.subTest(name):
                 self.reset_fake_run()
-                fixed_source = APP_FIXED + f"# edit {number}\n"
+                # Code, not a comment: a fix pass that adds only a comment line is judged by the comment rules.
+                fixed_source = APP_FIXED + f"edit_{number} = 1\n"
                 second_review = f"## Fix\n- {finding}\n\n## Ask\nNone\n\n## Nit\nNone\n"
                 completed = self.run_script({
                     "code-reviewer": [{"result": FIX_REVIEW}, {"result": second_review}, {"result": CLEAN_REVIEW}],
@@ -5384,7 +5467,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             "`src/app.py` and `limit`": {"limit"},
             "`app.py:3`": set(),
             "`config.json`": set(),
+            "`README.md:~40` and `limit`": {"limit"},
             "`load(path.json)`": {"load(path.json)"},
+            "`vc.tree_fingerprint`": {"vc.tree_fingerprint"},
+            "`script_utils.first_location`": {"script_utils.first_location"},
         }
 
         for text, expected in cases.items():
@@ -6323,6 +6409,252 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3", f"{DECISIONS_PATH}:5"])
         self.assertIn("a coder pass changed or removed this recorded ruling", packet["ask"][0]["question"])
+
+
+APP_COMMENT = "# the limits are tuned by hand\n"
+
+
+class CommentRemovalLoopTest(ReviewLoopHarness, unittest.TestCase):
+    """A fix pass never removes a code comment that no finding names."""
+
+    def setUp(self):
+        super().setUp()
+        (self.repo / "app.py").write_text(APP_BEFORE + APP_COMMENT)
+
+    def run_loop(self, review, edited=APP_FIXED, exit_code=0):
+        coder = {"result": "Fixed 1.", "edits": {"app.py": edited}, "exit": exit_code}
+        scenario = {
+            "code-reviewer": [{"result": review}, *[{"result": CLEAN_REVIEW}] * 3],
+            "coder": [coder],
+            "closure": [{"result": CLOSED}],
+        }
+        completed = self.run_script(scenario)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def test_a_pass_that_deletes_an_unnamed_comment_gets_the_line_back_and_an_ask(self):
+        packet = self.run_loop(FIX_REVIEW)
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED + APP_COMMENT)
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:6"])
+        self.assertIn("removed this code comment", packet["ask"][0]["question"])
+
+    def test_a_pass_that_deletes_a_comment_a_finding_names_keeps_it_deleted_with_no_ask(self):
+        review = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
+                  "- `app.py:6` [docs] the comment is stale\n\n"
+                  "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+        packet = self.run_loop(review)
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_named_comment_is_exempt_but_a_second_unnamed_one_is_put_back_with_one_ask(self):
+        (self.repo / "app.py").write_text(APP_BEFORE + APP_COMMENT + "limit = 6\n# second note\n")
+        review = ("## Fix\n- `app.py:6` [docs] the comment is stale\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                  "Overall Assessment: NEEDS CHANGES\n")
+
+        packet = self.run_loop(review, edited=APP_BEFORE + "limit = 6\n")
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_BEFORE + "limit = 6\n# second note\n")
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:8"])
+
+    def test_a_pass_that_adds_lines_above_a_comment_keeps_it_and_files_no_ask(self):
+        packet = self.run_loop(FIX_REVIEW, edited=APP_FIXED + "limit = 6\n" + APP_COMMENT)
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED + "limit = 6\n" + APP_COMMENT)
+        self.assertEqual(packet["ask"], [])
+
+    def test_a_coder_that_fails_after_deleting_an_unnamed_comment_gets_the_line_back_and_one_ask(self):
+        packet = self.run_loop(FIX_REVIEW, exit_code=1)
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED + APP_COMMENT)
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:6"])
+
+    def test_a_finding_with_no_line_does_not_exempt_the_comments_of_its_file(self):
+        review = ("## Fix\n- `app.py` the limits are wrong\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+                  "Overall Assessment: NEEDS CHANGES\n")
+
+        packet = self.run_loop(review)
+
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED + APP_COMMENT)
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:6"])
+
+    def test_the_filed_ask_carries_the_deletion_as_its_change(self):
+        packet = self.run_loop(FIX_REVIEW)
+
+        ask = packet["ask"][0]
+        self.assertIn(review_loop_comment_removal.delete_change_text("app.py", APP_COMMENT.strip()), str(ask))
+        self.assertNotIn("the loop put it back", ask["change"])
+
+
+class FakeCommentRun(review_loop_comment_removal.CommentRemovalRuns):
+    """A LoopRun stand-in with what `undo_comment_pass` reads: a repo and the asks it files."""
+
+    def __init__(self, repo):
+        self.repo = str(repo)
+        self.asks = []
+
+    def add_ask(self, gate, finding):
+        self.asks.append(finding)
+
+
+class CommentRemovalUnitTest(unittest.TestCase):
+    """`undo_comment_pass` and its helpers on plain files, with no loop around them."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.repo = pathlib.Path(self.dir.name)
+        self.run_ = FakeCommentRun(self.repo)
+
+    def pass_over(self, name, before, after, finding_lines=(), findings=None):
+        """Write `before`, snapshot, write `after` (None deletes the file), run the put-back; returns the put-back."""
+        target = self.repo / name
+        target.write_bytes(before.encode())
+        snapshot = review_loop_comment_removal.snapshot_comments(self.repo, [name])
+        if after is None:
+            target.unlink()
+        else:
+            target.write_bytes(after.encode())
+        if findings is None:
+            findings = [finding_record.parse_finding(f"{name}:{line} [bug] problem") for line in finding_lines]
+        return self.run_.undo_comment_pass(snapshot, findings)
+
+    def test_removed_entries_count_repeats(self):
+        before = [(1, "# same"), (2, "# same"), (3, "# other")]
+        after = [(1, "# same"), (2, "# other")]
+
+        self.assertEqual(protected_lines.entries_missing(before, after), [(2, "# same")])
+
+    def test_two_identical_comments_with_one_removed_put_back_one_and_file_one_ask(self):
+        put_back = self.pass_over("a.py", "x = 1\n# same\ny = 2\n# same\n", "x = 1\n# same\ny = 2\n")
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual(len(self.run_.asks), 1)
+        self.assertEqual((self.repo / "a.py").read_text().count("# same"), 2)
+
+    def test_a_file_with_no_comment_style_or_deleted_by_the_pass_is_left_alone(self):
+        cases = {
+            "a json file": ("a.json", '{"a": 1}\n', '{"a": 2}\n'),
+            "a deleted file": ("a.py", "x = 1\n# note\n", None),
+        }
+        for name, (path, before, after) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.pass_over(path, before, after), [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_reworded_comment_is_put_back_in_place(self):
+        before = "x = 1\n# the limit is tuned by hand\ny = 2\n"
+
+        self.pass_over("a.py", before, "x = 1\n# the limit is set by config\ny = 2\n")
+
+        self.assertEqual((self.repo / "a.py").read_text(), before)
+
+    def test_trailing_comments_docstrings_and_strings_are_not_protected(self):
+        cases = {
+            "trailing comment": ("x = 1  # old\n", "x = 2  # new\n"),
+            "docstring": ('def f():\n    """Wrong claim.\n    More.\n    """\n    return 1\n',
+                          'def f():\n    """Returns one."""\n    return 1\n'),
+            "multi-line string": ('PROMPT = """a\nThen stop.\n"""\n', 'PROMPT = """a\nThen stop now.\n"""\n'),
+            "markdown heading in a string": ('PLAN = """\n# Plan\n\n## Phase 1\n"""\n',
+                                             'PLAN = """\n# Plan\n\n## Phase 2\n"""\n'),
+        }
+        # No finding names a line: a put-back or an ask appears if any of these lines counts as a comment.
+        for name, (before, after) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.pass_over("a.py", before, after), [])
+                self.assertEqual((self.repo / "a.py").read_text(), after)
+
+    def test_deleting_a_named_dead_function_with_an_inner_comment_is_kept(self):
+        before = "x = 1\n\ndef unused():\n    # Doubles x.\n    return 2\n"
+
+        put_back = self.pass_over("a.py", before, "x = 1\n", finding_lines=[3])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), "x = 1\n")
+
+    def test_rewrapping_a_two_line_comment_named_at_its_first_line_is_kept(self):
+        before = "x = 1\n# one long\n# comment here\ny = 2\n"
+        after = "x = 1\n# one long comment here\ny = 2\n"
+
+        put_back = self.pass_over("a.py", before, after, finding_lines=[2])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), after)
+
+    def test_a_stale_comment_updated_with_the_code_line_a_finding_names_is_kept(self):
+        before = "# returns one\nreturn 1\n"
+        after = "# returns two\nreturn 2\n"
+
+        self.assertEqual(self.pass_over("a.py", before, after, finding_lines=[2]), [])
+
+    def test_an_unnamed_deleted_comment_comes_back_alone_and_other_edits_stay(self):
+        before = "x = 1\n# note\ny = 2\nz = 3\n"
+
+        self.pass_over("a.py", before, "x = 1\ny = 2\nz = 4\n")
+
+        self.assertEqual((self.repo / "a.py").read_text(), "x = 1\n# note\ny = 2\nz = 4\n")
+
+    def test_crlf_line_endings_survive_a_put_back(self):
+        before = "x = 1\r\n# note\r\ny = 2\r\nz = 3\r\n"
+
+        self.pass_over("a.py", before, "x = 1\r\ny = 2\r\nz = 4\r\n")
+
+        self.assertEqual((self.repo / "a.py").read_bytes(), b"x = 1\r\n# note\r\ny = 2\r\nz = 4\r\n")
+
+    def test_non_utf8_bytes_survive_a_put_back(self):
+        before = b"s = '\xe9'\n# note\ny = 2\n"
+        target = self.repo / "a.py"
+        target.write_bytes(before)
+        snapshot = review_loop_comment_removal.snapshot_comments(self.repo, ["a.py"])
+        target.write_bytes(b"s = '\xe9'\ny = 3\n")
+
+        self.run_.undo_comment_pass(snapshot, [])
+
+        self.assertEqual(target.read_bytes(), b"s = '\xe9'\n# note\ny = 3\n")
+
+    def test_a_skipped_held_file_keeps_its_removed_comment_and_files_no_ask(self):
+        target = self.repo / "held.py"
+        target.write_text("# note\nx = 1\n")
+        snapshot = review_loop_comment_removal.snapshot_comments(self.repo, ["held.py"])
+        target.write_text("x = 1\n")
+
+        put_back = self.run_.undo_comment_pass(snapshot, [], skip={"held.py"})
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(target.read_text(), "x = 1\n")
+        self.assertEqual(self.run_.asks, [])
+
+    def test_an_uncommented_line_of_code_is_kept_beside_the_restored_comment(self):
+        before = "# z = compute(a, b)\n"
+
+        self.pass_over("a.py", before, "z = compute(a, b)\n", finding_lines=[])
+
+        self.assertEqual((self.repo / "a.py").read_text(), "# z = compute(a, b)\nz = compute(a, b)\n")
+
+    def test_an_accepted_ask_for_a_comment_with_repeated_spaces_or_a_change_mark_is_honored(self):
+        for comment in ("#   aligned    note", "# On change: re-read"):
+            with self.subTest(comment):
+                change = review_loop_comment_removal.delete_change_text("a.py", comment)
+                accepted = finding_record.parse_finding(
+                    f"a.py:9 [comment] Proposed change: {' '.join(change.split())}")
+
+                put_back = self.pass_over("a.py", f"x = 1\n{comment}\ny = 2\n", "x = 1\ny = 2\n",
+                                          findings=[accepted])
+
+                self.assertEqual(put_back, [])
+
+    def test_an_accepted_ask_deletes_the_comment_even_when_its_line_moved(self):
+        before = "x = 1\n# note\ny = 2\n"
+        change = review_loop_comment_removal.delete_change_text("a.py", "# note")
+        accepted = finding_record.parse_finding(f"a.py:9 [comment] Proposed change: {change}")
+
+        put_back = self.pass_over("a.py", before, "x = 1\ny = 2\n", findings=[accepted])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), "x = 1\ny = 2\n")
 
 
 if __name__ == "__main__":

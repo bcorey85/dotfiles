@@ -16,6 +16,7 @@ from review_fix_names import (
     FILED_AT_KEY,
     PENDING_LAUNCH_KEY,
     PLAN_IMPACT_FILED_AT_KEY,
+    RESTORED_INDEXES_KEY,
     REVIEW_FIX_FOLDER,
     STATE_FILE_NAME,
 )
@@ -52,6 +53,7 @@ SAME_RUN_STATE_KEYS = (
     "ask_outcomes",
     "ask_notes",
     CORRECT_OPEN_KEY,
+    RESTORED_INDEXES_KEY,
     "last_asks_launch_line",
     "last_ask_outcomes",
     "last_ask_notes",

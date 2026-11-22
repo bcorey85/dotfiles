@@ -119,7 +119,10 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, del
               "rc": return_code, "tokens": tokens}
     record_call(out, sequence, record)
 
-    if return_code != 0 or not replied:
+    reported_error = replied and bool(payload.get("is_error"))
+    if return_code != 0 or not replied or reported_error:
         said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
-        raise RuntimeError(f"the {role} call failed (exit {return_code}){said}; reply {raw}, stderr {errors}")
+        # A reply with is_error set can come with exit 0, so the exit code alone does not say why the call failed.
+        raise RuntimeError(f"the {role} call failed (exit {return_code}, reply flagged as error: {reported_error})"
+                           f"{said}; reply {raw}, stderr {errors}")
     return text

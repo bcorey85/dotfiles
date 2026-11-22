@@ -3,6 +3,7 @@ class holds repo, gate_commands and files_touched, and has repair."""
 import named_test_targets
 from finding_record import parse_finding
 from review_loop_coder import CoderResult
+from review_loop_pass_names import restore_pass
 
 
 class NamedTestRemovedError(RuntimeError):
@@ -33,7 +34,7 @@ class NamedTestRuns:
 
         restore_findings = [parse_finding(restore_finding(target)) for target in gone]
         self.files_touched.update(result.changed)
-        restore = self.repair(f"{call_name}-restore", restore_findings, restore_named=False)
+        restore = self.repair(restore_pass(call_name), restore_findings, restore_named=False)
         changed = sorted({*result.changed, *restore.changed})
         still_gone = named_test_targets.missing_targets(gone, self.repo)
         if still_gone:

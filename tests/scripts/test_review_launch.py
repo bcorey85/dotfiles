@@ -100,15 +100,19 @@ class ReviewLaunchTest(unittest.TestCase):
                 except ProcessLookupError:
                     continue
 
-    def launch(self, *flags, repo=None, env_overrides=None):
+    def run_launch(self, *flags, repo=None, env_overrides=None, detach=True):
         repo = repo or self.repo
+        detach_flags = ["--detach"] if detach else []
         (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
         environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
                        "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
                        "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1",
                        **(env_overrides or {})}
-        done = subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", "--detach", *flags], cwd=repo,
+        return subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", *detach_flags, *flags], cwd=repo,
                               text=True, capture_output=True, env=environment, check=False)
+
+    def launch(self, *flags, repo=None, env_overrides=None):
+        done = self.run_launch(*flags, repo=repo, env_overrides=env_overrides)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         return done.stdout + done.stderr
 
@@ -302,6 +306,96 @@ class ReviewLaunchTest(unittest.TestCase):
         second_pid = reviewer_dispatch.loop_pid(second_dir)
         self.assertTrue(process_is_running(second_pid), "the new loop was stopped")
 
+    def test_a_launch_saves_its_skill_in_the_launch_record(self):
+        self.launch()
+        record = json.loads((self.loop_dirs(self.repo)[-1] / reviewer_dispatch.LAUNCH_FILE).read_text())
+        self.assertEqual(record["packet_args"][:2], ["--skill", "review"])
+
+    def test_a_launch_saves_its_branch_launch_time_and_detach_flag(self):
+        before = time.time()
+        self.launch()
+        record = json.loads((self.loop_dirs(self.repo)[-1] / reviewer_dispatch.LAUNCH_FILE).read_text())
+        branch = subprocess.run(["git", "-C", str(self.repo), "branch", "--show-current"], capture_output=True,
+                                text=True, check=True).stdout.strip()
+        self.assertEqual(record["branch"], branch)
+        self.assertGreaterEqual(record["launched_at"], before)
+        self.assertIs(record["detach"], True)
+
+    def test_a_launch_from_a_detached_head_saves_an_empty_branch(self):
+        subprocess.run(["git", "-C", str(self.repo), "checkout", "--detach"], capture_output=True, check=True)
+        self.launch()
+        record = json.loads((self.loop_dirs(self.repo)[-1] / reviewer_dispatch.LAUNCH_FILE).read_text())
+        self.assertEqual(record["branch"], "")
+
+    def test_a_launch_without_detach_saves_detach_false(self):
+        done = self.run_launch(detach=False)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        record = json.loads((self.loop_dirs(self.repo)[-1] / reviewer_dispatch.LAUNCH_FILE).read_text())
+        self.assertIs(record["detach"], False)
+
+    def test_a_refusal_comes_before_any_loop_is_stopped(self):
+        # The fix loop sorts first, so a single pass that checks and then stops each loop would stop it before it
+        # reached the review loop and refused.
+        fix_loop = self.plant_loop(self.repo, "review-script-a-fix", record_repo=self.repo, skill="fix")
+        review_loop = self.plant_loop(self.repo, "review-script-b-review", record_repo=self.repo, skill="review")
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+
+        done = self.run_launch("--fix", str(fix_file))
+
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertTrue(process_is_running(reviewer_dispatch.loop_pid(review_loop)), "the review loop was stopped")
+        self.assertTrue(process_is_running(reviewer_dispatch.loop_pid(fix_loop)), "the fix loop was stopped")
+
+    def test_a_loop_of_another_repo_or_another_command_does_not_refuse_a_launch(self):
+        other_repo = self.make_repo("otherrepo")
+        foreign = self.plant_loop(self.repo, "review-script-foreign-fix", record_repo=other_repo, skill="fix")
+        stranger = self.plant_loop(self.repo, "review-script-stranger-none", record_repo=self.repo, skill=None,
+                                   command_names_agent=False)
+
+        done = self.run_launch()
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        for planted in (foreign, stranger):
+            self.assertTrue(process_is_running(reviewer_dispatch.loop_pid(planted)), f"{planted.name} was stopped")
+
+    def test_a_fix_launch_refuses_a_live_review_loop_and_leaves_it_running(self):
+        review_loop = self.plant_loop(self.repo, "review-script-review", record_repo=self.repo, skill="review")
+        review_pid = reviewer_dispatch.loop_pid(review_loop)
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+
+        done = self.run_launch("--fix", str(fix_file))
+
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        output = done.stdout + done.stderr
+        for named in (review_loop.name, "started as a review run, not a fix run", str(review_pid)):
+            self.assertIn(named, output)
+        self.assertIn(f"End the run with a stop that names this loop; launch again after pid {review_pid} exits.",
+                      output)
+        self.assertNotIn(reviewer_dispatch.WAIT_COMMAND, output)
+        self.assertTrue(process_is_running(review_pid), "the review loop was stopped")
+        self.assertEqual(self.loop_dirs(self.repo), [review_loop], "a loop folder was made")
+
+    def test_a_loop_record_with_no_skill_reads_as_another_skill(self):
+        unlabeled = self.plant_loop(self.repo, "review-script-unlabeled", record_repo=self.repo, skill=None)
+
+        done = self.run_launch()
+
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertIn(unlabeled.name, done.stdout + done.stderr)
+        self.assertTrue(process_is_running(reviewer_dispatch.loop_pid(unlabeled)), "the loop was stopped")
+
+    def test_a_fix_relaunch_stops_the_live_fix_loop(self):
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+        self.launch("--fix", str(fix_file))
+        first_dir = self.loop_dirs(self.repo)[-1]
+        first_pid = reviewer_dispatch.loop_pid(first_dir)
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+
+        output = self.launch("--fix", str(fix_file))
+
+        self.assertIn(f"Stopped the earlier review loop {first_dir.name}", output)
+        self.assertTrue(wait_until_gone(first_pid), "the first fix loop is still running")
+
     def test_a_launch_leaves_a_loop_of_another_repo_and_a_pid_of_another_command_running(self):
         other_repo = self.make_repo("otherrepo")
         self.launch(repo=other_repo)
@@ -440,7 +534,11 @@ class ReviewLaunchTest(unittest.TestCase):
                 review_launch.fix_run_findings(options, self.repo)
             self.assertIn(f"{flag} 3 names no finding", str(raised.exception))
 
-    def plant_loop(self, repo, agent_id, record_repo, command_names_agent=True):
+    def test_relaunch_flags_with_no_repo_value_or_no_repo_flag_name_no_repo(self):
+        self.assertIsNone(review_launch.relaunch_repo(["--repo"]))
+        self.assertIsNone(review_launch.relaunch_repo([]))
+
+    def plant_loop(self, repo, agent_id, record_repo, command_names_agent=True, skill="review"):
         loop_dir = repo / ".git" / "review-script" / reviewer_dispatch.LOOP_FOLDER / agent_id
         loop_dir.mkdir(parents=True)
         marker = agent_id if command_names_agent else "unrelated"
@@ -448,7 +546,9 @@ class ReviewLaunchTest(unittest.TestCase):
         self.addCleanup(process.wait)
         self.addCleanup(process.kill)
         (loop_dir / reviewer_dispatch.PID_FILE).write_text(f"{process.pid}\n")
-        record = {"packet_args": [], "relaunch_args": ["--repo", str(record_repo)]}
+        record = {"relaunch_args": ["--repo", str(record_repo)]}
+        if skill:
+            record["packet_args"] = ["--skill", skill]
         (loop_dir / reviewer_dispatch.LAUNCH_FILE).write_text(json.dumps(record) + "\n")
         return loop_dir
 
@@ -511,7 +611,7 @@ class StopLoopTest(unittest.TestCase):
                 mock.patch.object(review_launch, "STOP_WAIT_SECONDS", wait_seconds), \
                 mock.patch.object(review_launch, "STOP_POLL_SECONDS", 0.01), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
-            review_launch.stop_loop_if_live(self.loop_dir, 4242, self.repo)
+            review_launch.stop_loop(self.loop_dir, 4242, self.repo)
         return stderr.getvalue()
 
     def test_a_stopped_loop_is_waited_for_until_it_exits(self):
@@ -530,8 +630,18 @@ class StopLoopTest(unittest.TestCase):
         self.write_record(["--lane", "none"])
         with self.assertRaises(review_launch.LaunchError):
             review_launch.loop_repo(self.launch_file)
-        errors = self.stop([])
-        self.assertIn("names no --repo", errors)
+        with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            loop = review_launch.live_loop_of(self.loop_dir, 4242, self.repo)
+        self.assertIsNone(loop, "a loop whose record cannot be read must not be stopped")
+        self.assertIn("names no --repo", stderr.getvalue())
+
+    def test_a_record_that_is_not_a_json_object_is_a_launch_error_from_loop_skill(self):
+        self.launch_file.write_text("[]\n")
+        with self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.loop_skill(self.launch_file)
+        self.assertIn(str(self.launch_file), str(raised.exception))
+        self.assertNotIn("--launch", str(raised.exception))
 
 
 if __name__ == "__main__":

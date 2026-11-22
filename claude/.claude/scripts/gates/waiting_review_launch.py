@@ -4,7 +4,8 @@
 `review_fix.py launch` hands each round's reviewers to the main session with `ACTION: dispatch-reviewer`. When the
 conversation is compacted after that line, the session can lose it, and the loop waits on reports nobody writes. This
 hook prints the open dispatch lines of every launch run of the session's repo whose loop still runs, as
-additionalContext. It prints nothing for an `--agent` seat, outside a repo, or when no loop waits.
+additionalContext. A loop of another branch, or detached for a code fork, gets one line with its age and branch and
+no ACTION. It prints nothing for an `--agent` seat, outside a repo, or when no loop waits.
 
 Fail-open: an unreadable event or a bad manifest prints a warning on stderr and no context, since a missed reminder
 costs less than a blocked session start. Always exits 0.
@@ -19,8 +20,8 @@ import hook_input
 import reviewer_dispatch
 import script_utils
 
-HEADER = ("A review loop launched earlier in this session still waits on its reviewers. Do these steps now, as "
-          "`/review` step 1 says:")
+HEADER = ("A review loop still waits on its reviewers (each loop names its age and branch). Do these "
+          "steps now, as `/review` step 1 says:")
 
 
 def session_start_event():
@@ -44,14 +45,15 @@ def main():
     if repo is None:
         return 0
     try:
-        lines = reviewer_dispatch.waiting_launch_lines(repo)
-    except reviewer_dispatch.ManifestError as error:
+        notice = reviewer_dispatch.waiting_launch_lines(repo)
+    except (reviewer_dispatch.ManifestError, OSError) as error:
         hook_input.emit_stderr(f"waiting_review_launch: {error}; no reminder\n")
         return 0
-    if not lines:
+    if not notice.dispatch and not notice.left_out:
         return 0
 
-    context = "\n".join([HEADER, *lines])
+    lines = [HEADER, *notice.dispatch, *notice.left_out] if notice.dispatch else [*notice.left_out]
+    context = "\n".join(lines)
     document = {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}
     print(json.dumps(document, ensure_ascii=False))
     return 0

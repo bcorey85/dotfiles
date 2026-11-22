@@ -4,10 +4,12 @@ It starts review_loop_script.py --reviewers main as a detached process and retur
 (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop exits. With --detach (the /review and /fix
 fork) it returns once the loop has started and names the `code_wait.py review --loop` command that waits on it.
 It records the session's dispatch row, writes the prompt file, the loop's pid, <loop dir>/handoff.txt and
-<loop dir>/launch.json (the packet arguments the wait prints, and the flags a later fix run of the same review
-carries), and keeps its state under
-<git dir>/review-script. It SIGTERMs the process group of every live earlier loop of the same repo, and deletes the
---fix, --also-fix and --handoff files that sit in the code-phase run folder.
+<loop dir>/launch.json (the packet arguments the wait prints, which name the run's mode (`fix` or `review`), and the
+flags a later fix run of the same review carries, and the branch, launch time and `--detach` flag that the
+session-start notice reads), and keeps its state under
+<git dir>/review-script. It SIGTERMs the process group of every live earlier loop of the same repo and run mode; a
+live loop of the repo started in another mode (or whose record names no mode) stops the launch before any folder is
+made. It deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder.
 
 A findings file (`--fix`, `--also-fix`) holds one finding per item: a line that starts with `- ` at column 0, then
 any indented continuation lines. Blank lines may sit between items. Any other line stops the launch.
@@ -274,7 +276,7 @@ def handoff_text(options, paths, findings):
 
 
 def packet_args(options, launch_file):
-    args = ["--skill", options.skill]
+    args = [reviewer_dispatch.SKILL_FLAG, options.skill]
     if options.base:
         args += ["--scope", "branch-exit"]
     return [*args, "--lane", options.lane, "--launch", str(launch_file)]
@@ -321,10 +323,9 @@ def relaunch_handoff(args):
 
 
 def relaunch_repo(args):
-    """The repo the relaunch flags name after `--repo`, or None when they carry no `--repo`."""
-    if "--repo" not in args:
-        return None
-    return args[args.index("--repo") + 1]
+    """The repo the relaunch flags name after `--repo`, or None when they carry no `--repo` or it has no value."""
+    _rest, repo = script_utils.pop_option(args, "--repo")
+    return repo or None
 
 
 def relaunch_args_with_handoff(args, handoff_file):
@@ -336,12 +337,9 @@ def relaunch_args_with_handoff(args, handoff_file):
 def read_relaunch_args(launch_file):
     """The relaunch flags a launch record holds."""
     try:
-        args = reviewer_dispatch.read_launch_record(launch_file, RELAUNCH_KEY)
+        return reviewer_dispatch.read_string_list(launch_file, RELAUNCH_KEY)
     except reviewer_dispatch.ManifestError as error:
         raise LaunchError(f"--launch {error}") from error
-    if not isinstance(args, list) or not all(isinstance(arg, str) for arg in args):
-        raise LaunchError(f"--launch {launch_file}: {RELAUNCH_KEY} is not a list of strings")
-    return args
 
 
 def ruled_texts(flag, numbers, findings):
@@ -358,12 +356,9 @@ def read_user_ruled(launch_file):
     """What a launch record says the user accepted: the list of finding texts, empty for none (also a record with no
     key)."""
     try:
-        user_ruled = reviewer_dispatch.read_launch_record(launch_file, USER_RULED_RECORD_KEY, default=[])
+        return reviewer_dispatch.read_string_list(launch_file, USER_RULED_RECORD_KEY, default=[])
     except reviewer_dispatch.ManifestError as error:
         raise LaunchError(f"--launch {error}") from error
-    if isinstance(user_ruled, list) and all(isinstance(entry, str) for entry in user_ruled):
-        return user_ruled
-    raise LaunchError(f"--launch {launch_file}: {USER_RULED_RECORD_KEY} is not a list of finding texts")
 
 
 def remove_stale_run_folder_findings(repo):
@@ -419,30 +414,81 @@ def wait_for_exit(pid):
         time.sleep(STOP_POLL_SECONDS)
 
 
-def stop_loop_if_live(loop_dir, pid, repo):
-    """SIGTERMs the process group of the running loop (loop_dir, pid) when it is a loop of repo. A pid whose command
-    line does not name the loop's agent id (the pid was reused) is left alone. A failed record, `ps` or kill is
+def is_live_loop_of(loop_dir, pid, repo):
+    """True when the launch record in loop_dir names repo and the command line of pid names the loop's agent id (a
+    reused pid does not). Raises LaunchError or OSError when the record or `ps` cannot be read."""
+    if loop_repo(loop_dir / reviewer_dispatch.LAUNCH_FILE) != repo:
+        return False
+    return loop_dir.name in process_group.command_line(pid)
+
+
+def stop_loop(loop_dir, pid, repo):
+    """SIGTERMs the process group of the live loop (loop_dir, pid) of repo and waits for it to exit. A failed kill is
     printed on stderr and the launch goes on."""
-    launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
-    if not launch_file.is_file():
-        return
     try:
-        if loop_repo(launch_file) != repo:
-            return
-        if loop_dir.name not in process_group.command_line(pid):
-            return
         if process_group.terminate_group(pid):
             print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
             wait_for_exit(pid)
-    except (LaunchError, OSError) as error:
+    except OSError as error:
         print(f"review_launch: could not stop the loop in {loop_dir}: {error}", file=sys.stderr)
 
 
-def stop_earlier_loops(state_dir, repo):
-    """Stops every live loop of repo that an earlier launch started, so two loops never edit one tree."""
+def loop_skill(launch_file):
+    """The run mode (`fix` or `review`) a launch record names after `--skill` in its packet arguments, or None for a
+    record with none."""
+    try:
+        saved_args = reviewer_dispatch.read_string_list(
+            launch_file, reviewer_dispatch.PACKET_ARGS_KEY, default=[])
+    except reviewer_dispatch.ManifestError as error:
+        raise LaunchError(str(error)) from error
+    _rest, skill = script_utils.pop_option(saved_args, reviewer_dispatch.SKILL_FLAG)
+    return skill or None
+
+
+class LiveLoop(NamedTuple):
+    loop_dir: pathlib.Path
+    pid: int
+    started_by: str | None
+
+
+def live_loop_of(loop_dir, pid, repo):
+    """The LiveLoop for (loop_dir, pid) when it is a live loop of repo, else None. A loop whose record or `ps` cannot
+    be read is named on stderr and returns None, so it is never stopped."""
+    launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
+    if not launch_file.is_file():
+        return None
+    try:
+        if not is_live_loop_of(loop_dir, pid, repo):
+            return None
+        started_by = loop_skill(launch_file)
+    except (LaunchError, OSError) as error:
+        print(f"review_launch: could not stop the loop in {loop_dir}: {error}", file=sys.stderr)
+        return None
+    return LiveLoop(loop_dir, pid, started_by)
+
+
+def refuse_loop_of_another_skill(loop, repo, skill):
+    """Raises a LaunchError that names the live loop of repo when another run mode started it."""
+    if loop.started_by == skill:
+        return
+    started_as = f"a {loop.started_by} run" if loop.started_by else "a run whose record names no mode"
+    raise LaunchError(
+        f"the review loop {loop.loop_dir.name} of {repo} (pid {loop.pid}) was started as {started_as}, not a "
+        f"{skill} run, and still runs. Nothing was launched and the loop was not stopped. End the run with a stop "
+        f"that names this loop; launch again after pid {loop.pid} exits.")
+
+
+def stop_earlier_loops(state_dir, repo, skill):
+    """Stops every live loop of repo that an earlier launch of the same run mode started, so two loops never edit one
+    tree. Each loop is looked at once: a live loop of repo started in another run mode stops the launch before any
+    loop is stopped, and a loop that cannot be read is reported and left running."""
     loop_root = pathlib.Path(state_dir) / reviewer_dispatch.LOOP_FOLDER
-    for loop_dir, pid in reviewer_dispatch.live_loops(loop_root):
-        stop_loop_if_live(loop_dir, pid, repo)
+    answers = [live_loop_of(loop_dir, pid, repo) for loop_dir, pid in reviewer_dispatch.live_loops(loop_root)]
+    loops = [loop for loop in answers if loop is not None]
+    for loop in loops:
+        refuse_loop_of_another_skill(loop, repo, skill)
+    for loop in loops:
+        stop_loop(loop.loop_dir, loop.pid, repo)
 
 
 class FixRunFindings(NamedTuple):
@@ -520,7 +566,7 @@ def command_launch(argv, loop_script):
                           "with --base <ref>.")
 
     state_dir = script_utils.git_path(repo, STATE_NAME)
-    stop_earlier_loops(state_dir, repo)
+    stop_earlier_loops(state_dir, repo, options.skill)
     agent_id = f"{AGENT_PREFIX}{script_utils.sortable_unique_id()}"
     loop_dir = pathlib.Path(state_dir) / reviewer_dispatch.LOOP_FOLDER / agent_id
     loop_dir.mkdir(parents=True, exist_ok=True)
@@ -532,9 +578,12 @@ def command_launch(argv, loop_script):
     handoff_file = loop_dir / HANDOFF_NAME
     script_utils.write_text_atomically(handoff_file, handoff)
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
-    launch_record = {"packet_args": packet_args(options, launch_file),
+    launch_record = {reviewer_dispatch.PACKET_ARGS_KEY: packet_args(options, launch_file),
                      RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file, ruled_out),
-                     USER_RULED_RECORD_KEY: user_ruled}
+                     USER_RULED_RECORD_KEY: user_ruled,
+                     reviewer_dispatch.LAUNCH_BRANCH_KEY: script_utils.current_branch(repo),
+                     reviewer_dispatch.LAUNCH_TIME_KEY: time.time(),
+                     reviewer_dispatch.LAUNCH_DETACH_KEY: options.detach}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     consume_run_folder_inputs(repo, options)
     print(f"The review loop runs as a script; its log is {log_path}")

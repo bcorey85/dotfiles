@@ -11,9 +11,11 @@ nested repository raises.
 A `git add` of a new file, a new symlink or a staged move leaves the value as it was; `git rm --cached` changes it.
 The reviewed tree leaves the repo's notes paths (notes_paths.py) out of both parts, so an edit of a plan or note
 after the review keeps the credit and any other edit voids it.
-Verify stores the `tree_fingerprint` whole-tree value (its context and ledger review rows), not the reviewed value,
-with an optional path left out of both parts. A
-tree whose added paths are all untracked regular files keeps its old value; a tree that adds a file through the
+Verify stores a `tree_fingerprint` value (its context and ledger review rows), not the reviewed value,
+taken against the merge base, with the context's `excludeRel` and the notes paths (docs/ Markdown and Markdown at the
+saved `notesEntries`; notes_paths.py) left out of both parts; a context with no `notesEntries` key leaves out only
+`excludeRel`.
+A tree whose added paths are all untracked regular files keeps its old value; a tree that adds a file through the
 index or a commit since base hashes differently, so verify-prep and the branch review rerun once there.
 
 State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint,

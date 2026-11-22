@@ -116,9 +116,10 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual(passed, [*SAMPLE_COMMANDS, STALE_PROSE_COMMAND])
         self.assertTrue(code_review_start.coder_gate.is_stale_prose_check(passed[-1]))
 
-    def run_live(self, code_review_start, write_packet, packet_text="status: converged\n"):
+    def run_live(self, code_review_start, write_packet, packet_text="status: converged\n",
+                 plan="docs/plans/p/spec.md"):
         # Runs main with the loop mocked; `write_packet` puts `packet_text` in packet.txt beside the prompt file.
-        argv = ["code_review_start.py", "lane-a", "docs/plans/p/spec.md", "1", str(self.repo / "handoff.txt"),
+        argv = ["code_review_start.py", "lane-a", plan, "1", str(self.repo / "handoff.txt"),
                 "--base", BASE]
         output = io.StringIO()
 
@@ -234,8 +235,15 @@ class CodeReviewStartTest(unittest.TestCase):
         self.run_live(self.load_module(), write_packet=False)
 
         run_record = json.loads((self.repo / ".git/code-phase/run.json").read_text())
-        self.assertEqual(set(run_record), {"lane", "phase", "loop_dir"})
+        self.assertEqual(set(run_record), {"lane", "phase", "loop_dir", "plan"})
         self.assertEqual((run_record["lane"], run_record["phase"]), ("lane-a", "1"))
+        self.assertEqual(run_record["plan"], str((self.repo / "docs/plans/p/spec.md").resolve()))
+
+    def test_the_live_run_with_no_plan_records_no_plan_key(self):
+        self.run_live(self.load_module(), write_packet=False, plan="-")
+
+        run_record = json.loads((self.repo / ".git/code-phase/run.json").read_text())
+        self.assertEqual(set(run_record), {"lane", "phase", "loop_dir"})
 
     def test_the_live_run_records_the_loop_folder_that_loop_dir_names(self):
         _printed, prompt_folder, _loop_folder, _command = self.run_live(self.load_module(), write_packet=False)

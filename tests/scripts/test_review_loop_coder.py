@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -11,9 +12,13 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import finding_record
 import review_loop_calls
 import review_loop_coder
+import review_loop_comment_removal
+import review_loop_partial_fix
 import review_loop_ruled_out
+import review_loop_signoffs
 import review_loop_untracked
 import test_review_loop_script as loop_tests
 
@@ -123,6 +128,18 @@ class UntrackedDeletionTest(unittest.TestCase):
 
         self.assertEqual((self.repo / "mine.py").read_text(), "mine\n")
         self.assertIn("review1-reviewer deleted untracked files", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_a_coder_that_exits_zero_with_an_error_result_is_a_dead_pass(self):
+        reply = {"is_error": True, "result": "Claude usage limit reached", "usage": {}}
+
+        def run_process(*_args, **_kwargs):
+            return 0, json.dumps(reply), ""
+
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=run_process,
+                                 preloaded_skills_prompt=lambda _agent: ""):
+            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+            with self.assertRaisesRegex(review_loop_coder.CoderCallError, "usage limit reached"):
+                review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard)
 
     def test_a_call_that_is_interrupted_after_deleting_a_file_still_restores_it(self):
         (self.repo / "mine.py").write_text("mine\n")
@@ -362,6 +379,388 @@ class RuledOutLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
                                                  ["fresh.py", "mine.py"], [])
 
         self.assertEqual(guard.backup.saved, ["mine.py"])
+
+
+class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
+    """A fix coder that edits a file and exits non-zero leaves a record; the next launch takes its findings."""
+
+    FINDING = "`app.py:2` the limit is wrong for `limit`"
+
+    def findings_header(self, *findings):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps(list(findings)))
+        return f"mode: fix-first\nfindings: {findings_file}\n"
+
+    def record_file(self):
+        return self.repo / ".git" / "review-fix" / "partial-fix.json"
+
+    def save_record(self, *findings, diff=""):
+        self.record_file().parent.mkdir(parents=True, exist_ok=True)
+        self.record_file().write_text(json.dumps({"findings": list(findings), "diff": diff, "time": 1}))
+
+    def die_mid_edit(self):
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"app.py": loop_tests.APP_FIXED}, "exit": 1}],
+        }, header_extra=self.findings_header(self.FINDING))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return self.stored_packet()[1]
+
+    def test_a_coder_that_dies_after_editing_leaves_a_record_and_the_stop_note_names_the_findings(self):
+        started = time.time()
+        packet = self.die_mid_edit()
+        finished = time.time()
+
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [self.FINDING])
+        self.assertIn("-limit = 2", record["diff"])
+        self.assertIn("+limit = 20", record["diff"])
+        self.assertGreaterEqual(record["time"], started)
+        self.assertLessEqual(record["time"], finished)
+        branch = subprocess.run(["git", "branch", "--show-current"], cwd=self.repo, capture_output=True, text=True,
+                                check=True).stdout.strip()
+        self.assertEqual(record["branch"], branch)
+        self.assertIn(self.FINDING, packet["blockers"][0])
+        self.assertIn("unverified", packet["blockers"][0])
+        self.assertIn("may hold part of the fix", packet["blockers"][0])
+        self.assertIn(str(self.record_file()), packet["blockers"][0])
+
+    def test_a_coder_that_exits_zero_with_no_final_report_leaves_a_record_and_an_unverified_note(self):
+        completed = self.run_script({
+            "coder": [{"result": "", "edits": {"app.py": loop_tests.APP_FIXED}}],
+        }, header_extra=self.findings_header(self.FINDING))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [self.FINDING])
+        blocker = self.stored_packet()[1]["blockers"][0]
+        self.assertIn("no final report", blocker)
+        self.assertIn("unverified", blocker)
+
+    def test_a_coder_that_dies_with_no_edits_keeps_the_findings_and_does_not_claim_a_partial_fix(self):
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {}, "exit": 1}],
+        }, header_extra=self.findings_header(self.FINDING))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        blocker = self.stored_packet()[1]["blockers"][0]
+        self.assertNotIn("may hold part of the fix", blocker)
+        self.assertNotIn("partial diff", blocker)
+        self.assertIn(self.FINDING, blocker)
+        self.assertIn(str(self.record_file()), blocker)
+
+    def test_findings_on_a_reverted_approval_only_path_stay_out_of_the_record_and_the_note(self):
+        reverted_finding = "`CLAUDE.md:1` the rule is wrong"
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "exit": 1,
+                       "edits": {"app.py": loop_tests.APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+        }, header_extra=self.findings_header(self.FINDING, reverted_finding))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [self.FINDING])
+        blocker = self.stored_packet()[1]["blockers"][0]
+        self.assertIn(self.FINDING, blocker)
+        self.assertNotIn(reverted_finding, blocker)
+
+    def test_a_dying_coder_that_edits_only_approval_only_paths_removes_the_older_record(self):
+        self.save_record("`CLAUDE.md:1` the rule is wrong")
+
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(self.record_file().exists())
+
+    def test_a_path_the_loop_fully_put_back_is_absent_from_the_record_diff(self):
+        self.commit_files({"app.py": "# keep this note\n" + loop_tests.APP_BEFORE})
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"app.py": loop_tests.APP_BEFORE}, "exit": 1}],
+        }, header_extra=self.findings_header(self.FINDING))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("# keep this note", (self.repo / "app.py").read_text())
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["diff"], "")
+        self.assertNotIn("may hold part of the fix", self.stored_packet()[1]["blockers"][0])
+
+    def test_a_launch_carrying_only_a_saved_record_still_plans_the_structure_pass(self):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps([self.FINDING]))
+        for header_findings, expected_skipped in (([], False), ([self.FINDING], True)):
+            with self.subTest(header_findings=header_findings):
+                extra = f"findings: {findings_file}" if header_findings else ""
+                loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+                prompt = self.scratch / "prompt.txt"
+                prompt.write_text(self.prompt_file_text(extra))
+                header, handoff = loop_main.read_prompt(str(prompt))
+                request = loop_main.LoopRequest(str(self.repo), self.scratch, loop_tests.SESSION, header, handoff,
+                                                {"fixed": [], "files_touched": set()}, ["echo ran"],
+                                                gates_every_run=True)
+                self.save_record("`app.py:3` carried")
+                with mock.patch.object(loop_main, "first_pass") as first_pass, \
+                        mock.patch.object(loop_main, "walk"), \
+                        mock.patch.object(loop_main, "write_telemetry", return_value=([], [])):
+                    loop_main.run_loop(request)
+
+                sent_findings = first_pass.call_args.args[1]
+                self.assertIn("`app.py:3` carried", sent_findings)
+                self.assertEqual(first_pass.call_args.args[3], expected_skipped)
+
+    def test_the_next_launch_sends_the_recorded_findings_to_the_coder_and_removes_the_record(self):
+        self.die_mid_edit()
+        self.reset_fake_run()
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}}],
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coder_prompts), 1)
+        self.assertIn("the limit is wrong", coder_prompts[0])
+        self.assertFalse(self.record_file().exists())
+
+    def test_a_relaunch_with_the_same_findings_removes_the_record(self):
+        self.die_mid_edit()
+        self.reset_fake_run()
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}}],
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra=self.findings_header(self.FINDING))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(self.record_file().exists())
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(coder_prompts[0].count("the limit is wrong"), 1)
+
+    def test_a_relaunch_whose_saved_findings_all_sit_on_a_ruled_out_file_drops_the_record_with_no_coder(self):
+        self.save_record("`notes.py:1` the keys are out of order")
+
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra="ruled-out files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call for call in self.fake_calls() if call["key"] == "coder"], [])
+        self.assertFalse(self.record_file().exists())
+
+    def test_a_settle_followed_by_a_dead_pass_writes_the_record_once(self):
+        self.save_record("`notes.py:1` the keys are out of order")
+        dead_finding_text = "`app.py:2` the limit is wrong for `limit`"
+        loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text("ruled-out files: notes.py\n"))
+        header, handoff = loop_main.read_prompt(str(prompt))
+        request = loop_main.LoopRequest(str(self.repo), self.scratch, loop_tests.SESSION, header, handoff,
+                                        {"fixed": [], "files_touched": set()}, ["echo ran"])
+
+        def settle_then_die(loop, findings, *_flags):
+            loop.fix_first(findings)
+            snapshots = (review_loop_signoffs.snapshot_signoffs(self.repo, []),
+                         review_loop_comment_removal.snapshot_comments(self.repo, []))
+            died = review_loop_coder.CoderCallError("the coder died", [])
+            loop.failed_pass_blocker("coder0", died, snapshots, [finding_record.parse_finding(dead_finding_text)],
+                                     [])
+
+        with mock.patch.object(loop_main, "first_pass", side_effect=settle_then_die), \
+                mock.patch.object(loop_main, "walk"), \
+                mock.patch.object(loop_main, "write_telemetry", return_value=([], [])), \
+                mock.patch.object(review_loop_partial_fix, "write_partial_fix",
+                                  wraps=review_loop_partial_fix.write_partial_fix) as write_record:
+            loop_main.run_loop(request)
+
+        write_record.assert_called_once()
+        self.assertEqual(json.loads(self.record_file().read_text())["findings"], [dead_finding_text])
+
+    def test_a_relaunch_whose_coder_edits_a_later_phase_file_drops_the_sent_findings_from_the_record(self):
+        self.die_mid_edit()
+        self.reset_fake_run()
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED,
+                                                       "notes.py": loop_tests.NOTES_REFLOWED}}],
+        }, header_extra="later-phase files: notes.py")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.stored_packet()[1]["status"], "critical-blocker")
+        self.assertFalse(self.record_file().exists())
+
+    def test_a_coder_that_dies_again_keeps_the_saved_findings_on_a_held_file_in_the_record(self):
+        held_finding = "`notes.py:1` the keys are out of order"
+        self.save_record(self.FINDING, held_finding)
+        (self.repo / "notes.py").write_text("value = 1  # another session's edit\n")
+
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"app.py": loop_tests.APP_FIXED}, "exit": 1}],
+        }, header_extra=loop_tests.SCOPED_WITH_NOTES_HELD)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(sorted(record["findings"]), sorted([self.FINDING, held_finding]))
+
+    def test_a_record_written_on_another_branch_stops_the_launch_and_names_both_branches(self):
+        self.die_mid_edit()
+        record = json.loads(self.record_file().read_text())
+        record["branch"] = "some-other-branch"
+        self.record_file().write_text(json.dumps(record))
+
+        record_before = self.record_file().read_text()
+        current_branch = subprocess.run(["git", "-C", str(self.repo), "branch", "--show-current"],
+                                        capture_output=True, text=True, check=True).stdout.strip()
+        self.reset_fake_run()
+
+        completed = self.run_script({"coder": [{"result": "Fixed 1.", "edits": {}}]})
+
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        self.assertIn(current_branch, output)
+        self.assertEqual(self.fake_calls(), [])
+        self.assertEqual(self.record_file().read_text(), record_before)
+        self.assertIn("some-other-branch", output)
+        self.assertIn(f"delete {self.record_file()} to drop the record", output)
+
+        with self.subTest(record_written_on="a detached HEAD"):
+            record["branch"] = ""
+            self.record_file().write_text(json.dumps(record))
+            self.reset_fake_run()
+
+            detached = self.run_script({"coder": [{"result": "Fixed 1.", "edits": {}}]})
+
+            self.assertNotEqual(detached.returncode, 0)
+            self.assertIn("detached HEAD", detached.stdout + detached.stderr)
+
+    def test_a_gate_pass_that_dies_saves_no_record_and_the_stop_note_calls_nothing_unverified(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}] * 2,
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED, "broken.flag": "x\n"}},
+                      {"result": "You've hit your limit", "edits": {"app.py": loop_tests.APP_BEFORE}, "exit": 1}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra=self.findings_header(self.FINDING), quality_check="test ! -f broken.flag")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call["key"] for call in self.fake_calls()].count("coder"), 2)
+        self.assertFalse(self.record_file().exists(), "a dying coder-gate pass must save no record")
+        blockers = " ".join(self.stored_packet()[1]["blockers"])
+        self.assertNotIn("unverified", blockers)
+
+    def test_a_record_with_no_branch_field_launches_normally(self):
+        self.save_record(self.FINDING)
+        self.assertNotIn("branch", json.loads(self.record_file().read_text()))
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}}],
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertIn("the limit is wrong", coder_prompts[0])
+        self.assertFalse(self.record_file().exists())
+
+    def test_a_dying_coder_whose_sent_finding_is_reverted_keeps_the_held_saved_finding_with_no_note(self):
+        reverted_finding = "`CLAUDE.md:1` the rule is wrong"
+        held_finding = "`notes.py:1` the keys are out of order"
+        self.save_record(held_finding)
+        (self.repo / "notes.py").write_text("value = 1  # another session's edit\n")
+        header = self.findings_header(reverted_finding) + loop_tests.SCOPED_WITH_NOTES_HELD
+
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"CLAUDE.md": "# Rules\n"}, "exit": 1}],
+        }, header_extra=header)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [held_finding])
+        self.assertNotIn("unverified", " ".join(self.stored_packet()[1]["blockers"]))
+
+    def test_a_relaunch_sends_the_findings_off_held_files_and_keeps_the_held_ones_in_the_record(self):
+        held_finding = "`notes.py:1` the keys are out of order"
+        self.save_record(self.FINDING, held_finding)
+        (self.repo / "notes.py").write_text("value = 1  # another session's edit\n")
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}}],
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra=loop_tests.SCOPED_WITH_NOTES_HELD)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder_prompts = [call["prompt"] for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coder_prompts), 1)
+        self.assertIn("the limit is wrong", coder_prompts[0])
+        self.assertNotIn("the keys are out of order", coder_prompts[0])
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [held_finding])
+
+    def test_a_coder_that_dies_again_keeps_the_record_and_the_stop_note_names_the_findings(self):
+        self.die_mid_edit()
+        self.reset_fake_run()
+
+        completed = self.run_script({
+            "coder": [{"result": "You've hit your limit", "edits": {"app.py": loop_tests.APP_FIXED}, "exit": 1}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(record["findings"], [self.FINDING])
+        self.assertIn(self.FINDING, self.stored_packet()[1]["blockers"][0])
+
+    def test_a_finding_pass_that_dies_after_a_settle_replaces_the_record_with_its_own_findings(self):
+        held_finding = "`notes.py:1` the keys are out of order"
+        new_finding = "`app.py:4` the fourth limit is wrong"
+        second_edit = loop_tests.APP_FIXED.replace("limit = 4", "limit = 40")
+        new_review = loop_tests.FIX_REVIEW.replace("`app.py:2` the limit is wrong for `limit`", new_finding)
+        self.save_record(self.FINDING, held_finding)
+        (self.repo / "notes.py").write_text("value = 1  # another session's edit\n")
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}},
+                      {"result": "You've hit your limit", "edits": {"app.py": second_edit}, "exit": 1}],
+            "code-reviewer": [{"result": new_review}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra=loop_tests.SCOPED_WITH_NOTES_HELD)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        record = json.loads(self.record_file().read_text())
+        self.assertEqual(sorted(record["findings"]), sorted([new_finding, held_finding]))
+        self.assertIn("+limit = 40", record["diff"])
+        self.assertNotIn("the limit is wrong for `limit`", " ".join(record["findings"]))
+        blocker = self.stored_packet()[1]["blockers"][0]
+        self.assertIn(new_finding, blocker)
+        self.assertIn("unverified", blocker)
+
+    def test_a_relaunch_where_no_coder_pass_runs_keeps_the_record(self):
+        self.save_record("`notes.py:1` the keys are out of order", diff="+value = 1\n")
+        saved = json.loads(self.record_file().read_text())
+        (self.repo / "notes.py").write_text("value = 1  # another session's edit\n")
+
+        completed = self.run_script({}, header_extra=loop_tests.SCOPED_WITH_NOTES_HELD + "no-review: yes\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual([call for call in self.fake_calls() if call["key"] == "coder"], [])
+        # No finding is left to send, so the held finding stays and the diff is dropped (see the partial-fix docs).
+        kept = json.loads(self.record_file().read_text())
+        self.assertEqual(kept["findings"], saved["findings"])
+        self.assertEqual(kept["diff"], "")
+
+    def test_a_damaged_record_stops_the_launch_naming_the_file_and_the_expected_form(self):
+        self.record_file().parent.mkdir(parents=True, exist_ok=True)
+        for damaged in ("not json", "[]", '{"findings": [""]}'):
+            with self.subTest(damaged=damaged):
+                self.record_file().write_text(damaged)
+
+                completed = self.run_script({})
+
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(str(self.record_file()), completed.stderr)
+                self.assertIn("non-empty finding texts", completed.stderr)
 
 
 if __name__ == "__main__":

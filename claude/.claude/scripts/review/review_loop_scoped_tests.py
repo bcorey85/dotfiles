@@ -4,6 +4,7 @@ reviewed_and_touched_files and scoped_failures_pre_existing."""
 import pathlib
 import time
 
+import accepted_failures
 import check_scope
 import coder_gate
 import full_check
@@ -86,15 +87,24 @@ class ScopedTestRuns:
             self.stop("critical-blocker", [named_run_blocker(run)])
             return False
 
-        if run.tails and self.scoped_failures_pre_existing(run.real_failures):
+        if not run.tails:
+            return True
+
+        try:
+            pre_existing = self.scoped_failures_pre_existing(run.real_failures)
+        except accepted_failures.AcceptRefusedError as error:
+            # Fail closed: a damaged acceptance store must not pass a red run.
+            self.stop("critical-blocker", [f"The accepted-failures store was refused: {error}. Fix or remove "
+                                           "that line, then rerun."])
+            return False
+        if pre_existing:
             self.scoped_tests = f"{full_check.SCOPED_PRE_EXISTING}: {self.scoped_tests}"
             return True
 
-        if run.tails:
-            env_hint = ("If a test needs an env var the repo's CI sets, add it under "
-                        f"{gate_env.gate_env_repo_name(self.repo)!r} in {gate_env.personal_gate_env_file()}.")
-            failing = full_check.SCOPED_FAILING_PREFIX + "\n\n".join(run.tails)
-            self.stop("critical-blocker", [failing + "\n" + env_hint])
-            return False
-
-        return True
+        env_hint = ("If a test needs an env var the repo's CI sets, add it under "
+                    f"{gate_env.gate_env_repo_name(self.repo)!r} in {gate_env.personal_gate_env_file()}.")
+        failing = full_check.SCOPED_FAILING_PREFIX + "\n\n".join(run.tails)
+        accept_hint = self.accept_failure_hint(run.real_failures)
+        stop_text = "\n".join(part for part in (failing, env_hint, accept_hint) if part)
+        self.stop("critical-blocker", [stop_text])
+        return False

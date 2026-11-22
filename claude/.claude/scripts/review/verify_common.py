@@ -307,7 +307,9 @@ def load_context(path):
 def context_fingerprint(context, top, timeout=None):
     """The fingerprint of the tree at `top` as a saved context measures it. Every reader of a context hashes through
     here, so the logged value and the value checked later cannot drift apart."""
-    return tree_fingerprint(top, context["mergeBase"], context["excludeRel"], timeout=timeout)
+    # A context saved before notes entries were stored has no key: it fingerprints as it did then.
+    return tree_fingerprint(top, context["mergeBase"], context["excludeRel"], timeout=timeout,
+                            notes_entries=context.get("notesEntries"))
 
 
 class BranchCredit(typing.NamedTuple):

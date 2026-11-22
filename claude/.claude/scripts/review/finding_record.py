@@ -16,9 +16,10 @@ MERGED_SEPARATOR = " Also reported: "
 
 @dataclasses.dataclass(frozen=True)
 class Finding:
-    """A finding. `path` is "" and `line` 0 when the text names no file:line. A merged finding takes its path, line,
+    """A finding. `path` is "" when the text names no location; `line` is 0 when the location has no exact line
+    number (a bare path, or an approximate `~` line). A merged finding takes its path, line,
     class and title from its first part, and holds every part, each with its own, in `parts`; a plain finding has
-    no parts."""
+    no parts. `bare` is True when the location is a path with no line part."""
 
     text: str
     path: str
@@ -27,6 +28,7 @@ class Finding:
     title: str
     identifiers: frozenset
     parts: tuple = ()
+    bare: bool = False
 
     @property
     def each_part(self):
@@ -38,6 +40,9 @@ def code_identifiers(text):
     """Backticked names in a finding that are neither a file path nor a file:line pointer."""
     names = set()
     for token in script_utils.backticked_spans(text):
+        # Skips a `path:~N` pointer; the `:\d` check below skips an exact line.
+        if ":" in token and script_utils.LOCATION_ALONE.fullmatch(token):
+            continue
         if "/" in token or re.search(r":\d", token) or (re.search(r"\.\w{1,4}$", token) and "(" not in token):
             continue
         names.add(token)
@@ -45,22 +50,27 @@ def code_identifiers(text):
 
 
 def parse_finding(text):
-    """The record of one finding's text: its file:line, the class the reviewer tagged it with, its title and the
+    """The record of one finding's text: its location, the class the reviewer tagged it with, its title and the
     code names it mentions."""
-    located = script_utils.PATH_LINE.search(text)
-    path, line = script_utils.split_location(located.group(1)) if located else ("", 0)
+    located = script_utils.first_location(text)
+    path, line = (located.path, located.line) if located else ("", 0)
 
-    # The tag rule puts the class right after the file:line; `other` when the reviewer tagged none.
-    class_tag = FINDING_CLASS_TAG.search(text, located.end() if located else 0) or FINDING_CLASS_TAG.search(text)
+    # The tag rule puts the class right after the location; `other` when the reviewer tagged none.
+    # A tag inside a quoted span is a quotation, not the reviewer's tag.
+    tag_start = located.end if located else 0
+    tag_after_location = script_utils.first_unquoted_match(FINDING_CLASS_TAG, text, tag_start)
+    class_tag = tag_after_location or script_utils.first_unquoted_match(FINDING_CLASS_TAG, text)
     finding_class = class_tag.group(1).lower() if class_tag else "other"
 
-    # The title is the text with its file:line and bracketed tags taken out, lowercased, punctuation folded to
-    # spaces. A refile keeps it when the coder's edit moves the line.
+    # The title is the text with its exact path:line tokens and bracketed tags taken out, lowercased, punctuation
+    # folded to spaces. An approximate pointer (`a.py:~40`) stays in it, so a refile keeps the title only when the
+    # coder's edit moves an exact line. A bare path stays in it too and does not break the match.
     title = script_utils.PATH_LINE.sub(" ", text)
     title = re.sub(r"\[[\w-]+\]", " ", title)
     title = re.sub(r"\W+", " ", title).strip().lower()
 
-    return Finding(text, path, line, finding_class, title, code_identifiers(text))
+    bare = bool(located and located.bare)
+    return Finding(text, path, line, finding_class, title, code_identifiers(text), bare=bare)
 
 
 def combine(parts):
@@ -72,4 +82,6 @@ def combine(parts):
 
     text = MERGED_SEPARATOR.join(part.text for part in parts)
     identifiers = frozenset().union(*(part.identifiers for part in parts))
-    return Finding(text, first.path, first.line, first.finding_class, first.title, identifiers, tuple(parts))
+    return Finding(
+        text, first.path, first.line, first.finding_class, first.title, identifiers, parts=tuple(parts), bare=first.bare
+    )

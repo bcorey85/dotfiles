@@ -296,6 +296,50 @@ def split_at_test_headings(detail_lines):
     return sub_blocks
 
 
+PYTEST_TEST_HEADER = re.compile(r"^_{2,} (?P<name>\S.*?) _{2,}$")
+PYTEST_SECTION_RULE = re.compile(r"^={2,} ")
+PYTEST_FIXTURE_ERROR_PREFIX = re.compile(r"^ERROR at (?:setup|teardown) of ")
+PYTEST_COLLECTING_PREFIX = re.compile(r"^ERROR collecting ")
+
+
+def pytest_header_name(name):
+    """A test name in pytest's header form: `tests/t.py::TestA::test_x[1.5]` and the header `TestA.test_x[1.5]` both
+    give `TestA.test_x[1.5]`. The path is dropped, the `::` parts are joined with `.`, and the parameter list is kept
+    whole. A pytest setup, teardown or collection error header prefix (`ERROR at setup of `, `ERROR collecting `) is
+    dropped. A name with no `::` (a collection error on a file) keeps its whole path."""
+    name = PYTEST_FIXTURE_ERROR_PREFIX.sub("", name)
+    name = PYTEST_COLLECTING_PREFIX.sub("", name)
+    base, bracket, parameters = name.partition("[")
+    if "::" in base:
+        base = ".".join(base.split("::")[1:])
+    return base + bracket + parameters
+
+
+def failing_line_test_name(line):
+    """The header-form name of the test a failing line names (`FAILED path::test[a b] - reason`); None when it names
+    none. The name is everything between the first word and the reason, so a parameter list with a space stays whole."""
+    before_reason = line.partition(FAILURE_REASON_SEPARATOR)[0].strip()
+    name = before_reason.partition(" ")[2].strip()
+    if not name:
+        return None
+    return pytest_header_name(name)
+
+
+def lines_by_pytest_test(log_lines):
+    """(header-form test name, plain line) for each log line. Pytest prints each failure under a `___ name ___`
+    header, and the `E` lines sit there, outside the `FAILED` lines. A line under a header has that header's name; a
+    line before the first header or after the section ends (the next `=== ... ===` rule) has None."""
+    owner = None
+    for raw_line in log_lines:
+        line = strip_ansi(raw_line)
+        header = PYTEST_TEST_HEADER.match(line)
+        if header:
+            owner = pytest_header_name(header.group("name"))
+        elif PYTEST_SECTION_RULE.match(line):
+            owner = None
+        yield owner, line
+
+
 def failing_blocks(lines):
     """Each failing block of the log as [failing line, *detail lines]: the non-blank lines after a failing line up to
     the next failing test line or the end of the log. Jest prints one FAIL line per file and a `●` block per test, with
@@ -313,6 +357,13 @@ def failing_blocks(lines):
         yield block
 
 
+def failure_name_and_reason(line):
+    """(test name, separator, reason) of a failing test line that carries a reason; None for any other line."""
+    if not FAILING_TEST_LINE.match(line) or FAILURE_REASON_SEPARATOR not in line:
+        return None
+    return line.partition(FAILURE_REASON_SEPARATOR)
+
+
 def normalized_log_line(line):
     """The log line without runner timings (`(5.2 s)`, `in 1.2s`), a Python traceback frame's `, line N` and a Rust
     panic's thread id and `:LINE:COL`, and, on a runner summary line, without the non-failure
@@ -328,8 +379,9 @@ def normalized_log_line(line):
     # A traceback frame's line number moves when a diff shifts lines in the file.
     line = TRACEBACK_FRAME_LINE_NUMBER.sub(r"\g<before>", line)
     # A failing test's reason keeps its numbers: `expected 5000ms, got 2000ms` is an assertion, not a timing.
-    if FAILING_TEST_LINE.match(line) and FAILURE_REASON_SEPARATOR in line:
-        name, separator, reason = line.partition(FAILURE_REASON_SEPARATOR)
+    name_and_reason = failure_name_and_reason(line)
+    if name_and_reason:
+        name, separator, reason = name_and_reason
         without_timing = RUNNER_TIMING.sub(" ", name) + separator + reason
     else:
         without_timing = RUNNER_TIMING.sub(" ", line)

@@ -82,13 +82,16 @@ def reverted_clause(reverted_texts):
     none."""
     if not reverted_texts:
         return ""
-    return "; still open, their fix was an approval-only edit the loop reverted: " + "; ".join(reverted_texts)
+    return ("; filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "edit the loop reverted: "
+            + "; ".join(reverted_texts))
 
 
 def receipt_after_class_repair(closed_members, held_texts, ruled_texts, reverted_texts=()):
-    """The closure receipt once the class-fix coder changed a file. It names only the members sent to the coder, so
-    members skipped as held or ruled out are not claimed fixed, and it claims no fix when every sent member was
-    reverted. It replaces the check's receipt, whose prose still calls the sent members open."""
+    """The closure receipt once the class-fix coder changed a file, or when every member it was sent was reverted.
+    It names only the members sent to the coder, so members skipped as held or ruled out are not claimed fixed, and
+    it claims no fix when every sent member was reverted. It replaces the check's receipt, whose prose still calls
+    the sent members open."""
     if not closed_members:
         return ("the class repair fixed none of the class members the closure check found open"
                 + held_clause(held_texts, ruled_texts) + reverted_clause(reverted_texts))
@@ -102,11 +105,13 @@ def receipt_all_held(held_texts, ruled_texts):
             "to a coder" + held_clause(held_texts, ruled_texts))
 
 
-def receipt_still_open(open_texts, held_texts, ruled_texts):
+def receipt_still_open(open_texts, held_texts, ruled_texts, reverted_texts=()):
     """The closure receipt when the class repair changed nothing. The check's receipt names the skipped members as
-    open, so it is rebuilt from the members that stay open."""
+    open, so it is rebuilt from the members that stay open. With none left open, every sent member was reverted."""
+    if not open_texts:
+        return receipt_after_class_repair([], held_texts, ruled_texts, reverted_texts)
     return ("class members still open, the class repair changed nothing: " + "; ".join(open_texts)
-            + held_clause(held_texts, ruled_texts))
+            + held_clause(held_texts, ruled_texts) + reverted_clause(reverted_texts))
 
 
 def closure_check(repo, out, fixed, claude_call):

@@ -549,6 +549,7 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertIn("agent code-reviewer", lines[1])
         self.assertIn(self.entries[0]["report_file"], lines[1])
         self.assertIn("code_wait.py review <agentId> <report file>", lines[-1])
+        self.assertTrue(lines[1].endswith(code_wait.CODE_WAIT_WRITES_NOTE), lines[1])
 
     def test_an_answered_request_lets_the_review_wait_go_on(self):
         pathlib.Path(self.entries[0]["report_file"]).write_text("## Fix\nNone\n")
@@ -656,7 +657,7 @@ class ReviewerRequestTest(unittest.TestCase):
         code, output, _ = self.run_main("review", AGENT_ID, report_file)
 
         self.assertEqual(code, 1)
-        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
         self.assertIn(report_file, output)
         self.assertIn("code_review_start.py", output)
         self.assertFalse(pathlib.Path(report_file).exists())
@@ -677,8 +678,12 @@ class ReviewerRequestTest(unittest.TestCase):
         code, output, _ = self.run_main("review")
 
         self.assertEqual(code, 1)
-        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
         self.assertIn(self.entries[0]["report_file"], output)
+        self.assertNotIn(code_wait.CODE_WAIT_WRITES_NOTE, output)
+        prompt_file = self.entries[0]["prompt_file"]
+        self.assertNotIn(prompt_file, output)
+        self.assertNotIn(code_wait.reviewer_dispatch.AGENT_PROMPT.format(prompt_file=prompt_file), output)
 
     def test_a_launched_loop_that_ended_with_a_packet_and_an_open_request_names_the_packet_command(self):
         (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
@@ -696,7 +701,7 @@ class ReviewerRequestTest(unittest.TestCase):
         code, output, _ = self.run_main("review")
 
         self.assertEqual(code, 1)
-        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
         self.assertNotIn("ACTION: dispatch-reviewer", output)
 
     def test_a_launched_loop_gone_with_an_open_request_names_its_launch_line(self):
@@ -705,7 +710,7 @@ class ReviewerRequestTest(unittest.TestCase):
         code, output, _ = self.run_main("review", "--loop", str(self.loop_dir))
 
         self.assertEqual(code, 1)
-        self.assertIn(code_wait.LOOP_GONE, output)
+        self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
         self.assertIn("launch", output)
 
     def test_a_bad_agent_id_for_agent_stops_loudly(self):

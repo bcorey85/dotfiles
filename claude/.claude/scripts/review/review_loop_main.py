@@ -16,6 +16,7 @@ import handback
 import handback_store
 import plan_format
 import review_loop_held
+import review_loop_partial_fix
 import review_loop_script
 import script_utils
 import session_registry
@@ -172,12 +173,18 @@ def run_loop(request):
     scope_fields = telemetry_scope_fields(header, header.get("caller", "code"))
     loop, check_command = build_loop(request)
     try:
-        findings = read_findings(header)
-        loop.user_ruled = header_ruled(header, findings, USER_RULED_HEADER_KEY)
+        header_findings = read_findings(header)
+        saved = review_loop_partial_fix.saved_findings(request.repo)
+        loop.saved_record_texts = saved
+        carried = review_loop_partial_fix.saved_findings_not_in_header(saved, header_findings)
+        # Carried findings add a fix-first pass but never cost the run its structure pass.
+        structure_pass_skipped = structure_pass_skipped or bool(header_findings)
+        findings = [*header_findings, *carried]
+        loop.user_ruled = header_ruled(header, header_findings, USER_RULED_HEADER_KEY)
         loop.user_ruled_at = header.get(USER_RULED_AT_KEY, "")
-        loop.adopted = adopted_rulings(header_adopted(header, findings))
+        loop.adopted = adopted_rulings(header_adopted(header, header_findings))
         loop.session_id = request.session
-        loop.session_ruled = header_ruled(header, findings, SESSION_RULED_HEADER_KEY)
+        loop.session_ruled = header_ruled(header, header_findings, SESSION_RULED_HEADER_KEY)
         loop.resume_approval_asks([parse_finding(text) for text in findings])
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
@@ -188,6 +195,9 @@ def run_loop(request):
     except plan_format.PlanFormatError as error:
         # The message names the plan file, the line and the expected form of the standing ruling.
         loop.stop("critical-blocker", [f"the plan's standing ruling does not parse: {error}"])
+
+    # One write per run: a pass that died or settled the saved record only sets what the file is to hold.
+    review_loop_partial_fix.save_pending(request.repo, loop.pending_record, now())
 
     if request.gates_every_run and loop.status != "converged" and not loop.scoped_tests:
         loop.scoped_tests = full_check.SCOPED_NOT_RUN_STOPPED.format(status=loop.status)

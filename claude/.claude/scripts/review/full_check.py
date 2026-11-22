@@ -93,6 +93,8 @@ from ansi_text import strip_ansi
 from check_output import (
     FAILING_TEST_LINE,
     failing_block_details,
+    failing_blocks,
+    failure_name_and_reason,
     is_setup_fault,
     missing_path,
     missing_tool_text,
@@ -100,6 +102,7 @@ from check_output import (
     tail_with_failing_tests,
 )
 from linked_installs import VENV_FOLDERS, holds_editable_install, import_path_enters_repo
+from number_masking import masked_numbers
 from test_run_output import MAX_RUNNER_SUMMARIES, runner_summaries
 from toml_file import read_toml
 from worktree_snapshot import CHANGE_KINDS, changes_since, take
@@ -565,10 +568,15 @@ def failed_run_result(repo, base, exit_code, output, tail):
     return f"failed (exit {exit_code})", tail
 
 
+def normalized_failing_lines(log_lines):
+    """The normalized failing_step_lines of a log, as a set."""
+    return {normalized_log_line(line) for line in failing_step_lines(log_lines)}
+
+
 def log_comparison(log_lines):
     """(the normalized failing_step_lines, the normalized lines, the normalized failing-block details) of a log: what a
     head run and a base run are compared on."""
-    failing_lines = {normalized_log_line(line) for line in failing_step_lines(log_lines)}
+    failing_lines = normalized_failing_lines(log_lines)
     normalized_lines = {normalized_log_line(line) for line in log_lines}
     return failing_lines, normalized_lines, failing_block_details(log_lines)
 
@@ -675,23 +683,102 @@ def base_run(repo, check_command, log, timeout, env=None, on_start=None, live_tr
     return BaseRun(result, *log_comparison(base_log_text.splitlines()))
 
 
-def is_pre_existing(head_log, head_result, base):
+def failing_line_mask(line):
+    """The normalized failing line with its numbers masked in the reason after the test name only, so a numbered test
+    id (`test_x[2]`) stays exact."""
+    line = normalized_log_line(line)
+    name_and_reason = failure_name_and_reason(line)
+    if not name_and_reason:
+        return line
+    name, separator, reason = name_and_reason
+    return name + separator + masked_numbers(reason)
+
+
+def accepted_masks_in_base(accepted, base):
+    """The failing-line masks that an accepted line and a base failing line both have."""
+    accepted_masks = {failing_line_mask(line) for line in accepted}
+    base_masks = {failing_line_mask(line) for line in base.failing_lines}
+    return accepted_masks & base_masks
+
+
+def head_details_missing_from_base(head_lines, base, excused_masks):
+    """The normalized detail lines of the head log's failing blocks that the base run's failing blocks lack. A block
+    whose failing line mask is in `excused_masks` is compared with its numbers masked; every other block exactly."""
+    missing = set()
+    for failing_line, *detail_lines in failing_blocks(head_lines):
+        compare_key = masked_numbers if failing_line_mask(failing_line) in excused_masks else str
+        details = {normalized_log_line(line) for line in detail_lines}
+        missing |= script_utils.items_missing_by_key(details, base.failing_details, compare_key)
+    return missing
+
+
+def log_lines_new_to_base(head_lines, base, excused_masks, excused_names):
+    """The normalized head log lines the base run's log lacks. With no excused mask every line is compared exactly.
+    Otherwise a line is compared with its numbers masked when it sits under the `___ name ___` header of an excused
+    test (header-form name in `excused_names`), or under no header in a log with no pytest header; a line under any
+    other test's header is compared exactly."""
+    owned_lines = list(check_output.lines_by_pytest_test(head_lines))
+    log_has_header = any(owner is not None for owner, _ in owned_lines)
+    masked_group = set()
+    exact_group = set()
+    for owner, line in owned_lines:
+        normalized = normalized_log_line(line)
+        headerless_line_excused = owner is None and not log_has_header
+        if excused_masks and (headerless_line_excused or owner in excused_names):
+            masked_group.add(normalized)
+        else:
+            exact_group.add(normalized)
+    exact_missing = script_utils.items_missing_by_key(exact_group, base.log_lines, str)
+    masked_missing = script_utils.items_missing_by_key(masked_group, base.log_lines, masked_numbers)
+    return exact_missing | masked_missing
+
+
+def accepted_names_each(new_failing, accepted_in_base):
+    """True when each failing line in `new_failing` has a mask in `accepted_in_base` (the accepted_masks_in_base of the
+    accepted lines and the base run)."""
+    masks = {failing_line_mask(line) for line in new_failing}
+    return masks <= accepted_in_base
+
+
+def is_pre_existing(head_log, head_result, base, accepted=()):
     """True when the head run fails as the base run does: the same result (exit code), failing lines that are not
     empty and all fail in the base run too, every detail line inside a failing block is in the base run's failing
     blocks, and no other line new to the head log holds an error marker. When every failing line is a
     `FAILED: <steps>` summary, no line may be new to the log. `base` is from base_run; None when the base run was no
-    failure."""
+    failure.
+
+    `accepted` holds failing lines a person accepted as failing without the diff. A head failing line the base run
+    lacks passes only when an accepted line and a base failing line both equal it with the numbers of its reason
+    masked. A failing block whose line is equal that way, changed or not, has its detail lines compared with their
+    numbers masked, and the new log lines under that test's `___ name ___` header are compared that way too, as are
+    lines under no header when the log holds no pytest header. Lines under a header whose name an unexcused failing
+    line shares stay exact, as do every other block's details and every line under another test's header. With no
+    such line, every comparison is exact."""
     if base is None or head_result != base.result or not base.failing_lines:
         return False
 
-    head_text = pathlib.Path(head_log).read_text(errors="replace")
-    head_lines, head_log_lines, head_details = log_comparison(head_text.splitlines())
-    if not head_lines or not head_lines <= base.failing_lines:
-        return False
-    if not head_details <= base.failing_details:
+    head_text_lines = pathlib.Path(head_log).read_text(errors="replace").splitlines()
+    head_lines = normalized_failing_lines(head_text_lines)
+    if not head_lines:
         return False
 
-    new_lines = head_log_lines - base.log_lines
+    accepted_in_base = accepted_masks_in_base(accepted, base)
+    new_failing = head_lines - base.failing_lines
+    if new_failing and not accepted_names_each(new_failing, accepted_in_base):
+        return False
+
+    head_failing_masks = {failing_line_mask(line) for line in head_lines}
+    excused_masks = head_failing_masks & accepted_in_base
+    if head_details_missing_from_base(head_text_lines, base, excused_masks):
+        return False
+
+    excused_names = {check_output.failing_line_test_name(line) for line in head_lines
+                     if failing_line_mask(line) in excused_masks}
+    # Fail closed: a name that an unexcused failing line shares (the same test in another file) is not excused.
+    shared_names = {check_output.failing_line_test_name(line) for line in head_lines
+                    if failing_line_mask(line) not in excused_masks}
+    excused_names -= shared_names
+    new_lines = log_lines_new_to_base(head_text_lines, base, excused_masks, excused_names)
     # A `FAILED: <steps>` summary names steps, not what failed in them, so a new line anywhere is a new failure.
     if all(FAILED_STEPS_LINE.match(line) for line in head_lines):
         return not new_lines

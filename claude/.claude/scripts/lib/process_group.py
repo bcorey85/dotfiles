@@ -1,6 +1,7 @@
 """Questions about a running process and its process group, for any caller: a process's command line and a SIGTERM
 for its group. It reads no toolkit state."""
 import os
+import shlex
 import signal
 import subprocess
 
@@ -31,16 +32,18 @@ def pid_is_alive(owner_pid):
 
 def command_line(pid):
     """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
+    ps_command = ["ps", "-ww", "-o", "command=", "-p", str(pid)]
     try:
-        finished = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
-                                  timeout=PS_TIMEOUT_SECONDS, check=False)
+        finished = subprocess.run(ps_command, capture_output=True, text=True, timeout=PS_TIMEOUT_SECONDS,
+                                  check=False)
     except (OSError, subprocess.TimeoutExpired) as error:
-        raise ProcessQueryError(f"ps -o command= -p {pid}: {error}") from error
+        raise ProcessQueryError(f"{shlex.join(ps_command)}: {error}") from error
     # `ps` exits 1 with no output for a pid that is gone: an answer, not a failure.
     if finished.returncode == 1 and not finished.stderr.strip():
         return ""
     if finished.returncode != 0:
-        raise ProcessQueryError(f"ps -o command= -p {pid} exited {finished.returncode}: {finished.stderr.strip()}")
+        raise ProcessQueryError(
+            f"{shlex.join(ps_command)} exited {finished.returncode}: {finished.stderr.strip()}")
     return finished.stdout.strip()
 
 

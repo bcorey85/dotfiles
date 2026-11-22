@@ -1,17 +1,37 @@
 """approval_asks_store.py: the file of unsettled approval-only paths in the review-fix folder (`APPROVAL_ASKS_NAME`):
-each path mapped to the blob id its edit is measured against. The review loop writes it, a resumed loop reads it, and
-a ruling on a user-only approval ask, accepted or rejected, removes its path."""
+each path mapped to the blob id its edit is measured against (None when the file was absent, `UNKNOWN_BASE` when the
+pre-pass content is not known), and the wanted-change asks ({text, change, path, line, title}: a finding's change
+on an approval-only file). The review loop writes it, a resumed loop
+reads it, and a ruling on a user-only ask, accepted or rejected, removes its path or its wanted-change entry."""
 import json
 
 import script_utils
 from ask_outcome_words import USER_ONLY_KEY
 from review_fix_names import APPROVAL_ASKS_NAME, HELD_APPROVAL_NAME, REVIEW_FIX_FOLDER
 
+# The saved base of a path whose pre-pass content is not known (the snapshot could not list the files, or could not
+# hash this one). A blob id is hex, so it never equals this word; None stays the base of an absent file.
+UNKNOWN_BASE = "unknown"
+
+CHANGE_PREFIX = "revert the fix coder's edit to `"
+CHANGE_SUFFIX = "`."
+
 
 def approval_change(path):
-    """The change the approval ask proposes for `path`. An accepted ask reaches the next fix run as
+    """The change the approval ask proposes for `path`. An accepted ask with a known base (a saved absent
+    base for a file HEAD tracks counts as unknown) is restored and left out of the next fix run; an accepted ask
+    with an unknown base reaches it as
     `<file_line> [<class>] Proposed change: <change>`, so the change is the part that names the ask there."""
-    return f"revert the fix coder's edit to `{path}`."
+    return f"{CHANGE_PREFIX}{path}{CHANGE_SUFFIX}"
+
+
+def approval_path_of_change(change):
+    """The path an approval ask's change text names, or None when the text is not an approval change."""
+    if not isinstance(change, str):
+        return None
+    if not (change.startswith(CHANGE_PREFIX) and change.endswith(CHANGE_SUFFIX)):
+        return None
+    return change[len(CHANGE_PREFIX):-len(CHANGE_SUFFIX)]
 
 
 def review_fix_file(repo, name):
@@ -33,32 +53,77 @@ class ApprovalAsksFileError(Exception):
     """The saved approval-paths file is damaged."""
 
 
-def read_approval_paths(repo):
-    """The saved approval-only paths of `repo`, each mapped to the blob id its edit is measured against (None when the
-    file was absent); {} when none were saved. Raises ApprovalAsksFileError naming the file when it is not a JSON
-    object of path to blob id: a damaged file stops the run rather than losing an ask."""
+PATHS_KEY = "paths"
+WANTED_KEY = "wanted"
+WANTED_FIELDS = {"text": str, "change": str, "path": str, "line": int, "title": str}
+WANTED_SHAPE = "{" + ", ".join(WANTED_FIELDS) + "}"
+
+
+def wanted_edit_target(path):
+    """The words a wanted-change ask's change ends with to name the file exactly. An accepted ask reaches the next
+    run as a finding whose location is empty (UNLOCATED) for a path whose folder holds a space, so the run reads
+    the path from these words."""
+    return f"(edit to `{path}`)"
+
+
+def wanted_entry(text, change, path, line, title):
+    """One saved wanted-change ask, in the shape `is_wanted_entry` checks."""
+    values = {"text": text, "change": change, "path": path, "line": line, "title": title}
+    return {name: values[name] for name in WANTED_FIELDS}
+
+
+def is_wanted_entry(entry):
+    if not isinstance(entry, dict):
+        return False
+    return all(isinstance(entry.get(name), kind) for name, kind in WANTED_FIELDS.items())
+
+
+def read_saved_asks(repo):
+    """The saved asks of `repo` as (paths, wanted): `paths` maps each approval-only path to the blob id its edit is
+    measured against (None when the file was absent, `UNKNOWN_BASE` when the pre-pass content is not known);
+    `wanted` is a list of {text, change, path, line, title} for the wanted-change asks (each is a finding's change;
+    `path` is the exact repo-relative path and `title` the finding's title). Both are empty when nothing was saved.
+    The file holds {"paths": ..., "wanted": [...]}; an older file that is a flat object of path to blob id reads as
+    paths only. Raises ApprovalAsksFileError naming the file when it is damaged: a damaged file stops the run
+    rather than losing an ask."""
     saved = approval_paths_file(repo)
     if saved is None or not saved.exists():
-        return {}
+        return {}, []
     try:
-        paths = json.loads(saved.read_text())
+        contents = json.loads(saved.read_text())
     except ValueError as error:
         raise ApprovalAsksFileError(
-            f"{saved} is not readable JSON ({error}); delete it or fix it to a JSON object of path to blob id"
+            f"{saved} is not readable JSON ({error}); delete it or fix it to a JSON object with `paths` (path to "
+            f"blob id) and `wanted` (a list of {WANTED_SHAPE})"
         ) from error
-    if not isinstance(paths, dict) or not all(isinstance(base, (str, type(None))) for base in paths.values()):
-        raise ApprovalAsksFileError(f"{saved} must hold a JSON object of path to blob id; delete it or fix it")
-    return paths
+    if isinstance(contents, dict) and PATHS_KEY in contents:
+        paths, wanted = contents[PATHS_KEY], contents.get(WANTED_KEY, [])
+    else:
+        paths, wanted = contents, []
+    paths_ok = isinstance(paths, dict) and all(isinstance(base, (str, type(None))) for base in paths.values())
+    wanted_ok = isinstance(wanted, list) and all(is_wanted_entry(entry) for entry in wanted)
+    if not (paths_ok and wanted_ok):
+        raise ApprovalAsksFileError(
+            f"{saved} must hold a JSON object with `paths` (path to blob id) and `wanted` (a list of "
+            f"{WANTED_SHAPE}); delete it or fix it")
+    return paths, wanted
 
 
-def write_approval_paths(repo, paths):
-    """Saves `paths` (path to base blob id), the approval-only paths of `repo` still asked about, for a resumed run to
-    read."""
+def read_approval_paths(repo):
+    """The saved approval-only paths of `repo`, each mapped to the blob id its edit is measured against; {} when none
+    were saved. Raises ApprovalAsksFileError when the file is damaged (see `read_saved_asks`)."""
+    return read_saved_asks(repo)[0]
+
+
+def write_saved_asks(repo, paths, wanted):
+    """Saves `paths` (path to base blob id, None for an absent file, or `UNKNOWN_BASE`) and `wanted` (the
+    wanted-change entries, shaped as `read_saved_asks` describes), the asks of `repo` still waiting on the user, for a
+    resumed run to read."""
     saved = approval_paths_file(repo)
     if saved is None:
         return
     saved.parent.mkdir(parents=True, exist_ok=True)
-    script_utils.write_text_atomically(saved, json.dumps(paths))
+    script_utils.write_text_atomically(saved, json.dumps({PATHS_KEY: paths, WANTED_KEY: wanted}))
 
 
 def user_only_changes(asks):
@@ -128,9 +193,10 @@ def forget_ruled_approval_paths(repo, asks):
     if not ruled_changes:
         return
     forget_held_changes(repo, ruled_changes)
-    saved = read_approval_paths(repo)
+    saved, wanted = read_saved_asks(repo)
     # Matched on the change text, which is written from the exact filed path: parsing the path back out of the ask's
     # location drops a folder name that holds a space.
     kept = {path: base for path, base in saved.items() if approval_change(path) not in ruled_changes}
-    if len(kept) != len(saved):
-        write_approval_paths(repo, kept)
+    kept_wanted = [entry for entry in wanted if entry["change"] not in ruled_changes]
+    if len(kept) != len(saved) or len(kept_wanted) != len(wanted):
+        write_saved_asks(repo, kept, kept_wanted)

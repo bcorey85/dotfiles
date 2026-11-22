@@ -5,8 +5,9 @@
     python3 phase_asks.py rule [--by user [{relay_usage}]]
         <accepted|rejected>:<one-line reason> ...
 
-An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md) is refused (exit 2, nothing
-logged) unless the call carries `--by user`, which the session uses only to record the user's own ruling. A user
+An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md, or an ask that names a
+criterion of a plan whose criteria the user owns) is refused (exit 2, nothing logged)
+unless the call carries `--by user`, which the session uses only to record the user's own ruling. A user
 ruling the user gave to another live session is recorded with
 `--by user {relay_usage}`
 The script needs a real user turn of that session's transcript whose whole text is the quote, typed after the
@@ -23,8 +24,11 @@ the asks; a notes-only commit still passes. Each ask ruled `rejected` is also st
 the ruling session and each opener), so the next review loop drops a repeat of it. A later review of the repo
 leaves the asks open: only a newer phase packet with finding asks replaces them.
 The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
+An accepted user-only approval ask puts its file back to the blob it held before the fix pass (a file the pass created
+is deleted; an ask with an unknown base, or a saved absent base for a file HEAD tracks, restores nothing) and
+prints one line per restored file.
 Run from the repo root. Exit 0 when done, 2 when the call is refused (nothing is logged then), 1 when the store is
-damaged or cannot be written (the message names the file and line).
+damaged or cannot be written (the message names the file and line), or when a restore fails (nothing is logged).
 """
 import itertools
 import os
@@ -46,12 +50,15 @@ from approval_asks_store import (
     check_approval_paths_readable,
     forget_ruled_approval_paths,
 )
+from approval_restore import ApprovalRestoreError, restore_accepted_approvals, restored_lines
 from ask_outcome_words import (
     ACCEPTED,
+    CRITERIA_KEY,
     LIST_COMMAND,
     OUTCOME_PLACEHOLDER,
     REJECTED,
     RELAY_USAGE,
+    USER_ONLY_KEY,
     rule_command,
     rule_instruction,
 )
@@ -60,6 +67,10 @@ from review_fix_state import ASK_LOGGER
 
 RULABLE_OUTCOMES = (ACCEPTED, REJECTED)
 SCOPE_PHASE = "phase"
+# The key of the /code run record that holds the plan path; code_wait.write_phase_run writes it.
+PLAN_KEY = "plan"
+HELD_CRITERIA_STEP = (f"Do not rule this ask: put it on the phase-end list with its question and criteria; the user "
+                      f"rules it with `phase_asks.py rule --by {plan_format.USER_RULING}`.")
 
 
 def finding_asks(packet):
@@ -77,13 +88,76 @@ def ask_context(repo, packet, run_info):
     return context
 
 
+class CriteriaUnreadableError(Exception):
+    """The run's plan or its criteria cannot be read, so no ask can be checked for a user-owned criterion. The message
+    names the plan, the criteria file, or the step that failed."""
+
+
+class MissingPlanError(CriteriaUnreadableError):
+    """The plan file the run record names does not exist; re-running the review start rewrites the record."""
+
+
+def user_owned_criteria(repo, run_info):
+    """{"AC<n>": text} of the plan's acceptance-criteria.md when the run has a plan whose criteria the user owns,
+    else {}. Raises MissingPlanError when the recorded plan is missing, and CriteriaUnreadableError, naming the file,
+    when a criteria file or ticket cannot be read or parsed."""
+    plan = run_info.get(PLAN_KEY)
+    if not plan:
+        return {}
+    plan_path = pathlib.Path(repo) / plan
+    if not plan_path.is_file():
+        raise MissingPlanError(f"the recorded plan file {plan_path} does not exist")
+    criteria_file = plan_path.parent / plan_format.CRITERIA_FILE_NAME
+    if not criteria_file.is_file():
+        return {}
+    try:
+        owner = plan_format.plan_criteria_owner(plan_path)["owner"]
+    except (plan_format.PlanFormatError, OSError) as error:
+        raise CriteriaUnreadableError(f"the criteria owner of {plan_path} cannot be read: {error}") from error
+    if owner != plan_format.CRITERIA_OWNER_USER:
+        return {}
+    try:
+        return plan_format.criteria_by_id(criteria_file.read_text(), str(criteria_file))
+    except (plan_format.PlanFormatError, OSError) as error:
+        raise CriteriaUnreadableError(f"{criteria_file} cannot be read: {error}") from error
+
+
+def hold_criterion_asks(repo, asks, run_info):
+    """The asks, each one whose question or change names a user-owned criterion id of the run's plan marked
+    `user_only` with the ids under `criteria`. An ask already `user_only` passes through as it is. The packet's own
+    dicts are left as they are."""
+    criteria = user_owned_criteria(repo, run_info)
+    if not criteria:
+        return asks
+    held_asks = []
+    for item in asks:
+        named_text = f"{item.get('question', '')}\n{item.get('change', '')}"
+        named_ids = [criterion_id for criterion_id in dict.fromkeys(plan_format.criterion_ids_in(named_text))
+                     if criterion_id in criteria]
+        if not named_ids or item.get(USER_ONLY_KEY):
+            held_asks.append(item)
+            continue
+        held_asks.append({**item, USER_ONLY_KEY: True, CRITERIA_KEY: named_ids})
+    return held_asks
+
+
+def held_criteria_line(asks):
+    """The line that tells the session not to rule the held criterion asks and to put them on the phase-end list, ""
+    when none."""
+    held = [(number, item[CRITERIA_KEY]) for number, item in enumerate(asks, 1) if item.get(CRITERIA_KEY)]
+    if not held:
+        return ""
+    named = "; ".join(f"ask {number} names {', '.join(ids)}" for number, ids in held)
+    return f"{named}. {HELD_CRITERIA_STEP}"
+
+
 def record_open(session_id, repo, packet, run_info, packet_key):
     """Opens the finding asks of a phase packet for ruling. Returns the lines that tell the session to rule on them,
     empty when the packet is not clean (a blocked or capped loop leaves its asks to the resumed run), holds no
     finding ask, or the session has no id. `packet_key` names the packet (loop folder
     and iteration): a repeat for the same packet adds no row and prints the same lines while the asks are unruled.
-    Raises PhaseAskRowError or OSError (a damaged store, a lock held past its timeout) when the asks cannot be opened:
-    the caller fails its step on it."""
+    Raises PhaseAskRowError or OSError (a damaged store, a lock held past its timeout) or CriteriaUnreadableError (the
+    plan's criteria cannot be read) when the asks cannot be opened: the caller fails its step on it."""
     asks = finding_asks(packet)
     if not session_id or not asks:
         return []
@@ -91,14 +165,19 @@ def record_open(session_id, repo, packet, run_info, packet_key):
         return []
 
     context = ask_context(repo, packet, run_info)
+    asks = hold_criterion_asks(repo, asks, run_info)
     handback_store.record_phase_asks_open(session_id, repo, asks, context, packet_key)
     unruled = handback_store.unruled_phase_asks(repo)
     if unruled is None:
         return []
     open_asks = unruled["asks"]
     open_count = len(open_asks)
-    return [f"{open_count} finding ask(s) await your ruling: run `{LIST_COMMAND}`, then "
-            f"{rule_instruction(open_asks)}."]
+    lines = [f"{open_count} finding ask(s) await your ruling: run `{LIST_COMMAND}`, then "
+             f"{rule_instruction(open_asks)}."]
+    held_line = held_criteria_line(open_asks)
+    if held_line:
+        lines.append(held_line)
+    return lines
 
 
 def session_state():
@@ -132,6 +211,9 @@ def command_list():
         print("These asks are already ruled. Done.")
         return 0
     print(f"Rule on all {len(asks)} in order: {rule_instruction(asks)}")
+    held_line = held_criteria_line(asks)
+    if held_line:
+        print(held_line)
     return 0
 
 
@@ -309,6 +391,14 @@ def rule_open_asks(words):
     except ApprovalAsksFileError as error:
         print(f"phase_asks: {error}. Nothing was logged.", file=sys.stderr)
         return 1
+    # An accepted approval ask puts its file back to the pre-pass text; a failed restore logs nothing.
+    try:
+        restored = restore_accepted_approvals(rows_repo, asks, outcomes)
+    except ApprovalRestoreError as error:
+        print(f"phase_asks: {error}. Or answer the ask `rejected:<reason>`. Nothing was logged.", file=sys.stderr)
+        return 1
+    for line in restored_lines(restored):
+        print(line)
 
     # Before the outcome rows: a hung or failed logger must not lose them. A rerun adds none (the store skips a text
     # already rejected). The key is the one the review loop reads them under.

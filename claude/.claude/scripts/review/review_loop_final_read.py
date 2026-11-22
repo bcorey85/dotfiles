@@ -5,11 +5,12 @@ scoped_tests, nits and round_two_fix_diff_path, and has next_round, run_reviewer
 tree_paths and take_review."""
 import script_utils
 from capped_review import CAP_REACHED
+from review_loop_pass_names import CLASS_FIX_PASS, GATE_FIX_PASS, LINT_FIX_PASS, PROSE_FIX_PASS
 
 FINAL_READ_AGENT = "code-reviewer"
 FINAL_DIFF_NAME = "final-fix.diff"
 LATE_REPAIR_DIFF_NAME = "late-repair.diff"
-LATE_REPAIR_CALLS = ("coder-gate", "coder-lint", "coder-class", "coder-prose")
+LATE_REPAIR_CALLS = (GATE_FIX_PASS, LINT_FIX_PASS, CLASS_FIX_PASS, PROSE_FIX_PASS)
 
 
 class FinalRead:

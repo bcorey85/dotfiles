@@ -40,6 +40,11 @@ class ProcessGroupTest(unittest.TestCase):
         process.wait()
         self.assertEqual(process_group.command_line(process.pid), "")
 
+    def test_command_line_is_not_cut_to_a_narrow_columns_width(self):
+        process = self.sleeper()
+        with unittest.mock.patch.dict(os.environ, {"COLUMNS": "20"}):
+            self.assertIn(MARKER, process_group.command_line(process.pid))
+
     def test_pid_is_alive_for_a_running_pid_and_not_for_a_gone_unusable_or_oversized_one(self):
         self.assertTrue(process_group.pid_is_alive(os.getpid()))
         self.assertTrue(process_group.pid_is_alive(str(os.getpid())))

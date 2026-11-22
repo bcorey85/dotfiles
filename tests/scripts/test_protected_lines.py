@@ -14,6 +14,23 @@ import review_loop_signoffs
 BEFORE = "# D\n\n- Ruled by the session.\n\n- plain note\n"
 
 
+class StretchHelpersTest(unittest.TestCase):
+    def test_entries_missing_counts_repeats(self):
+        missing = protected_lines.entries_missing([(1, "a"), (2, "a"), (3, "b")], [(1, "a"), (2, "b")])
+
+        self.assertEqual(missing, [(2, "a")])
+
+    def test_changed_stretches_name_removed_and_rewritten_lines_of_the_first_text(self):
+        stretches = protected_lines.changed_stretches("a\nb\nc\nd\n", "a\nc\nD\n")
+
+        self.assertEqual(stretches, [(2, 2), (4, 4)])
+
+    def test_a_removed_stretch_comes_back_only_at_its_protected_lines_when_not_whole(self):
+        restored = protected_lines.restore_protected_lines("a\nb\nc\nd\n", "a\nd\n", [2], whole_stretch=False)
+
+        self.assertEqual(restored, "a\nb\nd\n")
+
+
 class RestoreProtectedLinesTest(unittest.TestCase):
     def test_a_changed_protected_line_goes_back_and_other_edits_stay(self):
         after = "# D\n\n- Ruled by the user.\n\n- plain note, edited\n"

@@ -6,11 +6,17 @@ STATE_FILE_NAME = "state.json"
 ASK_FINDINGS_NAME = "ask-findings.md"
 # The folder under the review-fix state folder that holds the whole text of a long blocker line.
 BLOCKER_TEXT_FOLDER = "blocker-text"
-# The paths of the approval-only files with an open user-only ask, a JSON object of each path to the blob id its edit
-# is measured against, which the next review loop run of the repo reloads and rewrites with the paths it files again,
-# and each ruling on a user-only ask, accepted or rejected, removes its path. Kept beside the state file.
+# The approval-only asks still open, a JSON object {"paths": ..., "wanted": [...]} (the shape is documented at
+# `approval_asks_store.read_saved_asks`), which the next review loop run of the repo reloads and rewrites with the asks
+# it files again. Each ruling on a user-only ask, accepted or rejected, removes its path and its wanted entries. Kept
+# beside the state file.
 APPROVAL_ASKS_NAME = "approval-asks.json"
 HELD_APPROVAL_NAME = "held-approval-changes.json"
+# The findings a fix coder was given when it died mid-edit, less those on a reverted approval-only path (a user-only
+# ask now), with the partial diff: the next review loop run of the repo sends those not on a held file to the coder
+# again, and keeps only the held ones after that pass, or when none of its findings is left to send (no diff then); a
+# run that stops before the first fix pass leaves the file as it is.
+PARTIAL_FIX_NAME = "partial-fix.json"
 # The run folder's findings file: `/fix` passes it to `--fix`, and a fork writes it for `launch --also-fix` to add
 # findings to the fix run asks-done printed. The run folder is the one place the fork may write.
 RUN_FOLDER_FINDINGS_NAME = "fix-findings.md"
@@ -27,6 +33,9 @@ CORRECT_OPEN_KEY = "correct_open"
 # Who ruled on each ask, a list with one entry per ask: set by the asks-done that prints the fix run, then reset to the
 # decider of each ask a later `asks-done --correct` re-answers, so a session correction drops that ask's `--user-ruled`.
 ASKS_DECIDED_BY_KEY = "asks_decided_by"
+# The indexes of the approval asks asks-done put back to their pre-pass text: they hold nothing for the coder, and a
+# retry of the call keeps them.
+RESTORED_INDEXES_KEY = "restored_approval_indexes"
 # The identity keys of a packet's saved state, set when the packet is saved (apart from `packet_id`). A kept packet
 # that holds a packet's held asks copies them, as it relaunches the same review run.
 PACKET_IDENTITY_KEYS = ("skill", "scope", "lane", "iter", "review_round", "spec_iter", "status", "branch", "source",

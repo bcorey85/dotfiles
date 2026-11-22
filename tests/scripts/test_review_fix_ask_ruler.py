@@ -58,6 +58,208 @@ class LegacyFiledTimeTest(unittest.TestCase):
         self.assertEqual(stamped, [1000, 1000])
 
 
+class ApprovalRestoreRulingTest(unittest.TestCase):
+    """An accepted user-only approval ask puts its file back to the text it held before the pass, and the fix coder
+    is not handed the ask."""
+    setUp = fixture.ReviewFixScriptTest.setUp
+    stop_launched_loops = fixture.ReviewFixScriptTest.stop_launched_loops
+    fake_command = fixture.ReviewFixScriptTest.fake_command
+    environment = fixture.ReviewFixScriptTest.environment
+    git = fixture.ReviewFixScriptTest.git
+    run_script = fixture.ReviewFixScriptTest.run_script
+    packet = fixture.ReviewFixScriptTest.packet
+    ledger_writes = fixture.ReviewFixScriptTest.ledger_writes
+    findings_file = fixture.ReviewFixScriptTest.findings_file
+
+    PRE_PASS_TEXT = "rules\nuser line\n"
+    EDITED_TEXT = "rules\nuser line\ncoder line\n"
+
+    def claude_md(self):
+        return pathlib.Path(self.repo) / "CLAUDE.md"
+
+    def packet_with_approval_ask(self, base):
+        """CLAUDE.md holds the coder's edit; the saved paths name `base`, or the blob of the pre-pass text."""
+        self.claude_md().write_text(self.PRE_PASS_TEXT)
+        pre_pass_blob = script_utils.work_tree_blob(self.repo, "CLAUDE.md", keep_object=True)
+        self.claude_md().write_text(self.EDITED_TEXT)
+        approval_asks_store.write_saved_asks(self.repo, {"CLAUDE.md": base or pre_pass_blob}, [])
+        change = approval_asks_store.approval_change("CLAUDE.md")
+        entry = ask_entry("edit", "CLAUDE.md:1", finding_id="a1b2c3d4e5f60051", question="approve?", change=change)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[{**entry, "user_only": True}, SECOND_ASK]))
+
+    def test_the_user_lines_remain_the_coder_edit_is_gone_and_the_coder_gets_only_the_other_ask(self):
+        self.packet_with_approval_ask(None)
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("Restored `CLAUDE.md` to its text from before the fix pass; "
+                      "commit it with the rest of the change.", output)
+        self.assertIn("`git add CLAUDE.md`", output)
+        self.assertEqual(self.claude_md().read_text(), self.PRE_PASS_TEXT)
+        findings = self.findings_file().read_text().splitlines()
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("two.ts:2", findings[0])
+        self.assertEqual(approval_asks_store.read_approval_paths(self.repo), {})
+
+    def test_an_unknown_base_leaves_the_file_and_still_hands_the_ask_to_the_coder(self):
+        self.packet_with_approval_ask(approval_asks_store.UNKNOWN_BASE)
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Restored", output)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+        findings = self.findings_file().read_text().splitlines()
+        self.assertEqual(len(findings), 2, findings)
+        claude_md_line = next(line for line in findings if "CLAUDE.md" in line)
+        self.assertIn(approval_asks_store.approval_change("CLAUDE.md"), claude_md_line)
+
+    def test_a_restore_that_fails_exits_non_zero_naming_the_file_and_logs_nothing(self):
+        missing_blob = "0123456789abcdef0123456789abcdef01234567"
+        self.packet_with_approval_ask(missing_blob)
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("CLAUDE.md", output)
+        self.assertIn(missing_blob, output)
+        self.assertIn("modified:", output)
+        self.assertIn("Nothing was logged", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+
+    def test_a_correction_to_accepted_after_the_base_was_released_is_refused_and_never_reverts_to_head(self):
+        self.packet_with_approval_ask(None)
+        self.run_script(["asks-done", "--by", "user", "rejected:keep the edit", "accepted"])
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("CLAUDE.md", output)
+        self.assertIn("by hand", output)
+        self.assertIn("Nothing was logged", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+
+    def test_a_retry_after_a_logging_failure_keeps_the_restored_ask_out_of_the_findings_file(self):
+        self.packet_with_approval_ask(None)
+        fail_call = fake_ledger.write_call_count(self.ledger_env) + 2
+        words = ["asks-done", "--by", "user", "accepted", "accepted"]
+        code, output = self.run_script(words, FAKE_LEDGER_FAIL_WRITE_CALL=str(fail_call))
+        self.assertEqual(code, 0, output)
+        # The retry below must be the case where the restore is done and the saved paths are already forgotten.
+        self.assertEqual(self.claude_md().read_text(), self.PRE_PASS_TEXT)
+        self.assertEqual(approval_asks_store.read_approval_paths(self.repo), {})
+
+        code, output = self.run_script(words)
+        self.assertEqual(code, 0, output)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "rejected:no"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.claude_md().read_text(), self.PRE_PASS_TEXT)
+        findings_text = self.findings_file().read_text() if self.findings_file().exists() else ""
+        self.assertNotIn("CLAUDE.md", findings_text)
+
+    def test_the_modified_answer_the_refusal_suggests_is_accepted(self):
+        self.packet_with_approval_ask(None)
+        self.run_script(["asks-done", "--by", "user", "rejected:keep the edit", "accepted"])
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user",
+                                       "modified:keep the coder line in `CLAUDE.md`", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+
+    def assert_correction_after_accepted_is_refused(self, new_answer):
+        self.packet_with_approval_ask(None)
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", new_answer, "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("already put the file back", output)
+        self.assertIn("Nothing was logged", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.assertEqual(self.claude_md().read_text(), self.PRE_PASS_TEXT)
+
+    def test_a_correction_after_an_accepted_ruling_is_refused_because_the_edit_is_already_gone(self):
+        self.assert_correction_after_accepted_is_refused("rejected:keep the edit")
+
+    def test_a_modified_correction_after_an_accepted_ruling_is_refused_too(self):
+        self.assert_correction_after_accepted_is_refused("modified:keep the coder line in `CLAUDE.md`")
+
+    def test_the_call_the_refusal_suggests_corrects_the_other_ask(self):
+        self.packet_with_approval_ask(None)
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted", "rejected:no"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.claude_md().read_text(), self.PRE_PASS_TEXT)
+        self.assertGreater(len(self.ledger_writes()), rows_before)
+        # The second ask is rejected, so no ask is left for the coder and the findings file is gone.
+        findings_text = self.findings_file().read_text() if self.findings_file().exists() else ""
+        self.assertNotIn("CLAUDE.md", findings_text)
+        self.assertNotIn("two.ts", findings_text)
+
+    def test_a_correction_on_a_sibling_ask_keeps_the_restored_ask_out_of_the_findings(self):
+        self.packet_with_approval_ask(None)
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "accepted",
+                                       "modified:do x in `two.ts`"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("CLAUDE.md", self.findings_file().read_text())
+
+    def test_an_unrestored_accepted_ask_can_be_corrected_to_rejected_and_keeps_the_edit(self):
+        self.packet_with_approval_ask(approval_asks_store.UNKNOWN_BASE)
+        self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "rejected:keep the edit",
+                                       "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+
+    def test_a_saved_absent_base_for_a_tracked_file_is_not_restored(self):
+        self.packet_with_approval_ask(None)
+        self.git("add", "CLAUDE.md")
+        self.git("commit", "-m", "track")
+        self.claude_md().write_text(self.EDITED_TEXT)
+        approval_asks_store.write_saved_asks(self.repo, {"CLAUDE.md": None}, [])
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("Restored", output)
+        self.assertEqual(self.claude_md().read_text(), self.EDITED_TEXT)
+
+    def test_a_folder_name_with_a_space_is_restored(self):
+        folder = pathlib.Path(self.repo) / "my dir"
+        folder.mkdir()
+        target = folder / "CLAUDE.md"
+        target.write_text(self.PRE_PASS_TEXT)
+        blob = script_utils.work_tree_blob(self.repo, "my dir/CLAUDE.md", keep_object=True)
+        target.write_text(self.EDITED_TEXT)
+        approval_asks_store.write_saved_asks(self.repo, {"my dir/CLAUDE.md": blob}, [])
+        change = approval_asks_store.approval_change("my dir/CLAUDE.md")
+        entry = ask_entry("edit", "my dir/CLAUDE.md:1", finding_id="a1b2c3d4e5f60052", question="approve?",
+                          change=change)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[{**entry, "user_only": True}, SECOND_ASK]))
+
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(target.read_text(), self.PRE_PASS_TEXT)
+        self.assertIn("`git add 'my dir/CLAUDE.md'`", output)
+
+
 class AskRulerTest(unittest.TestCase):
     # The real asks-done runs against a temp repo, set up as the review-fix script tests set it up.
     setUp = fixture.ReviewFixScriptTest.setUp
@@ -119,6 +321,68 @@ class AskRulerTest(unittest.TestCase):
         self.answered(ONE_ASK, "--by", "session", "modified:cap at 5")
         self.assertEqual(self.findings_lines(),
                          ["- one.ts:1 [smell] Proposed change: c1 " + SESSION_SENTENCE + "cap at 5"])
+
+    def test_an_accepted_ask_with_no_location_and_no_file_in_its_change_is_refused_and_logs_nothing(self):
+        unlocated = ask_entry("first", "unlocated", finding_id="a1b2c3d4e5f60033", question="keep it?",
+                              change="tighten the check")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[unlocated]))
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("'modified:<the change, naming the file and the edit>'", output)
+        self.assertIn("Nothing was logged", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+        self.asks_done("--by", "session", "modified:tighten the check in src/gate.py")
+        self.assertIn("src/gate.py", "\n".join(self.findings_lines()))
+
+    def test_an_accepted_unlocated_ask_whose_change_names_a_file_gives_the_coder_that_path(self):
+        unlocated = ask_entry("first", "unlocated", finding_id="a1b2c3d4e5f60035", question="keep it?",
+                              change="tighten the check in src/gate.py")
+        self.answered(packet_text(CLEAN_EMPTY_FIELDS, ask=[unlocated]), "--by", "session", "accepted")
+        self.assertIn("src/gate.py", "\n".join(self.findings_lines()))
+
+    def test_a_correction_to_accepted_on_an_unlocated_ask_with_no_file_is_refused_and_logs_nothing(self):
+        unlocated = ask_entry("first", "unlocated", finding_id="a1b2c3d4e5f60034", question="keep it?",
+                              change="tighten the check")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[unlocated]))
+        self.asks_done("--by", "session", "modified:tighten the check in src/gate.py")
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("Nothing was logged", output)
+        self.assertIn("run `asks-done --correct ...` again", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def conditional_ask_packet(self):
+        conditional = ask_entry("first", "a.py:1", finding_id="a1b2c3d4e5f60036", question="keep it?",
+                                change="if yes, drop it; if no, keep it")
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[conditional]))
+
+    def test_a_correction_to_accepted_on_a_conditional_change_is_refused_with_the_correct_command(self):
+        self.conditional_ask_packet()
+        self.asks_done("--by", "session", "modified:drop it")
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("run `asks-done --correct ...` again", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_an_accepted_conditional_change_is_refused_with_the_plain_command(self):
+        self.conditional_ask_packet()
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("run `asks-done ...` again", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
 
     def test_a_session_ruling_on_a_user_only_ask_is_refused_and_logs_nothing(self):
         user_only_ask = {**FIRST_ASK, "user_only": True}
@@ -199,7 +463,7 @@ class AskRulerTest(unittest.TestCase):
         question, change = review_loop_findings.ask_parts(text)
         item = {"question": question, "change": change, "file_line": "gates/x.py:12", "class": "security"}
 
-        self.assertEqual(review_fix_asks.conditional_ask_numbers([item]), [])
+        self.assertEqual(review_asks.conditional_ask_numbers([item]), [])
         finding = review_fix_asks.ask_finding_text(item)
 
         self.assertEqual(finding, "gates/x.py:12 [security] Proposed change: remove the quoted-argument exemption, "
@@ -210,16 +474,22 @@ class AskRulerTest(unittest.TestCase):
             "Drop the cache? Change if yes: drop it. Change if no: keep it.")
         item = {"question": question, "change": change, "file_line": "a.py:1", "class": "bug"}
 
-        self.assertEqual(review_fix_asks.conditional_ask_numbers([item]), [1])
+        self.assertEqual(review_asks.conditional_ask_numbers([item]), [1])
         with self.assertRaises(review_fix_asks.UsageError):
-            review_fix_asks.refuse_conditional_changes([item], [review_fix_asks.ACCEPTED])
+            review_asks.refuse_conditional_changes([item], [review_fix_asks.ACCEPTED], "asks-done ...")
+
+    def test_the_conditional_refusal_names_the_rerun_command_it_was_given(self):
+        item = {"question": "Drop the cache?", "change": "If not confirmed, revert the cache", "file_line": "a.py:1"}
+        with self.assertRaises(review_fix_asks.UsageError) as raised:
+            review_asks.refuse_conditional_changes([item], [review_fix_asks.ACCEPTED], "asks-done --correct ...")
+        self.assertIn("run `asks-done --correct ...` again", str(raised.exception))
 
     def test_every_outcome_but_modified_is_refused_on_a_conditional_change(self):
         item = {"question": "Drop the cache?", "change": "If not confirmed, revert the cache", "file_line": "a.py:1"}
         for outcome in (review_fix_asks.ACCEPTED, review_fix_asks.APPLIED, review_fix_asks.REJECTED):
             with self.subTest(outcome=outcome), self.assertRaises(review_fix_asks.UsageError):
-                review_fix_asks.refuse_conditional_changes([item], [outcome])
-        review_fix_asks.refuse_conditional_changes([item], [review_fix_asks.MODIFIED])
+                review_asks.refuse_conditional_changes([item], [outcome], "asks-done ...")
+        review_asks.refuse_conditional_changes([item], [review_fix_asks.MODIFIED], "asks-done ...")
 
     def test_a_plain_change_mark_in_the_question_keeps_a_single_change_if_label_as_the_split(self):
         parts = review_loop_findings.ask_parts(
@@ -543,7 +813,7 @@ class ApprovalPathsRulingTest(unittest.TestCase):
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[{**entry, "user_only": True}]))
 
     def save_paths(self):
-        approval_asks_store.write_approval_paths(self.repo, {self.PATH: None, "AGENTS.md": None})
+        approval_asks_store.write_saved_asks(self.repo, {self.PATH: None, "AGENTS.md": None}, [])
 
     def assert_user_ruling_drops_the_path(self, outcome):
         self.approval_packet()
@@ -560,15 +830,6 @@ class ApprovalPathsRulingTest(unittest.TestCase):
     def test_an_accepted_user_ruling_drops_the_path(self):
         self.assert_user_ruling_drops_the_path("accepted")
 
-    def test_a_correction_after_an_accepted_ruling_leaves_the_path_dropped(self):
-        self.approval_packet()
-        self.save_paths()
-        self.run_script(["asks-done", "--by", "user", "accepted"])
-
-        code, output = self.run_script(["asks-done", "--correct", "--by", "user", "rejected:keep the edit"])
-
-        self.assertEqual(code, 0, output)
-        self.assertEqual(list(approval_asks_store.read_approval_paths(self.repo)), ["AGENTS.md"])
 
     def test_a_damaged_saved_file_stops_a_rejection_with_nothing_logged(self):
         self.approval_packet()

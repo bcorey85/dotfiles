@@ -9,6 +9,7 @@ import sys
 
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 sys.path[:0] = [str(SCRIPT_DIR.parent / folder) for folder in (".", "review", "code", "lib")]
+import accepted_failures
 import format_files
 import full_check
 import full_check_receipt
@@ -16,6 +17,7 @@ import handback
 import script_utils
 import source_paths
 from finding_record import parse_finding
+from review_loop_pass_names import GATE_FIX_PASS, LINT_FIX_PASS
 from worktree_snapshot import CHANGE_KINDS
 
 CHECK_TIMEOUT_SECONDS = 900
@@ -114,7 +116,7 @@ class FullCheckSteps:
             return
 
         gate_records = [parse_finding(text) for text in gate_findings]
-        _report, _diffs, gate_changed, gate_reverted = self.repair("coder-gate", gate_records)
+        _report, _diffs, gate_changed, gate_reverted = self.repair(GATE_FIX_PASS, gate_records)
         self.mark_repaired(gate_records, gate_changed, gate_reverted)
         self.recheck_full_check(check_command, "full check still failing after one repair")
 
@@ -131,7 +133,7 @@ class FullCheckSteps:
             return True
 
         lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
-        _report, _diffs, lint_changed, lint_reverted = self.repair("coder-lint", lint_records)
+        _report, _diffs, lint_changed, lint_reverted = self.repair(LINT_FIX_PASS, lint_records)
         self.mark_repaired(lint_records, lint_changed, lint_reverted)
         self.format_reviewed_files(check_command)
         problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
@@ -210,14 +212,16 @@ class FullCheckSteps:
     def scoped_failures_pre_existing(self, real_failures):
         """True when every red scoped test command, each a (command, outcome, output) from
         coder_gate.scoped_run (ScopedRun.real_failures), fails as its base run does on HEAD without
-        the working-tree changes, by full_check.is_pre_existing. A new failing test, a new error line or a base run
-        that passes makes it False. Each command's base run happens once per loop."""
+        the working-tree changes, by full_check.is_pre_existing, which also takes the recorded acceptances. A new
+        failing test, a new error line or a base run that passes makes it False. Each command's base run happens
+        once per loop."""
         if not real_failures:
             return False
 
         gate_assignments = script_utils.environment_from_assignments(self.gate_env)
         base_runner = functools.partial(full_check.base_run, live_trees=LIVE_BASE_TREES,
                                         gate_assignments=gate_assignments)
+        accepted = accepted_failures.accepted_lines(self.repo)
         for index, (command, outcome, output) in enumerate(real_failures):
             if command not in self.scoped_base_runs:
                 base_log = f"{SCOPED_BASE_LOG_STEM}-{len(self.scoped_base_runs)}.log"
@@ -226,9 +230,22 @@ class FullCheckSteps:
             head_log = self.out / f"{SCOPED_HEAD_LOG_STEM}-{index}.log"
             head_log.write_text(output)
             head_result = f"failed ({outcome})"
-            if not full_check.is_pre_existing(head_log, head_result, self.scoped_base_runs[command]):
+            base = self.scoped_base_runs[command]
+            if not full_check.is_pre_existing(head_log, head_result, base, accepted):
                 return False
         return True
+
+    def accept_failure_hint(self, real_failures):
+        """The accept commands for the failing lines of the red scoped commands, with a lead line; empty when no
+        failing line is named."""
+        failing = []
+        for _command, _outcome, output in real_failures:
+            failing += accepted_failures.failing_lines_of(output)
+        if not failing:
+            return ""
+
+        commands = accepted_failures.accept_command_text(self.repo, list(dict.fromkeys(failing)))
+        return "If a failing line above also fails without this diff, record that it is accepted:\n" + commands
 
     def autofix_touched_files(self):
         """Run the autofix formatters on the files the loop touched, a web tool only where the repo configures it.

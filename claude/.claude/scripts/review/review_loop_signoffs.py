@@ -1,17 +1,17 @@
 """review_loop_signoffs.py: sign-off lines of a decision log are never edited by a coder. A finding on one, or one that
 objects to a recorded ruling, goes to the packet's asks instead of a coder. After each coder pass, a file whose
 sign-off lines changed or vanished is put back and an ask names the entry and the reviewer's objection."""
-import collections
 import pathlib
 import typing
 
+import hook_input
 import plan_format
 import protected_lines
 import review_loop_coder
-import script_utils
 import signoff_lines
 from finding_record import parse_finding
 from review_loop_held import held_path_in_repo
+from review_loop_put_back import put_back_lines
 from review_loop_ruled import CODER_GATE
 
 SIGNOFF_ASK_NOTE = "[sign-off] a recorded ruling that no coder edits; the caller routes it"
@@ -38,19 +38,12 @@ def in_signoff_scope(path, text, line):
     return line - 1 in signoff_lines.signoff_scope_indexes(pathlib.PurePath(path).name, lines)
 
 
-def file_text(repo, path):
-    target = pathlib.Path(repo) / path
-    if not target.is_file():
-        return None
-    return target.read_text(errors="replace")
-
-
 def signoff_entry_line(repo, path, line):
     """The `<path>:<line>` label of the sign-off entry a finding on `path` at `line` names: the line itself when it is
     a sign-off line or any other line the finding names, else the file's first sign-off line, else the bare path."""
     if line:
         return f"{path}:{line}"
-    text = file_text(repo, path)
+    text = hook_input.read_file_text(pathlib.Path(repo) / path, errors="replace")
     numbers = [number for number, _text in recorded_signoff_lines(path, text)] if text is not None else []
     if numbers:
         return f"{path}:{numbers[0]}"
@@ -62,7 +55,7 @@ def finding_hits_signoff(repo, finding):
     path = held_path_in_repo(finding.path, repo)
     if not path or not is_decision_log(path):
         return False
-    text = file_text(repo, path)
+    text = hook_input.read_file_text(pathlib.Path(repo) / path, errors="replace")
     if text is None:
         return False
     if any(number == finding.line for number, _line in recorded_signoff_lines(path, text)):
@@ -86,26 +79,6 @@ class SignoffSnapshot(typing.NamedTuple):
     lines: dict
 
 
-class SignoffPutBack(typing.NamedTuple):
-    """One file the loop put sign-off lines back in: their line numbers in the text before the pass, and that text and
-    the restored one."""
-
-    path: str
-    lost_numbers: list
-    before_text: str
-    restored_text: str
-
-    @property
-    def unchanged(self):
-        """True when the put-back left the file as it was before the pass, so no fix to it survives."""
-        return self.restored_text == self.before_text
-
-
-def fully_put_back_paths(put_back):
-    """The paths in `put_back` that went back to their text before the pass."""
-    return [entry.path for entry in put_back if entry.unchanged]
-
-
 def snapshot_signoffs(repo, extra_paths):
     """A SignoffSnapshot of the plan folders' markdown files and of `extra_paths` that are decision logs."""
     root = pathlib.Path(repo)
@@ -113,7 +86,7 @@ def snapshot_signoffs(repo, extra_paths):
     paths.update(path for path in extra_paths if is_decision_log(path))
     texts, lines = {}, {}
     for path in sorted(paths):
-        text = file_text(root, path)
+        text = hook_input.read_file_text(root / path)
         if text is None:
             continue
         entries = recorded_signoff_lines(path, text)
@@ -127,14 +100,7 @@ def snapshot_signoffs(repo, extra_paths):
 def lost_lines(before_entries, after_text, path=""):
     """The (line number, text) entries of `before_entries` that `after_text` of the file `path` no longer holds,
     counting repeats."""
-    remaining = collections.Counter(text for _number, text in recorded_signoff_lines(path, after_text or ""))
-    lost = []
-    for number, text in before_entries:
-        if remaining[text] > 0:
-            remaining[text] -= 1
-            continue
-        lost.append((number, text))
-    return lost
+    return protected_lines.entries_missing(before_entries, recorded_signoff_lines(path, after_text or ""))
 
 
 def objection_text(findings, path, repo):
@@ -175,7 +141,7 @@ class SignoffRuns:
 
     def put_back_undid(self, finding, put_back):
         """True when the put-back undid the fix of `finding`: its file went back to its text before the pass, or the
-        line it cites is a sign-off line that went back."""
+        line it cites is a sign-off or comment line that went back."""
         path = held_path_in_repo(finding.path, self.repo)
         for entry in put_back:
             if entry.path != path:
@@ -184,27 +150,25 @@ class SignoffRuns:
         return False
 
     def not_put_back(self, items):
-        """The items the sign-off put-back did not restore: a restored finding is not fixed."""
+        """The items the sign-off or comment put-back did not restore: a restored finding is not fixed."""
         return [item for item in items if item not in self.put_back_findings]
 
     def undo_signoff_pass(self, snapshot, findings, skip):
         """After a coder pass: puts back the sign-off lines, in each snapshot file except those in `skip`, that changed
-        or vanished, and files one ask per lost line. Other edits to the file stay. Returns a SignoffPutBack for each
+        or vanished, and files one ask per lost line. Other edits to the file stay. Returns a ProtectedPutBack for each
         file."""
         put_back = []
         for path, entries in snapshot.lines.items():
             if path in skip:
                 continue
-            current = file_text(self.repo, path)
+            current = hook_input.read_file_text(pathlib.Path(self.repo) / path)
             lost = lost_lines(entries, current, path)
             if not lost:
                 continue
             # Only the lines the pass changed go back: a sign-off another session wrote into the file during the
             # pass stays.
             lost_numbers = [number for number, _text in lost]
-            restored = protected_lines.restore_protected_lines(snapshot.texts[path], current or "", lost_numbers)
-            script_utils.write_text_atomically(pathlib.Path(self.repo) / path, restored)
-            put_back.append(SignoffPutBack(path, lost_numbers, snapshot.texts[path], restored))
+            put_back.append(put_back_lines(self.repo, path, snapshot.texts[path], current or "", lost_numbers))
             objection = objection_text(findings, path, self.repo)
             for number, text in lost:
                 ask = parse_finding(f"{path}:{number} {PUT_BACK_NOTE}. Line: {text.strip()!r}. "

@@ -33,8 +33,9 @@ still judges.
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
                                          script exits, and then names the packet command to run. --detach returns
                                          once the loop started and names the code_wait.py wait. Exits 2 when
-                                         CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, and on a
-                                         review-first run with nothing to review.
+                                         CLAUDE_CODE_SESSION_ID is not set, on a bad flag or findings file, on a
+                                         review-first run with nothing to review, and when a live loop of the repo
+                                         started in the other mode (fix or review) still runs.
   review_fix.py escape --escape "..."...   log escape rows from the saved packet state (fix, repeatable)
   review_fix.py asks-done --by <user|session> [--packet <packet_id>] [--correct] <outcome>...
                                          one outcome per ask, in order: {outcomes},
@@ -134,7 +135,6 @@ from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_t
 from review_blocker_text import blocker_text
 from review_fix_asks import (
     command_asks_done,
-    conditional_ask_numbers,
     findings_covered_by_impact,
     missing_packet_repo_reason,
     packet_repo,
@@ -355,7 +355,7 @@ def asks_done_line(asks, state):
         listed = ", ".join(str(number) for number in user_only)
         line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
                  f"{review_asks.HELD_MEANS}")
-    conditional = conditional_ask_numbers(asks)
+    conditional = review_asks.conditional_ask_numbers(asks)
     if not conditional:
         return line
     numbers = ", ".join(str(number) for number in conditional)

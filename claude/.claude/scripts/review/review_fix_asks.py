@@ -8,6 +8,7 @@ import shlex
 import sys
 from typing import NamedTuple
 
+import approval_restore
 import handback_store
 import plan_format
 import review_asks
@@ -24,6 +25,7 @@ from approval_asks_store import (
 )
 from ask_outcome_words import HELD, USER_ONLY_KEY
 from handback import PLAN_IMPACT_STATUS, is_plan_impact_ask
+from held_asks import refuse_misplaced_held, split_held
 from human_turn_lookup import HumanTurnRefusedError
 from review_asks import (
     ACCEPT_MEANS,
@@ -498,7 +500,8 @@ def set_ask_decider(state, index, decided_by):
 def ruled_numbers(state, ruler):
     """The 1-based positions, in the findings file, of the findings whose ask `ruler` ruled on."""
     deciders = ask_deciders(state)
-    indexes = finding_ask_indexes(state["asks"], state["ask_outcomes"])
+    outcomes = approval_restore.finding_outcomes(state)
+    indexes = finding_ask_indexes(state["asks"], outcomes)
     return [number for number, index in enumerate(indexes, 1) if deciders[index] == ruler]
 
 
@@ -602,30 +605,6 @@ def mark_packet_answered(state, target):
     state["last_ask_notes"] = target.get("ask_notes")
 
 
-def conditional_ask_numbers(asks):
-    """The 1-based numbers of the asks whose proposed change hangs on the answer. A converted ask's change is the
-    skipped finding line the user already accepted; any "if" in it is not a branch for the user to pick."""
-    return [number for number, item in enumerate(asks, 1)
-            if not item.get(USER_RULED_KEY) and review_asks.is_conditional_change(item.get("change") or "")]
-
-
-def refuse_conditional_changes(asks, outcomes):
-    """Refuses any outcome but modified on an ask whose proposed change is conditional: no other word says
-    which branch the ruler chose. A modified outcome carries the ruler's own change and is never refused."""
-    problems = []
-    conditional = conditional_ask_numbers(asks)
-    for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
-        if outcome == MODIFIED or number not in conditional:
-            continue
-        change = item.get("change") or ""
-        problems.append(f"ask {number} ({item.get('file_line') or 'no file:line'}) has a conditional proposed "
-                        f"change: {one_line(change, 160)}")
-    if problems:
-        raise UsageError("\n".join(problems) + "\nNothing was logged. Answer each of these asks with "
-                         f"'{MODIFIED}:<the change to make, with no condition>', quoted as one shell word, and run "
-                         "asks-done again.")
-
-
 def answer_of(outcome, note):
     """What an ask's answer is: the outcome word, plus the ruler's change for a modified one. The note after accepted
     or rejected is not stored."""
@@ -669,6 +648,7 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=
     needs_repo = touches_rejection or any(item.get(USER_ONLY_KEY) for item in corrected_asks)
     repo = required_packet_repo(state.get("relaunch_args") or []) if needs_repo else None
     refuse_damaged_approval_paths(repo, corrected_asks)
+    approval_restore.refuse_corrections_of_state(state, indexes, outcomes)
     for index in indexes:
         item = state["asks"][index]
         outcome_row = review_asks.log_ask_outcome(ASK_LOGGER, state, item, outcomes[index], decided_by)
@@ -703,7 +683,8 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=
 def sync_pending_fix_run(state):
     """Rebuilds the findings file and the pending launch from the stored answers and deciders, or drops both when no
     ask is left to apply. Does not save. Returns the findings file, or None when it was dropped."""
-    finding_lines = ask_finding_lines(state["asks"], state["ask_outcomes"], state["ask_notes"], ask_deciders(state))
+    finding_outcomes = approval_restore.finding_outcomes(state)
+    finding_lines = ask_finding_lines(state["asks"], finding_outcomes, state["ask_notes"], ask_deciders(state))
     state["last_ask_outcomes"] = state["ask_outcomes"]
     state["last_ask_notes"] = state["ask_notes"]
     if not finding_lines:
@@ -767,7 +748,8 @@ def command_correct_asks(options):
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
-    refuse_conditional_changes(asks, outcomes)
+    review_asks.refuse_conditional_changes(asks, outcomes, "asks-done --correct ...")
+    review_asks.refuse_unlocated_changes(asks, outcomes, notes, "asks-done --correct ...")
     indexes = corrected_ask_indexes(state, asks, outcomes, notes)
     # Blank the uncorrected asks, keeping their places, so the refusal names only corrected user_only asks by
     # their listing numbers.
@@ -803,52 +785,6 @@ class Answers(NamedTuple):
     decided_by: str
     held_packet: dict | None
     held_changes: HeldChanges | None
-
-
-def refuse_misplaced_held(target, outcomes, decided_by):
-    """Refuses (nothing is logged) `held` in a `--by user` call, on an ask that is not user-only, on every ask of
-    the packet (a call that holds all of them rules nothing), and on a retry of a packet whose outcomes are already
-    logged (an ask the user ruled cannot move to the held packet)."""
-    asks = target["asks"]
-    if HELD in outcomes and target.get("ask_outcomes") is not None:
-        raise UsageError("asks-done is a retry: a retry gives the outcomes already logged, never `held`. "
-                         "Nothing was logged.")
-    problems = []
-    for number, (item, outcome) in enumerate(zip(asks, outcomes, strict=True), 1):
-        if outcome != HELD:
-            continue
-        if decided_by == plan_format.USER_RULING:
-            problems.append(f"ask {number}: {HELD} is for a session call; a `--by user` call rules every ask")
-        elif not item.get(USER_ONLY_KEY):
-            problems.append(f"ask {number}: {HELD} is only for a user_only ask; give this one "
-                            f"{review_asks.PLAIN_OUTCOMES_TEXT} or '{MODIFIED}:<the change>'")
-    if problems:
-        raise UsageError("\n".join(problems) + "\nNothing was logged.")
-    if all(outcome == HELD for outcome in outcomes):
-        raise UsageError(f"every ask is {HELD}: the call would rule nothing. Leave the packet for the user's "
-                         "`--by user` call. Nothing was logged.")
-
-
-class HeldSplit(NamedTuple):
-    """The asks of a packet split by the call's outcomes: the plain asks with their outcomes and notes, and the
-    held asks."""
-    plain_asks: list
-    plain_outcomes: list
-    plain_notes: list
-    held_asks: list
-
-
-def split_held(asks, outcomes, notes):
-    """The HeldSplit of the asks. Changes nothing."""
-    split = HeldSplit([], [], [], [])
-    for item, outcome, note in zip(asks, outcomes, notes, strict=True):
-        if outcome == HELD:
-            split.held_asks.append(item)
-            continue
-        split.plain_asks.append(item)
-        split.plain_outcomes.append(outcome)
-        split.plain_notes.append(note)
-    return split
 
 
 # The keys of a packet's state that its held asks keep: the kept packet relaunches the same review run.
@@ -898,7 +834,8 @@ def read_answers(state, options, waiting):
     kept_places = [{} if outcome == HELD else item for item, outcome in zip(asks, outcomes, strict=True)]
     user_command = f"asks-done --by {plan_format.USER_RULING} ..."
     refuse_session_on_user_only(kept_places, options.decided_by, user_command, holdable=True)
-    refuse_conditional_changes(kept_places, outcomes)
+    review_asks.refuse_conditional_changes(kept_places, outcomes, "asks-done ...")
+    review_asks.refuse_unlocated_changes(kept_places, outcomes, notes, "asks-done ...")
     refuse_changed_retry(state, target, split.plain_outcomes, split.plain_notes, correctable=False)
 
     held_packet = None
@@ -995,7 +932,8 @@ def command_asks_done(argv):
     relayed = verified_fix_relay(options, asks)
     repo = repo_for_outcomes(target.get("relaunch_args") or [], asks, outcomes)
     refuse_damaged_approval_paths(repo, asks)
-    finding_lines = ask_finding_lines(asks, outcomes, notes, uniform_deciders(asks, decided_by))
+    finding_outcomes = approval_restore.restore_for_asks_done(target, repo, outcomes)
+    finding_lines = ask_finding_lines(asks, finding_outcomes, notes, uniform_deciders(asks, decided_by))
     findings_file = write_unprinted_fix_run(state, target, finding_lines, decided_by)
 
     logged_now = log_fix_ask_outcomes(target, asks, outcomes, decided_by)

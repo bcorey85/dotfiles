@@ -7,11 +7,57 @@ import difflib
 REWRITE_RATIO = 0.6
 
 
-def restore_protected_lines(before_text, after_text, protected_numbers):
+def entries_missing(before_entries, after_entries):
+    """The (number, text) entries of `before_entries` whose text `after_entries` no longer holds, counting repeats."""
+    remaining = {}
+    for _number, text in after_entries:
+        remaining[text] = remaining.get(text, 0) + 1
+    missing = []
+    for number, text in before_entries:
+        if remaining.get(text, 0) > 0:
+            remaining[text] -= 1
+            continue
+        missing.append((number, text))
+    return missing
+
+
+def changed_stretches(before_text, after_text):
+    """The (first, last) 1-based line numbers of `before_text` of each stretch that `after_text` removed or rewrote."""
+    before_lines = before_text.splitlines(keepends=True)
+    after_lines = after_text.splitlines(keepends=True)
+    matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
+    stretches = []
+    for tag, before_start, before_end, _after_start, _after_end in matcher.get_opcodes():
+        if tag in ("delete", "replace"):
+            stretches.append((before_start + 1, before_end))
+    return stretches
+
+
+def consecutive_runs(entries):
+    """The (first, last) line numbers of each run of consecutive lines in the (number, text) `entries`."""
+    runs = []
+    for number, _text in entries:
+        if runs and runs[-1][1] == number - 1:
+            runs[-1] = (runs[-1][0], number)
+            continue
+        runs.append((number, number))
+    return runs
+
+
+def in_span_with(number, spans, named_lines):
+    """True when `number` lies in a (first, last) span that also holds one of `named_lines`."""
+    return any(
+        first <= number <= last and any(first <= line <= last for line in named_lines)
+        for first, last in spans
+    )
+
+
+def restore_protected_lines(before_text, after_text, protected_numbers, whole_stretch=True, may_replace=None):
     """`after_text` with each protected line of `before_text` that it changed or removed put back. `protected_numbers`
-    are 1-based line numbers of `before_text`. A stretch that was removed is restored whole. In a stretch that was
-    rewritten, each protected line replaces its closest rewrite, and the other lines of the stretch stay, so a line
-    someone else added beside the rewrite is kept."""
+    are 1-based line numbers of `before_text`. A stretch that was removed is restored whole, or only at its protected
+    lines when `whole_stretch` is False. In a stretch that was rewritten, each protected line replaces its closest
+    rewrite, and the other lines of the stretch stay, so a line someone else added beside the rewrite is kept. When
+    `may_replace` is given, only a stretch line it accepts (called with the line's text) can be replaced."""
     protected = {number - 1 for number in protected_numbers}
     before_lines = before_text.splitlines(keepends=True)
     after_lines = after_text.splitlines(keepends=True)
@@ -19,24 +65,27 @@ def restore_protected_lines(before_text, after_text, protected_numbers):
     restored = []
     for tag, before_start, before_end, after_start, after_end in matcher.get_opcodes():
         lost_in_stretch = sorted(protected.intersection(range(before_start, before_end)))
-        if tag == "delete" and lost_in_stretch:
+        if tag == "delete" and lost_in_stretch and whole_stretch:
             restored += before_lines[before_start:before_end]
+        elif tag == "delete" and lost_in_stretch:
+            restored += [before_lines[index] for index in lost_in_stretch]
         elif tag == "replace" and lost_in_stretch:
-            restored += rewritten_stretch(before_lines, lost_in_stretch, after_lines[after_start:after_end])
+            restored += rewritten_stretch(before_lines, lost_in_stretch, after_lines[after_start:after_end],
+                                          may_replace)
         else:
             restored += after_lines[after_start:after_end]
     return "".join(restored)
 
 
-def rewritten_stretch(before_lines, lost_indexes, stretch_lines):
+def rewritten_stretch(before_lines, lost_indexes, stretch_lines, may_replace=None):
     """The lines of one rewritten stretch with each lost line of `before_lines` back: in place of the stretch line most
-    like it, or in front of the stretch when no line is alike."""
+    like it that `may_replace` accepts, or in front of the stretch when no line is alike."""
     lines = list(stretch_lines)
     taken = set()
     unmatched = []
     for index in lost_indexes:
         original = before_lines[index]
-        match = closest_line(original, lines, taken)
+        match = closest_line(original, lines, taken, may_replace)
         if match is None:
             unmatched.append(original)
             continue
@@ -45,12 +94,14 @@ def rewritten_stretch(before_lines, lost_indexes, stretch_lines):
     return unmatched + lines
 
 
-def closest_line(original, lines, taken):
-    """The index in `lines`, outside `taken`, of the line most like `original` at REWRITE_RATIO or better; None when no
-    line is."""
+def closest_line(original, lines, taken, may_replace=None):
+    """The index in `lines`, outside `taken`, of the line most like `original` at REWRITE_RATIO or better, among the
+    lines `may_replace` accepts (all when it is None); None when no line is."""
     best_index, best_ratio = None, REWRITE_RATIO
     for index, line in enumerate(lines):
         if index in taken:
+            continue
+        if may_replace is not None and not may_replace(line):
             continue
         ratio = difflib.SequenceMatcher(None, original, line).ratio()
         if ratio >= best_ratio:

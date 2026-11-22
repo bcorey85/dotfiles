@@ -35,17 +35,24 @@ def file_texts(repo, start=None):
     return texts
 
 
-class CoderCallError(RuntimeError):
-    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs."""
+class NoFinalReportError(RuntimeError):
+    """A coder call that exited 0 and printed no final report."""
 
-    def __init__(self, message, changed, cause=None):
+
+class CoderCallError(RuntimeError):
+    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs;
+    `diffs` maps each of them to its diff text."""
+
+    def __init__(self, message, changed, cause=None, diffs=None):
         super().__init__(message)
         self.changed = changed
         self.cause = message if cause is None else cause
+        self.diffs = {} if diffs is None else diffs
 
     def keeping_only(self, kept):
         """This error as it reads when only the `kept` paths still hold the coder's edits."""
-        return failed_call_error(self.cause, kept)
+        kept_diffs = {path: self.diffs[path] for path in kept if path in self.diffs}
+        return failed_call_error(self.cause, kept, kept_diffs)
 
 
 def changed_paths(before, after):
@@ -80,14 +87,14 @@ def without_reverted(result, reverted, stats_before):
     return result._replace(diffs=kept_diffs, changed=kept_changed, reverted=tuple(reverted))
 
 
-def failed_call_error(error, changed):
-    """The CoderCallError for a coder call that died after it changed `changed` paths. With none changed, the error
-    names only the cause."""
+def failed_call_error(error, changed, diffs=None):
+    """The CoderCallError for a coder call that died after it changed `changed` paths (`diffs` maps each to its diff
+    text). With none changed, the error names only the cause."""
     if not changed:
         return CoderCallError(str(error), [])
     message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
                "that may fail its checks")
-    return CoderCallError(message, changed, str(error))
+    return CoderCallError(message, changed, str(error), diffs)
 
 
 def coder_call(role, prompt, repo, out, held, pass_guard):
@@ -104,12 +111,16 @@ def coder_call(role, prompt, repo, out, held, pass_guard):
     held_before = review_loop_held.digests(repo, held)
     try:
         report = claude_call(role, prompt, repo, out, agent="coder", deletable=pass_guard.deletions)
+        if not report.strip():
+            # A coder that exits 0 with no final report left its findings unverified, as a crash does.
+            raise NoFinalReportError(f"the {role} call ended with no final report")
     except RuntimeError as error:
         pass_guard.undo()
         review_loop_untracked.record_loop_written(repo, held, untracked)
         after = after_call(role, repo, held, held_before, head_before)
         changed = changed_paths(before, after)
-        raise failed_call_error(error, changed) from error
+        diffs = {path: "\n".join(path_diff(repo, path, before, after, head_before)) for path in changed}
+        raise failed_call_error(error, changed, diffs) from error
 
     pass_guard.undo()
     review_loop_untracked.record_loop_written(repo, held, untracked)

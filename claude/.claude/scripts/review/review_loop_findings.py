@@ -24,8 +24,9 @@ PLAN_CHANGE_YES = re.compile(r"plan[-_ ]?impact:\s*yes\s*$", re.I | re.M)
 # on, with up to three words and optional markup around them.
 CHANGE_IF_CONDITION = r"\s+if\s+[`*_]*\w+(?:\s+\w+){0,2}[`*_]*"
 ASK_CHANGE_MARK = re.compile(rf"\bchange(?P<condition>{CHANGE_IF_CONDITION})?:", re.I)
-# The same mark with its condition required: the pattern text of a `Change if <answer>:` label.
-CHANGE_IF_LABEL_PATTERN = rf"\bchange{CHANGE_IF_CONDITION}:"
+# The same mark with its condition required: the pattern text of a `Change if <answer>:` label, or of the label after
+# `inert_change_marks` put a space before its colon.
+CHANGE_IF_LABEL_PATTERN = rf"\bchange{CHANGE_IF_CONDITION}\s?:"
 
 # An ask that names another ask in place of a question: "The open ask about pinning the window still stands."
 ASK_POINTER = re.compile(r"\b(?:the|that|this|my)\s+(?:open|earlier|same|previous|prior|above|first|existing|standing)"
@@ -91,6 +92,12 @@ def ask_parts(text):
     after_mark = text[split_mark.end():].strip()
     before_mark = text[:split_mark.start()].rstrip(" —-")
     return AskParts(before_mark or after_mark, after_mark or before_mark)
+
+
+def inert_change_marks(text):
+    """`text` with each `change:` marker made unreadable to `ask_parts` (a space goes before its colon), so text that
+    an ask quotes cannot move the ask's question/change split."""
+    return ASK_CHANGE_MARK.sub(lambda mark: f"{mark.group(0)[:-1]} :", text)
 
 
 def section(text, name):
@@ -337,10 +344,18 @@ def same_finding(finding, other):
     return finding.line == other.line
 
 
+def matches_any_finding(item, findings):
+    """Whether `item` is the same finding as one of `findings`."""
+    return any(same_finding(item, other) for other in findings)
+
+
 def names_absent_file(repo, tree_paths, finding):
-    """True when the finding's file:line names a path that is not on disk and matches no path git lists."""
+    """True when the finding's file:line names a path that is not on disk and matches no path git lists. A bare
+    path (no line part) never does: it may name a file the finding asks for. An approximate `~` line still does."""
     path = finding.path
     if not path or (pathlib.Path(repo) / path).exists():
+        return False
+    if finding.bare:
         return False
     return not any(known == path or known.endswith("/" + path) for known in tree_paths)
 

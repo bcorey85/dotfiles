@@ -18,7 +18,8 @@
 # Prints the claude pane's id, then the command typed into it, one per line.
 #
 # Layout:
-#   Tab 1 "code"     claude (40%) | nvim (60%). herdr auto-detects the claude
+#   Tab 1 "code"     claude (40%) | hunk diff --watch (60%; was nvim, kept
+#                    commented below). herdr auto-detects the claude
 #                    process and adopts the pane as a managed agent, so it gets
 #                    tab-bar status and `herdr agent read/prompt/wait` for free.
 #   Tab 2 "console"  three equal shells for git / tests / logs. If the project
@@ -98,7 +99,7 @@ build_tuios_console() {
     herdr-api pane resize --direction left --amount 0.1667 --pane "$c1" >/dev/null
 }
 
-# ── Tab 1 "code": claude (40%) | nvim (60%) ─────────────────────────────────
+# ── Tab 1 "code": claude (40%) | hunk (60%) ─────────────────────────────────
 code_tab=$(herdr-api workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
 agent=$(herdr-api pane list --workspace "$ws" \
     | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)
@@ -121,9 +122,13 @@ if [ -n "$claude_session" ]; then
 fi
 start_in_fresh_pane "$agent" "$claude_cmd"
 
+# The right pane is a live hunk diff. To go back to nvim, swap the two
+# hunk lines below for the commented nvim lines.
 editor=$(split "$agent" 0.4)
-herdr-api pane rename "$editor" editor >/dev/null
-run "$editor" "nvim ."
+# herdr-api pane rename "$editor" editor >/dev/null
+# run "$editor" "nvim ."
+herdr-api pane rename "$editor" review >/dev/null
+run "$editor" "hunk diff --watch"
 
 if [ -n "${TUIOS_SOCKET:-}" ]; then
     # 50 | 50 to 40 | 60: move the editor's left edge a tenth of the width.

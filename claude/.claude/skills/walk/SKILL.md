@@ -23,7 +23,7 @@ Whole-repo walk: top-level layout (one stop per major dir's anchor file), the ce
 ## Present
 
 1. One `nvim-jump` call with every stop in walk order, per `~/.claude/skills/_shared/nvim-jump.md`. Each `--note` is 2–3 sentences, not the shared one-line note: what the spot does, why it works that way, and what it hands to the next stop.
-2. Then in chat: one sentence naming the flow, the numbered stops as `path:line — <the note's first sentence>` in the same order, and "`]k`/`[k` steps the walk".
+2. Then in chat: one sentence naming the flow, the numbered stops as `path:line — <the note's first sentence>` in the same order, and "`]v`/`[v` steps the walk".
 
 ## Save (default — `+ephemeral` skips)
 
@@ -42,7 +42,7 @@ After presenting, write `<vault>/walks/<repo>-<slug>.md` (`$VAULT_DIR` else `~/v
 
 ## Nest — `/walk here [focus]`
 
-A deeper walk inside the current one. No focus → start at the line under the nvim cursor (`nvim-jump --where`) and trace only what it calls, nothing before it. Pass `--push` to the nvim-jump call, and end the chat with "`[K` returns to the outer walk".
+A deeper walk inside the current one. No focus → start at the line under the nvim cursor (`nvim-jump --where`) and trace only what it calls, nothing before it. Pass `--push` to the nvim-jump call, and end the chat with "`[V` returns to the outer walk".
 
 ## Replay — `/walk replay [name]`
 

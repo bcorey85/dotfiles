@@ -1,7 +1,7 @@
 -- `nvim-jump --note`: color the jumped-to line numbers and show the agent's note above
 -- them as virtual lines, re-wrapped when the window resizes. nvim-jump sends a
--- list of locations; ]k/[k step through it, and the next nvim-jump replaces it.
--- `nvim-jump --push` nests its list inside the current one instead; [K drops
+-- list of locations; ]v/[v step through it, and the next nvim-jump replaces it.
+-- `nvim-jump --push` nests its list inside the current one instead; [V drops
 -- back to the outer list at the stop it was left from.
 -- One note at a time; <Esc> in that buffer dismisses it. nvim-jump calls show()
 -- over RPC right after its :edit, so the first location is the current buffer.

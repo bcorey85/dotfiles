@@ -23,6 +23,7 @@ unmeasured: "No bench: the watch counts hook blocks per day; no metric counts ma
 - A repo with no review record pushes freely: the push check cannot tell a repo the toolkit never reviewed from one whose record was lost.
 - Phase asks are no longer enforced at commit. `phase_asks.py list` and `rule` still open and rule them, and `verify_common.branch_review_covers` still needs them ruled.
 - Prompt and doc mentions of the commit gate now name the push check or the review record.
+- A stale test now expects the fix-coder prompt's `coder-model:` header, and an over-long docstring line in `review/review_loop_script.py` is wrapped, so the suite and lint pass.
 
 ## Evidence
 

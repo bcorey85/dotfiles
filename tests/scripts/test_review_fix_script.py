@@ -3238,7 +3238,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         loop_dir, prompt, packet_args = self.launched_run()
         self.assertEqual(packet_args, ["--skill", "review", "--scope", "branch-exit", "--lane", "none", "--launch",
                                        str(loop_dir / "launch.json")])
-        self.assertIn(f"base: {base}\nfiles: README.md\nreviewer-model: haiku\niter: 1\n", prompt)
+        self.assertIn(f"base: {base}\nfiles: README.md\nreviewer-model: haiku\ncoder-model: haiku\niter: 1\n", prompt)
         self.assertIn("Review only these files: README.md.", prompt)
         relaunch_args = json.loads((loop_dir / "launch.json").read_text())["relaunch_args"]
         self.assertEqual(relaunch_args, ["--repo", str(self.repo.resolve()), "--base", "HEAD", "--file", "README.md",

@@ -51,6 +51,14 @@ def live_session_rows():
     return rows
 
 
+def row_for_name(name):
+    """The first live row (file order, as `live_session_rows`) named `name`; None when none is."""
+    for row in live_session_rows():
+        if row.get("name") == name:
+            return row
+    return None
+
+
 def other_live_session_in(folder, own_session_id):
     """The first live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it;
     None when there is none. A row with no string `cwd` is no match."""

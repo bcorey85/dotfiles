@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1106 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1107 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-22, [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md).
 

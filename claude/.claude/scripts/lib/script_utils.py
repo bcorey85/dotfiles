@@ -1394,6 +1394,14 @@ def can_append(path):
     return os.access(path.parent, os.W_OK)
 
 
+def xdg_state_home():
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if not state_home:
+        return pathlib.Path.home() / ".local" / "state"
+    return pathlib.Path(state_home)
+
+
 def state_file_path(state_dir, name, suffix):
     """`name` plus `suffix` in `state_dir`, with every character outside letters, digits, dot, dash and underscore in
     `name` replaced by an underscore, so an id from a hook event or a branch name is one safe file name."""

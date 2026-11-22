@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-697 fix notes
+698 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -160,6 +160,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/hook-local-row | 1 | 0 |
 | script/hunk-review-pane | 1 | 1 |
 | script/install-stow | 1 | 0 |
+| script/lanes | 1 | 1 |
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |

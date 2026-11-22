@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1106 changes
+1107 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [herdr lane file grammar and lanes CLI](notes/2026-11-22-herdr-lane-file-grammar-and-lanes-cli.md) [script/lanes, shared/lane-entries] Each herdr lane gets one JSON file under herdr-lanes with a single grammar in lib/lane_entries.py, a lanes.py command for every bash caller, and a registry lookup by name.
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
 * [Deny a docker run without --name and print the fixed form](notes/2026-11-22-deny-a-docker-run-without-name-and-print-the-fixed.md) [script/git-discipline-gate, script/docker-run-names, script/shell-command, script/shell-command-words, script/directory-emptying-deletes, script/plan-format] git-discipline-gate denies a Bash command whose docker run, docker container run or podman run step carries no --name, and prints the step as it is to be run: the same words with --rm --name <ticket>-<purpose> inserted after run, <ticket> filled from the branch's leading KEY-123 when it has one. docker compose run and docker exec pass. The hook's median time on a matched call equals its time on an unmatched one.

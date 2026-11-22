@@ -58,6 +58,20 @@ class UntrackedDeletionTest(unittest.TestCase):
             guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], [])
             return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard)
 
+    def coder_model_sent(self, **coder_kwargs):
+        """The model coder_call hands to claude_call."""
+        guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+        with mock.patch.object(review_loop_coder, "claude_call", return_value="done") as fake_call:
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard, **coder_kwargs)
+        return fake_call.call_args.kwargs["model"]
+
+    def test_coder_call_passes_the_model_to_the_model_call(self):
+        self.assertEqual(self.coder_model_sent(model="haiku"), "haiku")
+
+    def test_an_empty_coder_model_leaves_the_model_unset(self):
+        self.assertIsNone(self.coder_model_sent(model=""))
+        self.assertIsNone(self.coder_model_sent())
+
     def test_a_file_an_earlier_call_made_stays_deleted_with_no_fault_note(self):
         self.call("coder1", lambda repo: (repo / "dup.py").write_text("dup\n"))
         self.call("coder2", lambda repo: (repo / "dup.py").unlink())

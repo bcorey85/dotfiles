@@ -7,7 +7,8 @@
 The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
 block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
 `no-review: yes` then plans no reviewer. `base:` reviews every change since that commit, `files:` only the named files,
-`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one, and `iter:` counts the rounds an earlier run already used.
+`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one, and `iter:` counts
+the rounds an earlier run already used.
 The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure

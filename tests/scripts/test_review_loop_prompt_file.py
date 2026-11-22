@@ -57,6 +57,18 @@ class RuledOutHeaderTest(unittest.TestCase):
         self.assertEqual(review_loop_prompt_file.header_list({"lane": "code"}, "ruled-out files"), [])
 
 
+class CoderModelHeaderTest(unittest.TestCase):
+    def test_the_coder_model_line_is_read_under_its_key(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        prompt_file = pathlib.Path(directory.name) / "prompt.txt"
+        prompt_file.write_text("lane: code\ncoder-model: haiku\n\nhandoff\n")
+
+        header, _handoff = review_loop_prompt_file.read_prompt(prompt_file)
+
+        self.assertEqual(header[review_loop_prompt_file.CODER_MODEL_KEY], "haiku")
+
+
 class HeaderHeldByTest(unittest.TestCase):
     ROW: ClassVar[dict] = {"path": "a.py", "session": "lane-b", "claim": "dirty at the run start"}
 

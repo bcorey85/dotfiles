@@ -74,7 +74,8 @@ with open(os.path.join(fake_dir, "calls.jsonl"), "a") as handle:
     pane_names = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
     pane_env = {name: os.environ.get(name) for name in pane_names}
     record = {"key": key, "hook_off": os.environ.get("CLAUDE_FORMAT_HOOK_OFF"), "prompt": prompt,
-              "pane_env": pane_env, "name": args[args.index("--name") + 1] if "--name" in args else None}
+              "pane_env": pane_env, "name": args[args.index("--name") + 1] if "--name" in args else None,
+              "model": args[args.index("--model") + 1] if "--model" in args else None}
     handle.write(json.dumps(record) + "\\n")
 
 if os.environ.get("FAKE_CLAUDE_HANG"):
@@ -1669,6 +1670,22 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("status: skipped", second_round_prompt)
         self.assertNotIn("status: fixed", second_round_prompt)
         self.assertIn(review_loop_findings.REVERTED_APPROVAL_EDIT_REASON, second_round_prompt)
+
+    def coder_models_of_a_fix_run(self, header_extra):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=header_extra)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return [call["model"] for call in self.fake_calls() if call["key"] == "coder"]
+
+    def test_a_coder_model_line_runs_the_fix_coder_on_that_model(self):
+        self.assertEqual(self.coder_models_of_a_fix_run("coder-model: haiku\n"), ["haiku"])
+
+    def test_no_coder_model_line_leaves_the_fix_coder_on_its_agents_own_model(self):
+        self.assertEqual(self.coder_models_of_a_fix_run(""), [None])
 
     def test_a_nit_on_a_held_file_never_reaches_the_fix_coder(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")

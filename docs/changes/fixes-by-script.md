@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-679 fix notes
+682 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -19,7 +19,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/handback | 56 | 2 |
 | script/review-commit-gate | 46 | 8 |
 | script/review-loop-gate | 35 | 0 |
-| script/coder-gate | 28 | 6 |
+| script/coder-gate | 29 | 7 |
 | script/full-check | 28 | 4 |
 | script/script-utils | 26 | 5 |
 | script/plan-format | 25 | 5 |
@@ -65,6 +65,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/adr-flow | 4 | 1 |
+| script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
 | script/format-changed | 4 | 0 |
 | script/format-files | 4 | 0 |
@@ -75,7 +76,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
-| script/agent-model-guard | 3 | 1 |
 | script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
@@ -117,6 +117,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/verify-branch | 2 | 0 |
 | script/waiting-review-launch | 2 | 1 |
 | skill/branch-recap | 2 | 0 |
+| skill/stage | 2 | 1 |
 | agent/code-reviewer | 1 | 0 |
 | agent/mutation-tester | 1 | 0 |
 | agent/plan-verifier | 1 | 0 |
@@ -185,4 +186,3 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | shared/reviewer-calibration | 1 | 0 |
 | skill/close-branch | 1 | 0 |
 | skill/pr-comments | 1 | 0 |
-| skill/stage | 1 | 0 |

@@ -18,7 +18,8 @@
 # Prints the claude pane's id, then the command typed into it, one per line.
 #
 # Layout:
-#   Tab 1 "code"     claude (40%) | hunk diff --watch (60%; was nvim, kept
+#   Tab 1 "code"     claude (40%) | hunk-review-pane (60%; hunk diff --watch that
+#                    hands the pane to nvim on E or from nvim-jump; was nvim, kept
 #                    commented below). herdr auto-detects the claude
 #                    process and adopts the pane as a managed agent, so it gets
 #                    tab-bar status and `herdr agent read/prompt/wait` for free.
@@ -128,7 +129,7 @@ editor=$(split "$agent" 0.4)
 # herdr-api pane rename "$editor" editor >/dev/null
 # run "$editor" "nvim ."
 herdr-api pane rename "$editor" review >/dev/null
-run "$editor" "hunk diff --watch"
+run "$editor" "hunk-review-pane"
 
 if [ -n "${TUIOS_SOCKET:-}" ]; then
     # 50 | 50 to 40 | 60: move the editor's left edge a tenth of the width.

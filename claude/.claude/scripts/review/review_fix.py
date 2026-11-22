@@ -22,7 +22,7 @@ still judges.
       `ACTION: stop-no-handback` and leaves the saved state alone: re-dispatch once, then stop and show the user the
       loop's final text on a second miss.
       A re-run on the same hand-back (the same stored row; the same text, for a packet on stdin) repeats no side
-      effect: posted replies, logged escapes and the nvim-jump are kept in the state. Two dispatches that return the
+      effect: posted replies, logged escapes and hunk-notes are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
                        [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
@@ -108,7 +108,7 @@ still judges.
                                          <summary>`; records the ruling so the push check counts the review as clean.
 
 State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2. Env
-REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override the nvim-jump
+REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_HUNK_NOTES and REVIEW_FIX_GH override the hunk-notes
 and gh commands; REVIEW_FIX_LOOP_SCRIPT overrides the loop script `launch` runs; HANDBACK_STORE_DIR overrides the
 hand-back store; CLAUDE_CODE_SESSION_ID names the session."""
 import json
@@ -324,10 +324,10 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
 
 
 def save_packet_asks(packet, state):
-    """Run nvim-jump once, save the packet's asks with stage `asks`, and return them."""
+    """Run hunk-notes once, save the packet's asks with stage `asks`, and return them."""
     asks = packet["ask"]
     if "jumped" not in state:
-        state["jumped"] = review_asks.run_nvim_jump(os.environ.get("REVIEW_FIX_NVIM_JUMP", "nvim-jump"), asks)
+        state["jumped"] = review_asks.run_hunk_notes(os.environ.get("REVIEW_FIX_HUNK_NOTES", "hunk-notes"), asks)
     review_asks.stamp_filed_at(asks, time.time())
     state.update({"stage": "asks", "asks": asks})
     save_fix_state(state)
@@ -335,7 +335,7 @@ def save_packet_asks(packet, state):
 
 
 def jumped_line(state):
-    return f"The script ran nvim-jump for all asks ({state['jumped']}). Do not run it again."
+    return f"The script ran hunk-notes for all asks ({state['jumped']}). Do not run it again."
 
 
 def asks_done_line(asks, state):

@@ -1,0 +1,14 @@
+#!/bin/bash
+# Print `--exclude-untracked` when the tree has more than 200 untracked files, else nothing.
+#
+# hunk reads and diffs every untracked file before its first paint, about 3 ms
+# each, so a tree with build output that .gitignore misses takes seconds to open.
+# Used by hunk-review-popup and hunk-review-pane.
+
+set -u
+
+untracked_limit=200
+untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | head -n $((untracked_limit + 1)) | wc -l)
+if [ "$untracked_count" -gt "$untracked_limit" ]; then
+    echo --exclude-untracked
+fi

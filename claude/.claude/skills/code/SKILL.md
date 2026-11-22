@@ -78,7 +78,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
    Before the dispatch, run `python3 ~/.claude/scripts/code/phase_start.py --new-run` from the repo root for the first phase of a fresh run that is not a resume, `python3 ~/.claude/scripts/code/phase_start.py --resume` for a resume that goes on with the phase that stopped (its Phase Status line still unchecked), and `python3 ~/.claude/scripts/code/phase_start.py` for every other phase start, a resume that starts the next phase after a phase-complete stop included; keep the sha it prints as the phase base. Then, from the repo root, run `python3 ~/.claude/scripts/code/gate_commands.py <plan> <N>` (`-` as `<plan>` and `1` as `<N>` with no plan file) and set the hand-back gate with its lines: `python3 ~/.claude/scripts/code/coder_gate.py set <command>...`, each output line one quoted shell command. With no output lines, skip `set`.
    Then run `python3 ~/.claude/scripts/code/coder_packet.py <plan> <N>` and put its whole output in the coder's prompt, below the phase line. For a gated phase whose release the task text holds, add `--gate-evidence "<who>, <when>: <quoted text>"` to that command: the packet then opens with the evidence, and the coder does not ask for the release again. With no plan file (a plain task or a pasted plan), skip `coder_packet.py` and put the task text in the coder's prompt in place of the phase line. Wait for the coder.
 
-   When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py clear` before anything else.
+   When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py finish` from the repo root before anything else; on exit 1, do the step its last line names.
 
 4. **After the coder completes**: put any `PLAN-IMPACT:` block in its report on the phase-end list and go on. Then summarize: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
 
@@ -137,7 +137,7 @@ Human-only verification remaining:
 - <item>
 
 Next:
-  1. Read the queue (`]v`/`[v` in nvim); spot-check the evidence lines; run the human-only items.
+  1. Read the queue (the agent notes in the hunk review pane); spot-check the evidence lines; run the human-only items.
   2. Stage what you've read, then commit it. `Commit subject: <subject>`.
   3. Run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
 

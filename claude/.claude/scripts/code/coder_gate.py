@@ -5,6 +5,15 @@
                                   and the variables each one runs with. The gate covers any coder.
   coder_gate.py summary           print each coder's last gate result
   coder_gate.py clear             print each coder's last gate result, then delete the gate
+  coder_gate.py finish            run from the repo root right after the coder returns. No gate: prints "none set".
+                                  A coder handed back through the hook: acts as `clear`. No coder did (it ended its
+                                  turn without calling SubagentHandback, so the hook never ran): runs the stored
+                                  commands now, stores the run under "finish", and on a pass, timeout, setup fault or
+                                  command error prints the summary and deletes the gate. On a real failure it keeps
+                                  the gate, prints the failing tests and output tails, and exits 1 with a last line
+                                  that tells the caller to send that output to the coder and run `finish` again.
+                                  After MAX_DENIES failing runs of the same gate it prints the failures, deletes the
+                                  gate and exits 0, so the review handoff lists the failure under `flagged`.
   coder_gate.py hook              PreToolUse hook on SubagentHandback. With CLAUDE_CODE_SESSION_ID set, `set` also
                                   writes a pointer to its gate file; when the event's session_id has a pointer, the
                                   hook reads that gate and runs it in the repo root it was set in (the file is gone:
@@ -91,7 +100,7 @@ from check_scope import names_django_test_run, scanned_command
 from script_utils import changed_files
 from source_paths import is_runnable_test_file
 
-USAGE = "usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | hook | bash-hook"
+USAGE = "usage: coder_gate.py set [--env NAME=value]... <command>... | summary | clear | finish | hook | bash-hook"
 MAX_DENIES = 3
 # The /code skill clears the gate after its coder hands back, and again at its start, which drops a gate a crashed
 # run left behind. The age is the backstop: it stops such a gate from outliving a working day.
@@ -318,6 +327,80 @@ def clear_gate():
         return
 
     gate_file = gate_path(".")
+    gate_file.unlink()
+    gate_file.with_suffix(".lock").unlink(missing_ok=True)
+    remove_session_pointer(os.environ.get("CLAUDE_CODE_SESSION_ID"), gate_file)
+
+
+FINISH_KEY = "finish"
+
+
+def _finish_under_lock(gate_file, checked_gate):
+    # The report of the run, or None when the gate was cleared or set again during the lock wait.
+    lock_path = gate_file.with_suffix(".lock")
+    with lock_path.open("w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            gate = json.loads(gate_file.read_text())
+        except FileNotFoundError:
+            return None
+        if gate["setAt"] != checked_gate["setAt"]:
+            return None
+
+        started = time.time()
+        failures, skipped, timed_out, not_started, _summaries = run_commands(gate, GATE_BUDGET_SECONDS)
+        seconds = round(time.time() - started)
+        sorted_failures = sort_failures(failures, gate["repoRoot"])
+        real_failures, setup_faults, command_errors = sorted_failures
+        earlier = gate.get(FINISH_KEY, {})
+        finish = {"runs": earlier.get("runs", 0) + 1, "denies": earlier.get("denies", 0), "result": "none",
+                  "commands": command_outcomes(sorted_failures, timed_out, skipped, not_started)}
+        outcome = gate_outcome(real_failures, command_errors, setup_faults, timed_out, not_started)
+        _apply_outcome(finish, outcome)
+        gate[FINISH_KEY] = finish
+        script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
+        counts = GateCounts(len(real_failures), len(timed_out), len(setup_faults), len(not_started))
+        return GateRunReport(gate, finish, seconds, counts, real_failures)
+
+
+def finish_gate():
+    # Exit 1 only when the coder never handed back through the hook and the stored commands fail now.
+    gate_file = gate_path(".")
+    if gate_file is None or not gate_file.exists():
+        print("coder gate: none set")
+        return
+
+    try:
+        checked_gate = json.loads(gate_file.read_text())
+    except FileNotFoundError:
+        print("coder gate: none set")
+        return
+
+    if checked_gate["coders"]:
+        clear_gate()
+        return
+
+    report = _finish_under_lock(gate_file, checked_gate)
+    if report is None:
+        print("coder gate: none set")
+        return
+
+    finish = report.coder
+    log_gate_run(report.gate, finish, report.seconds, report.counts)
+    command_lists = ", ".join(f"{label}: {joined_commands(finish, outcome)}"
+                              for outcome, label in CLEAR_COMMAND_OUTCOMES)
+    print(f"coder gate: no coder handed back through the hook; ran the stored commands: {finish['result']} after "
+          f"{finish['runs']} run(s), {command_lists}")
+    if finish["result"] == "deny":
+        print(failure_text(report.failures))
+        print("The coder ended without handing back through the gate, and these checks fail. SendMessage this output "
+              "to the coder's agent id, wait for it to return, then run `coder_gate.py finish` again.")
+        sys.exit(1)
+
+    if finish["result"] == "cap":
+        print(failure_text(report.failures))
+        print(f"coder gate: still failing after {MAX_DENIES} sends to the coder; the review handoff lists it under "
+              "`flagged`.")
     gate_file.unlink()
     gate_file.with_suffix(".lock").unlink(missing_ok=True)
     remove_session_pointer(os.environ.get("CLAUDE_CODE_SESSION_ID"), gate_file)
@@ -654,13 +737,17 @@ def is_stale_prose_check(command):
     return runs_script(command, STALE_PROSE_SCRIPT)
 
 
-def denial(failures):
+def failure_text(failures):
     chunks = []
     for command, outcome, output in failures:
         tail = tail_with_failing_tests(output, output[-TAIL_CHARS:])
         chunks.append(f"=== `{command}` failed ({outcome}), output tail ===\n{tail}")
-    failure_text = "\n\n".join(chunks)
-    reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failure_text
+    return "\n\n".join(chunks)
+
+
+def denial(failures):
+    failed = failure_text(failures)
+    reason = ("The hand-back gate ran the phase's checks and they failed.\n\n" + failed
               + "\n\nFix these. Do not run the checks yourself. Then call SubagentHandback again.")
     return reason
 
@@ -856,6 +943,9 @@ def main():
         return
     if verb == "clear":
         clear_gate()
+        return
+    if verb == "finish":
+        finish_gate()
         return
     if verb == "hook":
         hook_input.run_gate(run_hook)

@@ -1,4 +1,4 @@
-"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing and nvim-jump anchors of a review packet,
+"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing and hunk-notes anchors of a review packet,
 for /review (review_fix.py).
 A plan-impact ask is not a finding: it gets no id and logs no outcome row."""
 import pathlib
@@ -39,7 +39,7 @@ ACCEPT_MEANS = "make this change"
 APPLIED_MEANS = "the change is already in the tree: nothing to change"
 REJECT_MEANS = "leave the code as it is"
 HELD_MEANS = "a user_only ask in a session call waits for the user's `--by user` call"
-JUMP_NOTE_LIMIT = 160
+NOTE_TEXT_LIMIT = 160
 # The ask field that marks an ask converted from a finding the user already accepted. Its change is that finding's
 # line, so the conditional-change check skips it.
 USER_RULED_KEY = "user_ruled"
@@ -57,8 +57,9 @@ CONDITIONAL_CHANGE = re.compile(
     r"|\bif the user (confirms|approves|accepts|agrees|says)\b"
     r"|" + CHANGE_IF_LABEL_PATTERN,
     re.IGNORECASE)
-# One path with a line or line range and nothing else: a list of locations or a bare path has no one place to jump to.
-JUMP_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
+# One path with a line or line range and nothing else: a list of locations
+# or a bare path has no one place to anchor a note.
+NOTE_ANCHOR = re.compile(r"^[^\s,;]+:\d+(-\d+)?$")
 
 
 WRONG_COUNT = "wrong-count"
@@ -94,33 +95,42 @@ def parse_outcome_words(words, count, allowed, note_required):
     return outcomes, notes
 
 
-def jump_anchor_args(asks):
-    """The nvim-jump arguments for the asks: `--note <question> <path:line>` for each ask whose file_line is one
+def note_anchor_args(asks):
+    """The hunk-notes arguments for the asks: `--note <question> <path:line>` for each ask whose file_line is one
     well-formed anchor. Empty when no ask has one."""
     arguments = []
     for item in asks:
         file_line = item.get("file_line") or ""
-        if JUMP_ANCHOR.match(file_line):
-            arguments += ["--note", one_line(item.get("question", ""), JUMP_NOTE_LIMIT), file_line]
+        if NOTE_ANCHOR.match(file_line):
+            arguments += ["--note", one_line(item.get("question", ""), NOTE_TEXT_LIMIT), file_line]
     return arguments
 
 
-def run_nvim_jump(command, asks, cwd=None):
-    """Run the nvim-jump `command` once over the asks' anchors and return a line saying what happened."""
-    arguments = jump_anchor_args(asks)
+def run_hunk_notes(command, asks, cwd=None):
+    """Run the hunk-notes `command` once over the asks' anchors and return a line saying what happened."""
+    arguments = note_anchor_args(asks)
     if not arguments:
-        return "no ask names a file:line: nothing to jump to."
+        return "no ask names a file:line: nothing to post."
     if shutil.which(command) is None:
-        return "nvim-jump is not installed: skip jumping."
+        return "hunk-notes is not installed: skip posting."
 
     code, output = run_command([command, *arguments], cwd)
-    if code in (2, 127):
-        return "nvim-jump is not installed: skip jumping."
+    if code == 127:
+        return "hunk-notes is not installed: skip posting."
+    if code == 2:
+        return "hunk-notes got bad arguments or hunk is missing: skip posting."
     if code == 1:
-        return "no nvim owns this directory: anchors printed only."
+        return (
+            "hunk-notes could not post (file not in a git repo, no such directory, "
+            "no hunk session owns this repo, or hunk cannot show the file): "
+            "anchors printed only."
+        )
     if code == 0:
-        return "jumped to the first ask: ]v and [v step the rest."
-    return f"nvim-jump exit {code}: {output}"
+        # hunk-notes exits 0 even when no anchor landed on a line its diff shows, so its own
+        # "(posted/total notes)" summary is the only truthful word on what was posted.
+        summary = output.splitlines()[-1] if output else "no summary line"
+        return f"hunk-notes: {summary}"
+    return f"hunk-notes exit {code}: {output}"
 
 
 def is_conditional_change(text):

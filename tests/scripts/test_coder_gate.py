@@ -112,6 +112,62 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         self.assertEqual(0, done.returncode, done.stderr)
         self.assertEqual("pass", self.stored_gate()["coders"]["a1"]["result"])
 
+    def gate_verb(self, verb):
+        return subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), verb], cwd=self.repo, env=self.env,
+                              capture_output=True, text=True)
+
+    def test_finish_with_no_gate_prints_none_set_and_exits_zero(self):
+        done = self.gate_verb("finish")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("coder gate: none set", done.stdout)
+
+    def test_finish_runs_the_commands_when_no_coder_handed_back_and_keeps_the_gate_on_a_failure(self):
+        self.gate_set("echo typecheck-error; exit 3")
+
+        done = self.gate_verb("finish")
+
+        self.assertEqual(1, done.returncode, done.stderr)
+        self.assertIn("typecheck-error", done.stdout)
+        last_line = done.stdout.strip().splitlines()[-1]
+        self.assertIn("SendMessage", last_line)
+        self.assertIn("coder_gate.py finish", last_line)
+        stored = self.stored_gate()
+        self.assertEqual("deny", stored["finish"]["result"])
+        self.assertEqual({}, stored["coders"])
+
+    def test_finish_deletes_the_gate_and_exits_zero_on_a_pass(self):
+        self.gate_set("true")
+
+        done = self.gate_verb("finish")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("pass after 1 run(s)", done.stdout)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_finish_acts_as_clear_when_a_coder_handed_back_through_the_hook(self):
+        self.gate_set("exit 3")
+        self.gate_hook()
+
+        done = self.gate_verb("finish")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("coder gate: deny after 1 run(s)", done.stdout)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
+    def test_finish_stops_refusing_after_three_failing_runs_and_deletes_the_gate(self):
+        self.gate_set("echo still-broken; exit 3")
+
+        for _attempt in range(3):
+            refused = self.gate_verb("finish")
+            self.assertEqual(1, refused.returncode, refused.stderr)
+        done = self.gate_verb("finish")
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertIn("still-broken", done.stdout)
+        self.assertIn("flagged", done.stdout)
+        self.assertFalse((self.repo / ".git/coder-gate.json").exists())
+
     def test_the_hook_denies_a_command_that_needs_a_variable_the_gate_was_not_given(self):
         self.gate_set('test "$GATE_PROBE" = 1')
 

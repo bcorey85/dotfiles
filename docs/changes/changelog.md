@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1083 changes
+1087 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
 * [A /list skill lists the session's proposed changes as one numbered list](notes/2026-11-22-a-list-skill-lists-the-session-s-proposed-changes.md) [skill/list] A new /list skill turns the changes proposed in a session into one numbered list, broken things first, with a ship gate per item, so the user picks by number.
 * [Branch-prep lists renamed copies, near matches and the nearest other functions of each added function](notes/2026-11-20-branch-prep-lists-renamed-copies-near-matches-and.md) [skill/refactor, agent/smell-reviewer, script/refactor-flow, script/shape-clones] refactor_flow branch-prep compares each changed Python or TypeScript function with every function in the repo once names, attribute names and literals are stripped, and lists the nearest other functions of each added function.
@@ -58,6 +59,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [A fix pass's approval-file edit becomes a user-only ask with the wanted change](notes/2026-11-22-a-fix-pass-s-approval-file-edit-becomes-a-user.md) [script/review-loop-ruled, script/review-loop-script] After the loop reverts a fix coder's edit to an approval-only file, each finding on that file becomes a user-only ask carrying its proposed change.
 * [An accepted approval-file ask restores the pre-pass text, not HEAD](notes/2026-11-22-an-accepted-approval-file-ask-restores-the-pre.md) [script/review-loop-ruled, script/phase-asks, script/approval-restore] When the user accepts reverting a fix coder's edit to an approval-only file, the loop restores the saved pre-pass blob and keeps the user's uncommitted lines.
 * [An accepted ask with no location must name the file to change](notes/2026-11-22-an-accepted-ask-with-no-location-must-name-the.md) [script/review-asks, script/review-fix-asks] asks-done refuses an accepted or modified ruling on an unlocated finding ask whose change names no file, and asks for a modified ruling that names it.
+* [Unpinned web-fetch calls run on haiku instead of being denied](notes/2026-11-22-unpinned-web-fetch-calls-run-on-haiku-instead-of.md) [script/agent-model-guard, agent/web-fetch] The model guard rewrites an unpinned web-fetch call to model haiku and lets it run, so a page fetch no longer costs a denied call and a retry.
+* [Stage skips added-line tripwires on prose files](notes/2026-11-22-stage-skips-added-line-tripwires-on-prose-files.md) [skill/stage] Stage no longer tags a markdown or text file as a suppression or bypass when its prose only names one, so the tag keeps meaning a real suppression in code.
+* [Code runs the coder checks itself when a coder skips the hand-back](notes/2026-11-22-code-runs-the-coder-checks-itself-when-a-coder.md) [script/coder-gate, skill/code] A coder that ends without handing back through the gate no longer sends failing checks to review: /code runs the gate's checks itself and sends any failure back to the coder.
 * [A quoted path:line later in a finding is not its location](notes/2026-11-22-a-quoted-path-line-later-in-a-finding-is-not-its.md) [script/finding-record, script/script-utils] parse_finding takes the first path a finding names as its location and skips a path:line inside a quoted span.
 * [verify-prep keeps a branch review current when only change notes were added](notes/2026-11-22-verify-prep-keeps-a-branch-review-current-when.md) [script/verify-prep, script/verify-common] verify-prep and verify-log leave committed change-note paths out of the tree fingerprint, so notes written after the branch review do not ask for a second review.
 * [The inline interpreter hint docstring says the gate blocks stdin code](notes/2026-11-22-the-inline-interpreter-hint-docstring-says-the.md) [script/inline-interpreter-hint] The inline-interpreter hint's docstring said the Bash gate does not block code fed on stdin to a bare interpreter; the gate does block it, and the docstring now says so.

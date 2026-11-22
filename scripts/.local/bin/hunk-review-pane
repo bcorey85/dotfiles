@@ -1,0 +1,107 @@
+#!/bin/bash
+# Loop for the herdr dev layout's `review` pane: hunk, with nvim a handoff away.
+#
+# Runs `hunk diff <merge-base with origin/main or origin/master> --watch` on a feature
+# branch (committed and worktree changes), plain `hunk diff --watch` on the default branch,
+# a detached HEAD, or with no origin/main or origin/master.
+# When hunk quits with the target `nvim` or `lazygit` in $HUNK_REVIEW_HANDOFF, runs that tool in the repo root and, when it exits, goes
+# back to hunk. A plain quit of hunk ends the loop; the pane drops back to its shell.
+#
+# Two things hand off: the claude-review extension's `E` and `C` keys (write the
+# target, quit hunk) and nvim-jump, which has no nvim to jump in. nvim-jump is in
+# another pane, so it finds this one by the pane id: state lives in the directory
+# `hunk-review-pane --state-dir PANE_ID` prints,
+#   root      the repo root; nvim-jump hands off only for files under it
+#   handoff   the target file, read here once hunk exits
+#   hunk.pid  hunk's pid, written by the extension (the shim and node wrappers
+#             make the child this script starts a different process)
+# nvim-jump writes `handoff`, then SIGTERMs the pid, the same shutdown as `q`.
+# The key is $HERDR_PANE_ID: set in every herdr pane and fixed unless the pane moves to
+# another workspace; after a move nvim-jump cannot find this pane's state until the loop
+# restarts. With it unset, hunk runs plain and nothing hands off.
+#
+# Env (PATH shims, EDITOR) is the caller's job.
+#
+# Usage: hunk-review-pane [hunk diff args...]
+#        hunk-review-pane --state-dir PANE_ID
+
+set -u
+
+# $0 is a stow symlink, so the library is found from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=handoff-command.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/handoff-command.bash"
+
+# Under $HOME, not a shared /tmp, when there is no runtime dir: another local user could
+# otherwise plant the state files nvim-jump trusts.
+state_dir() {
+    echo "${XDG_RUNTIME_DIR:-$HOME/.cache}/hunk-review-pane/${1//[^A-Za-z0-9_.-]/_}"
+}
+
+if [ "${1:-}" = "--state-dir" ]; then
+    [ $# -eq 2 ] || { echo "usage: hunk-review-pane --state-dir PANE_ID" >&2; exit 2; }
+    state_dir "$2"
+    exit 0
+fi
+
+# Past the untracked-file limit, leave them out. Recomputed each pass: lazygit can add files.
+untracked_flag=()
+set_untracked_flag() {
+    local flag
+    untracked_flag=()
+    flag=$(hunk-untracked-flag)
+    [ -z "$flag" ] || untracked_flag=("$flag")
+}
+
+# On a feature branch, base_ref is the merge-base with origin's default branch, so the diff
+# holds the branch's commits as well as the worktree and hunk-notes can anchor on committed
+# lines. It is empty, and hunk shows the plain worktree diff, on the default branch, on a
+# detached HEAD, and when origin has neither main nor master.
+base_ref=
+set_base_ref() {
+    base_ref=
+    local branch default_ref
+    branch=$(git symbolic-ref --short -q HEAD) || return 0
+    for default_ref in origin/main origin/master; do
+        git rev-parse --verify --quiet "refs/remotes/$default_ref" >/dev/null || continue
+        [ "$branch" != "${default_ref#origin/}" ] || return 0
+        base_ref=$(git merge-base HEAD "refs/remotes/$default_ref") || base_ref=
+        return 0
+    done
+}
+
+# Outside a herdr pane there is no key for the state dir: plain hunk, no handoff.
+# The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
+if [ -z "${HERDR_PANE_ID:-}" ]; then
+    set_base_ref
+    set_untracked_flag
+    exec hunk diff ${base_ref:+"$base_ref"} --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+fi
+
+dir=$(state_dir "$HERDR_PANE_ID")
+mkdir -p "$dir"
+export HUNK_REVIEW_HANDOFF="$dir/handoff"
+export HUNK_REVIEW_PIDFILE="$dir/hunk.pid"
+trap 'rm -rf "$dir"' EXIT
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)
+echo "$repo_root" >"$dir/root"
+
+while true; do
+    rm -f "$HUNK_REVIEW_HANDOFF" "$HUNK_REVIEW_PIDFILE"
+    # Each pass: a commit or branch switch (lazygit's C) moves the base.
+    set_base_ref
+    set_untracked_flag
+    hunk diff ${base_ref:+"$base_ref"} --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+    hunk_status=$?
+    rm -f "$HUNK_REVIEW_PIDFILE"
+
+    # Absent or empty file: hunk was quit normally, nothing to hand off to.
+    [ -s "$HUNK_REVIEW_HANDOFF" ] || exit "$hunk_status"
+    target=$(head -n 1 "$HUNK_REVIEW_HANDOFF")
+    rm -f "$HUNK_REVIEW_HANDOFF"
+
+    # Unknown target: exec_handoff_tool prints the message and returns without exec.
+    is_handoff_target "$target" || { exec_handoff_tool "$target"; exit 1; }
+    # The subshell keeps this loop alive: exec_handoff_tool replaces the shell it runs in.
+    (cd "$repo_root" && exec_handoff_tool "$target")
+done

@@ -323,7 +323,7 @@ def checklist(context, rows):
     evidence = [row for row in rows if row["verdict"] == "done" and row.get("file")]
     if evidence:
         lines.append("")
-        lines.append("## Evidence to jump to (nvim-jump, table order)")
+        lines.append("## Evidence to post (hunk-notes, table order)")
         for row in evidence:
             lines.append(f"- {row['file']}:{row['line']}  {log_text(row['item'], 120)}")
     return "\n".join(lines)

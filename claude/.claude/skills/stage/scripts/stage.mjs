@@ -124,7 +124,9 @@ const MANIFEST_RE = /(^|\/)(package\.json|Cargo\.toml|pyproject\.toml|Gemfile)$/
 const REEXPORT_LINE_RE =
   /^\s*(export\s+(type\s+)?(\*|\{[^}]*\})\s*(from\s+['"][^'"]+['"])?\s*;?|import\s+.*;?|\/\/.*|\/\*.*|\*.*|)\s*$/;
 
-// Tripwires on ADDED lines, any file type.
+// Tripwires on ADDED lines, any file type but prose: a markdown or text line that names
+// a suppression or a bypass flag suppresses nothing.
+const PROSE_RE = /\.(mdx?|txt|rst|adoc)$/i;
 const ADDED_TRIPWIRES = [
   [/\b(it|test|describe)\s*\.\s*(skip|only)\s*\(|\bx(it|describe|test)\s*\(/, "test skip/only added"],
   [/eslint-disable|biome-ignore/, "lint suppression added"],
@@ -247,7 +249,7 @@ function diffLines(path, meta) {
   const out = git(["diff", diffBase, "--", path], { cwd: root });
   if (/^Binary files /m.test(out)) return { added: [], removed: [], binary: true, raw: out };
   const added = [], removed = [];
-  // New-file line number of the first changed line, for the nvim-jump queue.
+  // New-file line number of the first changed line, for the hunk-notes queue.
   let newLine = 0, firstLine;
   for (const l of out.split("\n")) {
     if (l.startsWith("+++") || l.startsWith("---")) continue;
@@ -381,8 +383,9 @@ for (const [path, meta] of changed) {
   entry.churn = lines && !lines.binary ? lines.added.length + lines.removed.length : 0;
 
   if (lines && !lines.binary) {
+    const isProse = PROSE_RE.test(path);
     for (const [re, why] of ADDED_TRIPWIRES)
-      if (lines.added.some((l) => re.test(l))) entry.reasons.push(why);
+      if (!isProse && lines.added.some((l) => re.test(l))) entry.reasons.push(why);
     // Removed-coverage tripwires fire only on NET removal: count matches in
     // removed vs added (on code residue, so comments don't count). A retitled
     // `it('...')` or a moved `expect()` shows up as one removed + one added —
@@ -507,7 +510,7 @@ if (runMode) {
   report.push("");
 
   report.push(
-    "Still yours: write the one-line note for each jump-queue row from the diff, run nvim-jump with the rows in order, and report any disagreement with a tier.",
+    "Still yours: write the one-line note for each jump-queue row from the diff, run hunk-notes with the rows in order, and report any disagreement with a tier.",
   );
   process.stdout.write(report.join("\n") + "\n");
   process.exit(0);

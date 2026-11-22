@@ -2,6 +2,7 @@
 
 Checks that the next phase's prompt goes out only after /clear has taken effect.
 """
+import json
 import os
 import pathlib
 import shutil
@@ -9,8 +10,10 @@ import subprocess
 import tempfile
 import unittest
 
+import toolkit_paths
 from stubs import write_stub
 
+LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
 HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-phase-change"
 
 # The pane's state lives in files: its status, its session id, and every prompt
@@ -30,8 +33,10 @@ case "$1 $2" in
                 echo $((left - 1)) > "$state/clear-pending"
             fi
         fi
-        printf '{"result":{"agent":{"agent_status":"%s","agent_session":{"value":"%s"}}}}\n' \
-            "$(cat "$state/status")" "$(cat "$state/session")"
+        cwd_field=""
+        [ -f "$state/cwd" ] && cwd_field=",\"cwd\":\"$(cat "$state/cwd")\""
+        printf '{"result":{"agent":{"agent_status":"%s","agent_session":{"value":"%s"}%s}}}\n' \
+            "$(cat "$state/status")" "$(cat "$state/session")" "$cwd_field"
         ;;
     "agent prompt")
         printf '%s\n' "$4" >> "$state/prompts"
@@ -70,18 +75,93 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         (self.state_dir / "session").write_text("s1\n")
         self.prompts = self.state_dir / "prompts"
 
-    def run_phase_change(self, *args):
+    def run_phase_change(self, *args, cwd=None, lanes_cli=LANES_CLI):
         env = dict(os.environ)
         env["HOME"] = str(self.root)
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["STATE_DIR"] = str(self.state_dir)
-        return subprocess.run([str(self.bin_dir / "herdr-phase-change"), *args], env=env,
+        env["HERDR_LANES_CLI"] = str(lanes_cli)
+        env["XDG_STATE_HOME"] = str(self.root / "lane-state")
+        return subprocess.run([str(self.bin_dir / "herdr-phase-change"), *args], env=env, cwd=cwd,
                               capture_output=True, text=True, timeout=30)
 
     def submitted_prompts(self):
         if not self.prompts.exists():
             return []
         return self.prompts.read_text().splitlines()
+
+    def add_lane(self, name, worktree):
+        env = dict(os.environ, XDG_STATE_HOME=str(self.root / "lane-state"))
+        subprocess.run(["python3", str(LANES_CLI), "add", "--name", name, "--worktree", str(worktree),
+                        "--main-checkout", str(self.root), "--branch", "b", "--reports-to", "boss"],
+                       input="original brief", env=env, check=True, capture_output=True, text=True)
+
+    def lane_entry(self, name):
+        env = dict(os.environ, XDG_STATE_HOME=str(self.root / "lane-state"))
+        finished = subprocess.run(["python3", str(LANES_CLI), "get", name], env=env,
+                                  check=True, capture_output=True, text=True)
+        return json.loads(finished.stdout)["entry"]
+
+    def test_a_phase_change_stores_the_new_session_id_and_the_sent_prompt_in_the_lane_of_the_agents_worktree(self):
+        worktree = pathlib.Path(os.path.realpath(self.state_dir)) / "wt"
+        worktree.mkdir()
+        self.add_lane("lane-a", worktree)
+        (self.state_dir / "cwd").write_text(str(worktree))
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "Option 2. Go on.")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        sent = self.submitted_prompts()[-1]
+        self.assertEqual(sent, "[from orchestrator pane wS:pA9] Option 2. Go on.")
+        entry = self.lane_entry("lane-a")
+        self.assertEqual(entry["session_id"], "s2")
+        self.assertEqual(entry["brief"], sent)
+
+    def test_an_agent_outside_every_lane_writes_nothing(self):
+        worktree = pathlib.Path(os.path.realpath(self.state_dir)) / "wt"
+        worktree.mkdir()
+        elsewhere = pathlib.Path(os.path.realpath(self.state_dir)) / "elsewhere"
+        elsewhere.mkdir()
+        self.add_lane("lane-a", worktree)
+        (self.state_dir / "cwd").write_text(str(elsewhere))
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        entry = self.lane_entry("lane-a")
+        self.assertEqual(entry["session_id"], "")
+        self.assertEqual(entry["brief"], "original brief")
+
+    def test_an_agent_that_reports_no_cwd_writes_nothing_even_when_the_callers_folder_is_a_lane(self):
+        worktree = pathlib.Path(os.path.realpath(self.state_dir)) / "wt"
+        worktree.mkdir()
+        self.add_lane("lane-a", worktree)
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md", cwd=worktree)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        entry = self.lane_entry("lane-a")
+        self.assertEqual(entry["session_id"], "")
+        self.assertEqual(entry["brief"], "original brief")
+
+    def test_a_lane_update_that_fails_warns_and_still_exits_0_after_the_prompt_went_out(self):
+        lanes_stub = self.root / "stub-lanes.py"
+        lanes_stub.write_text("import sys\n"
+                              "if sys.argv[1] == 'get':\n"
+                              "    print('{\"entry\": {\"name\": \"lane-a\"}}')\n"
+                              "else:\n"
+                              "    sys.exit(1)\n")
+        (self.state_dir / "cwd").write_text(str(self.root))
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md", lanes_cli=lanes_stub)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("herdr-phase-change: lane lane-a not updated", finished.stderr)
+        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
 
     def test_a_done_pane_gets_clear_and_the_prompt_as_two_submissions_after_the_session_changes(self):
         (self.state_dir / "clear-delay").write_text("2\n")

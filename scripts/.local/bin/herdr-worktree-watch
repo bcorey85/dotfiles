@@ -20,13 +20,16 @@
 # its recovery steps written to herdr-worktree-watch.log in the worktree's git
 # dir, and a herdr notification names that log (none under tuios, which has no
 # notification command). The recovery steps' format is in
-# `herdr-worktree --help`. Any other failure of the workspace check is
+# `herdr-worktree --help`. When the fork has a lane entry, the watcher stores the session id
+# in it, and a closed workspace with a stored id logs one step, `herdr-lane-resume <name>`.
+# Any other failure of the workspace check is
 # reported on stderr as "could not check workspace" (the log under the launcher)
 # and exits 1. It never reopens the workspace: the user may have closed it on
 # purpose.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
+lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
 
 [ $# -eq 5 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane> <parent session>" >&2; exit 1; }
 workspace="$1"
@@ -36,6 +39,8 @@ claude_pane="$4"
 parent_session="$5"
 
 log=$(git -C "$worktree" rev-parse --path-format=absolute --git-path herdr-worktree-watch.log)
+# The lane entry and the recovery step are named by the worktree folder.
+label=$(basename "$worktree")
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
 # Step 2's herdr-dev call resumes a fork that already holds its brief, so it
@@ -74,6 +79,15 @@ done
 # Only the parent's id after the whole wait means the fork's id never showed.
 [ "$session" != "$parent_session" ] || session=""
 
+# Only a fork that wrote a lane entry (herdr-worktree --fork) has one to fill. With no entry
+# nothing runs and nothing is logged.
+if [ -n "$session" ]; then
+    lane_entry=$(python3 "$lanes_cli" get "$label" 2>/dev/null | jq -r --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry // empty' 2>/dev/null) || lane_entry=""
+    if [ -n "$lane_entry" ] && ! store_error=$(python3 "$lanes_cli" set-session "$label" "$session" 2>&1 >/dev/null); then
+        echo "lane $label: session id not stored: $store_error" >>"$log"
+    fi
+fi
+
 waited=$((SECONDS - start_seconds))
 remaining=$((watch_seconds - waited))
 if [ "$remaining" -gt 0 ]; then
@@ -99,7 +113,6 @@ fi
 # step 2 is prose; only its worktree path pastes, as a cd target.
 # tuios answers no worktree.create, so there the workspace opens on the
 # existing worktree through herdr-api.
-label=$(basename "$worktree")
 if [ -n "${TUIOS_SOCKET:-}" ]; then
     reopen="herdr-api workspace create --cwd $(printf %q "$worktree") --label $(printf %q "$label") --focus"
 else
@@ -109,15 +122,23 @@ focus_step=""
 # tuios ignores create's --focus, and herdr-dev's layout calls need the client
 # on this workspace.
 [ -z "${TUIOS_SOCKET:-}" ] || focus_step="herdr-api workspace focus <ws> >/dev/null && "
+# A lane entry with a session id is resumed by herdr-lane-resume, which reopens the workspace
+# under herdr and tuios alike. An empty id (no entry, a failed add or a failed set-session)
+# keeps the manual steps.
+lane_session=$(python3 "$lanes_cli" get "$label" 2>/dev/null | jq -r --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry.session_id // empty' 2>/dev/null) || lane_session=""
 {
     echo "workspace $workspace closed. Recovery steps:"
-    echo "1. $reopen"
-    if [ -n "$session" ]; then
-        # <ws> stays a placeholder: the user reads the id off step 1's reply.
-        echo "2. ${focus_step}herdr-dev $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
-        echo "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
+    if [ -n "$lane_session" ]; then
+        echo "1. herdr-lane-resume $label"
     else
-        echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
+        echo "1. $reopen"
+        if [ -n "$session" ]; then
+            # <ws> stays a placeholder: the user reads the id off step 1's reply.
+            echo "2. ${focus_step}herdr-dev $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
+            echo "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
+        else
+            echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
+        fi
     fi
 }>>"$log"
 

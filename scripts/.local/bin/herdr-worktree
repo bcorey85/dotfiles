@@ -34,7 +34,10 @@
 # checks the workspace HERDR_WORKTREE_WATCH_SECONDS later (default 120). If the
 # workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
 # the worktree's git dir and shows a herdr notification that names that log (no
-# notification under tuios). With the fork's session id the log holds two steps:
+# notification under tuios). When the lane entry holds the fork's session id, the log
+# holds one step, `1. herdr-lane-resume <worktree folder name>` (herdr and tuios alike).
+# The steps below apply when the entry is missing or its session id is empty. With the
+# fork's session id they are two:
 #   1. herdr worktree open --cwd <main checkout> --path <worktree> --focus
 #   2. herdr-dev <worktree> <ws> <fork session id> '<resume prompt>'
 # <ws> is the workspace id that step 1 prints (.result.workspace.workspace_id);
@@ -46,12 +49,22 @@
 # waiting while the pane reports it, so step 2 never names the parent.
 # The watcher's own output goes to that log too.
 #
+# With --fork the run also writes a lane entry before herdr-dev starts: the brief,
+# worktree, branch, main checkout and the name of the session that forked, in
+# ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<worktree folder name>.json. The
+# watcher fills in the fork's session id, and herdr-phase-change keeps the session id
+# and brief current. A failed write warns and the fork still starts; recovery for that
+# lane is then the steps above. `herdr-lane-resume <name>` reopens a lane from its entry.
+# A run without --fork writes no entry.
+#
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 bin_dir="$(cd "$(dirname "$0")" && pwd)"
+lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
+session_pane=${HERDR_SESSION_PANE:-$HOME/.claude/scripts/tools/session_pane.py}
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -248,6 +261,17 @@ done <<<"$lockfiles"
 # tuios ignores create's --focus, and herdr-dev's layout calls need the client
 # on this workspace.
 herdr-api workspace focus "$ws" >/dev/null
+
+# The lane entry lets herdr-lane-resume reopen the lane. A failed write must not stop
+# the run: the workspace is already open, so it warns and the fork still starts.
+if [ -n "$fork" ]; then
+    reports_to=$(python3 "$session_pane" sender 2>/dev/null | jq -r '.name // empty' 2>/dev/null) || reports_to=""
+    if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
+        --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" 2>&1 >/dev/null); then
+        lane_file="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/$label.json"
+        echo "herdr-worktree: lane entry not written at $lane_file: $add_error; herdr-lane-resume will not know this lane" >&2
+    fi
+fi
 
 # herdr-dev prints the claude pane's id, then the command it typed there.
 layout=$("$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session" "$prompt")

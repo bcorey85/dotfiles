@@ -3,6 +3,7 @@
 Checks the checkout herdr-worktree asks herdr to branch from, the brief it hands herdr-dev, its check that the fork
 started, and how herdr-dev types the claude command.
 """
+import json
 import os
 import pathlib
 import re
@@ -13,12 +14,15 @@ import tempfile
 import time
 import unittest
 
+import toolkit_paths
 from stubs import write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
 HERDR_DEV = BIN_DIR / "herdr-dev"
 DETACH = BIN_DIR / "detach"
+LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
+SESSION_PANE = pathlib.Path(os.environ.get("HERDR_SESSION_PANE", toolkit_paths.TOOLS_DIR / "session_pane.py"))
 CREATED_WORKSPACE = '{"result":{"workspace":{"workspace_id":"w1"}}}'
 CLAUDE_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
 SHELL_PANE = '{"result":{"pane":{"agent":null}}}'
@@ -43,6 +47,12 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.linked_worktree = self.root / "repo-linked"
         git(self.main_checkout, "worktree", "add", "-q", "-b", "linked", str(self.linked_worktree))
 
+        self.state_home = self.root / "state"
+        self.config_dir = self.root / "claude"
+        (self.config_dir / "sessions").mkdir(parents=True)
+        row = {"pid": os.getpid(), "sessionId": "s1", "name": "orchestrator"}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
+
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
@@ -65,7 +75,11 @@ echo '{CREATED_WORKSPACE}'""")
 
     def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None, watch_seconds=None):
         env = {key: value for key, value in os.environ.items()
-               if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS")}
+               if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS", "CLAUDE_CODE_SESSION_ID")}
+        env["HERDR_LANES_CLI"] = str(LANES_CLI)
+        env["HERDR_SESSION_PANE"] = str(SESSION_PANE)
+        env["XDG_STATE_HOME"] = str(self.state_home)
+        env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
         if watch_seconds is not None:
             env["HERDR_WORKTREE_WATCH_SECONDS"] = watch_seconds
         env["HOME"] = str(self.root)
@@ -277,6 +291,67 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_dev_values = herdr_dev_args.read_text().split("\0")
         self.assertEqual(herdr_dev_values[2:4], ["s1", brief.rstrip("\n")])
+
+    def lane_entry(self, name):
+        """The lane file's entry for `name`, read through the lanes CLI; None when there is none."""
+        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+        finished = subprocess.run(["python3", str(LANES_CLI), "get", name], env=env, capture_output=True, text=True)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return json.loads(finished.stdout)["entry"]
+
+    def test_a_fork_writes_a_lane_entry_with_the_brief_worktree_branch_and_sender_before_the_session_id_is_known(self):
+        self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Fix it.\nGo on.",
+                                           "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        entry = self.lane_entry("repo-new-thing")
+        self.assertEqual(entry["worktree"], str(self.root / "repo-new-thing"))
+        self.assertEqual(entry["branch"], "fix/new-thing")
+        self.assertEqual(entry["brief"], "Fix it.\nGo on.")
+        self.assertEqual(entry["session_id"], "")
+        self.assertEqual(entry["reports_to"], "orchestrator")
+
+    def test_a_fork_from_a_prompt_file_stores_the_brief_the_fork_is_sent(self):
+        herdr_dev_args = self.stub_fork(CLAUDE_PANE)
+        brief_file = self.root / "brief.md"
+        brief_file.write_text("Fix the bug.\nGo on.\n")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt-file", str(brief_file),
+                                           "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        sent_brief = herdr_dev_args.read_text().split("\0")[3]
+        self.assertEqual(self.lane_entry("repo-new-thing")["brief"], sent_brief)
+
+    def test_a_fork_whose_sender_cannot_be_named_writes_the_entry_with_no_reports_to(self):
+        self.stub_fork(CLAUDE_PANE)
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").unlink()
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.lane_entry("repo-new-thing")["reports_to"], "")
+
+    def test_a_run_without_fork_writes_no_lane_entry(self):
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIsNone(self.lane_entry("repo-new-thing"))
+
+    def test_a_lane_entry_that_cannot_be_written_warns_with_the_file_and_the_fork_still_starts(self):
+        self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+        self.state_home.write_text("a file where the state folder should be")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        lane_file = self.state_home / "herdr-lanes" / "repo-new-thing.json"
+        self.assertIn(f"herdr-worktree: lane entry not written at {lane_file}: ", finished.stderr)
+        self.assertIn("herdr-lane-resume will not know this lane", finished.stderr)
+        self.wait_for_file(watch_args)
 
     def add_origin_with_default_master(self):
         """A bare origin whose default branch is master, fetched into the main checkout."""

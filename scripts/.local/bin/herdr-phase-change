@@ -22,6 +22,8 @@
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
+lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
+session_pane=${HERDR_SESSION_PANE:-$HOME/.claude/scripts/tools/session_pane.py}
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -92,3 +94,13 @@ done
 herdr-api agent wait "$target" --until idle --until "done" --timeout "$((timeout_seconds * 1000))" >/dev/null \
     || { echo "herdr-phase-change: $target did not settle after /clear; sent nothing more. Read the pane before you retry." >&2; exit 1; }
 herdr-api agent prompt "$target" "$prompt"
+
+# The lane file keeps the latest session id and prompt, so herdr-lane-resume resumes this
+# phase. This step is fail-open: the prompt already went out, so a failure only warns.
+# An empty cwd ends the step: an agent with no cwd is in no lane, and `get --containing ""` is a usage error.
+cwd=$(agent_field cwd)
+[ -n "$cwd" ] || exit 0
+lane=$(python3 "$lanes_cli" get --containing "$cwd" | jq -r '.entry.name // empty') || lane=""
+[ -n "$lane" ] || exit 0
+printf '%s' "$prompt" | python3 "$lanes_cli" set-session "$lane" "$new_session" --brief-stdin >/dev/null \
+    || echo "herdr-phase-change: lane $lane not updated" >&2

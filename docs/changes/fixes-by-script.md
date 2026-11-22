@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-698 fix notes
+699 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -45,10 +45,10 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/criteria-dry-run | 10 | 3 |
 | script/review-asks | 10 | 6 |
 | script/comment-bloat-gate | 8 | 0 |
+| script/herdr-worktree | 8 | 2 |
 | script/review-fix-asks | 8 | 5 |
 | script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
-| script/herdr-worktree | 7 | 1 |
 | script/log-review-metrics | 7 | 0 |
 | script/phase-asks | 7 | 4 |
 | script/reviewer-dispatch | 7 | 2 |
@@ -59,6 +59,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/full-check-gate | 5 | 4 |
+| script/herdr-phase-change | 5 | 1 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 0 |
 | script/shell-statements | 5 | 5 |
@@ -69,7 +70,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/format-changed | 4 | 0 |
 | script/format-files | 4 | 0 |
-| script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/reviewed-tree | 4 | 2 |
 | script/run-sh | 4 | 0 |
@@ -104,6 +104,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/fork-write-scope | 2 | 1 |
 | script/git-calls | 2 | 2 |
 | script/herdr-dev | 2 | 0 |
+| script/herdr-worktree-watch | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -156,7 +157,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
 | script/herdr-worktree-prune | 1 | 0 |
-| script/herdr-worktree-watch | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/hunk-review-pane | 1 | 1 |
 | script/install-stow | 1 | 0 |
@@ -180,6 +180,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-partial-fix | 1 | 1 |
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
+| script/session-pane | 1 | 1 |
 | script/shape-clones | 1 | 1 |
 | script/shell-command-words | 1 | 1 |
 | script/shell-variables | 1 | 1 |

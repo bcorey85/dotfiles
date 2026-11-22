@@ -37,6 +37,7 @@ from review_loop_plan import review_files
 from review_loop_prompt_file import (
     ADOPTED_HEADER_KEY,
     BASE_KEY,
+    CODER_MODEL_KEY,
     FILES_KEY,
     FINDINGS_KEY,
     ITER_KEY,
@@ -61,7 +62,7 @@ STOP_WAIT_SECONDS = 5
 STOP_POLL_SECONDS = 0.05
 AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
-FAST_REVIEWER_MODEL = "haiku"
+FAST_MODEL = "haiku"
 FINDINGS_JSON = "findings.json"
 HANDOFF_NAME = "handoff.txt"
 # The launch record's flags for a later fix run of the same review: `packet --launch` stores them for asks-done.
@@ -107,7 +108,7 @@ def launch_parser():
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
                         help="a test command the loop runs on every converged run, before commit credit (repeatable)")
     models = parser.add_mutually_exclusive_group()
-    models.add_argument("--fast", action="store_true", help=f"run the reviewers on {FAST_REVIEWER_MODEL}")
+    models.add_argument("--fast", action="store_true", help=f"run the reviewers and the fix coder on {FAST_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
     parser.add_argument("--iter", type=int, default=0, help="review rounds an earlier run of this review used")
     parser.add_argument("--lane", help="lane of the run (default none for review, code for fix)")
@@ -252,7 +253,8 @@ def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None
     if options.no_review:
         pairs.append((NO_REVIEW_KEY, YES))
     if options.fast:
-        pairs.append((REVIEWER_MODEL_KEY, FAST_REVIEWER_MODEL))
+        pairs.append((REVIEWER_MODEL_KEY, FAST_MODEL))
+        pairs.append((CODER_MODEL_KEY, FAST_MODEL))
     if options.iter:
         pairs.append((ITER_KEY, str(options.iter)))
     return pairs

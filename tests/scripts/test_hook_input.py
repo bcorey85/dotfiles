@@ -76,6 +76,23 @@ class SessionTempRootsTest(unittest.TestCase):
             self.assertFalse(hook_input.is_under_session_temp_root(f"{UNIQUE_BASE}/other/brief.md"))
 
 
+class SessionScratchpadTest(unittest.TestCase):
+    def test_only_a_path_below_the_slug_and_session_folders_is_in_the_scratchpad(self):
+        root = f"{UNIQUE_BASE}/claude-{os.getuid()}"
+        cases = (
+            (f"{root}/-proj/s2/scratchpad/repo", True),
+            (f"{root}/-proj/s2/x", True),
+            (f"{root}/-proj/s2", False),
+            (f"{root}/s2/x", False),
+            (f"{root}/-proj/s3/scratchpad/repo", False),
+            (f"{UNIQUE_BASE}/other/-proj/s2/x", False),
+        )
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_TMPDIR": UNIQUE_BASE}):
+            for path, expected in cases:
+                with self.subTest(path=path):
+                    self.assertEqual(expected, hook_input.is_in_session_scratchpad(path, "s2"))
+
+
 class ExpandEnvNamesTest(unittest.TestCase):
     def test_only_the_named_set_variables_are_replaced(self):
         env = {"TMPDIR": "/t", "HOME": "/h"}

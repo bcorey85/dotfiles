@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1040 changes
+1044 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -26,6 +26,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [code relay names the run path and phase_start refuses a resume of another checkout](notes/2026-11-21-code-relay-names-the-run-path-and-phase-start.md) [script/code-relay, script/phase-start, script/code-stop-record, script/script-utils] code_relay.py records the session's last /code stop and puts the repo top in a To go on line that names no path; phase_start.py --resume refuses a resume in a repo with no stopped run while the session's last stop is in another run folder.
+* [Hand-back gate runs in the checkout coder_gate set ran in](notes/2026-11-21-hand-back-gate-runs-in-the-checkout-coder-gate-set.md) [script/coder-gate, script/script-utils] coder_gate.py set writes a session pointer to its gate file, and the hand-back hook uses that gate, not the gate of the hook's cwd, so a failure in another checkout never blocks the run.
+* [Commit gate passes session scratch repos and quoted commit words piped to text tools](notes/2026-11-21-commit-gate-passes-session-scratch-repos-and.md) [script/review-commit-gate, script/commit-gate-dirty, script/shell-statements, script/shell-command, script/hook-input] The review commit gate lets a session commit in a throwaway repo under its own scratchpad, and no longer reads commit words quoted in a script's argument as a commit when the script's output goes to a text tool.
+* [Quality-check cap skips a run a shell parse error stopped](notes/2026-11-21-quality-check-cap-skips-a-run-a-shell-parse-error.md) [script/quality-check-cap, script/check-output] A check command that fails on a shell parse or quoting error before any step runs is no longer counted toward the quality-check cap, so the clean rerun after the quoting fix is allowed.
 * [Command steps continue across a newline after an operator and read a backslash continuation](notes/2026-11-20-command-steps-continue-across-a-newline-after-an.md) [script/shell-command, script/shell-steps, script/git-discipline-gate, script/quality-check-cap, script/rg-path-gate, script/shell-variables, script/git-commit-calls, script/check-scope, script/inline-interpreter-hint, script/git-calls, script/shell-write-gate, script/review-commit-gate, script/shell-statements] split_command_steps keeps a step going across a newline after &&, || or | (and after a trailing |&), and the gates that read steps join a backslash-newline first.
 * [Comment stripping keeps an escaped blank before a hash](notes/2026-11-20-comment-stripping-keeps-an-escaped-blank-before-a.md) [script/shell-write-gate, script/shell-quoting, script/shell-statements] A # after a backslash-escaped blank is part of its word, so strip_comments no longer cuts the rest of the line as a comment.
 * [Shell write gate reads a process-substitution tee target](notes/2026-11-20-shell-write-gate-reads-a-process-substitution-tee.md) [script/shell-write-gate] A tee or redirect inside a >(...) or <(...) span is read as gate text, so it is checked like a tee at the top of the command.

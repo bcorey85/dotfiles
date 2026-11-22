@@ -895,14 +895,15 @@ def _backtick_span_end(text, start):
 
 
 # The `-c` settings that move no directory, in lower case: git reads section and key names without case.
-DIRECTORY_FREE_CONFIG = ("alias.", "core.editor=", "sequence.editor=")
+DIRECTORY_FREE_CONFIG = ("alias.", "core.editor=", "sequence.editor=", "user.name=", "user.email=")
 
 
 def git_c_directory(words, directory):
     """The directory a git call in `words` runs in, from `directory`, moved by each `-C <dir>` before the subcommand
-    (`~` expanded; a `-c alias.<name>=<value>`, `-c core.editor=<value>` or `-c sequence.editor=<value>` moves
-    nothing). None when git's options are ones the gate does not follow: `--git-dir`, `--work-tree`, `--config-env`,
-    any other `-c`, a `-C` with no or an empty value, or an option git is not known to have."""
+    (`~` expanded; a `-c alias.<name>=<value>`, `-c core.editor=<value>`, `-c sequence.editor=<value>`,
+    `-c user.name=<value>` or `-c user.email=<value>` moves nothing). None when git's options are ones the gate does
+    not follow: `--git-dir`, `--work-tree`, `--config-env`, any other `-c`, a `-C` with no or an empty value, or an
+    option git is not known to have."""
     options, _index = git_options(words)
     for option, value in options:
         if option == "-C":

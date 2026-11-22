@@ -3,6 +3,7 @@ and which tests failed."""
 import pathlib
 import re
 
+import hook_input
 import script_utils
 from ansi_text import strip_ansi
 from check_scope import prints_own_runner_summary, runs_tests
@@ -175,6 +176,15 @@ MISSING_PATH_LINES = (
 # same line or on the `-->` line after it) and mypy's `can't read file`.
 CHECK_MISSING_PATH = re.compile(r"\bE902 No such file or directory|^mypy: can't read file '[^']*': No such file",
                                 re.MULTILINE)
+
+
+# A shell's parse error: the shell stopped before it ran any step. Only zsh `eval` parses the whole string first;
+# a script runs line by line, so `zsh:` and `bash:` prefixes count only on line 1. `no matches found` and
+# `bad substitution` are left out: they are runtime errors, the steps before them ran. The `[[` form of
+# `condition expected` is already a `parse error`.
+SHELL_PARSE_ERROR = re.compile(
+    r"(?:\(eval\):\d+|zsh:1|bash: (?:-c: )?line 1): "
+    r"(?:unmatched [\"'`]|parse error|unexpected EOF|syntax error near unexpected token)")
 
 
 def is_repo_module(module_name, repo_root):
@@ -375,6 +385,21 @@ def stopped_on_missing_path(output):
     if CHECK_MISSING_PATH.search(plain):
         return True
     return missing_path(plain.splitlines()) is not None
+
+
+def shell_parse_error_line(output):
+    """The first line of the output, after one optional `Exit code N` line, when it is a shell's parse error (the
+    command failed to parse, so no step of it ran), else None."""
+    lines = strip_ansi(output).splitlines()
+    if lines and hook_input.exit_code_in_error_text(lines[0].strip()) is not None:
+        lines = lines[1:]
+    if not lines:
+        return None
+
+    first_line = lines[0].strip()
+    if SHELL_PARSE_ERROR.match(first_line):
+        return first_line
+    return None
 
 
 def is_setup_fault(code, output, repo_root, include_missing_modules=True):

@@ -7,30 +7,30 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-657 fix notes
+661 fix notes
 
-Recent: the 7 days up to 2026-11-20, the newest note.
+Recent: the 7 days up to 2026-11-21, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 171 | 5 |
-| script/review-fix | 72 | 17 |
+| script/review-fix | 72 | 16 |
 | script/review-loop-script | 69 | 12 |
 | script/handback | 56 | 3 |
-| script/review-commit-gate | 44 | 8 |
+| script/review-commit-gate | 45 | 8 |
 | script/review-loop-gate | 35 | 0 |
+| script/coder-gate | 28 | 7 |
 | script/full-check | 28 | 5 |
-| script/coder-gate | 27 | 6 |
+| script/script-utils | 25 | 5 |
 | script/plan-format | 24 | 5 |
 | script/shell-write-gate | 24 | 10 |
-| script/script-utils | 23 | 3 |
+| script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
-| script/quality-check-cap | 20 | 3 |
 | skill/code | 18 | 1 |
-| script/review-loop | 17 | 6 |
+| script/review-loop | 17 | 4 |
 | skill/review | 17 | 0 |
+| script/shell-command | 15 | 8 |
 | script/verify-prep | 15 | 3 |
-| script/shell-command | 14 | 8 |
 | script/git-discipline-gate | 13 | 4 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 2 |
@@ -40,9 +40,9 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/code-wait | 10 | 3 |
 | script/log-escape | 10 | 2 |
 | script/verify-common | 10 | 2 |
+| script/check-output | 9 | 5 |
 | script/criteria-dry-run | 9 | 2 |
 | script/review-asks | 9 | 8 |
-| script/check-output | 8 | 4 |
 | script/code-review-start | 8 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/check-scope | 7 | 2 |
@@ -52,7 +52,7 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/handback-store | 6 | 1 |
 | script/ledger-write | 6 | 3 |
 | script/pipe-shell-check | 6 | 0 |
-| script/review-launch | 6 | 3 |
+| script/review-launch | 6 | 2 |
 | skill/refactor | 6 | 1 |
 | script/deferred-push-check | 5 | 0 |
 | script/inline-interpreter-hint | 5 | 2 |
@@ -60,6 +60,7 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/parallel-tests | 5 | 1 |
 | script/phase-asks | 5 | 4 |
 | script/reviewer-dispatch | 5 | 0 |
+| script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 1 |
 | (no component) | 4 | 0 |
 | script/bash-safety-gate | 4 | 0 |
@@ -69,7 +70,6 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/run-sh | 4 | 0 |
-| script/shell-statements | 4 | 4 |
 | script/source-paths | 4 | 1 |
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
@@ -78,10 +78,12 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/agent-model-guard | 3 | 1 |
 | script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
+| script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
 | script/gate-commands | 3 | 2 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
+| script/phase-start | 3 | 2 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
@@ -92,18 +94,17 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
 | script/calibration-guard | 2 | 0 |
-| script/code-relay | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-dev | 2 | 0 |
+| script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/permission-question | 2 | 1 |
-| script/phase-start | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-findings | 2 | 1 |
 | script/reviewed-tree | 2 | 0 |
@@ -127,6 +128,8 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/block-credential-read | 1 | 0 |
 | script/clone-pairs | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
+| script/code-stop-record | 1 | 1 |
+| script/commit-gate-dirty | 1 | 1 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 1 |
@@ -140,7 +143,6 @@ Recent: the 7 days up to 2026-11-20, the newest note.
 | script/herdr-wake-limited | 1 | 0 |
 | script/herdr-worktree-prune | 1 | 1 |
 | script/herdr-worktree-watch | 1 | 0 |
-| script/hook-input | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/install-stow | 1 | 0 |
 | script/ledger-hook | 1 | 0 |

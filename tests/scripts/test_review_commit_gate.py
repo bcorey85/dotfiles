@@ -16,6 +16,8 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 # The review modules come from the tree under test (the HOOK_SCRIPTS_DIR override), as the gate does.
 sys.path.insert(0, str(pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR) / "review"))
+import commit_gate_dirty
+import hook_input
 import review_commit_gate
 import script_utils
 import verify_common
@@ -39,7 +41,8 @@ STAGED_FILES = (("review", "review_commit_gate.py"), ("review", "handback.py"), 
                 ("review", "review_fix_state.py"), ("lib", "review_fix_names.py"),
                 ("lib", "ask_outcome_words.py"), ("lib", "file_lock.py"), ("lib", "git_alias_commits.py"),
                 ("lib", "git_commit_calls.py"), ("lib", "git_calls.py"), ("lib", "import_guard.py"),
-                ("review", "commit_placement.py"), ("review", "verify_common.py"))
+                ("review", "commit_placement.py"), ("review", "verify_common.py"),
+                ("review", "commit_gate_dirty.py"))
 COMMIT_DENIED = ("[review-commit-gate] Coder work from this session has no converged /review. Do not stop or ask "
                  "the user: invoke the /review skill now on the coder work, then commit after it converges. If "
                  "the commit ships only Markdown files under the repo's top-level docs/ folder or a path listed "
@@ -339,6 +342,17 @@ class ReviewCommitGateTest(GateCase):
         for command in commands:
             with self.subTest(command=command):
                 self.assert_silent(self.bash(command))
+
+    def test_a_script_run_piped_into_a_text_tool_that_quotes_commit_words_is_not_a_commit(self):
+        self.dispatch()
+        command = ("python3 ~/agent-evals/bin/build_queue.py new --title t "
+                   "--body $'The hook blocked git -C d commit -qm base in a scratch repo.' 2>&1 | tail -5")
+        self.assert_silent(self.bash(command))
+
+    def test_a_script_run_piped_into_an_expanded_command_word_is_still_read_as_a_commit(self):
+        self.dispatch()
+        command = "python3 x.py --body 'git -C d commit -m y' | $SHELL"
+        self.assert_commit_denied(self.bash(command))
 
     def test_a_script_file_run_whose_arguments_hold_a_bare_git_commit_is_a_commit(self):
         self.dispatch()
@@ -1032,6 +1046,131 @@ class ReviewedWorkCommitTest(GateCase):
 
     def commit(self, command, cwd=None, **extra):
         return self.bash(command, cwd=str(cwd or self.repo), **extra)
+
+    def make_scratch_repo(self, session="s2"):
+        """A repo under the session's scratchpad, `<temp root>/<project slug>/<session>/scratchpad/plantrepo`; the
+        gate runs with TMPDIR set to self.tmp."""
+        name = f"{hook_input.claude_temp_folder()}/-proj/{session}/scratchpad/plantrepo"
+        (self.tmp / name).parent.mkdir(parents=True)
+        return self.make_repo(name)
+
+    def dirty_session_with_coder_edits(self, edited_file):
+        """Session s2: a coder dispatch a1 that edited edited_file, and a dirty event. Returns the transcript path."""
+        transcript = self.coder_transcript("a1", edited_file)
+        self.assert_silent(self.dispatch(session="s2", tool_response={"agentId": "a1"}))
+        with open(self.state_dir / "s2", "a") as state_file:
+            state_file.write(json.dumps({"kind": "dirty", "ts": time.time()}) + "\n")
+        return transcript
+
+    def test_a_commit_in_a_repo_under_the_sessions_scratchpad_passes_a_dirty_session(self):
+        scratch = self.make_scratch_repo()
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+        command = f"git -C {scratch} commit -qm base --allow-empty"
+
+        self.assert_silent(self.commit(command, cwd=self.tmp, session="s2", transcript_path=transcript))
+
+    def test_a_scratch_repo_commit_with_identity_config_options_passes_a_dirty_session(self):
+        scratch = self.make_scratch_repo()
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+        command = f"git -C {scratch} -c user.name=b -c user.email=b@b commit -qm base"
+
+        self.assert_silent(self.commit(command, cwd=self.tmp, session="s2", transcript_path=transcript))
+
+    def test_a_commit_in_a_repo_outside_the_scratchpad_is_still_denied_by_a_dirty_event(self):
+        other = self.make_repo("other")
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=other, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_scratch_repo_a_coder_dispatch_edited_is_still_denied(self):
+        scratch = self.make_scratch_repo()
+        transcript = self.dirty_session_with_coder_edits(scratch / "base.py")
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_scratch_repo_of_another_session_is_still_denied(self):
+        scratch = self.make_scratch_repo(session="s3")
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                              transcript_path=transcript))
+
+    def dirty_session_with_unplaceable_coder(self, agent_response):
+        """Session s2: a coder dispatch whose edits cannot be read, and a dirty event. Returns the transcript path."""
+        transcript = self.write_transcript()
+        self.assert_silent(self.dispatch(session="s2", tool_response=agent_response))
+        with open(self.state_dir / "s2", "a") as state_file:
+            state_file.write(json.dumps({"kind": "dirty", "ts": time.time()}) + "\n")
+        return transcript
+
+    def test_a_scratch_repo_commit_is_denied_when_a_coders_transcript_cannot_be_read(self):
+        scratch = self.make_scratch_repo()
+        transcript = self.dirty_session_with_unplaceable_coder({"agentId": "a1"})
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_scratch_repo_commit_is_denied_when_a_coder_dispatch_has_no_agent_id(self):
+        scratch = self.make_scratch_repo()
+        transcript = self.dirty_session_with_unplaceable_coder({})
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_scratch_repo_with_a_remote_is_still_denied_by_a_dirty_session(self):
+        scratch = self.make_scratch_repo()
+        self.git(scratch, "remote", "add", "origin", str(self.repo))
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+        command = f"git -C {scratch} commit -qm base --allow-empty"
+
+        self.assert_commit_denied(self.commit(command, cwd=self.tmp, session="s2", transcript_path=transcript))
+
+    def test_a_linked_worktree_of_a_real_repo_under_the_scratchpad_is_still_denied(self):
+        linked = self.tmp / hook_input.claude_temp_folder() / "-proj" / "s2" / "scratchpad" / "wt"
+        linked.parent.mkdir(parents=True)
+        self.git(self.repo, "worktree", "add", "-q", "-b", "linked", str(linked))
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=linked, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_repo_whose_git_common_dir_cannot_be_read_is_no_scratch_repo(self):
+        # The scratchpad check passes for any path here, so only the empty-common-dir guard can return False.
+        with mock.patch.object(commit_gate_dirty.script_utils, "git_output", return_value=""), \
+                mock.patch.object(commit_gate_dirty.hook_input, "is_in_session_scratchpad", return_value=True):
+            result = commit_gate_dirty.is_session_scratch_repo("/scratch/repo", "s2", {}, [])
+
+        self.assertFalse(result)
+
+    def test_a_reviewed_scratch_repo_is_judged_by_its_review_and_not_exempted(self):
+        scratch = self.make_scratch_repo()
+        self.seed_handback("converged", session="s2", repo=str(scratch.resolve()), handed_back=False)
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+
+        self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                              transcript_path=transcript))
+
+    def test_a_reviewed_scratch_repo_whose_tree_the_review_covers_passes_through_the_credit(self):
+        scratch = self.make_scratch_repo()
+        self.seed_handback("converged", session="s2", repo=str(scratch.resolve()))
+        self.record_reviewed_tree(session="s2")
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+
+        self.assert_silent(self.commit("git commit --allow-empty -m x", cwd=scratch, session="s2",
+                                       transcript_path=transcript))
+
+    def test_a_repo_at_the_wrong_depth_of_the_scratchpad_is_still_denied(self):
+        transcript = self.dirty_session_with_coder_edits(self.repo / "base.py")
+        folder = hook_input.claude_temp_folder()
+        for name in (f"{folder}/-proj/s2", f"{folder}/s2/x"):
+            with self.subTest(name=name):
+                (self.tmp / name).parent.mkdir(parents=True, exist_ok=True)
+                repo = self.make_repo(name)
+
+                self.assert_commit_denied(self.commit("git commit --allow-empty -m x", cwd=repo, session="s2",
+                                                      transcript_path=transcript))
 
     def record_reviewed_tree(self, session="s1"):
         """Credit the stored review's tree, as /code's review-loop does when it ends clean."""

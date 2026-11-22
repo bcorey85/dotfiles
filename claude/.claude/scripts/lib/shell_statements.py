@@ -21,6 +21,8 @@ NOT_SCRIPT_PROGRAMS = (
     | set(shell_command.CONTAINER_PROGRAMS)
     | set(OTHER_CODE_RUNNING_PROGRAMS)
 )
+# Shell builtins that run a file's text as commands.
+SOURCE_WORDS = ("source", ".")
 # Scripts in the trusted toolkit folders that run `exec <interpreter> "$@"`: each is read as that interpreter.
 INTERPRETER_LAUNCHER_SCRIPTS = {"hook-python": "python3"}
 # A later word of these flags, alone or as `<flag>=<value>`, makes a run no script run: `review_fix.py launch --test`
@@ -279,15 +281,18 @@ def runs_script_file(words):
         return False
 
     program = os.path.basename(words[0])
-    later_programs = [os.path.basename(word) for word in words[1:]]
-    names_code_runner = any(
-        later in NOT_SCRIPT_PROGRAMS or shell_command.INTERPRETER.fullmatch(later) for later in later_programs
-    )
+    names_code_runner = any(is_code_running_program(word) for word in words[1:])
     if shell_command.INTERPRETER.fullmatch(program):
         return given_script_file_after_value_options(words) and not names_code_runner
     if "/" not in words[0]:
         return False
     return trusted_script_path(words[0]) and not names_code_runner
+
+
+def is_code_running_program(word):
+    """True when the word names a program of NOT_SCRIPT_PROGRAMS or an interpreter (shell_command.INTERPRETER)."""
+    program = os.path.basename(word)
+    return program in NOT_SCRIPT_PROGRAMS or bool(shell_command.INTERPRETER.fullmatch(program))
 
 
 def launcher_as_interpreter(words):
@@ -344,23 +349,53 @@ def in_skill_scripts(resolved, skills_dir):
 
 def blank_script_run_quotes(command):
     """The command with each quoted string emptied to `""` in each step that is one script run (see runs_script_file):
-    its quoted arguments are data. Every other step stays as written, so does a step that a `|` follows (its output
-    may feed a shell), a step this reading cannot parse, and every step of a command that pipes out of a compound
-    group (see pipes_out_of_compound): the group's steps are not read one by one."""
+    its quoted arguments are data. Every other step stays as written, so does a step that a `|` follows when a later
+    step of that pipeline names a code runner (its output may feed a shell), a step this reading cannot parse, and
+    every step of a command that pipes out of a compound group (see pipes_out_of_compound): the group's steps are not
+    read one by one."""
     if pipes_out_of_compound(command):
         return command
 
     steps = shell_command.split_command_steps(command)
     pieces = []
     for position, (operator, step) in enumerate(steps):
-        following_operator = steps[position + 1][0] if position + 1 < len(steps) else ""
         # split_command_steps keeps `|&` inside its step, so that step is not one simple command and
         # blank_if_script_run leaves it as written.
-        if following_operator == "|":
+        if feeds_code_runner(steps, position):
             pieces.append(operator + step)
             continue
         pieces.append(operator + blank_if_script_run(step))
     return "".join(pieces)
+
+
+def feeds_code_runner(steps, position):
+    """True when a `|` follows steps[position] and a later step of that pipeline (up to the next operator that is not
+    `|`) names a code runner, which may read the step's output as code."""
+    for operator, later_step in steps[position + 1:]:
+        if operator != "|":
+            return False
+        if step_names_code_runner(later_step):
+            return True
+    return False
+
+
+def step_names_code_runner(step):
+    """True when a word of the step is a code runner: shell_command.names_code_runner, or any word of the step that is
+    a program of NOT_SCRIPT_PROGRAMS (shells, launchers, argument runners; this covers `fish` and `nu`, which
+    names_code_runner misses), an interpreter that reads code from stdin (`| python3`), or `source` or `.`
+    (`| source /dev/stdin`). A step this reading cannot parse counts as one, and so does a simple command whose first
+    word is an expansion (starts with `$` or a backtick)."""
+    if shell_command.names_code_runner(step):
+        return True
+    try:
+        simple_commands = shell_command.split_simple_commands(step)
+    except ValueError:
+        return True
+    for words in simple_commands:
+        # A command word that is an expansion (`$SHELL`, `${SHELL}`, `$(which sh)`, a backtick) may name any program.
+        if words and words[0].startswith(("$", "`")):
+            return True
+    return any(is_code_running_program(word) or word in SOURCE_WORDS for words in simple_commands for word in words)
 
 
 def pipes_out_of_compound(command):

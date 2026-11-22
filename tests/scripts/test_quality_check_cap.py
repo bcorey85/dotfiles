@@ -405,6 +405,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assertEqual(records, [])
         self.assert_allowed(self.pre("ruff check src"))
 
+    def test_a_run_a_shell_parse_error_stopped_before_it_started_is_not_counted(self):
+        command = 'pytest "tests/test_x.py'
+        for error in ('Exit code 1\n(eval):1: unmatched "', "(eval):1: unmatched '"):
+            with self.subTest(error=error):
+                self.fire("PostToolUseFailure", command=command, error=error)
+                self.assertEqual(self.run_records(), [])
+                self.assert_allowed(self.pre(command))
+
     def test_a_failed_run_with_only_an_import_traceback_and_no_runner_summary_records_nothing(self):
         error = ("Exit code 2\nTraceback (most recent call last):\n  File \"tests/test_x.py\", line 1, in <module>\n"
                  "    import requests_missing_dep\nModuleNotFoundError: No module named 'requests_missing_dep'")

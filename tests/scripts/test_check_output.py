@@ -952,6 +952,39 @@ class CheckOutputMissingToolTest(unittest.TestCase):
         self.assertEqual(output, check_output.cannot_start_line(127, output))
 
 
+class ShellParseErrorLineTest(unittest.TestCase):
+    def test_a_shells_parse_error_first_line_is_found_bare_or_after_an_exit_code_line(self):
+        cases = [
+            ("bare unmatched double quote", '(eval):1: unmatched "', '(eval):1: unmatched "'),
+            ("after an exit code line", 'Exit code 1\n(eval):1: unmatched "', '(eval):1: unmatched "'),
+            ("unmatched single quote", "(eval):1: unmatched '", "(eval):1: unmatched '"),
+            ("zsh parse error near", "zsh:1: parse error near `)'", "zsh:1: parse error near `)'"),
+            ("zsh [[ condition", "(eval):1: parse error: condition expected: -f",
+             "(eval):1: parse error: condition expected: -f"),
+            ("bash unexpected EOF", "bash: line 1: unexpected EOF while looking for matching `\"'",
+             "bash: line 1: unexpected EOF while looking for matching `\"'"),
+            ("bash -c syntax error", "Exit code 2\nbash: -c: line 1: syntax error near unexpected token `)'",
+             "bash: -c: line 1: syntax error near unexpected token `)'"),
+        ]
+        for name, output, wanted in cases:
+            with self.subTest(name):
+                self.assertEqual(wanted, check_output.shell_parse_error_line(output))
+
+    def test_output_that_is_no_shell_parse_error_gives_none(self):
+        cases = [
+            ("no matches found", "Exit code 1\nzsh:1: no matches found: tests/*.nope"),
+            ("bad substitution", "(eval):1: bad substitution"),
+            ("a runner SyntaxError", "Exit code 1\nSyntaxError: invalid syntax"),
+            ("a parse error that is not the first line", "FAILED t.py::test_a\n(eval):1: unmatched \""),
+            ("bash error after line 1 ran", "bash: line 2: unexpected EOF while looking for matching `\"'"),
+            ("zsh script error after line 1 ran", 'zsh:3: unmatched "'),
+            ("empty", ""),
+        ]
+        for name, output in cases:
+            with self.subTest(name):
+                self.assertIsNone(check_output.shell_parse_error_line(output))
+
+
 class TestDbCollisionTest(unittest.TestCase):
     def test_each_known_collision_shape_matches(self):
         cases = [

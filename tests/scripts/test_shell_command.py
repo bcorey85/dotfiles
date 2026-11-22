@@ -425,11 +425,12 @@ class GitCDirectoryTest(unittest.TestCase):
         self.assertEqual(os.path.expanduser("~/r"), git_c_directory(["git", "-C", "~/r", "commit"], "/a"))
         self.assertEqual("/a", git_c_directory(["git", "--no-pager", "commit"], "/a"))
 
-    def test_an_alias_or_an_editor_config_moves_nothing_and_another_c_is_not_followed(self):
-        for config in ("alias.ci=commit", "core.editor=true", "sequence.editor=true"):
+    def test_an_alias_an_editor_or_an_identity_config_moves_nothing_and_another_c_is_not_followed(self):
+        for config in ("alias.ci=commit", "core.editor=true", "sequence.editor=true", "user.name=x",
+                       "user.email=x@x"):
             with self.subTest(config):
                 self.assertEqual("/a", git_c_directory(["git", "-c", config, "rebase", "--continue"], "/a"))
-        for config in ("core.worktree=/w", "core.editorx=true", "user.name=x"):
+        for config in ("core.worktree=/w", "core.editorx=true"):
             with self.subTest(config):
                 self.assertIsNone(git_c_directory(["git", "-c", config, "commit"], "/a"))
 

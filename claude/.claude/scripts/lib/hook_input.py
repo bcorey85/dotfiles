@@ -304,6 +304,22 @@ def is_under_session_temp_root(path):
     return any(script_utils.path_is_under(real, root) for root in session_temp_roots())
 
 
+# A session scratchpad sits at <root>/<project slug>/<session>/: the root, a slug folder, then the session folder.
+SCRATCHPAD_DEPTH_BELOW_ROOT = 2
+
+
+def is_in_session_scratchpad(path, session):
+    """True when the path, once symlinks and `..` are resolved, lies below `<session temp root>/<slug>/<session>/`."""
+    real = os.path.realpath(path)
+    for root in session_temp_roots():
+        if not script_utils.path_is_under(real, root):
+            continue
+        below_root = os.path.relpath(real, root).split(os.sep)
+        if len(below_root) > SCRATCHPAD_DEPTH_BELOW_ROOT and below_root[1] == session:
+            return True
+    return False
+
+
 def is_under_temp_dir(path):
     real = os.path.realpath(path)
     return any(script_utils.path_is_under(real, root) for root in temp_roots())

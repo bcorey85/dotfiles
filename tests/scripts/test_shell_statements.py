@@ -397,6 +397,38 @@ class ScriptRunTest(unittest.TestCase):
 
         self.assertEqual(command, strip_stored_heredocs(command))
 
+    def test_a_script_step_piped_only_into_text_tools_is_blanked(self):
+        self.assertEqual('python3 x.py "" 2>&1 | tail -5',
+                         blank_script_run_quotes('python3 x.py "git commit" 2>&1 | tail -5'))
+        self.assertEqual('python3 x.py "" | sort | head -2',
+                         blank_script_run_quotes('python3 x.py "git commit" | sort | head -2'))
+
+    def test_a_script_step_piped_through_a_text_tool_into_a_shell_stays_as_written(self):
+        commands = (
+            'python3 x.py "git commit -am x" | tail | sh',
+            'python3 x.py "git commit -am x" | tee | bash',
+            'python3 x.py "git commit -am x" | python3',
+            'python3 x.py "git commit -am x" | source /dev/stdin',
+            'python3 x.py "git commit -am x" | . /dev/stdin',
+            "python3 x.py --body 'git -C d commit -m y' | $SHELL",
+            "python3 x.py --body 'git -C d commit -m y' | ${SHELL}",
+            "python3 x.py --body 'git -C d commit -m y' | `which sh`",
+            "python3 x.py --body 'git -C d commit -m y' | $(which sh)",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_script_step_piped_into_a_step_that_cannot_be_parsed_stays_as_written(self):
+        command = 'python3 x.py "git commit" | tail "unterminated'
+
+        self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_shell_after_an_and_operator_does_not_keep_the_piped_script_step_as_written(self):
+        for command in ('python3 x.py "git commit" | tail && sh', 'python3 x.py "git commit" | tail ; sh'):
+            with self.subTest(command=command):
+                self.assertEqual(command.replace('"git commit"', '""'), blank_script_run_quotes(command))
+
     def test_the_last_step_of_a_pipe_is_still_blanked(self):
         self.assertEqual('echo a | python3 x.py ""', blank_script_run_quotes('echo a | python3 x.py "b"'))
 

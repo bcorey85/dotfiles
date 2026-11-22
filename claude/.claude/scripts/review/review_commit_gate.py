@@ -9,7 +9,10 @@
 A coder dispatch makes dirty each repo its transcript shows it edited through the EDIT_TOOL_PATH_KEYS tools: no repo
 when no edited file lies in a work tree (a scratch file, a git dir, a deleted worktree), and every repo when its
 transcript cannot be read, git cannot place an edited folder, or it has no agent id. A dirty event makes
-every repo dirty. A commit is judged when a repo it commits in is dirty.
+every repo dirty (commit_gate_dirty.py reads these). A commit is judged when a repo it commits in is dirty, except
+in a repo whose work tree and git common dir both lie under the session's own scratchpad
+(`<temp root>/<project>/<session>/`), that no coder dispatch edited (nor any coder whose edits cannot be read
+or whose dispatch has no agent id), and that is not the repo of the session's latest review dispatch.
 
 A dirty commit that ships only notes is not denied. The commit passes when every path it can ship is a Markdown file
 under the repo's top-level docs/ folder or a path listed in the repo's `.claude/notes-paths` (one entry per line: a
@@ -49,7 +52,9 @@ and no later word is a flag of `shell_statements.COMMAND_VALUE_FLAGS` (`--test`,
 `<flag>=<value>`
 (a trusted program's argv and stdin are trusted as data, except a launcher of
 `shell_statements.INTERPRETER_LAUNCHER_SCRIPTS`, which is read as the interpreter it runs).
-A step that a `|` or `|&` follows is read as written: its output may feed a shell. So is a whole
+A step that a `|` follows is read as written when a later step of that pipeline names a code runner (its output may
+feed a shell); one piped only into text tools (`| tail -5`) is a script run. A step that `|&` follows is read as
+written. So is a whole
 command that holds a `|` and an unquoted compound opener (`{`, `(`, `do`, `then`, `else`), quoted text and
 heredoc bodies included. Otherwise the text is read as written, with every quoted-string join (a quote,
 optional whitespace, `+`, optional whitespace, a quote; the quotes may be backslash-escaped) removed,
@@ -144,6 +149,13 @@ import script_utils
 import shell_statements
 import user_prompts
 import verify_common
+from commit_gate_dirty import (
+    GIT_TIMEOUT_SECONDS,
+    dirty_since,
+    edited_repos_by_agent,
+    gate_events,
+    is_session_scratch_repo,
+)
 from git_calls import REPO_ENVIRONMENT_NAMES
 from git_commit_calls import (
     COMMIT_VALUE_LETTERS,
@@ -172,7 +184,6 @@ from shell_command import (
 from shell_directory import DIRECTORY_MOVE_WORDS
 from shell_quoting import join_line_continuations, quoted_positions, strip_comments, without_quote_characters
 
-AGENT_ID = re.compile(r"[A-Za-z0-9_-]+")
 # The command words (first word of a simple command, quotes and escapes resolved) that change folder or repo.
 FOLDER_COMMAND_WORDS = (*DIRECTORY_MOVE_WORDS, "eval", "source", ".")
 # A command that changes folder or repo (a folder command word, or a git dir or work-tree option or variable; `.` is
@@ -196,11 +207,7 @@ QUOTED_STRING_JOIN = re.compile(r"""\\?["']\s*\+\s*\\?["']""")
 OPTION_VALUE = r"""(?:"[^"]*"|'[^']*'|\$\([^()]*\)|`[^`]*`|\S+)"""
 # For a command shlex cannot read: git, then only option-like words with an optional value each, then commit.
 UNREADABLE_GIT_THEN_COMMIT = re.compile(r"\bgit(?:[ \t]+-\S+(?:[ \t]+" + OPTION_VALUE + r")?)*[ \t]+" + COMMITTING_CALL)
-GIT_TIMEOUT_SECONDS = 3
 NO_REVIEW_MARKERS = ("[no-review]", "[no review]")
-# The input key that names the edited file, for each tool a coder edits with.
-EDIT_TOOL_PATH_KEYS = {"Edit": "file_path", "MultiEdit": "file_path", "Write": "file_path",
-                       "NotebookEdit": "notebook_path"}
 READ_ONLY_GIT = ("status", "diff", "log", "show", "rev-parse")
 # Programs the notes-only commit exemption allows beside git; a subset of PROBE_PROGRAMS below, but the two lists
 # answer different questions.
@@ -587,131 +594,6 @@ def open_state_dir():
     return state_dir
 
 
-def gate_events(state_file):
-    """The state events, oldest first. A plain `dirty` line, and a line the gate cannot read, become a dirty event at
-    the file's last change. A leftover plain `clean` line is no event."""
-    try:
-        with open(state_file, "rb") as handle:
-            lines = handle.read().decode("utf-8", "replace").splitlines()
-        changed_at = os.path.getmtime(state_file)
-    except OSError:
-        return []
-
-    events = []
-    for line in lines:
-        if line.strip() == "clean":
-            continue
-        try:
-            event = json.loads(line)
-        except ValueError:
-            event = None
-        if not isinstance(event, dict) or not isinstance(event.get("ts"), (int, float)):
-            event = {"kind": "dirty", "ts": changed_at}
-        events.append(event)
-    return events
-
-
-def subagent_transcript(transcript_path, agent_id):
-    """The transcript of the session's subagent agent_id: Claude Code keeps every subagent's, nested ones too, in
-    `<session transcript without .jsonl>/subagents/agent-<id>.jsonl`. None without a transcript or an id."""
-    if not transcript_path or not isinstance(agent_id, str) or not AGENT_ID.fullmatch(agent_id):
-        return None
-    return script_utils.subagent_transcript_path(transcript_path, agent_id)
-
-
-def worked_until(transcript_path, agent_id):
-    """The last change to a coder agent's transcript, or 0 when it has none."""
-    agent_transcript = subagent_transcript(transcript_path, agent_id)
-    try:
-        return os.path.getmtime(agent_transcript) if agent_transcript else 0
-    except OSError:
-        return 0
-
-
-def folder_repo_top(folder):
-    """The top level of the work tree that holds folder (its nearest existing ancestor when it is gone), as a
-    string; "" when it lies outside every work tree: in a git dir, or with no `.git` in it or above it; None when
-    git cannot tell, so the caller fails closed."""
-    existing = pathlib.Path(folder)
-    while not existing.is_dir() and existing != existing.parent:
-        existing = existing.parent
-    top = script_utils.repo_root(str(existing), timeout=GIT_TIMEOUT_SECONDS)
-    if top:
-        return str(top)
-    if ".git" in existing.parts:
-        return ""
-    has_git_above = any((ancestor / ".git").exists() for ancestor in (existing, *existing.parents))
-    return None if has_git_above else ""
-
-
-def edited_repos(transcript_path, agent_id, top_by_dir):
-    """The top levels of the repos a coder agent edited through the EDIT_TOOL_PATH_KEYS tools, read from its
-    transcript: an empty set when no edited file lies in a work tree, None when the transcript cannot be read or git
-    cannot place an edited folder. top_by_dir caches each folder's repo top, shared across agents. Fail-open on a
-    readable transcript with no work-tree edit: the shell-write-gate keeps coder shell writes out of tracked files,
-    so the edit tools are the record of coder writes."""
-    agent_transcript = subagent_transcript(transcript_path, agent_id)
-    if agent_transcript is None:
-        return None
-    edited_dirs = set()
-    try:
-        with open(agent_transcript, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                edited_dirs.update(edited_dirs_in(line))
-    except OSError:
-        return None
-
-    for folder in edited_dirs:
-        if folder not in top_by_dir:
-            top_by_dir[folder] = folder_repo_top(folder)
-
-    repo_tops = {top_by_dir[folder] for folder in edited_dirs}
-    if None in repo_tops:
-        return None
-    repo_tops.discard("")
-    return repo_tops
-
-
-def edited_dirs_in(line):
-    """The folders of the files one transcript line's calls to the EDIT_TOOL_PATH_KEYS tools name."""
-    edited_dirs = set()
-    for tool_name, tool_input in script_utils.tool_use_calls(line):
-        path_key = EDIT_TOOL_PATH_KEYS.get(tool_name)
-        edited = tool_input.get(path_key) if path_key else None
-        if isinstance(edited, str) and os.path.isabs(edited):
-            edited_dirs.add(os.path.dirname(edited))
-    return edited_dirs
-
-
-def edited_repos_by_agent(events, transcript_path):
-    """edited_repos for each coder agent id the dispatch events name, read once."""
-    top_by_dir = {}
-    return {event["agent"]: edited_repos(transcript_path, event["agent"], top_by_dir) for event in events
-            if event.get("kind") == "dispatch" and isinstance(event.get("agent"), str) and event["agent"]}
-
-
-def dirty_since(events, transcript_path, repo_top, edited_by_agent):
-    """When the work in repo_top became dirty: the latest dirty event, or coder dispatch that edited repo_top, or None
-    when none did. A dirty event stands for every repo. A coder counts for the repos its transcript shows it edited
-    (none when it edited no work tree), and for every repo when edited_repos is None. It counts from its dispatch or
-    its transcript's last change, whichever is later, since a background coder edits after its dispatch is recorded.
-    A coder with no agent id on record counts as dirty now, in every repo, since its edits cannot be read."""
-    dirty_times = []
-    for event in events:
-        if event.get("kind") != "dispatch":
-            dirty_times.append(event["ts"])
-            continue
-        agent_id = event.get("agent")
-        if not isinstance(agent_id, str) or not agent_id:
-            dirty_times.append(time.time())
-            continue
-        edited = edited_by_agent[agent_id]
-        if repo_top is not None and edited is not None and repo_top not in edited:
-            continue
-        dirty_times.append(max(event["ts"], worked_until(transcript_path, agent_id)))
-    return max(dirty_times, default=None)
-
-
 def on_post_tool_use(root, state_file):
     """Record a coder dispatch with the id of the agent it ran."""
     if not script_utils.CODERS.match(jq_field(root, "tool_input", "subagent_type")):
@@ -864,12 +746,17 @@ def earns_credit(repo_dir, repo_top, dirty_at, session):
 
 def is_clear(repo_dir, events, transcript_path, session, edited_by_agent):
     """True when a commit in repo_dir owes no review: no dirty event or coder work of the session touched its repo,
-    or the commit earns credit there. A repo_dir of None is never clear."""
+    or the repo is a session scratch repo (`is_session_scratch_repo`) other than the latest reviewed repo, or the
+    commit earns credit there. A repo_dir of None is never clear."""
     if repo_dir is None:
         return False
 
     repo_top_name, dirty_at = repo_top_and_dirty_at(repo_dir, events, transcript_path, edited_by_agent)
     if dirty_at is None:
+        return True
+    # A throwaway repo in the session's own scratchpad owes no review, unless it is the repo a review covered.
+    is_scratch = is_session_scratch_repo(repo_top_name, session, edited_by_agent, events)
+    if is_scratch and repo_top_name != latest_reviewed_repo(session):
         return True
     return earns_credit(repo_dir, repo_top_name, dirty_at, session)
 

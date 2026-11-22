@@ -30,7 +30,6 @@ CORPUS = pathlib.Path(os.environ.get("GATE_REPLAY_CORPUS")
 # reads the PreToolUse JSON and denies with decision JSON on stdout; `command` reads the bare command and denies with
 # exit 1.
 GATES = {
-    "shell-write-gate": ("shell_write_gate.py", "hook"),
     "git-discipline-gate": ("git_discipline_gate.py", "hook"),
     "inline-interpreter-hint": ("inline_interpreter_hint.py", "hook"),
     "pipe-shell-check": ("pipe_shell_check.py", "command"),

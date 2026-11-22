@@ -33,7 +33,6 @@ def bash_pretooluse_handlers():
 ALWAYS_FIRING = {
     "bash-safety-gate.sh",
     "gates/inline_interpreter_hint.py",
-    "gates/shell_write_gate.py",
     "gates/quality_check_cap.py",
     "code/coder_gate.py",
     "gates/wait_loop_gate.py",

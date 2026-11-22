@@ -78,8 +78,7 @@ def edited_repos(transcript_path, agent_id, top_by_dir):
     """The top levels of the repos a coder agent edited through the EDIT_TOOL_PATH_KEYS tools, read from its
     transcript: an empty set when no edited file lies in a work tree, None when the transcript cannot be read or git
     cannot place an edited folder. top_by_dir caches each folder's repo top, shared across agents. Fail-open on a
-    readable transcript with no work-tree edit: the shell-write-gate keeps coder shell writes out of tracked files,
-    so the edit tools are the record of coder writes."""
+    readable transcript with no work-tree edit: a coder shell write is not counted."""
     agent_transcript = subagent_transcript(transcript_path, agent_id)
     if agent_transcript is None:
         return None

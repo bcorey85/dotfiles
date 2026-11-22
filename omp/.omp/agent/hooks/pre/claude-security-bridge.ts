@@ -6,7 +6,7 @@
  * bash scripts stay the single source of truth for both harnesses.
  *
  * Covered gates (the "Safety Rails" set from the global CLAUDE.md):
- *   PreToolUse(Bash)        bash-safety-gate.sh, gates/git_discipline_gate.py, review/review_commit_gate.py, gates/shell_write_gate.py, gates/quality_check_cap.py
+ *   PreToolUse(Bash)        bash-safety-gate.sh, gates/git_discipline_gate.py, review/review_commit_gate.py, gates/quality_check_cap.py
  *   PreToolUse(Read|Grep)   block-credential-read.sh        (also mapped: glob)
  *   PreToolUse(Write|Edit)  write-edit-safety-gate.sh       (also mapped: ast_edit)
  *   PostToolUse(Agent)      review/review_commit_gate.py    (arms on coder dispatch; omp task tool)
@@ -19,8 +19,8 @@
  *
  * Output conventions handled:
  *   CB hooks  — stdout JSON line {"hookSpecificOutput":{"permissionDecision":"deny"|"ask",...}}, exit 0
- *   custom    — stderr message + exit 2; the four Python gates (review-commit-gate, quality-check-cap,
- *               git-discipline-gate, shell-write-gate) deny through the JSON permissionDecision line and use exit 2
+ *   custom    — stderr message + exit 2; the three Python gates (review-commit-gate, quality-check-cap,
+ *               git-discipline-gate) deny through the JSON permissionDecision line and use exit 2
  *               with stderr only when they crash (import_guard, run_gate)
  *
  * Session id: a per-session UUID that review-commit-gate keys its dirty/clean
@@ -29,9 +29,8 @@
  * Known gaps (inherent to bridging, not fixable here):
  *   - omp's eval tool executes arbitrary JS/Python with no bash string to
  *     inspect — no Claude equivalent exists, so no gate covers it.
- *   - omp's event carries no agent_type, so shell-write-gate's test-ownership
- *     half (and test-ownership-gate itself) is inert here, as under any
- *     harness that does not name the dispatched agent.
+ *   - omp's event carries no agent_type, so test-ownership-gate is inert
+ *     here, as under any harness that does not name the dispatched agent.
  *   - xd:// device tools (ast_edit etc.) are gated IF they surface under
  *     their own tool name; if one ever surfaces as a generic write with an
  *     xd:// path, its inner target paths are not inspected.
@@ -55,7 +54,6 @@ const PRE_TOOL_GATES: Record<string, { tool: string; gates: string[] }> = {
       "bash-safety-gate.sh",
       "gates/git_discipline_gate.py",
       "review/review_commit_gate.py",
-      "gates/shell_write_gate.py",
       "gates/quality_check_cap.py",
     ],
   },

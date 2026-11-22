@@ -44,22 +44,6 @@ class HookRunTest(unittest.TestCase):
         return json.loads(finished.stdout.decode("utf-8"))["hookSpecificOutput"]
 
 
-class ShellWriteGateFindingsTest(HookRunTest):
-    def test_lone_surrogate_in_the_command_still_denies(self):
-        # finding 1: the crash exited 1, so the command ran
-        stdin = b'{"tool_input":{"command":"sed -i s/a/b/ notes.txt #\\ud800"},"cwd":"/tmp"}'
-        finished = self.run_hook("shell-write-gate", stdin)
-        decision = self.decision(finished)
-        self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("in-place editing", decision["permissionDecisionReason"])
-
-    def test_unicode_letter_assignment_prefix_does_not_hide_the_editor(self):
-        # finding 2
-        stdin = json.dumps({"tool_input": {"command": "é=1 sed -i s/a/b/ notes.txt"}, "cwd": str(self.work)})
-        decision = self.decision(self.run_hook("shell-write-gate", stdin))
-        self.assertEqual(decision["permissionDecision"], "deny")
-
-
 class QualityCheckCapFindingsTest(HookRunTest):
     def fire(self, event, command, session="s1"):
         payload = {"hook_event_name": event, "tool_name": "Bash", "session_id": session, "cwd": str(self.work),
@@ -226,8 +210,8 @@ class RunGateTest(HookRunTest):
     PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
               "git-discipline-gate", "log-agent-usage", "quality-check-cap", "review-commit-gate",
-              "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
-    GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
+              "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
+    GATES = ("quality-check-cap", "git-discipline-gate", "review-commit-gate",
              "comment-bloat-gate", "spec-budget-gate")
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):

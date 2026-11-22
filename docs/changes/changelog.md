@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1045 changes
+1046 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -23,6 +23,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Changed
 
 * [The review commit gate skips the heredoc text of a script-file run](notes/2026-11-17-the-review-commit-gate-skips-heredoc-text-and.md) [script/review-commit-gate] `review_commit_gate.py` no longer reads a commit in the heredoc body of an interpreter running a script file, such as `python3 bin/build_queue.py new <<'EOF'`. A commit beside that run is still denied.
+
+### Removed
+
+* [Remove shell-write-gate](notes/2026-11-21-remove-shell-write-gate.md) [script/shell-write-gate] The PreToolUse(Bash) shell-write-gate is deleted with the five libs only it used. bash-safety-gate still blocks in-place edits, inline interpreter writes and redirects into the protected toolkit paths.
 
 ### Fixed
 

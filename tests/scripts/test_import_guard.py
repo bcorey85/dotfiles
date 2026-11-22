@@ -13,7 +13,7 @@ import toolkit_paths
 SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.SCRIPTS_DIR)
 # The guarded gates that import lib/shell_command.py, with the name each stderr line opens with.
 GATES = {"review-commit-gate": "review/review_commit_gate.py", "quality-check-cap": "gates/quality_check_cap.py",
-         "git-discipline-gate": "gates/git_discipline_gate.py", "shell-write-gate": "gates/shell_write_gate.py"}
+         "git-discipline-gate": "gates/git_discipline_gate.py"}
 PLANTED_MODULE = "lib/shell_command.py"
 PAYLOAD = {"hook_event_name": "PreToolUse", "session_id": "s", "tool_name": "Bash", "tool_input": {"command": "ls"}}
 # fork_write_scope imports lib/hook_input.py, not shell_command.py, so it is tested through it.

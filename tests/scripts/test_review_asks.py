@@ -83,3 +83,30 @@ class ReadOutcomesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NumberedAskLinesTest(unittest.TestCase):
+    ASKS = (
+        {"question": "Cap at 3?", "gate": "code-reviewer", "class": "smell", "file_line": "a.py:1"},
+        {"question": "Drop it?", "gate": "code-reviewer", "class": "docs", "user_only": True},
+    )
+
+    def test_each_ask_line_opens_with_the_marker_and_its_number(self):
+        lines = review_asks.numbered_ask_lines(list(self.ASKS))
+
+        self.assertEqual(f"{review_asks.ASK_MARKER} 1. Cap at 3?", lines[0])
+        self.assertTrue(lines[1].startswith(f"{review_asks.ASK_MARKER} 2. "))
+
+    def test_the_detail_line_opens_with_the_marker_and_keeps_the_location_and_class(self):
+        lines = review_asks.numbered_ask_lines(list(self.ASKS), detail=True)
+
+        self.assertEqual(f"{review_asks.ASK_MARKER} 1. a.py:1  [code-reviewer/smell]", lines[0])
+        self.assertIn("no file:line  [code-reviewer/docs]", lines[2])
+
+    def test_no_script_parses_the_line_back_so_the_old_form_in_a_saved_packet_loads(self):
+        old_packet_ask = {"question": "Cap at 3?", "gate": "code-reviewer", "class": "smell", "file_line": "a.py:1",
+                          "finding_id": "abc"}
+
+        lines = review_asks.numbered_ask_lines([old_packet_ask], detail=True)
+
+        self.assertTrue(lines[0].endswith("1. a.py:1  [code-reviewer/smell]"))

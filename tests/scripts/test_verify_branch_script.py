@@ -504,14 +504,14 @@ class PrepTest(VerifyBranchBase):
     def test_criteria_file_fails_when_the_id_span_names_no_readable_id(self):
         common = load_common()
         with self.assertRaises(common.VerifyError) as caught:
-            common.parse_criteria_file("- **AC1** — fine.\n- **AC3a** — suffix id.\n")
+            common.parse_criteria_file("- **AC1** — fine.\n- **AC3ab** — two-letter suffix.\n")
         self.assertIn(":2:", str(caught.exception))
 
     def test_criteria_file_fails_when_a_multi_id_span_holds_an_unreadable_id(self):
         common = load_common()
         with self.assertRaises(common.VerifyError) as caught:
-            common.parse_criteria_file("- **AC1, AC3a** — two ids.\n")
-        self.assertIn("AC3a", str(caught.exception))
+            common.parse_criteria_file("- **AC1, AC3ab** — two ids.\n")
+        self.assertIn("AC3ab", str(caught.exception))
 
     def test_criteria_file_reads_every_id_of_a_multi_id_span_and_skips_a_ticket_id(self):
         common = load_common()

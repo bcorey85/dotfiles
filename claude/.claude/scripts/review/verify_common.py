@@ -3,7 +3,6 @@ import functools
 import json
 import os
 import pathlib
-import re
 import sys
 import typing
 
@@ -27,15 +26,6 @@ REVIEW_ASKS = "reviewAsks"
 # case from "no branch review logged".
 TREE_DIFFERS_REASON = "the tree differs from the one reviewed"
 COVERED_BY_COMMIT_REVIEW_REASON = "branch review logged on an earlier tree; a converged /review covers this tree"
-# Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
-# or several comma-separated ids inside one bold span.
-ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
-# A line opens an id span at its start (after indent and an optional list marker). A bold `**ACn` later in a line
-# that never closes (a status note saying `**AC4's part is OPEN**`) is prose.
-ID_START = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?\*\*AC\d+")
-# A closed bold id span anywhere in a line (a table cell, a quote, a prefix, a strikethrough) also marks a criterion
-# line, so one that is written wrong fails instead of dropping out. Prose such as `**AC4's ...**` does not close.
-ID_SPAN = re.compile(r"\*\*AC\d+(?:\s*\([^)]*\))?(?:,\s*AC\d+(?:\s*\([^)]*\))?)*\*\*")
 
 
 class VerifyError(Exception):
@@ -47,7 +37,11 @@ class VerifyError(Exception):
 
 
 run = functools.partial(script_utils.run_or_raise, error_type=VerifyError)
-tree_fingerprint = functools.partial(reviewed_tree.tree_fingerprint, error_type=VerifyError)
+# Folders whose files never make a logged branch review stale: a change note records the work, it is not the work.
+# Only the folder named here is neutral; a change to any other path, docs/ or not, changes the fingerprint.
+REVIEW_NEUTRAL_FOLDERS = ("docs/changes/",)
+tree_fingerprint = functools.partial(reviewed_tree.tree_fingerprint, error_type=VerifyError,
+                                     exclude_prefixes=REVIEW_NEUTRAL_FOLDERS)
 
 
 def script_path(env_name, installed_relative):
@@ -67,37 +61,7 @@ def raising_verify_error(plan_reader):
     return read
 
 
-def parse_criteria_file(text, name=plan_format.CRITERIA_FILE_NAME):
-    """(entries, manual_entries) from acceptance-criteria.md, one {id, text} per id.
-
-    Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that starts
-    with a `**ACn` bold span (after indent and an optional list marker), or holds a closed bold id span anywhere,
-    but does not match raises VerifyError; an unclosed `**ACn's ...` later in a line is prose and is skipped."""
-    entries = []
-    manual_entries = []
-    in_manual = False
-    for number, line in enumerate(text.splitlines(), 1):
-        if plan_format.heading_level(line):
-            in_manual = bool(re.match(r"^#+\s+manual only", line, re.I))
-            continue
-        match = ID_LINE.match(line)
-        if not match and not (ID_START.search(line) or ID_SPAN.search(line)):
-            continue
-        if not match:
-            raise VerifyError(f"{name}:{number}: line names an acceptance id but does not match "
-                       f"`- **ACn** — text`: {line.strip()[:80]}")
-        target = manual_entries if in_manual else entries
-        ac_ids = plan_format.criterion_ids_in(match.group(1))
-        unread = plan_format.unread_criterion_tokens(match.group(1))
-        if unread:
-            raise VerifyError(f"{name}:{number}: id span holds {', '.join(unread)}, which is not a readable "
-                              f"criterion id (expected `**ACn**`): {line.strip()[:80]}")
-        if not ac_ids:
-            raise VerifyError(f"{name}:{number}: id span names no readable criterion id "
-                              f"(expected `**ACn**`): {line.strip()[:80]}")
-        for ac_id in ac_ids:
-            target.append({"id": ac_id, "text": match.group(2).strip()})
-    return entries, manual_entries
+parse_criteria_file = raising_verify_error(plan_format.parse_criteria_file)
 
 
 @raising_verify_error

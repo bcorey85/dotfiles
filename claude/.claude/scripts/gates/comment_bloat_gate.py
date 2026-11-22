@@ -56,7 +56,7 @@ CASE_SENSITIVE_MARKERS = [re.compile(pattern) for pattern in (
     r"\(D[0-9]+[):]",
     r"\bD[0-9]+:",
     r"\bPD[0-9]+\b",
-    r"(?<![#\w])AC[0-9]+\b",
+    r"(?<![#\w])AC[0-9]+[a-z]?\b",
 )]
 NOT_A_MARKER = re.compile(
     r"utf-8|sha-[0-9]|iso-[0-9]|rfc-[0-9]|aes-[0-9]|http-[0-9]|base-[0-9]|dp-[0-9]|hdmi-[0-9]|dvi-[0-9]|usb-[0-9]",

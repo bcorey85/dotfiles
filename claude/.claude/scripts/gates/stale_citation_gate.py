@@ -33,7 +33,7 @@ COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|--|\"\"\"|''')")
 VOCABULARY = [re.compile(pattern, re.I) for pattern in (
     r"\bphases? [0-9]",
     r"\(D[0-9]{1,2}\)|\bper D[0-9]{1,2}\b|\bD[0-9]{1,2}:",
-    r"\bAC[0-9]{1,2}\b",
+    r"\bAC[0-9]{1,2}[a-z]?\b",
     r"written by the (coder|architect|assistant)|per the (architect|plan)",
     r"an earlier version (said|had)",
 )]

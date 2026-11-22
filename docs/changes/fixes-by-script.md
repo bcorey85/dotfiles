@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-669 fix notes
+671 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -21,16 +21,16 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 29 | 7 |
 | script/full-check | 28 | 4 |
-| script/plan-format | 25 | 5 |
+| script/plan-format | 26 | 6 |
 | script/script-utils | 25 | 4 |
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 18 | 1 |
 | script/review-loop | 17 | 1 |
+| script/verify-prep | 17 | 3 |
 | skill/review | 17 | 0 |
 | script/shell-command | 15 | 7 |
-| script/verify-prep | 15 | 1 |
 | script/git-discipline-gate | 14 | 5 |
 | script/pull-keep-index | 13 | 2 |
 | script/staged-claim-gate | 13 | 1 |
@@ -71,6 +71,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/full-check-gate | 4 | 3 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
+| script/reviewed-tree | 4 | 2 |
 | script/run-sh | 4 | 0 |
 | script/source-paths | 4 | 0 |
 | skill/eng-spec | 4 | 0 |
@@ -86,7 +87,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/phase-start | 3 | 2 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
-| script/reviewed-tree | 3 | 1 |
 | script/rg-path-gate | 3 | 1 |
 | script/wait-loop-gate | 3 | 0 |
 | script/worktree-snapshot | 3 | 1 |
@@ -151,6 +151,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-skill-use | 1 | 0 |
 | script/mcp-ledger | 1 | 0 |
 | script/merge-built-page | 1 | 0 |
+| script/plan-check | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |

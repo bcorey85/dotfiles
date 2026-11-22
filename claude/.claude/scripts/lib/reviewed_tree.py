@@ -82,7 +82,7 @@ def shared_bases_file():
 
 
 def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerprintError, timeout=None,
-                     notes_entries=None, target=None):
+                     notes_entries=None, target=None, exclude_prefixes=()):
     """Content fingerprint of the working tree at `top` as it stands: `git diff <base>` without added files, plus the
     hash of each file the tree adds against `base` (committed since `base`, staged as new, or untracked), as
     "sha256:<hex>"; an added submodule stays in the diff, an added symlink is hashed by its link text whether staged,
@@ -90,7 +90,8 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
 
     Equal fingerprints mean equal content, whatever the mtimes or renames in between, and a `git add` of a new file,
     a new symlink or a staged move leaves the value as it was. `git rm --cached` of a tracked file changes it.
-    `exclude_rel` (a path relative to the top level) leaves a file or directory out of both parts. `notes_entries`,
+    `exclude_rel` (a path relative to the top level) leaves a file or directory out of both parts, as does each
+    folder in `exclude_prefixes` (repo-relative, ending in `/`). `notes_entries`,
     a list of `.claude/notes-paths` entries, leaves every notes path they and docs/ name out of both parts; None
     leaves them in. `target`, a commit, fingerprints that commit's tree in place of the working tree: the value equals
     the working tree's when the two hold the same content, and untracked files are not read. Each git call may run
@@ -105,6 +106,7 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     pathspecs = ["--", "."]
     if exclude_rel:
         pathspecs.append(f":(exclude,literal){exclude_rel}")
+    pathspecs += [f":(exclude,literal){prefix.rstrip('/')}" for prefix in exclude_prefixes]
     if notes_entries is not None:
         pathspecs += notes_paths.exclude_pathspecs(notes_entries)
     # Lowercase `a` leaves added files out of the diff: they are hashed below as whole files, so a staged new file
@@ -121,6 +123,8 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     def is_excluded(name):
         path = os.fsdecode(name)
         if exclude_rel and script_utils.path_is_under(path, exclude_rel):
+            return True
+        if any(script_utils.path_is_under(path, prefix) for prefix in exclude_prefixes):
             return True
         return notes_entries is not None and notes_paths.is_notes_path(path, notes_entries)
 

@@ -11,7 +11,8 @@ here-string, a pipe in, also into `manage.py shell`), which the gate also blocks
 what to do instead. An error while reading the input or judging the command exits 0 with no output.
 
 The same hook also denies a test run that is not inside a memory-capped systemd scope (lib/memory_cap_scope.py), with
-the capped form to run, on a machine that can run one; any error there passes the call.
+the capped form to run, on a machine that can run one, and a full-suite test run in the foreground of a main session
+(no agent_id, run_in_background not true), with the way to background it; any error there passes the call.
 """
 import json
 import os
@@ -200,6 +201,14 @@ def emit_deny(reason):
         "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}))
 
 
+def runs_in_foreground(payload):
+    """True for a main session's Bash call without run_in_background. A subagent (agent_id set) waits on its own
+    tests, so it is never denied."""
+    if payload.get("agent_id"):
+        return False
+    return (payload.get("tool_input") or {}).get("run_in_background") is not True
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read())
@@ -210,6 +219,8 @@ def main():
             emit_deny(TEXT)
         elif memory_cap_scope.cap_available() and memory_cap_scope.uncapped_test_run(command):
             emit_deny(memory_cap_scope.DENY_TEXT)
+        elif runs_in_foreground(payload) and memory_cap_scope.foreground_full_suite(command):
+            emit_deny(memory_cap_scope.BACKGROUND_DENY_TEXT)
     except Exception:
         pass
     sys.exit(0)

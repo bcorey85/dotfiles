@@ -5,7 +5,11 @@ run inside `systemd-run --user --scope -p MemoryMax=... -p MemorySwapMax=0` dies
 names such a command: a step that runs tests (check_scope.step_runs_tests) or `tests/run.sh`, with no systemd-run
 wrapper in front of it. A step that asks for usage (`--help`, `-h`, `--version`) runs nothing and is not one. A
 command text that shlex cannot split is not one either. cap_available says whether this machine can run the scope:
-Linux, systemd-run on PATH and a user bus."""
+Linux, systemd-run on PATH and a user bus.
+
+foreground_full_suite names a command with a full-suite step (tests/run.sh, `unittest discover`, a bare runner),
+capped or not: a main session's tool call must run it with run_in_background so the conversation stays open. A run
+of one or a few named test files is not one."""
 import os
 import re
 import shutil
@@ -25,6 +29,12 @@ DENY_TEXT = (f"A test run outside a memory cap can take all the memory on this m
              f"`{CAPPED_PREFIX} python3 -m unittest discover | tail -20` or "
              f"`{CAPPED_PREFIX} bash tests/run.sh`. A run that goes past {MEMORY_MAX} is then killed alone and "
              f"your session survives.")
+BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the conversation until it ends. Rerun the same "
+                        f"command with the Bash tool's run_in_background set to true, inside the cap "
+                        f"(`{CAPPED_PREFIX} <test command>`), then go on with other work or end the turn until the "
+                        f"completion notice arrives. A run of one or a few named test files may stay in the "
+                        f"foreground.")
+SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E", "--setenv"}
 
 
 def cap_available():
@@ -67,3 +77,56 @@ def uncapped_test_run(command):
     except ValueError:
         return False
     return any(step_is_uncapped_test_run(words) for words in steps)
+
+
+def program_after_systemd_run(words):
+    """The words of the program a `systemd-run` step runs, or the words unchanged for any other step."""
+    if os.path.basename(words[0]) != "systemd-run":
+        return words
+
+    index = 1
+    while index < len(words) and words[index].startswith("-"):
+        index += 2 if words[index] in SYSTEMD_RUN_VALUE_OPTIONS else 1
+    return words[index:]
+
+
+def is_full_unittest_run(words):
+    """True for `python -m unittest` with no module name, or with `discover` (whatever directory or pattern)."""
+    if len(words) < 3 or words[1:3] != ["-m", "unittest"]:
+        return False
+
+    positional_words = [word for word in words[3:] if not word.startswith("-")]
+    return not positional_words or positional_words[0] == "discover"
+
+
+def step_is_full_suite(words):
+    words = shell_command.without_assignments(words)
+    if not words or HELP_FLAGS.intersection(words):
+        return False
+
+    final_words = program_after_systemd_run(shell_command.command_after_wrappers(words))
+    if not final_words:
+        return False
+
+    if runs_test_script(final_words):
+        return True
+
+    import check_scope  # pylint: disable=import-outside-toplevel
+
+    if not check_scope.step_runs_tests(final_words):
+        return False
+
+    if os.path.basename(final_words[0]).startswith("python"):
+        final_words = ["python", *final_words[1:]]
+    return is_full_unittest_run(final_words) or check_scope.direct_check_scope(final_words) == "whole"
+
+
+def foreground_full_suite(command):
+    """True when the command has a full-suite test step. The caller has checked the call is not in the background."""
+    if not TEST_WORDS.search(command):
+        return False
+    try:
+        steps = shell_command.split_simple_commands(command)
+    except ValueError:
+        return False
+    return any(step_is_full_suite(words) for words in steps)

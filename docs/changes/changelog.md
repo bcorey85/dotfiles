@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1099 changes
+1100 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
 * [Review stop ask lines open with a marker emoji](notes/2026-11-22-review-stop-ask-lines-open-with-a-marker-emoji.md) [shared/review-fork-run, skill/review] Each ask line a review stop shows the user opens with a marker emoji and its number, so the user can tell the asks apart at a glance.
 * [pull_keep_index puts staged files back after a pull that changes the built change-log pages](notes/2026-11-22-pull-keep-index-puts-staged-files-back-after-a.md) [script/pull-keep-index] A pull that changes the built change-log pages and a file the user also staged no longer leaves the tree with none of the local changes.
 * [Scripts owner list names the work tree's git tree object writer](notes/2026-11-22-scripts-owner-list-names-the-work-tree-s-git-tree.md) [rule/scripts-claude-md] The tree identity owner line now names the helper that returns the work tree's git tree object id and says it is not a fingerprint, so a coder under scripts/ imports it and does not take it for a second tree hash.

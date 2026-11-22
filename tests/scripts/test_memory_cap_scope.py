@@ -89,7 +89,8 @@ class HookTest(unittest.TestCase):
 
     def test_a_machine_with_no_scope_passes_the_call(self):
         result = subprocess.run(["/usr/bin/env", "-i", "PATH=/nonexistent", sys.executable, str(HOOK)],
-                                input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "pytest"}}),
+                                input=json.dumps({"tool_name": "Bash",
+                                                  "tool_input": {"command": "pytest", "run_in_background": True}}),
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
@@ -102,6 +103,78 @@ class HookTest(unittest.TestCase):
         env = dict(os.environ, CLAUDE_SKIP_HOOKS="1")
         result = run_hook("pytest", env=env)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+
+CAPPED_SUITE = f"{memory_cap_scope.CAPPED_PREFIX} bash tests/run.sh"
+FULL_SUITES = {
+    "run_sh": CAPPED_SUITE,
+    "run_sh_piped": f"{CAPPED_SUITE} 2>&1 | tail -20",
+    "unittest_discover": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest discover -s bin -p 'test_*.py'",
+    "bare_pytest": f"{memory_cap_scope.CAPPED_PREFIX} pytest",
+    "npm_test": f"{memory_cap_scope.CAPPED_PREFIX} npm test",
+}
+TARGETED_RUNS = {
+    "unittest_module": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest test_x",
+    "pytest_file": f"{memory_cap_scope.CAPPED_PREFIX} pytest tests/test_a.py",
+    "pytest_node": f"{memory_cap_scope.CAPPED_PREFIX} pytest tests/test_a.py::test_one",
+    "parallel_tests_file": f"{memory_cap_scope.CAPPED_PREFIX} python3 tests/parallel_tests.py test_a.py",
+    "pytest_help": "pytest --help",
+}
+
+
+def hook_input(command, background=None, **extra):
+    tool_input = {"command": command}
+    if background is not None:
+        tool_input["run_in_background"] = background
+    return {"tool_name": "Bash", "tool_input": tool_input, **extra}
+
+
+def run_hook_payload(payload):
+    return subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload), capture_output=True, text=True,
+                          timeout=30)
+
+
+class ForegroundFullSuiteTest(unittest.TestCase):
+    def test_a_full_suite_in_the_foreground_is_denied_with_the_background_fix(self):
+        for name, command in FULL_SUITES.items():
+            for background in (None, False):
+                with self.subTest(name, background=background):
+                    result = run_hook_payload(hook_input(command, background))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    decision = json.loads(result.stdout)["hookSpecificOutput"]
+                    self.assertEqual(decision["permissionDecision"], "deny")
+                    self.assertIn("run_in_background", decision["permissionDecisionReason"])
+                    self.assertIn("completion notice", decision["permissionDecisionReason"])
+
+    def test_a_full_suite_in_the_background_is_allowed(self):
+        for name, command in FULL_SUITES.items():
+            with self.subTest(name):
+                result = run_hook_payload(hook_input(command, True))
+                self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_a_targeted_run_in_the_foreground_is_allowed(self):
+        for name, command in TARGETED_RUNS.items():
+            with self.subTest(name):
+                result = run_hook_payload(hook_input(command))
+                self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_a_subagent_foreground_full_suite_is_allowed(self):
+        result = run_hook_payload(hook_input(CAPPED_SUITE, None, agent_id="coder-1"))
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_a_command_that_runs_no_tests_is_allowed(self):
+        result = run_hook_payload(hook_input("cat tests/run.sh | head"))
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_a_malformed_payload_fails_open(self):
+        for payload in ("not json", "[]", json.dumps({"tool_input": "bash tests/run.sh"}),
+                        json.dumps({"tool_input": {"command": ["bash", "tests/run.sh"]}}),
+                        json.dumps({"tool_input": {"command": CAPPED_SUITE, "run_in_background": "yes"},
+                                    "agent_id": {"x": 1}})):
+            with self.subTest(payload=payload):
+                result = subprocess.run([sys.executable, str(HOOK)], input=payload, capture_output=True, text=True,
+                                        timeout=30)
+                self.assertEqual((result.returncode, result.stdout), (0, ""))
 
 
 @unittest.skipUnless(systemd_scope_works(), "systemd-run --user --scope is not available on this machine")

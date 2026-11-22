@@ -12,6 +12,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import review_loop_calls
+import review_loop_closure
 import review_loop_coder
 import review_loop_ruled_out
 import review_loop_untracked
@@ -39,6 +40,8 @@ class UntrackedDeletionTest(unittest.TestCase):
         review_loop_untracked.UNTRACKED_FAULTS.clear()
         review_loop_untracked.LOOP_WRITTEN.clear()
         review_loop_calls.CALLS.clear()
+        review_loop_closure.FIX_DIFF_STATS.clear()
+        self.addCleanup(review_loop_closure.FIX_DIFF_STATS.clear)
         self.addCleanup(review_loop_untracked.UNTRACKED_FAULTS.clear)
         self.addCleanup(review_loop_untracked.LOOP_WRITTEN.clear)
         self.addCleanup(review_loop_calls.CALLS.clear)

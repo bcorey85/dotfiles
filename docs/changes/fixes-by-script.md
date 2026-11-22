@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-685 fix notes
+687 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -21,17 +21,17 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 29 | 7 |
 | script/full-check | 28 | 4 |
+| script/plan-format | 26 | 6 |
 | script/script-utils | 26 | 5 |
-| script/plan-format | 25 | 5 |
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 18 | 1 |
 | script/review-loop | 17 | 1 |
+| script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
+| script/git-discipline-gate | 16 | 7 |
 | script/verify-prep | 16 | 2 |
-| script/shell-command | 15 | 7 |
-| script/git-discipline-gate | 14 | 5 |
 | script/pull-keep-index | 14 | 3 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
@@ -98,6 +98,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
+| script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 1 |
 | script/git-calls | 2 | 2 |
@@ -113,6 +114,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/shell-quoting | 2 | 2 |
+| script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
 | script/waiting-review-launch | 2 | 1 |
@@ -141,6 +143,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 0 |
+| script/docker-run-names | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
 | script/finding-record | 1 | 1 |
@@ -174,7 +177,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |
-| script/shell-steps | 1 | 1 |
+| script/shell-command-words | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |

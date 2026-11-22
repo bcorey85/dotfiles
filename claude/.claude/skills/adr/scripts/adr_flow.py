@@ -37,6 +37,7 @@ from pathlib import Path
 
 CLAUDE_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(CLAUDE_DIR / "scripts" / "lib"))
+import plan_format
 import script_utils
 
 RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(CLAUDE_DIR / "scripts" / "tools" / "resolve-task-dir.sh")
@@ -48,7 +49,7 @@ GH_COMMAND = os.environ.get("ADR_GH") or "gh"
 TASK_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 # One ticket-key grammar (_shared/jira-ticket.md), case-sensitive, with an optional slug:
 # LED-5, LED-5-yield-view, RES-2-queue-tui.
-TICKET_KEY_PATTERN = re.compile(r"^([A-Z][A-Z0-9]+-[0-9]+)(?:-(.+))?$")
+TICKET_KEY_PATTERN = re.compile(rf"^({plan_format.TICKET_KEY})(?:-(.+))?$")
 # Files /eng-spec writes into a task dir: 00-ticket, 01-questions, 01-leak-check, 02-research,
 # 03-decisions, 04-exploration, 05-plan-review-r1, plan-review-round1, spec, acceptance-criteria,
 # the review shards (review-shard-A, review-shard-seam, spec-review-shard-a, plan-review-shard-b,

@@ -43,6 +43,7 @@ from shell_command import (
     is_short_cluster,
     names_code_runner,
     options_before_separator,
+    parse_raw_simple_commands,
     parse_simple_commands,
     process_substitution_bounds,
     raw_words_without_redirections,
@@ -582,6 +583,22 @@ class SplitSimpleCommandsTest(unittest.TestCase):
         self.assertEqual(split_simple_commands("echo 5"), [["echo", "5"]])
 
 
+class ParseRawSimpleCommandsTest(unittest.TestCase):
+    def test_a_word_keeps_its_quotes(self):
+        self.assertEqual(parse_raw_simple_commands("rm \"d/a\" 'd/b'"), [["rm", "\"d/a\"", "'d/b'"]])
+
+    def test_a_redirection_is_left_out(self):
+        self.assertEqual(parse_raw_simple_commands("rm d/c >x 2>&1"), [["rm", "d/c"]])
+
+    def test_a_pipe_and_an_and_list_split_into_commands(self):
+        self.assertEqual(parse_raw_simple_commands("rm d/c |& wc d/e && ls"),
+                         [["rm", "d/c"], ["wc", "d/e"], ["ls"]])
+
+    def test_unreadable_text_raises_as_the_resolved_reading_does(self):
+        with self.assertRaises(ValueError):
+            parse_raw_simple_commands("rm 'd/a")
+
+
 class ParseSimpleCommandsTest(unittest.TestCase):
     def test_each_command_carries_its_redirections_with_their_targets(self):
         self.assertEqual(parse_simple_commands("echo x >> a.txt 2>&1 && git show HEAD:a > b <in &>c"),
@@ -783,6 +800,8 @@ class UnwrapDockerTest(unittest.TestCase):
             "docker exec -it web ls": ["ls"],
             "docker container run image echo hi": ["echo", "hi"],
             "docker run image": [],
+            "docker run -dp 80:80 img cmd": ["cmd"],
+            "docker run -h box --name n img cmd": ["cmd"],
         }
         for command, expected in cases.items():
             with self.subTest(command=command):

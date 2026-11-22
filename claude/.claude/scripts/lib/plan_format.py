@@ -56,7 +56,8 @@ AGENT_VERIFIED_MARK = "agent-verified"
 
 PHASE_STATUS_LINE = re.compile(rf"^[-*]\s+\[( |x|X|-)\]\s+Phase\s+({PHASE_ID})\s*[:.—–-]\s*(.*)$")
 MOVED_MARK = "-"
-MOVED_TARGET = re.compile(r"(?i:moved to)\s+([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9])")
+TICKET_KEY = r"[A-Z][A-Z0-9]+-\d+"
+MOVED_TARGET = re.compile(rf"(?i:moved to)\s+({TICKET_KEY})(?![A-Za-z0-9])")
 DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its

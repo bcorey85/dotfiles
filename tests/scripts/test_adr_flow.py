@@ -19,6 +19,9 @@ RESOLVE_SCRIPT = pathlib.Path(
     os.environ.get("ADR_RESOLVE_SCRIPT") or CLAUDE_DIR / "scripts" / "tools" / "resolve-task-dir.sh"
 )
 TEMPLATE = pathlib.Path(os.environ.get("ADR_TEMPLATE") or CLAUDE_DIR / "skills" / "_shared" / "adr-template.md")
+# adr_flow reads the ticket-key grammar from plan_format, which imports these.
+LIB_DIR = SCRIPT_UTILS.parent
+PLAN_FORMAT_FILES = ("plan_format.py", "source_text.py", "ask_outcome_words.py")
 PLANS = "docs/plans"
 DECISIONS = "docs/decisions"
 
@@ -29,6 +32,7 @@ def install_into_home(home):
     for source, target in (
         (SCRIPT, installed),
         (SCRIPT_UTILS, home / ".claude" / "scripts" / "lib" / "script_utils.py"),
+        *[(LIB_DIR / name, home / ".claude" / "scripts" / "lib" / name) for name in PLAN_FORMAT_FILES],
         (RESOLVE_SCRIPT, home / ".claude" / "scripts" / "tools" / "resolve-task-dir.sh"),
         (TEMPLATE, home / ".claude" / "skills" / "_shared" / "adr-template.md"),
     ):

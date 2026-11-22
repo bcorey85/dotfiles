@@ -2,11 +2,11 @@
 type: "Change"
 change_type: "fixed"
 title: "Review loop lint and format skip files the pre-commit exclude or oxlint ignore config leaves out"
-description: "The loop's lint and format file list now leaves out every file the top-level exclude of the repo's pre-commit config matches and every file a ruff hook's own exclude matches, and an oxlint whose ignore config leaves out every named file is no longer a lint problem."
+description: "The loop's lint and format file list, and the turn-end format hook's, now leave out every file the top-level exclude of the repo's pre-commit config matches, and every file a ruff hook's own exclude matches is left out of that hook's ruff run, and an oxlint whose ignore config leaves out every named file is no longer a lint problem."
 generated: {"by": "claude-code/claude-fable-5-2", "at": "2026-11-22T13:32:23-06:00"}
 seq: 22
 kind: "fix"
-components: ["script/format-files", "script/review-loop"]
+components: ["script/format-files", "script/format-changed", "script/review-loop"]
 evidence: ["judgment"]
 watches: []
 test: "tests/scripts/test_format_files.py::PreCommitExcludeTest::test_a_file_the_top_level_exclude_matches_is_neither_formatted_nor_linted"
@@ -20,7 +20,8 @@ unmeasured: "Two oxlint cases stay as they were: oxlint 1.94 lints a named file 
 `lib/format_files.py`: `exclude_value` reads an `exclude:` key of a pre-commit config, as a one-line value or a `|` or
 `>` block scalar. `sort_files` drops each file the top-level exclude matches, for every tool. `ruff_targets` drops a
 Python file from `ruff format` or `ruff check` when every ruff hook of that kind excludes it, with or without a ruff
-config file. In check mode `web_lint_command` gives oxlint `--no-error-on-unmatched-pattern` when that oxlint's
+config file. The turn-end format hook (`gates/format_changed.py`) calls the same function, so it skips those files
+too. In check mode `web_lint_command` gives oxlint `--no-error-on-unmatched-pattern` when that oxlint's
 `--help` lists the flag.
 
 No change for eslint (flat config and `.eslintrc`), prettier, oxfmt and biome. Each was run on a named ignored file:

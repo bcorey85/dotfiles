@@ -601,7 +601,9 @@ class PreCommitExcludeTest(unittest.TestCase):
                   "exclude: |\n          (?x)^(\n            gen/.* |\n\n            vendor/.*\n          )$":
                       "(?x)^(\ngen/.* |\n\nvendor/.*\n)$\n",
                   "exclude: >-  # folded\n          ^gen/": "^gen/",
-                  "exclude: >\n          ^gen/\n          |^vendor/": "^gen/ |^vendor/\n"}
+                  "exclude: >\n          ^gen/\n          |^vendor/": "^gen/ |^vendor/\n",
+                  "exclude: >\n          ^gen/\n\n          |^vendor/\n\n\n          |^dist/":
+                      "^gen/\n|^vendor/\n\n|^dist/\n"}
         for value, regex in shapes.items():
             with self.subTest(value=value):
                 config = HOOKS_PREFIX + f"      - id: ruff\n        {value}\n      - id: ruff-format\n"

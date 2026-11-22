@@ -55,6 +55,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/pipe-shell-check | 6 | 0 |
 | script/review-launch | 6 | 1 |
 | script/deferred-push-check | 5 | 0 |
+| script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/inline-interpreter-hint | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
@@ -66,7 +67,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | (no component) | 4 | 0 |
 | script/adr-flow | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
-| script/format-changed | 4 | 0 |
 | script/full-check-gate | 4 | 3 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |

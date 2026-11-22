@@ -200,7 +200,7 @@ class RuffHook:
         self.exclude = None
 
     def excludes(self, path):
-        return self.exclude is not None and bool(re.search(self.exclude, path))
+        return regex_matches(self.exclude, path)
 
     def takes(self, path):
         """True when pre-commit hands the hook this file: `files:` matches it and `exclude:` does not."""
@@ -222,7 +222,12 @@ class PreCommitConfig:
         return {hook.hook_id for hook in self.ruff_hooks}
 
     def excludes(self, path):
-        return self.exclude is not None and bool(re.search(self.exclude, path))
+        return regex_matches(self.exclude, path)
+
+
+def regex_matches(regex, path):
+    """True when `regex` (None: matches no file) finds a match in `path`."""
+    return regex is not None and bool(re.search(regex, path))
 
 
 def files_value(line):
@@ -287,10 +292,28 @@ def exclude_value(lines, index):
     if not body:
         return key_column, None
 
-    joiner = "\n" if header.group("style") == "|" else " "
+    text = "\n".join(body) if header.group("style") == "|" else fold_lines(body)
     # YAML keeps the last line break unless the header ends in `-`, and pre-commit matches with it in the regex.
     last_break = "" if header.group("chomp") == "-" else "\n"
-    return key_column, compiled_or_none(joiner.join(body) + last_break)
+    return key_column, compiled_or_none(text + last_break)
+
+
+def fold_lines(body):
+    """The text of a folded (`>`) block scalar's lines: neighbouring lines join with one space, and each blank line
+    between two lines stays one line break, as YAML folds them."""
+    text = ""
+    blank_lines = 0
+    for line in body:
+        if not line:
+            blank_lines += 1
+            continue
+        if blank_lines:
+            text += "\n" * blank_lines
+        elif text:
+            text += " "
+        text += line
+        blank_lines = 0
+    return text
 
 
 def top_level_exclude(config_text):

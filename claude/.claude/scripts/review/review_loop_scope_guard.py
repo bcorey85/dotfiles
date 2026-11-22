@@ -14,7 +14,7 @@ from review_loop_ruled_out import BACKUP_FOLDER, PATH_TOKEN_END, PATH_TOKEN_STAR
 SCOPE_FAULTS = []
 
 
-def names_path(finding_texts, path, root):
+def findings_name(finding_texts, path, root):
     """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
     pattern = re.compile(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}")
     root_prefix = f"{root}/"
@@ -34,7 +34,7 @@ class PassScope(typing.NamedTuple):
         """Whether the pass may change `path`."""
         if path in self.allowed or self.has_own_guard(path):
             return True
-        return names_path(self.finding_texts, path, self.root)
+        return findings_name(self.finding_texts, path, self.root)
 
 
 class ScopeGuard:
@@ -89,7 +89,7 @@ class ScopeGuard:
                                 "so the change stays: " + ", ".join(uncopied))
 
 
-def begin_pass(repo, out, role, allowed, has_own_guard, finding_texts):
+def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
     """The ScopeGuard of one coder pass. `allowed` are the paths the pass may change, `has_own_guard(path)` says
     whether another guard of the loop rules on a path, and `finding_texts` are the pass's findings, whose text may
     name more paths."""

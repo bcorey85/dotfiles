@@ -17,11 +17,12 @@ unmeasured: ""
 
 ## Change
 
-`review/review_loop_scope_guard.py` (new): `begin_pass` copies the dirty files outside a pass's scope and keeps the
+`review/review_loop_scope_guard.py` (new): `guard_pass` copies the dirty files outside a pass's scope and keeps the
 commit HEAD names; `ScopeGuard.undo` copies those files back and restores every other tracked file that differs from
 that commit, in the work tree and the index. `review_loop_coder.coder_call` runs it after the ruled-out guard, on a
 finished and on a failed call. `review_loop_script.repair` builds the scope: the review scope, the paths of the pass's
-findings, the files earlier passes touched, and the held, ruled-out and later-phase files. A path a finding's text
+findings, the files earlier passes touched, the held, ruled-out and later-phase files, and the files of the tests
+the plan runs by name, which the named-test restore pass guards. A path a finding's text
 holds as a whole token stays, and so does a file the pass created, a decision log and an approval-only file: each of
 the last two has its own guard. The loop's formatter step already reads only the review scope and the touched files.
 

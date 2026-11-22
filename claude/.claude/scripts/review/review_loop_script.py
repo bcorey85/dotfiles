@@ -72,6 +72,7 @@ import full_check
 import full_check_gate
 import handback
 import loop_transcript
+import named_test_targets
 import plan_format
 import review_loop_held
 import review_loop_ruled_out
@@ -580,8 +581,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         prompt = self.coder_brief(call_name, findings, nits, files_in_scope, issue_texts, named)
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out, diff_files,
                                                  issue_texts)
-        allowed = self.pass_scope(files_in_scope)
-        scope_guard = review_loop_scope_guard.begin_pass(self.repo, self.out, call_name, allowed, has_own_guard,
+        allowed = self.pass_scope(files_in_scope, named)
+        scope_guard = review_loop_scope_guard.guard_pass(self.repo, self.out, call_name, allowed, has_own_guard,
                                                          issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
@@ -613,10 +614,13 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         self.check_pass_result(call_name, result)
         return self.restore_named_tests(call_name, named, result)
 
-    def pass_scope(self, files_in_scope):
+    def pass_scope(self, files_in_scope, named):
         """The paths a coder pass may change: the files in its scope and the ones earlier passes touched. The held,
-        ruled-out and later-phase files count too: each has its own guard, as has_own_guard's paths do."""
-        return {*files_in_scope, *self.files_touched, *self.held_files, *self.ruled_out, *self.later_phase_files}
+        ruled-out and later-phase files and the files of the `named` test targets count too: each has its own guard,
+        as has_own_guard's paths do."""
+        named_files = [named_test_targets.target_file(target) for target in named]
+        return {*files_in_scope, *self.files_touched, *self.held_files, *self.ruled_out, *self.later_phase_files,
+                *named_files}
 
     def coder_brief(self, call_name, findings, nits, files_in_scope, issue_texts, named):
         """The coder's prompt for one pass, written under the pass's brief folder."""

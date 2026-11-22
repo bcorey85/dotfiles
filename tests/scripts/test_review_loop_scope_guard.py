@@ -43,7 +43,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.addCleanup(review_loop_scope_guard.SCOPE_FAULTS.clear)
 
     def guard(self, allowed=("app.py",), has_own_guard=lambda _path: False, finding_texts=()):
-        return review_loop_scope_guard.begin_pass(self.repo, self.out, "coder1", allowed, has_own_guard,
+        return review_loop_scope_guard.guard_pass(self.repo, self.out, "coder1", allowed, has_own_guard,
                                                   finding_texts)
 
     def text(self, name):

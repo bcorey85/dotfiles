@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1052 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1053 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Peer-session messages lose their 150-word cap](notes/2026-11-22-peer-session-messages-lose-their-150-word-cap.md).
+Latest change: 2026-11-22, [Stop hook tells the session to take the step it offers and list it](notes/2026-11-22-stop-hook-tells-the-session-to-take-the-step-it.md).
 
 ## Top gains
 

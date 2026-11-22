@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1053 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1054 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Code reviewers no longer read the plan folder: 84-96k chars of tool output each → 33-36k](notes/2026-11-22-code-reviewers-no-longer-read-the-plan-folder-84.md).
+Latest change: 2026-11-22, [Stop hook tells the session to take the step it offers and list it](notes/2026-11-22-stop-hook-tells-the-session-to-take-the-step-it.md).
 
 ## Top gains
 

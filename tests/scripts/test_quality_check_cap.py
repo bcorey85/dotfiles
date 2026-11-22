@@ -405,6 +405,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assertEqual(records, [])
         self.assert_allowed(self.pre("ruff check src"))
 
+    def test_a_run_a_shell_parse_error_stopped_before_it_started_is_not_counted(self):
+        command = 'pytest "tests/test_x.py'
+        for error in ('Exit code 1\n(eval):1: unmatched "', "(eval):1: unmatched '"):
+            with self.subTest(error=error):
+                self.fire("PostToolUseFailure", command=command, error=error)
+                self.assertEqual(self.run_records(), [])
+                self.assert_allowed(self.pre(command))
+
     def test_a_failed_run_with_only_an_import_traceback_and_no_runner_summary_records_nothing(self):
         error = ("Exit code 2\nTraceback (most recent call last):\n  File \"tests/test_x.py\", line 1, in <module>\n"
                  "    import requests_missing_dep\nModuleNotFoundError: No module named 'requests_missing_dep'")
@@ -438,6 +446,18 @@ class QualityCheckCapTest(unittest.TestCase):
                  "FAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s ==")
         self.fire("PostToolUseFailure", command="pytest tests/test_x.py", error=error)
         self.assert_denied(self.pre("pytest tests/test_x.py"))
+
+    def test_a_failed_run_after_setup_steps_joined_by_newline_continuations_is_recorded(self):
+        command = f"cd {self.work} &&\nsource env &&\nmake test"
+        error = "Exit code 2\nFAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s =="
+        self.fire("PostToolUseFailure", command=command, error=error)
+        self.assert_denied(self.pre(command))
+
+    def test_a_failed_run_after_a_backslash_newline_continuation_is_recorded(self):
+        command = f"cd {self.work} && \\\npytest tests/test_x.py"
+        error = "Exit code 1\nFAILED tests/test_x.py::test_a - AssertionError\n== 1 failed in 0.10s =="
+        self.fire("PostToolUseFailure", command=command, error=error)
+        self.assert_denied(self.pre(command))
 
     def test_an_interrupted_run_records_nothing(self):
         payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",

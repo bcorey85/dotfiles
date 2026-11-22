@@ -44,22 +44,6 @@ class HookRunTest(unittest.TestCase):
         return json.loads(finished.stdout.decode("utf-8"))["hookSpecificOutput"]
 
 
-class ShellWriteGateFindingsTest(HookRunTest):
-    def test_lone_surrogate_in_the_command_still_denies(self):
-        # finding 1: the crash exited 1, so the command ran
-        stdin = b'{"tool_input":{"command":"sed -i s/a/b/ notes.txt #\\ud800"},"cwd":"/tmp"}'
-        finished = self.run_hook("shell-write-gate", stdin)
-        decision = self.decision(finished)
-        self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("in-place editing", decision["permissionDecisionReason"])
-
-    def test_unicode_letter_assignment_prefix_does_not_hide_the_editor(self):
-        # finding 2
-        stdin = json.dumps({"tool_input": {"command": "é=1 sed -i s/a/b/ notes.txt"}, "cwd": str(self.work)})
-        decision = self.decision(self.run_hook("shell-write-gate", stdin))
-        self.assertEqual(decision["permissionDecision"], "deny")
-
-
 class QualityCheckCapFindingsTest(HookRunTest):
     def fire(self, event, command, session="s1"):
         payload = {"hook_event_name": event, "tool_name": "Bash", "session_id": session, "cwd": str(self.work),
@@ -87,27 +71,6 @@ class QualityCheckCapFindingsTest(HookRunTest):
             payload["session_id"] = blank
             self.run_hook("quality-check-cap", json.dumps(payload))
         self.assertEqual(len(list((root / "unknown").glob("run-*"))), 1)
-
-
-class ReviewCommitGateFindingsTest(HookRunTest):
-    def test_empty_session_id_does_not_become_unknown(self):
-        # finding 4: jq `//` keeps ""; the state path is then the directory itself, so no unknown file appears
-        payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": "",
-                   "tool_input": {"subagent_type": "coder"}}
-        self.run_hook("review-commit-gate", json.dumps(payload))
-        self.assertFalse((self.home / ".claude" / "state" / "review-gate" / "unknown").exists())
-
-    def test_missing_null_and_false_session_id_use_unknown(self):
-        for blank in ("missing", None, False):
-            payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent",
-                       "tool_input": {"subagent_type": "coder"}}
-            if blank != "missing":
-                payload["session_id"] = blank
-            marker = self.home / ".claude" / "state" / "review-gate" / "unknown"
-            if marker.exists():
-                marker.unlink()
-            self.run_hook("review-commit-gate", json.dumps(payload))
-            self.assertEqual(json.loads(marker.read_text())["kind"], "dispatch", blank)
 
 
 class CalibrationGuardFindingsTest(HookRunTest):
@@ -225,9 +188,9 @@ class GitDisciplineAmendTest(HookRunTest):
 class RunGateTest(HookRunTest):
     PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
-              "git-discipline-gate", "log-agent-usage", "quality-check-cap", "review-commit-gate",
-              "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
-    GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
+              "git-discipline-gate", "log-agent-usage", "quality-check-cap",
+              "spec-budget-gate", "stale-citation-gate")
+    GATES = ("quality-check-cap", "git-discipline-gate",
              "comment-bloat-gate", "spec-budget-gate")
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):

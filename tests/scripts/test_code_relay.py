@@ -9,7 +9,9 @@ import unittest.mock
 
 import toolkit_paths
 
-sys.path[:0] = [str(toolkit_paths.REVIEW_DIR), str(toolkit_paths.LIB_DIR)]
+sys.path[:0] = [str(toolkit_paths.REVIEW_DIR), str(toolkit_paths.LIB_DIR), str(toolkit_paths.CODE_DIR)]
+import code_relay  # noqa: E402
+import code_stop_record  # noqa: E402
 import handback_store  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -21,11 +23,18 @@ UNREVIEWED_NOTE = "The tree changed after the converged review; this stop is unr
 STOP = "Phase 2 complete. Stopped for your review.\n\nTo go on: /code resume <your feedback>"
 
 
+def stop_with_top(top):
+    """STOP as relayed: the repo top follows `resume` in the `To go on:` line."""
+    return STOP.replace("/code resume ", f"/code resume {top} ")
+
+
 class RelayTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
-        self.repo = pathlib.Path(folder.name)
+        self.repo = pathlib.Path(folder.name).resolve()
+        self.home = self.repo / "home"
+        self.home.mkdir()
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         self.run_folder = self.repo / ".git" / "code-phase"
 
@@ -33,9 +42,17 @@ class RelayTest(unittest.TestCase):
         self.run_folder.mkdir(exist_ok=True)
         (self.run_folder / "stop.md").write_text(text)
 
-    def relay(self):
+    def relay(self, session=SESSION):
+        env = {**os.environ, "HOME": str(self.home)}
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
+        if session:
+            env["CLAUDE_CODE_SESSION_ID"] = session
         return subprocess.run([sys.executable, str(SCRIPT)], cwd=self.repo, capture_output=True, text=True,
-                              check=False)
+                              check=False, env=env)
+
+    def recorded_stop(self, session=SESSION):
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            return code_stop_record.last_stop(session)
 
     def test_a_new_stop_prints_word_for_word_between_markers_under_the_no_tool_rule(self):
         self.write_stop(STOP + "\n")
@@ -45,7 +62,72 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         rule, body = result.stdout.split("-----BEGIN USER TEXT-----\n")
         self.assertIn("Make no other tool call", rule)
-        self.assertEqual(body, STOP + "\n-----END USER TEXT-----\n")
+        self.assertEqual(body, stop_with_top(self.repo) + "\n-----END USER TEXT-----\n")
+
+    def test_a_relayed_stop_is_recorded_for_the_session(self):
+        self.write_stop(STOP)
+
+        self.relay()
+
+        recorded = self.recorded_stop()
+        self.assertEqual(recorded["runFolder"], str(self.run_folder))
+        self.assertEqual(recorded["repoTop"], str(self.repo))
+        self.assertEqual(recorded["goOn"], f"To go on: /code resume {self.repo} <your feedback>")
+
+    def test_no_session_id_records_nothing(self):
+        self.write_stop(STOP)
+
+        result = self.relay(session=None)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.home / ".claude" / "code-stop-sessions").exists())
+
+    def test_a_review_stop_is_not_recorded(self):
+        self.run_folder.mkdir()
+        review_stop = "Done.\n\nTo go on: /review resume <your feedback>"
+        (self.run_folder / "review-stop.md").write_text(review_stop)
+
+        result = self.relay()
+
+        self.assertIsNone(self.recorded_stop())
+        body = result.stdout.split("-----BEGIN USER TEXT-----\n")[1]
+        self.assertEqual(body, review_stop + "\n-----END USER TEXT-----\n")
+
+    def test_a_slash_word_in_the_feedback_placeholder_still_gets_the_repo_top(self):
+        self.write_stop("Stopped.\n\nTo go on: /code resume <your feedback, or /clear>")
+
+        result = self.relay()
+
+        self.assertIn(f"/code resume {self.repo} <your feedback, or /clear>", result.stdout)
+
+    def test_with_resume_path_changes_only_a_resume_line_with_no_path_right_after_resume(self):
+        cases = {
+            "no resume word": ("Stopped.\n\nTo go on: say go", "Stopped.\n\nTo go on: say go"),
+            "finished stop": ("Run finished.", "Run finished."),
+            "path not right after resume": ("To go on: /code resume --flag /abs/plan.md",
+                                            "To go on: /code resume /top --flag /abs/plan.md"),
+            "path right after resume": ("To go on: /code resume /abs/plan.md x",
+                                        "To go on: /code resume /abs/plan.md x"),
+        }
+        for name, (text, expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(code_relay.with_resume_path(text, "/top"), expected)
+
+    def test_a_finished_stop_is_recorded_for_the_session(self):
+        self.write_stop("Run finished.")
+
+        self.relay()
+
+        self.assertEqual(self.recorded_stop()["runFolder"], str(self.run_folder))
+
+    def test_a_resume_line_that_names_the_plan_path_stays_as_written(self):
+        stop = "Stopped.\n\nTo go on: /code resume /work/plans/x/plan.md <your feedback>"
+        self.write_stop(stop)
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"\n{stop}\n-----END", result.stdout)
 
     def test_a_stop_relayed_already_exits_1_and_says_to_relay_the_skill_result(self):
         self.write_stop(STOP)
@@ -206,8 +288,9 @@ class ReviewedTreeRelayTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(RE_REVIEW_FEEDBACK, result.stdout)
-        self.assertIn(STOP.splitlines()[-1], result.stdout)
+        self.assertIn(stop_with_top(self.top).splitlines()[-1], result.stdout)
         self.assertNotIn("USER TEXT", result.stdout)
+        self.assertIsNone(code_stop_record.last_stop(SESSION))
         self.assertFalse((self.run_folder / "relayed").exists())
 
     def test_a_stop_bounced_once_relays_when_the_resume_wrote_no_new_stop(self):
@@ -218,7 +301,8 @@ class ReviewedTreeRelayTest(unittest.TestCase):
         result = self.relay()
 
         self.assert_relayed(result)
-        self.assertIn(UNREVIEWED_NOTE, result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(STOP)[0])
+        self.assertIn(UNREVIEWED_NOTE,
+                      result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(stop_with_top(self.top))[0])
 
     def test_a_bounced_stop_moved_aside_by_phase_start_relays_once_with_the_unreviewed_note(self):
         (self.repo / "app.py").write_text("x = 2\n")
@@ -229,7 +313,13 @@ class ReviewedTreeRelayTest(unittest.TestCase):
         result = self.relay()
 
         self.assert_relayed(result)
-        self.assertIn(UNREVIEWED_NOTE, result.stdout.split("-----BEGIN USER TEXT-----\n")[1].split(STOP)[0])
+        body = result.stdout.split("-----BEGIN USER TEXT-----\n")[1]
+        self.assertIn(UNREVIEWED_NOTE, body.split(stop_with_top(self.top))[0])
+        self.assertIn(stop_with_top(self.top), body)
+        recorded = code_stop_record.last_stop(SESSION)
+        self.assertEqual(recorded["runFolder"], str(self.run_folder))
+        self.assertEqual(recorded["repoTop"], self.top)
+        self.assertEqual(recorded["goOn"], stop_with_top(self.top).splitlines()[-1])
         self.assertEqual(self.relay().returncode, 1)
 
     def bounce_and_move_stop_aside(self):

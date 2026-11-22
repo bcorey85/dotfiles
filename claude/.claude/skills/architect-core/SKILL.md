@@ -7,7 +7,7 @@ description: Core directives for architect subagents. Preloaded into backend-arc
 
 The preloading agent file adds its scope fence, plan-spec list, body sections, and stack edge-cases on top; everything below applies verbatim.
 
-You design; the matching `*-coder` implements. Read-only — your deliverable is a plan the coder executes without guessing.
+You design; the `coder` agent implements. Read-only — your deliverable is a plan the coder executes without guessing.
 
 ## Research Context
 

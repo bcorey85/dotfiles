@@ -19,8 +19,7 @@ Only a user_only ask is credited to the user; the session rules the rest.
 phase packet (converged, or capped and read as deferred) that holds finding asks. `list` prints them. `rule` takes
 one outcome per finding ask, in order, logs each ask's outcome row decided by the session, except a user-only ask's
 row under `--by user`, which is decided by the user, and stores one `phase-asks-ruled` row that names the open
-row it answers; the commit gate denies a commit in the repo until that row exists, in whichever session opened
-the asks; a notes-only commit still passes. Each ask ruled `rejected` is also stored as a rejected-ask row (for
+row it answers, whichever session opened the asks. Each ask ruled `rejected` is also stored as a rejected-ask row (for
 the ruling session and each opener), so the next review loop drops a repeat of it. A later review of the repo
 leaves the asks open: only a newer phase packet with finding asks replaces them.
 The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
@@ -184,7 +183,7 @@ def session_state():
     """(session id, repo, PhaseAsks or None) of this call. The asks are the repo's, whichever session opened them.
     Raises what handback_store.read_phase_ask_rows raises."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    # The same form the open row's writer and the commit gate use for the store's `repo` key.
+    # The same form the open row's writer uses for the store's `repo` key.
     repo_top = script_utils.repo_root(pathlib.Path.cwd())
     if repo_top is None:
         return session_id, None, None
@@ -411,7 +410,7 @@ def rule_open_asks(words):
     failures = outcome_log.failures
     if relayed is not None:
         ruling_relay.record_relay(session_id, rows_repo, relayed, outcome_log.logged_asks)
-    # One row per answered open row, after the outcome rows: a logger failure must not leave the commit gate closed.
+    # One row per answered open row, after the outcome rows: a logger failure must not leave the asks open.
     # A row names the open row it answers, so an open row written while the outcomes were logging stays open.
     ruled_rulings = [{"outcome": outcome, "reason": reason, "finding_id": item.get("finding_id")}
                      for item, (outcome, reason) in zip(asks, rulings, strict=True)]

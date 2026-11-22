@@ -14,7 +14,7 @@ import sys
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 from shell_command import parse_simple_commands, split_command_steps, without_assignments
-from shell_statements import strip_comments, strip_heredocs
+from shell_statements import shell_code
 
 # rg options that take a value; `--opt=value` is one word and needs no entry.
 VALUE_SHORT_OPTIONS = set("efEmjgdtTABCMr")
@@ -86,7 +86,8 @@ def rg_without_path(words):
 
 def hanging_rg(command):
     """The words of the first rg call in the command that would hang, or None."""
-    for operator, step in split_command_steps(strip_comments(strip_heredocs(command))):
+    joined = shell_code(command)
+    for operator, step in split_command_steps(joined):
         if operator == "|":
             continue
         try:

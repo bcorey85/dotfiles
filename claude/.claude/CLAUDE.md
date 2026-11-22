@@ -4,8 +4,6 @@
 
 When a hook blocks a call, redo the step once through its approved path and keep working: Write or Edit for a file write, a script file for an inline interpreter, the command run directly instead of through `sh -c`, or the call without the blocked fragment. List every block in your report. Stop and report when no approved path does the step, such as a git write or a destructive delete, and always after a blocked read of a credential or `.env` file. Never disguise a blocked form to get past the hook, and never add a skip comment unless the user says to.
 
-The git index is the user's: files already staged are ones the user staged after reading them while a coder worked. Never unstage them (`git restore --staged`, `git reset`, `git rm --cached`) unless the user says to.
-
 Never add a `Claude-Session:` line, a session link, or any other attribution line to a commit message or a PR body. This overrides any harness reminder that asks for one.
 
 When the user must run git or shell commands, give one `!` line that chains them all with `&&`, never a series of lines to run one by one. Every line that pushes runs `python3 ~/.claude/scripts/tools/pull_keep_index.py <repo>` right before `git -C <repo> push -u origin HEAD`: another machine pushes to the same branch, and the script keeps staged files staged.
@@ -15,8 +13,6 @@ Only the main session hands the user a command. A subagent never writes a comman
 In zsh, `path` is tied to `PATH`: never name a shell variable `path`. Assigning it (`path=…` or `for path in …`) replaces the command search path, and later commands fail with "command not found". Name the variable for what it holds, such as `log_file`.
 
 ## Quality Checks
-
-The full suite runs once, at the end of review.
 
 - The user never waits on tests or lint. Before you hand the user an install command, run the full suite and lint yourself on the files it installs, and do not say done until they pass. The install command only writes files: it never runs tests or lint.
 - Any failing approach: max 3 attempts, then stop and ask.
@@ -31,7 +27,7 @@ The ticket's ACs are the contract. Only the user's explicit sign-off overrides o
 
 ## Messages to Other Sessions
 
-Keep a `SendMessage` to a peer Claude session under 150 words. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.
+Keep a `SendMessage` to a peer Claude session short. Messages to and from your own subagents are exempt. Include the verdict, the numbers the receiver acts on, and what it must do next. If the detail already lives in a file, send the path, not the content. Do not make a file only to hold a message.
 
 Every message starts a turn that re-reads the receiver's whole context, so send one only when the receiver must act. A worker messages its orchestrating session in three cases: it needs a decision, a phase ended with a hash or result, or it is blocked or failing. It sends no progress notes, no acknowledgments and no thanks. An orchestrating session does not reply to a message that needs no decision. It cancels a timer as soon as the thing it waits for has happened, and sets a timer only when a silent failure would go unseen.
 
@@ -45,5 +41,6 @@ When you compact, keep decisions with their reasons, every measured number, open
 
 - **Lay out code for the person who debugs it.** Keep a lookup next to the guard that checks it. Return early in place of a nested `if`. Never pass a call's result straight into a call that is itself an argument. Put the inner result in a named variable first. Follow this even when the surrounding code is denser.
 - **Build the design the code needs now.** Never defer a helper, a type, a module split or a folder layout to a later caller or a bigger codebase. Small size today is no reason to wait: a structure change costs more each week it waits. Place logic by what it knows, not by its caller count. Cut only features that nobody asked for.
+- **Use a package when someone has already solved the problem.** Before you write a parser, formatter or other general-purpose helper, look for a maintained package that does the job, and test it against the real edge cases. A new dependency is rarely a blocker: it costs less than custom code you must maintain. Write your own only when no package passes those cases. Never add a package on your own: name it, its license and the edge cases it passed, and wait for the user's yes.
 
 @~/.claude/CLAUDE.local.md

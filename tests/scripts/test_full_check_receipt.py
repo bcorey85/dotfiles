@@ -169,6 +169,7 @@ class ReceiptValidityTest(ReceiptTestCase):
         cases = {
             "cd backend; pytest tests": "whole",
             "cd backend || pytest tests/test_a.py": "targeted",
+            "cd backend || \\\npytest tests/test_a.py": "targeted",
         }
         for step, expected in cases.items():
             with self.subTest(step=step):

@@ -7,7 +7,8 @@
 The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
 block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
 `no-review: yes` then plans no reviewer. `base:` reviews every change since that commit, `files:` only the named files,
-`reviewer-model:` runs each reviewer on that model, and `iter:` counts the rounds an earlier run already used.
+`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one, and `iter:` counts
+the rounds an earlier run already used.
 The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
@@ -71,6 +72,7 @@ import full_check
 import full_check_gate
 import handback
 import loop_transcript
+import plan_format
 import review_loop_held
 import review_loop_ruled_out
 import review_loop_untracked
@@ -374,6 +376,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.change = None  # ChangeUnderReview: the lines the change adds, which the fix passes must not remove
         self.reviewers = REVIEWERS_HEADLESS  # who runs the reviewers: REVIEWERS_HEADLESS or REVIEWERS_MAIN
         self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
+        self.coder_model = ""  # the model the fix coder runs on; "" leaves the agent's own
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
         self.only_files = []  # the files the caller scoped the review to; [] is every changed file
         self.gate_commands = []  # the caller's scoped test commands, which name the tests no fix pass may remove
@@ -388,6 +391,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
     def review_scope(self):
         files = review_files(self.repo, self.review_base, self.only_files)
+        # The plan's folder holds the plan documents, not the change. A file the caller named stays in scope.
+        if not self.only_files:
+            files = plan_format.outside_plan_folder(files, self.plan)
         return script_utils.without_paths(files, self.held_files | self.ruled_out)
 
     def coder_held_files(self):
@@ -572,7 +578,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
             self.put_back_findings = []
         try:
-            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard)
+            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
+                                 model=self.coder_model)
         except CoderCallError as error:
             blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
             raise CoderFailedError(blocker) from error
@@ -873,7 +880,7 @@ def check_ran_gates(loop):
 def walk(loop, check_command, gate_commands):
     """The review rounds, then the full check, the class closure and the scoped tests while the loop converges. With
     gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
-    before commit credit."""
+    before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
         round_fix, round_nits = loop.review_round()

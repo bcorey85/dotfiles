@@ -32,9 +32,9 @@ Per-phase residue of the review round budget comes due here — skip this step a
 ~/.claude/scripts/tools/ledger_deferred.py
 ```
 
-Run it with a Bash `timeout` of `600000`: about 204 s when the ledger answers busy at once, longer when a ledger call hangs.
+Run it with a Bash `timeout` of `600000`: on a busy or hung ledger it can take minutes.
 
-It runs `ledger yield --deferred`, which reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. While the ledger cache is behind, the script waits up to about 90 s for it to catch up, then runs `ledger worker --once` itself and reads once more, one try with no wait. Do not retry it or run the worker yourself.
+It runs `ledger yield --deferred`, which reads the current repo and branch from the cwd and prints a header line, then one row per deferred finding: `finding_id, ts, gate, class, disposition, blocker, fix_induced, line, actioned, gate_agent_run_id, session`. `actioned=1` means a later edit to the finding's file landed inside its gate run's window. While the ledger cache is behind, the script waits for it to catch up, then runs `ledger worker --once` itself and reads once more, one try with no wait. Do not retry it or run the worker yourself.
 
 When the queue goes unread, the script prints the recap line, and the recap uses it as printed, never `deferred: none`:
 - no `ledger`: `deferred: not tracked (ledger not installed)`.

@@ -1,5 +1,5 @@
 """Every site that judges whether a review ended clean gives the same answer for the same stored hand-back rows,
-because each one asks handback.py: the clean-review record and the commit credit of a hand-back.
+because each one asks handback.py: the owner and the clean-review record.
 
 run: python3 tests/scripts/test_review_clean_status_one_owner.py
 """
@@ -18,7 +18,6 @@ import toolkit_paths
 for folder in (toolkit_paths.LIB_DIR, toolkit_paths.REVIEW_DIR, toolkit_paths.CODE_DIR):
     sys.path.insert(0, str(folder))
 import handback  # noqa: E402
-import review_commit_gate  # noqa: E402
 import reviewed_tree  # noqa: E402
 
 SESSION = "s1"
@@ -71,13 +70,9 @@ class CleanStatusOneOwnerTest(unittest.TestCase):
         all_rows = [dispatch, *rows]
         (self.store / f"{SESSION}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in all_rows))
 
-    def clean_by_commit_credit(self):
-        return review_commit_gate.review_handed_back_since(SESSION, 0, str(self.repo))
-
     def sites(self):
         return {"owner": lambda: handback.false_clean_reason(SESSION) is None,
-                "record_clean_review": lambda: handback.record_clean_review(SESSION)[0] is None,
-                "commit credit": self.clean_by_commit_credit}
+                "record_clean_review": lambda: handback.record_clean_review(SESSION)[0] is None}
 
     def cap_row(self, tree="current", **packet_fields):
         """A stored cap-reached hand-back whose passed full check covered `tree` ("current": the repo's tree now)."""

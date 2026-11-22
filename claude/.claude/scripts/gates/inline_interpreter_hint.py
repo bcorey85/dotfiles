@@ -7,7 +7,7 @@ does, so it blocks what the gate blocks on each platform: macOS grep matches the
 GNU grep stops at them. It matches them on the command with its quoted text blanked, as the gate does on a
 command it judges read-only; on other commands the gate matches the raw text. So a quoted argument that names a
 `-c` flag denies nothing. It also blocks code fed on stdin to a bare interpreter (`python3 -`, a heredoc or
-here-string, a pipe in, also into `manage.py shell`), which the gate does not block. It denies with text that says
+here-string, a pipe in, also into `manage.py shell`), which the gate also blocks. It denies with text that says
 what to do instead. An error while reading the input or judging the command exits 0 with no output.
 """
 import json
@@ -15,11 +15,13 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import shell_command
 import shell_quoting
 import shell_statements
+import shell_steps
 
 INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
 INLINE = rf"\b(python3?|node|perl|ruby|php)\b[^;|&]*\s({INLINE_FLAGS})\b"
@@ -49,7 +51,7 @@ def grep(pattern, command):
 
 
 def runs_stdin_code(command):
-    command = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
+    command = shell_statements.shell_code(command)
     try:
         piped_commands = shell_command.parse_piped_commands(command)
     except ValueError:
@@ -64,7 +66,7 @@ def unparsed_runs_stdin_code(command):
     parse_piped_commands piece by piece, and split on whitespace only where that fails; a heredoc or here-string
     outside quotes ends the words of a piece split that way."""
     for operator, step in shell_command.split_command_steps(command):
-        core, tail = shell_command.step_parts(step)
+        core, tail = shell_steps.step_parts(step)
         for part_index, part in enumerate(shell_statements.split_on_pipe_both(core + " " + tail)):
             if part_reads_stdin_code(part, part_index > 0 or operator == "|"):
                 return True
@@ -167,11 +169,34 @@ def blocked(command):
     return bool(INTERPRETER.search(command)) and runs_inline_code(command) and not grep(ALLOWED, command)
 
 
+PILOT_OFF_SWITCH = os.path.expanduser("~/.claude/security-pilot-off")
+SHADOW_LOG = os.path.expanduser("~/.claude/security-hook-shadow-log.jsonl")
+
+
+def pilot_passes(payload, command):
+    """Pilot: under auto mode the safety gate records an inline run and lets it go on to the classifier, so this
+    hook does the same. A run that cannot be recorded is denied as before."""
+    if payload.get("permission_mode") != "auto" or os.path.exists(PILOT_OFF_SWITCH):
+        return False
+
+    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "hook": "inline-interpreter-hint",
+           "reason": "[inline_interpreter_hint]", "value": command, "mode": "auto",
+           "session_id": payload.get("session_id"), "tool_use_id": payload.get("tool_use_id"),
+           "transcript_path": payload.get("transcript_path"), "agent_id": payload.get("agent_id")}
+    try:
+        with open(SHADOW_LOG, "a") as handle:
+            handle.write(json.dumps(row) + "\n")
+    except OSError:
+        return False
+    return True
+
+
 def main():
     try:
         payload = json.loads(sys.stdin.read())
         command = (payload.get("tool_input") or {}).get("command")
-        if not os.environ.get("CLAUDE_SKIP_HOOKS") and isinstance(command, str) and blocked(command):
+        if (not os.environ.get("CLAUDE_SKIP_HOOKS") and isinstance(command, str) and blocked(command)
+                and not pilot_passes(payload, command)):
             sys.stdout.write(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": TEXT}}))
     except Exception:

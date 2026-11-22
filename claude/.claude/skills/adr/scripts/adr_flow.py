@@ -51,11 +51,13 @@ TASK_SLUG_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 TICKET_KEY_PATTERN = re.compile(r"^([A-Z][A-Z0-9]+-[0-9]+)(?:-(.+))?$")
 # Files /eng-spec writes into a task dir: 00-ticket, 01-questions, 01-leak-check, 02-research,
 # 03-decisions, 04-exploration, 05-plan-review-r1, plan-review-round1, spec, acceptance-criteria,
-# and the review shards (review-shard-A, review-shard-seam, spec-review-shard-a, plan-review-shard-b).
+# the review shards (review-shard-A, review-shard-seam, spec-review-shard-a, plan-review-shard-b,
+# review-round2-shard-a), and the architect plans seen in real task dirs (04-backend-plan, 05-frontend-plan).
 # Other names seen in plan dirs (plan.md, slices.md, 04-acceptance-criteria.md) are user notes: finish refuses them.
 PLAN_FILE_PATTERN = re.compile(
     r"^(?:00-ticket|01-questions|01-leak-check|02-research|03-decisions|04-exploration|05-plan-review-r[0-9]+"
-    r"|plan-review-round[0-9]+|spec|acceptance-criteria|(?:(?:spec|plan)-)?review-shard-[A-Za-z]+)\.md$"
+    r"|plan-review-round[0-9]+|spec|acceptance-criteria|(?:(?:spec|plan)-)?review-shard-[A-Za-z]+"
+    r"|[0-9]+-(?:backend|frontend)-plan|review-round[0-9]+-shard-[A-Za-z]+)\.md$"
 )
 SOURCE_FILES = ("spec.md", "03-decisions.md", "02-research.md")
 DEFAULT_BRANCHES = ("main", "master")

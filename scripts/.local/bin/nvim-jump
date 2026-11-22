@@ -12,8 +12,8 @@
 #
 # --note colors LINE..END's line numbers and shows TEXT above them (nvim's util/jump_note.lua);
 # each --note belongs to the location after it. Several locations make a list:
-# nvim opens the first, ]k/[k step through it, and the next jump replaces it.
-# --push nests the new list inside the current one instead; [K in nvim drops
+# nvim opens the first, ]v/[v step through it, and the next jump replaces it.
+# --push nests the new list inside the current one instead; [V in nvim drops
 # back to the outer list. <Esc> in nvim dismisses the note.
 #
 # Usage: nvim-jump [--push] [--note TEXT] FILE[:LINE[-END]] [LINE]
@@ -21,7 +21,8 @@
 #        nvim-jump --where               # file:line under the cursor
 #        nvim-jump --list                # live instances and their cwd
 #
-# Exit 0 on jump, 1 no instance owns the file, 2 nvim not running / bad args.
+# With no nvim owning the file, a live hunk session for its repo gets the list as notes instead.
+# Exit 0 on jump, 1 no nvim instance or hunk session owns the file, 2 nvim not running / bad args.
 
 set -euo pipefail
 
@@ -107,8 +108,40 @@ for i in "${!files[@]}"; do
 done
 file=${files[0]}; line=${lines[0]}
 
+# No nvim owns the file: post the list as agent notes in the live hunk session for the
+# file's repo, replacing the last list's agent notes (user notes stay), and focus the
+# first. hunk anchors a note only on a line its diff shows; a list with no such line
+# still moves hunk to the first file.
+hunk_jump() {
+    local root rel first focus added=0
+    PATH="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH"
+    command -v hunk >/dev/null || return 1
+    root=$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>/dev/null) || return 1
+    hunk session get --repo "$root" >/dev/null 2>&1 || return 1
+    hunk session comment clear --repo "$root" --yes >/dev/null 2>&1 || true
+    for i in "${!files[@]}"; do
+        rel=${files[$i]#"$root"/}
+        first=${lines[$i]%-*}
+        focus=
+        [ "$added" -gt 0 ] || focus=--focus
+        if hunk session comment add --repo "$root" --file "$rel" --new-line "$first" \
+            --summary "${notes[$i]:-$rel:$first}" --author claude $focus >/dev/null 2>&1; then
+            added=$((added + 1))
+        fi
+    done
+    if [ "$added" -eq 0 ]; then
+        rel=${file#"$root"/}
+        hunk session navigate --repo "$root" --file "$rel" --hunk 1 >/dev/null 2>&1 || return 1
+    fi
+    echo "hunk $root -> ${file#"$root"/}:$line ($added/${#files[@]} notes)"
+}
+
 sock=$(owner_of "$file")
-[ -n "$sock" ] || { echo "no nvim instance owns $file (nvim-jump --list)" >&2; exit 1; }
+if [ -z "$sock" ]; then
+    hunk_jump && exit 0
+    echo "no nvim instance or hunk session owns $file (nvim-jump --list, hunk session list)" >&2
+    exit 1
+fi
 
 # <C-\><C-n> exits any mode (insert/visual/cmdline) before the command.
 nvim --server "$sock" --remote-send "<C-\\><C-n>:edit +${line%-*} $(printf '%q' "$file")<CR>zz"
@@ -116,6 +149,6 @@ nvim --server "$sock" --remote-send "<C-\\><C-n>:edit +${line%-*} $(printf '%q' 
 # and no --push only clears it.
 note_error=$(nvim --server "$sock" --remote-expr "luaeval('select(2, pcall(function(a) return require(\"util.jump_note\").show(a.jumps, a.push) end, _A))', {'jumps': [$jumps], 'push': $push})" 2>&1) || true
 list_hint=
-[ ${#files[@]} -eq 1 ] || list_hint=" (1/${#files[@]}, ]k/[k for the rest)"
+[ ${#files[@]} -eq 1 ] || list_hint=" (1/${#files[@]}, ]v/[v for the rest)"
 [ -z "$list_hint${notes[0]}" ] || [ -z "$note_error" ] || echo "note not shown: $note_error" >&2
 echo "$(cwd_of "$sock") -> ${file#"$(cwd_of "$sock")"/}:$line$list_hint"

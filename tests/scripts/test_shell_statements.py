@@ -20,12 +20,14 @@ from shell_statements import (
     opens_shell_heredoc,
     resolved_word,
     runs_script_file,
+    shell_code,
     split_on_pipe_both,
     statement_word_pairs,
-    statements_with_operators,
-    strip_comments,
+    statements,
     strip_heredocs,
     strip_stored_heredocs,
+    without_ansi_c_quotes,
+    without_leading_noise,
 )
 
 
@@ -65,16 +67,57 @@ class DecodeAnsiCTest(unittest.TestCase):
         self.assertEqual(decode_ansi_c("\\U0010FFFF\\x41"), "\U0010FFFFA")
 
 
-class StatementsWithOperatorsTest(unittest.TestCase):
+class StatementsTest(unittest.TestCase):
     def test_a_redirection_stays_a_word_of_its_statement_and_is_no_separator(self):
         cases = {
-            "git push 2>&1 && ls": [("", ["git", "push", "2>&1"], "&&"), ("&&", ["ls"], "")],
-            "git push &>f; ls": [("", ["git", "push", "&>f"], ";"), (";", ["ls"], "")],
+            "git push 2>&1 && ls": [["git", "push", "2>&1"], ["ls"]],
+            "git push &>f; ls": [["git", "push", "&>f"], ["ls"]],
+            "cat <&3 | git commit": [["cat", "<&3"], ["git", "commit"]],
         }
         for command, expected in cases.items():
             with self.subTest(command=command):
-                found = [(s.operator_before, s.words, s.operator_after) for s in statements_with_operators(command)]
-                self.assertEqual(found, expected)
+                self.assertEqual(statements(command), expected)
+
+    def test_every_step_operator_and_a_parenthesis_ends_a_statement(self):
+        found = statements("a && b || c | d |& e; f\ng & (h) i")
+        self.assertEqual(found, [["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"], ["h"], ["i"]])
+
+    def test_leading_noise_is_dropped_except_the_kept_words(self):
+        self.assertEqual(statements("X=1 do then git push"), [["git", "push"]])
+        self.assertEqual(without_leading_noise(["if", "cd", "x"], kept_words=("if",)), ["if", "cd", "x"])
+        self.assertEqual(without_leading_noise(["if", "cd", "x"]), ["cd", "x"])
+
+
+class WithoutAnsiCQuotesTest(unittest.TestCase):
+    def test_an_unquoted_ansi_c_string_reads_as_its_decoded_and_shell_quoted_text(self):
+        cases = {"git $'commit' -m x": "git commit -m x", "git $'\\x63ommit'": "git commit",
+                 "echo $'a b'": "echo 'a b'", "echo $'it\\'s'": "echo 'it'\"'\"'s'",
+                 "echo $$'x'": "echo $$'x'"}
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(without_ansi_c_quotes(command), expected)
+
+    def test_an_earlier_quoted_dollar_does_not_hide_a_real_ansi_c_string(self):
+        cases = {
+            "echo '$' ; git $'commit' -m x": "echo '$' ; git commit -m x",
+            "echo 'a$' && git $'commit' -m x": "echo 'a$' && git commit -m x",
+            "echo \"$'\"; git $'commit' -m x": "echo \"$'\"; git commit -m x",
+            "echo 'a$' $'x'": "echo 'a$' x",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(without_ansi_c_quotes(command), expected)
+
+    def test_two_ansi_c_strings_both_decode(self):
+        self.assertEqual(without_ansi_c_quotes("echo $'a' $'b'"), "echo a b")
+
+    def test_an_unterminated_ansi_c_string_stays(self):
+        self.assertEqual(without_ansi_c_quotes("echo $'abc"), "echo $'abc")
+
+    def test_a_dollar_quote_inside_quotes_or_a_comment_stays(self):
+        for command in ("echo \"$'a'\"", "echo '$'\"'a'\"", "echo # $'a'"):
+            with self.subTest(command=command):
+                self.assertEqual(without_ansi_c_quotes(command), command)
 
 
 class StatementWordPairsTest(unittest.TestCase):
@@ -107,15 +150,13 @@ class ResolvedWordTest(unittest.TestCase):
         self.assertEqual(self.resolve("git push &>f", 2), "&>f")
 
 
-class StripCommentsTest(unittest.TestCase):
-    def test_an_apostrophe_in_a_comment_does_not_hide_the_next_comments(self):
-        command = "ls # it's\nls # don't\nsed -i x f"
+class ShellCodeTest(unittest.TestCase):
+    def test_comments_are_cut_before_backslash_newlines_join(self):
+        self.assertEqual("ls \ngit commit -m x", shell_code("ls # note \\\ngit commit -m x"))
+        self.assertEqual("a b", shell_code("a \\\nb"))
 
-        self.assertEqual("ls \nls \nsed -i x f", strip_comments(command))
-
-    def test_a_hash_inside_quotes_is_kept(self):
-        self.assertEqual("echo '# a'", strip_comments("echo '# a'"))
-        self.assertEqual('echo "x # y" ', strip_comments('echo "x # y" # z'))
+    def test_a_heredoc_body_is_cut(self):
+        self.assertEqual("cat >f <<'EOF'\nls", shell_code("cat >f <<'EOF'\n# x \\\nEOF\nls"))
 
 
 class OpensShellHeredocTest(unittest.TestCase):
@@ -355,6 +396,38 @@ class ScriptRunTest(unittest.TestCase):
         command = "{ ~/.claude/scripts/x <<'EOF'\ngit commit -m y\nEOF\n} | python3"
 
         self.assertEqual(command, strip_stored_heredocs(command))
+
+    def test_a_script_step_piped_only_into_text_tools_is_blanked(self):
+        self.assertEqual('python3 x.py "" 2>&1 | tail -5',
+                         blank_script_run_quotes('python3 x.py "git commit" 2>&1 | tail -5'))
+        self.assertEqual('python3 x.py "" | sort | head -2',
+                         blank_script_run_quotes('python3 x.py "git commit" | sort | head -2'))
+
+    def test_a_script_step_piped_through_a_text_tool_into_a_shell_stays_as_written(self):
+        commands = (
+            'python3 x.py "git commit -am x" | tail | sh',
+            'python3 x.py "git commit -am x" | tee | bash',
+            'python3 x.py "git commit -am x" | python3',
+            'python3 x.py "git commit -am x" | source /dev/stdin',
+            'python3 x.py "git commit -am x" | . /dev/stdin',
+            "python3 x.py --body 'git -C d commit -m y' | $SHELL",
+            "python3 x.py --body 'git -C d commit -m y' | ${SHELL}",
+            "python3 x.py --body 'git -C d commit -m y' | `which sh`",
+            "python3 x.py --body 'git -C d commit -m y' | $(which sh)",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_script_step_piped_into_a_step_that_cannot_be_parsed_stays_as_written(self):
+        command = 'python3 x.py "git commit" | tail "unterminated'
+
+        self.assertEqual(command, blank_script_run_quotes(command))
+
+    def test_a_shell_after_an_and_operator_does_not_keep_the_piped_script_step_as_written(self):
+        for command in ('python3 x.py "git commit" | tail && sh', 'python3 x.py "git commit" | tail ; sh'):
+            with self.subTest(command=command):
+                self.assertEqual(command.replace('"git commit"', '""'), blank_script_run_quotes(command))
 
     def test_the_last_step_of_a_pipe_is_still_blanked(self):
         self.assertEqual('echo a | python3 x.py ""', blank_script_run_quotes('echo a | python3 x.py "b"'))

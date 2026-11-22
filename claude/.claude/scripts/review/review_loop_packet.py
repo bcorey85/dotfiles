@@ -142,7 +142,7 @@ def write_handback_rows(args, message, status, ask_rows, unreviewed_fix):
         report_write_failure("stop row", error)
 
     # The /code run that launched this loop can end before the loop hands back, and then nothing records the tree.
-    # So the loop records the tree it ended clean on itself, under the commit gate's hand-back rule.
+    # So the loop records the tree it ended clean on itself, under the hand-back rule.
     try:
         reason, reviewed_repo = handback.record_clean_review(args.session)
         if not reason and not reviewed_repo:

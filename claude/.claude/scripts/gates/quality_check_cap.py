@@ -11,7 +11,8 @@ of 126 or 127 (the shell found no command to run), so the rerun is allowed. Exit
 behind `&&` or `||` may never have started, so it is not recorded; after a success, a check behind `||` is not.
 A check whose output redirection the shell could not open (a redirect into a missing folder, `> gone/x.log`)
 never started, so it is not recorded. Nor is a failed run whose output says it stopped on a path that does not
-exist (check_output.stopped_on_missing_path: a file list passed as one word), nor a failed run with no runner
+exist (check_output.stopped_on_missing_path: a file list passed as one word), nor a failed run that a shell parse
+error stopped before any step ran (check_output.shell_parse_error_line), nor a failed run with no runner
 summary whose output shows the tool could not start or an environment fault
 (check_output.failed_without_a_result). The key keeps leading `NAME=value` words, so a rerun that
 changes them is allowed.
@@ -57,13 +58,12 @@ from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_
 from shell_command import (
     git_subcommand,
     parse_simple_commands,
-    path_word,
     redirection_writes_file,
-    runs_only_after_success,
     split_command_steps,
-    step_surely_ran,
 )
-from shell_statements import strip_comments, strip_heredocs
+from shell_directory import path_word
+from shell_statements import shell_code
+from shell_steps import runs_only_after_success, step_surely_ran
 
 SIGNAL_EXIT_CODES = range(129, 193)
 # 126 (not executable) and 127 (command not found): the shell never started the check.
@@ -486,6 +486,8 @@ def run(raw, state):
             return
         if check_output.stopped_on_missing_path(error_text):
             return
+        if check_output.shell_parse_error_line(error_text):
+            return
 
     command = jq_field(root_json, "tool_input", "command")
     if not command:
@@ -493,7 +495,7 @@ def run(raw, state):
     skipped = event == "PreToolUse" and "#skip-quality-cap" in command
     command = command.replace("#skip-quality-cap", "")
 
-    steps = split_command_steps(strip_comments(strip_heredocs(command)))
+    steps = split_command_steps(shell_code(command))
     succeeded = event == "PostToolUse"
     checks = []
     format_indexes = []

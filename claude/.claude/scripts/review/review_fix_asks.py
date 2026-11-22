@@ -2,7 +2,7 @@
 for each corrected ask while the printed fix run has not launched. When the user accepted or modified an ask, it
 writes those asks to a findings file and prints the fix run that applies them: the first run's launch flags plus
 `--fix`, `--iter` and `--detach`, so the loop's fix coder makes the change, a review round covers it, and the
-converged hand-back earns commit credit."""
+converged hand-back earns review credit."""
 import os
 import shlex
 import sys

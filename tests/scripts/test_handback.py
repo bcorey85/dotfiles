@@ -1056,7 +1056,7 @@ class StoreTest(HandbackTestBase):
                               message=json_packet(plan_impacts=[adopted, held]))
         self.assertIn("1 plan impact(s) that await a ruling", handback.false_clean_reason(SESSION))
 
-    def test_a_reword_adopted_under_a_standing_ruling_clears_the_commit_gate(self):
+    def test_a_reword_adopted_under_a_standing_ruling_earns_review_credit(self):
         import contextlib
         import io
 
@@ -1707,8 +1707,6 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertIn("Step 6 execution gate", json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_a_root_line_in_another_repo_than_the_dispatch_names_one_repo_for_the_gate(self):
-        import review_commit_gate
-
         other = self.loop_repo()
         reviewed = os.path.realpath(self.loop_repo())
         prompt_without_repo_line = {"type": "user", "message": {"role": "user", "content": "review loop\n"}}
@@ -1723,12 +1721,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back(steps, cwd=other), "")
 
         self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], reviewed)
-        self.assertTrue(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
-        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
 
     def test_a_root_line_outside_any_work_tree_names_no_repo_for_the_gate(self):
-        import review_commit_gate
-
         other = self.loop_repo()
         outside = self.tmp / "plain-folder"
         outside.mkdir()
@@ -1744,11 +1738,8 @@ class OneCheckedHandBackTest(HandbackTestBase):
         self.assertEqual(self.hand_back(steps, cwd=other), "")
 
         self.assertIsNone(handback_store.latest(SESSION)["dispatch"]["repo"])
-        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
 
-    def test_a_second_dispatch_of_another_repo_leaves_the_root_line_repo_its_credit_and_gives_itself_none(self):
-        import review_commit_gate
-
+    def test_a_second_dispatch_of_another_repo_names_its_own_repo(self):
         other = self.loop_repo()
         reviewed = os.path.realpath(self.loop_repo())
         prompt_without_repo_line = {"type": "user", "message": {"role": "user", "content": "review loop\n"}}
@@ -1765,8 +1756,6 @@ class OneCheckedHandBackTest(HandbackTestBase):
                         "tool_input": {"subagent_type": "review-loop", "prompt": f"review loop\nrepo: {other}\n"}}
         self.run_cli(["hook", "dispatch"], json.dumps(second_event))
         self.assertEqual(handback_store.latest(SESSION)["dispatch"]["repo"], os.path.realpath(other))
-        self.assertTrue(review_commit_gate.review_handed_back_since(SESSION, 0, reviewed))
-        self.assertFalse(review_commit_gate.review_handed_back_since(SESSION, 0, os.path.realpath(other)))
 
     def test_a_clean_hand_back_after_a_full_check_passes(self):
         self.assertEqual(self.hand_back([coder_step("t1")]), "")

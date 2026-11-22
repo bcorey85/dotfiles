@@ -14,6 +14,9 @@ missing record, or one for another HEAD, is replaced either way. Prints the HEAD
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept and its head is printed as the phase base. With no
 record, or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr.
+Before anything is moved, `--resume` exits non-zero when this repo's run folder holds no stop.md and no stop.prev.md
+newer than the session's last relayed stop (lib/code_stop_record.py), and that stop is in another run folder: it
+names both and the stop's recorded `To go on:` line (`/code resume <repo top>` for a finished stop).
 An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays), and an existing
 handoff.txt to handoff.prev.txt, so a review start never reads an earlier phase's hand-off as this phase's; loop-dir
 goes to loop-dir.prev, so a wait never returns an earlier phase's packet before this phase's review starts.
@@ -26,6 +29,7 @@ import sys
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
+import code_stop_record
 import code_wait
 import script_utils
 import stop_file_names
@@ -123,6 +127,26 @@ def resume_base(repo, kept):
     return kept["head"]
 
 
+def other_run_refusal(run_folder):
+    """The refusal text when this repo's run folder holds no stop of its own (no stop.md, and no stop.prev.md newer
+    than the session's recorded stop) and that recorded stop is in another run folder; None otherwise. Fail-open: no
+    session id or no record resumes as before."""
+    if (run_folder / stop_file_names.STOP_FILE).is_file():
+        return None
+
+    recorded = code_stop_record.last_stop(os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if recorded is None:
+        return None
+    previous_stop = run_folder / stop_file_names.PREVIOUS_STOP_FILE
+    if previous_stop.is_file() and previous_stop.stat().st_mtime > recorded["time"]:
+        return None
+    if pathlib.Path(recorded["runFolder"]).resolve() == run_folder.resolve():
+        return None
+    resume_line = recorded["goOn"] or f"/code resume {recorded['repoTop']}"
+    return (f"phase_start: --resume found no stop in {run_folder}, and this session's last stop is in "
+            f"{recorded['runFolder']}. Resume that run from its repo: {resume_line}")
+
+
 def main():
     flags = ("--new-run", "--resume")
     unknown = [arg for arg in sys.argv[1:] if arg not in flags]
@@ -136,6 +160,10 @@ def main():
         sys.exit(f"phase_start: {pathlib.Path.cwd()} is not inside a git work tree")
 
     run_folder = code_wait.phase_dir(repo)
+    if "--resume" in sys.argv[1:]:
+        refusal = other_run_refusal(run_folder)
+        if refusal is not None:
+            sys.exit(refusal)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
     move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)

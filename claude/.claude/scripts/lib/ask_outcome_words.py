@@ -1,5 +1,5 @@
-"""The ask outcome words and the `phase_asks.py` command lines the commit gate prints. No imports beyond the standard
-library: it keeps the commit gate from importing `phase_asks`."""
+"""The ask outcome words and the `phase_asks.py` command lines. No imports beyond the standard library: it keeps its
+callers from importing `phase_asks`."""
 import pathlib
 
 ACCEPTED = "accepted"

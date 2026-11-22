@@ -1,4 +1,4 @@
-"""Checks for git_discipline_gate.py, the PreToolUse(Bash) hook enforcing four git rules."""
+"""Checks for git_discipline_gate.py, the PreToolUse(Bash) hook enforcing the git rules in its docstring."""
 import json
 import os
 import pathlib
@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
@@ -182,6 +183,16 @@ class GitDisciplineGateTest(GateCaseBase):
                         "git -C /r pull --no-autostash $(git -C /r pull --autostash) && git -C /r push"):
             with self.subTest(command=command):
                 self.assert_denied(command, "[git-discipline-gate] git autostash is blocked")
+
+    def test_an_ansi_c_quoted_amend_already_held_before_the_change(self):
+        """Pins a verdict that held before the git gates read `$'...'`: this gate decodes the words itself."""
+        for command in ("git $'commit' --amend", "git commit $'\\x2d\\x2damend'", "git $'\\143ommit' $'--amend'",
+                        "echo '$' ; git $'commit' --amend"):
+            self.assert_denied(command, "[git-discipline-gate] git commit --amend is blocked")
+
+    def test_an_amend_after_a_comment_ending_in_a_backslash_is_denied(self):
+        command = "git status # note \\\ngit commit --amend"
+        self.assert_denied(command, "[git-discipline-gate] git commit --amend is blocked")
 
     def test_amend_denied(self):
         for command in ("git commit --amend", "git commit -m x --amend --no-edit", "git commit --amend -m x"):
@@ -927,6 +938,83 @@ class NamesProtectedBranchTest(unittest.TestCase):
                 self.assertTrue(git_destructive_calls.names_protected_branch(call), command)
         feature = git_calls.git_call(["git", "push", "origin", "feature"])
         self.assertFalse(git_destructive_calls.names_protected_branch(feature))
+
+
+def load_reviewed_tree():
+    sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+    import reviewed_tree
+    return reviewed_tree
+
+
+PUSH_DENIED = "[git-discipline-gate] code changed since the last review: run /review on this branch, then push"
+
+
+class PushReviewedTreeTest(GateCaseBase):
+    """Rule 8: a push or a new pull request passes only when the repo's HEAD tree is one a converged review recorded,
+    notes paths left out; a repo with no record passes."""
+
+    def setUp(self):
+        super().setUp()
+        self.reviewed_tree = load_reviewed_tree()
+        patched = unittest.mock.patch.dict(os.environ, {"HOME": str(self.tmp)})
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.repo = self.repo_on("feature")
+        self.write("app.py", "print('a')\n")
+        self.commit("base")
+
+    def git(self, *args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], cwd=self.repo,
+                       check=True, capture_output=True)
+
+    def write(self, name, content):
+        target = self.repo / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+
+    def commit(self, message):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+
+    def review_then_commit(self):
+        self.write("app.py", "print('b')\n")
+        self.write("lib/new.py", "x = 1\n")
+        os.symlink("app.py", self.repo / "link.py")
+        self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
+        self.commit("reviewed change")
+
+    def test_push_passes_when_head_holds_the_reviewed_tree(self):
+        self.review_then_commit()
+        self.write("scratch.txt", "not pushed\n")
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+        self.assert_allowed("gh pr create --fill", cwd=self.repo)
+
+    def test_push_passes_after_a_review_of_a_committed_branch(self):
+        self.write("app.py", "print('c')\n")
+        self.commit("work")
+        self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
+        self.assert_allowed("git push", cwd=self.repo)
+
+    def test_push_is_denied_when_code_changed_after_the_review(self):
+        self.review_then_commit()
+        self.write("app.py", "print('unreviewed')\n")
+        self.commit("late edit")
+        reason = self.assert_denied("git push -u origin HEAD", PUSH_DENIED, cwd=self.repo)
+        self.assertEqual(reason, PUSH_DENIED)
+        self.assert_denied(f"git -C {self.repo} push", PUSH_DENIED, cwd=self.tmp)
+        self.assert_denied("gh pr create --fill", PUSH_DENIED, cwd=self.repo)
+
+    def test_push_passes_when_only_notes_changed_after_the_review(self):
+        self.review_then_commit()
+        self.write("docs/plan.md", "# plan\n")
+        self.commit("notes")
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+
+    def test_push_passes_in_a_repo_with_no_review_record(self):
+        self.write("app.py", "print('never reviewed')\n")
+        self.commit("work")
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+        self.assert_allowed("gh pr create --fill", cwd=self.repo)
 
 
 if __name__ == "__main__":

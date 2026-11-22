@@ -54,6 +54,8 @@ Kept; cost guard `review-lens-split-cache-read` closed (ruled by agent-evals-5e)
 run fell instead of rising: 7,305,263 → 2,490,538 over 80 runs. The quality reading `review-lens-split-escapes` stays
 open in the work intake's edit-watch step.
 
+Reading 2026-11-21: `review-lens-split-escapes` NO CHANGE, kept. Review escapes per code-reviewer run: 0.14 median before (range 0.09-0.24), 0.12 after (56 of 457, 2026-11-04..2026-11-13). Eight other edits share the window.
+
 ## Back-out
 
 Restore the size gate in `first_round_plan` (split by file above 5 files and 300 changed lines), drop `LensOwned` and

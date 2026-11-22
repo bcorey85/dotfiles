@@ -437,8 +437,8 @@ REDISPATCHED = "redispatched"
 def hand_back_gap(seen):
     """Why the session has no current hand-back, from a `latest` result: NO_DISPATCH (the session never dispatched a
     review-loop), NO_HANDBACK (dispatched, nothing came back), REDISPATCHED (dispatched again after a
-    hand-back), or None when the latest hand-back is current. The one rule that /review, /fix and the commit gate
-    share."""
+    hand-back), or None when the latest hand-back is current. The one rule that /review, /fix and the review
+    record share."""
     if seen["dispatch"] is None:
         return NO_DISPATCH
     if seen["handback"] is not None and not seen["pending"]:

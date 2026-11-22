@@ -879,6 +879,120 @@ def load_gate_module():
     return gate_module
 
 
+class SessionPointerTests(unittest.TestCase):
+    """The hand-back hook runs the gate that this session's `set` stored, whatever checkout the hook's cwd is."""
+
+    SESSION = "session-one"
+
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        root = pathlib.Path(temp_directory.name)
+        self.home = root / "home"
+        self.home.mkdir()
+        self.repo_a = root / "repo_a"
+        self.repo_b = root / "repo_b"
+        self.env = {**os.environ, **GIT_IDENTITY, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "0"}
+        self.env.pop("CLAUDE_CODE_SESSION_ID", None)
+        for repo in (self.repo_a, self.repo_b):
+            repo.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=self.env)
+
+    def gate_verb(self, repo, *arguments, session_id=SESSION):
+        env = dict(self.env)
+        if session_id:
+            env["CLAUDE_CODE_SESSION_ID"] = session_id
+        return subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), *arguments], cwd=repo, env=env,
+                              capture_output=True, text=True)
+
+    def gate_hook(self, event_cwd, session_id=SESSION):
+        event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(event_cwd), "session_id": session_id,
+                 "tool_input": {"message": "BEHAVIOR: done"}}
+        return subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "hook"], cwd=event_cwd, env=self.env,
+                              input=json.dumps(event), capture_output=True, text=True)
+
+    def stored_coders(self, repo):
+        return json.loads((repo / ".git/coder-gate.json").read_text())["coders"]
+
+    def pointer_files(self):
+        return list((self.home / ".claude/coder-gate-sessions").glob("*.json"))
+
+    def test_a_hook_from_another_checkout_runs_the_gate_set_in_the_first_checkout(self):
+        done = self.gate_verb(self.repo_a, "set", "pwd > ran_here.txt")
+        self.assertEqual(0, done.returncode, done.stderr)
+        done = self.gate_verb(self.repo_b, "set", "exit 3", session_id=None)
+        self.assertEqual(0, done.returncode, done.stderr)
+
+        hook = self.gate_hook(self.repo_b)
+
+        self.assertEqual(0, hook.returncode, hook.stderr)
+        self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+        self.assertEqual("pass", self.stored_coders(self.repo_a)["a1"]["result"])
+        ran_in = (self.repo_a / "ran_here.txt").read_text().strip()
+        self.assertEqual(self.repo_a.resolve(), pathlib.Path(ran_in).resolve())
+        self.assertFalse((self.repo_b / "ran_here.txt").exists())
+        self.assertEqual({}, self.stored_coders(self.repo_b))
+
+    def test_with_no_pointer_the_hook_runs_the_gate_of_its_cwd(self):
+        self.gate_verb(self.repo_a, "set", "exit 3", session_id=None)
+
+        hook = self.gate_hook(self.repo_a)
+
+        self.assertEqual([], self.pointer_files())
+        self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+        self.assertEqual("deny", self.stored_coders(self.repo_a)["a1"]["result"])
+
+    def test_a_pointer_whose_gate_file_is_gone_allows_and_does_not_run_the_cwds_gate(self):
+        self.gate_verb(self.repo_a, "set", "echo a")
+        self.gate_verb(self.repo_b, "set", "exit 3", session_id=None)
+        (self.repo_a / ".git/coder-gate.json").unlink()
+
+        hook = self.gate_hook(self.repo_b)
+
+        self.assertEqual(0, hook.returncode, hook.stderr)
+        self.assertNotIn("deny", hook.stdout)
+        self.assertEqual({}, self.stored_coders(self.repo_b))
+
+    def test_a_second_set_in_the_same_session_moves_the_pointer_to_the_new_repo(self):
+        self.gate_verb(self.repo_a, "set", "echo a")
+        self.gate_verb(self.repo_b, "set", "pwd > ran_here.txt")
+
+        hook = self.gate_hook(self.repo_a)
+
+        self.assertEqual("allow", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+        self.assertTrue((self.repo_b / "ran_here.txt").exists())
+        self.assertEqual({}, self.stored_coders(self.repo_a))
+
+    def test_an_unreadable_or_gateless_pointer_falls_back_to_the_cwds_gate_and_reports_it(self):
+        cases = [("corrupt json", "{not json", "unreadable session pointer"),
+                 ("no gateFile", "{}", "has no gateFile"),
+                 ("not an object", "[]", "not a JSON object")]
+        for name, text, message in cases:
+            with self.subTest(name):
+                self.gate_verb(self.repo_a, "set", "echo a")
+                self.gate_verb(self.repo_b, "set", "exit 3", session_id=None)
+                self.pointer_files()[0].write_text(text)
+
+                hook = self.gate_hook(self.repo_b)
+
+                self.assertEqual("deny", json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecision"])
+                self.assertIn(message, hook.stderr)
+
+    def test_clear_removes_the_pointer_it_names_and_leaves_another_gates_pointer(self):
+        self.gate_verb(self.repo_a, "set", "echo a")
+        self.assertEqual(1, len(self.pointer_files()))
+
+        self.gate_verb(self.repo_b, "set", "echo b", session_id="other-session")
+        self.gate_verb(self.repo_b, "clear", session_id=self.SESSION)
+        self.assertEqual(2, len(self.pointer_files()))
+
+        self.gate_verb(self.repo_a, "clear")
+
+        remaining = [json.loads(pointer.read_text())["gateFile"] for pointer in self.pointer_files()]
+        self.assertEqual([str((self.repo_b / ".git/coder-gate.json").resolve())],
+                         [str(pathlib.Path(gate_file).resolve()) for gate_file in remaining])
+
+
 class PinnedInterpreterTests(unittest.TestCase):
     """A linked worktree has no `.python-version` while the main checkout pins one: every gate run still gets the
     pyenv shims first and the pinned version."""

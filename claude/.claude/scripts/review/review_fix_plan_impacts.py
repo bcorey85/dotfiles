@@ -1,6 +1,6 @@
 """review_fix_plan_impacts.py: how `review_fix.py packet` presents the plan impacts a review hand-back carries: the
 deviation lines for an adopted one, the toolkit-fault lines, and the closing question for a held one. It also records
-a plan-impact ruling and settles the commit gate with it: `record_ruling` and `settle_ruling` write the ruling and
+a plan-impact ruling and settles the push check with it: `record_ruling` and `settle_ruling` write the ruling and
 credit the covered tree, and return a `Settled` (clean, or why the gate still counts the review as dirty), which
 `print_settled` turns into `done` or `stop`. `decide` checks who may rule here: `refuse_session_ruling` for a session
 ruling, `verified_decide_relay` for a user ruling another session relays."""
@@ -123,20 +123,20 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo,
 
 
 class Settled(NamedTuple):
-    """What recording a ruling left: `clean` is True when the commit gate counts the review as clean, and `line` says
+    """What recording a ruling left: `clean` is True when the push check counts the review as clean, and `line` says
     so, or says why the gate still counts it as dirty."""
     clean: bool
     line: str
 
 
 def record_ruling(session_id, decision, settled_line):
-    """Record a plan-impact ruling and credit the tree the ruled hand-back covered, so a commit of that tree passes
-    the commit gate however many coders ran since. Settled is clean with settled_line, or dirty with why the gate
+    """Record a plan-impact ruling and credit the tree the ruled hand-back covered, so a push of that tree passes
+    the push check however many coders ran since. Settled is clean with settled_line, or dirty with why the gate
     still counts the review as dirty."""
     handback_store.record(session_id, handback_store.PLAN_RULING, decision=decision)
     refusal, _repo = handback.record_clean_review(session_id)
     if refusal:
-        return Settled(False, f"The ruling is recorded, but the commit gate still counts the review as dirty: "
+        return Settled(False, f"The ruling is recorded, but the push check still counts the review as dirty: "
                               f"{refusal}.")
     return Settled(True, settled_line)
 
@@ -145,9 +145,9 @@ def settle_ruling(decision):
     """Record a `keep` or an applied-`adopt` ruling for this session."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id:
-        return Settled(False, "CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the commit gate "
+        return Settled(False, "CLAUDE_CODE_SESSION_ID is not set, so the ruling is not recorded and the push check "
                               "still counts the review as dirty.")
-    return record_ruling(session_id, decision, "The ruling settles the plan impact, so the commit gate counts the "
+    return record_ruling(session_id, decision, "The ruling settles the plan impact, so the push check counts the "
                                                "review as clean.")
 
 
@@ -207,7 +207,7 @@ def standing_reword_deviation_lines(rewords, ruling, ruled_at):
 
 
 def record_standing_adoption(session_id, rewords, repo, ruled_at, nothing_held):
-    """Records the adoption of each impact in `rewords` at `ruled_at` in `repo` where the commit gate reads rulings: a
+    """Records the adoption of each impact in `rewords` at `ruled_at` in `repo` where the review record reads rulings: a
     ruled-impact row for each. With `nothing_held` (no held impact is left in the packet) it also writes the
     plan-ruling row and credits the reviewed tree as a `decide` ruling does; with a held impact left, that row would
     settle it too, so none is written."""
@@ -219,7 +219,7 @@ def record_standing_adoption(session_id, rewords, repo, ruled_at, nothing_held):
     handback_store.record(session_id, handback_store.PLAN_RULING, decision=plan_format.ADOPT_DECISION)
     refusal, _repo = handback.record_clean_review(session_id)
     if refusal:
-        print(f"The standing adoption is recorded, but the commit gate still counts the review as dirty: {refusal}.")
+        print(f"The standing adoption is recorded, but the push check still counts the review as dirty: {refusal}.")
 
 
 def standing_settled(packet, standing):
@@ -230,7 +230,7 @@ def standing_settled(packet, standing):
 
 
 def settle_standing_rewords(packet, rewords, state, ruled_at):
-    """Marks each impact in `rewords` adopted and records the adoption for the commit gate, under the repo the
+    """Marks each impact in `rewords` adopted and records the adoption for the push check, under the repo the
     packet answers. Without a session id it records nothing and says so."""
     if not rewords:
         return
@@ -240,7 +240,7 @@ def settle_standing_rewords(packet, rewords, state, ruled_at):
     if not session_id:
         named = "; ".join(one_line(impact["text"], 120) for impact in rewords)
         print("CLAUDE_CODE_SESSION_ID is not set, so the adoption of the standing-ruling rewords is not recorded "
-              f"and the commit gate still counts the review as dirty. Rewords: {named}.")
+              f"and the push check still counts the review as dirty. Rewords: {named}.")
         return
     repo = required_packet_repo(state.get("relaunch_args") or [])
     nothing_held = not handback.held_plan_impacts(packet)
@@ -327,6 +327,6 @@ def present_plan_impacts(packet, state, plan_path=None):
     else:
         lines += ["Plan impacts that change an acceptance criterion stay unapplied until the user signs off. Ask once, "
                   "now that the review is done."]
-    lines.append(f"Gate: do not commit yet: {len(held)} {handback.PLAN_IMPACTS_WAIT_TEXT}, so the commit gate counts "
+    lines.append(f"Gate: do not commit yet: {len(held)} {handback.PLAN_IMPACTS_WAIT_TEXT}, so the push check counts "
                  "the review as dirty until `decide` records one.")
     print_action("ask-user-plan-impact", *lines, *plan_impact_question_lines(held_text, packet))

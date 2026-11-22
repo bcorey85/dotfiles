@@ -12,6 +12,7 @@ return {
       "bash",
       "c",
       "c_sharp",
+      "comment",
       "css",
       "diff",
       "go",

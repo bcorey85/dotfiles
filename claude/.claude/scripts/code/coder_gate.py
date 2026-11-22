@@ -5,7 +5,14 @@
                                   and the variables each one runs with. The gate covers any coder.
   coder_gate.py summary           print each coder's last gate result
   coder_gate.py clear             print each coder's last gate result, then delete the gate
-  coder_gate.py hook              PreToolUse hook on SubagentHandback
+  coder_gate.py hook              PreToolUse hook on SubagentHandback. With CLAUDE_CODE_SESSION_ID set, `set` also
+                                  writes a pointer to its gate file; when the event's session_id has a pointer, the
+                                  hook reads that gate and runs it in the repo root it was set in (the file is gone:
+                                  allow, run nothing); with no pointer it reads the gate of the event's cwd. `clear`
+                                  removes the pointer. One pointer per session, the last `set` wins: a stale pointer (a
+                                  run that died before `clear`, or a second concurrent run in the same session) gates
+                                  every later coder hand-back of that session with that gate until `clear` or
+                                  MAX_GATE_AGE_SECONDS.
   coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
@@ -103,6 +110,8 @@ TIMEOUT_TAIL_CHARS = 600
 GATE_LOG = pathlib.Path.home() / ".claude/coder-gate.jsonl"
 # The gate's state file, kept in the repo's git dir.
 CODER_GATE_FILE = "coder-gate.json"
+# The folder under the home's .claude that holds one pointer file per session: the gate file its `set` wrote.
+SESSION_POINTER_DIR = ".claude/coder-gate-sessions"
 STALE_PROSE_SCRIPT = "stale_prose.py"
 # The outcome of a stale-prose command that found a hit, and the scoped result of a run that passed.
 HIT_OUTCOME = "exit 1"
@@ -172,6 +181,61 @@ def gate_path(cwd):
     return script_utils.git_path(cwd, CODER_GATE_FILE)
 
 
+def session_pointer_dir():
+    # Read at call time: the tests patch HOME.
+    return pathlib.Path.home() / SESSION_POINTER_DIR
+
+
+def session_pointer_path(session_id):
+    return script_utils.session_state_path(session_pointer_dir(), session_id)
+
+
+def write_session_pointer(session_id, gate_file):
+    # Names the gate file a `set` wrote, so the hand-back hook finds it from any cwd. No session id, no
+    # pointer: the hook then uses the cwd's gate.
+    pointer = {"gateFile": str(pathlib.Path(gate_file).resolve())}
+    script_utils.write_session_state(session_pointer_dir(), session_id, pointer)
+
+
+def read_session_pointer(session_id):
+    # The pointer dict of the session, or None when there is no session id or no pointer.
+    # Fail-open: a pointer that cannot be read is reported on stderr and the cwd's gate is used, as with no pointer.
+    pointer = script_utils.read_session_state(
+        session_pointer_dir(), session_id, "coder-gate: unreadable session pointer")
+    if pointer is None:
+        return None
+
+    if not isinstance(pointer.get("gateFile"), str):
+        print(f"coder-gate: session pointer {session_pointer_path(session_id)} has no gateFile", file=sys.stderr)
+        return None
+    return pointer
+
+
+def remove_session_pointer(session_id, gate_file):
+    # Removes the session's pointer when it names this gate file.
+    pointer = read_session_pointer(session_id)
+    if pointer is None:
+        return
+
+    if pathlib.Path(pointer["gateFile"]) != pathlib.Path(gate_file).resolve():
+        return
+    session_pointer_path(session_id).unlink(missing_ok=True)
+
+
+def hook_gate_file(event):
+    # The gate file the hand-back hook reads: the one the session's last `set` named. When that file is gone the
+    # gate was cleared, so the hook allows (None) and never reads the cwd's gate. Only with no usable pointer does
+    # it use the gate of the event's cwd.
+    pointer = read_session_pointer(event.get("session_id"))
+    if pointer is None:
+        return gate_path(event.get("cwd") or ".")
+
+    gate_file = pathlib.Path(pointer["gateFile"])
+    if not gate_file.exists():
+        return None
+    return gate_file
+
+
 def whole_recipe_lines(scan):
     # One line for each make recipe command that runs a whole suite: the make call, the recipe command and its target.
     return [f"`{make_call}` runs `{recipe_command}` in target `{target}`."
@@ -221,6 +285,7 @@ def set_gate(commands, gate_assignments=()):
         sys.exit(f"coder-gate: --env {error}")
     gate = {"repoRoot": repo_root, "commands": commands, "env": environment, "setAt": time.time(), "coders": {}}
     script_utils.write_text_atomically(gate_file, json.dumps(gate, indent=1))
+    write_session_pointer(os.environ.get("CLAUDE_CODE_SESSION_ID"), gate_file)
     print(f"coder gate set: {len(commands)} command(s)")
 
 
@@ -255,6 +320,7 @@ def clear_gate():
     gate_file = gate_path(".")
     gate_file.unlink()
     gate_file.with_suffix(".lock").unlink(missing_ok=True)
+    remove_session_pointer(os.environ.get("CLAUDE_CODE_SESSION_ID"), gate_file)
 
 
 def command_directory(command, repo_root):
@@ -721,7 +787,7 @@ def run_hook():
     if event.get("agent_type") != "coder":
         return
 
-    gate_file = gate_path(event.get("cwd") or ".")
+    gate_file = hook_gate_file(event)
     if gate_file is None:
         return
 

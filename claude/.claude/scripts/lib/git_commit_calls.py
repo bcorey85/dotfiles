@@ -7,14 +7,11 @@ from typing import NamedTuple
 
 import script_utils
 from shell_command import (
-    DIRECTORY_MOVE_WORDS,
     LAUNCHER_PROGRAMS,
-    ShellDirectory,
     command_after_wrappers,
     git_c_directory,
     git_c_settings,
     git_options,
-    group_closes,
     is_git_word,
     options_before_separator,
     split_command_steps,
@@ -22,6 +19,8 @@ from shell_command import (
     without_flag_values,
     wrapper_moves_directory,
 )
+from shell_directory import DIRECTORY_MOVE_WORDS, ShellDirectory
+from shell_steps import group_closes
 
 # Subcommands that make a commit when they run; `rebase` does so only with `--continue` or `--skip`.
 COMMITTING_SUBCOMMANDS = ("commit", "merge", "cherry-pick", "revert", "am")

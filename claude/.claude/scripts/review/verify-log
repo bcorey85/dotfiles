@@ -20,7 +20,7 @@ Empty rows are an error unless --result NA, which logs a run row with no result 
 --escapes-only logs the escape rows of a run that was already logged in full; an escape logged once is not logged again.
 A run with no gaps prints ASKS OPEN in place of CLEAN while the branch review of this tree logged an `ask` finding;
 --asks-ruled prints the user's ruling on those asks and lets the run print CLEAN.
---asks-ruled, on a run that prints CLEAN, also saves the tree it ruled on as reviewAsksRuledTree (the commit gate reads
+--asks-ruled, on a run that prints CLEAN, also saves the tree it ruled on as reviewAsksRuledTree (verify_common reads
 it only as "the asks are ruled"; credit still needs the logged tree to equal the current tree);
 a new `review` log clears it.
 

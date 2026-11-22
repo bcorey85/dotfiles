@@ -76,7 +76,8 @@ with open(os.path.join(fake_dir, "calls.jsonl"), "a") as handle:
     pane_names = ("HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "TUIOS_SOCKET")
     pane_env = {name: os.environ.get(name) for name in pane_names}
     record = {"key": key, "hook_off": os.environ.get("CLAUDE_FORMAT_HOOK_OFF"), "prompt": prompt,
-              "pane_env": pane_env, "name": args[args.index("--name") + 1] if "--name" in args else None}
+              "pane_env": pane_env, "name": args[args.index("--name") + 1] if "--name" in args else None,
+              "model": args[args.index("--model") + 1] if "--model" in args else None}
     handle.write(json.dumps(record) + "\\n")
 
 if os.environ.get("FAKE_CLAUDE_HANG"):
@@ -1752,6 +1753,22 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         reviewer_calls = [call for call in self.fake_calls() if call["key"] == "code-reviewer"]
         self.assertEqual(len(reviewer_calls), 1, "a reverted file does not send a second-round reviewer back to it")
 
+    def coder_models_of_a_fix_run(self, header_extra):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=header_extra)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        return [call["model"] for call in self.fake_calls() if call["key"] == "coder"]
+
+    def test_a_coder_model_line_runs_the_fix_coder_on_that_model(self):
+        self.assertEqual(self.coder_models_of_a_fix_run("coder-model: haiku\n"), ["haiku"])
+
+    def test_no_coder_model_line_leaves_the_fix_coder_on_its_agents_own_model(self):
+        self.assertEqual(self.coder_models_of_a_fix_run(""), [None])
+
     def test_a_nit_on_a_held_file_never_reaches_the_fix_coder(self):
         (self.repo / "notes.py").write_text("value = {'a': 1, 'b': 3}  # another session's edit\n")
         nit_review = FIX_REVIEW.replace("## Nit\nNone", "## Nit\n- `notes.py:1` rename the value")
@@ -2185,6 +2202,17 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop, _check_command = loop_main.build_loop(request)
         return loop
 
+    def test_the_loop_brief_names_the_plan_lines_of_the_phase(self):
+        plan = self.repo / "docs" / "plans" / "p" / "spec.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# Plan\n\n## Phase 1: First\n\none\n")
+        loop_main, request = self.gate_command_request(
+            "echo scoped", False, header_extra="plan: docs/plans/p/spec.md\nphase: 1\n")
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertIn("Phase 1 is the `## Phase 1: First` section of the plan, lines 3-5", loop.brief)
+
     @staticmethod
     def fake_check_run(_repo, _check_command, log, _timeout, _env, _on_start):
         """A check run that exits 0 and leaves an empty log, so no real command starts."""
@@ -2268,6 +2296,23 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(marker.read_text(), "ran\n")
         self.assertEqual(loop.scoped_tests, "passed")
+
+    def test_the_review_scope_leaves_out_the_plan_folder_unless_the_caller_names_its_files(self):
+        loop_script = self.load_script_module()
+        plan = "docs/plans/p/spec.md"
+        (self.repo / plan).parent.mkdir(parents=True)
+        (self.repo / plan).write_text("# Plan\n")
+        (self.repo / "docs/plans/p/research.md").write_text("notes\n")
+        progress = {"fixed": [], "files_touched": set()}
+
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress, plan)
+        self.assertEqual(["app.py"], sorted(loop.review_scope()))
+
+        no_plan_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress)
+        self.assertEqual(["app.py", "docs/plans/p/research.md", plan], sorted(no_plan_loop.review_scope()))
+
+        loop.only_files = [plan]
+        self.assertEqual([plan], sorted(loop.review_scope()))
 
     def test_a_loop_that_does_not_gate_every_run_leaves_the_runner_counts_off_the_line(self):
         loop_script = self.load_script_module()
@@ -2569,29 +2614,23 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
 
-    def launch_with_dirty_gate(self):
-        # What /code leaves behind when it launches the loop: the dispatch row and a dirty commit gate. Nothing else
-        # runs after the script, as when the /code run ended before the loop handed back.
+    def launch_after_dispatch(self):
+        # What /code leaves behind when it launches the loop: the dispatch row. Nothing else runs after the script,
+        # as when the /code run ended before the loop handed back.
         store = self.scratch / "handback"
         store.mkdir()
         (store / f"{SESSION}.jsonl").write_text(json.dumps({"kind": "dispatch", "session_id": SESSION,
                                                                  "repo": str(self.repo)}) + "\n")
-        gate_dir = self.scratch / "home" / ".claude" / "state" / "review-gate"
-        gate_dir.mkdir(parents=True)
-        (gate_dir / SESSION).write_text("dirty\n")
 
-    def commit_gate_reply(self):
-        hook_input = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": SESSION,
-                      "cwd": str(self.repo), "tool_input": {"command": "git commit -m phase"}}
-        env = {"PATH": os.environ["PATH"], "HOME": str(self.scratch / "home"), "TMPDIR": str(self.scratch)}
-        gate = toolkit_paths.REVIEW_DIR / "review_commit_gate.py"
-        finished = subprocess.run([sys.executable, str(gate)], input=json.dumps(hook_input), capture_output=True,
-                                  text=True, env=env, cwd=str(self.repo))
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        return finished.stdout
+    def reviewed_repos(self):
+        # The repos the shared reviewed-tree record credits, which the push check reads.
+        record = self.scratch / "home" / ".claude" / "state" / "review-gate" / "reviewed-trees.json"
+        if not record.exists():
+            return set()
+        return {os.path.realpath(top) for top in json.loads(record.read_text())}
 
-    def test_converged_loop_lets_the_commit_through_when_its_code_run_ended_first(self):
-        self.launch_with_dirty_gate()
+    def test_converged_loop_records_its_tree_when_its_code_run_ended_first(self):
+        self.launch_after_dispatch()
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -2600,10 +2639,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(self.commit_gate_reply(), "")
+        self.assertIn(os.path.realpath(self.repo), self.reviewed_repos())
 
-    def test_failed_loop_leaves_the_commit_gate_closed(self):
-        self.launch_with_dirty_gate()
+    def test_failed_loop_records_no_reviewed_tree(self):
+        self.launch_after_dispatch()
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],
@@ -2611,7 +2650,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         })
 
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("no converged /review", self.commit_gate_reply())
+        self.assertNotIn(os.path.realpath(self.repo), self.reviewed_repos())
 
     def test_the_packet_the_script_hands_back_is_one_json_object(self):
         completed = self.run_script({

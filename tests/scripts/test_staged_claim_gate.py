@@ -416,7 +416,8 @@ class PermissionQuestionTest(unittest.TestCase):
     def assert_sent_back(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
         self.assertEqual(decision["decision"], "block")
-        self.assertIn("without that closing question", decision["reason"])
+        self.assertIn("Take the step you offer now", decision["reason"])
+        self.assertIn('"Decisions taken" list', decision["reason"])
         return decision["reason"]
 
     def write_prompts(self, *prompts):

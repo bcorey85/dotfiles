@@ -56,6 +56,8 @@ A fifth branch-wide review led to nine more: the gate follows `cd`, `pushd`, `po
 
 `phase-asks-need-a-ruling-before-the-commit`: share of phase reviewer questions with an outcome row (metric `phase_asks_with_outcome_share`), expected up. Before: 152 of 392.
 
+Reading 2026-11-21: `phase-asks-need-a-ruling-before-the-commit` WORSE as scripted, kept, not reverted. Share of phase-scope questions with an outcome: 0.26 median before (range 0.10-0.81), 0.00 after (0 of 81, 2026-11-14..2026-11-20). The reading is not trusted: the ingest hashes the finding id key and leaves branch and file null on these rows, so the join cannot match, while 156 outcome rows (accepted or rejected, 2026-11-16 to 2026-11-20) exist for the same window, and a loose join on repo, line and gate finds an outcome dated on or after the question for 22 of the 81. The edit works; the watch cannot read it. Queued a fix for the watch join. No Claude Code version switch is visible in the window.
+
 ## Back-out
 
 Revert the commit.

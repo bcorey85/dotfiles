@@ -460,6 +460,37 @@ def string_data_regions(lines, style):
     return StringDataRegions(set(), {}, {})
 
 
+def code_text_by_line(path, lines):
+    """{line number: the code text of the line}, with the lines of a multi-line string held as data left out, and a
+    line that opens or closes one cut to its code part."""
+    style = comment_style_of(path)
+    regions = string_data_regions(lines, style)
+    code = {}
+    for number, line in enumerate(lines, 1):
+        if number in regions.numbers:
+            continue
+        if number in regions.closing_tails:
+            code[number] = regions.closing_tails[number]
+        elif number in regions.openings:
+            code[number] = regions.openings[number]
+        else:
+            code[number] = line
+    return code
+
+
+def without_string_text_keeping_comment(line_text, style):
+    """The line with its string text removed; a trailing comment stays."""
+    code, comment = split_trailing_comment(line_text, style)
+    return without_string_text(code) + comment
+
+
+def masks_string_text(line, code_line, is_comment):
+    """Whether the string text of a line is masked before a marker search: a line cut to its code part by
+    code_text_by_line (a multi-line string opened or closed on it) or a code line is masked, and an uncut comment line
+    stays raw, since an apostrophe in prose is no string quote."""
+    return code_line != line or not is_comment
+
+
 class _TripleQuoteScan:
     """The state of a line-by-line scan for triple-quoted strings held as data."""
 

@@ -36,37 +36,27 @@ vim.g.diffs = {
     fugitive = false,
     neogit = true,
   },
-  conflict = {
-    enabled = false,
-  },
-  highlights = {
-    -- Intra-line (word/char-level) emphasis OFF: diffs.nvim's job here is
-    -- treesitter syntax + line washes in status/patch buffers. Word-level
-    -- emphasis deliberately lives in ONE surface only — codediff.nvim,
-    -- opened from neogit (see plugins/codediff.lua) — after a whole arc of
-    -- per-renderer confetti (default algorithm: 154 fragment spans on a
-    -- rewritten CLAUDE.md line; vscode algorithm: 7). The 'vscode' algorithm
-    -- setting stays as documentation of the good value should intra ever be
-    -- re-enabled.
-    intra = {
-      enabled = false,
-      algorithm = "vscode",
-    },
-  },
+  conflict = false,
 }
+
+-- Word-level emphasis lives in ONE surface only: codediff.nvim, opened from
+-- neogit (see plugins/codediff.lua). diffs.nvim has no switch for it apart
+-- from the global 'diffopt', which native diff mode needs at inline:word, so
+-- its word groups take the line wash and draw nothing.
+local function hide_word_emphasis()
+  vim.api.nvim_set_hl(0, "DiffsAddText", { link = "DiffsAdd" })
+  vim.api.nvim_set_hl(0, "DiffsDeleteText", { link = "DiffsDelete" })
+end
 
 return {
   "https://forge.barrettruth.com/barrettruth/diffs.nvim",
   event = "VeryLazy",
   config = function()
-    -- The 'vscode' intra algorithm needs libvscode_diff (prebuilt FFI lib,
-    -- per-machine download from codediff.nvim's releases). Nothing in the
-    -- plugin fetches it automatically — without this, a fresh machine
-    -- silently falls back to the confetti-prone 'default' algorithm.
-    -- One-time, async, no-op once present.
-    local lib = require("diffs.lib")
-    if not lib.has_lib() then
-      lib.ensure(function() end)
-    end
+    hide_word_emphasis()
+    -- Scheduled: the plugin resets its groups on the same event.
+    vim.api.nvim_create_autocmd("ColorScheme", {
+      group = vim.api.nvim_create_augroup("diffs_hide_word_emphasis", { clear = true }),
+      callback = vim.schedule_wrap(hide_word_emphasis),
+    })
   end,
 }

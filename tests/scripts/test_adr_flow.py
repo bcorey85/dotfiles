@@ -828,7 +828,8 @@ class AdrFlowTest(unittest.TestCase):
             "review-shard-A.md", "review-shard-B.md", "review-shard-seam.md", "spec-review-shard-a.md",
             "spec-review-shard-b.md", "plan-review-shard-a.md", "plan-review-shard-b.md", "plan-review-round1.md",
             "01-leak-check.md", "04-exploration.md", "05-plan-review-r1.md", "05-plan-review-r12.md",
-            "acceptance-criteria.md",
+            "acceptance-criteria.md", "06-backend-plan.md", "07-frontend-plan.md", "review-round1-shard-a.md",
+            "review-round12-shard-seam.md",
         )
         for name in shapes:
             self.write(f"{task_dir}/{name}", "x\n")
@@ -840,7 +841,8 @@ class AdrFlowTest(unittest.TestCase):
         self.assertFalse((self.repo / task_dir).exists())
 
     def test_refuses_hand_written_names_that_only_look_like_plan_files(self):
-        for name in ("plan.md", "slices.md", "04-acceptance-criteria.md", "plan-review-shard-.md", "review-shard-1.md"):
+        for name in ("plan.md", "slices.md", "04-acceptance-criteria.md", "plan-review-shard-.md", "review-shard-1.md",
+                     "backend-plan.md", "06-api-plan.md", "review-round-shard-a.md", "review-round1-shard-.md"):
             with self.subTest(name=name):
                 task_dir = self.make_task_dir(f"LED-5-{name.split('.')[0]}")
                 self.write(f"{task_dir}/{name}", "mine\n")

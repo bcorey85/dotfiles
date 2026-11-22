@@ -28,6 +28,7 @@ from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
 from review_loop_prompt_file import (
     BASE_KEY,
+    CODER_MODEL_KEY,
     FILES_KEY,
     HELD_FILES_KEY,
     NO_REVIEW_KEY,
@@ -114,7 +115,7 @@ def default_check_could_not_run(session, repo):
 def build_loop(request):
     """The LoopRun for one request, with the settings its prompt header gives. Returns (loop, check_command)."""
     header, handoff, repo = request.header, request.handoff, request.repo
-    brief = reviewer_brief(header, handoff)
+    brief = reviewer_brief(header, handoff, repo)
     gate_env = plan_format.gate_env_words_in(handoff)
     loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get("plan", ""))
     loop.reviewers = request.reviewers
@@ -143,6 +144,7 @@ def build_loop(request):
     loop.gates_every_run = request.gates_every_run
     loop.gate_commands = list(request.gate_commands)
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
+    loop.coder_model = header.get(CODER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)

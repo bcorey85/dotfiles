@@ -11,6 +11,8 @@ not yet relayed (below).
 A stop with a `To go on:` line waits on the user: the rule says to make no other tool call. A stop without one is a
 finished run: the rule says to go on with the skill that invoked it. The relayed stop's name and mtime go in
 <run folder>/relayed, so a second relay of the same stop exits 1 and says to relay the Skill result instead.
+A relayed stop.md stop is also recorded for the session (lib/code_stop_record.py, with its `To go on:` line), and
+that line gets the repo top after its first `resume` word unless the word right after `resume` is an absolute path.
 A stop that waits on the user, in a tree whose source changed after the session's clean review (and no commit since),
 is not relayed: the rule sends the main session back through the `To go on:` line to re-run the review round, and
 `relayed` stays unwritten. The stop's stamp goes in <run folder>/bounced, so the same stop, relayed again after the
@@ -26,6 +28,7 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent),
                 str(pathlib.Path(__file__).resolve().parent.parent / "lib"),
                 str(pathlib.Path(__file__).resolve().parent.parent / "review")]
+import code_stop_record
 import code_wait
 import handback
 import reviewed_tree
@@ -35,6 +38,7 @@ from stop_file_names import PREVIOUS_STOP_FILE, STOP_FILE, STOP_FILES
 RELAYED_FILE = "relayed"
 BOUNCED_FILE = "bounced"
 GO_ON_PREFIX = "To go on:"
+RESUME_WORD = "resume"
 RULE = ("Say the text between the markers as your whole reply, word for word. Make no other tool call before the "
         "user's next message: no search, read, edit or check of the fork's work. A fix goes back through "
         "the stop's `To go on:` line.")
@@ -63,6 +67,26 @@ def go_on_line(text):
         if line.startswith(GO_ON_PREFIX):
             return line
     return None
+
+
+def with_resume_path(text, repo_top):
+    """`text` with the repo top inserted after the first `resume` word of its `To go on:` line, unless the word
+    right after `resume` is an absolute path."""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith(GO_ON_PREFIX):
+            continue
+        words = line.split(" ")
+        if RESUME_WORD not in words:
+            return text
+        after_resume = words.index(RESUME_WORD) + 1
+        next_words = words[after_resume:after_resume + 1]
+        if next_words and next_words[0].startswith("/"):
+            return text
+        words.insert(after_resume, repo_top)
+        lines[index] = " ".join(words)
+        return "\n".join(lines)
+    return text
 
 
 def edited_after_clean_review(repo):
@@ -110,7 +134,12 @@ def relay_bounced_stop(repo, folder, previous_stop, stamp):
     """Relay a stop.md stop that was bounced and then moved aside by the resume's phase_start, which wrote no new
     stop. The user still gets the unreviewed note when the tree is still edited."""
     text = previous_stop.read_text().strip()
+    top = script_utils.repo_root(repo)
+    if top is not None:
+        text = with_resume_path(text, str(top))
     script_utils.write_text_atomically(folder / RELAYED_FILE, stamp + "\n")
+    if top is not None:
+        code_stop_record.record_stop(os.environ.get("CLAUDE_CODE_SESSION_ID"), folder, top, go_on_line(text))
     return user_text_reply(repo, text, add_unreviewed_note=True)
 
 
@@ -133,6 +162,9 @@ def relay(repo):
         return 1, f"code_relay: {stop} was relayed already, so this run wrote no new stop. {FALLBACK}"
 
     text = stop.read_text().strip()
+    top = script_utils.repo_root(repo) if stop.name == STOP_FILE else None
+    if top is not None:
+        text = with_resume_path(text, str(top))
     go_on = go_on_line(text)
     waits = go_on is not None
     bounced = folder / BOUNCED_FILE
@@ -142,6 +174,8 @@ def relay(repo):
         script_utils.write_text_atomically(bounced, stamp + "\n")
         return 0, RE_REVIEW_RULE + go_on
     script_utils.write_text_atomically(relayed, stamp + "\n")
+    if top is not None:
+        code_stop_record.record_stop(os.environ.get("CLAUDE_CODE_SESSION_ID"), folder, top, go_on)
     return user_text_reply(repo, text, add_unreviewed_note=already_bounced)
 
 

@@ -12,7 +12,8 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
                                                                   else LIVE_SCRIPTS_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from shell_quoting import quoted_positions, without_quote_characters
+from shell_command import split_command_steps
+from shell_quoting import join_line_continuations, quoted_positions, strip_comments, without_quote_characters
 
 
 class WithoutQuoteCharactersTest(unittest.TestCase):
@@ -102,6 +103,49 @@ class QuotedPositionsTest(unittest.TestCase):
         positions = quoted_positions(command)
         self.assertIn(command.index("| x"), positions)
         self.assertNotIn(command.rindex("|"), positions)
+
+    def test_a_hash_after_a_backslash_newline_starts_a_comment_but_one_after_an_escaped_blank_does_not(self):
+        continued = "echo a \\\n#it's fine\ngit commit -m x"
+        self.assertEqual(2, len(split_command_steps(continued)))
+        escaped = "echo a\\ #it's fine\ngit commit -m x"
+        self.assertEqual(1, len(split_command_steps(escaped)))
+
+
+class StripCommentsTest(unittest.TestCase):
+    def test_an_apostrophe_in_a_comment_does_not_hide_the_next_comments(self):
+        command = "ls # it's\nls # don't\nsed -i x f"
+
+        self.assertEqual("ls \nls \nsed -i x f", strip_comments(command))
+
+    def test_a_hash_after_an_escaped_blank_starts_no_comment(self):
+        self.assertEqual("echo x\\ #; touch tracked.txt", strip_comments("echo x\\ #; touch tracked.txt"))
+
+    def test_a_hash_after_a_paren_that_ends_or_sits_inside_a_word_starts_no_comment(self):
+        for command in ("ls *(#q.) ; git commit -m y", "echo $(true)#x; git commit -m y",
+                        "echo <(true)#x; git commit -m y", "echo (true)#x; git commit -m y"):
+            with self.subTest(command=command):
+                self.assertEqual(command, strip_comments(command))
+
+    def test_a_hash_after_a_paren_that_starts_a_word_starts_a_comment(self):
+        self.assertEqual("( \nls", strip_comments("( # c\nls"))
+        self.assertEqual("((\nls", strip_comments("((# c\nls"))
+
+    def test_a_hash_inside_quotes_is_kept(self):
+        self.assertEqual("echo '# a'", strip_comments("echo '# a'"))
+        self.assertEqual('echo "x # y" ', strip_comments('echo "x # y" # z'))
+
+
+class JoinLineContinuationsTest(unittest.TestCase):
+    def test_a_backslash_newline_joins_but_an_escaped_backslash_before_a_newline_does_not(self):
+        cases = {
+            "a\\\nb": "ab",
+            "a\\\\\nb": "a\\\\\nb",
+            "a\\\r\nb": "ab",
+            "'a\\\n'b": "'a\\\n'b",
+            '"a\\\nb"': '"ab"',
+        }
+        for text, expected in cases.items():
+            self.assertEqual(expected, join_line_continuations(text), repr(text))
 
 
 if __name__ == "__main__":

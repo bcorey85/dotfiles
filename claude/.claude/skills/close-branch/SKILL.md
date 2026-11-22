@@ -77,7 +77,7 @@ git diff --stat <base>
 rg -n -i 'sign-?off' <the plan's folder>/03-decisions.md <the spec path>
 ```
 
-Run the deferred queue read in its own Bash call with a `timeout` of `600000` (about 204 s when the ledger answers busy at once, longer when a ledger call hangs):
+Run the deferred queue read in its own Bash call with a `timeout` of `600000` (on a busy or hung ledger it can take minutes):
 
 ```bash
 ~/.claude/scripts/tools/ledger_deferred.py

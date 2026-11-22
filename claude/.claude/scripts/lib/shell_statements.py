@@ -3,6 +3,7 @@ is code, and the `$(...)` and backtick spans of an unquoted one, which the shell
 import os
 import pathlib
 import re
+import shlex
 from typing import NamedTuple
 
 import shell_command
@@ -20,6 +21,8 @@ NOT_SCRIPT_PROGRAMS = (
     | set(shell_command.CONTAINER_PROGRAMS)
     | set(OTHER_CODE_RUNNING_PROGRAMS)
 )
+# Shell builtins that run a file's text as commands.
+SOURCE_WORDS = ("source", ".")
 # Scripts in the trusted toolkit folders that run `exec <interpreter> "$@"`: each is read as that interpreter.
 INTERPRETER_LAUNCHER_SCRIPTS = {"hook-python": "python3"}
 # A later word of these flags, alone or as `<flag>=<value>`, makes a run no script run: `review_fix.py launch --test`
@@ -32,14 +35,11 @@ DELIMITER_PART = re.compile(r"""\\(.)|'([^']*)'|"((?:[^"\\]|\\.)*)"|([^'"\\]+)""
 ARITHMETIC_OPENER = re.compile(r"\$?\((?=\()")
 QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 QUOTE_MARK = re.compile("\x01(\\d+)\x01")
-COMMENT_START = re.compile(r"(^|[\s;&|()])#")
-COMMENT = re.compile(r"(^|\s)#[^\n]*")
 COMMAND_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)")
 COMPOUND_OPENER = re.compile(r"[{(]|(?<![\w.-])(?:do|then|else)(?![\w.-])")
-# A `&` inside a redirection (`2>&1`, `&>file`) is no separator.
-SEPARATORS = re.compile(r"\n|;|&&|\|\||\|&|\||(?<![<>])&(?!>)|\(|\)")
+# The step operators of shell_command (a `&` inside a redirection is none), `|&` and the parentheses.
+SEPARATORS = re.compile(shell_command.OPERATOR.pattern + r"|\|&|\(|\)")
 STATEMENT_SPLIT = re.compile("(" + SEPARATORS.pattern + ")")
-LINE_CONTINUING_OPERATORS = {"&&", "||", "|", "|&"}
 ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
 PIPE_BOTH = re.compile(r"\|&")
 
@@ -122,6 +122,46 @@ def strip_heredocs(command):
     return rewrite_heredoc_lines(command, keep_bodies)
 
 
+def shell_code(command):
+    """The text a gate reads from a Bash command: heredoc bodies cut as strip_heredocs does (a body fed to a shell, and
+    the substitution spans of an unquoted body, stay), comments cut, then each backslash-newline joined. Comments go
+    before the join: a `\\` ending a comment line is literal in zsh, so it must not pull the next
+    line into the comment."""
+    without_heredocs = strip_heredocs(command)
+    uncommented = shell_quoting.strip_comments(without_heredocs)
+    return shell_quoting.join_line_continuations(uncommented)
+
+
+def outside_heredoc_bodies(command, transform):
+    """The command with transform(text) applied to each run of lines that are no heredoc body or terminator line;
+    those lines stay as written, so a quote in a body does not change the quote state of the lines after it."""
+    body_lines = set()
+
+    def note_bodies(line, lines, index, heredocs):
+        bodies = heredoc_bodies(lines, index, [delimiter for delimiter, _quoted in heredocs])
+        if not heredocs or bodies is None:
+            return None
+
+        skipped = sum(len(body) + 1 for body in bodies)
+        body_lines.update(range(index, index + skipped))
+        return [], skipped
+
+    rewrite_heredoc_lines(command, note_bodies)
+    pieces = []
+    open_lines = []
+    for number, line in enumerate(command.split("\n")):
+        if number not in body_lines:
+            open_lines.append(line)
+            continue
+        if open_lines:
+            pieces.append(transform("\n".join(open_lines)))
+            open_lines = []
+        pieces.append(line)
+    if open_lines:
+        pieces.append(transform("\n".join(open_lines)))
+    return "\n".join(pieces)
+
+
 def strip_stored_heredocs(command):
     """The command with the body and terminator line of each heredoc cut out where the heredocs its line opens only
     store text: cat or tee writing a file, or a script run (`runs_script_file`). The `$(...)` and backtick spans of an
@@ -177,7 +217,7 @@ def stores_heredoc_text(line):
     # True when the line parses, a command on it takes a heredoc, and each such command reads it as data that no
     # later command is piped from.
     try:
-        piped_commands = shell_command.parse_piped_commands(strip_comments(line))
+        piped_commands = shell_command.parse_piped_commands(shell_quoting.strip_comments(line))
     except ValueError:
         return False
 
@@ -241,15 +281,18 @@ def runs_script_file(words):
         return False
 
     program = os.path.basename(words[0])
-    later_programs = [os.path.basename(word) for word in words[1:]]
-    names_code_runner = any(
-        later in NOT_SCRIPT_PROGRAMS or shell_command.INTERPRETER.fullmatch(later) for later in later_programs
-    )
+    names_code_runner = any(is_code_running_program(word) for word in words[1:])
     if shell_command.INTERPRETER.fullmatch(program):
         return given_script_file_after_value_options(words) and not names_code_runner
     if "/" not in words[0]:
         return False
     return trusted_script_path(words[0]) and not names_code_runner
+
+
+def is_code_running_program(word):
+    """True when the word names a program of NOT_SCRIPT_PROGRAMS or an interpreter (shell_command.INTERPRETER)."""
+    program = os.path.basename(word)
+    return program in NOT_SCRIPT_PROGRAMS or bool(shell_command.INTERPRETER.fullmatch(program))
 
 
 def launcher_as_interpreter(words):
@@ -306,23 +349,53 @@ def in_skill_scripts(resolved, skills_dir):
 
 def blank_script_run_quotes(command):
     """The command with each quoted string emptied to `""` in each step that is one script run (see runs_script_file):
-    its quoted arguments are data. Every other step stays as written, so does a step that a `|` follows (its output
-    may feed a shell), a step this reading cannot parse, and every step of a command that pipes out of a compound
-    group (see pipes_out_of_compound): the group's steps are not read one by one."""
+    its quoted arguments are data. Every other step stays as written, so does a step that a `|` follows when a later
+    step of that pipeline names a code runner (its output may feed a shell), a step this reading cannot parse, and
+    every step of a command that pipes out of a compound group (see pipes_out_of_compound): the group's steps are not
+    read one by one."""
     if pipes_out_of_compound(command):
         return command
 
     steps = shell_command.split_command_steps(command)
     pieces = []
     for position, (operator, step) in enumerate(steps):
-        following_operator = steps[position + 1][0] if position + 1 < len(steps) else ""
         # split_command_steps keeps `|&` inside its step, so that step is not one simple command and
         # blank_if_script_run leaves it as written.
-        if following_operator == "|":
+        if feeds_code_runner(steps, position):
             pieces.append(operator + step)
             continue
         pieces.append(operator + blank_if_script_run(step))
     return "".join(pieces)
+
+
+def feeds_code_runner(steps, position):
+    """True when a `|` follows steps[position] and a later step of that pipeline (up to the next operator that is not
+    `|`) names a code runner, which may read the step's output as code."""
+    for operator, later_step in steps[position + 1:]:
+        if operator != "|":
+            return False
+        if step_names_code_runner(later_step):
+            return True
+    return False
+
+
+def step_names_code_runner(step):
+    """True when a word of the step is a code runner: shell_command.names_code_runner, or any word of the step that is
+    a program of NOT_SCRIPT_PROGRAMS (shells, launchers, argument runners; this covers `fish` and `nu`, which
+    names_code_runner misses), an interpreter that reads code from stdin (`| python3`), or `source` or `.`
+    (`| source /dev/stdin`). A step this reading cannot parse counts as one, and so does a simple command whose first
+    word is an expansion (starts with `$` or a backtick)."""
+    if shell_command.names_code_runner(step):
+        return True
+    try:
+        simple_commands = shell_command.split_simple_commands(step)
+    except ValueError:
+        return True
+    for words in simple_commands:
+        # A command word that is an expansion (`$SHELL`, `${SHELL}`, `$(which sh)`, a backtick) may name any program.
+        if words and words[0].startswith(("$", "`")):
+            return True
+    return any(is_code_running_program(word) or word in SOURCE_WORDS for words in simple_commands for word in words)
 
 
 def pipes_out_of_compound(command):
@@ -420,7 +493,7 @@ def opens_shell_heredoc(line):
     # True when a command on the line takes a heredoc and runs a shell interpreter. A line this reading cannot parse
     # counts as a shell when any of its words names one: its body is kept and read as commands.
     try:
-        piped_commands = shell_command.parse_piped_commands(strip_comments(line))
+        piped_commands = shell_command.parse_piped_commands(shell_quoting.strip_comments(line))
     except ValueError:
         words = re.split(r"[\s|&;()<>]+", line)
         return any(os.path.basename(word.strip("'\"")) in shell_command.SHELL_INTERPRETERS for word in words)
@@ -452,16 +525,6 @@ def delimiter_text(word):
     return "".join(parts)
 
 
-def strip_comments(command):
-    """The command with each comment outside quotes cut off, from its `#` to the end of its line. A quote character
-    inside a comment opens no quote."""
-    for comment in reversed(shell_quoting.unquoted_matches(COMMENT_START, command)):
-        comment_start = comment.end() - 1
-        line_end = command.find("\n", comment_start)
-        command = command[:comment_start] + (command[line_end:] if line_end != -1 else "")
-    return command
-
-
 def clean(command, quotes=None):
     """The command with heredoc bodies, quoted strings and comments blanked. When `quotes` is a list, each quoted
     string is replaced by a QUOTE_MARK word part holding its index in `quotes`, and the string is appended there."""
@@ -470,7 +533,7 @@ def clean(command, quotes=None):
         without_quotes = QUOTED.sub('""', without_heredocs)
     else:
         without_quotes = QUOTED.sub(lambda found: marked_quote(found.group(), quotes), without_heredocs)
-    without_comments = COMMENT.sub(r"\1", without_quotes)
+    without_comments = shell_quoting.strip_comments(without_quotes)
     return COMMAND_SUBSTITUTION.sub(lambda match: "$<" + match.group(1).replace(" ", "\x00") + ">", without_comments)
 
 
@@ -484,44 +547,26 @@ def marked_quote(quoted, quotes):
     return f"\x01{len(quotes) - 1}\x01"
 
 
-class Statement(NamedTuple):
-    operator_before: str
-    words: list
-    # The separator right after the statement; "" when the command ends there.
-    operator_after: str
+def without_leading_noise(words, kept_words=()):
+    """The words with the leading words of SKIP_WORDS (do, then, else, if, elif, `!`, `time`) and env assignments
+    dropped, except the words in `kept_words`."""
+    while words and words[0] not in kept_words and (words[0] in SKIP_WORDS or ASSIGNMENT.match(words[0])):
+        words = words[1:]
+    return words
 
 
-def statements_with_operators(command, kept_words=(), quotes=None):
-    """Each statement as a Statement. `operator_before` is the separator right before the statement ("" for the
-    first); `operator_after` is the one right after it. A newline after `&&`, `||`, `|` or `|&` leaves that operator
-    in place as the next statement's `operator_before`, since the statement still hangs on it. A `&` ends its command,
-    so a newline after it continues nothing. Leading do/then/else and env assignments are dropped from the words,
-    except the words in `kept_words`. A list in `quotes` is filled as clean() describes, and the words then hold
-    quote marks."""
+def statements(command, quotes=None):
+    """Each statement of the command as its list of words, split on every separator (SEPARATORS), with the leading
+    words of without_leading_noise dropped. A list in `quotes` is filled as clean() describes, and the words then
+    hold quote marks."""
     parsed = []
-    operator = ""
-    after_is_open = False
     for index, piece in enumerate(STATEMENT_SPLIT.split(clean(command, quotes))):
         if index % 2 == 1:
-            if after_is_open:
-                parsed[-1] = parsed[-1]._replace(operator_after=piece)
-                after_is_open = False
-            if piece != "\n" or operator not in LINE_CONTINUING_OPERATORS:
-                operator = piece
             continue
-        words = piece.split()
-        while words and words[0] not in kept_words and (words[0] in SKIP_WORDS or ASSIGNMENT.match(words[0])):
-            words = words[1:]
+        words = without_leading_noise(piece.split())
         if words:
-            parsed.append(Statement(operator, words, ""))
-            operator = ""
-            after_is_open = True
+            parsed.append(words)
     return parsed
-
-
-def statements(command):
-    # Each statement is a list of words. Leading do/then/else and env assignments are dropped.
-    return [statement.words for statement in statements_with_operators(command)]
 
 
 class WordPair(NamedTuple):
@@ -534,9 +579,9 @@ def statement_word_pairs(command):
     # Each statement of the command as a WordPair; the two lists have the same length.
     quotes = []
     pairs = []
-    for statement in statements_with_operators(command, quotes=quotes):
-        blanked = [QUOTE_MARK.sub('""', word) for word in statement.words]
-        resolved = [resolved_word(word, quotes) for word in statement.words]
+    for words in statements(command, quotes=quotes):
+        blanked = [QUOTE_MARK.sub('""', word) for word in words]
+        resolved = [resolved_word(word, quotes) for word in words]
         pairs.append(WordPair(blanked, resolved))
     return pairs
 
@@ -562,6 +607,26 @@ def decode_ansi_c_escape(found):
 def decode_ansi_c(content):
     # The text of a `$'...'` string as bash reads it: \xHH, \NNN, \uHHHH, \n and the like become their characters.
     return ANSI_C_ESCAPE.sub(decode_ansi_c_escape, content)
+
+
+ANSI_C_STRING = re.compile(r"\$'((?:[^'\\]|\\.)*)'", re.DOTALL)
+
+
+def without_ansi_c_quotes(command):
+    """The command with each unquoted `$'...'` string replaced by its decoded text, shell-quoted (shlex.quote), so a
+    reader that splits words with shlex (which keeps the `$`) sees the word the shell runs (`git $'commit'` reads as
+    `git commit`). A `$'` inside quotes or a comment stays."""
+    pieces = []
+    position = 0
+    for start in shell_quoting.ansi_c_quote_starts(command):
+        found = ANSI_C_STRING.match(command, start)
+        if found is None:
+            continue
+        pieces.append(command[position:start])
+        pieces.append(shlex.quote(decode_ansi_c(found.group(1))))
+        position = found.end()
+    pieces.append(command[position:])
+    return "".join(pieces)
 
 
 def resolved_word(word, quotes):

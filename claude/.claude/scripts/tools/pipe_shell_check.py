@@ -36,7 +36,7 @@ def text_pipes_into_shell(command):
 
 
 def pipes_into_shell(command):
-    command = shell_statements.strip_comments(shell_statements.strip_heredocs(command))
+    command = shell_statements.shell_code(command)
     try:
         piped_commands = shell_command.parse_piped_commands(command)
     except ValueError:

@@ -25,16 +25,18 @@ import sys
 from typing import NamedTuple
 
 import shell_command
+import shell_directory
 import shell_statements
+import shell_steps
 
 # The text of one git call inside code the gate cannot parse: from the `git` word to a separator or a quote.
 GIT_CALL_TEXT = re.compile(r"\bgit\b[^\n;&|'\"`()]*", re.I)
 SUBSHELL_CD = re.compile(r"(?<!\$)\(.*\bcd\b", re.S)
-PUSHD_OR_POPD = re.compile(r"\b(?:" + "|".join(w for w in shell_command.DIRECTORY_MOVE_WORDS if w != "cd") + r")\b")
-CD_WORD = re.compile(r"\bcd\b")
+STACK_MOVE_WORDS = tuple(word for word in shell_directory.DIRECTORY_MOVE_WORDS if word != shell_directory.CD_WORD)
+PUSHD_OR_POPD = re.compile(r"\b(?:" + "|".join(STACK_MOVE_WORDS) + r")\b")
+CD_WORD_PATTERN = re.compile(r"\b" + shell_directory.CD_WORD + r"\b")
 # Words in front of a statement's real command: a `cd` behind one of them is not followed.
 DIRECTORY_MOVE_PREFIXES = ("{", "builtin", "command", "while", "until", "!")
-LINE_CONTINUATION = re.compile(r"\\\n")
 CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
 # A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
 UNREAD_PATH_MARKS = ('"', "'", "$", "`", "*", "?")
@@ -51,8 +53,13 @@ CONFIG_ENVIRONMENT = re.compile(r"\b(?:" + "|".join(CONFIG_ENVIRONMENT_NAMES) + 
 # Statement heads that open and close a compound command whose body runs only on a condition or in a loop.
 BLOCK_OPENERS = {"if", "case", "for", "select", "while", "until"}
 BLOCK_CLOSERS = {"fi", "esac", "done"}
-# A statement next to one of these runs in a subshell, so a `cd` there does not move the shell.
-SUBSHELL_OPERATORS = {"|", "|&", "&"}
+# A step after or before a `|` (or `|&`) runs in a subshell, so a `cd` there does not move the shell. A step after a `&`
+# is read as conditional too: the gate does not track which list the `&` ended, so it fails closed. (`|&` stays inside
+# its step: a step that holds one is a pipeline.)
+SUBSHELL_OPERATORS = {"|", "&"}
+# The characters read_part strips before a pipe part's first word: shell_steps.STEP_OPENERS without `{`, because a
+# `{ cd` group is a move the gate does not follow, so its `{` must stay a word.
+PART_OPENERS = shell_steps.STEP_OPENERS.replace("{", "")
 # The path component that stands for a `-C` or `cd` target the gate cannot read.
 UNREAD_DIRECTORY = "<unread>"
 REV_PARSE_TIMEOUT_SECONDS = 10
@@ -260,7 +267,7 @@ def has_unfollowed_directory_move(code, follows_cds):
         return True
     if has_conditional_cd(code):
         return True
-    if shell_command.names_code_runner(code) and CD_WORD.search(code):
+    if shell_command.names_code_runner(code) and CD_WORD_PATTERN.search(code):
         return True
     return has_hidden_directory_move(code)
 
@@ -273,36 +280,86 @@ def has_hidden_directory_move(code):
         head = pair.resolved
         while head and head[0] in DIRECTORY_MOVE_PREFIXES:
             head = head[1:]
-        if not head or head[0] not in shell_command.DIRECTORY_MOVE_WORDS:
+        if not head or head[0] not in shell_directory.DIRECTORY_MOVE_WORDS:
             continue
-        if pair.blanked[0] != "cd":
+        if pair.blanked[0] != shell_directory.CD_WORD:
             return True
     return False
 
 
 def has_conditional_cd(code):
-    """True when a `cd` statement may not run: it follows `||`, follows `&&` after a statement that is not a `cd`, or
-    sits in an `if`, `case`, `for`, `select`, `while` or `until` body or condition, or sits next to `|`, `|&` or `&`."""
+    """True when a `cd` may not run: it follows `||` in its list, follows `&&` after a statement that is not a `cd`,
+    or sits in an `if`, `case`, `for`, `select`, `while` or `until` body or condition (any `cd` word of a step in
+    one counts, a `case` pattern's `)` hides the command after it), or sits after or before `|` or `|&` (a subshell),
+    or runs in the background; a step after a `&` counts too (fail closed: the gate does not track which list the
+    `&` ended)."""
+    steps = shell_command.split_command_steps(shell_statements.shell_code(code))
     block_depth = 0
     previous_is_cd = False
-    statements = shell_statements.statements_with_operators(code, kept_words=("if",))
-    for statement in statements:
-        previous_operator = statement.operator_before
-        words = statement.words
-        if words[0] in BLOCK_OPENERS:
-            block_depth += 1
-        if words[0] in BLOCK_CLOSERS:
-            block_depth = max(block_depth - 1, 0)
-        while words and words[0] in ("if", "!"):
-            words = words[1:]
-        is_cd = bool(words) and words[0] == "cd"
-        runs_in_subshell = previous_operator in SUBSHELL_OPERATORS or statement.operator_after in SUBSHELL_OPERATORS
-        runs_on_condition = block_depth > 0 or previous_operator == "||"
-        runs_after_other = previous_operator == "&&" and not previous_is_cd
-        if is_cd and (runs_in_subshell or runs_on_condition or runs_after_other):
+    for index in range(len(steps)):
+        reading = read_step(steps, index, block_depth, previous_is_cd)
+        if reading.conditional:
             return True
-        previous_is_cd = is_cd
+        block_depth = reading.block_depth
+        previous_is_cd = reading.previous_is_cd
     return False
+
+
+class StepReading(NamedTuple):
+    conditional: bool
+    block_depth: int
+    previous_is_cd: bool
+
+
+def read_step(steps, index, block_depth, previous_is_cd):
+    """What one step tells has_conditional_cd: whether it holds a `cd` that may not run, and the block depth and
+    previous-step-is-cd state after it."""
+    operator, step = steps[index]
+    parts = shell_statements.split_on_pipe_both(step)
+    next_operator = steps[index + 1][0] if index + 1 < len(steps) else ""
+    runs_in_subshell = (len(parts) > 1 or operator in SUBSHELL_OPERATORS or next_operator == "|"
+                        or shell_steps.step_runs_in_background(steps, index))
+    runs_after_other = operator == "&&" and not previous_is_cd
+    may_not_run = (runs_in_subshell or runs_after_other or shell_steps.step_may_be_skipped(steps, index))
+    for part in parts:
+        reading = read_part(part, block_depth)
+        if reading is None:
+            continue
+        block_depth = reading.block_depth
+        if reading.cd_in_block or (reading.is_cd and may_not_run):
+            return StepReading(True, block_depth, previous_is_cd)
+        previous_is_cd = reading.is_cd
+    return StepReading(False, block_depth, previous_is_cd)
+
+
+class PartReading(NamedTuple):
+    block_depth: int
+    is_cd: bool
+    cd_in_block: bool
+
+
+def read_part(part, block_depth):
+    """What one pipe part of a step tells has_conditional_cd: the block depth after it, whether it runs `cd`, and
+    whether a `cd` word sits in an open block. None for a part with no words."""
+    words = shell_command.raw_words_without_redirections(part.lstrip(PART_OPENERS))
+    words = shell_statements.without_leading_noise(words, kept_words=("if",))
+    if not words:
+        return None
+    block_depth = block_depth_after(block_depth, words[0])
+    while words and words[0] in ("if", "!"):
+        words = words[1:]
+    is_cd = words[:1] == [shell_directory.CD_WORD]
+    cd_in_block = block_depth > 0 and shell_directory.CD_WORD in words
+    return PartReading(block_depth, is_cd, cd_in_block)
+
+
+def block_depth_after(block_depth, head):
+    """The depth of nested `if`/`case`/loop blocks after a statement that starts with the word `head`."""
+    if head in BLOCK_OPENERS:
+        return block_depth + 1
+    if head in BLOCK_CLOSERS:
+        return max(block_depth - 1, 0)
+    return block_depth
 
 
 def quoted_environment_sets(code, names):
@@ -341,9 +398,7 @@ def git_calls(command, directory=".", context=NO_CONTEXT):
     runs in the directory an earlier `cd` of the command moved to, else in `directory`. In code that names a code
     runner, each `git` word starts a call, quoted or not. `context` holds what the code around the command
     already does; the command's own text adds to it."""
-    without_heredocs = shell_statements.strip_heredocs(command)
-    joined = LINE_CONTINUATION.sub(" ", without_heredocs)
-    code = shell_statements.strip_comments(joined)
+    code = shell_statements.shell_code(command)
     # A `cd` after a `(` may run in a subshell, whose directory does not carry on, so none is followed.
     follows_cds = SUBSHELL_CD.search(code) is None
     context = command_context(code, follows_cds, context)

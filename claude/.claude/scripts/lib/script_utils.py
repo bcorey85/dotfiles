@@ -219,7 +219,9 @@ def top_level_sections(lines):
 
 
 def text_similarity(first, second):
-    """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic."""
+    """How alike two strings are, from 0 to 1. Long strings are compared in full, with no junk heuristic.
+
+    For two token lists or other sequences, use `sequence_similarity` (bounded edit distance, n-gram overlap)."""
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
@@ -298,6 +300,11 @@ def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None)
         stdout, stderr = process.communicate()
         return ProcessResult(None, stdout, stderr)
     return ProcessResult(process.returncode, stdout, stderr)
+
+
+def escaped_glob(name):
+    """The name as a wildmatch pattern that matches only itself, for `git apply --exclude`."""
+    return re.sub(r"([*?\[\\])", r"\\\1", name)
 
 
 def git_output(cwd, *args, timeout=None):
@@ -463,6 +470,15 @@ def untracked_paths(directory):
     if listing is None:
         return None
     return sorted(name for name in listing.split("\0") if name)
+
+
+def repo_file_paths(directory):
+    """Sorted paths of the tracked files and the untracked files .gitignore does not hide, relative to directory, or
+    None when git fails. A tracked file deleted in the work tree is still listed."""
+    listing = git_output(directory, "ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    if listing is None:
+        return None
+    return sorted({name for name in listing.split("\0") if name})
 
 
 def read_text_lines(path):
@@ -1376,6 +1392,43 @@ def state_file_path(state_dir, name, suffix):
     `name` replaced by an underscore, so an id from a hook event or a branch name is one safe file name."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(name))
     return pathlib.Path(state_dir) / (safe + suffix)
+
+
+def session_state_path(state_dir, session):
+    """The JSON file of `session` in `state_dir`."""
+    return state_file_path(state_dir, session, ".json")
+
+
+def write_session_state(state_dir, session, data):
+    """Write `data` as JSON to the file of `session` in `state_dir`, replacing it. No session id, no write."""
+    if not session:
+        return
+
+    state_file = session_state_path(state_dir, session)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomically(state_file, json.dumps(data, indent=1))
+
+
+def read_session_state(state_dir, session, error_prefix):
+    """The JSON object of the session's file in `state_dir`. None for no session id or no file.
+    Fail-open: a file that cannot be read as an object is reported on stderr as `<error_prefix> <file>: <error>`
+    and reads as no file."""
+    if not session:
+        return None
+
+    state_file = session_state_path(state_dir, session)
+    try:
+        data = json.loads(state_file.read_text())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        print(f"{error_prefix} {state_file}: {error}", file=sys.stderr)
+        return None
+
+    if not isinstance(data, dict):
+        print(f"{error_prefix} {state_file}: not a JSON object", file=sys.stderr)
+        return None
+    return data
 
 
 def read_jsonl(path):

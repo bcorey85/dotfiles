@@ -2,7 +2,7 @@
 
 Analyze both sides of the flywheel:
 
-- **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, disposition counts (`fix`/`ask`/`nit`/`blocker`), outcome buckets (`fixed`/`skipped_fp`), `test_intent`, `culled`, `result`. Every row also carries `comment_noise`, always 0 and not reported. Rows dated before 2026-09-01 also carry `class_closed` and `fixed_classes`; both are retired and neither is reported — the stopping-rule receipt is prose in the review packet now, not telemetry.
+- **Catches** — what `/review` logs on every run (via `log-review-metrics`): repo, iter, disposition counts (`fix`/`ask`/`nit`/`blocker`), outcome buckets (`fixed`/`skipped_fp`), `test_intent`, `culled`, `result`. Every row also carries `comment_noise`, always 0 and not reported. Rows dated before 2026-09-01 also carry `class_closed` and `fixed_classes`; do not report either.
 - **Escapes** — what got PAST the gates (`review_escape` ledger rows via `~/.claude/scripts/telemetry/log-escape`, fed by `/cc`, `/refactor`, `/verify-branch`, and manual `/escape`): `stage_found`, `gate_missed`, `class`, `severity`, `guard`, `miss_reason`, `path_key`. `path_key` is a keyed hash of the file path, never the path.
 - **Scans** — what the deterministic scans found and how much was real (`scan_run` ledger rows via `~/.claude/scripts/telemetry/log-scan`, fed by `/code` prohibition scans): `scan`, `stage`, `exit`, `candidates`, `confirmed`, `fixed`, `fp`.
 - **Plans** — one row per finalized (or abandoned) plan (via `~/.claude/scripts/telemetry/log-spec-run`, fed by `/eng-spec`): `verdict`, `phases`, `criteria`, `decisions`, `research_q`, `gaps`, `falsified`.
@@ -28,8 +28,6 @@ The escapes and scans live in the ledger. On a machine with no ledger found (PAT
 - **Precision**: `sum(confirmed) / sum(candidates)`. A scan trending toward zero is training its reader to skim; say so and propose tightening its threshold or retiring it. Report the raw pair, never the ratio alone — 3/4 and 300/400 are not the same evidence.
 - **Did-not-run rate**: share of rows with `exit=2`. Any non-trivial rate means the scan is silently absent from runs that reported clean, and every clean report since is suspect.
 - Report scan findings BESIDE the agent-gate numbers, never merged into them.
-
-1c. **Residue→escape join** — the price of the round cap, retired. The join keyed on a byte-identical `desc`, which findings no longer carry. Print one skip line and go on: `residue→escape join: findings carry no desc since LED-5`.
 
 1d. **Per-class recall** — the only step here that measures what the gates MISS. Everything else in this lane counts what they found, which cannot distinguish a gate that catches everything from one nobody points at. Read `ledger yield --recall --class all --until <today UTC>` (skip with one line if `ledger` is absent); it joins the two sides on `class`. Per class report the raw pair:
 

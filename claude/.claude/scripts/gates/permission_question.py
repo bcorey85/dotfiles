@@ -99,9 +99,10 @@ REQUEST_OPENING = re.compile(r"\A\W*(?:(?:can|could|would|will) you|please)\b", 
 QUESTION_OPENING = re.compile(
     r"\A\W*(?:what|why|how|when|where|which|who|whose|is|are|was|were|do|does|did|can|could|will|would|should|"
     r"has|have|any|whats|hows|isnt|doesnt)\b", re.IGNORECASE)
-REASON = ("Your message ends asking permission to go on. Send it again without that closing question. Do not start "
-          "the step it offers unless the user's request already covers it. Ask only before a step that cannot be "
-          "undone, leaves this machine, or a rule requires the user's yes for (a worktree).")
+REASON = ("Your message ends asking permission to go on. Take the step you offer now: the user reads it at the end "
+          'and can undo it. Then end your report with a "Decisions taken" list: one line for each step you took '
+          "without asking, with the reason. Ask only before a step that cannot be undone, leaves this machine, or a "
+          "rule requires the user's yes for (a worktree).")
 
 
 def asks_a_question(prompt):

@@ -53,6 +53,8 @@ ALLOWED_HITS = [
      "names the live install folders that scripts are run from: a command's path is judged against them"),
     ("scripts/gates/calibration_refs_guard.py", "calibration_path = ", LIVE_AGENTS),
     ("scripts/gates/calibration_refs_guard.py", "agents_dir = ", LIVE_AGENTS),
+    ("scripts/gates/inline_interpreter_hint.py", "PILOT_OFF_SWITCH = ",
+     "flag file the user touches to turn the security pilot off: a marker under the home folder, not code"),
     ("scripts/gates/emit_orchestration.py", "SessionStart hook: inject", "docstring text"),
     ("scripts/gates/emit_orchestration.py", "MISSING_WARNING = ", PRINTED),
     ("scripts/gates/emit_orchestration.py", "os.path.join(os.environ.get", "injects the user's own rules file"),

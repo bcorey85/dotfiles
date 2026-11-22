@@ -2,7 +2,10 @@
 """Run the live review loop script for /code.
 
     python3 ~/.claude/scripts/code/code_review_start.py <lane> <plan> <phase> <handoff file>
-        --base <phase start sha> [--dry-run | --detach]
+        --base <phase start sha> [--coder-model <model>] [--dry-run | --detach]
+
+`--coder-model` runs the loop's fix coder on that model: the prompt gets a `coder-model:` line, and a detached run
+keeps the option for its child.
 
 The base may be the start record's head (the base `phase_start.py --resume` prints), an ancestor of it (a
 merge-base), or the current HEAD when the record's head is an ancestor of it. When base..HEAD holds a merge commit,
@@ -53,6 +56,7 @@ import session_registry
 from code_wait import HANDOFF_FILE, LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
 from review_loop_prompt_file import (
     BASE_KEY,
+    CODER_MODEL_KEY,
     HELD_BY_KEY,
     HELD_FILES_KEY,
     LIST_SEPARATOR,
@@ -94,9 +98,10 @@ def coder_why_blocks(entry_lines):
     return why_by_path
 
 
-def handoff_with_git_files(repo, base_commit, handoff, held=()):
+def handoff_with_git_files(repo, base_commit, handoff, held=(), plan=NO_PLAN):
     # The handoff's `files:` list is the files git shows changed since base (tracked changes plus untracked files),
-    # less the held files. The coder's own list is dropped; only its `why:` lines are kept, under the matching path.
+    # less the held files and the files under the plan's folder, which are plan documents and not the change. The
+    # coder's own list is dropped; only its `why:` lines are kept, under the matching path.
     lines = handoff.splitlines()
     starts = [at for at, line in enumerate(lines) if line.rstrip() == HANDOFF_FILES_LINE]
     if not starts:
@@ -110,7 +115,8 @@ def handoff_with_git_files(repo, base_commit, handoff, held=()):
             break
 
     why_by_path = coder_why_blocks(lines[start + 1:end])
-    changed = script_utils.without_paths(coder_gate.changed_files(repo, base_commit), held)
+    not_held = script_utils.without_paths(coder_gate.changed_files(repo, base_commit), held)
+    changed = plan_format.outside_plan_folder(not_held, plan)
     if not changed:
         return "\n".join([*lines[:start], f"{HANDOFF_FILES_LINE} []", *lines[end:]]) + "\n"
 
@@ -183,6 +189,7 @@ class ReviewScope(NamedTuple):
 
 
 SCOPE_FILE_FLAG = "--scope-file"
+CODER_MODEL_FLAG = "--coder-model"
 SCOPE_FILE = "review-scope.json"
 
 
@@ -221,16 +228,17 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     holders = phase_held_files(repo, base_commit, plan, phase, notes)
     held_paths = [holder["path"] for holder in holders]
     review_base = diff_base(repo, base_commit)
-    handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths)
+    handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
     return ReviewScope(holders, handoff, phase_changed, review_base, notes)
 
 
-def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None):
+def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model=""):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
     lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it; the
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
-    base too, so a phase the user committed before a resume is still reviewed."""
+    base too, so a phase the user committed before a resume is still reviewed. A `coder_model` adds the line that
+    runs the fix coder on it."""
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
     if review_base is not None:
         header.append(f"{BASE_KEY}: {review_base}")
@@ -245,6 +253,8 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
     if holders:
         header.append(f"{HELD_FILES_KEY}: {LIST_SEPARATOR.join(holder['path'] for holder in holders)}")
         header.append(f"{HELD_BY_KEY}: {json.dumps(list(holders))}")
+    if coder_model:
+        header.append(f"{CODER_MODEL_KEY}: {coder_model}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
     assignments = gate_env.repo_gate_env(repo, plan_or_none(plan))
@@ -360,6 +370,16 @@ def base_option(argv):
     return argv[argv.index("--base") + 1]
 
 
+def coder_model_option(argv):
+    """The model `--coder-model` names, or "" when the option is absent (the coder runs on its agent's own)."""
+    if CODER_MODEL_FLAG not in argv:
+        return ""
+    value_index = argv.index(CODER_MODEL_FLAG) + 1
+    if value_index >= len(argv):
+        sys.exit(__doc__)
+    return argv[value_index]
+
+
 def run_scope(argv, repo, base, coder_handoff, plan, phase):
     """The scope a detached parent saved (`--scope-file`), else the one this call computes."""
     if SCOPE_FILE_FLAG in argv and argv.index(SCOPE_FILE_FLAG) + 1 < len(argv):
@@ -380,7 +400,8 @@ def main(argv):
     coder_handoff = handoff_path.read_text()
     scope = run_scope(argv, repo, base, coder_handoff, plan, phase)
     handoff = scope.handoff
-    prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base)
+    prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base,
+                           coder_model_option(argv))
     if "--dry-run" in argv:
         print(prompt)
         for note in scope.notes:

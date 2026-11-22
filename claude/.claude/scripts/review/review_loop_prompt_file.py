@@ -21,6 +21,7 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
                             skip
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
+  coder-model: <model>      the model the fix coder runs on; with no line the coder runs on its agent's own model
   iter: <n>                 review rounds an earlier run of the same review already used
 """
 import json
@@ -28,6 +29,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / "../lib")]
+import plan_format
 import script_utils
 from handback_store import AdoptedRuling
 
@@ -49,6 +51,7 @@ USER_RULED_AT_KEY = "user-ruled-at"
 SESSION_RULED_HEADER_KEY = "session-ruled"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
+CODER_MODEL_KEY = "coder-model"
 ITER_KEY = "iter"
 LIST_SEPARATOR = ", "
 YES = "yes"
@@ -181,11 +184,47 @@ def header_ruled(header, findings, key):
                               f"expected the number of one of the {error.item_count} findings") from error
 
 
-def reviewer_brief(header, handoff):
+def plan_read_line(repo, plan, phase):
+    """The brief line that names the plan lines a reviewer reads: the phase's section, when the plan on disk has one.
+    None with no phase, an unreadable plan or no section for the phase."""
+    if not phase:
+        return None
+    plan_file = pathlib.Path(repo) / plan
+    if not plan_file.is_file():
+        return None
+    plan_lines = plan_file.read_text(errors="replace").splitlines()
+    line_range = plan_format.phase_line_range(plan_lines, phase)
+    if line_range is None:
+        return None
+    first, last = line_range
+    heading = plan_lines[first - 1].strip()
+    return (f"Phase {phase} is the `{heading}` section of the plan, lines {first}-{last} at the run's start. "
+            "Read only that section of it.")
+
+
+def reviewer_brief(header, handoff, repo):
+    """The brief every reviewer of the run gets. The plan's folder is left out of the diff command and of the
+    untracked files: the plan documents are not the change under review. The brief names the plan lines of the
+    phase when `repo` holds the plan, the header has a `phase:` and the plan has a matching section."""
+    plan = header.get("plan", "")
     lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
+    plan_folder = plan_format.plan_folder(plan)
+    read_line = plan_read_line(repo, plan, header.get("phase"))
+    if read_line:
+        lines.append(read_line)
+    if plan_folder:
+        plan_part = "the plan section named here" if read_line else f"`{plan}`"
+        openable = f"{plan_part}, `{plan_format.CRITERIA_FILE_NAME}` and `{plan_format.TICKET_FILE_NAME}`"
+        lines.append(f"The files under {plan_folder} are plan documents, not the change: do not review them, and "
+                     f"open none of them but {openable}.")
     if header.get(BASE_KEY):
         base = header[BASE_KEY]
-        lines.append(f"Review every change since {base}, commits included: `git diff {base}` plus untracked files.")
+        diff_command = f"git diff {base}"
+        untracked = "untracked files"
+        if plan_folder:
+            diff_command += f" -- . '{plan_format.plan_folder_exclude(plan)}'"
+            untracked += f" outside {plan_folder}"
+        lines.append(f"Review every change since {base}, commits included: `{diff_command}` plus {untracked}.")
     lines += ["Handoff:", handoff]
     return "\n".join(lines)
 

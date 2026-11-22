@@ -391,6 +391,22 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertNotIn("forgotten_by_git", handoff)
         self.assertIn("      why:\n        - lines: 1-1\n          note: kept\n  tests-run: none", handoff)
 
+    def test_the_handoff_files_leave_out_the_plan_folder(self):
+        base = self.commit_base()
+        (self.repo / "src").mkdir()
+        (self.repo / "src/one.py").write_text("a = 1\n")
+        (self.repo / "docs/plans/p/spec.md").write_text(PLAN + "edited\n")
+        (self.repo / "docs/plans/p/research.md").write_text("notes\n")
+        (self.repo / "handoff.txt").write_text("handoff:\n  files:\n    - path: src/one.py\n  iter: 0\n")
+
+        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "docs/plans/p/spec.md", "1", "handoff.txt",
+                               "--base", base, "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        handoff = done.stdout.partition("\n\n")[2]
+        paths = [line.split("path: ")[1] for line in handoff.splitlines() if "path: " in line]
+        self.assertEqual(["handoff.txt", "src/one.py"], paths)
+
     def test_a_dry_run_records_no_handoff_phase(self):
         done = self.start("--dry-run")
 
@@ -534,6 +550,31 @@ class CodeReviewStartTest(unittest.TestCase):
         with mock.patch.object(code_review_start, "review_scope", side_effect=AssertionError("computed twice")):
             printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
         self.assertIn("lane: lane-a", printed)
+
+    def test_a_coder_model_option_writes_the_coder_model_header_line(self):
+        done = self.start("--coder-model", "haiku", "--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0]
+        self.assertEqual(header.splitlines()[-1], "coder-model: haiku")
+
+    def test_no_coder_model_option_writes_no_coder_model_line(self):
+        done = self.start("--dry-run")
+
+        self.assertNotIn("coder-model", done.stdout)
+
+    def test_a_detached_run_keeps_the_coder_model_for_its_child(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        environment = {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"}
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess:
+            fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
+            self.run_main(code_review_start, ["--coder-model", "haiku", "--detach"], environment)
+        child_command = fake_subprocess.Popen.call_args.args[0]
+
+        printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
+        self.assertIn("coder-model: haiku", printed)
 
     def test_a_run_with_no_session_id_stops_before_it_starts(self):
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}

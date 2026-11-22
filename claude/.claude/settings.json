@@ -152,7 +152,34 @@
       "SendFeedback",
       "AskUserQuestion",
       "Workflow",
-      "ScheduleWakeup"
+      "ScheduleWakeup",
+      "Bash(*/sudo *)",
+      "Bash(git push --force*)",
+      "Bash(git push * --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git * push --force*)",
+      "Bash(git * push * --force*)",
+      "Bash(git * push -f*)",
+      "Bash(git * push * -f*)",
+      "Bash(git push * +*)",
+      "Bash(git * push * +*)",
+      "Bash(git push * --delete *)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * master)",
+      "Bash(git push * master *)",
+      "Bash(git push *:main*)",
+      "Bash(git push *:master*)",
+      "Bash(git * push * main)",
+      "Bash(git * push * main *)",
+      "Bash(git * push * master)",
+      "Bash(git * push * master *)",
+      "Bash(git * push *:main*)",
+      "Bash(git * push *:master*)",
+      "Bash(git * --no-verify*)",
+      "Bash(git commit -n *)",
+      "Bash(git commit * -n *)"
     ],
     "defaultMode": "auto"
   },
@@ -164,22 +191,11 @@
     "audit": "user-invocable-only",
     "brainstorm": "user-invocable-only",
     "brief": "user-invocable-only",
-    "calibrate": "user-invocable-only",
     "commit": "user-invocable-only",
-    "daily-recap": "user-invocable-only",
-    "eng-arch": "user-invocable-only",
-    "falsify": "user-invocable-only",
     "guide": "user-invocable-only",
-    "msg": "user-invocable-only",
     "peer-review": "user-invocable-only",
     "pr-comments": "user-invocable-only",
     "pr-triage": "user-invocable-only",
-    "pull-design": "user-invocable-only",
-    "save-note": "user-invocable-only",
-    "vault-ask": "user-invocable-only",
-    "vault-progress": "user-invocable-only",
-    "vault-review": "user-invocable-only",
-    "weekly-recap": "user-invocable-only",
     "dataviz": "user-invocable-only",
     "claude-api": "user-invocable-only",
     "code-review": "user-invocable-only",
@@ -231,15 +247,6 @@
           {
             "type": "command",
             "command": "~/.claude/scripts/tools/notify 'Claude Code' 'Task complete'"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       }
@@ -295,10 +302,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
-          },
-          {
-            "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/telemetry/log_agent_usage.py"
           }
         ]
@@ -333,15 +336,6 @@
             "timeout": 5
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "PostToolUseFailure": [
@@ -351,15 +345,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/quality_check_cap.py"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       }
@@ -384,14 +369,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/git_discipline_gate.py"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/review/review_commit_gate.py"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/shell_write_gate.py"
           },
           {
             "type": "command",
@@ -480,15 +457,6 @@
         ]
       },
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Agent",
         "hooks": [
           {
@@ -551,10 +519,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/warn_skip_hooks.py"
-          },
-          {
-            "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/calibration_guard.py"
           }
         ]
@@ -566,15 +530,6 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/herdr-agent-state.sh session",
             "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       },
@@ -615,15 +570,6 @@
             "command": "~/.claude/scripts/telemetry/ledger-hook session-end"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "SubagentStop": [
@@ -641,15 +587,6 @@
             "type": "command",
             "command": "~/.claude/scripts/telemetry/ledger-hook subagent-stop",
             "async": true
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       }
@@ -675,15 +612,6 @@
             "async": true
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "StopFailure": [
@@ -693,15 +621,6 @@
             "type": "command",
             "command": "~/.claude/scripts/telemetry/ledger-hook stop-failure",
             "async": true
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       }
@@ -720,59 +639,6 @@
           {
             "type": "command",
             "command": "echo 'Style: verdict in sentence one. Under 100 words unless I ask for detail. Plain words, short sentences, no should/may/might, no recap.'"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 310
-          }
-        ]
-      }
-    ],
-    "PermissionDenied": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "ElicitationResult": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tuios agent-hook claude-code --integration 3",
-            "timeout": 5
           }
         ]
       }
@@ -831,6 +697,9 @@
       "effortLevel": "medium"
     },
     "claude-opus-5-5": {
+      "effortLevel": "medium"
+    },
+    "claude-fable-5-2": {
       "effortLevel": "medium"
     }
   },

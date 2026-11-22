@@ -5,16 +5,16 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1033 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1070 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-19, [an adopted plan impact reaches the resume round's fix coder](notes/2026-11-19-an-adopted-plan-impact-reaches-the-resume-round-s.md).
+Latest change: 2026-11-22, [Scripts owner list names the work tree's git tree object writer](notes/2026-11-22-scripts-owner-list-names-the-work-tree-s-git-tree.md).
 
 ## Top gains
 
 * [`code-reviewer` now runs on opus and catches defects sonnet missed](notes/2026-08-08-code-reviewer-pinned-to-opus.md): **raises substantive true findings per review by 226% (1.583 → 5.167)** [agent/code-reviewer] - 2026-08-08 [watch: no watch]
 * [Test cull keeps every distinct input shape and names the surviving twin](notes/2026-11-01-test-cull-keeps-every-distinct-input-shape-and.md): **raises of 8 audits kept every distinct-shape test by 167% (3 → 8)** [agent/test-intent-reviewer] ([2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input](../../../agent-evals/findings/2026-11-01-a-cull-rule-keeps-tests-with-a-distinct-input.md)) - 2026-11-01 [watch: no watch]
-* [Round-one code review splits by lens on every multi-file change](notes/2026-11-04-round-one-code-review-splits-by-lens-on-every.md): **raises of 25 known bugs fixed per pass by 124% (6.25 → 14)** [script/review-loop-script, agent/review-loop] ([2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the](../../../agent-evals/findings/2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the.md)) - 2026-11-04 [watch: NO CHANGE]
-* [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: NO CHANGE]
+* [Round-one code review splits by lens on every multi-file change](notes/2026-11-04-round-one-code-review-splits-by-lens-on-every.md): **raises of 25 known bugs fixed per pass by 124% (6.25 → 14)** [script/review-loop-script, agent/review-loop] ([2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the](../../../agent-evals/findings/2026-11-04-lens-split-in-round-one-code-review-fixes-2-2x-the.md)) - 2026-11-04 [watch: NO CHANGE, closed kept]
+* [`code-reviewer` files taste breaks such as dead code and single-use pass-throughs as `fix`, not `nit`](notes/2026-10-14-code-reviewer-files-taste-breaks-as-fix-not-nit.md): **cuts planted taste defects not filed as fix (of 28) by 100% (14 → 0)** [agent/code-reviewer, skill/fix] ([2026-10-14-catchlist-sealed-4-runs-per-arm](../../../agent-evals/findings/2026-10-14-catchlist-sealed-4-runs-per-arm.md)) - 2026-10-14 [watch: NO CHANGE, closed kept]
 * [plan-reviewer now flags oversized phases, a skeleton phase with no Phase 0 contract, and criteria files over 8 criteria](notes/2026-10-12-plan-reviewer-a-new-finding-class-phase-shape.md): **cuts planted shape defects missed (of 9) by 100% (9 → 0)** [agent/plan-reviewer] ([2026-10-09-planfmt-sealed-planfmt-md-graded-edit](../../../agent-evals/findings/2026-10-09-planfmt-sealed-planfmt-md-graded-edit.md)) - 2026-10-12 [watch: NO CHANGE, closed kept]
 
 ## Total saved

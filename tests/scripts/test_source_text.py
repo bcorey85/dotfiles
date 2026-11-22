@@ -214,6 +214,50 @@ class StringDataLineNumbersTest(unittest.TestCase):
         self.assertEqual(set(), source_text.string_data_regions(['x = """', "a", '"""'], "hash")[0])
 
 
+class CodeTextByLineTest(unittest.TestCase):
+    def test_a_triple_quoted_data_block_keeps_only_the_opening_head_and_closing_tail(self):
+        lines = ['X = """', "data", '"""  # tail', "y = 1"]
+
+        self.assertEqual({1: "X = ", 3: "  # tail", 4: "y = 1"}, source_text.code_text_by_line("a.py", lines))
+
+    def test_a_slash_style_template_literal_is_data(self):
+        lines = ["const t = `", "data", "`;", "let y = 1;"]
+
+        self.assertEqual({1: "const t = ", 3: ";", 4: "let y = 1;"}, source_text.code_text_by_line("a.js", lines))
+
+    def test_a_path_with_no_comment_style_keeps_every_line_unchanged(self):
+        lines = ['X = """', "data", '"""']
+
+        for path in ("a.md", "Makefile"):
+            with self.subTest(path=path):
+                self.assertEqual({1: lines[0], 2: lines[1], 3: lines[2]}, source_text.code_text_by_line(path, lines))
+
+    def test_a_line_that_closes_one_string_and_opens_the_next_keeps_its_closing_tail(self):
+        lines = ["const t = `", "a", "` + `", "b", "`;"]
+
+        code = source_text.code_text_by_line("a.js", lines)
+
+        self.assertEqual({1: "const t = ", 3: " + ", 5: ";"}, code)
+
+
+class WithoutStringTextKeepingCommentTest(unittest.TestCase):
+    def test_a_string_holding_a_hash_is_emptied_and_the_trailing_comment_stays(self):
+        masked = source_text.without_string_text_keeping_comment('x = "a # b"  # TODO', "hash")
+        self.assertEqual('x = ""  # TODO', masked)
+
+    def test_apostrophes_in_the_trailing_comment_are_not_masked_as_a_string(self):
+        line = "x = 1  # it's a TODO, isn't it"
+        self.assertEqual(line, source_text.without_string_text_keeping_comment(line, "hash"))
+
+
+class MasksStringTextTest(unittest.TestCase):
+    def test_a_cut_line_or_a_code_line_is_masked_and_an_uncut_comment_line_is_not(self):
+        cases = [("x", "x", False, True), ("x", "y", True, True), ("x", "x", True, False)]
+        for line, code_line, is_comment, expected in cases:
+            with self.subTest(line=line, code_line=code_line, is_comment=is_comment):
+                self.assertEqual(expected, source_text.masks_string_text(line, code_line, is_comment))
+
+
 class CommentStyleOfTest(unittest.TestCase):
     def test_an_unknown_suffix_gives_none(self):
         for path in ("x.md", "Makefile"):

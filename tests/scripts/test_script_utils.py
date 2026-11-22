@@ -508,6 +508,39 @@ class GitOutputTest(unittest.TestCase):
         self.assertEqual(name + b"\0", os.fsencode(listing))
 
 
+class RepoFilePathsTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+    def test_tracked_and_untracked_files_come_back_sorted_and_ignored_ones_do_not(self):
+        (self.repo / ".gitignore").write_text("skip.txt\n")
+        (self.repo / "tracked.py").write_text("x = 1\n")
+        subprocess.run(["git", "add", "tracked.py"], cwd=self.repo, check=True)
+        (self.repo / "sub").mkdir()
+        (self.repo / "sub" / "new.py").write_text("y = 2\n")
+        (self.repo / "skip.txt").write_text("z\n")
+
+        self.assertEqual([".gitignore", "sub/new.py", "tracked.py"], script_utils.repo_file_paths(self.repo))
+
+    def test_a_tracked_file_deleted_in_the_work_tree_is_still_listed_and_a_modified_one_appears_once(self):
+        (self.repo / "gone.py").write_text("x = 1\n")
+        (self.repo / "edited.py").write_text("y = 1\n")
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        (self.repo / "gone.py").unlink()
+        (self.repo / "edited.py").write_text("y = 2\n")
+
+        self.assertEqual(["edited.py", "gone.py"], script_utils.repo_file_paths(self.repo))
+
+    def test_a_folder_outside_any_repo_gives_none(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+
+        self.assertIsNone(script_utils.repo_file_paths(outside.name))
+
+
 class JoinedDistinctTest(unittest.TestCase):
     def test_equal_values_appear_once_and_empty_values_are_dropped(self):
         self.assertEqual("Q? (a.ts:3)", script_utils.joined_distinct(["Q? (a.ts:3)", "", "Q? (a.ts:3)"]))
@@ -1196,6 +1229,12 @@ class SharedHelpersTest(unittest.TestCase):
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+
+
+class EscapedGlobTest(unittest.TestCase):
+    def test_each_wildmatch_character_gets_a_backslash_and_other_text_is_unchanged(self):
+        self.assertEqual(script_utils.escaped_glob("p[1]*?\\x.md"), "p\\[1]\\*\\?\\\\x.md")
+        self.assertEqual(script_utils.escaped_glob("plain.md"), "plain.md")
 
 
 class WorkTreeBlobRestoreTest(unittest.TestCase):

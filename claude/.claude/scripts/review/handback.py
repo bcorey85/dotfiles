@@ -66,7 +66,7 @@ INVALID_STATUS = "invalid"
 STATUSES = ["converged", DEFERRED, PLAN_IMPACT_STATUS, "critical-blocker", CAP_REACHED, SETUP_FAULT_STATUS,
             FIX_REMOVED_CHANGE]
 CLEAN_STATUSES = ("converged", DEFERRED)
-# The words after the count in the lines that say plan impacts hold the commit gate.
+# The words after the count in the lines that say plan impacts hold the review credit.
 PLAN_IMPACTS_WAIT_TEXT = "plan impact(s) wait for a ruling"
 PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers", "findings_remaining", "plan_impact",
                "ask", "class_closure", "full_check", "full_check_command", "full_check_summary", "full_check_tree",
@@ -504,7 +504,7 @@ def status_problems(raw, packet):
     if "fixed" not in raw and status in CLEAN_STATUSES:
         problems.append("fixed is missing: the packet must always carry fixed, even as []")
 
-    # A blocker left open keeps the commit gate shut, so it never rides out on a status that clears it.
+    # A blocker left open keeps the review uncredited, so it never rides out on a status that clears it.
     if status in CLEAN_STATUSES and any(is_blocker(item) for item in packet["findings_remaining"]):
         problems.append(f"status is {status} but findings_remaining holds a blocker: return cap-reached")
 
@@ -682,7 +682,7 @@ def stored_effective_status(seen):
 
 def stored_packet(message):
     """(the packet of a stored hand-back, the parse error or None). A message that is not a JSON packet has no packet
-    and no error. A packet that does not parse returns its error: the commit gate fails closed on it."""
+    and no error. A packet that does not parse returns its error: the review credit fails closed on it."""
     if json_packet_text(message) is None:
         return None, None
     try:
@@ -692,7 +692,7 @@ def stored_packet(message):
 
 
 def false_clean_reason(session_id):
-    """Why the session's review earns no commit credit, or None when its latest review-loop hand-back is current and
+    """Why the session's review earns no review credit, or None when its latest review-loop hand-back is current and
     converged or deferred. Takes the hook event's session_id, the value of CLAUDE_CODE_SESSION_ID in a Bash call. An
     empty session id is refused."""
     return standing_false_clean_reason(latest(session_id))
@@ -713,7 +713,7 @@ def standing_false_clean_reason(seen):
     if seen["handback"].get("no_reviewer"):
         return "the review-loop handed back clean with no reviewer run"
     _packet, parse_error = stored_packet(seen["handback"].get("message", ""))
-    # Fail closed: a hand-back whose plan impacts cannot be read never earns commit credit.
+    # Fail closed: a hand-back whose plan impacts cannot be read never earns review credit.
     if parse_error:
         return (f"the latest review-loop hand-back does not parse, so its plan impacts "
                 f"cannot be read: {parse_error}")

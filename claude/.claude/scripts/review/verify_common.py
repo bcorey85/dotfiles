@@ -325,7 +325,7 @@ def branch_review_covers(repo_dir, timeout=None):
     fingerprint computed now, and its `reviewAsks` is empty or `reviewAsksRuledTree` equals the logged tree
     (saved by a verify-log --asks-ruled run that printed CLEAN). Fails closed: no repo, a detached HEAD or no
     saved context is `covers` False with no problem; a bad context or a failed fingerprint is False with
-    `problem` set, so the commit gate keeps asking for a review and can print the problem. repo_top,
+    `problem` set, so the caller keeps asking for a review and can print the problem. repo_top,
     require_branch and the fingerprint's git calls may each run `timeout` seconds;
     repo_name keeps its own 10 s limit. A git call that times out in repo_top or require_branch reads as no repo
     or a detached HEAD, so it is `covers` False with no problem too."""

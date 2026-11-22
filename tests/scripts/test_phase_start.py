@@ -32,6 +32,8 @@ class PhaseStartTest(unittest.TestCase):
             (self.repo / name).write_text(f"# {name}\n")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-q", "-m", "base")
+        self.home = scratch / "home"
+        self.home.mkdir()
         self.config_dir = scratch / "config"
         (self.config_dir / "sessions").mkdir(parents=True)
         self.handoff = scratch / "handoff.txt"
@@ -42,7 +44,7 @@ class PhaseStartTest(unittest.TestCase):
 
     def phase_start_with(self, *flags):
         return subprocess.run([sys.executable, str(PHASE_START), *flags], cwd=self.repo, capture_output=True,
-                              text=True, check=False)
+                              text=True, check=False, env={**ENV, "HOME": str(self.home)})
 
     def recorded_dirty(self):
         return sorted(json.loads((self.repo / ".git/code-phase/start.json").read_text())["dirty"])
@@ -295,6 +297,120 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), started_from)
         self.assertEqual(json.loads((self.repo / ".git/code-phase/start.json").read_text())["head"], started_from)
+
+    def other_repo_with_recorded_stop(self):
+        """A second repo whose run folder holds this session's recorded stop; the home is a temp folder."""
+        other = self.repo.parent / "other"
+        other.mkdir()
+        git(other, "init", "-q")
+        (other / ".git/code-phase").mkdir()
+        (other / ".git/code-phase/stop.md").write_text("Stopped.\n\nTo go on: /code resume <your feedback>\n")
+        env = {**ENV, "HOME": str(self.home)}
+        subprocess.run([sys.executable, str(PHASE_START.parent / "code_relay.py")], cwd=other, capture_output=True,
+                       text=True, check=True, env=env)
+        return other, env
+
+    def resume_in_repo(self, env):
+        return subprocess.run([sys.executable, str(PHASE_START), "--resume"], cwd=self.repo, capture_output=True,
+                              text=True, check=False, env=env)
+
+    def test_resume_in_a_repo_with_no_stop_while_the_session_stopped_in_another_names_both(self):
+        other, env = self.other_repo_with_recorded_stop()
+
+        done = self.resume_in_repo(env)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(str(self.repo / ".git/code-phase"), done.stderr)
+        self.assertIn(str(other / ".git/code-phase"), done.stderr)
+        self.assertIn(f"To go on: /code resume {other} <your feedback>", done.stderr)
+
+    def test_a_finished_stop_in_another_run_folder_is_refused_with_the_bare_resume_line(self):
+        other, env = self.other_repo_with_recorded_stop()
+        (other / ".git/code-phase/stop.md").write_text("Run finished.")
+        (other / ".git/code-phase/relayed").unlink()
+        subprocess.run([sys.executable, str(PHASE_START.parent / "code_relay.py")], cwd=other, capture_output=True,
+                       text=True, check=True, env=env)
+
+        done = self.resume_in_repo(env)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn(f"/code resume {other}", done.stderr)
+
+    def test_a_refused_resume_leaves_the_run_folder_untouched(self):
+        _, env = self.other_repo_with_recorded_stop()
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "handoff.txt").write_text("a handoff\n")
+
+        done = self.resume_in_repo(env)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertFalse((run_folder / "start.json").exists())
+        self.assertFalse((run_folder / "stop.prev.md").exists())
+        self.assertTrue((run_folder / "handoff.txt").is_file())
+        self.assertFalse((run_folder / "handoff.prev.txt").exists())
+
+    def test_resume_in_a_repo_whose_own_newer_stop_was_moved_aside_goes_on(self):
+        _, env = self.other_repo_with_recorded_stop()
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "stop.prev.md").write_text("Stopped.\n\nTo go on: /code resume <your feedback>\n")
+
+        done = self.resume_in_repo(env)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_resume_with_a_stop_prev_older_than_the_recorded_stop_is_refused(self):
+        _, env = self.other_repo_with_recorded_stop()
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        old_stop = run_folder / "stop.prev.md"
+        old_stop.write_text("Stopped.\n\nTo go on: /code resume <your feedback>\n")
+        os.utime(old_stop, (1.0, 1.0))
+
+        done = self.resume_in_repo(env)
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("this session's last stop is in", done.stderr)
+
+    def test_resume_with_the_recorded_stop_in_this_run_folder_and_no_stop_files_goes_on(self):
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        spellings = {"plain": run_folder, "symlinked": self.repo.parent / "link"}
+        spellings["symlinked"].symlink_to(self.repo, target_is_directory=True)
+        spellings["symlinked"] = spellings["symlinked"] / ".git/code-phase"
+        for name, recorded_folder in spellings.items():
+            with self.subTest(name):
+                record_dir = self.home / ".claude/code-stop-sessions"
+                record_dir.mkdir(parents=True, exist_ok=True)
+                (record_dir / "test-session.json").write_text(json.dumps(
+                    {"runFolder": str(recorded_folder), "repoTop": str(self.repo), "goOn": "", "time": 1.0}))
+
+                done = self.resume_in_repo({**ENV, "HOME": str(self.home)})
+
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertNotIn("code_stop_record: ignoring", done.stderr)
+
+    def test_resume_in_a_repo_with_its_own_stop_goes_on_whatever_the_session_recorded(self):
+        _, env = self.other_repo_with_recorded_stop()
+        run_folder = self.repo / ".git/code-phase"
+        run_folder.mkdir()
+        (run_folder / "stop.md").write_text("Stopped.\n\nTo go on: /code resume <your feedback>\n")
+
+        done = self.resume_in_repo(env)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((run_folder / "stop.prev.md").is_file())
+
+    def test_resume_with_no_session_id_or_no_record_goes_on(self):
+        _, env = self.other_repo_with_recorded_stop()
+        no_session = {key: value for key, value in env.items() if key != "CLAUDE_CODE_SESSION_ID"}
+        no_record = {**env, "CLAUDE_CODE_SESSION_ID": "never-relayed"}
+        for name, case_env in {"no session id": no_session, "no record": no_record}.items():
+            with self.subTest(name):
+                done = self.resume_in_repo(case_env)
+
+                self.assertEqual(done.returncode, 0, done.stderr)
 
     def test_resume_with_no_record_prints_head_and_says_so(self):
         done = self.phase_start_with("--resume")

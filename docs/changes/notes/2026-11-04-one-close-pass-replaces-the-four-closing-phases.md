@@ -42,6 +42,8 @@ missed one low-severity broker-call fix (6/8 → 1/8). The user ruled the token 
 `close-pass-escapes`: review escapes per review run stay flat. A WORSE reading reverts this change. Closing
 wall-clock has no intake metric and goes unmeasured in real work.
 
+Reading 2026-11-21: `close-pass-escapes` NO CHANGE, watch closed, kept. Review escapes per code-reviewer run: 0.14 median before (range 0.09-0.24), 0.12 after (56 of 457, 2026-11-04..2026-11-13). Eight other edits share the window.
+
 ## Back-out
 
 Restore the four closing phases in `closing-phases.md`, `plan-format.md`, the spec template and `/code`'s

@@ -11,7 +11,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 - `smell-reviewer` — **what repeats or sits wrong** (duplication, placement, naming, dead weight, cohesion). Bound: a diff. Modes 3, 4, 6.
 - `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module — never a diff. Mode 7.
 
-## CRITICAL: Never modify a test to make a refactor pass
+## Never modify a test to make a refactor pass
 
 **Never edit, weaken, or delete a test to pass.** Blocked without a test change → **stop and alert the user**. Verbatim test moves (no assertion changes) are safe.
 
@@ -37,7 +37,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 3. **Branch audit (default)**: target = entire branch diff. Do NOT ask focus, do NOT read changed files.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, and the finder prompt with the changed-file list: committed, uncommitted and untracked changes against the merge base (deleted, renamed, binary and untracked files marked). `STOP:` when the branch diff, the uncommitted changes and the untracked files are all empty, a base with no shared history, or no base found.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py branch-prep` and read `~/.claude/skills/_shared/escape-ratchet.md` in the same response. It prints the base it chose (the `branch-base` helper picks it; pass `--base REF` to override), the mechanical-sweep matches, a one-line count of the jscpd clone pairs (markdown and text pairs left out) that have a site on a changed line (work tree only; a note says when detection is skipped or fails), a one-line count of the renamed-copy pairs (same body once names, attribute names and literals are stripped) and near-match pairs (a few tokens apart) between each changed Python or TypeScript function and every function in the repo (a note says when TypeScript is not read), and the finder prompt with the changed-file list: committed, uncommitted and untracked changes against the merge base (deleted, renamed, binary and untracked files marked), followed by those pairs, the shape pairs, and each added function's nearest other functions. `STOP:` when the branch diff, the uncommitted changes and the untracked files are all empty, a base with no shared history, or no base found.
 
    b. **Finder dispatch**: ONE `smell-reviewer` (pinned; omit `model` unless `+fast`) with the prompt the script printed. Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).
 
@@ -54,12 +54,12 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    For the coder:
    - Pass the work list (with file paths per finding) or the targeted refactoring description, plus any context you gathered
-   - **Pass the CRITICAL test rule verbatim** (never modify/weaken/delete a test; blocked → stop and report; verbatim moves fine)
+   - **Pass the test rule verbatim** (never modify/weaken/delete a test; blocked → stop and report; verbatim moves fine)
    - Needs redesign → report back, recommend `/eng-spec`
 
    **After coders complete**, summarize: what, why, structural changes, concerns.
 
-   **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → CRITICAL-rule violation: stop, alert the user.
+   **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → test-rule violation: stop, alert the user.
 
    **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
    - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
@@ -106,7 +106,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 6. **Audit mode — global DRY / pattern sweep of pre-existing code. Report-only: no coders, no `/review`, no code changes.**
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only") and prints the finder prompt, with the candidate clone pairs when there are any.
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py audit-prep <target-dir>`. It runs jscpd (or prints "no mechanical detection — agent prior-art search only", or the `jscpd output did not parse` note) and prints the finder prompt, with the candidate clone pairs when there are any.
 
    b. **Judgment dispatch**: ONE `smell-reviewer` (omit `model` unless `+fast`) with the printed prompt.
 

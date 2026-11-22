@@ -68,6 +68,7 @@
 
       Every real option appears, each in a few words. Why is 1–2 sentences: the
       reason, and what the strongest other option would break.
+    - Start each block's heading with an emoji for its kind, 🔷 for a decision (D) and ❓ for an open question (Q), put ➡ before `Rec:`, and put a `---` line between blocks. A ⚠ goes after the kind emoji. A drill-down section opens with the same emoji heading.
     - Prefix ⚠ on any line that needs the user's own call: the scope gate below,
       a cut or narrowing of an AC, a credential or data-retention consequence, or
       a recommendation you hold weakly. Say why in the line.

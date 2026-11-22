@@ -9,7 +9,7 @@ Every line in a skill, agent, rules file or CLAUDE.md is read on each load. A li
 
 ## Terms
 
-- **No-op**: a line the agent would follow without it, or that changes nothing it does.
+- **No-op**: a line whose prevented failure you cannot name: the agent would act the same without it.
 - **Duplicate**: a rule stated twice, in one file or across files. Keep one owner; point to it from the rest.
 - **Cache**: a copy of a fact the agent can read from its source before it acts (a file list, a flag table, a version). Point to the source instead. A fact the agent learns only after the wrong move, such as a hook's approved path, is not a cache.
 - **Sprawl**: one topic split across files that each load alone. Co-locate it with the step that uses it.
@@ -19,15 +19,17 @@ Every line in a skill, agent, rules file or CLAUDE.md is read on each load. A li
 
 ## Checks
 
-1. **Description is the trigger.** Only the description is always loaded. It names what the skill does and the words or situations that call it. A skill with `context: fork` keeps in its description every instruction the main session needs, since the main session never reads the body.
+1. **Description is the trigger.** Only the description is always loaded. It names what the skill does and the words or situations that call it, and never lists the steps. A skill with `context: fork` keeps in its description every instruction the main session needs, since the main session never reads the body.
 2. **User-invoked or model-invoked.** Before you set `disable-model-invocation: true`, `rg` the toolkit for callers: an agent's `skills:` preload, another skill that loads it. Set it only when the user is the sole caller.
 3. **Done when.** Every step or phase ends with a check the agent can run or observe.
 4. **Lead with the action.** Write "do X". Use "never Y", caps or bold only on a line where the wrong move is the likely one, at most a few per file.
-5. **Order by use.** The step the agent takes first comes first. Reference that only one branch reaches moves into that branch, or into a sibling file the branch reads on a named trigger.
-6. **Prune.** Cut each no-op, duplicate, cache and sediment line. Fix each weak pointer, sprawl and dense rule.
+5. **Exactness matches fragility.** A step where a slip breaks something (a git write, a log or queue write, a command form) gets the exact command or a script. A judgment step gets the goal and a few heuristics.
+6. **One default.** Give one choice and the case that leaves it: "Use X. If Y, use Z." Never a menu of options.
+7. **Order by use.** The step the agent takes first comes first. Reference that only one branch reaches moves into that branch, or into a sibling file the branch reads on a named trigger.
+8. **Prune.** Cut each no-op, duplicate, cache and sediment line. Fix each weak pointer, sprawl and dense rule.
 
 ## Cutting a rule
 
 A no-op or duplicate flag on an existing rule is a candidate. Test it with `~/agent-evals/bin/rule_meter.py` before you cut it. A new or reworded rule follows the agent-evals rule workflow.
 
-Done when every line of the changed text passes the six checks, or carries a rule-meter candidate note in your report.
+Done when every line of the changed text passes the eight checks, or carries a rule-meter candidate note in your report.

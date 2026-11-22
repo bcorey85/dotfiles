@@ -197,9 +197,10 @@ def run_loop(request):
     except plan_format.PlanFormatError as error:
         # The message names the plan file, the line and the expected form of the standing ruling.
         loop.stop("critical-blocker", [f"the plan's standing ruling does not parse: {error}"])
-
-    # One write per run: a pass that died or settled the saved record only sets what the file is to hold.
-    review_loop_partial_fix.save_pending(request.repo, loop.pending_record, now())
+    finally:
+        # One write per run, even when an unlisted error ends it: a pass that died or settled the saved record only
+        # sets what the file is to hold.
+        review_loop_partial_fix.save_pending(request.repo, loop.pending_record, now())
 
     if request.gates_every_run and loop.status != "converged" and not loop.scoped_tests:
         loop.scoped_tests = full_check.SCOPED_NOT_RUN_STOPPED.format(status=loop.status)

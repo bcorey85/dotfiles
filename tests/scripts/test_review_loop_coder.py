@@ -595,6 +595,27 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         write_record.assert_called_once()
         self.assertEqual(json.loads(self.record_file().read_text())["findings"], [dead_finding_text])
 
+    def test_a_settle_followed_by_an_unlisted_crash_still_removes_the_settled_record(self):
+        self.save_record("`notes.py:1` the keys are out of order")
+        loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text("ruled-out files: notes.py\n"))
+        header, handoff = loop_main.read_prompt(str(prompt))
+        request = loop_main.LoopRequest(str(self.repo), self.scratch, loop_tests.SESSION, header, handoff,
+                                        {"fixed": [], "files_touched": set()}, ["echo ran"])
+
+        def settle_then_crash(loop, findings, *_flags):
+            loop.fix_first(findings)
+            raise RuntimeError("the reviewer reply was an error")
+
+        with mock.patch.object(loop_main, "first_pass", side_effect=settle_then_crash), \
+                mock.patch.object(loop_main, "walk"), \
+                mock.patch.object(loop_main, "write_telemetry", return_value=([], [])), \
+                self.assertRaises(RuntimeError):
+            loop_main.run_loop(request)
+
+        self.assertFalse(self.record_file().exists())
+
     def test_a_relaunch_whose_coder_edits_a_later_phase_file_drops_the_sent_findings_from_the_record(self):
         self.die_mid_edit()
         self.reset_fake_run()

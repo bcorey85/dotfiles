@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-On a non-zero exit, a timeout, an `is_error` reply or no final report, the loop writes `partial-fix.json` in `<git dir>/review-fix/` and the stop note names each finding as unverified. The next launch re-queues them and removes the record after the pass. A reviewer or disposition call whose reply has `is_error` set now stops the run as a crash, with no retry.
+On a non-zero exit, a timeout, an `is_error` reply or no final report, the loop writes `partial-fix.json` in `<git dir>/review-fix/` and the stop note names each finding as unverified. The next launch re-queues them and removes the record after the pass. A reviewer or disposition call whose reply has `is_error` set now stops the run as a crash, with no retry. A record written while git failed holds a null branch, and the next launch skips the branch check; the module docstrings of the new review modules name the fact each owns.
 
 ## Evidence
 

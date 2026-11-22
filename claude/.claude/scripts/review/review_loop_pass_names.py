@@ -1,4 +1,5 @@
-"""review_loop_pass_names.py: the names of the fix coder passes. Imports nothing, so any loop module can read it."""
+"""review_loop_pass_names.py: the names of the fix coder passes. Imports nothing, so any loop module can read it.
+Owner of the pass names and of `is_finding_pass`. Import them; never spell a pass name elsewhere."""
 FIRST_FIX_PASS = "coder0"
 CLASS_FIX_PASS = "coder-class"
 GATE_FIX_PASS = "coder-gate"

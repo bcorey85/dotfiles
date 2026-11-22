@@ -12,6 +12,7 @@ test's `___ name ___` header or under no header, with their numbers masked. The 
 block, and the log lines under any other test's header, stay exact. With no row naming a failing line, every
 comparison is exact, and a new failing test stays a blocker. Rows are kept in the repo's git dir, one JSON object per
 line.
+Owner of which failing lines a person accepted, and of the accept command. Import it; never read the rows another way.
 Exit 0 when done, 2 when `accept` is refused (an empty field, a line that is not a failing line, no git dir, or a
 stored line that is not a JSON object). `list` exits 2 for a stored line that is not a JSON object."""
 import argparse

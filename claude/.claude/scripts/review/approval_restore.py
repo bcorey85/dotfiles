@@ -2,7 +2,9 @@
 fix coder's edit to an approval-only file (see `approval_asks_store.approval_change`). The saved approval paths hold
 the blob the file had before that pass, so accepting the ask puts the file back to it: uncommitted lines the user
 kept stay, which a reset to HEAD would drop. An ask whose base is unknown (`UNKNOWN_BASE`), or whose saved base is
-None while HEAD tracks the path, is not restored here: it still reaches the fix coder as a finding."""
+None while HEAD tracks the path, is not restored here: it still reaches the fix coder as a finding.
+Owner of what an accepted approval ask does to its file; import it for that restore. The post-pass revert of a fix
+coder's edit is `RuledFindings.revert_approval_edit`."""
 import shlex
 from typing import NamedTuple
 

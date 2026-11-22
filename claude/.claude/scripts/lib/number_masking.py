@@ -1,4 +1,5 @@
-"""number_masking.py: compare text that differs only in its numbers. Standard library only."""
+"""number_masking.py: compare text that differs only in its numbers. Standard library only.
+Owner of number masking. Import it; never mask numbers another way."""
 import re
 
 NUMBER_RUN = re.compile(r"\d+")

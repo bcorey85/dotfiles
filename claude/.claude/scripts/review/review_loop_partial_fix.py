@@ -7,10 +7,13 @@ back; a path the put-back returned to its old text, or the loop reverted, has no
 stop note names those findings as unverified. The next launch sends those not on a held file to the coder again, and
 keeps only the held ones in the record after that pass, or when none of its findings is left to send (no diff then); a
 run that stops before the first fix pass leaves the record as it is. The record names
-the branch it was written on, and a launch on another branch stops.
+the branch it was written on (null when git failed, "" on a detached HEAD), and a launch on another branch
+stops; a null branch, or a branch git cannot name at launch, skips that check.
 
 `PartialFixRuns` is the `LoopRun` mixin that sets the record in memory: a settle or a dead pass changes
-`pending_record`, and the run's single write at the end saves it."""
+`pending_record`, and the run's single write at the end saves it.
+
+Owner of the dead-coder record. Import it; never read or write the record another way."""
 import json
 import typing
 
@@ -36,7 +39,7 @@ def write_partial_fix(repo, finding_texts, diffs, now):
     record_file.parent.mkdir(parents=True, exist_ok=True)
     diff_text = "\n".join(diffs[path] for path in sorted(diffs))
     record = {FINDINGS_FIELD: list(finding_texts), DIFF_FIELD: diff_text, TIME_FIELD: now,
-              BRANCH_FIELD: script_utils.current_branch(repo) or ""}
+              BRANCH_FIELD: script_utils.current_branch(repo)}
     script_utils.write_text_atomically(record_file, json.dumps(record, indent=2) + "\n")
 
 
@@ -108,8 +111,11 @@ def saved_findings(repo):
     if not script_utils.is_nonblank_string_list(texts):
         raise PromptFileError(f"{record_file}: expected {expected}")
     branch = script_utils.current_branch(repo)
-    if BRANCH_FIELD in record and branch is not None and record[BRANCH_FIELD] != branch:
-        recorded_name = record[BRANCH_FIELD] or "detached HEAD"
+    recorded_branch = record.get(BRANCH_FIELD)
+    if recorded_branch is None or branch is None:
+        return texts
+    if recorded_branch != branch:
+        recorded_name = recorded_branch or "detached HEAD"
         launch_name = branch or "detached HEAD"
         raise PromptFileError(f"{record_file}: the record was written on branch {recorded_name} and this launch is "
                               f"on branch {launch_name}; delete {record_file} to drop the record")

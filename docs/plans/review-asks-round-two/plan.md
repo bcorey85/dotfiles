@@ -82,6 +82,10 @@ current tree. Scripts live in `claude/.claude/scripts/`; tests in `tests/scripts
 - AC10: the detached-HEAD ask is rejected, no criterion change. A launch from a detached HEAD stays kept and
   dispatched, and the pinned test stays; no session hit that case (toolkit-script-rules Size). Ruled by the lane
   session, 2026-11-21.
+- Branch review ask (scripts CLAUDE.md Owners list lacks the six new owners): rejected, no CLAUDE.md edit. The owner
+  facts go in the module docstrings of accepted_failures, review_loop_partial_fix, review_loop_pass_names,
+  approval_restore, number_masking and age_text; the rerun review's ask (is a docstring owner enough for age_text and
+  number_masking) is answered by the same ruling. Ruled by agent-evals-c3, 2026-11-22.
 
 ## Phase 1: notes written after the branch review do not make it stale
 

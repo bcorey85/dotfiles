@@ -1,4 +1,5 @@
-"""age_text.py: a span of seconds as a short age for a person to read. Standard library only."""
+"""age_text.py: a span of seconds as a short age for a person to read. Standard library only.
+Owner of age text. Import it; never format an age another way."""
 
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600

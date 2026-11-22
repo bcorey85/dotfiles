@@ -673,6 +673,30 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
             self.assertNotEqual(detached.returncode, 0)
             self.assertIn("detached HEAD", detached.stdout + detached.stderr)
 
+    def test_a_record_written_while_git_failed_keeps_a_null_branch_apart_from_a_detached_head(self):
+        with mock.patch.object(review_loop_partial_fix.script_utils, "current_branch", return_value=None):
+            review_loop_partial_fix.write_partial_fix(self.repo, [self.FINDING], {}, "now")
+
+        record = json.loads(self.record_file().read_text())
+        self.assertIn("branch", record)
+        self.assertIsNone(record["branch"], "a failed git call must not read back as a detached HEAD")
+
+    def test_a_record_with_a_null_branch_launches_normally(self):
+        self.die_mid_edit()
+        record = json.loads(self.record_file().read_text())
+        record["branch"] = None
+        self.record_file().write_text(json.dumps(record))
+        self.reset_fake_run()
+
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}}],
+            "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("detached HEAD", completed.stdout + completed.stderr)
+
     def test_a_gate_pass_that_dies_saves_no_record_and_the_stop_note_calls_nothing_unverified(self):
         completed = self.run_script({
             "code-reviewer": [{"result": loop_tests.CLEAN_REVIEW}] * 2,

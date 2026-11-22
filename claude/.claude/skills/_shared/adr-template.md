@@ -41,7 +41,7 @@ Apply `~/.claude/skills/_shared/skimmable-writing.md` in full, plus:
 
 - **One Diátaxis mode**: ADRs are **explanation** — no state-of-code reference (eng-arch's job); cross-link.
 - **Headings = answers**, ADR flavor: a heading names the finding (`Status: Accepted`, `FormData Content-Type footgun`) rather than the slot it sits in (`Status field`, `Implementation note 3`).
-- **Per-section line caps** (hard — if you blow it, you're writing the wrong section): TL;DR ≤ 3 sentences. Problem ≤ 8. Decision ≤ 8. Alternatives ≤ 12. Assumptions ≤ 6. Watch out for ≤ 10.
+- **Per-section line caps** (`adr_flow.py finish` rejects a draft over them; a section that runs long holds material for another section): TL;DR ≤ 3 sentences. Problem ≤ 8. Decision ≤ 8. Alternatives ≤ 12. Assumptions ≤ 6. Watch out for ≤ 10.
 - **Target 50–80 lines** at creation (Addenda exempt). Past that, you're writing eng-arch material (Mega-ADR).
 
 ## Template

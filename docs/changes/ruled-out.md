@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-116 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+117 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-142 further findings are left out of this page.
+147 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-22 [A Haiku coder raises Opus review spend 81% on one plan phase with no key gain](../../../agent-evals/findings/2026-11-22-a-haiku-coder-raises-opus-review-spend-81-on-one.md) - HOLD: Smoke pair on WH-200 phase 1, Opus main session, same frozen plan and pinned toolkit: a Haiku coder kept 12/12 keys but raised Opus review cache read 14.4M → 26.0M and wall-clock 94 → 146 min. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-21 [Outside write-less skills and code-health tools did not make a coder trim a toolkit script more than a plain coder](../../../agent-evals/findings/2026-11-21-outside-write-less-skills-and-code-health-tools.md) - HOLD: One coder run per brief on one 1,040-line toolkit script and its 6,847 test lines: a plain coder cut 33 script lines and 41 test lines, and the ponytail text, the ub-mode text and ub-mode with crapper and mutator each cut the same or less. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-21 [A plan test budget halves new tests but cuts test lines only 15 percent](../../../agent-evals/findings/2026-11-21-a-plan-test-budget-halves-new-tests-but-cuts-test.md) - HOLD: One full Sonnet build per toolkit on the warehouse ticket: a plan that names its tests cut new tests 56% (319 to 141) but test lines only 15% (6,959 to 5,896), and the build caught 10 fewer planted bugs. [watch: no watch]

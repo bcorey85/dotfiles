@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-7 open benches, by rank. Each line is the question the bench asks.
+11 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -15,6 +15,10 @@ description: "The benches that are open now and the question each asks."
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
 * Refute each code-reviewer finding with a second agent before the review loop acts on it (queued): Test whether a verifier subagent that tries to refute each code-reviewer finding before the loop acts on it cuts wrong fixes without dropping real catches.
 * Bench: tests asked for only where a function is complex and uncovered, in place of the test reviewer's judgment (queued): A score of complexity times missing coverage per changed function decides where a test is owed, so test lines fall where the code is simple or already covered.
-* Agent-driven review loop with a full second review, on two fixtures, against the scripted loop (running): A Sonnet loop agent that keeps the full second review but drops the third round and the smell re-run could cut the review loop's Opus tokens about 30% with no round-one miss lost; this bench proves it on two fixtures so it can ship.
-* Haiku coder against Sonnet coder, same plan and review loop (running): A Haiku coder could cut the coder's Sonnet tokens and wall-clock if the review loop does not spend the saving back on extra Opus review.
+* Review loop without the last read of the final fix, against the pinned loop script (queued): Cutting the review loop's last read of the final fix saves one Opus code-reviewer dispatch per run; smoke showed it partly moves into the late-repair read.
+* Review loop without the round-two smell re-run, against the pinned loop script (queued): Cutting the review loop's round-two smell re-run saves one Opus smell-reviewer dispatch per run; smoke showed about 10% Opus, inside the control spread.
 * Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.
+* Review loop writes a condensed prior-issues list in round two (queued): A one-line-per-issue prior-issues list in the script's round-two and last-read requests could cut 5-10% of the loop's Opus tokens, the part of the agent driver's cut that ports to the script.
+* Stop hook: take the reversible step and list it, against resending the report without the question (running): A Stop hook that tells the session to take the reversible step and list it under Decisions taken is predicted to cut the turn ends the user answers with a bare go-ahead by a third or more, against today's hook that only removes the question.
+* Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
+* Pilot: replace the regex Bash gate's intent rules with auto mode prose rules and deny rules (queued): Fewer interruptions: swap the regex Bash rules that guess intent for auto mode prose rules plus deny rules, if a replay shows the classifier keeps the true blocks and drops the false ones.

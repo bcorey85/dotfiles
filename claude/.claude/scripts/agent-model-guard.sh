@@ -17,7 +17,10 @@
 #      leaving model empty, but explicit. When the orchestrator is on Opus this
 #      silently fans out Opus subagents.
 #   5. Any other explicit model at the call site is allowed.
-#   6. Empty model on a non-fork agent: resolve the agent file from CLAUDE_PROJECT_DIR (preferred)
+#   5a. Empty model on subagent_type "web-fetch": the call runs, rewritten to model
+#      "haiku". The harness's page fetcher has no agent file to pin it, and a
+#      deny here only cost a retry that always came back with haiku.
+#   6. Empty model on any other non-fork agent: resolve the agent file from CLAUDE_PROJECT_DIR (preferred)
 #      or HOME, then check for a `model:` frontmatter line. If found, exit 0
 #      (frontmatter handles selection, including a deliberate `model: opus`
 #      pin). If not found, block — the subagent would silently inherit the
@@ -78,6 +81,11 @@ fi
 shopt -u nocasematch
 
 if [[ -n "$model" ]]; then
+  exit 0
+fi
+
+if [[ "$subagent" == "web-fetch" ]]; then
+  printf '%s' "$input" | jq -c '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":(.tool_input + {"model":"haiku"})}}'
   exit 0
 fi
 

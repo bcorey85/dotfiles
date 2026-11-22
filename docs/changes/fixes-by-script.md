@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-666 fix notes
+667 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -64,6 +64,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/adr-flow | 4 | 1 |
+| script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
 | script/format-changed | 4 | 0 |
 | script/format-files | 4 | 0 |
@@ -75,7 +76,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
-| script/agent-model-guard | 3 | 1 |
 | script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |

@@ -136,6 +136,37 @@ class AgentModelGuardTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("inherit", denial_reason(reply) or "")
 
+    def test_unpinned_web_fetch_runs_pinned_to_haiku(self):
+        code, reply = run_guard({"subagent_type": "web-fetch", "prompt": "read https://example.com"})
+        self.assertEqual(code, 0)
+        self.assertIsNotNone(reply, "an unpinned web-fetch call gets a rewrite, not silence")
+        assert reply is not None
+        output = reply["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], "allow")
+        self.assertEqual(output["updatedInput"],
+                         {"subagent_type": "web-fetch", "prompt": "read https://example.com", "model": "haiku"},
+                         "the rewrite adds the haiku pin and keeps every other field")
+
+    def test_web_fetch_with_explicit_sonnet_is_left_alone(self):
+        code, reply = run_guard({"subagent_type": "web-fetch", "model": "sonnet", "prompt": "x"})
+        self.assertEqual(code, 0)
+        self.assertIsNone(reply, "a pinned web-fetch call keeps its own model")
+
+    def test_web_fetch_with_opus_is_denied(self):
+        code, reply = run_guard({"subagent_type": "web-fetch", "model": "opus", "prompt": "x"})
+        self.assertEqual(code, 0)
+        self.assertIn("opus", denial_reason(reply) or "")
+
+    def test_web_fetch_with_inherit_is_denied(self):
+        code, reply = run_guard({"subagent_type": "web-fetch", "model": "inherit", "prompt": "x"})
+        self.assertEqual(code, 0)
+        self.assertIn("inherit", denial_reason(reply) or "")
+
+    def test_unpinned_general_purpose_is_still_denied(self):
+        code, reply = run_guard({"subagent_type": "general-purpose", "prompt": "x"})
+        self.assertEqual(code, 0)
+        self.assertIn("no model pin", denial_reason(reply) or "", "only web-fetch gets the haiku rewrite")
+
 
 if __name__ == "__main__":
     unittest.main()

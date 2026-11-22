@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1071 changes
+1072 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -48,6 +48,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Unpinned web-fetch calls run on haiku instead of being denied](notes/2026-11-22-unpinned-web-fetch-calls-run-on-haiku-instead-of.md) [script/agent-model-guard, agent/web-fetch] The model guard rewrites an unpinned web-fetch call to model haiku and lets it run, so a page fetch no longer costs a denied call and a retry.
 * [The inline interpreter hint docstring says the gate blocks stdin code](notes/2026-11-22-the-inline-interpreter-hint-docstring-says-the.md) [script/inline-interpreter-hint] The inline-interpreter hint's docstring said the Bash gate does not block code fed on stdin to a bare interpreter; the gate does block it, and the docstring now says so.
 * [Branch-recap and close-branch drop ledger wait seconds copied from a script](notes/2026-11-22-branch-recap-and-close-branch-drop-ledger-wait.md) [skill/branch-recap, skill/close-branch] Branch-recap and close-branch keep the 600000 ms Bash timeout and drop the 204 s and 90 s figures copied from ledger_deferred.py, which drift when the script changes.
 * [Toolkit script rules point at lib/ instead of listing its modules](notes/2026-11-22-toolkit-script-rules-point-at-lib-instead-of.md) [rule/toolkit-script-rules] The script rules drop two hand-kept lists of lib/ modules that had fallen 14 modules behind, so a search-before-you-write check looks at the whole folder.

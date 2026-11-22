@@ -168,6 +168,7 @@ class CommentBloatGateTest(unittest.TestCase):
     def test_the_deny_names_the_bare_marker_text(self):
         cases = [
             ("# AC4 covered", "AC4"),
+            ("# AC12a covered", "AC12a"),
             ("x = 1 # AC4", "AC4"),
             ("AC1 holds here", "AC1"),
             ("x = 1  # (AC2) done", "AC2"),

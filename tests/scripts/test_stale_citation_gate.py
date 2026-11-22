@@ -136,6 +136,13 @@ class StaleCitationGateTest(unittest.TestCase):
                          "the reference (see skills/_shared/code-vocabulary.md):\n  2:# phase 2 work\n"
                          "  4:# AC4 holds\n  5:# an earlier version said no\n")
 
+    def test_a_letter_suffixed_criterion_id_in_a_comment_is_reported_like_a_plain_one(self):
+        path = self.write("src/a.py", "x = 1\n# AC12 holds\n# AC12a holds\n")
+        self.assertEqual(self.edit(path),
+                         "stale-citation-gate: planning vocabulary in shipped source src/a.py — keep the fact, cut "
+                         "the reference (see skills/_shared/code-vocabulary.md):\n  2:# AC12 holds\n"
+                         "  3:# AC12a holds\n")
+
     def test_planning_vocabulary_outside_comment_lines_is_ignored(self):
         path = self.write("src/a.py", "x = 'phase 2'  # note\nname = 'AC4'\n")
         self.assertEqual(self.edit(path), "")

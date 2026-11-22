@@ -936,6 +936,133 @@ class RefactorFlowTest(unittest.TestCase):
         marked = set(re.findall(r"a\.py:(\d+) \[marker\]", done.stdout))
         self.assertEqual(marked, {str(number) for number in range(1, len(flagged) + 1)})
 
+    def test_branch_prep_sweep_ignores_a_marker_inside_a_string_and_keeps_a_bare_statement(self):
+        body = ('message = "call print(x) later"\n'
+                'other = "TODO in a string"\n'
+                'doc = """\nprint(x)\nTODO inside\n"""\n'
+                'print(value)\n'
+                'name = "ok"  # TODO real\n')
+        self.branch_with({"a.py": body})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        marked = set(re.findall(r"a\.py:(\d+) \[marker\]", done.stdout))
+        self.assertEqual(marked, {"7", "8"})
+
+    def test_branch_prep_sweep_skips_print_in_a_cli_script_but_keeps_todo_and_library_prints(self):
+        cli = ("import argparse\n\ndef main():\n    print('report')\n    # TODO tidy\n\n"
+               "if __name__ == '__main__':\n    main()\n")
+        self.branch_with({"cli.py": cli, "lib.py": "def f():\n    print('debug')\n"})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("cli.py:4 [marker]", done.stdout)
+        self.assertIn("cli.py:5 [marker]", done.stdout)
+        self.assertIn("lib.py:2 [marker]", done.stdout)
+
+    def test_branch_prep_sweep_silences_print_for_each_cli_trigger_alone_and_not_for_lookalikes(self):
+        cases = [
+            ("import argparse\n", True), ("from argparse import ArgumentParser\n", True),
+            ("def main():\n    pass\n", True), ("async def main():\n    pass\n", True),
+            ("if __name__ == '__main__':\n    pass\n", True),
+            ("def main_helper():\n    pass\n", False), ("class A:\n    def main(self):\n        pass\n", False),
+            ("def f():\n    import argparse\n", False),
+            ("if True:\n    if __name__ == '__main__':\n        pass\n", False),
+        ]
+        files = {f"c{index}.py": header + "print('x')\n" for index, (header, _silenced) in enumerate(cases)}
+        self.branch_with(files)
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for index, (header, silenced) in enumerate(cases):
+            with self.subTest(header=header):
+                reported = re.search(rf"c{index}\.py:\d+ \[marker\] print", done.stdout) is not None
+                self.assertEqual(reported, not silenced, done.stdout)
+
+    def test_branch_prep_sweep_never_silences_print_in_a_non_python_file(self):
+        self.branch_with({"a.js": "import argparse\nprint(x)\n"})
+        done = self.flow("branch-prep")
+        self.assertIn("a.js:2 [marker]", done.stdout)
+
+    def test_branch_prep_sweep_ignores_a_cli_fixture_string_and_string_data_comments(self):
+        body = ('FIXTURE = """\nif __name__ == "__main__":\n# import os\n"""\nprint("debug")\n')
+        self.branch_with({"t.py": body})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("t.py:5 [marker]", done.stdout)
+        self.assertNotIn("commented-out code", done.stdout)
+
+    def test_branch_prep_sweep_ignores_markers_in_an_untracked_file_string_data(self):
+        self.branch_with({"a.py": "x = 1\n"})
+        self.write("u.py", 's = "print(x)"\ndoc = """\nTODO\n# import os\n"""\n')
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Mechanical sweep (0 match(es))", done.stdout)
+        self.assertNotIn("u.py:", done.stdout.split("Mechanical sweep", 1)[-1])
+
+    def test_branch_prep_sweep_survives_a_dangling_symlink_and_a_gitlink(self):
+        self.git("checkout", "-q", "-b", "feature")
+        (self.repo / "dangling").symlink_to("TODO-missing-target")
+        self.git("update-index", "--add", "--cacheinfo", "160000," + "a" * 40 + ",sub")
+        self.commit_all("links")
+        for head_args in ([], ["--head", "feature"]):
+            with self.subTest(head_args=head_args):
+                done = self.flow("branch-prep", *head_args)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn("dangling:1 [marker] TODO-missing-target", done.stdout)
+
+    def test_branch_prep_sweep_survives_a_symlink_to_a_directory(self):
+        self.git("checkout", "-q", "-b", "feature")
+        (self.repo / "TODO-dir").mkdir()
+        self.write("TODO-dir/f.py", "x = 1\n")
+        (self.repo / "linked").symlink_to("TODO-dir")
+        self.commit_all("dir link")
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("linked:1 [marker] TODO-dir", done.stdout)
+
+    def test_post_image_reader_raises_on_an_unreadable_work_tree_file(self):
+        # Called directly: `git diff` itself fails first on an unreadable file, so the flow never reaches the reader.
+        self.write("a.py", "# TODO tidy\n")
+        unreadable = self.repo / "a.py"
+        unreadable.chmod(0)
+        self.addCleanup(unreadable.chmod, 0o644)
+        if os.access(unreadable, os.R_OK):
+            self.skipTest("file permissions do not stop this user from reading")
+        module = load_script_module()
+        read_post_image = module.post_image_reader(str(self.repo), None)
+        with self.assertRaisesRegex(module.RefactorFlowError, "cannot read .*a.py for the sweep"):
+            read_post_image("a.py")
+
+    def test_post_image_reader_in_head_mode_raises_for_a_path_missing_at_head(self):
+        self.branch_with({"a.py": "# TODO tidy\n"})
+        module = load_script_module()
+        previous_directory = os.getcwd()
+        self.addCleanup(os.chdir, previous_directory)
+        os.chdir(self.repo)
+        read_post_image = module.post_image_reader(str(self.repo), "feature")
+        with self.assertRaises(module.RefactorFlowError) as raised:
+            read_post_image("missing.py")
+        self.assertIn("feature:missing.py", str(raised.exception))
+
+    def test_branch_prep_stops_when_the_file_read_differs_from_the_diff(self):
+        self.git("config", "filter.swap.clean", "tr y x")
+        self.git("config", "filter.swap.smudge", "tr x y")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write(".gitattributes", "*.py filter=swap\n")
+        self.write("a.py", "# TODO fix\n")
+        self.commit_all("work")
+        (self.repo / "a.py").unlink()
+        self.git("checkout", "--", "a.py")
+        done = self.flow("branch-prep")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("the sweep cannot trust the file it read: a.py:1 differs", done.stderr)
+
+    def test_branch_prep_head_mode_reads_the_post_image_at_head(self):
+        self.branch_with({"a.py": "s = 'print(x)'\nprint(y)\n"})
+        self.write("a.py", "unrelated = 1\n")
+        done = self.flow("branch-prep", "--head", "feature")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertNotIn("a.py:1 [marker]", done.stdout)
+        self.assertIn("a.py:2 [marker]", done.stdout)
+
     def test_branch_prep_sweeps_a_whole_line_that_holds_a_form_feed_or_lone_carriage_return(self):
         self.branch_with({"a.py": "page = 1\x0c# TODO after the feed\nkept = 2\rprint('after the return')\n"})
         done = self.flow("branch-prep")

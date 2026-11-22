@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1044 changes
+1045 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -26,6 +26,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [refactor sweep skips markers in string text and prints in CLI scripts](notes/2026-11-21-refactor-sweep-skips-markers-in-string-text-and.md) [skill/refactor] The /refactor branch-prep sweep no longer lists a marker inside a single-line string literal or a multi-line string held as data, or a print( in a .py or .pyi file with a command-line entry point, as a debug leftover.
 * [code relay names the run path and phase_start refuses a resume of another checkout](notes/2026-11-21-code-relay-names-the-run-path-and-phase-start.md) [script/code-relay, script/phase-start, script/code-stop-record, script/script-utils] code_relay.py records the session's last /code stop and puts the repo top in a To go on line that names no path; phase_start.py --resume refuses a resume in a repo with no stopped run while the session's last stop is in another run folder.
 * [Hand-back gate runs in the checkout coder_gate set ran in](notes/2026-11-21-hand-back-gate-runs-in-the-checkout-coder-gate-set.md) [script/coder-gate, script/script-utils] coder_gate.py set writes a session pointer to its gate file, and the hand-back hook uses that gate, not the gate of the hook's cwd, so a failure in another checkout never blocks the run.
 * [Commit gate passes session scratch repos and quoted commit words piped to text tools](notes/2026-11-21-commit-gate-passes-session-scratch-repos-and.md) [script/review-commit-gate, script/commit-gate-dirty, script/shell-statements, script/shell-command, script/hook-input] The review commit gate lets a session commit in a throwaway repo under its own scratchpad, and no longer reads commit words quoted in a script's argument as a commit when the script's output goes to a text tool.

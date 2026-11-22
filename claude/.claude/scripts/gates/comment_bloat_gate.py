@@ -157,23 +157,18 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
     in_shell_file = SHELL_FILE.search(file_path) is not None
     style = source_text.comment_style_of(file_path)
     comment_numbers = comment_numbers_of(file_lines, style)
-    string_data_numbers, closing_tails, openings = source_text.string_data_regions(file_lines, style)
+    code = source_text.code_text_by_line(file_path, file_lines)
     rows = []
     for number, line in enumerate(file_lines, 1):
-        if not NONBLANK.search(line) or number in string_data_numbers:
+        if not NONBLANK.search(line) or number not in code:
             continue
         is_comment = COMMENT_LINE.match(line) or number in comment_numbers
         if comments_only and not is_comment:
             continue
-        if number in closing_tails:
-            raw = closing_tails[number]
+        raw = code[number]
+        searched = line
+        if source_text.masks_string_text(line, raw, is_comment):
             searched = searchable_text(raw, style)
-        elif number in openings:
-            raw = openings[number]
-            searched = searchable_text(raw, style)
-        else:
-            raw = line
-            searched = line if is_comment else searchable_text(line, style)
 
         raw_row = f"{number}:{searched}" if in_test_file else f"{number}:{raw}"
         eval_domain_counts = not in_agent_evals and (is_comment or not in_shell_file)

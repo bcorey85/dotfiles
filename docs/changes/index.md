@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1047 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1049 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-21, [Remove shell-write-gate](notes/2026-11-21-remove-shell-write-gate.md).
+Latest change: 2026-11-22, [pull_keep_index rebuilds staged built pages on the put-back and prints a gate-allowed recovery](notes/2026-11-22-pull-keep-index-rebuilds-staged-built-pages-on-the.md).
 
 ## Top gains
 

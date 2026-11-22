@@ -1,4 +1,14 @@
 """Usage: pull_keep_index.py <repo>
+       pull_keep_index.py --put-back <saved> <repo>
+
+`--put-back` puts the changes saved in the commit <saved> back into the repo, the way the pull does: staged files
+staged, built pages rebuilt. Every message that leaves the local changes saved but not applied names it.
+When the staged changes clash with the pull only on built pages (paths with `merge=built-page`) and the repo
+configures the built-page merge driver (`merge.built-page.driver`), the saved changes go on with no index so the
+driver rebuilds those pages, and the rebuilt pages are staged. With no driver configured git text-merges those pages,
+so the run exits 1 naming `--put-back`.
+A <saved> that is not a saved-changes commit (no second parent), or a repo with tracked changes
+(`git status --porcelain --untracked-files=no` prints anything), exits 1 with the usage.
 
 Run `git pull --rebase=merges` in the repo with its local changes set aside and put back after, staged files still
 staged. `--autostash` puts them back unstaged. The changes are saved as a dangling stash commit, never on the shared
@@ -23,6 +33,7 @@ the usual upstream checks and pull, so a deleted upstream still exits 1 naming i
 When the rebase stops on a conflict that a merge of the pulled tip would not have (a replayed merge commit that had
 resolved conflicts), the rebase is undone and the pulled tip is merged instead; else the run exits 1 mid-rebase."""
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -33,11 +44,32 @@ import script_utils
 
 # The variable ~/agent-evals/bin/merge_built_page.py reads for the stash commit a `git stash apply` is applying.
 BUILT_PAGE_STASH = "BUILT_PAGE_STASH"
+# The gitattributes value (`merge=built-page`) that marks a generated page.
+BUILT_PAGE_DRIVER = "built-page"
+PUT_BACK_VERB = "--put-back"
 FALLBACK_REMOTE = "origin"
 
 
+def saved_text(saved):
+    """Where the local changes are saved, with no closing punctuation so a caller can end it as it needs."""
+    return f"The local changes are saved in {saved}"
+
+
+def git_command_text(repo, *arguments):
+    """A git command line for the repo, quoted for the user to paste into a shell."""
+    return shlex.join(["git", "-C", repo, *arguments])
+
+
+def page_stage_arguments(pages):
+    """The git arguments that stage the rebuilt pages by literal path; the run and the printed command share them."""
+    return ("--literal-pathspecs", "add", "--", *pages)
+
+
 def recovery_text(repo, saved):
-    return f"The local changes are saved in {saved}; on a clean tree, run: git -C {repo} stash apply --index {saved}"
+    """How to put the saved changes back with the --put-back verb of this script."""
+    script = os.path.realpath(__file__)
+    command = f"python3 {shlex.quote(script)} {PUT_BACK_VERB} {shlex.quote(saved)} {shlex.quote(repo)}"
+    return f"{saved_text(saved)}; on a clean tree, run: {command}"
 
 
 def stopped_rebase_dir(repo):
@@ -61,8 +93,10 @@ def stopped_rebase_text(repo, state_dir):
             branch = head_name.read().strip()
     conflicts = listed_paths(repo, "--diff-filter=U")
     conflict_text = "conflicted paths: " + " ".join(conflicts) if conflicts else "no conflicted paths"
-    return (f"a rebase is stopped on {branch}, {conflict_text}. Finish it with git -C {repo} rebase --continue "
-            f"after resolving any conflict, or undo it with git -C {repo} rebase --abort.")
+    continue_command = git_command_text(repo, "rebase", "--continue")
+    abort_command = git_command_text(repo, "rebase", "--abort")
+    return (f"a rebase is stopped on {branch}, {conflict_text}. Finish it with {continue_command} "
+            f"after resolving any conflict, or undo it with {abort_command}.")
 
 
 def put_back_text(repo, saved):
@@ -76,7 +110,8 @@ def merge_abort_text(repo):
     """What to say about undoing a failed merge: the abort command only when a merge is in progress."""
     in_progress = run_in_repo(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")
     if in_progress.returncode == 0:
-        return f"Undo it with git -C {repo} merge --abort."
+        abort_command = git_command_text(repo, "merge", "--abort")
+        return f"Undo it with {abort_command}."
     return "No merge is in progress."
 
 
@@ -182,15 +217,17 @@ def listed_paths(repo, *diff_arguments):
     return [name for name in os.fsdecode(listed.stdout).split("\0") if name]
 
 
-def staged_tree(repo, saved):
+def staged_tree(repo, saved, left_out=()):
     """The tree the index would hold had the apply gone on cleanly: HEAD with the saved staged changes on it, built in
-    a scratch index. None when git cannot build it."""
+    a scratch index. The `left_out` paths keep their HEAD text. None when git cannot build it."""
     staged_changes = run_in_repo(repo, "diff", "--binary", f"{saved}^1", f"{saved}^2")
     if staged_changes.returncode != 0:
         return None
+    exclusions = [f"--exclude={script_utils.escaped_glob(name)}" for name in left_out]
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
-        for arguments, stdin in ((("read-tree", "HEAD"), None), (("apply", "--cached"), staged_changes.stdout)):
+        apply_arguments = ("apply", "--cached", *exclusions)
+        for arguments, stdin in ((("read-tree", "HEAD"), None), (apply_arguments, staged_changes.stdout)):
             if run_in_repo(repo, *arguments, env=env, stdin=stdin).returncode != 0:
                 return None
         written = run_in_repo(repo, "write-tree", env=env)
@@ -199,10 +236,11 @@ def staged_tree(repo, saved):
     return os.fsdecode(written.stdout).strip()
 
 
-def restore_the_split(repo, saved, conflicts):
+def restore_the_split(repo, saved, conflicts, left_out=()):
     """After a conflicted apply git stages every file that applied; give each one back the index entry it had.
+    The `left_out` paths (rebuilt pages the caller stages itself) are not in the staged tree.
     Return the staged tree, or exit 1 naming the recovery command when that fails."""
-    tree = staged_tree(repo, saved)
+    tree = staged_tree(repo, saved, left_out)
     if tree is None:
         sys.exit("pull_keep_index: the local changes conflict and the staged files could not be told apart. "
                  + recovery_text(repo, saved))
@@ -220,24 +258,86 @@ def restore_the_split(repo, saved, conflicts):
     return tree
 
 
+def staged_clash_paths(repo, saved):
+    """The paths both the saved staged changes and the pull changed; a superset of the paths whose staged change
+    cannot go on the index."""
+    staged = set(listed_paths(repo, f"{saved}^1", f"{saved}^2"))
+    pulled = set(listed_paths(repo, f"{saved}^1", "HEAD"))
+    return sorted(staged & pulled)
+
+
+def built_page_paths(repo, paths):
+    """The paths whose gitattributes set `merge=built-page`."""
+    checked = run_in_repo(repo, "check-attr", "-z", "merge", "--", *paths)
+    if checked.returncode != 0:
+        return []
+    fields = os.fsdecode(checked.stdout).split("\0")[:-1]
+    triples = zip(fields[0::3], fields[1::3], fields[2::3], strict=True)
+    return [name for name, _attribute, value in triples if value == BUILT_PAGE_DRIVER]
+
+
+def built_page_driver_configured(repo):
+    """Whether the repo configures the built-page merge driver. Git text-merges a page whose attribute names an
+    unconfigured driver, and that text must not be staged as a rebuilt page."""
+    found = run_in_repo(repo, "config", "--get", f"merge.{BUILT_PAGE_DRIVER}.driver")
+    return found.returncode == 0
+
+
+def put_back_without_index(repo, saved, pages, env):
+    """The staged changes clash with the pull only on built pages: apply the saved changes with no index so the merge
+    driver rebuilds those pages, then give every other file its staged or unstaged state and stage the rebuilt pages."""
+    applied = run_in_repo(repo, "stash", "apply", "--quiet", saved, env=env)
+    if applied.returncode != 0:
+        sys.stderr.write(os.fsdecode(applied.stderr))
+        exit_unapplied(repo, saved, left_out=pages)
+    restore_the_split(repo, saved, pages, left_out=pages)
+    staged = run_in_repo(repo, *page_stage_arguments(pages))
+    if staged.returncode != 0:
+        problem = script_utils.process_stderr_text(staged)
+        # The changes are already applied, so only the staging is left to do.
+        stage_command = git_command_text(repo, *page_stage_arguments(pages))
+        sys.exit(f"pull_keep_index: could not stage the rebuilt pages: {problem}. To stage them, run: {stage_command}\n"
+                 f"{saved_text(saved)}.")
+
+
+def exit_unapplied(repo, saved, left_out=()):
+    """Exit 1 for a failed apply: the conflict recovery when paths are conflicted, else the put-back command.
+    The `left_out` paths are rebuilt pages: the user stages them with `git add`, not a reset to the staged tree."""
+    conflicts = listed_paths(repo, "--diff-filter=U")
+    if not conflicts:
+        sys.exit("pull_keep_index: the local changes did not go back on cleanly. " + recovery_text(repo, saved))
+
+    tree = restore_the_split(repo, saved, [*conflicts, *left_out], left_out)
+    conflicted_files = [name for name in conflicts if name not in left_out]
+    message = (f"pull_keep_index: the local changes conflict with the pull in: {' '.join(conflicts)}. The other files "
+               f"are back, staged or unstaged as before. Fix the conflict markers, then run: ")
+    stage_lead = ""
+    if conflicted_files:
+        reset_command = git_command_text(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *conflicted_files)
+        message += f"{reset_command}\nThat marks them resolved with their staged text. "
+        stage_lead = "Then stage the pages: "
+    if left_out:
+        add_command = git_command_text(repo, *page_stage_arguments(left_out))
+        message += f"{stage_lead}{add_command}\n"
+    sys.exit(message + f"{saved_text(saved)}.")
+
+
 def put_back(repo, saved):
     """Apply the saved changes with their index, naming the saved commit to the built-page merge driver of
-    ~/agent-evals so it rebuilds a page it would else merge as text. Exit 1 naming the recovery command when that
-    fails; on a conflict, first put back each applied file's staged or unstaged state."""
+    ~/agent-evals so it rebuilds a page it would else merge as text. When the index clash is on built pages alone,
+    apply without the index and stage the rebuilt pages. Exit 1 naming the recovery command when that fails; on a
+    conflict, first put back each applied file's staged or unstaged state."""
     env = {**os.environ, BUILT_PAGE_STASH: saved}
     applied = run_in_repo(repo, "stash", "apply", "--index", "--quiet", saved, env=env)
     if applied.returncode == 0:
         return
     sys.stderr.write(os.fsdecode(applied.stderr))
-    conflicts = listed_paths(repo, "--diff-filter=U")
-    if not conflicts:
-        sys.exit("pull_keep_index: the local changes did not go back on cleanly. " + recovery_text(repo, saved))
-
-    tree = restore_the_split(repo, saved, conflicts)
-    names = " ".join(conflicts)
-    sys.exit(f"pull_keep_index: the local changes conflict with the pull in: {names}. The other files are back, "
-             f"staged or unstaged as before. Fix the conflict markers, then run: git -C {repo} reset -q {tree} -- "
-             f"{names}\nThat marks them resolved with their staged text. The local changes are saved in {saved}.")
+    has_conflicts = bool(listed_paths(repo, "--diff-filter=U"))
+    clashes = [] if has_conflicts else staged_clash_paths(repo, saved)
+    if clashes and built_page_paths(repo, clashes) == clashes and built_page_driver_configured(repo):
+        put_back_without_index(repo, saved, clashes, env)
+        return
+    exit_unapplied(repo, saved)
 
 
 def remote_has_ref(repo, remote, ref):
@@ -255,10 +355,11 @@ def configured_remote(repo, branch):
 
 def exit_upstream_gone(repo, branch, merge_ref, remote):
     """Exit 1 naming the gone upstream and the recovery commands."""
+    unset_command = git_command_text(repo, "branch", "--unset-upstream")
+    push_command = git_command_text(repo, "push", "-u", remote, "HEAD")
     sys.exit(f"pull_keep_index: the upstream {merge_ref} of {branch} is gone from {remote}; a chained push stops here "
              f"so it does not recreate it. Nothing was pulled and the local changes are in place. To recover, run: "
-             f"git -C {repo} branch --unset-upstream, then, if you mean to recreate it, push with: "
-             f"git -C {repo} push -u {remote} HEAD")
+             f"{unset_command}, then, if you mean to recreate it, push with: {push_command}")
 
 
 def pull_target(repo):
@@ -317,12 +418,24 @@ def set_upstream(repo, remote, branch):
         if written.returncode == 0:
             continue
         problem = script_utils.process_stderr_text(written)
+        retry = git_command_text(repo, "config", f"branch.{branch}.{key}", value)
         sys.exit(f"pull_keep_index: the pull worked but setting the upstream of {branch} failed in {repo}: {problem}. "
-                 f"To set it, run: git -C {repo} config branch.{branch}.{key} {value}")
+                 f"To set it, run: {retry}")
 
 
 def main(arguments):
-    if len(arguments) != 1:
+    if len(arguments) == 3 and arguments[0] == PUT_BACK_VERB:
+        saved, repo = arguments[1], arguments[2]
+        is_saved_commit = run_in_repo(repo, "rev-parse", "--verify", "-q", f"{saved}^2")
+        if is_saved_commit.returncode != 0:
+            sys.exit(f"pull_keep_index: {saved} is not a saved-changes commit\n{__doc__}")
+        tracked_changes = run_in_repo(repo, "status", "--porcelain", "--untracked-files=no")
+        if tracked_changes.stdout:
+            sys.exit(f"pull_keep_index: {repo} has tracked changes; --put-back needs a clean tree\n{__doc__}")
+        put_back(repo, saved)
+        return
+    is_put_back_call = bool(arguments) and arguments[0] == PUT_BACK_VERB
+    if len(arguments) != 1 or is_put_back_call:
         sys.exit(__doc__)
     repo = arguments[0]
 

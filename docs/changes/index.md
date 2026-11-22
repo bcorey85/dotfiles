@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1044 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1045 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-21, [code relay names the run path and phase_start refuses a resume of another checkout](notes/2026-11-21-code-relay-names-the-run-path-and-phase-start.md).
+Latest change: 2026-11-21, [refactor sweep skips markers in string text and prints in CLI scripts](notes/2026-11-21-refactor-sweep-skips-markers-in-string-text-and.md).
 
 ## Top gains
 

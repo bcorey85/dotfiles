@@ -60,6 +60,7 @@ import script_utils
 import shape_clones
 import simplify_slices
 import source_text
+import sweep_markers
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
@@ -73,13 +74,6 @@ MAX_LOG_INPUTS = MAX_STATE_INPUTS
 LOG_INPUT_PREFIX = "refactor-flow-"
 LOG_INPUT_HEX_DIGITS = 12
 LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPUT_HEX_DIGITS}}}\.json")
-
-# Each marker is a whole word, with an optional plural `s` (`# TODOs`), so an identifier that holds one (`TODOS_DIR`,
-# `HACKATHON`, `tree_fingerprint(`) is no hit. A bare `print(` or `pprint(` and the dotted `pprint.pprint(` are hits,
-# but a method call (`self.print(`) is not.
-SWEEP_MARKERS = re.compile(r"\b(?:TODO|FIXME|XXX|HACK)s?\b|\bconsole\.(?:log|debug)\b|\bdebugger\b|\bbinding\.pry\b"
-                           r"|(?<![\w.])p?print\(|\bpprint\.pprint\(")
-SWEEP_COMMENTED_CODE = re.compile(r"^\s*(//|#)\s*(if |for |while |return |const |let |var |def |function |import )")
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
                "not a phase diff.")
@@ -197,24 +191,20 @@ def parse_branch_diff(diff_text):
         raise RefactorFlowError(f"cannot parse the branch diff: {error}") from error
 
 
-def sweep_matches(diff_files):
-    """Added lines that match the two mechanical-sweep patterns, as (path, line, kind, text)."""
-    matches = []
-    for diff_file in diff_files:
-        for hunk in diff_file.hunks:
-            matches += _sweep_added_lines(diff_file.path, hunk.added)
-    return matches
-
-
-def _sweep_added_lines(path, added_lines):
-    """The sweep matches among one file's added (line, text) pairs."""
-    matches = []
-    for line, text in added_lines:
-        if SWEEP_MARKERS.search(text):
-            matches.append((path, line, "marker", text.strip()))
-        if SWEEP_COMMENTED_CODE.search(text):
-            matches.append((path, line, "commented-out code", text.strip()))
-    return matches
+def post_image_reader(root, head):
+    """A function path -> the file's lines after the branch's change: the work tree file, or the file at `head`.
+    None for a work-tree symlink, whose diff lines are not file text."""
+    def read_post_image(file_path):
+        if head:
+            return git("show", "--no-textconv", f"{head}:{file_path}").stdout.split("\n")
+        full_path = Path(root) / file_path
+        if full_path.is_symlink():
+            return None
+        try:
+            return full_path.read_bytes().decode("utf-8", errors="replace").split("\n")
+        except OSError as error:
+            raise RefactorFlowError(f"cannot read {full_path} for the sweep: {error}") from error
+    return read_post_image
 
 
 def binary_paths(numstat_text):
@@ -420,14 +410,6 @@ def read_branch_span(base, opts_head, root):
     return BranchSpan(diff_ref, files, diff_output(diff_ref, "-U0"), shortstat, untracked)
 
 
-def untracked_matches(untracked):
-    """The sweep matches in the untracked files, read as if every line were added."""
-    matches = []
-    for entry in untracked:
-        matches += _sweep_added_lines(entry.path, entry.added_lines)
-    return matches
-
-
 def branch_prep(opts):
     root = require_repo()
     head = opts.head or "HEAD"
@@ -464,7 +446,13 @@ def branch_prep(opts):
 def _print_branch_report(span, base, base_source, opts_head, root, jscpd_timeout):
     log_input = fresh_log_input()
     diff_files = parse_branch_diff(span.diff_text)
-    matches = sweep_matches(diff_files) + untracked_matches(span.untracked)
+    read_post_image = post_image_reader(root, opts_head)
+    try:
+        tracked_matches = sweep_markers.sweep_matches(diff_files, read_post_image)
+        untracked_matches = sweep_markers.untracked_matches(span.untracked)
+    except sweep_markers.PostImageMismatchError as error:
+        raise RefactorFlowError(f"the sweep cannot trust the file it read: {error}") from error
+    matches = tracked_matches + untracked_matches
     scope_head = f"head `{opts_head}`" if opts_head else "the work tree"
     if opts_head:
         pairs, note = [], clone_pairs.HEAD_MODE_NOTE

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1087 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1088 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [A recorded acceptance clears a known pre-existing scoped failure](notes/2026-11-22-a-recorded-acceptance-clears-a-known-pre-existing.md).
+Latest change: 2026-11-22, [run.sh skips the Python suite on a skill or agent markdown change](notes/2026-11-22-run-sh-skips-the-python-suite-on-a-skill-or-agent.md).
 
 ## Top gains
 

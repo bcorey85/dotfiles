@@ -4,6 +4,8 @@
 # the run's temp folder. The tests run even when the lint fails.
 # A failed step (lint, duplicate-check, tests, review-gate-state) is named on the last line, and the exit is non-zero.
 # `REAL_PLANS=1 bash tests/run.sh` also parses every real plan under ~/dev.
+# When every change against the merge base with origin/master is a .md file under claude/.claude/skills/ or
+# claude/.claude/agents/ (tests/changed_scope.py), only the test files that read such a file run; the run says so.
 set -euo pipefail
 
 repoRoot="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,8 +33,17 @@ runTmp="$(mktemp -d)"
 trap 'rm -rf "$runTmp"' EXIT
 slotDir="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import parallel_tests; print(parallel_tests.slot_folder())' "$repoRoot/tests")"
 
+testFiles=()
+scope="$(python3 "$repoRoot/tests/changed_scope.py" scope)" || scope=full
+if [ "$scope" = "markdown-only" ]; then
+    while IFS= read -r keptFile; do
+        testFiles+=("$keptFile")
+    done < <(python3 "$repoRoot/tests/changed_scope.py" kept)
+    echo "markdown-only change: skipped the unit tests; ran only the ${#testFiles[@]} test files that read a skill or agent file"
+fi
+
 testStatus=0
-TMPDIR="$runTmp" SUITE_SLOT_DIR="$slotDir" python3 "$repoRoot/tests/parallel_tests.py" || testStatus=1
+TMPDIR="$runTmp" SUITE_SLOT_DIR="$slotDir" python3 "$repoRoot/tests/parallel_tests.py" ${testFiles[@]+"${testFiles[@]}"} || testStatus=1
 
 if [ "$gateStatus" -eq 0 ]; then
     python3 "$repoRoot/tests/review_gate_unchanged.py" compare "$runTmp" <<<"$gateKeys" || gateStatus=1

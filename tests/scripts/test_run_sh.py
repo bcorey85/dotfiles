@@ -88,6 +88,36 @@ esac""")
         recorded = self.record_file.read_text()
         self.assertNotIn("compare", recorded, "compare never runs after a failed snapshot")
 
+    def run_with_scope_stub(self, scope):
+        """Runs run.sh with a python3 stub that answers the scope question with `scope` and records the test run."""
+        write_stub(self.bin_dir / "ruff", "exit 0")
+        self.record_file = self.bin_dir / "recorded"
+        write_stub(self.bin_dir / "python3", f"""case "$*" in
+  *"changed_scope.py scope"*) echo {scope}; exit 0 ;;
+  *"changed_scope.py kept"*) printf 'test_kept_a.py\\ntest_kept_b.py\\n'; exit 0 ;;
+  *parallel_tests.py*) echo "tests $*" >> {self.record_file}; exit 0 ;;
+  *) exit 0 ;;
+esac""")
+        bash_path = shutil.which("bash")
+        return subprocess.run([bash_path, str(SCRIPT)], env={"PATH": str(self.bin_dir)},
+                              capture_output=True, text=True, timeout=30)
+
+    def test_a_markdown_only_change_runs_lint_and_only_the_prompt_reading_tests_and_says_so(self):
+        finished = self.run_with_scope_stub("markdown-only")
+
+        self.assertEqual(finished.returncode, 0)
+        self.assertIn("markdown-only change: skipped the unit tests", finished.stdout)
+        recorded = self.record_file.read_text()
+        self.assertTrue(recorded.strip().endswith("parallel_tests.py test_kept_a.py test_kept_b.py"), recorded)
+
+    def test_any_other_change_runs_the_full_suite_with_no_skip_message(self):
+        finished = self.run_with_scope_stub("full")
+
+        self.assertEqual(finished.returncode, 0)
+        self.assertNotIn("skipped", finished.stdout)
+        recorded = self.record_file.read_text()
+        self.assertTrue(recorded.strip().endswith("parallel_tests.py"), recorded)
+
 
 if __name__ == "__main__":
     unittest.main()

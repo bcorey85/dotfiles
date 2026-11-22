@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-682 fix notes
+683 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -181,6 +181,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |
 | script/tests | 1 | 0 |
+| script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |
 | shared/reviewer-calibration | 1 | 0 |

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1071 changes
+1072 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -25,6 +25,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [pull_keep_index puts staged files back after a pull that changes the built change-log pages](notes/2026-11-22-pull-keep-index-puts-staged-files-back-after-a.md) [script/pull-keep-index] A pull that changes the built change-log pages and a file the user also staged no longer leaves the tree with none of the local changes.
 * [Scripts owner list names the work tree's git tree object writer](notes/2026-11-22-scripts-owner-list-names-the-work-tree-s-git-tree.md) [rule/scripts-claude-md] The tree identity owner line now names the helper that returns the work tree's git tree object id and says it is not a fingerprint, so a coder under scripts/ imports it and does not take it for a second tree hash.
 * [Under auto mode 48 of the Bash gate's 69 rules log and pass; permission deny entries and the classifier stand in (pilot build 2)](notes/2026-11-22-under-auto-mode-48-of-the-bash-gate-s-69-rules-log.md) [script/bash-safety-gate] The second build of the pilot on this machine: in an auto mode session 36 more rules of the Bash gate record the command and pass. Four command rules (push to main, force push, no-verify, root) hand over to 28 permissions.deny entries in settings.json, and 32 target rules hand over to auto mode's classifier with its default rules. 21 rules keep blocking in every mode.
 * [Under auto mode the Bash gate's twelve bypass-guard rules and the inline interpreter hint log and pass (pilot)](notes/2026-11-22-under-auto-mode-the-bash-gate-s-twelve-bypass.md) [script/bash-safety-gate, script/inline-interpreter-hint] A two-week pilot on this machine: in an auto mode session the twelve shape rules of the Bash gate and the inline interpreter hint record the command and let it go on to the gate's other rules and the auto mode classifier, and the sudo rule stops matching the word inside quoted search text.

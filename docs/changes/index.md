@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1071 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1072 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Review loop puts back files a fix pass changed outside the review scope](notes/2026-11-22-review-loop-puts-back-files-a-fix-pass-changed.md).
+Latest change: 2026-11-22, [Review loop lint and format skip files the pre-commit exclude or oxlint ignore config leaves out](notes/2026-11-22-review-loop-lint-and-format-skip-files-the-pre.md).
 
 ## Top gains
 

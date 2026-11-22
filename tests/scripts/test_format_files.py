@@ -54,6 +54,44 @@ TLDR_PRE_COMMIT_CONFIG = """repos:
         pass_filenames: false
 """
 
+# The top of a real repo's config: a top-level block-scalar exclude, a ruff config file beside it, and ruff hooks
+# with no `files:` of their own.
+TOP_LEVEL_EXCLUDE_CONFIG = """# See https://pre-commit.com for more information
+exclude: |
+    (?x)^(
+        src/backend/static/.*|
+        src/frontend/src/locales/.* |
+        .*/migrations/.* |
+        src/frontend/yarn.lock
+    )$
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    -   id: check-yaml
+        exclude: mkdocs.yml
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+    - id: ruff-format
+      args: [--preview]
+    - id: ruff-check
+      args: [
+        --fix,
+        --preview
+      ]
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.4.2
+  hooks:
+  - id: codespell
+    exclude: >
+      (?x)^(
+          docs/docs/stylesheets/.*|
+          pyproject.toml |
+      )$
+"""
+HOOKS_PREFIX = "repos:\n  - repo: r\n    hooks:\n"
+
 
 class RunFormattersTest(unittest.TestCase):
     def setUp(self):
@@ -494,6 +532,102 @@ for f in "$@"; do case "$f" in *.rs) echo '// formatted' >> "$f";; esac; done
 
 
 @unittest.skipUnless(shutil.which("ruff"), "ruff is not on PATH")
+class PreCommitExcludeTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name) / "repo"
+        self.repo.mkdir()
+        self.bin = pathlib.Path(scratch.name) / "bin"
+        self.bin.mkdir()
+        self.calls = pathlib.Path(scratch.name) / "ruff-calls.txt"
+        ruff = self.bin / "ruff"
+        # `ruff check` fails here, so each check that runs is a lint problem.
+        ruff.write_text(FAKE_RUFF.format(calls=self.calls).replace("|| exit 0", "|| exit 1"))
+        ruff.chmod(0o755)
+        patcher = mock.patch.dict(os.environ, {"PATH": str(self.bin)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write_files(self, *names):
+        for name in names:
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text("x = 1\n")
+
+    def test_a_file_the_top_level_exclude_matches_is_neither_formatted_nor_linted(self):
+        (self.repo / ".pre-commit-config.yaml").write_text(TOP_LEVEL_EXCLUDE_CONFIG)
+        (self.repo / "pyproject.toml").write_text("[tool.ruff.format]\nquote-style = 'single'\n")
+        names = ["app/migrations/0001_initial.py", "app/models.py", "src/frontend/src/locales/en/messages.ts"]
+        self.write_files(*names)
+
+        changed = format_files.run_formatters(str(self.repo), names, include_python=True, configured_only=True)
+        problems = format_files.lint_problems(str(self.repo), names)
+
+        self.assertEqual(changed, ["app/models.py"])
+        self.assertEqual((self.repo / "app/migrations/0001_initial.py").read_text(), "x = 1\n")
+        self.assertEqual(len(problems), 1, problems)
+        self.assertNotIn("migrations", self.calls.read_text())
+        sorted_files = format_files.sort_files(str(self.repo), names, include_python=True)
+        self.assertEqual((sorted_files.web, sorted_files.python), ([], ["app/models.py"]))
+
+    def test_a_file_a_ruff_hooks_own_exclude_matches_is_left_out_of_that_hooks_command(self):
+        config = (HOOKS_PREFIX + "      - id: ruff\n        exclude: ^gen/\n      - id: ruff-format\n"
+                  "      - id: mypy\n        exclude: ^app/\n")
+        for with_config_file in (False, True):
+            with self.subTest(with_config_file=with_config_file):
+                self.calls.unlink(missing_ok=True)
+                (self.repo / ".pre-commit-config.yaml").write_text(config)
+                if with_config_file:
+                    (self.repo / "ruff.toml").write_text("")
+                self.write_files("gen/x.py", "app/y.py")
+
+                format_files.run_formatters(str(self.repo), ["gen/x.py", "app/y.py"], include_python=True)
+
+                self.assertEqual(self.calls.read_text().splitlines(),
+                                 ["format --force-exclude gen/x.py app/y.py", "check --fix --force-exclude app/y.py"])
+
+    def test_a_file_only_one_of_two_hooks_of_a_kind_excludes_still_goes_to_the_command(self):
+        config = HOOKS_PREFIX + "      - id: ruff\n        exclude: ^gen/\n      - id: ruff-check\n"
+        (self.repo / ".pre-commit-config.yaml").write_text(config)
+        self.write_files("gen/x.py")
+
+        problems = format_files.lint_problems(str(self.repo), ["gen/x.py"])
+
+        self.assertEqual(len(problems), 1, problems)
+
+    def test_each_exclude_shape_reads_as_its_regex(self):
+        shapes = {"exclude: ^gen/": "^gen/",
+                  "exclude: '^gen/'  # generated": "^gen/",
+                  "exclude: |\n          (?x)^(\n            gen/.* |\n\n            vendor/.*\n          )$":
+                      "(?x)^(\ngen/.* |\n\nvendor/.*\n)$\n",
+                  "exclude: >-  # folded\n          ^gen/": "^gen/",
+                  "exclude: >\n          ^gen/\n          |^vendor/": "^gen/ |^vendor/\n"}
+        for value, regex in shapes.items():
+            with self.subTest(value=value):
+                config = HOOKS_PREFIX + f"      - id: ruff\n        {value}\n      - id: ruff-format\n"
+
+                hooks = format_files.parse_ruff_hooks(config)
+
+                self.assertEqual([(hook.hook_id, hook.exclude) for hook in hooks],
+                                 [("ruff", regex), ("ruff-format", None)])
+
+    def test_an_exclude_the_parser_cannot_read_excludes_no_file(self):
+        for value in ("", "|", ">-", "&anchor ^a/", "[^a/]", "'^a/", "^a(", "|\n          ^a("):
+            with self.subTest(value=value):
+                config = f"exclude: {value}\n" + HOOKS_PREFIX + f"      - id: ruff\n        exclude: {value}\n"
+
+                parsed = format_files.PreCommitConfig(config, format_files.parse_ruff_hooks(config),
+                                                      format_files.top_level_exclude(config))
+
+                self.assertEqual((parsed.exclude, parsed.ruff_hooks[0].exclude), (None, None))
+                self.assertFalse(parsed.excludes("a/x.py"))
+
+    def test_a_hooks_exclude_is_not_the_top_level_exclude(self):
+        config = HOOKS_PREFIX + "      - id: ruff\n        exclude: ^gen/\n"
+
+        self.assertIsNone(format_files.top_level_exclude(config))
+
+
 class LintProblemsTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -666,6 +800,37 @@ class WebLintProblemsTest(unittest.TestCase):
         command, output = problems[0]
         self.assertNotIn("--fix", command)
         self.assertEqual(output.strip(), "eslint from .bin a.ts")
+
+    def install_oxlint_with_help(self, help_text):
+        """A local oxlint that prints `help_text` for --help, and otherwise logs its arguments and exits 1 unless
+        it was given --no-error-on-unmatched-pattern (every named file is one its ignore config leaves out)."""
+        calls = self.bin.parent / "oxlint-calls.txt"
+        local_bin = self.repo / "node_modules" / ".bin"
+        local_bin.mkdir(parents=True)
+        oxlint = local_bin / "oxlint"
+        oxlint.write_text(f"#!/bin/sh\nif [ \"$1\" = --help ]; then echo '{help_text}'; exit 0; fi\n"
+                          f"echo \"$@\" >> {calls}\n"
+                          "case \"$*\" in *--no-error-on-unmatched-pattern*) exit 0;; esac\n"
+                          "echo 'No files found to lint.'\nexit 1\n")
+        oxlint.chmod(0o755)
+        return calls
+
+    def test_an_oxlint_whose_ignore_config_leaves_out_every_named_file_is_no_problem(self):
+        (self.repo / ".oxlintrc.json").write_text('{"ignorePatterns": ["a.ts"]}')
+        calls = self.install_oxlint_with_help("  --no-error-on-unmatched-pattern  Do not exit with an error")
+
+        problems = format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(problems, [])
+        self.assertEqual(calls.read_text(), "--no-error-on-unmatched-pattern a.ts\n")
+
+    def test_an_oxlint_without_the_unmatched_pattern_flag_is_run_without_it(self):
+        (self.repo / ".oxlintrc.json").write_text("{}")
+        calls = self.install_oxlint_with_help("  --fix  Fix as many issues as possible")
+
+        format_files.lint_problems(str(self.repo), ["a.ts"])
+
+        self.assertEqual(calls.read_text(), "a.ts\n")
 
     def test_a_passing_oxlint_has_no_problems(self):
         (self.repo / ".oxlintrc.json").write_text("{}")

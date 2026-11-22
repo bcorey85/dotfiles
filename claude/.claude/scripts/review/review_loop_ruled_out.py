@@ -11,10 +11,14 @@ import review_loop_untracked
 import worktree_snapshot
 
 RULED_OUT_REASON = "the user ruled the file out of scope"
-# Under it, per coder role: `ruled-out/` copies the ruled-out files, `diff/` copies the files of the diff under review.
+# Under it, per coder role: `ruled-out/` copies the ruled-out files, `diff/` copies the files of the diff under review,
+# `out-of-scope/` copies the dirty files outside the pass's scope.
 BACKUP_FOLDER = "pass-backup"
 # A move or rename takes the old path away, so a coder's `git mv` is a deletion of it that the finding names.
 DELETION_WORD = r"(?:delet|remov|mov|renam)\w*"
+# What stands before and after a path that a text holds as a whole token.
+PATH_TOKEN_START = r"(?<![\w./-])"
+PATH_TOKEN_END = r"(?![\w/-]|\.\w)"
 
 # One note per coder pass that changed a ruled-out file or deleted a file of the diff, for the packet's tool_fault.
 RULED_OUT_FAULTS = []
@@ -57,8 +61,8 @@ def names_deletion(finding_texts, path, root):
     """Whether one of the finding texts asks to delete, remove, move or rename `path`: such a word, then the path as a
     whole token, or the path followed by "is/should be/can be deleted/removed". A path under `root` counts as `path`."""
     escaped = re.escape(path)
-    as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?(?<![\w./-]){escaped}`?(?![\w/-]|\.\w)"
-    as_subject = rf"(?<![\w./-]){escaped}`?\s+(?:is|should\s+be|can\s+be)\s+{DELETION_WORD}"
+    as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?{PATH_TOKEN_START}{escaped}`?{PATH_TOKEN_END}"
+    as_subject = rf"{PATH_TOKEN_START}{escaped}`?\s+(?:is|should\s+be|can\s+be)\s+{DELETION_WORD}"
     pattern = re.compile(f"{as_object}|{as_subject}", re.IGNORECASE)
     root_prefix = f"{root}/"
     return any(pattern.search(text.replace(root_prefix, "")) for text in finding_texts)

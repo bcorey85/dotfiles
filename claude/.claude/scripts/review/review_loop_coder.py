@@ -7,6 +7,7 @@ import typing
 
 import review_loop_held
 import review_loop_ruled_out
+import review_loop_scope_guard
 import review_loop_untracked
 import script_utils
 from review_loop_calls import claude_call
@@ -20,7 +21,7 @@ def coder_fault_notes():
     """The notes the loop's model calls left for the packet's tool_fault: untracked files a call removed, held files
     a coder changed."""
     return [*review_loop_untracked.UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS,
-            *review_loop_ruled_out.RULED_OUT_FAULTS]
+            *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS]
 
 
 def file_texts(repo, start=None):
@@ -90,12 +91,13 @@ def failed_call_error(error, changed):
     return CoderCallError(message, changed, str(error))
 
 
-def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
+def coder_call(role, prompt, repo, out, held, pass_guard, model="", scope_guard=None):
     """The fix coder. Returns a CoderResult (report, diffs, changed): the diffs of what it changed feed the round-two
     brief, and one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the
     class-closure check; changed lists the paths whose text differs. A held file that changed during the call is
     left as it is and noted, and never counts as changed. `pass_guard` (a review_loop_ruled_out.PassGuard) undoes
-    the pass's edits to ruled-out files and its unnamed deletions before the tree is read again. A commit the coder
+    the pass's edits to ruled-out files and its unnamed deletions before the tree is read again, and `scope_guard`
+    (a review_loop_scope_guard.ScopeGuard) puts back the files outside the pass's scope. A commit the coder
     made during the call is kept; its changes count against the commit HEAD named before the call. A failed call
     raises CoderCallError naming the files it changed before it died. `model` is the model the coder runs on; ""
     leaves the agent's own."""
@@ -107,18 +109,25 @@ def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
         report = claude_call(role, prompt, repo, out, agent="coder", model=model or None,
                              deletable=pass_guard.deletions)
     except RuntimeError as error:
-        pass_guard.undo()
+        undo_pass(pass_guard, scope_guard)
         review_loop_untracked.record_loop_written(repo, held, untracked)
         after = after_call(role, repo, held, held_before, head_before)
         changed = changed_paths(before, after)
         raise failed_call_error(error, changed) from error
 
-    pass_guard.undo()
+    undo_pass(pass_guard, scope_guard)
     review_loop_untracked.record_loop_written(repo, held, untracked)
     after = after_call(role, repo, held, held_before, head_before)
     diffs = write_fix_diffs(repo, out, role, before, after, head_before)
     changed = changed_paths(before, after)
     return CoderResult(report, diffs, changed)
+
+
+def undo_pass(pass_guard, scope_guard):
+    """Undoes what the pass may not keep: the ruled-out files and unnamed deletions, then the files out of scope."""
+    pass_guard.undo()
+    if scope_guard is not None:
+        scope_guard.undo()
 
 
 def after_call(role, repo, held, held_before, head_before):

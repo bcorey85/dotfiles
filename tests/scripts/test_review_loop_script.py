@@ -4791,6 +4791,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_the_class_closure_prompt_names_one_diff_file_per_path_and_holds_no_diff_text(self):
         (self.repo / "generated").mkdir()
         self.commit_files({"generated/snapshot.json": "{}\n"})
+        # The snapshot is part of the change under review, so the fix pass may rewrite it.
+        (self.repo / "generated/snapshot.json").write_text("{ }\n")
         snapshot = "".join(f'{{"row": {number}, "marker": "SNAPSHOT-LINE"}}\n' for number in range(20000))
         self.assertGreater(len(snapshot), 400_000)
 

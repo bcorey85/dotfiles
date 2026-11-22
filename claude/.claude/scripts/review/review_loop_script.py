@@ -75,6 +75,7 @@ import loop_transcript
 import plan_format
 import review_loop_held
 import review_loop_ruled_out
+import review_loop_scope_guard
 import review_loop_untracked
 import reviewer_dispatch
 import script_utils
@@ -120,9 +121,15 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
-from review_loop_ruled import RuledFindings, no_code_numbers, prior_issue_entries, withheld_adopted
+from review_loop_ruled import (
+    RuledFindings,
+    approval_only_paths,
+    no_code_numbers,
+    prior_issue_entries,
+    withheld_adopted,
+)
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
-from review_loop_signoffs import SignoffRuns, fully_put_back_paths, snapshot_signoffs
+from review_loop_signoffs import SignoffRuns, fully_put_back_paths, is_decision_log, snapshot_signoffs
 from review_user_ruled import reasked_findings
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
@@ -163,6 +170,12 @@ class ReviewRequest(typing.NamedTuple):
     role: str
     agent: str
     prompt: str
+
+
+def has_own_guard(path):
+    """Whether another guard of the loop rules on a coder pass's edit to `path`: a decision log's sign-off lines are
+    put back line by line, and an approval-only file is reverted and reported."""
+    return is_decision_log(path) or bool(approval_only_paths([path]))
 
 
 class Sendable(typing.NamedTuple):
@@ -567,6 +580,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         prompt = self.coder_brief(call_name, findings, nits, files_in_scope, issue_texts, named)
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out, diff_files,
                                                  issue_texts)
+        allowed = self.pass_scope(files_in_scope)
+        scope_guard = review_loop_scope_guard.begin_pass(self.repo, self.out, call_name, allowed, has_own_guard,
+                                                         issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
         self.snapshot_approval_blobs()
@@ -577,7 +593,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
             self.put_back_findings = []
         try:
             result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
-                                 model=self.coder_model)
+                                 model=self.coder_model, scope_guard=scope_guard)
         except CoderCallError as error:
             put_back = self.undo_signoff_pass(signoffs, findings, self.coder_held_files())
             changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]
@@ -596,6 +612,11 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
         result = without_reverted(result, reverted, stats_before)
         self.check_pass_result(call_name, result)
         return self.restore_named_tests(call_name, named, result)
+
+    def pass_scope(self, files_in_scope):
+        """The paths a coder pass may change: the files in its scope and the ones earlier passes touched. The held,
+        ruled-out and later-phase files count too: each has its own guard, as has_own_guard's paths do."""
+        return {*files_in_scope, *self.files_touched, *self.held_files, *self.ruled_out, *self.later_phase_files}
 
     def coder_brief(self, call_name, findings, nits, files_in_scope, issue_texts, named):
         """The coder's prompt for one pass, written under the pass's brief folder."""

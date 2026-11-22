@@ -5,9 +5,9 @@ description: Systematic debugging — find the root cause before proposing any f
 
 # Debug — root cause before fix
 
-## The Iron Law
+## Root cause before fix
 
-> **NO FIX BEFORE ROOT CAUSE.**
+> **Find the root cause before proposing any fix.**
 
 A change at the error surface without knowing why the bad state got there is a symptom patch — it moves the bug.
 
@@ -21,7 +21,7 @@ Not this skill:
 - Hunting for bugs in a diff you just wrote → **/review**.
 - Traced hard and hit a wall (opaque library error, version mismatch, no visible cause in our code) → WebSearch the exact error and versions, and cite what the sources say. IN-code causes are yours; OUTSIDE-knowledge comes from sources.
 
-## Red flags — if you catch yourself here, STOP and return to phase 1
+## Red flags — if you catch yourself here, stop and return to phase 1
 
 - "Quick fix for now, investigate later" / "it's probably X, let me fix that"
 - "Just try changing X and see if it works" / proposing fixes before tracing data flow
@@ -61,13 +61,7 @@ Form ONE hypothesis, prove with evidence not reasoning (failing assertion at ori
 
 - **One change, at the original trigger** — never at the symptom because it's closer, and
   no "while I'm here" refactoring bundled in.
-- **Defense in depth** for bad values crossing layers — a check per passed boundary so the _class_ becomes impossible:
-  - **Entry** — reject invalid input at the API boundary (empty, missing, wrong type).
-  - **Business logic** — reject data that doesn't make sense for this operation (mocks
-    and alternate code paths bypass entry validation).
-  - **Environment guard** — refuse dangerous operations in the wrong context (e.g. no
-    destructive writes outside a temp dir under test).
-  - **Instrumentation** — log context before the dangerous operation for next time.
+- Where the bad value crossed layers, add a check at each boundary it passed, so the class cannot recur.
 - **Route the edit normally**: `/debug` **diagnoses**, `/fix` **repairs** — keep them on their rails so the review gate runs.
 - **If the fix doesn't work: count your attempts.** Under 3 → return to phase 1 with the
   new information, form a NEW hypothesis (don't stack fixes). **At 3+, STOP — usually wrong _architecture_, not hypothesis** (tell: each fix reveals fresh coupling). Raise as a design question before fix #4.

@@ -10,7 +10,7 @@ Covers `/eng-spec` features and small changes with a real decision but no spec.
 
 ## Gate: is there a decision here?
 
-An ADR records a DECISION WITH ALTERNATIVES — name one a reasonable engineer might have picked, or stop. No-decision ADRs bury the load-bearing ones.
+An ADR records a decision with alternatives — name one a reasonable engineer might have picked, or stop. No-decision ADRs bury the load-bearing ones.
 
 ## Sources (best-first)
 

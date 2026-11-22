@@ -13,7 +13,7 @@ The orchestrator's WebSearch-before-config rule applies in full here — this sk
 
 Current from lockfile/manifest; target from request or registry. One lookup, trust it.
 
-### 2. MANDATORY research — before touching anything
+### 2. Research before touching anything
 
 For every major-version step between current and target:
 

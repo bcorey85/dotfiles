@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1054 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1068 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Stop hook tells the session to take the step it offers and list it](notes/2026-11-22-stop-hook-tells-the-session-to-take-the-step-it.md).
+Latest change: 2026-11-22, [The inline interpreter hint docstring says the gate blocks stdin code](notes/2026-11-22-the-inline-interpreter-hint-docstring-says-the.md).
 
 ## Top gains
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1092 changes
+1093 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -51,6 +51,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Test that every mcp tool name in the toolkit names a registered server](notes/2026-11-22-test-that-every-mcp-tool-name-in-the-toolkit-names.md) [script/mcp-ledger, skill/audit] A test fails when a skill, agent, command or settings file names an mcp__<server>__ tool for a server the toolkit does not register, so a stale server name is caught before a lane breaks.
 * [A recorded acceptance clears a known pre-existing scoped failure](notes/2026-11-22-a-recorded-acceptance-clears-a-known-pre-existing.md) [script/accepted-failures, script/full-check-gate, script/check-output] accepted_failures.py records a user's acceptance of a failing line, and the full-check gate reads that line as pre-existing when the base run fails it too.
 * [A fix coder that dies mid-edit leaves a record and its findings stay open](notes/2026-11-22-a-fix-coder-that-dies-mid-edit-leaves-a-record-and.md) [script/review-loop-coder, script/review-loop-partial-fix] A fix coder that ends abnormally leaves partial-fix.json with its findings and pass diff, and the next launch re-queues those findings.
 * [A fix pass that deletes a comment no finding names files an ask](notes/2026-11-22-a-fix-pass-that-deletes-a-comment-no-finding-names.md) [script/review-loop-comment-removal, script/review-loop-script] After each fix pass the loop puts back a removed comment line that no finding names and files an ask carrying the removal.

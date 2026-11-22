@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1092 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1093 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [A recorded acceptance clears a known pre-existing scoped failure](notes/2026-11-22-a-recorded-acceptance-clears-a-known-pre-existing.md).
+Latest change: 2026-11-22, [Test that every mcp tool name in the toolkit names a registered server](notes/2026-11-22-test-that-every-mcp-tool-name-in-the-toolkit-names.md).
 
 ## Top gains
 

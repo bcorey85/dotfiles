@@ -1,5 +1,5 @@
 """Keeps a test out of the real ~/.claude/state: the review-gate records and the hand-back
-store live under it, and a test that reaches them with the real HOME adds its own rows to the live commit gate."""
+store live under it, and a test that reaches them with the real HOME adds its own rows to the live push check."""
 import os
 import pathlib
 import tempfile

@@ -309,7 +309,7 @@ class WaitReviewTest(unittest.TestCase):
 
     def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=()):
         """A repo whose review ended, with this session's dispatch and hand-back (holding `impacts`) in the real
-        store, keyed as the commit gate keys them."""
+        store, keyed as the review record keys them."""
         repo, phase_dir = self.repo_with_pid(999999999)
         packet = json.dumps({"status": status, "iter": 1, "fixed": [], "ask": [], "blockers": list(blockers),
                              "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts})

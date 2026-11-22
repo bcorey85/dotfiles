@@ -7,11 +7,14 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-4 open benches, by rank. Each line is the question the bench asks.
+7 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
+* Refute each code-reviewer finding with a second agent before the review loop acts on it (queued): Test whether a verifier subagent that tries to refute each code-reviewer finding before the loop acts on it cuts wrong fixes without dropping real catches.
 * Bench: tests asked for only where a function is complex and uncovered, in place of the test reviewer's judgment (queued): A score of complexity times missing coverage per changed function decides where a test is owed, so test lines fall where the code is simple or already covered.
 * Agent-driven review loop with a full second review, on two fixtures, against the scripted loop (running): A Sonnet loop agent that keeps the full second review but drops the third round and the smell re-run could cut the review loop's Opus tokens about 30% with no round-one miss lost; this bench proves it on two fixtures so it can ship.
+* Haiku coder against Sonnet coder, same plan and review loop (running): A Haiku coder could cut the coder's Sonnet tokens and wall-clock if the review loop does not spend the saving back on extra Opus review.
+* Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.

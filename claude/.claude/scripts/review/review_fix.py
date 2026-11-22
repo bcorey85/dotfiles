@@ -104,7 +104,7 @@ still judges.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
   review_fix.py defer <handoff file>    /code's phase-end deferral of held plan impacts. The handoff file must hold
                                          `plan_impact: RESOLVED: deferred to phase end by the session, <date>:
-                                         <summary>`; records the ruling so the commit gate counts the review as clean.
+                                         <summary>`; records the ruling so the push check counts the review as clean.
 
 State lives in <git dir>/review-fix/state.json. A packet that does not parse stops with exit 2. Env
 REVIEW_FIX_CLAUDE_DIR overrides the toolkit folder; REVIEW_FIX_NVIM_JUMP and REVIEW_FIX_GH override the nvim-jump
@@ -318,7 +318,7 @@ def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     else:
         lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
-                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the commit gate stays closed.")
+                 "Stop. Do not re-dispatch again. Tell the user no reviewer ran, so the push check stays closed.")
     print_action("stop-no-reviewer", *lines)
     return 2
 
@@ -623,15 +623,15 @@ def stop_for_status(packet, options, state):
 
 
 def commit_credit_refusal(packet):
-    """Why the commit gate does not credit a clean packet's review, as a line for the session, or None. The loop
-    records the credit when it hands back, so a refusal there would otherwise surface only as a denied commit."""
+    """Why the push check does not credit a clean packet's review, as a line for the session, or None. The loop
+    records the credit when it hands back, so a refusal there would otherwise surface only as a denied push."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not session_id or packet["status"] not in handback.CLEAN_STATUSES:
         return None
     reason = handback.false_clean_reason(session_id)
     if not reason:
         return None
-    return f"COMMIT CREDIT: the commit gate does not credit this review yet: {reason}."
+    return f"REVIEW CREDIT: the push check does not credit this review yet: {reason}."
 
 
 def command_packet(argv):
@@ -808,7 +808,7 @@ def waiting_plan_impact_source():
     """The PlanImpactSource for `decide`: either its state or its held impacts are set. The packet state is used while
     it waits and the latest hand-back's packet is missing, holds no impact (a fix round's hand-back) or holds the same
     impact, ruled or not. When the packet holds another impact, the state is stale, because the packet state outlives
-    its packet: the unruled held impacts of the latest hand-back are used, as the commit gate reads them.
+    its packet: the unruled held impacts of the latest hand-back are used, as the push check's record reads them.
     Raises UsageError when an existing state file is not readable, whatever the hand-back holds, and when neither
     source holds an impact."""
     state = read_state()
@@ -823,7 +823,7 @@ def waiting_plan_impact_source():
         return PlanImpactSource(None, hand_back.held, hand_back.packet, hand_back.handed_back_at)
     if state is None:
         raise missing_fix_state_error()  # no packet was processed
-    raise UsageError("no plan-impact is waiting in this session's packet or latest hand-back, so the commit gate is "
+    raise UsageError("no plan-impact is waiting in this session's packet or latest hand-back, so the push check is "
                      "already clear (a `defer` clears it too). Add the ruling under the plan's decision log "
                      "(`03-decisions.md` or `## Plan Deviations`) by hand. `decide` reads the packet state while it "
                      "waits on the hand-back's impact, else this session's hand-back.")
@@ -857,8 +857,8 @@ def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None)
         return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)
     return print_action("stop", logged_line, *entry,
                  "No review-fix launch state exists for this run, so `decide adopt` cannot re-dispatch. Run the review "
-                 "again through your own loop (`/code resume`) now that the plan is changed. The commit gate stays "
-                 "dirty until it hands back.")
+                 "again through your own loop (`/code resume`) now that the plan is changed. The push check stays "
+                 "closed until it hands back.")
 
 
 def record_plan_ruling(state, decision, by, ruling, plan_path, relayed=None):
@@ -928,7 +928,7 @@ def redispatch_lines(state, resolved_lines):
 
 def command_defer(argv):
     """/code defers the held plan impacts to phase end: the handoff's one-line RESOLVED row is the ruling, so the
-    commit gate stops waiting on them."""
+    push check stops waiting on them."""
     parser = argument_parser("defer")
     parser.add_argument("handoff")
     options = parser.parse_args(argv)
@@ -945,7 +945,7 @@ def command_defer(argv):
         raise UsageError("defer: CLAUDE_CODE_SESSION_ID is not set, so the deferral cannot be recorded")
 
     settled = record_ruling(
-        session_id, "defer", "The plan impacts wait for phase end, so the commit gate counts the review as clean.")
+        session_id, "defer", "The plan impacts wait for phase end, so the push check counts the review as clean.")
     print_settled(settled)
 
 

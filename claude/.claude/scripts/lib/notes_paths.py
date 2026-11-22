@@ -1,5 +1,5 @@
 """A repo's notes paths: the Markdown files a commit ships without review, and that the tree a review credits leaves
-out, so a plan ticked after the review keeps the commit credit.
+out, so a plan ticked after the review keeps the review credit.
 
 A notes path is a Markdown file under the repo's top-level docs/ folder, or a Markdown file at a path listed in the
 repo's `.claude/notes-paths` (one entry per line: a `/` ending is a folder prefix, else an exact file; blank lines and

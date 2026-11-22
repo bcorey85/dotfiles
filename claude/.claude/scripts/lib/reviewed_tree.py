@@ -1,8 +1,8 @@
 """The working tree a session's converged review covered, kept per repo so a later commit of that same tree passes.
 
 A review-loop records its tree when it ends clean: the scripted loop at its hand-back
-(review_loop_packet.write_handback_rows). Then
-review_commit_gate.py reads it back at commit time. A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the
+(review_loop_packet.write_handback_rows). git_discipline_gate.py reads it back at push time (`push_review_state`).
+A tree is its fingerprint, `tree_fingerprint`: "sha256:" and the
 hash of `git diff --binary --no-renames --diff-filter=a <base> -- .` (git's raw output bytes, never decoded)
 followed by, for each file the tree adds against base (committed since base, staged as new, or untracked and
 non-ignored) in name order, `\0untracked\0<name>\0<git hash-object>`. An added submodule stays in the diff part; an
@@ -18,8 +18,10 @@ index or a commit since base hashes differently, so verify-prep and the branch r
 
 State: ~/.claude/state/review-gate/<session>.reviewed, one JSON object of repo top level -> fingerprint,
 <session>.reviewed-base beside it (the HEAD at record time and the tree fingerprint recorded then, so a reviewed tree
-split across commits keeps its credit while that HEAD is an ancestor of the current one), and
-~/.claude/state/review-gate/reviewed-trees.json, repo top level -> the latest fingerprints any session recorded. A value
+split across commits keeps its credit while that HEAD is an ancestor of the current one),
+~/.claude/state/review-gate/reviewed-trees.json, repo top level -> the latest fingerprints any session recorded, and
+reviewed-bases.json beside it, repo top level -> the latest {"base", "tree"} pairs any session recorded, which the push
+check reads to fingerprint the pushed HEAD against the HEAD of review time. A value
 written in the older form for a tree that adds a file through the index or a commit since base never equals a current
 one, so that tree counts as not reviewed until it is recorded again; a tree whose added paths are all untracked
 regular files keeps its old value.
@@ -41,6 +43,13 @@ BASE_SUFFIX = ".reviewed-base"
 # earns the credit of a review that converged under another session id. It credits only the exact tree reviewed.
 SHARED_REVIEWED_NAME = "reviewed-trees.json"
 SHARED_LIMIT = 50
+# Every session's {"base": HEAD when recorded, "tree": the fingerprint recorded then}, per repo top level: the push
+# check fingerprints the pushed HEAD against each base.
+SHARED_BASES_NAME = "reviewed-bases.json"
+# push_review_state results.
+PUSH_NO_RECORD = "no-record"
+PUSH_REVIEWED = "reviewed"
+PUSH_CHANGED = "changed"
 # Added submodules (160000) are not hashed as files; they stay in the patch. Symlinks (120000) are hashed by link text.
 PATCH_MODES = {b"160000"}
 SYMLINK_MODE = b"120000"
@@ -68,8 +77,12 @@ def shared_reviewed_file():
     return review_gate_dir() / SHARED_REVIEWED_NAME
 
 
+def shared_bases_file():
+    return review_gate_dir() / SHARED_BASES_NAME
+
+
 def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerprintError, timeout=None,
-                     notes_entries=None):
+                     notes_entries=None, target=None):
     """Content fingerprint of the working tree at `top` as it stands: `git diff <base>` without added files, plus the
     hash of each file the tree adds against `base` (committed since `base`, staged as new, or untracked), as
     "sha256:<hex>"; an added submodule stays in the diff, an added symlink is hashed by its link text whether staged,
@@ -79,13 +92,16 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     a new symlink or a staged move leaves the value as it was. `git rm --cached` of a tracked file changes it.
     `exclude_rel` (a path relative to the top level) leaves a file or directory out of both parts. `notes_entries`,
     a list of `.claude/notes-paths` entries, leaves every notes path they and docs/ name out of both parts; None
-    leaves them in. Each git call may run `timeout` seconds (None: no limit). Raises error_type when git fails or
-    runs past it, or an added file name holds a newline."""
+    leaves them in. `target`, a commit, fingerprints that commit's tree in place of the working tree: the value equals
+    the working tree's when the two hold the same content, and untracked files are not read. Each git call may run
+    `timeout` seconds (None: no limit). Raises error_type when git fails or runs past it, or an added file name holds
+    a newline."""
     def git(argv, stdin=None):
         return script_utils.run_or_raise(["git", *argv], error_type, cwd=top, check=True, stdin=stdin,
                                          timeout=timeout, as_bytes=True)
 
     digest = hashlib.sha256()
+    revisions = [base] if target is None else [base, target]
     pathspecs = ["--", "."]
     if exclude_rel:
         pathspecs.append(f":(exclude,literal){exclude_rel}")
@@ -94,12 +110,13 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     # Lowercase `a` leaves added files out of the diff: they are hashed below as whole files, so a staged new file
     # and an untracked one give the same value. --no-renames makes a staged move read as a delete plus an add.
     diff_flags = ["--binary", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames"]
-    digest.update(git(["diff", *diff_flags, "--diff-filter=a", base, *pathspecs]).stdout)
+    digest.update(git(["diff", *diff_flags, "--diff-filter=a", *revisions, *pathspecs]).stdout)
 
-    raw = git(["diff", "--raw", "-z", "--no-renames", "--diff-filter=A", base, *pathspecs]).stdout
-    added, added_links, in_patch = added_paths(raw)
+    raw = git(["diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--diff-filter=A", *revisions,
+               *pathspecs]).stdout
+    added, added_links, in_patch, blobs = added_paths(raw)
     added = [*added, *added_links]
-    listing = git(["ls-files", "--others", "--exclude-standard", "-z"]).stdout
+    listing = b"" if target is not None else git(["ls-files", "--others", "--exclude-standard", "-z"]).stdout
 
     def is_excluded(name):
         path = os.fsdecode(name)
@@ -111,7 +128,7 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     kept_in_patch = sorted(name for name in in_patch if not is_excluded(name))
     if kept_in_patch:
         patch_specs = ["--", *[":(literal)" + os.fsdecode(name) for name in kept_in_patch]]
-        digest.update(git(["diff", *diff_flags, "--diff-filter=A", base, *patch_specs]).stdout)
+        digest.update(git(["diff", *diff_flags, "--diff-filter=A", *revisions, *patch_specs]).stdout)
 
     untracked = [name for name in listing.split(b"\0") if name]
     nested = [name for name in untracked if name.endswith(b"/") and not is_excluded(name)]
@@ -131,9 +148,17 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
     if any(b"\n" in name for name in names):
         raise error_type("an added file name holds a newline; rename it so the tree can be fingerprinted")
 
+    def link_text(name):
+        if target is None:
+            return os.fsencode(os.readlink(work_path(name)))
+        return git(["cat-file", "blob", blobs[name]]).stdout
+
     file_names = [name for name in names if name not in link_names]
     file_entries = {}
-    if file_names:
+    if target is not None:
+        # A committed file's blob id is the hash `git hash-object` gives the same content in the working tree.
+        file_entries = {name: blobs[name].encode() for name in file_names}
+    elif file_names:
         paths_input = b"\n".join(file_names) + b"\n"
         hashed = git(["hash-object", "--stdin-paths"], stdin=paths_input)
         file_hashes = hashed.stdout.split()
@@ -143,31 +168,33 @@ def tree_fingerprint(top, base="HEAD", exclude_rel=None, error_type=TreeFingerpr
         file_entries = dict(zip(file_names, file_hashes, strict=True))
     for name in names:
         if name in link_names:
-            target = os.readlink(work_path(name))
-            digest.update(b"\0symlink\0" + name + b"\0" + os.fsencode(target))
+            digest.update(b"\0symlink\0" + name + b"\0" + link_text(name))
         else:
             digest.update(b"\0untracked\0" + name + b"\0" + file_entries[name])
     return "sha256:" + digest.hexdigest()
 
 
 def added_paths(raw):
-    """(files, links, in_patch) from `git diff --raw -z --diff-filter=A` output: the added paths to hash as whole
-    files, the added symlinks, which are hashed by their link text, and the added submodules, which stay in the
-    patch."""
+    """(files, links, in_patch, blobs) from `git diff --raw -z --no-abbrev --diff-filter=A` output: the added paths to
+    hash as whole files, the added symlinks, which are hashed by their link text, the added submodules, which stay in
+    the patch, and each added path's new object id (all zeros for a working-tree file)."""
     raw_fields = [field for field in raw.split(b"\0") if field]
     files = []
     links = []
     in_patch = []
+    blobs = {}
     # With -z and no renames, each entry is a ":<old mode> <new mode> ..." field and then one path field.
     for meta, name in zip(raw_fields[0::2], raw_fields[1::2], strict=True):
-        new_mode = meta.split()[1]
+        meta_fields = meta.split()
+        new_mode = meta_fields[1]
+        blobs[name] = meta_fields[3].decode()
         if new_mode in PATCH_MODES:
             in_patch.append(name)
         elif new_mode == SYMLINK_MODE:
             links.append(name)
         else:
             files.append(name)
-    return files, links, in_patch
+    return files, links, in_patch, blobs
 
 
 def fingerprint_base(top, timeout=None):
@@ -275,6 +302,48 @@ def record_base(session, top, tree_hash, stored_tree=False):
     bases = read_json_object(base_file(session))
     bases[top] = {"base": head, "tree": tree_hash}
     script_utils.write_text_atomically(base_file(session), json.dumps(bases) + "\n")
+    record_shared_base(top, head, tree_hash)
+
+
+def record_shared_base(top, head, tree_hash):
+    """Add {"base": head, "tree": tree_hash} to the repo's latest SHARED_LIMIT pairs in the shared bases record."""
+    entry = {"base": head, "tree": tree_hash}
+    shared = read_json_object(shared_bases_file())
+    stored = shared.get(top)
+    entries = [value for value in stored if value != entry] if isinstance(stored, list) else []
+    shared[top] = [*entries, entry][-SHARED_LIMIT:]
+    script_utils.write_text_atomically(shared_bases_file(), json.dumps(shared) + "\n")
+
+
+def push_review_state(repo_dir):
+    """Whether the HEAD commit of the repo that holds repo_dir is a tree a converged review covered, notes paths left
+    out: PUSH_NO_RECORD when no review recorded a base for the repo (or repo_dir is in no work tree), PUSH_REVIEWED
+    when HEAD's tree, fingerprinted against a recorded base, equals the tree recorded with it, else PUSH_CHANGED.
+    Uncommitted files are not read: a push sends commits only."""
+    top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    if top is None:
+        return PUSH_NO_RECORD
+    stored = read_json_object(shared_bases_file()).get(str(top))
+    entries = [entry for entry in stored if isinstance(entry, dict)] if isinstance(stored, list) else []
+    if not entries:
+        return PUSH_NO_RECORD
+
+    notes_entries, errors = notes_paths.committed_notes_list(top, timeout=GIT_TIMEOUT_SECONDS)
+    for error in errors:
+        print("[reviewed-tree] " + error, file=sys.stderr)
+    # Fails closed: a base git no longer holds, or a fingerprint that fails, matches nothing.
+    for entry in reversed(entries):
+        base = entry.get("base")
+        if not isinstance(base, str):
+            continue
+        try:
+            head_hash = tree_fingerprint(top, base=base, timeout=GIT_TIMEOUT_SECONDS, notes_entries=notes_entries,
+                                         target="HEAD")
+        except TreeFingerprintError:
+            continue
+        if head_hash == entry.get("tree"):
+            return PUSH_REVIEWED
+    return PUSH_CHANGED
 
 
 def drop_base(session, top):

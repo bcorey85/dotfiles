@@ -114,8 +114,9 @@ Then the phase boundary:
   next stop.
 
 `/commit` drafts the message from the staged diff, scans for secrets, commits,
-and pushes. It never stages. `review-commit-gate` makes you confirm a
-`git commit` while a coder dispatch is unreviewed.
+and pushes. It never stages. `git-discipline-gate` denies a `git push` or
+`gh pr create` whose HEAD changed code after the last converged review of
+that repo.
 
 ### 4. Closing phases — after the last `/code` phase
 

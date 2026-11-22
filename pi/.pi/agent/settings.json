@@ -35,10 +35,6 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/scripts/gates/git_discipline_gate.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/scripts/review/review_commit_gate.py"
           }
         ]
       },

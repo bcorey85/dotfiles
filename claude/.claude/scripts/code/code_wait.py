@@ -220,10 +220,10 @@ def read_phase_run(repo):
 
 
 def plan_impact_notice(repo):
-    """The lines that list each plan impact the commit gate still holds for this session's latest hand-back and tell
-    /code to defer them to phase end (the defer sentence), before any commit. Empty when no plan impact waits for a
+    """The lines that list each plan impact that still holds the review credit for this session's latest hand-back and
+    tell /code to defer them to phase end (the defer sentence), before any commit. Empty when no plan impact waits for a
     ruling, and for a packet that is not clean (`defer` on such a packet records the ruling, but
-    `record_clean_review` refuses the commit credit)."""
+    `record_clean_review` refuses the review credit)."""
     hand_back = handback.current_session_held_impact_hand_back(str(repo))
     held = hand_back.held
     if not held:
@@ -236,7 +236,7 @@ def plan_impact_notice(repo):
     handoff_file = phase_dir(repo) / HANDOFF_FILE
     return [f"{len(held)} {handback.PLAN_IMPACTS_WAIT_TEXT}:",
             *[f"- {script_utils.one_line(impact['text'], None)}" for impact in held],
-            "The run does not stop on them mid-phase. Defer them to phase end now, so the commit gate clears: "
+            "The run does not stop on them mid-phase. Defer them to phase end now, so the review counts as clean: "
             + defer_instruction(handoff_file)]
 
 

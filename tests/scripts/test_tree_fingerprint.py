@@ -1,5 +1,5 @@
 """Checks for reviewed_tree.tree_fingerprint, the one working-tree hash behind verify's stored fingerprints and the
-review commit gate's reviewed-tree record."""
+push check's reviewed-tree record."""
 import os
 import pathlib
 import shutil

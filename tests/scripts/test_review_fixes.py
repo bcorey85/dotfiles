@@ -89,27 +89,6 @@ class QualityCheckCapFindingsTest(HookRunTest):
         self.assertEqual(len(list((root / "unknown").glob("run-*"))), 1)
 
 
-class ReviewCommitGateFindingsTest(HookRunTest):
-    def test_empty_session_id_does_not_become_unknown(self):
-        # finding 4: jq `//` keeps ""; the state path is then the directory itself, so no unknown file appears
-        payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent", "session_id": "",
-                   "tool_input": {"subagent_type": "coder"}}
-        self.run_hook("review-commit-gate", json.dumps(payload))
-        self.assertFalse((self.home / ".claude" / "state" / "review-gate" / "unknown").exists())
-
-    def test_missing_null_and_false_session_id_use_unknown(self):
-        for blank in ("missing", None, False):
-            payload = {"hook_event_name": "PostToolUse", "tool_name": "Agent",
-                       "tool_input": {"subagent_type": "coder"}}
-            if blank != "missing":
-                payload["session_id"] = blank
-            marker = self.home / ".claude" / "state" / "review-gate" / "unknown"
-            if marker.exists():
-                marker.unlink()
-            self.run_hook("review-commit-gate", json.dumps(payload))
-            self.assertEqual(json.loads(marker.read_text())["kind"], "dispatch", blank)
-
-
 class CalibrationGuardFindingsTest(HookRunTest):
     @unittest.skipIf(os.geteuid() == 0, "root reads any file")
     def test_unreadable_lock_prints_question_marks(self):
@@ -225,9 +204,9 @@ class GitDisciplineAmendTest(HookRunTest):
 class RunGateTest(HookRunTest):
     PORTED = ("calibration-guard", "calibration-refs-guard",
               "claudemd-linecount", "comment-bloat-gate", "dead-prose-gate", "emit-orchestration", "format-changed",
-              "git-discipline-gate", "log-agent-usage", "quality-check-cap", "review-commit-gate",
+              "git-discipline-gate", "log-agent-usage", "quality-check-cap",
               "shell-write-gate", "spec-budget-gate", "stale-citation-gate", "warn-skip-hooks")
-    GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate", "review-commit-gate",
+    GATES = ("shell-write-gate", "quality-check-cap", "git-discipline-gate",
              "comment-bloat-gate", "spec-budget-gate")
 
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):

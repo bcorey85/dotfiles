@@ -2487,29 +2487,23 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual(packet["status"], "converged")
 
-    def launch_with_dirty_gate(self):
-        # What /code leaves behind when it launches the loop: the dispatch row and a dirty commit gate. Nothing else
-        # runs after the script, as when the /code run ended before the loop handed back.
+    def launch_after_dispatch(self):
+        # What /code leaves behind when it launches the loop: the dispatch row. Nothing else runs after the script,
+        # as when the /code run ended before the loop handed back.
         store = self.scratch / "handback"
         store.mkdir()
         (store / f"{SESSION}.jsonl").write_text(json.dumps({"kind": "dispatch", "session_id": SESSION,
                                                                  "repo": str(self.repo)}) + "\n")
-        gate_dir = self.scratch / "home" / ".claude" / "state" / "review-gate"
-        gate_dir.mkdir(parents=True)
-        (gate_dir / SESSION).write_text("dirty\n")
 
-    def commit_gate_reply(self):
-        hook_input = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": SESSION,
-                      "cwd": str(self.repo), "tool_input": {"command": "git commit -m phase"}}
-        env = {"PATH": os.environ["PATH"], "HOME": str(self.scratch / "home"), "TMPDIR": str(self.scratch)}
-        gate = toolkit_paths.REVIEW_DIR / "review_commit_gate.py"
-        finished = subprocess.run([sys.executable, str(gate)], input=json.dumps(hook_input), capture_output=True,
-                                  text=True, env=env, cwd=str(self.repo))
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        return finished.stdout
+    def reviewed_repos(self):
+        # The repos the shared reviewed-tree record credits, which the push check reads.
+        record = self.scratch / "home" / ".claude" / "state" / "review-gate" / "reviewed-trees.json"
+        if not record.exists():
+            return set()
+        return {os.path.realpath(top) for top in json.loads(record.read_text())}
 
-    def test_converged_loop_lets_the_commit_through_when_its_code_run_ended_first(self):
-        self.launch_with_dirty_gate()
+    def test_converged_loop_records_its_tree_when_its_code_run_ended_first(self):
+        self.launch_after_dispatch()
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
@@ -2518,10 +2512,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(self.commit_gate_reply(), "")
+        self.assertIn(os.path.realpath(self.repo), self.reviewed_repos())
 
-    def test_failed_loop_leaves_the_commit_gate_closed(self):
-        self.launch_with_dirty_gate()
+    def test_failed_loop_records_no_reviewed_tree(self):
+        self.launch_after_dispatch()
 
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}],
@@ -2529,7 +2523,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         })
 
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("no converged /review", self.commit_gate_reply())
+        self.assertNotIn(os.path.realpath(self.repo), self.reviewed_repos())
 
     def test_the_packet_the_script_hands_back_is_one_json_object(self):
         completed = self.run_script({

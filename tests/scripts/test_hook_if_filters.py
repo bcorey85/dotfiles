@@ -38,7 +38,6 @@ ALWAYS_FIRING = {
     "code/coder_gate.py",
     "gates/wait_loop_gate.py",
     "gates/git_discipline_gate.py",
-    "review/review_commit_gate.py",
 }
 
 # command -> scripts behind an `if` filter that fire for it (the always-firing ones are added in the test).

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-662 fix notes
+663 fix notes
 
 Recent: the 7 days up to 2026-11-21, the newest note.
 
@@ -17,7 +17,7 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | script/review-fix | 72 | 16 |
 | script/review-loop-script | 69 | 12 |
 | script/handback | 56 | 3 |
-| script/review-commit-gate | 45 | 8 |
+| script/review-commit-gate | 46 | 9 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 28 | 7 |
 | script/full-check | 28 | 5 |
@@ -31,7 +31,7 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | skill/review | 17 | 0 |
 | script/shell-command | 15 | 8 |
 | script/verify-prep | 15 | 3 |
-| script/git-discipline-gate | 13 | 4 |
+| script/git-discipline-gate | 14 | 5 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 2 |
 | script/log-review-finding | 12 | 1 |
@@ -86,6 +86,7 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | script/phase-start | 3 | 2 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
+| script/reviewed-tree | 3 | 1 |
 | script/rg-path-gate | 3 | 1 |
 | script/wait-loop-gate | 3 | 0 |
 | script/worktree-snapshot | 3 | 1 |
@@ -95,6 +96,7 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | script/agent-cost | 2 | 0 |
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
+| script/commit-gate-dirty | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 2 |
 | script/git-calls | 2 | 2 |
@@ -107,7 +109,6 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-findings | 2 | 1 |
-| script/reviewed-tree | 2 | 0 |
 | script/shell-quoting | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
@@ -129,7 +130,6 @@ Recent: the 7 days up to 2026-11-21, the newest note.
 | script/clone-pairs | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
-| script/commit-gate-dirty | 1 | 1 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 1 |

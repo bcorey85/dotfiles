@@ -37,11 +37,6 @@ vim.g.diffs = {
     neogit = true,
   },
   conflict = false,
-  highlights = {
-    intra = {
-      algorithm = "vscode",
-    },
-  },
 }
 
 -- Word-level emphasis lives in ONE surface only: codediff.nvim, opened from
@@ -63,15 +58,5 @@ return {
       group = vim.api.nvim_create_augroup("diffs_hide_word_emphasis", { clear = true }),
       callback = vim.schedule_wrap(hide_word_emphasis),
     })
-
-    -- The 'vscode' intra algorithm needs libvscode_diff (prebuilt FFI lib,
-    -- per-machine download from codediff.nvim's releases). Nothing in the
-    -- plugin fetches it automatically — without this, a fresh machine
-    -- silently falls back to the confetti-prone 'default' algorithm.
-    -- One-time, async, no-op once present.
-    local lib = require("diffs.lib")
-    if not lib.has_lib() then
-      lib.ensure(function() end)
-    end
   end,
 }

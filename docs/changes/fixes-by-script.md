@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-663 fix notes
+665 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -32,10 +32,10 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/shell-command | 15 | 7 |
 | script/verify-prep | 15 | 1 |
 | script/git-discipline-gate | 14 | 5 |
+| script/pull-keep-index | 13 | 2 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
 | script/log-review-finding | 12 | 0 |
-| script/pull-keep-index | 12 | 1 |
 | script/refactor-flow | 11 | 3 |
 | script/code-wait | 10 | 3 |
 | script/log-escape | 10 | 2 |
@@ -63,6 +63,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
+| script/adr-flow | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
 | script/format-changed | 4 | 0 |
 | script/format-files | 4 | 0 |
@@ -74,7 +75,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
-| script/adr-flow | 3 | 0 |
 | script/agent-model-guard | 3 | 1 |
 | script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |

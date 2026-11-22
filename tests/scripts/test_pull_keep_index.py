@@ -1,11 +1,13 @@
 """Tests for tools/pull_keep_index.py: a pull before a push keeps the user's staged files staged."""
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from toolkit_paths import TOOLS_DIR
@@ -49,9 +51,22 @@ class PullKeepIndexTest(unittest.TestCase):
         self.git(other, "commit", "-qm", "other " + name)
         self.git(other, "push", "-q")
 
-    def run_script(self):
+    def run_script(self, *arguments):
         env = {**os.environ, **GIT_ENV}
-        return subprocess.run([sys.executable, str(SCRIPT), str(self.repo)], capture_output=True, text=True, env=env)
+        return subprocess.run([sys.executable, str(SCRIPT), *arguments, str(self.repo)], capture_output=True,
+                              text=True, env=env)
+
+    def saved_commit(self, stderr):
+        return stderr.split("The local changes are saved in ")[1].split(".")[0]
+
+    def mark_built_pages(self, *names):
+        driver = self.tmp / "rebuild_driver.py"
+        driver.write_text("import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('rebuilt\\n')\n")
+        self.git(self.repo, "config", "merge.built-page.driver", f"{sys.executable} {driver} %A")
+        self.write(self.repo, ".gitattributes", "".join(f"{name} merge=built-page\n" for name in names))
+        self.git(self.repo, "add", ".gitattributes")
+        self.git(self.repo, "commit", "-qm", "attributes")
+        self.git(self.repo, "push", "-q")
 
     def status(self):
         return self.git(self.repo, "status", "--porcelain").splitlines()
@@ -111,9 +126,178 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertNotEqual(finished.returncode, 0)
-        self.assertIn("stash apply --index", finished.stderr)
-        saved = finished.stderr.split("stash apply --index ")[1].split()[0]
+        self.assertIn("--put-back ", finished.stderr)
+        saved = finished.stderr.split("--put-back ")[1].split()[0]
         self.assertEqual(self.git(self.repo, "show", saved + ":f"), "mine\n")
+        own_lines = [line for line in finished.stderr.splitlines() if line.startswith("pull_keep_index:")]
+        self.assertTrue(own_lines)
+        for line in own_lines:
+            self.assertNotIn("stash", line.lower())
+
+    def test_put_back_verb_restores_saved_changes_with_the_split(self):
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "g", "unstaged\n")
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f"])
+
+    def test_a_put_back_call_with_no_repo_prints_the_usage(self):
+        env = {**os.environ, **GIT_ENV}
+
+        for extra in ([], ["abc"]):
+            finished = subprocess.run([sys.executable, str(SCRIPT), "--put-back", *extra], capture_output=True,
+                                      text=True, env=env)
+
+            self.assertNotEqual(finished.returncode, 0, extra)
+            self.assertIn("Usage: pull_keep_index.py <repo>", finished.stderr, extra)
+
+    def test_a_staged_clash_on_a_built_page_and_an_ordinary_file_stops_with_the_put_back_command(self):
+        self.add_files("k")
+        self.mark_built_pages("f")
+        self.push_from_other_machine("f", "theirs\n")
+        self.push_from_other_machine("k", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "k", "staged\n")
+        self.git(self.repo, "add", "k")
+
+        finished = self.run_script()
+
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("--put-back ", finished.stderr)
+        saved = finished.stderr.split("--put-back ")[1].split()[0]
+        self.assertEqual(self.git(self.repo, "show", saved + ":k"), "staged\n")
+        self.assertEqual(self.status(), [])
+        self.assertEqual((self.repo / "f").read_text(), "theirs\n")
+        self.assertEqual((self.repo / "k").read_text(), "theirs\n")
+
+    def test_a_built_page_clash_with_an_unstaged_conflict_names_the_conflict_and_the_page_to_stage(self):
+        self.mark_built_pages("f")
+        self.push_from_other_machine("f", "theirs\n")
+        self.push_from_other_machine("g", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("conflict with the pull in: g", finished.stderr)
+        self.assertIn(f"git -C {self.repo} --literal-pathspecs reset -q ", finished.stderr)
+        self.assertIn(f"git -C {self.repo} --literal-pathspecs add -- f", finished.stderr)
+        self.assertNotIn("could not be told apart", finished.stderr)
+        self.assertEqual(sorted(self.status()), ["M  f", "UU g"])
+        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
+        self.assertEqual((self.repo / "f").read_text(), "rebuilt\n")
+        self.assertIn(f"The local changes are saved in {self.saved_commit(finished.stderr)}", finished.stderr)
+
+    def test_a_built_page_the_driver_gives_up_on_is_named_for_staging_with_no_reset_line(self):
+        self.mark_built_pages("f")
+        failing = self.tmp / "failing_driver.py"
+        failing.write_text("import sys\nsys.exit(1)\n")
+        self.git(self.repo, "config", "merge.built-page.driver", f"{sys.executable} {failing} %A")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("UU f", self.status())
+        self.assertIn("conflict with the pull in: f.", finished.stderr)
+        self.assertIn(f"then run: git -C {self.repo} --literal-pathspecs add -- f\n", finished.stderr)
+        self.assertNotIn("reset -q", finished.stderr)
+        self.assertNotIn("run: Then", finished.stderr)
+
+    def test_a_built_page_named_with_glob_characters_is_rebuilt_and_a_lookalike_file_keeps_its_staged_text(self):
+        self.add_files("p[1]", "p1")
+        self.mark_built_pages("p\\[1]")
+        self.push_from_other_machine("p[1]", "theirs\n")
+        self.write(self.repo, "p[1]", "mine\n")
+        self.git(self.repo, "add", "p[1]")
+        self.write(self.repo, "p1", "staged\n")
+        self.git(self.repo, "add", "p1")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.git(self.repo, "show", ":p[1]"), "rebuilt\n")
+        self.assertEqual(self.git(self.repo, "show", ":p1"), "staged\n")
+
+    def test_a_recovery_command_for_a_repo_path_with_a_space_parses_back_to_that_path(self):
+        spaced = self.tmp / "my repo"
+        shutil.move(str(self.repo), str(spaced))
+        self.repo = spaced
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertNotEqual(finished.returncode, 0)
+        command = finished.stderr.split("on a clean tree, run: ")[1].split("\n")[0]
+        self.assertEqual(shlex.split(command)[-1], str(spaced))
+
+    def test_a_staged_clash_only_on_built_pages_is_rebuilt_and_the_split_kept(self):
+        self.add_files("k")
+        self.mark_built_pages("f")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+        self.write(self.repo, "k", "staged\n")
+        self.git(self.repo, "add", "k")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f", "M  k"])
+        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
+        self.assertEqual((self.repo / "f").read_text(), "rebuilt\n")
+        self.assertEqual(self.git(self.repo, "show", ":k"), "staged\n")
+
+    def test_built_page_attributes_with_no_driver_configured_stop_with_the_put_back_command(self):
+        # Git text-merges a page whose attribute names an unconfigured driver; never stage that text as rebuilt.
+        self.mark_built_pages("f")
+        self.git(self.repo, "config", "--unset", "merge.built-page.driver")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("--put-back ", finished.stderr)
+        self.assertNotIn("--literal-pathspecs add", finished.stderr)
+        self.assertEqual(self.status(), [])
+        self.assertEqual((self.repo / "f").read_text(), "theirs\n")
+
+    def test_a_put_back_of_a_commit_that_is_not_saved_changes_exits_with_the_usage(self):
+        head = self.git(self.repo, "rev-parse", "HEAD").strip()
+
+        finished = self.run_script("--put-back", head)
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn(f"pull_keep_index: {head} is not a saved-changes commit", finished.stderr)
+        self.assertIn("Usage: pull_keep_index.py <repo>", finished.stderr)
+
+    def test_a_put_back_into_a_repo_with_tracked_changes_exits_with_the_usage(self):
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+        self.write(self.repo, "g", "dirty\n")
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("Usage: pull_keep_index.py <repo>", finished.stderr)
+        self.assertEqual(self.status(), [" M g"])
 
     def add_files(self, *names):
         for name in names:
@@ -534,9 +718,106 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1, finished.stderr)
         self.assertIn("conflicted paths: f", finished.stderr)
         self.assert_names_both_ways_out(finished.stderr)
-        self.assertIn("stash apply --index", finished.stderr)
-        saved = finished.stderr.split("stash apply --index ")[1].split()[0]
+        self.assertIn("--put-back ", finished.stderr)
+        saved = finished.stderr.split("--put-back ")[1].split()[0]
         self.assertEqual(self.git(self.repo, "show", saved + ":g"), "unstaged\n")
+
+
+class PrintedCommandQuotingTest(unittest.TestCase):
+    """Every command the script prints for the user must survive a repo path or remote with a space."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.script_dir = str(SCRIPT.parent)
+        sys.path[:0] = [cls.script_dir]
+        import pull_keep_index
+        cls.module = pull_keep_index
+
+    @classmethod
+    def tearDownClass(cls):
+        sys.path.remove(cls.script_dir)
+
+    def test_upstream_gone_quotes_repo_and_remote(self):
+        with self.assertRaises(SystemExit) as stopped:
+            self.module.exit_upstream_gone("/a b", "main", "refs/heads/main", "my remote")
+        message = str(stopped.exception)
+        self.assertIn("git -C '/a b' branch --unset-upstream", message)
+        self.assertIn("git -C '/a b' push -u 'my remote' HEAD", message)
+
+    def test_merge_abort_quotes_repo(self):
+        found = subprocess.CompletedProcess([], 0)
+        with unittest.mock.patch.object(self.module, "run_in_repo", return_value=found):
+            text = self.module.merge_abort_text("/a b")
+        self.assertIn("git -C '/a b' merge --abort", text)
+
+    def test_stopped_rebase_quotes_repo(self):
+        with (
+            tempfile.TemporaryDirectory() as state_dir,
+            unittest.mock.patch.object(self.module, "listed_paths", return_value=[]),
+        ):
+            text = self.module.stopped_rebase_text("/a b", state_dir)
+        self.assertIn("git -C '/a b' rebase --continue", text)
+        self.assertIn("git -C '/a b' rebase --abort", text)
+
+    def test_set_upstream_failure_quotes_every_word(self):
+        failed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"no")
+        with (
+            unittest.mock.patch.object(self.module, "run_in_repo", return_value=failed),
+            self.assertRaises(SystemExit) as stopped,
+        ):
+            self.module.set_upstream("/a b", "my remote", "main")
+        self.assertIn("git -C '/a b' config branch.main.remote 'my remote'", str(stopped.exception))
+
+    def test_failed_staging_of_rebuilt_pages_names_the_add_command_and_the_saved_commit(self):
+        repo = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        env = {**os.environ, **GIT_ENV}
+        (repo / "f").write_text("1\n")
+        for arguments in (("init", "-q"), ("add", "f"), ("commit", "-qm", "one")):
+            subprocess.run(["git", "-C", str(repo), *arguments], check=True, capture_output=True, env=env)
+        (repo / "f").write_text("changed\n")
+        subprocess.run(["git", "-C", str(repo), "add", "f"], check=True, capture_output=True, env=env)
+        saved = subprocess.run(["git", "-C", str(repo), "stash", "create"], check=True, capture_output=True,
+                               text=True, env=env).stdout.strip()
+        subprocess.run(["git", "-C", str(repo), "reset", "--hard", "--quiet"], check=True, capture_output=True,
+                       env=env)
+        real_run_in_repo = self.module.run_in_repo
+
+        def fail_the_add(repo_path, *arguments, **options):
+            if arguments[:2] == ("--literal-pathspecs", "add"):
+                return subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"index is locked")
+            return real_run_in_repo(repo_path, *arguments, **options)
+
+        with (
+            unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_add),
+            self.assertRaises(SystemExit) as stopped,
+        ):
+            self.module.put_back_without_index(str(repo), saved, ["f"], env)
+
+        message = str(stopped.exception)
+        self.assertIn("could not stage the rebuilt pages: index is locked", message)
+        self.assertIn(f"git -C {repo} --literal-pathspecs add -- f", message)
+        self.assertNotIn("--put-back", message)
+        self.assertIn(f"The local changes are saved in {saved}.", message)
+
+    def test_a_failed_apply_with_no_conflicts_prints_the_put_back_command(self):
+        failed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"local changes would be overwritten")
+        no_conflicts = subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+
+        def fail_the_apply(repo_path, *arguments, **options):
+            if arguments[:2] == ("stash", "apply"):
+                return failed
+            return no_conflicts
+
+        with (
+            unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_apply),
+            self.assertRaises(SystemExit) as stopped,
+        ):
+            self.module.put_back_without_index("/a b", "abc123", ["f"], {})
+
+        message = str(stopped.exception)
+        self.assertIn("did not go back on cleanly", message)
+        self.assertIn("--put-back abc123 '/a b'", message)
 
 
 if __name__ == "__main__":

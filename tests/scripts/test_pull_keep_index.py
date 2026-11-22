@@ -15,6 +15,7 @@ from toolkit_paths import TOOLS_DIR
 SCRIPT = pathlib.Path(os.environ.get("PULL_KEEP_INDEX_SCRIPT") or TOOLS_DIR / "pull_keep_index.py")
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+REF = "refs/pull-keep-index/20260101T000000Z-abc12345"
 
 
 class PullKeepIndexTest(unittest.TestCase):
@@ -57,7 +58,7 @@ class PullKeepIndexTest(unittest.TestCase):
                               text=True, env=env)
 
     def saved_commit(self, stderr):
-        return stderr.split("The local changes are saved in ")[1].split(".")[0]
+        return stderr.split("The local changes are saved in ")[1].split()[0]
 
     def mark_built_pages(self, *names):
         driver = self.tmp / "rebuild_driver.py"
@@ -96,6 +97,153 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(self.status(), ["MM f"])
         self.assertEqual(self.git(self.repo, "show", ":f"), "staged\n")
         self.assertEqual((self.repo / "f").read_text(), "staged then edited\n")
+
+    def kept_refs(self):
+        listed = self.git(self.repo, "for-each-ref", "--format=%(refname) %(objectname)", "refs/pull-keep-index/")
+        return [line.split() for line in listed.splitlines()]
+
+    def make_saved_commit(self, name, text, staged=False):
+        self.write(self.repo, name, text)
+        if staged:
+            self.git(self.repo, "add", name)
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+        return saved
+
+    def test_help_prints_the_usage_and_exits_0(self):
+        env = {**os.environ, **GIT_ENV}
+
+        for flag in ("--help", "-h"):
+            finished = subprocess.run([sys.executable, str(SCRIPT), flag], capture_output=True, text=True, env=env)
+
+            self.assertEqual(finished.returncode, 0, finished.stderr)
+            self.assertIn("Usage: pull_keep_index.py <repo>", finished.stdout, flag)
+            self.assertIn("--put-back", finished.stdout, flag)
+            self.assertIn("refs/pull-keep-index/", finished.stdout, flag)
+
+    def test_a_ref_that_cannot_be_made_exits_1_naming_the_saved_commit_before_anything_is_set_aside(self):
+        # A file where the ref's folder belongs makes `update-ref` fail.
+        (self.repo / ".git" / "refs" / "pull-keep-index").write_text("in the way\n")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("could not keep a ref", finished.stderr)
+        self.assertIn("Nothing was set aside.", finished.stderr)
+        self.assertRegex(finished.stderr, r"saved changes [0-9a-f]{40}")
+        self.assertEqual(self.status(), [" M g"])
+
+    def test_put_back_of_a_hash_with_two_refs_deletes_only_the_first_by_name(self):
+        saved = self.make_saved_commit("g", "unstaged\n")
+        first = "refs/pull-keep-index/20260101T000000Z-a"
+        second = "refs/pull-keep-index/20260102T000000Z-b"
+        self.git(self.repo, "update-ref", second, saved)
+        self.git(self.repo, "update-ref", first, saved)
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual([name for name, _hash in self.kept_refs()], [second])
+        self.assertIn(f"older saved changes kept under: {second}", finished.stderr)
+
+    def test_a_ref_that_is_not_a_saved_commit_exits_1_and_makes_no_ref(self):
+        head = self.git(self.repo, "rev-parse", "HEAD").strip()
+        ref = "refs/pull-keep-index/20260101T000000Z-plain"
+        self.git(self.repo, "update-ref", ref, head)
+
+        finished = self.run_script("--put-back", ref)
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn(f"pull_keep_index: {ref} is not a saved-changes commit", finished.stderr)
+        self.assertEqual(self.kept_refs(), [[ref, head]])
+
+    def test_a_failed_put_back_leaves_a_ref_at_the_saved_commit_and_names_it(self):
+        # The hook recreates g after set_aside's reset, so the pull refuses and the apply stops on the file.
+        hook = self.repo / ".git" / "hooks" / "reference-transaction"
+        hook.write_text("#!/bin/sh\n[ \"$1\" = committed ] || exit 0\n"
+                        "while read old new ref; do\n"
+                        "  case \"$ref\" in refs/heads/*) echo other > g ;; esac\n"
+                        "done\n")
+        hook.chmod(0o755)
+        self.push_from_other_machine("h", "2\n")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertNotEqual(finished.returncode, 0)
+        kept = self.kept_refs()
+        self.assertEqual(len(kept), 1, finished.stderr)
+        ref, saved = kept[0]
+        self.assertEqual(self.git(self.repo, "show", f"{saved}:g"), "unstaged\n")
+        self.assertIn(ref, finished.stderr)
+
+    def test_a_clean_run_leaves_no_ref(self):
+        self.push_from_other_machine("h", "2\n")
+        self.write(self.repo, "f", "staged\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_put_back_of_a_ref_deletes_it_and_hands_the_driver_the_hash(self):
+        recorder = self.tmp / "record_driver.py"
+        recorder.write_text("import os, pathlib, sys\n"
+                            "pathlib.Path(sys.argv[1]).write_text(os.environ.get('BUILT_PAGE_STASH', ''))\n"
+                            "pathlib.Path(sys.argv[3]).write_text(pathlib.Path(sys.argv[4]).read_text())\n")
+        record = self.tmp / "record"
+        self.git(self.repo, "config", "merge.built-page.driver", f"{sys.executable} {recorder} {record} %O %A %B")
+        self.write(self.repo, ".gitattributes", "f merge=built-page\n")
+        self.git(self.repo, "add", ".gitattributes")
+        self.git(self.repo, "commit", "-qm", "attributes")
+        self.git(self.repo, "push", "-q")
+        saved = self.make_saved_commit("f", "mine\n")
+        ref = "refs/pull-keep-index/20260101T000000Z-older"
+        self.git(self.repo, "update-ref", "refs/pull-keep-index/20260101T000000Z-mine", saved)
+        self.git(self.repo, "update-ref", ref, self.git(self.repo, "rev-parse", "HEAD").strip())
+        self.push_from_other_machine("f", "theirs\n")
+        self.git(self.repo, "pull", "-q", "--rebase")
+
+        finished = self.run_script("--put-back", "refs/pull-keep-index/20260101T000000Z-mine")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(record.read_text(), saved)
+        self.assertEqual(len(record.read_text()), 40)
+        self.assertEqual([name for name, _hash in self.kept_refs()], [ref])
+        self.assertIn(f"older saved changes kept under: {ref}", finished.stderr)
+
+    def test_put_back_of_a_hash_deletes_the_ref_that_points_at_it(self):
+        saved = self.make_saved_commit("g", "unstaged\n")
+        self.git(self.repo, "update-ref", "refs/pull-keep-index/20260101T000000Z-x", saved)
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.kept_refs(), [])
+        self.assertEqual(self.status(), [" M g"])
+
+    def test_put_back_of_a_hash_with_no_ref_succeeds_and_leaves_no_ref(self):
+        saved = self.make_saved_commit("g", "unstaged\n")
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_failed_put_back_of_a_hash_with_no_ref_leaves_a_new_ref_and_names_it(self):
+        saved = self.make_saved_commit("f", "mine\n", staged=True)
+        self.push_from_other_machine("f", "theirs\n")
+        self.git(self.repo, "pull", "-q", "--rebase")
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        kept = self.kept_refs()
+        self.assertEqual(len(kept), 1, finished.stderr)
+        self.assertEqual(kept[0][1], saved)
+        self.assertIn(kept[0][0], finished.stderr)
 
     def test_a_clean_tree_just_pulls(self):
         self.push_from_other_machine("h", "2\n")
@@ -321,6 +469,7 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
         self.assertEqual((self.repo / "f").read_text(), "rebuilt\n")
         self.assertEqual(self.git(self.repo, "show", ":k"), "staged\n")
+        self.assertEqual(self.kept_refs(), [])
 
     def test_built_page_attributes_with_no_driver_configured_stop_with_the_put_back_command(self):
         # Git text-merges a page whose attribute names an unconfigured driver; never stage that text as rebuilt.
@@ -359,6 +508,8 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1, finished.stderr)
         self.assertIn("Usage: pull_keep_index.py <repo>", finished.stderr)
         self.assertEqual(self.status(), [" M g"])
+        self.assertIn(f"saved in {saved} (ref refs/pull-keep-index/", finished.stderr)
+        self.assertEqual([saved_hash for _name, saved_hash in self.kept_refs()], [saved])
 
     def add_files(self, *names):
         for name in names:
@@ -853,13 +1004,13 @@ class PrintedCommandQuotingTest(unittest.TestCase):
             unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_add),
             self.assertRaises(SystemExit) as stopped,
         ):
-            self.module.put_back_without_index(str(repo), saved, ["f"], env)
+            self.module.put_back_without_index(str(repo), saved, REF, ["f"], env)
 
         message = str(stopped.exception)
         self.assertIn("could not stage the rebuilt pages: index is locked", message)
         self.assertIn(f"git -C {repo} --literal-pathspecs add -- f", message)
         self.assertNotIn("--put-back", message)
-        self.assertIn(f"The local changes are saved in {saved}.", message)
+        self.assertIn(f"The local changes are saved in {saved} (ref {REF}).", message)
 
     def test_a_failed_apply_with_no_conflicts_prints_the_put_back_command(self):
         failed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"local changes would be overwritten")
@@ -874,11 +1025,12 @@ class PrintedCommandQuotingTest(unittest.TestCase):
             unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_apply),
             self.assertRaises(SystemExit) as stopped,
         ):
-            self.module.put_back_without_index("/a b", "abc123", ["f"], {})
+            self.module.put_back_without_index("/a b", "abc123", REF, ["f"], {})
 
         message = str(stopped.exception)
         self.assertIn("did not go back on cleanly", message)
-        self.assertIn("--put-back abc123 '/a b'", message)
+        self.assertIn(f"--put-back {REF} '/a b'", message)
+        self.assertIn(f"saved in abc123 (ref {REF})", message)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 0: Contracts — lane file grammar, `lanes.py` CLI, `row_for_name` — frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — a fork writes the lane file, the watcher fills the session id, phase-change keeps it current (risk: low)
 - [x] Phase 2: hunk-review-pane labels its own pane (risk: low)
-- [ ] Phase 3: pull_keep_index `--help` and the named save ref (risk: high)
+- [x] Phase 3: pull_keep_index `--help` and the named save ref (risk: high)
 - [ ] Phase 4: pull_keep_index built-page put-back through the merge driver (risk: high)
 - [ ] Phase 5: pull_keep_index in a shared checkout (risk: high)
 - [ ] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
@@ -271,8 +271,8 @@ A failed put-back never leaves the edits only in an unreferenced commit; `--help
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_pull_keep_index.py` (RED before: help and ref tests)
-- [ ] `bash tests/lint.sh claude/.claude/scripts/tools/pull_keep_index.py`
+- [x] `python3 tests/parallel_tests.py test_pull_keep_index.py` (RED before: help and ref tests)
+- [x] `bash tests/lint.sh claude/.claude/scripts/tools/pull_keep_index.py`
 
 #### Manual Verification
 

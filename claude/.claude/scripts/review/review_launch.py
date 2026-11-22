@@ -106,7 +106,7 @@ def launch_parser():
                              "sends no finding on it to a coder and puts back any change a coder makes to it")
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
-                        help="a test command the loop runs on every converged run, before commit credit (repeatable)")
+                        help="a test command the loop runs on every converged run, before review credit (repeatable)")
     models = parser.add_mutually_exclusive_group()
     models.add_argument("--fast", action="store_true", help=f"run the reviewers and the fix coder on {FAST_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")

@@ -1,10 +1,9 @@
 """The phase-asks chain from end to end, each step a real process: code_review_start.py runs the review loop's own
-entry (which builds the packet and writes the hand-back rows), code_wait.py opens the asks, the commit gate hook
-denies the commit, the command the denial prints rules on them, and the gate then passes.
+entry (which builds the packet and writes the hand-back rows), code_wait.py opens the asks, `phase_asks.py list`
+prints them with the rule command, that command rules on them, and the listing then reads them as ruled.
 
 Only the loop's walk is a stand-in: `run_loop` returns a fixed converged outcome with two finding asks, so no
 `claude -p` call is made. The test writes no store row itself."""
-import json
 import os
 import pathlib
 import shutil
@@ -25,7 +24,8 @@ ACCEPTED_WORD = "'accepted:fixes a defect in scope'"
 REJECTED_WORD = "'rejected:changes a criterion'"
 LOOP_ENTRY_IMPORT = "    import review_loop_main\n"
 LOOP_WAIT_SECONDS = 60
-DENIED_PART = "2 ask(s) that you have not ruled on"
+OPEN_PART = "Rule on all 2 in order: `"
+RULED_PART = "These asks are already ruled."
 # The loop's walk, replaced: a converged outcome with two finding asks, in the keys Loop.outcome returns.
 STAND_IN_SOURCE = f'''"""A fixed outcome in place of the review loop's walk, so the chain test makes no model call."""
 import copy
@@ -100,15 +100,11 @@ class PhaseAsksChainTest(unittest.TestCase):
         return subprocess.run(argv, cwd=self.repo, capture_output=True, text=True,
                               env=self.environment(telemetry, session))
 
-    def fire_gate(self, payload, telemetry, session=SESSION):
-        gate = self.scripts / "review" / "review_commit_gate.py"
-        event = {"session_id": session, "cwd": str(self.repo), **payload}
-        return subprocess.run([sys.executable, str(gate)], input=json.dumps(event), capture_output=True, text=True,
-                              cwd=self.repo, env=self.environment(telemetry, session))
-
-    def commit_attempt(self, telemetry, session=SESSION):
-        return self.fire_gate({"hook_event_name": "PreToolUse", "tool_name": "Bash",
-                               "tool_input": {"command": "git commit -a -m x"}}, telemetry, session)
+    def list_asks(self, telemetry, session=SESSION):
+        listing = self.scripts / "review" / "phase_asks.py"
+        finished = self.run_step([sys.executable, str(listing), "list"], telemetry, session)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return finished.stdout
 
     def wait_for_the_loop_to_end(self):
         pid = int((self.repo / ".git/code-phase/pid").read_text())
@@ -124,10 +120,6 @@ class PhaseAsksChainTest(unittest.TestCase):
     def review_the_phase(self, telemetry):
         """A coder dispatch, then the /code phase review as the skill runs it: start detached, then wait. Returns
         what the wait printed."""
-        dispatched = self.fire_gate({"hook_event_name": "PostToolUse", "tool_name": "Agent",
-                                     "tool_input": {"subagent_type": "coder"}, "tool_response": {"agentId": "a0"}},
-                                    telemetry)
-        self.assertEqual((dispatched.returncode, dispatched.stdout), (0, ""), dispatched.stderr)
         start = self.scripts / "code" / "code_review_start.py"
         started = self.run_step([sys.executable, str(start), "code", "-", "1", str(self.handoff), "--base", self.base,
                                  "--detach"], telemetry)
@@ -143,94 +135,83 @@ class PhaseAsksChainTest(unittest.TestCase):
         logs = sorted((self.repo / ".git/code-step/loop-script").glob("*/script.log"))
         return "\n".join(log.read_text() for log in logs)
 
-    def denied_rule_command(self, telemetry):
-        """The rule command the gate's denial of a commit prints, placeholders and all."""
-        finished = self.commit_attempt(telemetry)
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        decision = json.loads(finished.stdout)["hookSpecificOutput"]
-        self.assertEqual(decision["permissionDecision"], "deny")
-        reason = decision["permissionDecisionReason"]
-        self.assertIn(DENIED_PART, reason)
-        self.assertIn("Should an empty list count as none?", reason)
-        self.assertIn("Should the cap be 3?", reason)
-        command = reason.partition("rule on them first, with `")[2].partition("`")[0]
-        self.assertEqual(command.count(PLACEHOLDER), 2, reason)
+    def listed_rule_command(self, telemetry, session=SESSION):
+        """The rule command the listing of the open asks prints, placeholders and all."""
+        listing = self.list_asks(telemetry, session)
+        self.assertIn(OPEN_PART, listing)
+        self.assertIn("Should an empty list count as none?", listing)
+        self.assertIn("Should the cap be 3?", listing)
+        command = listing.partition(OPEN_PART)[2].partition("`")[0]
+        self.assertEqual(command.count(PLACEHOLDER), 2, listing)
         return command
 
     def rule(self, command, telemetry):
-        return subprocess.run(["bash", "-c", command], cwd=self.tmp, capture_output=True, text=True,
+        return subprocess.run(["bash", "-c", command], cwd=self.repo, capture_output=True, text=True,
                               env=self.environment(telemetry))
 
     def outcome_rows(self):
         return [row for row in fake_ledger.recorded_rows(self.ledger_env) if "ask_outcome" in row]
 
-    def assert_commit_passes(self, telemetry):
-        finished = self.commit_attempt(telemetry)
-        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+    def assert_asks_ruled(self, telemetry, session=SESSION):
+        self.assertIn(RULED_PART, self.list_asks(telemetry, session))
 
-    def test_the_commit_is_denied_until_the_printed_rule_command_rules_on_both_asks_and_each_outcome_is_logged(self):
+    def test_the_printed_rule_command_rules_on_both_asks_and_each_outcome_is_logged(self):
         waited = self.review_the_phase("1")
         self.assertIn('"status": "converged"', waited)
         self.assertIn("2 finding ask(s) await your ruling", waited)
 
-        command = self.denied_rule_command("1")
+        command = self.listed_rule_command("1")
         ruling = command.replace(PLACEHOLDER, ACCEPTED_WORD, 1).replace(PLACEHOLDER, REJECTED_WORD, 1)
         ruled = self.rule(ruling, "1")
 
         self.assertEqual(ruled.returncode, 0, ruled.stderr)
         self.assertIn("Ruled 2 ask(s)", ruled.stdout)
-        self.assert_commit_passes("1")
+        self.assert_asks_ruled("1")
         rows = self.outcome_rows()
         self.assertEqual([(row["finding_id"], row["ask_outcome"], row["ask_decided_by"]) for row in rows],
                          [(FIRST_ID, "accepted", "session"), (SECOND_ID, "rejected", "session")])
         self.assertEqual({(row["lane"], row["scope"], row["phase"]) for row in rows}, {("code", "phase", "1")})
 
-    def test_with_the_telemetry_switch_off_the_ruling_stands_and_the_commit_passes(self):
+    def test_with_the_telemetry_switch_off_the_ruling_stands(self):
         """log-review-finding's `ledger write` ignores the switch (test_telemetry_switch.py), so the outcome rows
         land with it off too."""
         self.review_the_phase("0")
-        command = self.denied_rule_command("0")
+        command = self.listed_rule_command("0")
         ruling = command.replace(PLACEHOLDER, ACCEPTED_WORD, 1).replace(PLACEHOLDER, REJECTED_WORD, 1)
 
         ruled = self.rule(ruling, "0")
 
         self.assertEqual(ruled.returncode, 0, ruled.stderr)
-        self.assert_commit_passes("0")
+        self.assert_asks_ruled("0")
         self.assertEqual([row["finding_id"] for row in self.outcome_rows()], [FIRST_ID, SECOND_ID])
 
-    def test_with_no_ledger_the_ruling_stands_and_the_commit_passes(self):
+    def test_with_no_ledger_the_ruling_stands(self):
         self.review_the_phase("1")
-        command = self.denied_rule_command("1")
+        command = self.listed_rule_command("1")
         ruling = command.replace(PLACEHOLDER, ACCEPTED_WORD, 1).replace(PLACEHOLDER, REJECTED_WORD, 1)
         failing_ledger = {"FAKE_LEDGER_WRITE_EXIT": "2"}
 
-        ruled = subprocess.run(["bash", "-c", ruling], cwd=self.tmp, capture_output=True, text=True,
+        ruled = subprocess.run(["bash", "-c", ruling], cwd=self.repo, capture_output=True, text=True,
                                env={**self.environment("1"), **failing_ledger})
 
         self.assertEqual(ruled.returncode, 0, ruled.stderr)
         self.assertEqual(self.outcome_rows(), [])
-        self.assert_commit_passes("1")
+        self.assert_asks_ruled("1")
 
     def test_a_new_session_id_after_the_review_still_meets_the_open_asks_and_can_rule_on_them(self):
         self.review_the_phase("1")
         after_clear = "44444444-aaaa-bbbb-cccc-555555555555"
 
-        denied = self.commit_attempt("1", after_clear)
-
-        self.assertEqual(denied.returncode, 0, denied.stderr)
-        decision = json.loads(denied.stdout)["hookSpecificOutput"]
-        self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn(DENIED_PART, decision["permissionDecisionReason"])
+        self.listed_rule_command("1", after_clear)
         rule = self.scripts / "review" / "phase_asks.py"
         ruled = self.run_step([sys.executable, str(rule), "rule", "accepted:fixes a defect in scope",
                                "rejected:changes a criterion"], "1", after_clear)
         self.assertEqual(ruled.returncode, 0, ruled.stderr)
-        passed = self.commit_attempt("1", after_clear)
-        self.assertEqual((passed.returncode, passed.stdout), (0, ""), passed.stderr)
+        self.assert_asks_ruled("1", after_clear)
 
-    def test_a_ruling_with_one_outcome_for_two_asks_is_refused_and_the_commit_stays_denied(self):
+    def test_a_ruling_with_one_outcome_for_two_asks_is_refused_and_the_asks_stay_open(self):
         self.review_the_phase("1")
-        command = self.denied_rule_command("1")
+        command = self.listed_rule_command("1")
         one_word = command.replace(PLACEHOLDER, ACCEPTED_WORD, 1).replace(f" {PLACEHOLDER}", "", 1)
 
         refused = self.rule(one_word, "1")
@@ -238,7 +219,7 @@ class PhaseAsksChainTest(unittest.TestCase):
         self.assertEqual(refused.returncode, 2, refused.stdout)
         self.assertIn("2 finding ask(s) are open but 1 outcome(s) were given", refused.stderr)
         self.assertEqual(self.outcome_rows(), [])
-        self.denied_rule_command("1")
+        self.listed_rule_command("1")
 
 
 if __name__ == "__main__":

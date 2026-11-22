@@ -23,6 +23,9 @@
      variable) on commit, push or merge; the rules are in git_destructive_calls.py and read past -C, -c,
      --no-pager, --git-dir and --work-tree. Rule 7 passes a linked worktree; bash-safety-gate.sh still denies the
      plain spellings (`git push --force`, `git reset --hard`, ...) everywhere, linked worktrees included
+  8. git push, and gh pr create in the hook's cwd, when the repo's HEAD tree differs, notes paths left out, from
+     every tree a converged review recorded for that repo (reviewed_tree.push_review_state); a repo with no review
+     record passes
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -40,6 +43,7 @@ import import_guard
 
 import_guard.guard("git-discipline-gate", __name__)
 import hook_input
+import reviewed_tree
 import script_utils
 import shell_command
 import shell_statements
@@ -97,6 +101,8 @@ CODER_INDEX_DENIED = ("[git-discipline-gate] a coder may not write the index: th
                       "already staged are ones the user chose. Move files with plain `mv` and leave staging, "
                       "commits, merges, pulls and rebases to the main session. To discard worktree "
                       "edits, run `git restore <paths>` or `git checkout -- <paths>`.")
+PUSH_UNREVIEWED_DENIED = ("[git-discipline-gate] code changed since the last review: run /review on this branch, "
+                          "then push")
 
 
 class DenyError(Exception):
@@ -396,6 +402,29 @@ def run(raw):
     for call in calls:
         check_destructive(call)
         check_branch(call)
+
+    check_push_reviewed(command, calls, payload_cwd)
+
+
+def opens_pull_request(command):
+    """True when a step of the command runs `gh pr create`."""
+    code = shell_statements.shell_code(command)
+    for words in shell_command.step_words(code):
+        if len(words) >= 3 and os.path.basename(words[0]) == "gh" and words[1:3] == ["pr", "create"]:
+            return True
+    return False
+
+
+def check_push_reviewed(command, calls, payload_cwd):
+    """Rule 8: a `git push` or `gh pr create` whose repo's HEAD holds code changed since the last converged review.
+    A repo with no review record passes."""
+    push_dirs = [call.directory for call in calls if call.subcommand == "push"]
+    if opens_pull_request(command):
+        push_dirs.append(payload_cwd)
+    for directory in push_dirs:
+        state = reviewed_tree.push_review_state(directory)
+        if state == reviewed_tree.PUSH_CHANGED:
+            raise DenyError(PUSH_UNREVIEWED_DENIED)
 
 
 def check_destructive(call):

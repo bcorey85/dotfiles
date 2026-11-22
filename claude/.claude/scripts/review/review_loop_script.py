@@ -873,7 +873,7 @@ def check_ran_gates(loop):
 def walk(loop, check_command, gate_commands):
     """The review rounds, then the full check, the class closure and the scoped tests while the loop converges. With
     gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
-    before commit credit."""
+    before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
         round_fix, round_nits = loop.review_round()

@@ -159,7 +159,7 @@ def packet_gate_reason(transcript, packet, session_id, agent_id):
 
 
 def rerecord_dispatch_repo(session_id, transcript, cwd):
-    """Record the repo the loop's ROOT= line names as its dispatch's repo, so the commit gate credits the repo the
+    """Record the repo the loop's ROOT= line names as its dispatch's repo, so the review record credits the repo the
     run rows name. The dispatch row was written before review-scope printed ROOT=. A transcript with no ROOT= line
     records nothing."""
     if not transcript.scope_root:

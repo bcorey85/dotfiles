@@ -354,7 +354,7 @@ class RuledFindings:
         """After a coder pass on `findings`: reverts the pass's edit to each approval-only file (see
         `approval_only_paths`) and reports it in the dropped asks (see `revert_approval_edit`). Returns the paths it
         reverted. Only an edit that cannot be reverted files an ask for the user. That ask rides the packet's ask
-        list like a reviewer ask: a /code phase review's commit gate holds the commit until it is ruled; the run's
+        list like a reviewer ask: a /code phase review opens it for `phase_asks.py` to rule on; the run's
         status is unchanged. The same file in a later round stays one ask. A file that a finding the user ruled on
         names by its repo-relative (or absolute) path is left as edited: the ruling is the approval, and a same-named
         file in another folder still is reverted. A session's ruling is no approval, except on this ask itself (a

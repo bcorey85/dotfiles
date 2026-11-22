@@ -7,7 +7,7 @@ name, and then imports the rest. `guard` acts only when the gate runs as the hoo
 library keeps its own excepthook:
 
     import import_guard
-    import_guard.guard("review-commit-gate", __name__)
+    import_guard.guard("git-discipline-gate", __name__)
     import hook_input
 
 Any exception that then escapes the module's top level (an import error, a syntax error in a sibling) prints one line

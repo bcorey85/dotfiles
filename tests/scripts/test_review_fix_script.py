@@ -908,7 +908,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("ACTION: done", output)
         self.assertNotIn("ACTION: redispatch", output)
         self.assertNotIn("plan_impact: RESOLVED", output)
-        self.assertIn("the commit gate counts the review as clean", output)
+        self.assertIn("the push check counts the review as clean", output)
         self.assertIn("1 plan impact(s) that await a ruling", held_reason)
         self.assertIsNone(self.false_clean_reason())
 
@@ -953,7 +953,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotEqual(adopted_code, 0, adopted_output)
         self.assertIsNotNone(adopted_reason)
         self.assertEqual(code, 0, output)
-        self.assertIn("the commit gate counts the review as clean", output)
+        self.assertIn("the push check counts the review as clean", output)
         self.assertIsNone(self.false_clean_reason())
 
     def test_decide_after_a_defer_says_the_gate_is_clear_and_where_the_ruling_goes(self):
@@ -973,7 +973,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         self.assertEqual(defer_code, 0, defer_output)
         self.assertNotEqual(code, 0, output)
-        self.assertIn("the commit gate is already clear", output)
+        self.assertIn("the push check is already clear", output)
         self.assertIn("decision log", output)
         self.assertIn("this session", output)
 
@@ -2614,7 +2614,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_kept_plan_impact_credits_the_tree_the_review_covered_and_not_a_later_edit(self):
         self.assert_ruling_credits_the_reviewed_tree(["decide", "keep", "--by", "user", "--ruling", "keep it"])
 
-    def test_a_clean_loop_the_commit_gate_does_not_credit_says_why(self):
+    def test_a_clean_loop_the_push_check_does_not_credit_says_why(self):
         held = json.dumps({**CONVERGED_FIELDS, "plan_impacts": [HELD_IMPACT]})
         home = self.temp_root / "home"
         code, output = self.launch(message=held, HOME=str(home))
@@ -2622,10 +2622,10 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         code, output = self.packet(held, HOME=str(home))
 
-        self.assertIn("COMMIT CREDIT: the commit gate does not credit this review yet: the review-loop handed back "
+        self.assertIn("REVIEW CREDIT: the push check does not credit this review yet: the review-loop handed back "
                       "1 plan impact(s) that await a ruling.", output)
 
-    def test_a_clean_loop_the_commit_gate_credits_prints_no_refusal(self):
+    def test_a_clean_loop_the_push_check_credits_prints_no_refusal(self):
         home = self.temp_root / "home"
         code, output = self.launch(HOME=str(home))
         self.assertEqual(code, 0, output)
@@ -2633,7 +2633,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet(CONVERGED, HOME=str(home))
 
         self.assertEqual(code, 0, output)
-        self.assertNotIn("COMMIT CREDIT", output)
+        self.assertNotIn("REVIEW CREDIT", output)
 
     def test_a_capped_packet_prints_no_commit_credit_line(self):
         home = self.temp_root / "home"
@@ -2645,7 +2645,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         code, output = self.packet(capped, HOME=str(home))
 
-        self.assertNotIn("COMMIT CREDIT", output)
+        self.assertNotIn("REVIEW CREDIT", output)
 
     def test_a_converged_packet_without_a_session_id_prints_no_commit_credit_line(self):
         home = self.temp_root / "home"
@@ -2654,7 +2654,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         code, output = self.packet(CONVERGED, HOME=str(home), CLAUDE_CODE_SESSION_ID="")
 
-        self.assertNotIn("COMMIT CREDIT", output)
+        self.assertNotIn("REVIEW CREDIT", output)
 
     def test_a_ruling_on_a_review_that_stays_dirty_says_the_gate_still_counts_it_dirty(self):
         home = self.temp_root / "home"
@@ -3685,7 +3685,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         packet_args = shlex.split(packet_command)[2:]
         code, output = self.run_script(packet_args, HOME=home)
         self.assertEqual(code, 0, output)
-        self.assertNotIn("COMMIT CREDIT", output)
+        self.assertNotIn("REVIEW CREDIT", output)
         self.assertIn("ACTION: render-and-finish", output)
         self.assertIsNone(self.false_clean_reason())
         with unittest.mock.patch.object(pathlib.Path, "home", return_value=pathlib.Path(home)):
@@ -4820,7 +4820,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertIn("AC3", sent[0])
 
-    def test_the_commit_gate_credits_the_fix_round_after_the_ruling(self):
+    def test_the_push_check_credits_the_fix_round_after_the_ruling(self):
         home = str(self.temp_root / "home")
         launch_args = self.packet_with_ruled_impact_ask(home)
         self.assertIn("plan impact(s) that await a ruling", self.false_clean_reason())

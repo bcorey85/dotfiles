@@ -88,7 +88,6 @@ print_info "Expected hook registrations"
 reg_blob=$(cat "$SETTINGS" "$CLAUDE_DIR/settings.local.json" 2>/dev/null)
 for pair in \
   "gates/emit_orchestration.py:orchestration context injection" \
-  "gates/shell_write_gate.py:shell-write bypass gate" \
   "gates/quality_check_cap.py:quality-check repeat-run cap"; do
   script="${pair%%:*}"; label="${pair#*:}"
   [[ -f "$CLAUDE_DIR/scripts/$script" ]] || continue

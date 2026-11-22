@@ -43,6 +43,7 @@ from shell_command import (
     is_short_cluster,
     names_code_runner,
     options_before_separator,
+    parse_raw_simple_commands,
     parse_simple_commands,
     process_substitution_bounds,
     raw_words_without_redirections,
@@ -580,6 +581,22 @@ class SplitSimpleCommandsTest(unittest.TestCase):
                 split_simple_commands(command)
         self.assertEqual(split_simple_commands("a 2>&1 b 3>f"), [["a", "b"]])
         self.assertEqual(split_simple_commands("echo 5"), [["echo", "5"]])
+
+
+class ParseRawSimpleCommandsTest(unittest.TestCase):
+    def test_a_word_keeps_its_quotes(self):
+        self.assertEqual(parse_raw_simple_commands("rm \"d/a\" 'd/b'"), [["rm", "\"d/a\"", "'d/b'"]])
+
+    def test_a_redirection_is_left_out(self):
+        self.assertEqual(parse_raw_simple_commands("rm d/c >x 2>&1"), [["rm", "d/c"]])
+
+    def test_a_pipe_and_an_and_list_split_into_commands(self):
+        self.assertEqual(parse_raw_simple_commands("rm d/c |& wc d/e && ls"),
+                         [["rm", "d/c"], ["wc", "d/e"], ["ls"]])
+
+    def test_unreadable_text_raises_as_the_resolved_reading_does(self):
+        with self.assertRaises(ValueError):
+            parse_raw_simple_commands("rm 'd/a")
 
 
 class ParseSimpleCommandsTest(unittest.TestCase):

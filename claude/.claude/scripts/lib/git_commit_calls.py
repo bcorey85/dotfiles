@@ -14,13 +14,10 @@ from shell_command import (
     git_options,
     is_git_word,
     options_before_separator,
-    split_command_steps,
-    split_simple_commands,
     without_flag_values,
     wrapper_moves_directory,
 )
-from shell_directory import DIRECTORY_MOVE_WORDS, ShellDirectory
-from shell_steps import group_closes
+from shell_steps import placed_commands
 
 # Subcommands that make a commit when they run; `rebase` does so only with `--continue` or `--skip`.
 COMMITTING_SUBCOMMANDS = ("commit", "merge", "cherry-pick", "revert", "am")
@@ -260,31 +257,19 @@ def git_commit_dirs(command, start_dir, commit_call):
     setting), and one commit_call answers UNPLACED_COMMIT for; the words of each go in `unplaced`. Returns a
     CommitDirs, with both lists [] when the command holds no such commit; None when the command cannot be read (the
     caller uses `start_dir`)."""
-    shell = ShellDirectory(start_dir)
-    outer_shells = []
     commit_dirs = []
     unplaced = []
     first_call_words = None
-    for _operator, step in split_command_steps(command):
-        try:
-            simple_commands = split_simple_commands(step)
-        except ValueError:
-            return None
-        opened, closed = group_closes(step)
-        outer_shells.extend([shell.saved()] * opened)
-        for simple_command in simple_commands:
-            words = command_after_wrappers(simple_command)
-            if not words:
-                continue
-            if words[0] in DIRECTORY_MOVE_WORDS:
-                shell.apply(words)
-                continue
-            for git_words, placed in committing_calls(words, simple_command, shell.current, start_dir, commit_call):
-                first_call_words = first_call_words or git_words
-                if placed.directory is None:
-                    unplaced.append(git_words)
-                elif placed.directory not in commit_dirs:
-                    commit_dirs.append(placed.directory)
-        for _group in range(min(closed, len(outer_shells))):
-            shell.restore(outer_shells.pop())
+    try:
+        placed_calls = list(placed_commands(command, start_dir))
+    except ValueError:
+        return None
+    for placed_call in placed_calls:
+        for git_words, placed in committing_calls(placed_call.words, placed_call.simple_command,
+                                                  placed_call.directory, start_dir, commit_call):
+            first_call_words = first_call_words or git_words
+            if placed.directory is None:
+                unplaced.append(git_words)
+            elif placed.directory not in commit_dirs:
+                commit_dirs.append(placed.directory)
     return CommitDirs(commit_dirs, unplaced, first_call_words)

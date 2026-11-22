@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-11 open benches, by rank. Each line is the question the bench asks.
+12 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -19,6 +19,7 @@ description: "The benches that are open now and the question each asks."
 * Review loop without the round-two smell re-run, against the pinned loop script (queued): Cutting the review loop's round-two smell re-run saves one Opus smell-reviewer dispatch per run; smoke showed about 10% Opus, inside the control spread.
 * Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.
 * Review loop writes a condensed prior-issues list in round two (queued): A one-line-per-issue prior-issues list in the script's round-two and last-read requests could cut 5-10% of the loop's Opus tokens, the part of the agent driver's cut that ports to the script.
-* Stop hook: take the reversible step and list it, against resending the report without the question (running): A Stop hook that tells the session to take the reversible step and list it under Decisions taken is predicted to cut the turn ends the user answers with a bare go-ahead by a third or more, against today's hook that only removes the question.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
-* Pilot: replace the regex Bash gate's intent rules with auto mode prose rules and deny rules (queued): Fewer interruptions: swap the regex Bash rules that guess intent for auto mode prose rules plus deny rules, if a replay shows the classifier keeps the true blocks and drops the false ones.
+* Re-bench the code reviewer on Sonnet against Opus on current models and toolkit (queued): A Sonnet code reviewer that keeps Opus's catch rate would move the biggest Opus subagent cost onto Sonnet.
+* Replay: auto mode prose rules in place of the Bash gate's target rules (running): Fewer harmless blocks: the Bash gate's target rules become auto mode prose rules, if a replay shows the classifier stops every seeded harmful command for each target.
+* Replay: four command rules move from the regex Bash gate to permissions.deny entries (queued): Fewer harmless blocks: four Bash gate rules that name a command move to permissions.deny entries, if a replay shows no harmful form gets through.

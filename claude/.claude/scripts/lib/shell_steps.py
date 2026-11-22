@@ -1,8 +1,12 @@
 """Read the steps of a split command line (the `(operator, text)` pairs of `split_command_steps`): which step may be
-skipped, runs in the background or surely ran, and where `( )` and `{ }` groups open and close."""
+skipped, runs in the background or surely ran, where `( )` and `{ }` groups open and close, and which folder each simple
+command runs in (`placed_commands`)."""
 import re
+import sys
+from typing import NamedTuple
 
-from shell_directory import CD_WORD
+from shell_command import command_after_wrappers, split_command_steps, split_simple_commands
+from shell_directory import CD_WORD, DIRECTORY_MOVE_WORDS, ShellDirectory
 from shell_quoting import quoted_positions
 
 # A step after an operator and a newline keeps that newline at its start.
@@ -12,6 +16,7 @@ TRAILING_BRACES = re.compile(r"(?:(?:^|[ \t\n])\}[ \t]*)+$")
 # The characters that may come before a step's command word: blanks, the newline a step keeps after an operator, and
 # the openers of groups.
 STEP_OPENERS = " \t\n({"
+DIRECTORY_MOVE_IN_TEXT = re.compile(rf"(?<![^\s;&|(])(?:{'|'.join(DIRECTORY_MOVE_WORDS)})(?![^\s;&|)])")
 
 
 def group_closes(step):
@@ -128,3 +133,43 @@ def step_surely_ran(steps, index, succeeded):
         if succeeded or not SETUP_STEP.match(steps[position - 1][1]):
             return False
     return True
+
+
+class PlacedCommand(NamedTuple):
+    step: str
+    simple_command: list
+    words: list
+    directory: str | None
+
+
+def placed_commands(command, start_dir, peel_containers=True, skip_unread=False):
+    """Each simple command of `command` that is not a `cd`, `pushd` or `popd`, as a PlacedCommand: its step, its words,
+    its words after the wrappers, and `directory`, where the shell stands when it runs (`start_dir` moved by the
+    earlier moves; a `cd` inside `( ... )` ends where the group closes; a `$( ... )` inside a step is no group).
+    Raises ValueError for a step that split_simple_commands cannot read. With `skip_unread`, such a step is reported
+    on stderr and left out, and the reading goes on; when it holds a `cd`, `pushd` or `popd` word, the folder of the
+    later commands is unknown (None) until the enclosing group closes."""
+    shell = ShellDirectory(start_dir)
+    outer_shells = []
+    for _operator, step in split_command_steps(command):
+        opened, closed = group_closes(step)
+        outer_shells.extend([shell.saved()] * opened)
+        try:
+            simple_commands = split_simple_commands(step)
+        except ValueError as error:
+            if not skip_unread:
+                raise
+            sys.stderr.write(f"shell_steps: step not read ({error}): {step!r}\n")
+            if DIRECTORY_MOVE_IN_TEXT.search(step):
+                shell.current = None
+            simple_commands = []
+        for simple_command in simple_commands:
+            words = command_after_wrappers(simple_command, peel_containers=peel_containers)
+            if not words:
+                continue
+            if words[0] in DIRECTORY_MOVE_WORDS:
+                shell.apply(words)
+                continue
+            yield PlacedCommand(step, simple_command, words, shell.current)
+        for _group in range(min(closed, len(outer_shells))):
+            shell.restore(outer_shells.pop())

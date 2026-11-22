@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-665 fix notes
+666 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -29,9 +29,9 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | skill/code | 18 | 1 |
 | script/review-loop | 17 | 1 |
 | skill/review | 17 | 0 |
-| script/shell-command | 15 | 7 |
+| script/shell-command | 16 | 8 |
+| script/git-discipline-gate | 15 | 6 |
 | script/verify-prep | 15 | 1 |
-| script/git-discipline-gate | 14 | 5 |
 | script/pull-keep-index | 13 | 2 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
@@ -110,6 +110,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-findings | 2 | 1 |
 | script/shell-quoting | 2 | 2 |
+| script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |
 | skill/branch-recap | 2 | 0 |
@@ -133,6 +134,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 0 |
+| script/directory-emptying-deletes | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
 | script/fix-diff | 1 | 1 |
@@ -165,7 +167,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/ruled-change-text | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |
-| script/shell-steps | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |

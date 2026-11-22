@@ -513,6 +513,13 @@ def path_is_under(path, prefix):
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")
 
 
+def resolved_parent_path(path):
+    # The absolute path with the folders resolved and the last name kept, so a symlink target names the link.
+    absolute = os.path.normpath(os.path.abspath(path))
+    parent = os.path.realpath(os.path.dirname(absolute))
+    return os.path.join(parent, os.path.basename(absolute))
+
+
 def details_with_outcome(outcomes, outcome):
     # {key: detail} for each entry of an {key: {"outcome": ..., "detail": ...}} map that has this outcome, in map order.
     return {key: entry["detail"] for key, entry in outcomes.items() if entry["outcome"] == outcome}

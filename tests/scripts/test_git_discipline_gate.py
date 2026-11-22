@@ -1017,5 +1017,64 @@ class PushReviewedTreeTest(GateCaseBase):
         self.assert_allowed("gh pr create --fill", cwd=self.repo)
 
 
+class DirectoryEmptyingGateTest(GateCaseBase):
+    """Rule 9: plain `rm` calls that cover every entry of a directory read as the recursive delete split up."""
+
+    DENIED = "[git-discipline-gate] rm of every entry in"
+
+    def setUp(self):
+        super().setUp()
+        self.root = pathlib.Path(tempfile.mkdtemp(dir=str(self.tmp)))
+        # The gate never reports a folder under a temp root, and the fixture is under one. A sitecustomize on the
+        # gate's PYTHONPATH empties the temp roots in the gate process so the fixture reads as an ordinary folder.
+        hook_dir = self.tmp / "no_temp_roots"
+        hook_dir.mkdir()
+        (hook_dir / "sitecustomize.py").write_text(
+            f"import sys\nsys.path.insert(0, {str(toolkit_paths.LIB_DIR)!r})\n"
+            "import hook_input\nhook_input.temp_roots = lambda: []\n")
+        self.hook_dir = hook_dir
+        self.folder = self.root / "d"
+        self.folder.mkdir()
+        (self.folder / "a").write_text("x")
+        (self.folder / "b").write_text("x")
+
+    def run_raw(self, stdin, cwd, env_extra=None):
+        return super().run_raw(stdin, cwd, {"PYTHONPATH": str(self.hook_dir), **(env_extra or {})})
+
+    def test_a_delete_naming_every_entry_is_denied_with_the_recursive_form(self):
+        reason = self.assert_denied("rm d/a d/b", self.DENIED, cwd=self.root)
+        self.assertIn(f"{self.DENIED} {self.folder} empties it:", reason)
+        self.assertIn("rm_recursive_force", reason)
+        self.assertIn(f"rm -r {self.folder}", reason)
+
+    def test_a_delete_that_leaves_an_entry_passes(self):
+        self.assert_allowed("rm d/a", cwd=self.root)
+
+    def test_a_delete_inside_a_substitution_is_read(self):
+        self.assert_denied("echo $(rm d/a d/b)", self.DENIED, cwd=self.root)
+
+    def test_a_cd_before_the_delete_places_it_in_that_folder(self):
+        self.assert_denied("cd d && rm a b", self.DENIED, cwd=self.root)
+
+    def test_the_payload_cwd_places_the_delete_when_the_process_runs_elsewhere(self):
+        for command in ("cd d && rm a b", "rm d/a d/b"):
+            with self.subTest(command=command):
+                payload = {"cwd": str(self.root), "tool_input": {"command": command}}
+                reason = self.reason_of(self.run_raw(json.dumps(payload), self.tmp))
+                self.assertTrue(reason.startswith(self.DENIED), reason)
+
+    def test_a_folder_with_a_space_is_shown_quoted_in_the_recursive_form(self):
+        spaced = self.root / "s p"
+        spaced.mkdir()
+        (spaced / "a").write_text("x")
+        reason = self.assert_denied("rm 's p/a'", self.DENIED, cwd=self.root)
+        self.assertIn(f"rm -r '{spaced}'", reason)
+
+    def test_the_last_delete_after_an_earlier_call_is_denied(self):
+        self.assert_allowed("rm d/a", cwd=self.root)
+        (self.folder / "a").unlink()
+        self.assert_denied("rm d/b", self.DENIED, cwd=self.root)
+
+
 if __name__ == "__main__":
     unittest.main()

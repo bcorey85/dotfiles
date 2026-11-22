@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1052 changes
+1053 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Deny a run of plain rm calls that empties a directory like the recursive form](notes/2026-11-22-deny-a-run-of-plain-rm-calls-that-empties-a.md) [script/git-discipline-gate, script/directory-emptying-deletes, script/shell-steps, script/shell-command] git-discipline-gate denies a Bash command whose plain rm targets cover every entry of an existing directory outside a temp or build folder, naming the directory and the rm -r form bash-safety-gate denies; the check reads the file system, so the last per-file delete of a split run is caught too. The hook's median time on a matched call is 37 ms against an 8 ms bare Python start.
 * [Branch-prep lists renamed copies, near matches and the nearest other functions of each added function](notes/2026-11-20-branch-prep-lists-renamed-copies-near-matches-and.md) [skill/refactor, agent/smell-reviewer, script/refactor-flow, script/shape-clones] refactor_flow branch-prep compares each changed Python or TypeScript function with every function in the repo once names, attribute names and literals are stripped, and lists the nearest other functions of each added function.
 * [A user ruling given to another session is relayed with --relayed-by and --quote and checked against that session's transcript](notes/2026-11-17-a-user-ruling-given-to-another-session-is-relayed.md) [script/review-fix-asks, script/phase-asks, script/review-asks] asks-done and phase_asks.py rule take --by user --relayed-by <session name> --quote <words>; the script needs a real user turn of that live session whose whole text is the quote, typed after the asks were filed, and refuses otherwise.
 * [A fail-closed gate that crashes on import blocks the call and names itself](notes/2026-11-17-a-fail-closed-gate-that-crashes-on-import-blocks.md) [script/review-commit-gate, script/quality-check-cap, script/git-discipline-gate, script/shell-write-gate, script/fork-write-scope, script/coder-gate, script/handback] `lib/import_guard.py` makes `review_commit_gate.py`, `quality_check_cap.py`, `git_discipline_gate.py`, `shell_write_gate.py`, `fork_write_scope.py` and `coder_gate.py` exit 2 with the gate's name and the recovery step when an import crashes, where the call ran before. The omp bridge denies on a PreToolUse gate crash.

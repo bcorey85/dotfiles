@@ -269,12 +269,25 @@ def parse_piped_commands(command):
     """Like parse_simple_commands, but each command is a triple (words, redirections, piped): piped is True when
     the command reads from a pipe, that is, a `|` or `|&` comes right before it. Raises ValueError as
     parse_simple_commands does."""
+    return _read_commands(command, posix=True)
+
+
+def parse_raw_simple_commands(command):
+    """The raw words of each simple command in a shell command, split where parse_simple_commands splits, with the
+    quotes still in place and each redirection left out. Raises ValueError as parse_simple_commands does. A word that
+    glues a quoted part to more text (`a"b c"d`), or holds a backslash-escaped blank (`a\\ b`), is cut differently
+    than parse_simple_commands cuts it, so a caller pairs a raw command with a parsed one by comparing their words,
+    and has a fallback for no match."""
+    return [words for words, _redirections, _piped in _read_commands(command, posix=False) if words]
+
+
+def _read_commands(command, posix):
     if HIDDEN_OPERATOR.search(command):
         raise ValueError("operator character inside quotes or after a backslash")
     if SPACED_REDIRECT_NUMBER.search(command):
         raise ValueError("a number, a space and a redirection")
 
-    lexer = shlex.shlex(with_bang_clobber_as_pipe(command), posix=True, punctuation_chars="();<>|&\n")
+    lexer = shlex.shlex(with_bang_clobber_as_pipe(command), posix=posix, punctuation_chars="();<>|&\n")
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""

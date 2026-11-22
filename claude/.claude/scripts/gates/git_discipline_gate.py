@@ -26,6 +26,9 @@
   8. git push, and gh pr create in the hook's cwd, when the repo's HEAD tree differs, notes paths left out, from
      every tree a converged review recorded for that repo (reviewed_tree.push_review_state); a repo with no review
      record passes
+  9. plain `rm` calls (no -r) whose targets cover every entry of an existing directory, read from the file system
+     now (directory_emptying_deletes.py): the recursive delete bash-safety-gate denies, split into files; a temp
+     directory and a build or cache folder pass
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -36,12 +39,14 @@ import itertools
 import json
 import os
 import re
+import shlex
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import import_guard
 
 import_guard.guard("git-discipline-gate", __name__)
+import directory_emptying_deletes
 import hook_input
 import reviewed_tree
 import script_utils
@@ -404,6 +409,16 @@ def run(raw):
         check_branch(call)
 
     check_push_reviewed(command, calls, payload_cwd)
+    check_directory_emptying(command, payload_cwd)
+
+
+def check_directory_emptying(command, payload_cwd):
+    """Rule 9: plain `rm` calls whose targets cover every entry of an existing directory."""
+    for folder in directory_emptying_deletes.emptied_directories(command, payload_cwd):
+        raise DenyError(f"[git-discipline-gate] rm of every entry in {folder} empties it: this is the recursive "
+                        "delete bash-safety-gate denies as rm_recursive_force, split into files. A blocked delete "
+                        "is never split or disguised. Leave the files and report the delete as a stop, so the user "
+                        f"can run `rm -r {shlex.quote(folder)}` themselves.")
 
 
 def opens_pull_request(command):

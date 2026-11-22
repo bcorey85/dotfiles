@@ -120,10 +120,11 @@ alias yrw="yarn run watch"
 alias gcm='git checkout master'
 alias gcb='git checkout -b'
 alias gf="git fetch"
+alias gp="git pull"
 alias gmom="git merge origin/master"
 alias grom="git rebase -i origin/master"
 alias gpou='git push origin -u'
-alias gpf='git push --force-with-lease'
+alias gpffetch='git push --force-with-lease'
 alias ga='git add --all'
 alias gcom='git commit -m'
 alias gs='git switch'
@@ -273,7 +274,7 @@ alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'
 alias vv='nvim .'
 alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
 alias vn='nvim +"cd ~/vault" ~/vault'
-alias nvim-old='NVIM_APPNAME=nvim-old nvim'
+alias hw='hunk diff --watch'
 alias cc="claude"
 alias ccskip="CLAUDE_SKIP_HOOKS=1 claude"
 alias oc="opencode"

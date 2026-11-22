@@ -12,8 +12,8 @@
 #
 # --note colors LINE..END's line numbers and shows TEXT above them (nvim's util/jump_note.lua);
 # each --note belongs to the location after it. Several locations make a list:
-# nvim opens the first, ]k/[k step through it, and the next jump replaces it.
-# --push nests the new list inside the current one instead; [K in nvim drops
+# nvim opens the first, ]v/[v step through it, and the next jump replaces it.
+# --push nests the new list inside the current one instead; [V in nvim drops
 # back to the outer list. <Esc> in nvim dismisses the note.
 #
 # Usage: nvim-jump [--push] [--note TEXT] FILE[:LINE[-END]] [LINE]
@@ -116,6 +116,6 @@ nvim --server "$sock" --remote-send "<C-\\><C-n>:edit +${line%-*} $(printf '%q' 
 # and no --push only clears it.
 note_error=$(nvim --server "$sock" --remote-expr "luaeval('select(2, pcall(function(a) return require(\"util.jump_note\").show(a.jumps, a.push) end, _A))', {'jumps': [$jumps], 'push': $push})" 2>&1) || true
 list_hint=
-[ ${#files[@]} -eq 1 ] || list_hint=" (1/${#files[@]}, ]k/[k for the rest)"
+[ ${#files[@]} -eq 1 ] || list_hint=" (1/${#files[@]}, ]v/[v for the rest)"
 [ -z "$list_hint${notes[0]}" ] || [ -z "$note_error" ] || echo "note not shown: $note_error" >&2
 echo "$(cwd_of "$sock") -> ${file#"$(cwd_of "$sock")"/}:$line$list_hint"

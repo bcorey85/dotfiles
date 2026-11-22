@@ -115,7 +115,7 @@ def run_nvim_jump(command, asks, cwd=None):
     if code == 1:
         return "no nvim owns this directory: anchors printed only."
     if code == 0:
-        return "jumped to the first ask: ]k and [k step the rest."
+        return "jumped to the first ask: ]v and [v step the rest."
     return f"nvim-jump exit {code}: {output}"
 
 

@@ -2,10 +2,11 @@
  * claude-review — GitHub-style "viewed" marks for hunk, plus the bridge into the
  * /cc skill.
  *
- * `o` marks the selected file viewed, collapses it in place to a single summary
- * row, and moves to the next unviewed file; `o` again reopens it (hunk owns `v`,
+ * `o` (or `-`) marks the selected file viewed, collapses it in place to a single
+ * summary row, and moves to the next unviewed file; `o` again reopens it (hunk owns `v`,
  * visual selection). `V` also drops
  * viewed files from the review entirely, `O` stages them, `U` clears the marks,
+ * `A` marks and collapses every file behind a confirm,
  * `X` discards the selected file's working-tree changes behind a confirm.
  * `C` quits into lazygit in the same herdr popup. Inline review notes (built-in
  * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
@@ -69,6 +70,10 @@ interface CommandCtx extends Ctx {
   };
   readonly navigation: {
     selectFile(fileId: string): void;
+  };
+  readonly commands: {
+    /** Run one public `hunk.*` command; false when it is unknown or disabled. */
+    execute(commandId: string): boolean;
   };
   readonly dialogs: {
     confirm(options: { title: string; body?: string }): Promise<boolean>;
@@ -433,6 +438,8 @@ function popLastMarked(
  * host resolves no layout callback. `navigation` is live, not a snapshot.
  */
 const COLLAPSE_SETTLE_MS = 50;
+/** Host command: give the selected file's view to every file it matches. */
+const APPLY_VIEW_TO_ALL = "hunk.view.applyFilePresentationToAllMatching";
 let pendingJump: ReturnType<typeof setTimeout> | null = null;
 function jumpAfterCollapse(ctx: Navigator, fileId: string): void {
   if (pendingJump) clearTimeout(pendingJump);
@@ -509,7 +516,7 @@ export default function claudeReview(hunk: HunkApi): void {
     {
       id: "toggleViewed",
       title: "Toggle viewed on the selected file",
-      key: "o",
+      key: ["o", "-"],
     },
     (ctx) => {
       const file = ctx.selection.file;
@@ -753,6 +760,79 @@ export default function claudeReview(hunk: HunkApi): void {
       // own when the state behind it moves.
       ctx.fileViews.refresh(VIEW_ID);
       ctx.notify(`cleared ${count} mark(s)`);
+    },
+  );
+
+  hunk.registerCommand(
+    { id: "markAllViewed", title: "Mark every file viewed", key: "A" },
+    async (ctx) => {
+      const state = withState(ctx);
+      if (!state) return;
+      const files = loadedReviews.get(state.repoRoot)?.visible ?? [];
+      const unmarked = files.filter(
+        (file) => state.viewed[file.path] !== file.hash,
+      );
+      // `p` unmarks a file but leaves its path in `collapsedPaths`, so a file
+      // counts as done only when it is both marked and collapsed.
+      const raw = files.filter(
+        (file) =>
+          state.viewed[file.path] !== file.hash ||
+          !collapsedPaths.has(file.path),
+      );
+      if (raw.length === 0) {
+        ctx.notify("claude-review: every file is already viewed", "warning");
+        return;
+      }
+      const ok = await ctx.dialogs.confirm({
+        title: `Mark ${raw.length} file${raw.length === 1 ? "" : "s"} viewed?`,
+      });
+      if (!ok) return;
+      const history = markHistory.get(state.repoRoot) ?? [];
+      for (const file of unmarked) {
+        state.viewed[file.path] = file.hash;
+        history.push(file.path);
+      }
+      markHistory.set(state.repoRoot, history);
+      writeState(state);
+
+      const selected = ctx.selection.file;
+      if (!selected) {
+        ctx.notify(
+          `marked ${unmarked.length} file(s) · select one and press A to collapse`,
+          "warning",
+        );
+        return;
+      }
+      // The extension API collapses only the selected file. The host's own
+      // apply-to-all command spreads that view to every file it matches, and it
+      // is enabled only once a selection change lands with the marks on disk:
+      // drop the view first so an already collapsed file still counts as one.
+      ctx.fileViews.select(null);
+      ctx.fileViews.select(VIEW_ID);
+      // Every file `p` reopened still presents the view with raw rows prepared.
+      ctx.fileViews.refresh(VIEW_ID);
+      const others = raw.filter(
+        (file) => file.path !== selected.path && !collapsedPaths.has(file.path),
+      );
+      collapsedPaths.add(selected.path);
+      if (others.length === 0) {
+        ctx.notify(`viewed all ${files.length} file(s)`);
+        return;
+      }
+      setTimeout(() => {
+        const spread = ctx.commands.execute(APPLY_VIEW_TO_ALL);
+        if (!spread) {
+          ctx.notify(
+            `marked ${unmarked.length} file(s) · only ${selected.path} collapsed`,
+            "warning",
+          );
+          return;
+        }
+        for (const file of files) {
+          collapsedPaths.add(file.path);
+        }
+        ctx.notify(`viewed all ${files.length} file(s)`);
+      }, COLLAPSE_SETTLE_MS);
     },
   );
 

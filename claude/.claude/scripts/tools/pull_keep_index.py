@@ -1,11 +1,13 @@
 """Usage: pull_keep_index.py <repo>
        pull_keep_index.py --put-back <saved> <repo>
+       pull_keep_index.py --help
 
 `--put-back` puts the changes saved in the commit <saved> back into the repo, the way the pull does: staged files
 staged, built pages rebuilt. Every message that leaves the local changes saved but not applied names it.
-When the staged changes clash with the pull only on built pages (paths with `merge=built-page`) and the repo
-configures the built-page merge driver (`merge.built-page.driver`), the saved changes go on with no index so the
-driver rebuilds those pages, and the rebuilt pages are staged. With no driver configured git text-merges those pages,
+When the staged changes clash with the pull on built pages (paths with `merge=built-page`), the rest of the staged
+changes go onto the pulled tree (a file both changed in other hunks does) and the repo configures the built-page merge
+driver (`merge.built-page.driver`), the saved changes go on with no index so the driver rebuilds those pages, and the
+rebuilt pages are staged. With no driver configured git text-merges those pages,
 so the run exits 1 naming `--put-back`.
 A <saved> that is not a saved-changes commit (no second parent), or a repo with tracked changes
 (`git status --porcelain --untracked-files=no` prints anything), exits 1 with the usage.
@@ -283,6 +285,21 @@ def built_page_driver_configured(repo):
     return found.returncode == 0
 
 
+def clashing_built_pages(repo, saved):
+    """The built pages that make the apply with the index fail, or [] when the apply needs another route. A page both
+    the saved staged changes and the pull changed clashes; so may an ordinary file they both changed, which applies
+    anyway when the hunks do not overlap. The staged changes minus those pages must go onto HEAD: when they do not, an
+    ordinary file really clashes and the caller stops. [] too when the repo configures no built-page merge driver, since
+    git text-merges such a page and that text must not be staged as rebuilt."""
+    clashes = staged_clash_paths(repo, saved)
+    pages = built_page_paths(repo, clashes) if clashes else []
+    if not pages or not built_page_driver_configured(repo):
+        return []
+    if staged_tree(repo, saved, left_out=pages) is None:
+        return []
+    return pages
+
+
 def put_back_without_index(repo, saved, pages, env):
     """The staged changes clash with the pull only on built pages: apply the saved changes with no index so the merge
     driver rebuilds those pages, then give every other file its staged or unstaged state and stage the rebuilt pages."""
@@ -333,9 +350,9 @@ def put_back(repo, saved):
         return
     sys.stderr.write(os.fsdecode(applied.stderr))
     has_conflicts = bool(listed_paths(repo, "--diff-filter=U"))
-    clashes = [] if has_conflicts else staged_clash_paths(repo, saved)
-    if clashes and built_page_paths(repo, clashes) == clashes and built_page_driver_configured(repo):
-        put_back_without_index(repo, saved, clashes, env)
+    pages = [] if has_conflicts else clashing_built_pages(repo, saved)
+    if pages:
+        put_back_without_index(repo, saved, pages, env)
         return
     exit_unapplied(repo, saved)
 
@@ -433,6 +450,9 @@ def main(arguments):
         if tracked_changes.stdout:
             sys.exit(f"pull_keep_index: {repo} has tracked changes; --put-back needs a clean tree\n{__doc__}")
         put_back(repo, saved)
+        return
+    if arguments in (["-h"], ["--help"]):
+        print(__doc__)
         return
     is_put_back_call = bool(arguments) and arguments[0] == PUT_BACK_VERB
     if len(arguments) != 1 or is_put_back_call:

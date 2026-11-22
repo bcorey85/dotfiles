@@ -176,6 +176,67 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual((self.repo / "f").read_text(), "theirs\n")
         self.assertEqual((self.repo / "k").read_text(), "theirs\n")
 
+    def test_a_built_page_clash_beside_an_ordinary_file_the_pull_changed_in_other_hunks_is_rebuilt(self):
+        self.add_files("k")
+        long_text = "".join(f"{i}\n" for i in range(30))
+        self.write(self.repo, "k", long_text)
+        self.git(self.repo, "add", "k")
+        self.git(self.repo, "commit", "-qm", "long k")
+        self.git(self.repo, "push", "-q")
+        self.mark_built_pages("f")
+        self.push_from_other_machine("f", "theirs\n")
+        other = self.tmp / "other-f"
+        self.write(other, "k", long_text.replace("0\n", "T\n", 1))
+        self.git(other, "commit", "-qam", "other k")
+        self.git(other, "push", "-q")
+        self.write(self.repo, "f", "mine\n")
+        self.write(self.repo, "k", long_text.replace("29\n", "M\n"))
+        self.git(self.repo, "add", "f", "k")
+        self.write(self.repo, "g", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f", "M  k"])
+        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
+        self.assertEqual(self.git(self.repo, "show", ":k"), long_text.replace("0\n", "T\n", 1).replace("29\n", "M\n"))
+
+    def test_put_back_of_a_built_page_clash_beside_a_mergeable_file_rebuilds_the_page(self):
+        self.add_files("k")
+        long_text = "".join(f"{i}\n" for i in range(30))
+        self.write(self.repo, "k", long_text)
+        self.git(self.repo, "add", "k")
+        self.git(self.repo, "commit", "-qm", "long k")
+        self.git(self.repo, "push", "-q")
+        self.mark_built_pages("f")
+        self.write(self.repo, "f", "mine\n")
+        self.write(self.repo, "k", long_text.replace("29\n", "M\n"))
+        self.git(self.repo, "add", "f", "k")
+        self.write(self.repo, "g", "unstaged\n")
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+        self.push_from_other_machine("f", "theirs\n")
+        other = self.tmp / "other-f"
+        self.write(other, "k", long_text.replace("0\n", "T\n", 1))
+        self.git(other, "commit", "-qam", "other k")
+        self.git(other, "push", "-q")
+        self.git(self.repo, "pull", "-q")
+
+        finished = self.run_script("--put-back", saved)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M g", "M  f", "M  k"])
+        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
+
+    def test_help_prints_the_usage_and_exits_0_from_any_folder(self):
+        env = {**os.environ, **GIT_ENV}
+        for flag in ("--help", "-h"):
+            finished = subprocess.run([sys.executable, str(SCRIPT), flag], capture_output=True, text=True, env=env,
+                                      cwd=self.tmp)
+
+            self.assertEqual(finished.returncode, 0, finished.stderr)
+            self.assertIn("Usage: pull_keep_index.py <repo>", finished.stdout)
+
     def test_a_built_page_clash_with_an_unstaged_conflict_names_the_conflict_and_the_page_to_stage(self):
         self.mark_built_pages("f")
         self.push_from_other_machine("f", "theirs\n")

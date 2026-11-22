@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-10 open benches, by rank. Each line is the question the bench asks.
+9 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -20,4 +20,3 @@ description: "The benches that are open now and the question each asks."
 * Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.
 * Review loop writes a condensed prior-issues list in round two (queued): A one-line-per-issue prior-issues list in the script's round-two and last-read requests could cut 5-10% of the loop's Opus tokens, the part of the agent driver's cut that ports to the script.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
-* Pilot: replace the regex Bash gate's intent rules with auto mode prose rules and deny rules (running): Fewer interruptions: swap the regex Bash rules that guess intent for auto mode prose rules plus deny rules, if a replay shows the classifier keeps the true blocks and drops the false ones.

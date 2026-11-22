@@ -1226,7 +1226,7 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
 
     def test_the_plan_folder_is_the_plans_own_folder_and_no_folder_for_a_plan_with_none(self):
         self.assertEqual("docs/plans/p/", plan_format.plan_folder("docs/plans/p/spec.md"))
-        for plan in ("", "-", "spec.md", "/abs/docs/plans/p/spec.md"):
+        for plan in ("", "-", "spec.md", "/abs/docs/plans/p/spec.md", "docs/foo.md", "docs/plans/foo.md"):
             with self.subTest(plan=plan):
                 self.assertEqual("", plan_format.plan_folder(plan))
                 self.assertEqual("", plan_format.plan_folder_exclude(plan))

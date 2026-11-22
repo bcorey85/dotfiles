@@ -186,8 +186,8 @@ def header_ruled(header, findings, key):
 
 def plan_read_line(repo, plan, phase):
     """The brief line that names the plan lines a reviewer reads: the phase's section, when the plan on disk has one.
-    None with no repo, no phase, an unreadable plan or no section for the phase."""
-    if not (repo and phase):
+    None with no phase, an unreadable plan or no section for the phase."""
+    if not phase:
         return None
     plan_file = pathlib.Path(repo) / plan
     if not plan_file.is_file():
@@ -197,22 +197,26 @@ def plan_read_line(repo, plan, phase):
     if line_range is None:
         return None
     first, last = line_range
-    return f"Phase {phase} is lines {first}-{last} of the plan. Read only those lines of it."
+    heading = plan_lines[first - 1].strip()
+    return (f"Phase {phase} is the `{heading}` section of the plan, lines {first}-{last} at the run's start. "
+            "Read only that section of it.")
 
 
-def reviewer_brief(header, handoff, repo=None):
+def reviewer_brief(header, handoff, repo):
     """The brief every reviewer of the run gets. The plan's folder is left out of the diff command and of the
-    untracked files: the plan documents are not the change under review. With `repo`, the brief names the plan lines
-    of the phase."""
+    untracked files: the plan documents are not the change under review. The brief names the plan lines of the
+    phase when `repo` holds the plan, the header has a `phase:` and the plan has a matching section."""
     plan = header.get("plan", "")
     lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
     plan_folder = plan_format.plan_folder(plan)
-    read_line = plan_read_line(repo, plan, header.get("phase")) if plan else None
+    read_line = plan_read_line(repo, plan, header.get("phase"))
     if read_line:
         lines.append(read_line)
     if plan_folder:
+        plan_part = "the plan section named here" if read_line else f"`{plan}`"
+        openable = f"{plan_part}, `{plan_format.CRITERIA_FILE_NAME}` and `{plan_format.TICKET_FILE_NAME}`"
         lines.append(f"The files under {plan_folder} are plan documents, not the change: do not review them, and "
-                     "open none of them but the plan lines named here.")
+                     f"open none of them but {openable}.")
     if header.get(BASE_KEY):
         base = header[BASE_KEY]
         diff_command = f"git diff {base}"

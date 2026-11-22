@@ -140,10 +140,10 @@ class ReviewerBriefTest(unittest.TestCase):
     def test_the_diff_command_and_the_untracked_files_leave_out_the_plan_folder(self):
         header = {"plan": PLAN_PATH, "phase": "1", "base": "abc1234"}
 
-        brief = review_loop_prompt_file.reviewer_brief(header, "the handoff")
+        brief = review_loop_prompt_file.reviewer_brief(header, "the handoff", self.repo_with_plan())
 
-        self.assertIn("`git diff abc1234 -- . ':(exclude)docs/plans/p/'` plus untracked files outside docs/plans/p/.",
-                      brief)
+        self.assertIn("`git diff abc1234 -- . ':(exclude)docs/plans/p/'`", brief)
+        self.assertIn("untracked files outside docs/plans/p/", brief)
         self.assertIn("The files under docs/plans/p/ are plan documents, not the change", brief)
         self.assertTrue(brief.endswith("Handoff:\nthe handoff"))
 
@@ -152,7 +152,10 @@ class ReviewerBriefTest(unittest.TestCase):
 
         brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH, "phase": "2"}, "the handoff", repo)
 
-        self.assertIn("Phase 2 is lines 7-9 of the plan. Read only those lines of it.", brief)
+        self.assertIn("Phase 2 is the `## Phase 2: Second` section of the plan, lines 7-9 at the run's start. "
+                      "Read only that section of it.", brief)
+        self.assertIn("open none of them but the plan section named here, `acceptance-criteria.md` and "
+                      "`00-ticket.md`.", brief)
 
     def test_a_phase_with_no_section_or_a_plan_not_on_disk_gets_no_line_range(self):
         repo = self.repo_with_plan()
@@ -160,7 +163,15 @@ class ReviewerBriefTest(unittest.TestCase):
                        {"plan": PLAN_PATH}):
             with self.subTest(header=header):
                 brief = review_loop_prompt_file.reviewer_brief(header, "the handoff", repo)
-                self.assertNotIn("of the plan", brief)
+                self.assertNotIn("section of the plan", brief)
+
+    def test_a_brief_with_no_line_range_still_lets_the_reviewer_open_the_plan(self):
+        repo = self.repo_with_plan()
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH, "phase": "9"}, "the handoff", repo)
+
+        self.assertIn(f"open none of them but `{PLAN_PATH}`, `acceptance-criteria.md` and `00-ticket.md`.", brief)
+        self.assertNotIn("plan section named here", brief)
 
     def test_a_review_with_no_plan_keeps_the_whole_diff(self):
         brief = review_loop_prompt_file.reviewer_brief({"base": "abc1234"}, "the handoff", "/nowhere")

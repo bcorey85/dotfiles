@@ -735,14 +735,14 @@ def phase_line_range(plan_lines, number):
 
 
 def plan_folder(plan):
-    """The repo-relative folder that holds the plan and its supporting files, ending in `/`. "" when there is no plan,
-    the plan path is absolute, or the plan sits at the repo root: no folder is the plan's own then."""
+    """The repo-relative folder that holds the plan and its supporting files, ending in `/`. "" when there is no plan
+    or the plan does not sit in a folder of its own under PLANS_DIR: no folder is the plan's own then."""
     if not plan:
         return ""
-    plan_path = pathlib.PurePosixPath(plan)
-    if plan_path.is_absolute() or str(plan_path.parent) == ".":
+    folder = f"{pathlib.PurePosixPath(plan).parent}/"
+    if not folder.startswith(PLANS_DIR) or folder == PLANS_DIR:
         return ""
-    return f"{plan_path.parent}/"
+    return folder
 
 
 def outside_plan_folder(files, plan):
@@ -751,7 +751,7 @@ def outside_plan_folder(files, plan):
     folder = plan_folder(plan)
     if not folder:
         return files
-    in_folder = [path for path in files if path.startswith(folder)]
+    in_folder = [path for path in files if script_utils.path_is_under(path, folder)]
     return script_utils.without_paths(files, in_folder)
 
 

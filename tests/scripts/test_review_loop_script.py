@@ -2120,6 +2120,17 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop, _check_command = loop_main.build_loop(request)
         return loop
 
+    def test_the_loop_brief_names_the_plan_lines_of_the_phase(self):
+        plan = self.repo / "docs" / "plans" / "p" / "spec.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# Plan\n\n## Phase 1: First\n\none\n")
+        loop_main, request = self.gate_command_request(
+            "echo scoped", False, header_extra="plan: docs/plans/p/spec.md\nphase: 1\n")
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertIn("Phase 1 is the `## Phase 1: First` section of the plan, lines 3-5", loop.brief)
+
     @staticmethod
     def fake_check_run(_repo, _check_command, log, _timeout, _env, _on_start):
         """A check run that exits 0 and leaves an empty log, so no real command starts."""

@@ -17,13 +17,13 @@ unmeasured: ""
 
 ## Change
 
-`lib/plan_format.py` owns four new helpers: `plan_folder` (the repo-relative folder of the `plan:` path), `outside_plan_folder` (a file list or mapping without the paths under it), `plan_folder_exclude` (the `:(exclude)<folder>` pathspec) and `phase_line_range` (the 1-based lines of a phase's section).
+`lib/plan_format.py` owns four new helpers: `plan_folder` (the folder of the `plan:` path, when it is a folder of its own under `docs/plans/`), `outside_plan_folder` (a file list or mapping without the paths under it), `plan_folder_exclude` (the `:(exclude)<folder>` pathspec) and `phase_line_range` (the 1-based lines of a phase's section).
 
 - `LoopRun.review_scope` drops the plan folder from the files every reviewer of the run owns (code, smell and test reviewers), unless the caller named files with a `files:` line.
 - `code_review_start.handoff_with_git_files` drops it from the handoff's `files:` list.
-- `reviewer_brief` writes the diff command as `git diff <base> -- . ':(exclude)<folder>'`, says untracked files under the folder are out, says the folder holds plan documents and not the change, and adds `Phase N is lines A-B of the plan. Read only those lines of it.`
+- `reviewer_brief` writes the diff command as `git diff <base> -- . ':(exclude)<folder>'`, says untracked files under the folder are out, says the folder holds plan documents and not the change, lets a reviewer open only the phase's section, `acceptance-criteria.md` and `00-ticket.md` there, and adds ``Phase N is the `<heading>` section of the plan, lines A-B at the run's start. Read only that section of it.``
 
-The fix coder's scope is unchanged: `changed_files_since` still lists plan files, so a coder that edits the plan for a ruled plan change is still tracked. A review with no plan, an absolute plan path or a plan at the repo root keeps the whole diff.
+The fix coder's Files in scope list leaves out plan-folder files unless a finding names one. The diff backup of a pass and the final read follow the review scope: they leave plan-folder files out unless a `files:` line names one, and a finding naming one does not bring it in. The lint pass covers a plan file only when a coder pass touched it. `changed_files_since` still tracks a coder edit to the plan. A review with no plan, or with a plan that has no folder of its own under `docs/plans/`, keeps the whole diff.
 
 ## Evidence
 
@@ -37,9 +37,11 @@ Bench trees under `~/dev/evals/review-plan-scope/`: a four-file change (6.6k cha
 
 After the change each code reviewer read the phase's plan lines once (6.3k and 6.7k chars) and no other plan file. Before, one read the decisions and criteria files and a 38k saved tool result, the other 16.7k of other spec sections.
 
+A third run, after the brief began to allow `acceptance-criteria.md` and `00-ticket.md` and to name the phase heading: 32,769 and 32,400 chars for the two code reviewers, 28,660 for the smell reviewer. Neither code reviewer opened the criteria or the ticket file.
+
 ## Result
 
-Both code reviewers are under the 40k target. Token totals fell from 328k and 417k to 145k and 88k. The four changed test files and the full suite pass (5238 tests, 0 failed).
+Both code reviewers are under the 40k target. Token totals fell from 328k and 417k to 145k and 88k (111k and 141k in the third run). The four changed test files and the full suite pass (5240 tests, 0 failed).
 
 ## Watch
 

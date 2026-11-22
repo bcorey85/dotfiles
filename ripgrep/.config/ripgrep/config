@@ -1,0 +1,4 @@
+# Search hidden files by default so a sweep reaches claude/.claude and other dot folders.
+--hidden
+# --hidden would otherwise search the whole .git folder.
+--glob=!.git

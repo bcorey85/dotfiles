@@ -37,6 +37,8 @@ To add/remove a stow package, edit the `stow -R` line in `install/stow`.
 
 - `nvim` → `~/.config/nvim/` — lazy.nvim config (bootstrap in `lua/config/lazy.lua`), one spec file per plugin in `lua/plugins/` (mini.* modules consolidated in `mini.lua`)
 - `zsh` → `~/.zshrc` — Plugins, aliases, mise/pyenv/starship init (nvm fallback when mise absent)
+- `zsh` also stows `~/.zshenv`, which exports `RIPGREP_CONFIG_PATH` for every zsh (interactive or not)
+- `ripgrep` → `~/.config/ripgrep/config` — `--hidden` and `--glob=!.git`, so a plain `rg` sweeps `claude/.claude`
 - `claude` → `~/.claude/` — Agents, commands, settings, hooks
 - `opencode` → `~/.config/opencode/` — Global config (`opencode.jsonc`), `AGENTS.md` global rules, `agents/` ported from claude. Auto-loads `~/.claude/skills/`
 - `omp` → `~/.omp/agent/hooks/` — Oh My Pi harness. `claude-security-bridge.ts` delegates tool-call gating to the claude package's hook scripts (single source of truth — do NOT re-port the gates). omp ignores `~/.pi` and `~/.claude/agents`

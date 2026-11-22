@@ -10,6 +10,9 @@ import tempfile
 
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 CLAUDE_DIR = pathlib.Path(os.environ.get("TOOLKIT_CLAUDE_DIR") or TREE_CLAUDE_DIR)
+REPO_ROOT = TREE_CLAUDE_DIR.parents[1]
+RIPGREP_CONFIG = REPO_ROOT / "ripgrep" / ".config" / "ripgrep" / "config"
+ZSHENV_DIR = REPO_ROOT / "zsh"
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
 CODE_DIR = SCRIPTS_DIR / "code"
 REVIEW_DIR = SCRIPTS_DIR / "review"

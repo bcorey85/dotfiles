@@ -25,6 +25,8 @@ findings, the files earlier passes touched, and the held, ruled-out and later-ph
 holds as a whole token stays, and so does a file the pass created. A decision log is guarded only on its sign-off
 lines, which the loop puts back; its other lines stay as the pass left them. An approval-only file is reverted and
 reported by its own guard. The loop's formatter step already reads only the review scope and the touched files.
+`paths_differing_from_head` is the module's one `git diff` listing: the paths dirty before the pass and the paths
+changed after it both come from it.
 
 ## Evidence
 

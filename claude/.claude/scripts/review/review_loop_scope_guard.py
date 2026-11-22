@@ -36,12 +36,13 @@ class PassScope(typing.NamedTuple):
         return findings_name(self.finding_texts, path, self.root)
 
 
-def paths_differing_from_head(repo, head):
+def paths_differing_from_head(repo, head, *diff_options):
     """The paths whose work tree or index text differs from `head` (a deleted file and both sides of a rename
-    included), as a set. A rename is listed by both paths because renames are not detected."""
+    included), as a set. A rename is listed by both paths because renames are not detected. `diff_options` narrow
+    the listing."""
     if head is None:
         return set()
-    listing = script_utils.git_output(repo, "diff", "--name-only", "-z", "--no-renames", head)
+    listing = script_utils.git_output(repo, "diff", "--name-only", "-z", "--no-renames", *diff_options, head)
     if listing is None:
         raise RuntimeError(f"scope guard: `git diff {head}` failed in {repo}")
     return {path for path in listing.split("\0") if path}
@@ -64,13 +65,8 @@ class ScopeGuard:
 
     def changed_clean_files(self):
         """The tracked files that were clean before the pass, differ from `head` now and the pass may not change."""
-        if self.head is None:
-            return []
-        listing = script_utils.git_output(self.repo, "diff", "--name-only", "-z", "--no-renames",
-                                          "--diff-filter=MDT", self.head)
-        if listing is None:
-            raise RuntimeError(f"scope guard: `git diff {self.head}` failed in {self.repo}")
-        changed = [path for path in listing.split("\0") if path and path not in self.dirty_before]
+        changed_now = paths_differing_from_head(self.repo, self.head, "--diff-filter=MDT")
+        changed = changed_now - self.dirty_before
         return sorted(path for path in changed if not self.scope.holds(path))
 
     def put_back_clean_files(self):

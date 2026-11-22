@@ -8,7 +8,7 @@
  * viewed files from the review entirely, `O` stages them, `U` clears the marks,
  * `A` marks and collapses every file behind a confirm,
  * `X` discards the selected file's working-tree changes behind a confirm.
- * `C` quits into lazygit in the same herdr popup. Inline review notes (built-in
+ * `C` quits into lazygit in the same herdr popup or review pane; `E` quits into nvim. Inline review notes (built-in
  * `c`) are mirrored to a JSONL the /cc skill reads and resolves.
  *
  * Collapsing is a registered file view, selected per file through
@@ -847,33 +847,56 @@ export default function claudeReview(hunk: HunkApi): void {
     },
   );
 
-  // ── Handoff out of the review popup ───────────────────────────────────────
+  // ── Handoff out of the review popup and pane ──────────────────────────────
   // herdr popups are session-modal, so review -> git costs a quit plus a prefix
-  // key. `hunk-review-popup` runs hunk and then whatever tool this writes into
-  // HUNK_REVIEW_HANDOFF, keeping both inside the one popup. SIGTERM is the same
-  // shutdown path as `q` — hunk installs it alongside SIGINT — so the terminal
-  // is restored exactly as on a normal quit before the wrapper takes over.
-  hunk.registerCommand(
-    { id: "handoffToLazygit", title: "Quit and open lazygit here", key: "C" },
-    (ctx) => {
+  // key. `hunk-review-popup` and `hunk-review-pane` run hunk and then whatever
+  // tool this writes into HUNK_REVIEW_HANDOFF, keeping both inside the one
+  // popup or pane. SIGTERM is the same shutdown path as `q` — hunk installs it
+  // alongside SIGINT — so the terminal is restored exactly as on a normal quit
+  // before the wrapper takes over.
+  const registerHandoff = (
+    command: { id: string; title: string; key: string },
+    target: "lazygit" | "nvim",
+  ): void => {
+    hunk.registerCommand(command, (ctx) => {
       const handoff = process.env.HUNK_REVIEW_HANDOFF;
       if (!handoff) {
         ctx.notify(
-          "claude-review: no handoff target — hunk was not started by hunk-review-popup",
+          "claude-review: no handoff target — $HUNK_REVIEW_HANDOFF is unset (hunk-review-pane outside herdr, or hunk not started by a wrapper)",
           "warning",
         );
         return;
       }
       try {
-        writeFileSync(handoff, "lazygit\n");
+        writeFileSync(handoff, `${target}\n`);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         ctx.notify(`claude-review: handoff failed — ${detail}`, "error");
         return;
       }
       process.kill(process.pid, "SIGTERM");
-    },
+    });
+  };
+  registerHandoff(
+    { id: "handoffToLazygit", title: "Quit and open lazygit here", key: "C" },
+    "lazygit",
   );
+  registerHandoff(
+    { id: "handoffToNvim", title: "Quit and open nvim here", key: "E" },
+    "nvim",
+  );
+
+  // hunk-review-pane cannot signal the real hunk process (shim and node wrappers
+  // sit between), so the process records its own pid for nvim-jump's handoff.
+  const pidFile = process.env.HUNK_REVIEW_PIDFILE;
+  if (pidFile) {
+    try {
+      writeFileSync(pidFile, `${process.pid}\n`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`claude-review: could not record pid — ${detail}`);
+    }
+  }
 
   hunk.transformChangeset((changeset, ctx) => {
     const root = rememberRepo(ctx);

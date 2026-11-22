@@ -1,0 +1,61 @@
+#!/bin/bash
+# Post a list of file:line notes into the live hunk session for the files' repo,
+# for walks over a diff (phase-end and review walks), where the code on screen is
+# the change itself. Use nvim-jump instead when the code may be unchanged.
+#
+# Replaces the last list's agent notes (user notes stay) and focuses the first
+# note. hunk anchors a note only on a line its diff shows; a list with no such
+# line still moves hunk to the first file.
+#
+# Usage: hunk-notes [--note TEXT] FILE[:LINE[-END]] [LINE]
+#        hunk-notes [--note TEXT] FILE:LINE [--note TEXT] FILE:LINE ...
+#
+# Each anchor hunk could not post is printed as `not posted: REL:LINE` before the summary
+# line. Exit 0 notes posted, or none landed and hunk moved to the first file, 1 the file is
+# not in a git repo, no hunk session owns the repo, hunk cannot show the file, or no such
+# directory, 2 bad args or hunk missing.
+
+set -euo pipefail
+
+usage() { sed -n '10,11p' "$0"; exit 2; }
+
+# The argument parser is shared with nvim-jump. $0 is a stow symlink, so the library is found
+# from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=location-args.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/location-args.bash"
+parse_location_args "$@"
+
+resolve_location_files
+
+PATH="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims:$PATH"
+command -v hunk >/dev/null || { echo "hunk not installed" >&2; exit 2; }
+
+root=$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>/dev/null) || { echo "$file is not in a git repo" >&2; exit 1; }
+if ! hunk session get --repo "$root" >/dev/null 2>&1; then
+    echo "no hunk session owns $root (hunk session list)" >&2
+    exit 1
+fi
+
+hunk session comment clear --repo "$root" --yes >/dev/null 2>&1 || true
+added=0
+for i in "${!files[@]}"; do
+    rel=${files[$i]#"$root"/}
+    first=${firsts[$i]}
+    focus=
+    [ "$added" -gt 0 ] || focus=--focus
+    if hunk session comment add --repo "$root" --file "$rel" --new-line "$first" \
+        --summary "${notes[$i]:-$rel:$first}" --author claude $focus >/dev/null 2>&1; then
+        added=$((added + 1))
+    else
+        echo "not posted: $rel:$first"
+    fi
+done
+
+if [ "$added" -eq 0 ]; then
+    rel=${file#"$root"/}
+    if ! hunk session navigate --repo "$root" --file "$rel" --hunk 1 >/dev/null 2>&1; then
+        echo "hunk could not show $rel in $root" >&2
+        exit 1
+    fi
+fi
+echo "hunk $root -> ${file#"$root"/}:$line ($added/${#files[@]} notes)"

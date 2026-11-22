@@ -53,7 +53,7 @@ No new hook process: the checks sit inside the hook that already runs on every B
 
 ## Result
 
-Built and checked; waits for the user's install command.
+Built and checked; installed by the user's command on 2026-11-22 at 13:03 CST.
 
 - Differential check, 399 commands through the archived and the pilot gate: default mode, archived blocks 395 and
   pilot 392 (three quoted-root-word searches); auto mode, archived 395 and pilot 7; auto mode with the off switch,

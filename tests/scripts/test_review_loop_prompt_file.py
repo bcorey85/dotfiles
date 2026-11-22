@@ -124,5 +124,50 @@ class HeaderIterTest(unittest.TestCase):
         self.assertEqual(review_loop_prompt_file.header_iter({"iter": "3"}), 3)
 
 
+PLAN_PATH = "docs/plans/p/spec.md"
+PLAN_TEXT = "\n".join(["# Plan", "", "## Phase 1: First", "", "one", "", "## Phase 2: Second", "", "two", ""])
+
+
+class ReviewerBriefTest(unittest.TestCase):
+    def repo_with_plan(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        repo = pathlib.Path(directory.name)
+        (repo / PLAN_PATH).parent.mkdir(parents=True)
+        (repo / PLAN_PATH).write_text(PLAN_TEXT)
+        return repo
+
+    def test_the_diff_command_and_the_untracked_files_leave_out_the_plan_folder(self):
+        header = {"plan": PLAN_PATH, "phase": "1", "base": "abc1234"}
+
+        brief = review_loop_prompt_file.reviewer_brief(header, "the handoff")
+
+        self.assertIn("`git diff abc1234 -- . ':(exclude)docs/plans/p/'` plus untracked files outside docs/plans/p/.",
+                      brief)
+        self.assertIn("The files under docs/plans/p/ are plan documents, not the change", brief)
+        self.assertTrue(brief.endswith("Handoff:\nthe handoff"))
+
+    def test_the_brief_names_the_plan_lines_of_the_phase(self):
+        repo = self.repo_with_plan()
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH, "phase": "2"}, "the handoff", repo)
+
+        self.assertIn("Phase 2 is lines 7-9 of the plan. Read only those lines of it.", brief)
+
+    def test_a_phase_with_no_section_or_a_plan_not_on_disk_gets_no_line_range(self):
+        repo = self.repo_with_plan()
+        for header in ({"plan": PLAN_PATH, "phase": "9"}, {"plan": "docs/plans/gone/spec.md", "phase": "1"},
+                       {"plan": PLAN_PATH}):
+            with self.subTest(header=header):
+                brief = review_loop_prompt_file.reviewer_brief(header, "the handoff", repo)
+                self.assertNotIn("of the plan", brief)
+
+    def test_a_review_with_no_plan_keeps_the_whole_diff(self):
+        brief = review_loop_prompt_file.reviewer_brief({"base": "abc1234"}, "the handoff", "/nowhere")
+
+        self.assertEqual(brief, "Review every change since abc1234, commits included: `git diff abc1234` plus "
+                                "untracked files.\nHandoff:\nthe handoff")
+
+
 if __name__ == "__main__":
     unittest.main()

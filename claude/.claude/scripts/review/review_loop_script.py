@@ -72,6 +72,7 @@ import full_check
 import full_check_gate
 import handback
 import loop_transcript
+import plan_format
 import review_loop_held
 import review_loop_ruled_out
 import review_loop_untracked
@@ -394,6 +395,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, PassChecks, RuledFindi
 
     def review_scope(self):
         files = review_files(self.repo, self.review_base, self.only_files)
+        # The plan's folder holds the plan documents, not the change. A file the caller named stays in scope.
+        if not self.only_files:
+            files = plan_format.outside_plan_folder(files, self.plan)
         return script_utils.without_paths(files, self.held_files | self.ruled_out)
 
     def coder_held_files(self):

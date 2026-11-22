@@ -2204,6 +2204,23 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(marker.read_text(), "ran\n")
         self.assertEqual(loop.scoped_tests, "passed")
 
+    def test_the_review_scope_leaves_out_the_plan_folder_unless_the_caller_names_its_files(self):
+        loop_script = self.load_script_module()
+        plan = "docs/plans/p/spec.md"
+        (self.repo / plan).parent.mkdir(parents=True)
+        (self.repo / plan).write_text("# Plan\n")
+        (self.repo / "docs/plans/p/research.md").write_text("notes\n")
+        progress = {"fixed": [], "files_touched": set()}
+
+        loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress, plan)
+        self.assertEqual(["app.py"], sorted(loop.review_scope()))
+
+        no_plan_loop = loop_script.LoopRun(self.repo, self.scratch, "", (), progress)
+        self.assertEqual(["app.py", "docs/plans/p/research.md", plan], sorted(no_plan_loop.review_scope()))
+
+        loop.only_files = [plan]
+        self.assertEqual([plan], sorted(loop.review_scope()))
+
     def test_a_loop_that_does_not_gate_every_run_leaves_the_runner_counts_off_the_line(self):
         loop_script = self.load_script_module()
         loop = loop_script.LoopRun(self.repo, self.scratch, "", (), {"fixed": [], "files_touched": set()})

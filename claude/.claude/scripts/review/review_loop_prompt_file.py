@@ -29,6 +29,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / "../lib")]
+import plan_format
 import script_utils
 from handback_store import AdoptedRuling
 
@@ -183,11 +184,43 @@ def header_ruled(header, findings, key):
                               f"expected the number of one of the {error.item_count} findings") from error
 
 
-def reviewer_brief(header, handoff):
+def plan_read_line(repo, plan, phase):
+    """The brief line that names the plan lines a reviewer reads: the phase's section, when the plan on disk has one.
+    None with no repo, no phase, an unreadable plan or no section for the phase."""
+    if not (repo and phase):
+        return None
+    plan_file = pathlib.Path(repo) / plan
+    if not plan_file.is_file():
+        return None
+    plan_lines = plan_file.read_text(errors="replace").splitlines()
+    line_range = plan_format.phase_line_range(plan_lines, phase)
+    if line_range is None:
+        return None
+    first, last = line_range
+    return f"Phase {phase} is lines {first}-{last} of the plan. Read only those lines of it."
+
+
+def reviewer_brief(header, handoff, repo=None):
+    """The brief every reviewer of the run gets. The plan's folder is left out of the diff command and of the
+    untracked files: the plan documents are not the change under review. With `repo`, the brief names the plan lines
+    of the phase."""
+    plan = header.get("plan", "")
     lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
+    plan_folder = plan_format.plan_folder(plan)
+    read_line = plan_read_line(repo, plan, header.get("phase")) if plan else None
+    if read_line:
+        lines.append(read_line)
+    if plan_folder:
+        lines.append(f"The files under {plan_folder} are plan documents, not the change: do not review them, and "
+                     "open none of them but the plan lines named here.")
     if header.get(BASE_KEY):
         base = header[BASE_KEY]
-        lines.append(f"Review every change since {base}, commits included: `git diff {base}` plus untracked files.")
+        diff_command = f"git diff {base}"
+        untracked = "untracked files"
+        if plan_folder:
+            diff_command += f" -- . '{plan_format.plan_folder_exclude(plan)}'"
+            untracked += f" outside {plan_folder}"
+        lines.append(f"Review every change since {base}, commits included: `{diff_command}` plus {untracked}.")
     lines += ["Handoff:", handoff]
     return "\n".join(lines)
 

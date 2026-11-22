@@ -20,16 +20,16 @@ allowed-tools:
 
 Turn a request (+ the current repo) into one well-scoped Jira ticket.
 
-## Brevity contract — NON-NEGOTIABLE
+## Brevity contract
 
 The whole point of this skill. A ticket is a pointer to work, not a design doc.
 
-- **Hard cap: the description fits on one screen (~150 words / ~15 lines).** If it doesn't, cut — don't scroll.
+- **The description fits on one screen.** If it doesn't, cut — don't scroll.
 - **Bullets, not paragraphs. One line per bullet.** No multi-sentence bullets, no sub-bullets unless truly needed.
 - **Definitions are terse:** name the thing, `path:line`, move on. No tool explanations, no domain teaching.
 - **Say each thing once.** Don't repeat a point across Why / Scope / Acceptance.
 - **Acceptance bullets are testable:** observable outcomes (command, behavior, dead repro) — "works correctly" doesn't qualify. Can't write the check → the ticket isn't clear; fix the ticket.
-- **Why = 1–3 bullets max.** If the motivation needs a paragraph, it's a doc, not a ticket.
+- **Why = the motivation in a bullet or two.** If the motivation needs a paragraph, it's a doc, not a ticket.
 - **Default sections: just `## Work` and `## Acceptance`.** Add `## Why` only if non-obvious, `## Out of scope` only to head off scope creep, `## Open Questions` whenever the work is gated on an unanswered question (see below).
 - **Link, don't transcribe** — reference files/PRs, never paste.
 

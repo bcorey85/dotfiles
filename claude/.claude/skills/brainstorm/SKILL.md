@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep, AskUserQuestion, Skill]
 
 # Brainstorm — vet a ticket before it costs a teammate rework
 
-This skill exists to make the ticket NOT WRONG — every
+This skill exists to make the ticket correct — every
 factual claim verified, the approach feasible, the acceptance unambiguous.
 
 ## Steps

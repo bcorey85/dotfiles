@@ -59,7 +59,7 @@ The user's comments come from two readers, Neovim and hunk. Both are explicit us
 5a. **Answer the `question` entries in conversation.** Answer at the depth asked. An answer that sends the user to the docs has not handled the comment. This is the whole handling for those entries; nothing is dispatched and no file changes.
 
 
-6. **Resolve handled entries — MANDATORY, do not skip.** Fire when **every entry is terminal** (`change` fixed, `question` answered, `skip` triaged) — even if `/review` still runs, even if `/fix` never ran. Never wait on a `/fix` handoff.
+6. **Resolve handled entries.** Fire when **every entry is terminal** (`change` fixed, `question` answered, `skip` triaged) — even if `/review` still runs, even if `/fix` never ran. Never wait on a `/fix` handoff.
 
    Using the ids and sources recorded in step 4, call each script with ONLY its own source's ids:
 

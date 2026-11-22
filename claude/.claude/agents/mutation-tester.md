@@ -31,7 +31,7 @@ git rev-parse --show-toplevel && git status --porcelain
 - **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → **STOP**. If
   `python3 ~/.claude/scripts/gates/calibration_guard.py --live --session-pid "$PPID"` exits 0 the lock is live: report its owner and
   worktree and stop; never restore or delete it. Otherwise a previous
-  `mutation-tester` or `/calibrate` run mutated a file and never restored it. Report the
+  `mutation-tester` run mutated a file and never restored it. Report the
   lock's `file` and `backup_path` and stop. Never mutate on top of an unrestored mutation.
   Stop either way; never clear someone else's lock.
 - **Target not in the working tree, or not the file named in the dispatch** → stop.

@@ -170,9 +170,23 @@ The user can also name numbers (`walk 1 3 5`) to walk a subset, or type `next` /
 
 ### 7. Wrap up
 
-- `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; describe, suggest, don't command; PLAUSIBLE as questions). No niceties or human-sounding filler: no thanks, greetings, praise, sign-offs, or softeners ("Thanks for this", "Nice work", "Just a thought"). Start each comment and the review body with the substance. Show full draft; after explicit approval, post via the `post-review` skill (validates anchors, hands the user the post command — the agent never posts).
+- `+comment`: draft one GitHub comment per comment-marked finding (never dismissed; describe, suggest, don't command; PLAUSIBLE as questions). No niceties or human-sounding filler: no thanks, greetings, praise, sign-offs, or softeners ("Thanks for this", "Nice work", "Just a thought"). Start each comment and the review body with the substance. Show full draft; after explicit approval, post it as one review per step 8.
 - `own-branch` only: each `blocker`, `ask` or `fix` the user kept as a real defect (not dismissed, not REFUTED) got past the loop's gates. Invoke `/escape` once per defect with `stage_found=peer-review`. Skip nits, and code the branch never sent through the loop. A `teammate` run logs no escape.
 - Always: `git worktree remove "${TMPDIR:-/tmp}/peer-review-<number>" --force` and confirm removal.
+
+### 8. Post the approved comments (`+comment` only)
+
+The agent never posts: `bash-safety-gate` blocks every mutating `gh api` call, and `gh pr review` cannot attach inline comments. Posting is always the user's `!` command; never wrap it in a script or alias that slips past the gate.
+
+1. Resolve the PR number and head SHA (`gh pr view <arg> --json number,headRefOid,url`) and the repo slug (`gh repo view --json nameWithOwner --jq .nameWithOwner`).
+2. Write the payload with the Write tool to `<scratchpad>/review-<pr>.json`:
+   `{"commit_id": "<headRefOid>", "event": "COMMENT", "body": "<scope questions and anything with no single anchor line>", "comments": [{"path": "<repo-relative>", "line": 42, "side": "RIGHT", "body": "..."}]}`
+   - `event` is `COMMENT` unless the user said approve or request changes.
+   - `line` is the head-file line (`side: RIGHT`); use `side: LEFT` only on deleted lines (old-file numbering). A range adds `start_line` (and `start_side`).
+   - A finding whose line sits outside every diff hunk: anchor it to the nearest changed line that expresses it, or move it to `body`. Never drop it.
+3. Validate: `bash "$CLAUDE_SKILL_DIR/check-anchors" <pr> <scratchpad>/review-<pr>.json`. Non-zero → fix the payload and re-run. A stale head means the PR was pushed since drafting: re-read the anchors at the new head and show the user any comment whose code changed.
+4. Hand the user one line: `! gh api -X POST repos/<owner>/<repo>/pulls/<pr>/reviews --input <scratchpad>/review-<pr>.json`
+5. After it runs, confirm with a GET only: `gh api repos/<owner>/<repo>/pulls/<pr>/reviews/<review-id>/comments --jq length` (the id is in the POST response). Report the review's `html_url` and whether the inline count matches the payload.
 
 ## Arguments
 

@@ -1,6 +1,6 @@
 # Skimmable Writing Directive
 
-Shared by `/eng-arch` + `/adr`. Write to be skimmed: trigger layer-cake scanning, earn commitment with trust signals.
+Used by `/adr`. Write to be skimmed: trigger layer-cake scanning, earn commitment with trust signals.
 
 - **Headings = answers, not topics.** A layer-cake scanner must extract value without dropping into the body.
 

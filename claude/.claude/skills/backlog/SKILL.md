@@ -49,7 +49,7 @@ Distill the conversation into a lightweight idea doc at `docs/backlog/` — _wha
    Omit this section if there are none.
    ```
 
-4. **Keep it 30-80 lines** — capture, not spec. No boilerplate.
+4. **Keep it short** — capture, not spec. No boilerplate.
 
 5. **Write the file** — `docs/backlog/<slug>.md` (kebab-case title unless `--name`; check collisions).
 

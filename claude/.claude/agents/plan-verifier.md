@@ -114,9 +114,6 @@ Execute what a terminal can drive and record by editing the item's line **in the
 ### Acceptance criteria
 [Per id: covered (test `file:line`) | manual (on the smoke checklist) | ⚠️ MISSING — quote the criterion. Or "no acceptance-criteria.md".]
 
-### Gaps  (omit when clean)
-[Each: the item, what is missing, where you looked, and what would satisfy it.]
-
 ### Evidence  (omit when Job 2 did not run)
 - automated: `<cmd>` → ✓ | ✗ <output>
 - agent-verified: <item> — `<command>` → <observed output>
@@ -131,6 +128,6 @@ Execute what a terminal can drive and record by editing the item's line **in the
 
 ## What this is not
 
-- **Not a code review** — a noticed bug gets one line under Gaps.
+- **Not a code review** — a noticed bug is not a verdict item and not in the report.
 - **Not test-intent** — pinning is `test-intent-reviewer`'s question.
 - **Not plan judgment** — check delivery against plan-as-written (+ Deviations); a wrong plan is a user finding, not your rewrite. A plan that drops a ticket AC without the sign-off or ruling above is a `missing` item, not a user finding.

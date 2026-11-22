@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1088 changes
+1089 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -41,6 +41,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [The plan-verifier reports per-criterion verdicts without a free-form gaps section](notes/2026-11-22-the-plan-verifier-reports-per-criterion-verdicts.md) [agent/plan-verifier] The plan-verifier drops the free-form Gaps section of its report and keeps one done, partial or missing verdict per criterion; across 16 metered runs every verdict matched the planted truth in both arms.
 * [The global rules drop the never-unstage and full-suite-at-end lines](notes/2026-11-22-the-global-rules-drop-the-never-unstage-and-full.md) [rule/global-claude-md] The global CLAUDE.md loses two rules the agent already followed without them (never-unstage) or that changed nothing (full suite once, at the end of review), so every session loads about 60 fewer words.
 * [Fourteen unused skills are deleted and post-review folds into peer-review](notes/2026-11-22-fourteen-unused-skills-are-deleted-and-post-review.md) [skill/peer-review, skill/post-review, skill/calibrate, skill/eng-arch, agent/code-reviewer, agent/mutation-tester] vault-ask, vault-progress, vault-review, save-note, daily-recap, weekly-recap, msg, calibrate, falsify, eng-arch, pull-design, go and stop are deleted, and posting approved review comments moves into /peer-review as its step 8, so the skill list every session loads is 14 entries shorter.
 * [Session start no longer runs tuios hooks or a second skip-hooks warning](notes/2026-11-22-session-start-no-longer-runs-tuios-hooks-or-a.md) [rule/settings, script/warn-skip-hooks] settings.json drops all 14 tuios agent-hook registrations and the Python copy of the skip-hooks warning, so every tool call and session start spawns 15 fewer processes and the skip warning prints once.

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1070 changes
+1071 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of six checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
 * [A /list skill lists the session's proposed changes as one numbered list](notes/2026-11-22-a-list-skill-lists-the-session-s-proposed-changes.md) [skill/list] A new /list skill turns the changes proposed in a session into one numbered list, broken things first, with a ship gate per item, so the user picks by number.
 * [Branch-prep lists renamed copies, near matches and the nearest other functions of each added function](notes/2026-11-20-branch-prep-lists-renamed-copies-near-matches-and.md) [skill/refactor, agent/smell-reviewer, script/refactor-flow, script/shape-clones] refactor_flow branch-prep compares each changed Python or TypeScript function with every function in the repo once names, attribute names and literals are stripped, and lists the nearest other functions of each added function.

@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-On a non-zero exit, a timeout, an `is_error` reply or no final report, the loop writes `partial-fix.json` in `<git dir>/review-fix/` and the stop note names each finding as unverified. The next launch re-queues them and removes the record after the pass. A reviewer or disposition call whose reply has `is_error` set now stops the run as a crash, with no retry. A record written while git failed holds a null branch, and the next launch skips the branch check; the module docstrings of the new review modules name the fact each owns.
+On a non-zero exit, a timeout, an `is_error` reply or no final report, the loop writes `partial-fix.json` in `<git dir>/review-fix/` and the stop note names each finding as unverified. The next launch re-queues them and removes the record after the pass. A reviewer or disposition call whose reply has `is_error` set now stops the run as a crash, with no retry. A record written while git failed holds a null branch, and the next launch skips the branch check; the module docstrings of the new review modules name the fact each owns. Only a failed model call (`ModelCallError`) counts as a dead coder, so any other error in a coder call crashes the run instead of leaving a record. A failed record save prints the failure to stderr and never replaces a crash in flight; with none in flight it still raises, and the stop signal saves the pending record before it exits. A record from another branch stops the run with a critical blocker that names the file to delete, in place of a crash packet.
 
 ## Evidence
 

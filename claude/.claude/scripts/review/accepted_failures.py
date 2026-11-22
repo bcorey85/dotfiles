@@ -2,7 +2,8 @@
 """accepted_failures.py: failing test lines a person accepted as already failing before the diff.
 
     python3 accepted_failures.py accept --repo <repo> --line <failing line> --by <who> --reason <text>
-    python3 accepted_failures.py list --repo <repo>
+    python3 accepted_failures.py list --repo <repo>     (first line names the store file: delete a row's line to
+                                                         withdraw that acceptance)
 
 The review loop's scoped test run passes a red command whose failing lines also fail on HEAD without the diff. A
 failure whose line differs between the two runs only in a number or a timestamp (a throttled call's 429 line) reads as
@@ -130,6 +131,7 @@ def main(argv):
         except AcceptRefusedError as error:
             print(f"accepted_failures: refused: {error}", file=sys.stderr)
             return 2
+        print(f"store: {store_path(args.repo)}; delete a row's line to withdraw it")
         for row in rows:
             print(json.dumps(row))
         return 0

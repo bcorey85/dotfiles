@@ -59,9 +59,13 @@ def restore_accepted_approvals(repo, asks, outcomes):
             if base is None:
                 raise ApprovalRestoreError(
                     f"cannot delete `{path}` (the pass created it). Fix the file's write access and rerun")
+            if script_utils.git_output(repo, "cat-file", "-e", base) is None:
+                # The saved blob is an unreferenced loose object, so `git gc` can prune it.
+                raise ApprovalRestoreError(
+                    f"cannot restore `{path}`: its saved pre-pass blob {base} was pruned from the git store. "
+                    f"Restore `{path}` by hand")
             raise ApprovalRestoreError(
-                f"cannot restore `{path}` to its pre-pass blob {base}. Fix the file's write access or the "
-                "missing blob and rerun")
+                f"cannot restore `{path}` to its pre-pass blob {base}. Fix the file's write access and rerun")
         restored.append(RestoredApproval(index, path))
     return restored
 

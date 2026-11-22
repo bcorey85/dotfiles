@@ -95,6 +95,11 @@ def unverified_note(finding_texts, record_file, tree_changed):
             "them to the coder again.")
 
 
+class SavedRecordError(PromptFileError):
+    """The saved record cannot be used: it does not read, or it was written on another branch. The message names the
+    file to delete."""
+
+
 def saved_findings(repo):
     """The finding texts of the repo's saved record, [] when there is none. A record that does not read names the
     file and the expected form; one written on another branch names both branches and the delete command."""
@@ -106,10 +111,10 @@ def saved_findings(repo):
     try:
         record = json.loads(record_file.read_text())
     except (OSError, json.JSONDecodeError) as error:
-        raise PromptFileError(f"{record_file}: {error}; expected {expected}") from error
+        raise SavedRecordError(f"{record_file}: {error}; expected {expected}") from error
     texts = record.get(FINDINGS_FIELD) if isinstance(record, dict) else None
     if not script_utils.is_nonblank_string_list(texts):
-        raise PromptFileError(f"{record_file}: expected {expected}")
+        raise SavedRecordError(f"{record_file}: expected {expected}")
     branch = script_utils.current_branch(repo)
     recorded_branch = record.get(BRANCH_FIELD)
     if recorded_branch is None or branch is None:
@@ -117,8 +122,8 @@ def saved_findings(repo):
     if recorded_branch != branch:
         recorded_name = recorded_branch or "detached HEAD"
         launch_name = branch or "detached HEAD"
-        raise PromptFileError(f"{record_file}: the record was written on branch {recorded_name} and this launch is "
-                              f"on branch {launch_name}; delete {record_file} to drop the record")
+        raise SavedRecordError(f"{record_file}: the record was written on branch {recorded_name} and this launch is "
+                               f"on branch {launch_name}; delete {record_file} to drop the record")
     return texts
 
 

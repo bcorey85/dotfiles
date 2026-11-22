@@ -465,7 +465,10 @@ class AcceptedFailuresCliTest(unittest.TestCase):
         code, out, _err = self.run_main("list", "--repo", str(self.repo))
 
         self.assertEqual(0, code)
-        self.assertEqual({"line": HEAD_THROTTLED_LINE, "by": "me", "reason": "throttled"}, json.loads(out))
+        store_line, row_line = out.splitlines()
+        self.assertEqual(f"store: {accepted_failures.store_path(self.repo)}; delete a row's line to withdraw it",
+                         store_line)
+        self.assertEqual({"line": HEAD_THROTTLED_LINE, "by": "me", "reason": "throttled"}, json.loads(row_line))
 
     def test_accept_prints_the_accepted_line_and_who(self):
         code, out, _err = self.run_main("accept", "--repo", str(self.repo), "--line", HEAD_THROTTLED_LINE,

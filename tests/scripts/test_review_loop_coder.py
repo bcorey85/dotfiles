@@ -1,4 +1,6 @@
 """Tests for the untracked-file guard around the review loop's model calls: which untracked files a call may delete."""
+import contextlib
+import io
 import json
 import pathlib
 import subprocess
@@ -76,6 +78,25 @@ class UntrackedDeletionTest(unittest.TestCase):
     def test_coder_call_passes_the_model_to_the_model_call(self):
         self.assertEqual(self.coder_model_sent(model="haiku"), "haiku")
 
+    def test_a_failed_model_call_raises_a_model_call_error_and_a_missing_report_is_one_too(self):
+        def failing_process(*_args, **_kwargs):
+            return 1, "", "boom"
+
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=failing_process,
+                                 preloaded_skills_prompt=lambda _agent: ""), \
+                self.assertRaises(review_loop_calls.ModelCallError):
+            review_loop_calls.claude_call("coder1", "prompt", self.repo, self.out, agent="coder")
+
+        self.assertTrue(issubclass(review_loop_coder.NoFinalReportError, review_loop_calls.ModelCallError))
+
+    def test_a_coder_failure_that_is_not_a_model_call_error_is_not_swallowed(self):
+        guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+        with mock.patch.object(review_loop_coder, "claude_call", side_effect=RuntimeError("a git read failed")), \
+                self.assertRaises(RuntimeError) as raised:
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard)
+
+        self.assertNotIsInstance(raised.exception, review_loop_coder.CoderCallError)
+
     def test_an_empty_coder_model_leaves_the_model_unset(self):
         self.assertIsNone(self.coder_model_sent(model=""))
         self.assertIsNone(self.coder_model_sent())
@@ -91,9 +112,9 @@ class UntrackedDeletionTest(unittest.TestCase):
     def test_a_file_a_failed_call_made_stays_deleted_with_no_fault_note(self):
         def write_then_die(repo):
             (repo / "dup.py").write_text("dup\n")
-            raise RuntimeError("coder died")
+            raise review_loop_calls.ModelCallError("coder died")
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(review_loop_coder.CoderCallError):
             self.call("coder1", write_then_die)
         self.call("coder2", lambda repo: (repo / "dup.py").unlink())
 
@@ -616,6 +637,51 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
         self.assertFalse(self.record_file().exists())
 
+    def loop_request(self, loop_main):
+        prompt = self.scratch / "prompt.txt"
+        prompt.write_text(self.prompt_file_text(""))
+        header, handoff = loop_main.read_prompt(str(prompt))
+        return loop_main.LoopRequest(str(self.repo), self.scratch, loop_tests.SESSION, header, handoff,
+                                     {"fixed": [], "files_touched": set()}, ["echo ran"])
+
+    def test_a_failed_record_save_never_masks_the_crash_that_was_in_flight(self):
+        loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+        request = self.loop_request(loop_main)
+        stderr = io.StringIO()
+
+        with mock.patch.object(loop_main, "first_pass", side_effect=ValueError("the real crash")), \
+                mock.patch.object(review_loop_partial_fix, "save_pending", side_effect=OSError("disk full")), \
+                contextlib.redirect_stderr(stderr), \
+                self.assertRaises(ValueError) as raised:
+            loop_main.run_loop(request)
+
+        self.assertEqual(str(raised.exception), "the real crash")
+        self.assertIn("review-loop-script: could not save the partial-fix record: disk full", stderr.getvalue())
+
+    def test_a_failed_record_save_with_no_crash_in_flight_still_fails_loudly(self):
+        loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+        request = self.loop_request(loop_main)
+
+        with mock.patch.object(loop_main, "first_pass"), mock.patch.object(loop_main, "walk"), \
+                mock.patch.object(review_loop_partial_fix, "save_pending", side_effect=OSError("disk full")), \
+                contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(OSError):
+            loop_main.run_loop(request)
+
+    def test_a_record_from_another_branch_stops_the_run_with_a_critical_blocker_naming_the_file(self):
+        self.die_mid_edit()
+        record = json.loads(self.record_file().read_text())
+        record["branch"] = "some-other-branch"
+        self.record_file().write_text(json.dumps(record))
+        loop_main = loop_tests.load_script_module(loop_tests.SCRIPT.parent / "review_loop_main.py")
+        request = self.loop_request(loop_main)
+
+        with mock.patch.object(loop_main, "write_telemetry", return_value=([], [])):
+            outcome = loop_main.run_loop(request)
+
+        self.assertEqual(outcome["status"], "critical-blocker")
+        self.assertIn(f"delete {self.record_file()} to drop the record", " ".join(outcome["blockers"]))
+
     def test_a_relaunch_whose_coder_edits_a_later_phase_file_drops_the_sent_findings_from_the_record(self):
         self.die_mid_edit()
         self.reset_fake_run()
@@ -655,7 +721,8 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
         completed = self.run_script({"coder": [{"result": "Fixed 1.", "edits": {}}]})
 
-        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.stored_packet()[1]["status"], "critical-blocker")
         output = completed.stdout + completed.stderr
         self.assertIn(current_branch, output)
         self.assertEqual(self.fake_calls(), [])
@@ -670,7 +737,7 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
             detached = self.run_script({"coder": [{"result": "Fixed 1.", "edits": {}}]})
 
-            self.assertNotEqual(detached.returncode, 0)
+            self.assertEqual(detached.returncode, 0, detached.stderr)
             self.assertIn("detached HEAD", detached.stdout + detached.stderr)
 
     def test_a_record_written_while_git_failed_keeps_a_null_branch_apart_from_a_detached_head(self):
@@ -820,9 +887,10 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
                 completed = self.run_script({})
 
-                self.assertNotEqual(completed.returncode, 0)
-                self.assertIn(str(self.record_file()), completed.stderr)
-                self.assertIn("non-empty finding texts", completed.stderr)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn("critical-blocker", completed.stdout)
+                self.assertIn(str(self.record_file()), completed.stdout)
+                self.assertIn("non-empty finding texts", completed.stdout)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,12 @@ CHILD_ENV = {**{name: value for name, value in os.environ.items() if name not in
 # The `via` of a call log row for a reviewer the main session dispatched as a subagent.
 VIA_MAIN = "main"
 
+
+
+class ModelCallError(RuntimeError):
+    """A model call that failed: a non-zero exit, no JSON reply, or a reply flagged as an error."""
+
+
 CALLS = []
 CALLS_LOCK = threading.Lock()
 LIVE_CHILDREN = full_check_gate.LIVE_CHILDREN
@@ -123,6 +129,6 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, del
     if return_code != 0 or not replied or reported_error:
         said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
         # A reply with is_error set can come with exit 0, so the exit code alone does not say why the call failed.
-        raise RuntimeError(f"the {role} call failed (exit {return_code}, reply flagged as error: {reported_error})"
+        raise ModelCallError(f"the {role} call failed (exit {return_code}, reply flagged as error: {reported_error})"
                            f"{said}; reply {raw}, stderr {errors}")
     return text

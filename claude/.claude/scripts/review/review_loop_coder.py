@@ -9,7 +9,7 @@ import review_loop_held
 import review_loop_ruled_out
 import review_loop_untracked
 import script_utils
-from review_loop_calls import claude_call
+from review_loop_calls import ModelCallError, claude_call
 from review_loop_closure import FIX_DIFF_STATS
 from review_loop_plan import changed_files_since
 
@@ -35,7 +35,7 @@ def file_texts(repo, start=None):
     return texts
 
 
-class NoFinalReportError(RuntimeError):
+class NoFinalReportError(ModelCallError):
     """A coder call that exited 0 and printed no final report."""
 
 
@@ -116,7 +116,7 @@ def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
         if not report.strip():
             # A coder that exits 0 with no final report left its findings unverified, as a crash does.
             raise NoFinalReportError(f"the {role} call ended with no final report")
-    except RuntimeError as error:
+    except ModelCallError as error:
         pass_guard.undo()
         review_loop_untracked.record_loop_written(repo, held, untracked)
         after = after_call(role, repo, held, held_before, head_before)

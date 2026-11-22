@@ -167,6 +167,21 @@ def tally_actioned(loop):
     loop.tallies["skipped_fp"] = every_actioned.count("skipped_fp") + loop.given_skipped
 
 
+# The running loop and its repo, so the stop signal can save the record held only in memory.
+RUNNING = {"loop": None, "repo": None}
+
+
+def save_pending_record(repo, pending, in_flight):
+    """Saves the partial-fix record. A save failure is printed to stderr; it is raised only when no other exception
+    is in flight, so it never replaces the real crash cause."""
+    try:
+        review_loop_partial_fix.save_pending(repo, pending, now())
+    except OSError as error:
+        print(f"review-loop-script: could not save the partial-fix record: {error}", file=sys.stderr)
+        if not in_flight:
+            raise
+
+
 def run_loop(request):
     """Walks the graph. Returns the outcome mapping. `request.progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes. `request.reviewers` says who runs the reviewers."""
@@ -174,6 +189,7 @@ def run_loop(request):
     structure_pass_skipped = header.get("structure-pass") == "skip"
     scope_fields = telemetry_scope_fields(header, header.get("caller", "code"))
     loop, check_command = build_loop(request)
+    RUNNING.update(loop=loop, repo=request.repo)
     try:
         header_findings = read_findings(header)
         saved = review_loop_partial_fix.saved_findings(request.repo)
@@ -197,10 +213,13 @@ def run_loop(request):
     except plan_format.PlanFormatError as error:
         # The message names the plan file, the line and the expected form of the standing ruling.
         loop.stop("critical-blocker", [f"the plan's standing ruling does not parse: {error}"])
+    except review_loop_partial_fix.SavedRecordError as error:
+        # The message names the saved record's file to delete.
+        loop.stop("critical-blocker", [str(error)])
     finally:
         # One write per run, even when an unlisted error ends it: a pass that died or settled the saved record only
         # sets what the file is to hold.
-        review_loop_partial_fix.save_pending(request.repo, loop.pending_record, now())
+        save_pending_record(request.repo, loop.pending_record, in_flight=sys.exc_info()[0] is not None)
 
     if request.gates_every_run and loop.status != "converged" and not loop.scoped_tests:
         loop.scoped_tests = full_check.SCOPED_NOT_RUN_STOPPED.format(status=loop.status)
@@ -218,6 +237,8 @@ def stop_on_sigterm(_signal_number, _frame):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pid, signal.SIGKILL)
     full_check_gate.remove_live_base_trees()
+    if RUNNING["loop"] is not None:
+        save_pending_record(RUNNING["repo"], RUNNING["loop"].pending_record, in_flight=True)
     os._exit(128 + signal.SIGTERM)
 
 

@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-New `review/accepted_failures.py` with `accept` and `list`. `full_check_gate.scoped_failures_pre_existing` counts an accepted line that also fails at base as pre-existing, and lines that differ only in numbers do not count as new. The scoped-failure blocker prints the `accept` command.
+New `review/accepted_failures.py` with `accept` and `list`. `full_check_gate.scoped_failures_pre_existing` counts an accepted line that also fails at base as pre-existing, and lines that differ only in numbers do not count as new. The scoped-failure blocker prints the `accept` command. `list` prints the store file's path first, and deleting a row's line withdraws that acceptance.
 
 ## Evidence
 

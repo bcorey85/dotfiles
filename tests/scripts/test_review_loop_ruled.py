@@ -567,6 +567,8 @@ class ApprovalAskResumeTest(unittest.TestCase):
 
         self.assertIn("CLAUDE.md", str(raised.exception))
         self.assertIn(missing_blob, str(raised.exception))
+        self.assertIn("was pruned", str(raised.exception))
+        self.assertIn("by hand", str(raised.exception))
         self.assertEqual((pathlib.Path(self.repo) / "CLAUDE.md").read_text(), "rules\nuser line\ncoder line\n")
 
     def hold_the_approval_ask(self):

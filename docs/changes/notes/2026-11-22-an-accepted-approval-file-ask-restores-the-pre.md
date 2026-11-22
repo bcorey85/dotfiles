@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-A user acceptance of an approval ask restores the file from its saved pre-pass blob and leaves the ask out of the coder's findings. An unknown base still goes to the coder. A failed restore exits non-zero and logs nothing.
+A user acceptance of an approval ask restores the file from its saved pre-pass blob and leaves the ask out of the coder's findings. An unknown base still goes to the coder. A failed restore exits non-zero and logs nothing. When the saved blob was pruned by `git gc`, the error says so and names the file and blob id, and the file must be restored by hand.
 
 ## Evidence
 

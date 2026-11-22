@@ -17,7 +17,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 
 - [x] Phase 0: Contracts — lane file grammar, `lanes.py` CLI, `row_for_name` — frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — a fork writes the lane file, the watcher fills the session id, phase-change keeps it current (risk: low)
-- [ ] Phase 2: hunk-review-pane labels its own pane (risk: low)
+- [x] Phase 2: hunk-review-pane labels its own pane (risk: low)
 - [ ] Phase 3: pull_keep_index `--help` and the named save ref (risk: high)
 - [ ] Phase 4: pull_keep_index built-page put-back through the merge driver (risk: high)
 - [ ] Phase 5: pull_keep_index in a shared checkout (risk: high)
@@ -243,7 +243,7 @@ A hand-started review pane is found by nvim-jump without a hand rename.
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_hunk_review_pane.py` (RED before: no rename call)
+- [x] `python3 tests/parallel_tests.py test_hunk_review_pane.py` (RED before: no rename call)
 
 #### Manual Verification
 

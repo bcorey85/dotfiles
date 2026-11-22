@@ -123,12 +123,11 @@ if [ -n "$claude_session" ]; then
 fi
 start_in_fresh_pane "$agent" "$claude_cmd"
 
-# The right pane is a live hunk diff. To go back to nvim, swap the two
-# hunk lines below for the commented nvim lines.
+# The right pane is a live hunk diff. To go back to nvim, swap the
+# hunk line below for the two commented nvim lines.
 editor=$(split "$agent" 0.4)
 # herdr-api pane rename "$editor" editor >/dev/null
 # run "$editor" "nvim ."
-herdr-api pane rename "$editor" review >/dev/null
 run "$editor" "hunk-review-pane"
 
 if [ -n "${TUIOS_SOCKET:-}" ]; then

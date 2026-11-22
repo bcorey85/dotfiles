@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_coder_gate.py::CoderGateEnvironmentTests::test_finish_runs_the_commands_when_no_coder_handed_back_and_keeps_the_gate_on_a_failure"
 asked: ""
 proof: []
-unmeasured: "The /code step-3 sentence changed from `clear` to `finish` plus 'on exit 1, do the step its last line names'. No rule-meter fixture covers the fork's hand-back step, so the meter cannot grade the wording; the script exit code carries the behavior."
+unmeasured: "The /code step-3 sentence changed from `clear` to `finish` plus 'on exit 1, do the step its last line names'. No rule-meter fixture covers the fork's hand-back step, so the meter cannot grade the wording; the script exit code carries the behavior. The user approved shipping the unmeasured wording on 2026-11-22."
 ---
 
 ## Change

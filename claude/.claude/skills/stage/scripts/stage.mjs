@@ -247,7 +247,7 @@ function diffLines(path, meta) {
   const out = git(["diff", diffBase, "--", path], { cwd: root });
   if (/^Binary files /m.test(out)) return { added: [], removed: [], binary: true, raw: out };
   const added = [], removed = [];
-  // New-file line number of the first changed line, for the nvim-jump queue.
+  // New-file line number of the first changed line, for the hunk-notes queue.
   let newLine = 0, firstLine;
   for (const l of out.split("\n")) {
     if (l.startsWith("+++") || l.startsWith("---")) continue;
@@ -507,7 +507,7 @@ if (runMode) {
   report.push("");
 
   report.push(
-    "Still yours: write the one-line note for each jump-queue row from the diff, run nvim-jump with the rows in order, and report any disagreement with a tier.",
+    "Still yours: write the one-line note for each jump-queue row from the diff, run hunk-notes with the rows in order, and report any disagreement with a tier.",
   );
   process.stdout.write(report.join("\n") + "\n");
   process.exit(0);

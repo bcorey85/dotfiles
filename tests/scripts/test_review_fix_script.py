@@ -185,10 +185,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.addCleanup(self.stop_launched_loops)
         self.ledger_env = fake_ledger.install(self.temp_root)
         self.escapes_file = self.temp_root / "escapes.jsonl"
-        self.jump_log = self.temp_root / "jump.log"
+        self.notes_log = self.temp_root / "notes.log"
         self.gh_log = self.temp_root / "gh.log"
         self.store_dir = self.temp_root / "store"
-        self.fake_jump = self.fake_command("nvim-jump", f'echo "$@" >> {self.jump_log}\nexit "${{JUMP_EXIT:-0}}"')
+        self.fake_notes = self.fake_command(
+            "hunk-notes",
+            f'echo "$@" >> {self.notes_log}\n'
+            'if [ -z "${NOTES_SILENT:-}" ]; then\n'
+            'echo "not posted: src/retry.ts:10"\n'
+            'echo "hunk /repo -> src/retry.ts:10 (0/2 notes)"\nfi\nexit "${NOTES_EXIT:-0}"')
         self.fake_gh = self.fake_command(
             "gh", f'echo "$@" >> {self.gh_log}\ncase "$1 $2" in "repo view") echo acme/web;; '
                   '"pr view") echo 7; exit "${GH_PR_VIEW_EXIT:-${GH_EXIT:-0}}";; esac\n'
@@ -220,7 +225,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def environment(self, **extra):
         return {**os.environ, **GIT_ENV, **self.ledger_env,
-                "REVIEW_ESCAPES_FILE": str(self.escapes_file), "REVIEW_FIX_NVIM_JUMP": str(self.fake_jump),
+                "REVIEW_ESCAPES_FILE": str(self.escapes_file), "REVIEW_FIX_HUNK_NOTES": str(self.fake_notes),
                 "REVIEW_FIX_GH": str(self.fake_gh), "REVIEW_FIX_CLAUDE_DIR": str(CLAUDE_DIR),
                 "HANDBACK_STORE_DIR": str(self.store_dir), "CLAUDE_CODE_SESSION_ID": SESSION,
                 "CLAUDE_TOOLKIT_TELEMETRY": "1", **extra}
@@ -1493,15 +1498,15 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertNotIn("refused on a conditional change", output)
 
-    def test_asks_are_jumped_listed_and_logged_with_their_outcomes(self):
+    def test_asks_are_posted_listed_and_logged_with_their_outcomes(self):
         code, output = self.packet(WITH_ASK, "--scope", "branch-exit")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
         self.assertIn("1. src/retry.ts:10", output)
         self.assertIn("Should retries be capped at 3 or configurable?", output)
-        jump = self.jump_log.read_text()
-        self.assertIn("--note Should retries be capped at 3 or configurable? src/retry.ts:10", jump)
-        self.assertIn("src/db.ts:5", jump)
+        posted = self.notes_log.read_text()
+        self.assertIn("--note Should retries be capped at 3 or configurable? src/retry.ts:10", posted)
+        self.assertIn("src/db.ts:5", posted)
 
         code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected:not worth it"])
         self.assertEqual(code, 0, output)
@@ -1648,16 +1653,67 @@ class ReviewFixScriptTest(unittest.TestCase):
         held_ids = [kept["packet_id"] for kept in self.stored_state()["waiting_packets"]]
         self.assertEqual([first_id], held_ids)
 
-    def test_nvim_jump_with_no_owner_is_silent_and_still_lists_the_asks(self):
-        code, output = self.packet(WITH_ASK, JUMP_EXIT="1")
+    def test_hunk_notes_with_no_session_is_silent_and_still_lists_the_asks(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="1")
         self.assertEqual(code, 0, output)
-        self.assertIn("no nvim owns this directory", output)
+        self.assertIn("hunk-notes could not post", output)
+        self.assertIn("anchors printed only", output)
         self.assertIn("2. src/db.ts:5", output)
 
-    def test_missing_nvim_jump_does_not_stop_the_run(self):
-        code, output = self.packet(WITH_ASK, REVIEW_FIX_NVIM_JUMP="/nonexistent/nvim-jump")
+    def test_hunk_notes_exit_0_relays_its_own_summary_not_a_posted_claim(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="0")
         self.assertEqual(code, 0, output)
-        self.assertIn("nvim-jump is not installed", output)
+        self.assertIn("hunk-notes: hunk /repo -> src/retry.ts:10 (0/2 notes)", output)
+        self.assertNotIn("posted the asks", output)
+        self.assertNotIn("hunk-notes: not posted", output)
+
+    def test_hunk_notes_exit_0_with_no_output_says_there_was_no_summary(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="0", NOTES_SILENT="1")
+        self.assertEqual(code, 0, output)
+        self.assertIn("hunk-notes: no summary line", output)
+
+    def test_hunk_notes_gets_only_well_formed_anchors_and_cuts_a_long_question(self):
+        long_question = "why " * 80
+        good = ask_entry("good", "src/good.ts:7", finding_id="a1b2c3d4e5f60010", question=long_question)
+        malformed = ask_entry("multi", "a.ts:1,b.ts:2", finding_id="a1b2c3d4e5f60011")
+        bare = ask_entry("bare", "src/bare.ts", finding_id="a1b2c3d4e5f60012")
+        fields = {**WITH_ASK_FIELDS, "ask": [malformed, good, bare]}
+        code, output = self.packet(json.dumps(fields))
+        self.assertEqual(code, 0, output)
+        logged = self.notes_log.read_text()
+        self.assertIn("src/good.ts:7", logged)
+        self.assertNotIn("a.ts:1", logged)
+        self.assertNotIn("bare.ts", logged)
+        self.assertNotIn(long_question.strip(), logged)
+        self.assertLessEqual(len(logged), 200)
+
+    def test_hunk_notes_exit_2_reports_bad_arguments_or_missing_hunk(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="2")
+        self.assertEqual(code, 0, output)
+        self.assertIn("hunk-notes got bad arguments or hunk is missing", output)
+
+    def test_hunk_notes_is_not_called_when_no_ask_names_an_anchor(self):
+        unanchored = ask_entry("no anchor", "src/db.ts", finding_id="a1b2c3d4e5f60003")
+        fields = {**WITH_ASK_FIELDS, "ask": [unanchored]}
+        code, output = self.packet(json.dumps(fields))
+        self.assertEqual(code, 0, output)
+        self.assertIn("nothing to post", output)
+        self.assertFalse(self.notes_log.exists())
+
+    def test_hunk_notes_exit_127_reports_not_installed(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="127")
+        self.assertEqual(code, 0, output)
+        self.assertIn("hunk-notes is not installed", output)
+
+    def test_hunk_notes_other_exit_reports_its_code(self):
+        code, output = self.packet(WITH_ASK, NOTES_EXIT="3")
+        self.assertEqual(code, 0, output)
+        self.assertIn("hunk-notes exit 3", output)
+
+    def test_missing_hunk_notes_does_not_stop_the_run(self):
+        code, output = self.packet(WITH_ASK, REVIEW_FIX_HUNK_NOTES="/nonexistent/hunk-notes")
+        self.assertEqual(code, 0, output)
+        self.assertIn("hunk-notes is not installed", output)
 
     def test_asks_done_with_the_wrong_number_of_outcomes_fails_loudly_and_logs_nothing(self):
         self.packet(WITH_ASK)
@@ -2183,7 +2239,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.packet("")
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: present-asks", output)
-        self.assertEqual(len(self.jump_log.read_text().splitlines()), 2)
+        self.assertEqual(len(self.notes_log.read_text().splitlines()), 2)
         self.run_script(["asks-done", "--by", "user", "accepted", "accepted"])
         self.assertEqual(len(self.ledger_writes()), 4)
 
@@ -2407,7 +2463,7 @@ class ReviewFixScriptTest(unittest.TestCase):
             else []
         )
 
-    def test_re_running_packet_posts_logs_and_jumps_nothing_twice(self):
+    def test_re_running_packet_posts_and_logs_nothing_twice(self):
         flags = ("--source", "conversation", "--escape", self.escape_spec(), "--aikido", "src/orders.ts:42=111")
         self.packet(CONVERGED, *flags, skill="fix")
         code, output = self.packet(CONVERGED, *flags, skill="fix")
@@ -2416,10 +2472,10 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(len(self.posts()), 1)
         self.assertIn("already posted", output)
 
-    def test_re_running_packet_with_asks_does_not_jump_again(self):
+    def test_re_running_packet_with_asks_does_not_post_again(self):
         self.packet(WITH_ASK)
         self.packet(WITH_ASK)
-        self.assertEqual(len(self.jump_log.read_text().splitlines()), 1)
+        self.assertEqual(len(self.notes_log.read_text().splitlines()), 1)
 
     def test_packet_after_asks_done_logs_nothing_more_and_keeps_the_stage(self):
         self.packet(WITH_ASK)

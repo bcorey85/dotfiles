@@ -27,7 +27,7 @@ The classifier is the single source of truth for tier + risk — never reclassif
 
 The `jump-queue` block holds one JSON row per queue entry that has a `line` (`tier`, `path`, `line`, `reason`), in reading order. Entries without a `line` (deleted files) are not in it.
 
-Read `~/.claude/skills/_shared/nvim-jump.md`, then make one `nvim-jump` call for the whole list: each row at its `line` with `--note "<TIER>: <what changed and why, one line, from the diff and the coder's handoff>"`. ESCALATE notes lead with the row's `reason`.
+Read `~/.claude/skills/_shared/nvim-jump.md`, then make one `hunk-notes` call for the whole list: each row at its `line` with `--note "<TIER>: <what changed and why, one line, from the diff and the coder's handoff>"`. ESCALATE notes lead with the row's `reason`.
 
 ### Phase 3: Report
 

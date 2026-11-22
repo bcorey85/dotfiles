@@ -137,7 +137,7 @@ Human-only verification remaining:
 - <item>
 
 Next:
-  1. Read the queue (`]v`/`[v` in nvim); spot-check the evidence lines; run the human-only items.
+  1. Read the queue (the agent notes in the hunk review pane); spot-check the evidence lines; run the human-only items.
   2. Stage what you've read, then commit it. `Commit subject: <subject>`.
   3. Run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
 

@@ -274,7 +274,7 @@ alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'
 alias vv='nvim .'
 alias vd='nvim +"cd ~/dotfiles" ~/dotfiles'
 alias vn='nvim +"cd ~/vault" ~/vault'
-alias hw='hunk diff --watch'
+alias hw='hunk-review-pane'
 alias cc="claude"
 alias ccskip="CLAUDE_SKIP_HOOKS=1 claude"
 alias oc="opencode"

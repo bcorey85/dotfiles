@@ -1,10 +1,10 @@
 #!/bin/bash
-# hunk review with a one-key handoff into lazygit, for the herdr prefix+d popup.
+# hunk review with a one-key handoff into lazygit (`C`) or nvim (`E`), for the herdr prefix+d popup.
 #
 # herdr popups are session-modal: while one is open no keybinding can open
 # another, so review -> git means quitting hunk and pressing the git key. This
-# wrapper collapses that into a single keypress by keeping BOTH tools inside the
-# one popup: the claude-review extension's `C` writes the tool it wants into
+# wrapper collapses that into a single keypress by keeping the tools inside the
+# one popup: the claude-review extension's `C` or `E` writes the tool it wants into
 # $HUNK_REVIEW_HANDOFF and quits hunk, and we exec that tool over ourselves.
 #
 # Env (PATH shims, EDITOR) is the caller's job — see the prefix+d binding.
@@ -13,20 +13,19 @@
 
 set -u
 
+# $0 is a stow symlink, so the library is found from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=handoff-command.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/handoff-command.bash"
+
 handoff="${TMPDIR:-/tmp}/hunk-review-handoff.$$"
 export HUNK_REVIEW_HANDOFF="$handoff"
 rm -f "$handoff"
 trap 'rm -f "$handoff"' EXIT
 
-# hunk reads and diffs every untracked file before its first paint, about 3 ms
-# each, so a tree with build output that .gitignore misses takes seconds to open.
-# Past the limit, leave untracked files out; lazygit (C) still lists them.
-untracked_limit=200
+# Past the untracked-file limit, leave them out; lazygit (C) still lists them.
 untracked_flag=()
-untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null | head -n $((untracked_limit + 1)) | wc -l)
-if [ "$untracked_count" -gt "$untracked_limit" ]; then
-    untracked_flag=(--exclude-untracked)
-fi
+flag=$(hunk-untracked-flag)
+[ -z "$flag" ] || untracked_flag=("$flag")
 
 # --sidebar first so it is the default, but a caller's --no-sidebar still wins.
 # The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
@@ -37,11 +36,5 @@ hunk diff --sidebar --no-hunk-headers ${untracked_flag[@]+"${untracked_flag[@]}"
 target=$(head -n 1 "$handoff")
 rm -f "$handoff"
 
-case "$target" in
-    lazygit) exec lazygit ;;
-    *)
-        echo "hunk-review-popup: unknown handoff target '$target' — enter to close"
-        read -r _
-        exit 1
-        ;;
-esac
+exec_handoff_tool "$target"
+exit 1

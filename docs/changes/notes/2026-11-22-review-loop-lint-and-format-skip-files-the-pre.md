@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_format_files.py::PreCommitExcludeTest::test_a_file_the_top_level_exclude_matches_is_neither_formatted_nor_linted"
 asked: ""
 proof: []
-unmeasured: ""
+unmeasured: "Two oxlint cases stay as they were: oxlint 1.94 lints a named file under a folder pattern (gen/) of .eslintignore, and oxlint 1.0 and older lint every named file and have no flag for it."
 ---
 
 ## Change

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1091 changes
+1092 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -62,6 +62,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [A fix pass's approval-file edit becomes a user-only ask with the wanted change](notes/2026-11-22-a-fix-pass-s-approval-file-edit-becomes-a-user.md) [script/review-loop-ruled, script/review-loop-script] After the loop reverts a fix coder's edit to an approval-only file, each finding on that file becomes a user-only ask carrying its proposed change.
 * [An accepted approval-file ask restores the pre-pass text, not HEAD](notes/2026-11-22-an-accepted-approval-file-ask-restores-the-pre.md) [script/review-loop-ruled, script/phase-asks, script/approval-restore] When the user accepts reverting a fix coder's edit to an approval-only file, the loop restores the saved pre-pass blob and keeps the user's uncommitted lines.
 * [An accepted ask with no location must name the file to change](notes/2026-11-22-an-accepted-ask-with-no-location-must-name-the.md) [script/review-asks, script/review-fix-asks] asks-done refuses an accepted or modified ruling on an unlocated finding ask whose change names no file, and asks for a modified ruling that names it.
+* [A test run outside a memory-capped scope is denied with the capped form](notes/2026-11-22-a-test-run-outside-a-memory-capped-scope-is-denied.md) [script/inline-interpreter-hint, script/memory-cap-scope] A test run a session starts outside a systemd memory-capped scope is denied with the capped form, so a runaway test dies alone at the cap and every other session on the machine survives.
 * [A plain rg now searches hidden folders, so sweeps over claude/.claude stop reporting false clean](notes/2026-11-22-a-plain-rg-now-searches-hidden-folders-so-sweeps.md) [method/rg-hidden-sweep] A stowed ripgrep config turns on hidden files and RIPGREP_CONFIG_PATH reaches every zsh, so a plain rg sweep finds files under claude/.claude.
 * [Unpinned web-fetch calls run on haiku instead of being denied](notes/2026-11-22-unpinned-web-fetch-calls-run-on-haiku-instead-of.md) [script/agent-model-guard, agent/web-fetch] The model guard rewrites an unpinned web-fetch call to model haiku and lets it run, so a page fetch no longer costs a denied call and a retry.
 * [Stage skips added-line tripwires on prose files](notes/2026-11-22-stage-skips-added-line-tripwires-on-prose-files.md) [skill/stage] Stage no longer tags a markdown or text file as a suppression or bypass when its prose only names one, so the tag keeps meaning a real suppression in code.

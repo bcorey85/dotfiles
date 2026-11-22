@@ -22,11 +22,15 @@ New `skills/glossary/SKILL.md` with three modes:
 - lookup: finds any `*glossary*.md`, matches the term with its word forms and aliases, and checks the code; answers
   defined, alias, in code only, or nowhere, with `file:line`.
 - `setup`: when no glossary exists, scans models, API surface, service verbs and docs, and writes `docs/glossary.md` as
-  one heading per term (kind and `file:line`, one-sentence meaning, an `Avoid:` line), never a Markdown table (user,
-  2026-11-22: "[the user's ask]"). An existing glossary is never overwritten, and entries added to it keep its
+  one `##` heading per domain area and one `###` heading per term (kind, the defining symbol and file with no line
+  number, one-sentence meaning, an `Avoid:` line listing only aliases the repo uses), never a Markdown table (user,
+  2026-11-22: "[the user's ask]"; "[the user's ask]"; "[the user's ask]"). A word gets an entry only when it has an alias in use, two meanings, or a meaning the name does
+  not show; the glossary is vocabulary, not a code map (user, 2026-11-22: "[the user's ask]"). An existing glossary is never overwritten, and entries added to it keep its
   own format (user, 2026-11-22: "[the user's ask]"). A run that
   creates the glossary appends a one-line pointer to the repo's root `CLAUDE.md` when that file exists (user,
-  2026-11-22: "[the user's ask]").
+  2026-11-22: "[the user's ask]"). The
+  pointer is a `## Domain language` section: canonical names only, look up unsure terms, and no new domain term
+  without the user's approval (user, 2026-11-22: "[the user's ask]").
 - `drift`: lists synonyms, verb drift, layer drift, overloaded words and stale entries, each confirmed at both names,
   with use counts and a canonical pick; renames go to `/refactor`.
 

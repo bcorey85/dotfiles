@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-11 open benches, by rank. Each line is the question the bench asks.
+12 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -20,5 +20,6 @@ description: "The benches that are open now and the question each asks."
 * Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.
 * Review loop writes a condensed prior-issues list in round two (queued): A one-line-per-issue prior-issues list in the script's round-two and last-read requests could cut 5-10% of the loop's Opus tokens, the part of the agent driver's cut that ports to the script.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
-* Replay: auto mode prose rules in place of the Bash gate's target rules (queued): Fewer harmless blocks: the Bash gate's target rules become auto mode prose rules, if a replay shows the classifier stops every seeded harmful command for each target.
-* Replay: four command rules move from the regex Bash gate to permissions.deny entries (queued): Fewer harmless blocks: four Bash gate rules that name a command move to permissions.deny entries, if a replay shows no harmful form gets through.
+* Re-bench the code reviewer on Sonnet against Opus on current models and toolkit (queued): A Sonnet code reviewer that keeps Opus's catch rate would move the biggest Opus subagent cost onto Sonnet.
+* A review finding counts only when rerunning its command shows the failure (queued): Fewer false-alarm fix rounds: a finding survives only if a rerun of its command shows the failure, as pstack's interrogate does.
+* Reviewer proves the one fact a change's safety rests on, or labels it unproven (queued): Fewer bugs past review: the reviewer names the fact the change is safe because of and runs a script that proves it, as pstack's blast-radius does.

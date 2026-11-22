@@ -46,44 +46,66 @@ Otherwise, scan the code for domain words, in this order:
 3. Business logic: service and module names, the verbs in their public functions (`approve`, `settle`, `void`).
 4. Words in the README, `docs/`, and UI strings.
 
-Keep a word when it names a business concept the code builds on. Drop framework and generic words (`handler`,
-`utils`, `data`, `manager`). Use an Explore subagent for the sweep on a large repo, and read the defining code yourself
-for each kept word.
+The glossary is shared vocabulary, not a map of how the code works. Keep a word only when the repo already names
+its concept more than one way, or the word itself means more than one thing, or a reader could not guess its meaning
+from the name. Keep the verbs for the system's actions (start an agent, stop a call, rule on an ask) to the same
+test. Drop framework and generic words (`handler`, `utils`, `data`, `manager`), implementation details and words
+everyone already reads one way. Use an Explore subagent for the sweep on a large repo, and read the defining code
+yourself for each kept word.
 
-Write `docs/glossary.md`, one heading per term, sorted A to Z. Never a Markdown table:
+Write `docs/glossary.md`: one `##` heading per domain area, named for the part of the business it covers, and under it
+one `###` heading per term, sorted A to Z. Never a Markdown table:
 
 ```
 # Glossary
 
-## Terms
+## Billing
 
 ### Settlement
 
-*noun* · `billing/models.py:41`
+*noun* · `Settlement` in `billing/models.py`
 
 The payout of a closed auction to the seller, net of fees.
 
-Avoid: payout, disbursement
+Avoid: "payout" (also the refund flow), "disbursement" (the bank's word)
 
 ### settle
 
-*verb* · `billing/service.py:88`
+*verb* · `settle_auction` in `billing/service.py`
 
 Create the settlement for a closed auction.
 
-Avoid: pay out, disburse
+Avoid: "pay out" (also the refund flow)
+
+## Open naming questions
+
+1. ...
 ```
 
 - Kind: noun, verb, adjective, state or event. A noun and its verb are two entries.
-- One plain sentence of meaning, read from the code, never guessed from the name. A meaning you could not confirm gets
-  `(unconfirmed)` and goes in your report.
-- `Avoid:` lists the other names drift found for the same concept. Leave the line out when there are none.
-- Put every drift item that has no clear winner under a closing `## Open naming questions` heading, not under
-  `## Terms`.
+- Name the defining symbol and its file, never a line number. A term defined in prose names the file and its section
+  heading. A term a whole module defines names the file alone.
+- One plain sentence that says what the thing is, read from the code, never guessed from the name. Never say how the
+  code computes it, and never copy a list of values, a number or a format the code owns. A meaning you could not
+  confirm gets `(unconfirmed)` and goes in your report.
+- `Avoid:` lists only names the repo uses for this same concept, each with its reason in brackets. Never list a name
+  you did not find, or a word that is common in the repo for other things (`step`, `result`, `log`). Never list a
+  spelling variant. Leave the line out when there are none.
+- Put each term in exactly one area. A term two areas share goes in the area whose code defines it.
+- Put every drift item that has no clear winner under a closing `## Open naming questions` heading, not in an area,
+  with each name's use count. Verbs that compete for one action go here too.
 
-Then leave a breadcrumb, only when this run created the glossary: append to the repo's root `CLAUDE.md` one line,
-`Domain terms: docs/glossary.md. Use its canonical names; never an alias it lists.` Skip it when the file already
-points at the glossary. No `CLAUDE.md` exists: do not create one, and say so in the report.
+Then leave a breadcrumb, only when this run created the glossary: append these lines to the repo's root `CLAUDE.md`:
+
+```
+## Domain language
+
+Domain terms live in `docs/glossary.md`. Use its canonical names, never an alias it lists. Before you use a term
+you are unsure of, look it up there. Never coin a domain term, or add one to code, docs or the glossary, without
+the user's approval.
+```
+
+Skip it when the file already points at the glossary. No `CLAUDE.md` exists: do not create one, and say so in the report.
 
 Report the term count, the unconfirmed count, the open questions and whether the breadcrumb went in. Do not commit.
 
@@ -95,7 +117,8 @@ Find concepts the code names more than one way, and names that mean more than on
 - **Verb drift**: one action, several verbs (`create`, `add`, `new`, `register` for the same insert).
 - **Layer drift**: one field named differently across layers (column `amt_cents`, API `amount`, UI "Total").
 - **Overloaded word**: one word, two concepts (`order` as purchase and as sort order).
-- **Stale entry**: a glossary term the code no longer uses, or a listed alias the code still uses.
+- **Stale entry**: a glossary term the code no longer uses, a symbol or file an entry names that is gone, or a listed
+  alias the code still uses.
 
 Confirm each item by reading the defining code at both names: two names count as drift only when they hold the same
 concept. Count each name's uses.

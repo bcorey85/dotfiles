@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "added"
 title: "Add toolkit-writing skill and load it in retro"
-description: "Adds a toolkit-writing skill of six checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks."
+description: "Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-22T14:25:54-06:00"}
 seq: 21
 kind: "user-rule"
@@ -17,8 +17,8 @@ unmeasured: "No rule-meter arms run yet: the retro, audit, debug and toolkit-wri
 
 ## Change
 
-- `skills/toolkit-writing/SKILL.md`: new. Terms (no-op, duplicate, cache, sprawl, weak pointer, sediment, dense rule) and six
-  checks: description as trigger, `disable-model-invocation`, done-when lines, lead with the action, order by use,
+- `skills/toolkit-writing/SKILL.md`: new. Terms (no-op, duplicate, cache, sprawl, weak pointer, sediment, dense rule) and eight
+  checks: description as trigger with no steps, `disable-model-invocation`, done-when lines, lead with the action, exactness matched to fragility, one default, order by use,
   prune. Rule cuts go through rule-meter first.
 - `skills/audit/retro.md`: loads toolkit-writing first; new Read-the-environment step (unwired checks, missing
   guardrails, steering files over 150 lines); classify before placing a fix; a numbered report of at most 7, and

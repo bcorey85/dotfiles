@@ -1003,8 +1003,8 @@ def manual_format_failure(plan_lines, plan_name, resume_line=""):
 # criterion n of the criteria file (the spec line shares at least two content words with it); a reference to the
 # ticket's number is written "ticket AC<n>". `AC` is upper case and stands alone: `ac3-evidence.md` and
 # `test_ac1_x` are names, not references.
-CRITERION_LINE = re.compile(r"^\s*[-*]\s+\**(AC\d+)\**\s*[:.—–-]*\s*(.*)$")
-AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])(?P<ticket>(?i:ticket)\s+)?AC(?P<number>\d+)(?![A-Za-z0-9_])")
+CRITERION_LINE = re.compile(r"^\s*[-*]\s+\**(AC\d+[a-z]?)\**\s*[:.—–-]*\s*(.*)$")
+AC_REFERENCE = re.compile(r"(?<![A-Za-z0-9_])(?P<ticket>(?i:ticket)\s+)?AC(?P<number>\d+[a-z]?)(?![A-Za-z0-9_])")
 AC_TOKEN = re.compile(r"(?<![A-Za-z0-9_])AC\d+[A-Za-z0-9_]*")
 CONTENT_WORD = re.compile(r"[a-z]{4,}")
 AC_STOP_WORDS = frozenset({"that", "this", "with", "from", "when", "then", "than", "into", "must", "shall", "will",
@@ -1022,7 +1022,7 @@ def criteria_by_id(criteria_text, name=CRITERIA_FILE_NAME):
         match = CRITERION_LINE.match(line)
         if not match:
             continue
-        criterion_id = match.group(1).upper()
+        criterion_id = match.group(1)
         if criterion_id in criteria:
             raise PlanFormatError(f"{name}:{number}: {criterion_id} is defined twice; give each criterion its own id")
         criteria[criterion_id] = match.group(2)
@@ -1044,7 +1044,7 @@ def missing_criteria_failure(spec_path):
 
     criteria_path = spec_path.with_name(CRITERIA_FILE_NAME)
     if criteria_path.is_file() and criteria_path.read_text().strip():
-        return None
+        return criteria_file_failure(criteria_path.read_text(), str(criteria_path))
     return (f"{criteria_path}: missing or empty, and the spec has an Acceptance Criteria section. The spec-criteria "
             "step never ran: dispatch spec-criteria (eng-spec Phase 6, step 17), never write the file yourself.")
 
@@ -1103,8 +1103,9 @@ def _bare_references(lines, fenced):
 
 
 def criterion_ids_in(text):
-    """Every criterion id the text names, in order of appearance: a bare upper-case `AC<n>` that stands alone, as
-    AC_REFERENCE reads it. A `ticket AC<n>` and a name such as `ac3-evidence.md` name none."""
+    """Every criterion id the text names, in order of appearance: a bare upper-case `AC<n>`, with an optional
+    lower-case letter (`AC12a`), that stands alone, as AC_REFERENCE reads it. A `ticket AC<n>` and a name such as
+    `ac3-evidence.md` name none."""
     ids = []
     for reference in AC_REFERENCE.finditer(text):
         if not reference.group("ticket"):
@@ -1112,9 +1113,15 @@ def criterion_ids_in(text):
     return ids
 
 
+def criterion_id_order(criterion_id):
+    """Sort key for `AC<n>` and `AC<n><letter>` ids: by number, then by suffix (AC12 before AC12a)."""
+    number = criterion_id[2:].rstrip("abcdefghijklmnopqrstuvwxyz")
+    return int(number), criterion_id[2 + len(number):]
+
+
 def unread_criterion_tokens(text):
-    """The `AC<n>...` tokens in the text that AC_REFERENCE does not read, such as `AC3a`. A `ticket AC<n>` is read, so
-    it is not listed. `criterion_ids_in` skips these tokens without a word."""
+    """The `AC<n>...` tokens in the text that AC_REFERENCE does not read, such as `AC3ab` or `AC3A`. A `ticket AC<n>` is
+    read, so it is not listed. `criterion_ids_in` skips these tokens without a word."""
     read_starts = {reference.start("number") - len("AC") for reference in AC_REFERENCE.finditer(text)}
     return [token.group() for token in AC_TOKEN.finditer(text) if token.start() not in read_starts]
 
@@ -1150,6 +1157,66 @@ TEST_STRATEGY_HEADING = re.compile(r"^#{2,3}\s+test(?:ing)?\s+strategy\b", re.I)
 def heading_level(line):
     match = re.match(r"^(#+)\s", line)
     return len(match.group(1)) if match else 0
+
+
+# Accepted id spans: a plain id, an id followed by a parenthetical, an id with a qualifier inside the bold,
+# or several comma-separated ids inside one bold span.
+ID_LINE = re.compile(r"^\s*[-*]\s+\*\*(AC\d+[a-z]?[^*]*)\*\*\s*(?:\([^)]*\))?\s*[—–-]+\s*(.*)$")
+# A line opens an id span at its start (after indent and an optional list marker). A bold `**ACn` later in a line
+# that never closes (a status note saying `**AC4's part is OPEN**`) is prose.
+ID_START = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?\*\*AC\d+[a-z]?")
+# A closed bold id span anywhere in a line (a table cell, a quote, a prefix, a strikethrough) also marks a criterion
+# line, so one that is written wrong fails instead of dropping out. Prose such as `**AC4's ...**` does not close.
+ID_SPAN = re.compile(r"\*\*AC\d+[a-z]?(?:\s*\([^)]*\))?(?:,\s*AC\d+[a-z]?(?:\s*\([^)]*\))?)*\*\*")
+
+
+def parse_criteria_file(text, name=CRITERIA_FILE_NAME):
+    """(entries, manual_entries) from acceptance-criteria.md, one {id, text} per id.
+
+    Lines are `- **ACn** — text`; the id span may carry a parenthetical or several ids. Any line that starts
+    with a `**ACn` bold span (after indent and an optional list marker), or holds a closed bold id span anywhere,
+    but does not match raises PlanFormatError; an unclosed `**ACn's ...` later in a line is prose and is skipped."""
+    entries = []
+    manual_entries = []
+    in_manual = False
+    for number, line in enumerate(text.splitlines(), 1):
+        if heading_level(line):
+            in_manual = bool(re.match(r"^#+\s+manual only", line, re.I))
+            continue
+        match = ID_LINE.match(line)
+        if not match and not (ID_START.search(line) or ID_SPAN.search(line)):
+            continue
+        if not match:
+            raise PlanFormatError(f"{name}:{number}: line names an acceptance id but does not match "
+                                  f"`- **ACn** — text`: {line.strip()[:80]}")
+        target = manual_entries if in_manual else entries
+        ac_ids = criterion_ids_in(match.group(1))
+        unread = unread_criterion_tokens(match.group(1))
+        if unread:
+            raise PlanFormatError(f"{name}:{number}: id span holds {', '.join(unread)}, which is not a readable "
+                              f"criterion id (expected `**ACn**`): {line.strip()[:80]}")
+        if not ac_ids:
+            raise PlanFormatError(f"{name}:{number}: id span names no readable criterion id "
+                              f"(expected `**ACn**`): {line.strip()[:80]}")
+        for ac_id in ac_ids:
+            target.append({"id": ac_id, "text": match.group(2).strip()})
+    return entries, manual_entries
+
+
+def no_criteria_message(name):
+    return f"{name} exists but holds no `- **ACn** — text` lines"
+
+
+def criteria_file_failure(text, name=CRITERIA_FILE_NAME):
+    """Why acceptance-criteria.md text does not parse, or None when parse_criteria_file reads at least one id from
+    it. The check the plan check and verify-prep both stand on: a numbered or unbolded list holds no id."""
+    try:
+        entries, manual_entries = parse_criteria_file(text, name)
+    except PlanFormatError as error:
+        return str(error)
+    if entries or manual_entries:
+        return None
+    return no_criteria_message(name)
 
 
 def section_body(lines, start_index):

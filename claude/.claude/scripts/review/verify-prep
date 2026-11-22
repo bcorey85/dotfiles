@@ -206,11 +206,11 @@ def read_criteria(mode, ticket_path, plan_path):
 
     if criteria_path is not None:
         if not entries and not manual_entries:
-            raise vc.VerifyError(f"{candidate} exists but holds no `- **ACn** — text` lines")
+            raise vc.VerifyError(plan_format.no_criteria_message(candidate))
         counts["criteriaFileIds"] = len(entries) + len(manual_entries)
         counts["manualOnly"] = len(manual_entries)
         counts["ids"] = sorted({entry["id"] for entry in [*entries, *manual_entries]},
-                               key=lambda ac_id: int(ac_id[2:]))
+                               key=plan_format.criterion_id_order)
     if plan_path is not None:
         counts["manualVerification"] = len(vc.manual_items(plan_path.read_text(), str(plan_path)))
     return counts, criteria_path

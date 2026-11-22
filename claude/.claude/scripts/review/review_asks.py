@@ -252,6 +252,14 @@ def stamp_filed_at(asks, now):
         item.setdefault(FILED_AT_KEY, now)
 
 
+ASK_MARKER = "\N{LARGE ORANGE DIAMOND}"
+
+
+def ask_line_open(number):
+    """What an ask line opens with: the marker emoji, then the number and a dot. Nothing parses it back."""
+    return f"{ASK_MARKER} {number}."
+
+
 def numbered_ask_lines(asks, detail=False):
     """The numbered listing of the asks, each with the one change an accepted answer makes; a multi-line text's later
     lines sit indented under its number. detail adds the location and `[gate/class]` after the number and lists the
@@ -262,12 +270,12 @@ def numbered_ask_lines(asks, detail=False):
         if detail:
             ask_class = item["class"] + (f" (was {item['class_raw']})" if item.get("class_raw") else "")
             user_suffix = f" {USER_ONLY_MARK}" if is_user_only else ""
-            lines.append(f"{number}. {item.get('file_line') or 'no file:line'}  [{item['gate']}/{ask_class}]"
-                         f"{user_suffix}")
+            location = item.get("file_line") or "no file:line"
+            lines.append(f"{ask_line_open(number)} {location}  [{item['gate']}/{ask_class}]{user_suffix}")
             lines += hanging_indent_lines("   ", item["question"])
         else:
             user_prefix = f"{USER_ONLY_MARK} " if is_user_only else ""
-            lines += hanging_indent_lines(f"{number}. {user_prefix}", ask_text(item))
+            lines += hanging_indent_lines(f"{ask_line_open(number)} {user_prefix}", ask_text(item))
         if item.get(CRITERIA_KEY):
             lines.append(f"   Names criteria: {', '.join(item[CRITERIA_KEY])}.")
         if item.get("change"):

@@ -14,6 +14,7 @@ import toolkit_paths
 from stubs import write_stub
 
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
+SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
 HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-phase-change"
 
 # The pane's state lives in files: its status, its session id, and every prompt
@@ -23,7 +24,13 @@ HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "
 STUB_HERDR_API = r"""
 state="$STATE_DIR"
 case "$1 $2" in
+    "agent list")
+        first='{"agent":"claude","pane_id":"wS:pL1","cwd":"'$state'/wt","agent_session":{"value":"s1"}}'
+        second='{"agent":"claude","pane_id":"wS:pL2","cwd":"'$state'/other","agent_session":{"value":"s9"}}'
+        echo '{"result":{"agents":['"$first,$second"']}}'
+        ;;
     "agent get")
+        echo "$3" >> "$state/get-targets"
         if [ -f "$state/clear-pending" ]; then
             left=$(cat "$state/clear-pending")
             if [ "$left" -le 0 ]; then
@@ -39,6 +46,7 @@ case "$1 $2" in
             "$(cat "$state/status")" "$(cat "$state/session")" "$cwd_field"
         ;;
     "agent prompt")
+        echo "$3" >> "$state/prompt-targets"
         printf '%s\n' "$4" >> "$state/prompts"
         if [ "$4" = "/clear" ] && [ -f "$state/clear-delay" ]; then
             cp "$state/clear-delay" "$state/clear-pending"
@@ -74,6 +82,17 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         (self.state_dir / "status").write_text("done\n")
         (self.state_dir / "session").write_text("s1\n")
         self.prompts = self.state_dir / "prompts"
+        self.get_targets = self.state_dir / "get-targets"
+        self.prompt_targets = self.state_dir / "prompt-targets"
+
+        # A live registry row for session s1: the pid is a `sleep` child that the cleanup kills.
+        sleeper = subprocess.Popen(["sleep", "600"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        sessions = self.root / ".claude" / "sessions"
+        sessions.mkdir(parents=True)
+        row = {"pid": sleeper.pid, "sessionId": "s1", "name": "lane-x"}
+        (sessions / f"{sleeper.pid}.json").write_text(json.dumps(row))
 
     def run_phase_change(self, *args, cwd=None, lanes_cli=LANES_CLI):
         env = dict(os.environ)
@@ -81,6 +100,8 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["STATE_DIR"] = str(self.state_dir)
         env["HERDR_LANES_CLI"] = str(lanes_cli)
+        env["HERDR_SESSION_PANE"] = str(SESSION_PANE)
+        env.pop("CLAUDE_CONFIG_DIR", None)
         env["XDG_STATE_HOME"] = str(self.root / "lane-state")
         return subprocess.run([str(self.bin_dir / "herdr-phase-change"), *args], env=env, cwd=cwd,
                               capture_output=True, text=True, timeout=30)
@@ -244,6 +265,41 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 1)
                 self.assertEqual(self.submitted_prompts(), [])
                 self.assertIn("--timeout needs whole seconds", finished.stderr)
+
+    def test_a_session_name_or_a_worktree_path_reaches_the_agents_pane(self):
+        worktree = self.state_dir / "wt"
+        worktree.mkdir()
+        (self.state_dir / "clear-delay").write_text("0\n")
+        for label, target in (("session name", "lane-x"), ("worktree path", str(worktree))):
+            with self.subTest(case=label):
+                self.prompts.unlink(missing_ok=True)
+                self.get_targets.unlink(missing_ok=True)
+                self.prompt_targets.unlink(missing_ok=True)
+                (self.state_dir / "session").write_text("s1\n")
+
+                finished = self.run_phase_change(target, "/code docs/plans/x/plan.md")
+
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.assertEqual(set(self.get_targets.read_text().split()), {"wS:pL1"}, label)
+                self.assertEqual(set(self.prompt_targets.read_text().split()), {"wS:pL1"}, label)
+                self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
+
+    def test_a_directory_with_two_agents_or_a_session_with_no_pane_sends_nothing(self):
+        (self.state_dir / "other").mkdir()
+        sessions = self.root / ".claude" / "sessions"
+        no_pane_row = {"pid": os.getpid(), "sessionId": "s-none", "name": "lane-none"}
+        (sessions / f"{os.getpid()}.json").write_text(json.dumps(no_pane_row))
+        cases = (
+            ("two agents in one directory", str(self.state_dir), "2 claude agents run in"),
+            ("session with no pane", "lane-none", "session lane-none has no herdr pane"),
+        )
+        for label, target, expected_message in cases:
+            with self.subTest(case=label):
+                finished = self.run_phase_change(target, "/code docs/plans/x/plan.md")
+
+                self.assertEqual(finished.returncode, 1)
+                self.assertEqual(self.submitted_prompts(), [], label)
+                self.assertIn(expected_message, finished.stderr)
 
     def test_a_pane_that_is_not_settled_gets_nothing(self):
         for status in ("working", "blocked"):

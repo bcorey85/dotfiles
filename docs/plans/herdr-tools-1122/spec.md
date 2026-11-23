@@ -21,7 +21,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 3: pull_keep_index `--help` and the named save ref (risk: high)
 - [x] Phase 4: pull_keep_index built-page put-back through the merge driver (risk: high)
 - [x] Phase 5: pull_keep_index in a shared checkout (risk: high)
-- [ ] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
+- [x] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
 - [ ] Phase 7: herdr-phase-change names the report-to session (risk: low)
 - [ ] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
 - [ ] Phase 9: lane-status (risk: low)
@@ -379,9 +379,9 @@ A ListAgents name and a worktree path both reach the right pane without a herdr 
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_herdr_phase_change.py` (RED before: `agent get lane-x` not found)
-- [ ] `python3 tests/parallel_tests.py test_session_pane.py`
-- [ ] `bash tests/lint.sh claude/.claude/scripts/tools/session_pane.py`
+- [x] `python3 tests/parallel_tests.py test_herdr_phase_change.py` (RED before: `agent get lane-x` not found)
+- [x] `python3 tests/parallel_tests.py test_session_pane.py`
+- [x] `bash tests/lint.sh claude/.claude/scripts/tools/session_pane.py`
 
 #### Manual Verification
 

@@ -18,7 +18,7 @@ PANE_WITH_SESSION = '{"result":{"pane":{"agent":"claude","agent_session":{"value
 PANE_WITHOUT_AGENT = '{"result":{"pane":{"agent":null}}}'
 
 
-class SessionPaneSenderTest(unittest.TestCase):
+class SessionPaneTestCase(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -33,6 +33,8 @@ class SessionPaneSenderTest(unittest.TestCase):
         row = {"pid": os.getpid(), "sessionId": session_id, "name": name}
         (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
 
+
+class SessionPaneSenderTest(SessionPaneTestCase):
     def stub_pane_current(self, command):
         write_stub(self.bin_dir / "herdr-api", f'case "$1 $2" in\n    "pane current") {command} ;;\nesac')
 
@@ -110,6 +112,90 @@ class SessionPaneSenderTest(unittest.TestCase):
                 result = json.loads(finished.stdout)
                 self.assertIsNone(result["name"])
                 self.assertIn("herdr-api pane current", result["reason"])
+
+
+AGENT_LIST = ('{"result":{"agents":['
+              '{"agent":"claude","pane_id":"w1:p1","cwd":"%(wt)s","agent_session":{"value":"s-one"}},'
+              '{"agent":"claude","pane_id":"w1:p2","cwd":"%(wt)s/deeper","agent_session":{"value":"s-two"}},'
+              '{"agent":"claude","pane_id":"w1:p3","cwd":"%(solo)s","agent_session":{"value":"s-three"}},'
+              '{"agent":"shell","pane_id":"w1:p4","cwd":"%(solo)s","agent_session":{"value":"s-four"}}]}}')
+
+
+class SessionPaneResolveTest(SessionPaneTestCase):
+    def setUp(self):
+        super().setUp()
+        self.shared = self.root / "shared"
+        (self.shared / "deeper").mkdir(parents=True)
+        self.solo = self.root / "solo"
+        self.solo.mkdir()
+        listing = AGENT_LIST % {"wt": self.shared, "solo": self.solo}
+        write_stub(self.bin_dir / "herdr-api", f'case "$1 $2" in\n    "agent list") echo \'{listing}\' ;;\nesac')
+
+    def run_resolve(self, arg):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=str(self.config_dir), PATH=f"{self.bin_dir}:{os.environ['PATH']}")
+        return subprocess.run(["python3", str(SESSION_PANE), "resolve", arg], env=env, capture_output=True,
+                              text=True)
+
+    def test_a_session_name_resolves_to_the_pane_holding_its_session(self):
+        self.register_session("s-three", "lane-three")
+
+        finished = self.run_resolve("lane-three")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), {"pane_id": "w1:p3", "via": "session"})
+
+    def test_a_directory_resolves_to_the_one_claude_agent_inside_it(self):
+        finished = self.run_resolve(str(self.solo))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), {"pane_id": "w1:p3", "via": "path"})
+
+    def test_a_directory_with_two_agents_exits_1_listing_both(self):
+        finished = self.run_resolve(str(self.shared))
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn(f"w1:p1 {self.shared}\n", finished.stderr)
+        self.assertIn(f"w1:p2 {self.shared}/deeper\n", finished.stderr)
+
+    def test_a_directory_with_no_claude_agent_exits_1(self):
+        empty = self.root / "empty"
+        empty.mkdir()
+
+        finished = self.run_resolve(str(empty))
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("no claude agent runs in", finished.stderr)
+
+    def test_a_directory_wins_over_a_session_of_the_same_name(self):
+        self.register_session("s-one", str(self.solo))
+
+        finished = self.run_resolve(str(self.solo))
+
+        self.assertEqual(json.loads(finished.stdout)["via"], "path")
+
+    def test_a_session_with_no_pane_exits_1_naming_it(self):
+        self.register_session("s-gone", "lane-gone")
+
+        finished = self.run_resolve("lane-gone")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("session lane-gone has no herdr pane", finished.stderr)
+
+    def test_an_unknown_argument_is_returned_as_given_without_listing_agents(self):
+        write_stub(self.bin_dir / "herdr-api", "exit 1")
+
+        finished = self.run_resolve("w1:p9")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), {"pane_id": "w1:p9", "via": "as-given"})
+
+    def test_a_failed_agent_list_exits_2_naming_the_call(self):
+        write_stub(self.bin_dir / "herdr-api", "exit 1")
+
+        finished = self.run_resolve(str(self.solo))
+
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("herdr-api agent list", finished.stderr)
 
 
 if __name__ == "__main__":

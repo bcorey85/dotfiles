@@ -3,7 +3,9 @@
 # first prompt.
 #
 # Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
-#   agent      a live agent name or pane id.
+#   agent      a ListAgents session name, a worktree path, a pane id or a herdr agent name.
+#              An existing directory wins over a session of the same name; a directory
+#              that holds no claude agent or several, or a session with no pane, sends nothing.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
 #              A slash command goes out as given. A prompt that is not a slash command goes
 #              out prefixed with "[from orchestrator pane <sending pane id>] ",
@@ -55,6 +57,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$target" ] && [ -n "$prompt" ] || { usage >&2; exit 1; }
+
+resolved=$(python3 "$session_pane" resolve "$target") || exit 1
+target=$(jq -r .pane_id <<<"$resolved")
 
 if [ "${prompt:0:1}" != "/" ]; then
     sender_pane=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty' || true)

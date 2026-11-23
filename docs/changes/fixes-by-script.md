@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-702 fix notes
+703 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -54,12 +54,12 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
+| script/herdr-phase-change | 6 | 2 |
 | script/inline-interpreter-hint | 6 | 3 |
 | script/ledger-write | 6 | 2 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/full-check-gate | 5 | 4 |
-| script/herdr-phase-change | 5 | 1 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 0 |
 | script/shell-statements | 5 | 5 |
@@ -116,6 +116,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
+| script/session-pane | 2 | 2 |
 | script/shell-quoting | 2 | 2 |
 | script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
@@ -180,7 +181,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-partial-fix | 1 | 1 |
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
-| script/session-pane | 1 | 1 |
 | script/shape-clones | 1 | 1 |
 | script/shell-command-words | 1 | 1 |
 | script/shell-variables | 1 | 1 |

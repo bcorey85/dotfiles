@@ -449,9 +449,8 @@ class CodeReviewStartTest(unittest.TestCase):
                                   return_value=live_row), \
                 mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
                 contextlib.redirect_stderr(io.StringIO()):
-            holders, _held_changed, _untracked = code_review_start.held_scope(
-                self.repo, "abc", "docs/plans/p/spec.md", phase)
-            return holders
+            held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", phase)
+            return held.dirty
 
     def test_a_dirty_file_is_held_only_when_another_live_session_works_in_the_repo(self):
         live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo / "sub")}
@@ -503,7 +502,7 @@ class CodeReviewStartTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2", notes)
 
-        self.assertEqual(held, ([], [], []))
+        self.assertEqual(held, code_review_start.NO_HELD_FILES)
         self.assertEqual(len(notes), 1)
         self.assertIn("no other session is live in the repo, so no file is held", notes[0])
         self.assertIn(notes[0], stderr.getvalue())
@@ -529,7 +528,7 @@ class CodeReviewStartTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as note:
             held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
 
-        self.assertEqual(held, ([], [], []))
+        self.assertEqual(held, code_review_start.NO_HELD_FILES)
         other_live.assert_not_called()
         self.assertIn("CLAUDE_CODE_SESSION_ID", note.getvalue())
 
@@ -854,6 +853,31 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertEqual([path for path in self.untracked_held_paths(scope, module) if path.startswith("newdir")],
                          ["newdir/a.py", "newdir/b.py"])
+
+    def test_a_held_file_a_coder_of_the_run_rewrote_is_released_and_reviewed(self):
+        self.write_start_record(dirty={"shared.py": None})
+        (self.repo / "shared.py").write_text("x\n")
+        self.coder_transcript("test-session", "shared.py")
+
+        scope, module = self.scope_of()
+
+        self.assertNotIn("shared.py", self.held_paths(scope))
+        self.assertEqual(list(scope.held_changed), [])
+        self.assertEqual(list(scope.held_released), ["shared.py"])
+        self.assertIn("code_review_start: " + module.code_wait.held_released_text(["shared.py"]), scope.notes)
+        self.assertFalse(any(note.startswith("Tool fault") for note in scope.notes))
+
+    def test_a_held_file_only_another_writer_changed_stays_held_as_a_fault(self):
+        self.write_start_record(dirty={"shared.py": None})
+        (self.repo / "shared.py").write_text("x\n")
+        self.coder_transcript("test-session", "other.py")
+
+        scope, module = self.scope_of()
+
+        self.assertIn("shared.py", self.held_paths(scope))
+        self.assertEqual(list(scope.held_changed), ["shared.py"])
+        self.assertEqual(list(scope.held_released), [])
+        self.assertIn("Tool fault: " + module.code_wait.held_fault_text(["shared.py"]), scope.notes)
 
     def test_an_untracked_file_a_coder_of_the_recorded_session_wrote_is_reviewed(self):
         self.write_start_record()

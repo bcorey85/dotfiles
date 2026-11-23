@@ -72,6 +72,11 @@ at that line. Do not improvise a near-equivalent.
 
 Run the same test command as the baseline. Then classify, reading these in order:
 
+- **INDETERMINATE — the mutant does not load.** Compile the mutated file first (`python -m py_compile <target>`,
+  `npx tsc --noEmit <target>`, or the stack's own check). If that fails, or the run shows a collection, import or
+  syntax error, the verdict is `INDETERMINATE — mutant does not load`, never KILLED. A kill needs a test the baseline
+  ran to fail on an assertion or a runtime error.
+
 - **KILLED** — at least one test fails. Name the failing test(s). If a different test than expected killed it, say so.
 
 - **INDETERMINATE — the expected test did not run.** Before you may write `SURVIVED`, confirm

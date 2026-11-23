@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-718 fix notes
+726 fix notes
 
 Recent: the 7 days up to 2026-11-23, the newest note.
 
@@ -21,10 +21,10 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 29 | 7 |
 | script/full-check | 28 | 4 |
-| script/plan-format | 27 | 7 |
+| script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 5 |
 | script/shell-write-gate | 24 | 9 |
-| script/review-loop | 22 | 6 |
+| script/review-loop | 23 | 7 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 19 | 2 |
@@ -33,9 +33,9 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 7 |
+| script/code-review-start | 13 | 6 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
-| script/code-review-start | 12 | 5 |
 | script/code-wait | 12 | 5 |
 | script/log-review-finding | 12 | 0 |
 | script/log-escape | 11 | 3 |
@@ -96,6 +96,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/wait-loop-gate | 3 | 0 |
 | script/worktree-snapshot | 3 | 1 |
 | agent/code-fork | 2 | 0 |
+| agent/code-reviewer | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
@@ -128,7 +129,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/waiting-review-launch | 2 | 1 |
 | skill/branch-recap | 2 | 0 |
 | skill/stage | 2 | 1 |
-| agent/code-reviewer | 1 | 0 |
+| agent/general-purpose | 1 | 1 |
 | agent/mutation-tester | 1 | 0 |
 | agent/plan-verifier | 1 | 0 |
 | agent/spec-criteria | 1 | 0 |
@@ -200,6 +201,10 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |
+| shared/review-fork-run | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
+| skill/architect-core | 1 | 1 |
 | skill/close-branch | 1 | 0 |
+| skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |
+| skill/test-audit | 1 | 1 |

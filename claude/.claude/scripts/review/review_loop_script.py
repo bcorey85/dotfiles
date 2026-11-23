@@ -39,7 +39,7 @@ Model steps are `claude -p` calls in auto permission mode, each named `child of 
 ListAgents tells it from a worker, and each with CLAUDE_FORMAT_HOOK_OFF=1 in its environment: the
 reviewers (agents code-reviewer, smell-reviewer, test-reviewer), the fix coder (agent coder) and the class-closure
 judgment (Sonnet). A Sonnet disposition call runs
-only when a reviewer's output has no Fix/Ask/Nit sections the parser can read. Every call is logged to
+only when a reviewer's output has no Fix/Ask/Plan impact/Nit sections the parser can read. Every call is logged to
 <state dir>/loop-script/<agent id>/calls.jsonl with its session id, role, wall time and token counts.
 With `--reviewers main` the reviewers are no `claude -p` call: reviewer_dispatch.py hands each round's reviewer
 prompts to the main session, which runs them as its subagents and writes their reports back; each gets a call log

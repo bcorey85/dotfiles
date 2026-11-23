@@ -1,6 +1,6 @@
 ---
 name: plan-verifier
-description: "Checks each plan criterion against the branch diff: done, partial or missing, with evidence. Dispatched by /verify-branch at branch end."
+description: "Checks each plan criterion against the branch diff: done, partial or missing, with evidence. Dispatched by /verify-branch and /close-branch at branch end."
 model: sonnet
 tools: Bash, Read, Edit, Glob, Grep, LSP
 color: cyan

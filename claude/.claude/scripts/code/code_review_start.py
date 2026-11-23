@@ -197,9 +197,21 @@ def review_holder(repo, record, own_session_id):
     return record["holder"] or phase_start.current_holder(repo, own_session_id)
 
 
+class HeldScope(NamedTuple):
+    """The files a review leaves out. `dirty` and `untracked` are holder rows of the held dirty and untracked files,
+    `changed` the held paths whose bytes changed since the run start, `released` the dirty paths whose change a coder
+    of the run wrote, which review reads."""
+    dirty: list
+    changed: list
+    untracked: list
+    released: list
+
+
+NO_HELD_FILES = HeldScope([], [], [], [])
+
+
 def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_files=None):
-    """(holder rows of the held dirty files, the held paths whose bytes changed since the run start, holder rows of
-    the held untracked files). A holder recorded at the phase start is honored whether or not this session's id is
+    """The HeldScope of a phase. A holder recorded at the phase start is honored whether or not this session's id is
     set. With no holder recorded, the live-holder fallback needs the id. No record, or no holder by either route,
     holds none (the no-holder route); the reason is noted on stderr and in `notes`. `named_files` is the phase's
     PlanFiles when the caller has them, else they are read from the plan here."""
@@ -209,7 +221,7 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_file
     if record is None:
         held_note(notes, "code_review_start: no phase start record, so files another session left dirty are reviewed "
                          f"as this phase's own. Run `{phase_start.COMMAND}` before each phase's coder dispatch.")
-        return [], [], []
+        return NO_HELD_FILES
 
     own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     holder = review_holder(repo, record, own_session_id)
@@ -221,14 +233,28 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_file
         held_note(notes, "code_review_start: the start record names no holder and no other session is live in the "
                          "repo, so no file is held.")
     if holder is None:
-        return [], [], []
+        return NO_HELD_FILES
 
     own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
     dirty_rows, held_changed = phase_held_files(repo, record, holder, own_files)
+    released = coder_rewritten(repo, record, held_changed, notes)
+    if released:
+        held_note(notes, "code_review_start: " + code_wait.held_released_text(released))
+    dirty_rows = [row for row in dirty_rows if row["path"] not in released]
+    held_changed = [path for path in held_changed if path not in released]
     if held_changed:
         held_note(notes, "Tool fault: " + code_wait.held_fault_text(held_changed))
     untracked_rows = foreign_untracked(repo, record, holder, named_files, plan, notes)
-    return dirty_rows, held_changed, untracked_rows
+    return HeldScope(dirty_rows, held_changed, untracked_rows, released)
+
+
+def coder_rewritten(repo, record, held_changed, notes):
+    """The held changed paths a coder of the recorded sessions wrote during the run: the run's own change, so review
+    reads them. A record with no session attributes none; foreign_untracked notes that once."""
+    if not held_changed or not record["sessions"]:
+        return []
+    written = coder_written_paths(repo, record, notes)
+    return [path for path in held_changed if path in written]
 
 
 def phase_held_files(repo, record, holder, own_files=()):
@@ -349,7 +375,8 @@ class ReviewScope(NamedTuple):
     """What a review covers: the holder rows of the held files, the handoff with its files from git, the files
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
-    changed since the run start, `held_targeted` the held files this phase's section names."""
+    changed since the run start, `held_targeted` the held files this phase's section names, `held_released` the
+    files dirty at the run start whose change a coder of the run wrote, which review reads."""
     holders: list
     handoff: str
     phase_changed: list
@@ -357,6 +384,7 @@ class ReviewScope(NamedTuple):
     notes: tuple = ()
     held_changed: tuple = ()
     held_targeted: tuple = ()
+    held_released: tuple = ()
 
 
 SCOPE_FILE_FLAG = "--scope-file"
@@ -396,8 +424,8 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
 
     notes = []
     named_files = plan_files(repo, plan, phase)
-    dirty_holders, held_changed, untracked_holders = held_scope(repo, base_commit, plan, phase, notes, named_files)
-    holders = [*dirty_holders, *untracked_holders]
+    held = held_scope(repo, base_commit, plan, phase, notes, named_files)
+    holders = [*held.dirty, *held.untracked]
     held_paths = [holder["path"] for holder in holders]
     held_targeted = targeted_held_files(named_files, held_paths)
     if held_targeted:
@@ -406,7 +434,8 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     review_base = diff_base(repo, base_commit)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
-    return ReviewScope(holders, handoff, phase_changed, review_base, notes, held_changed, held_targeted)
+    return ReviewScope(holders, handoff, phase_changed, review_base, notes, held.changed, held_targeted,
+                       held.released)
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",

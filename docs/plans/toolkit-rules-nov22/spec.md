@@ -9,7 +9,7 @@
 
 ## Summary
 
-Three prose-rule changes in the stowed claude toolkit, each measured with the rule meter before it ships: the global go-ahead line gains one exception (an owner line in the scripts CLAUDE.md), `orchestration.md` had one Delegation line stating what the Agent model hook enforces added, then removed after AM02 (net: no change to `orchestration.md`), and the `orchestration.md` auto-mode file-I/O line is metered and kept (on 6, off 9). The meter side (two scenarios, GA01 and AB01, one detector module, one plant set) lands in `~/agent-evals` on its own branch; the dotfiles side lands on `fix/toolkit-rules-nov22`.
+Three prose-rule changes in the stowed claude toolkit, each measured with the rule meter before it ships: the global go-ahead line gains one exception (an owner line in the scripts CLAUDE.md), `orchestration.md` had one Delegation line stating what the Agent model hook enforces added, then removed after AM02 (net: no change to `orchestration.md`), and the `orchestration.md` auto-mode file-I/O line is metered and kept (on 6, off 9). The meter side (two scenarios, GA01 and AB01, one detector module, two plant folders) lands in `~/agent-evals` on its own branch; the dotfiles side lands on `fix/toolkit-rules-nov22`.
 
 ## Phase Status
 
@@ -463,7 +463,7 @@ With the auto-mode notice's words in the task, the on arm writes files through E
 - [x] **Anchors-verified**: `claude/.claude/scripts/tools/rule-anchors.sh check` prints nothing and exits 0.
 - [x] **Change-file-verified**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/build_changes.py --check --root /home/brandon/dotfiles-toolkit-rules-nov22/docs/changes` exits 0.
 - [x] **Agent-run**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_meter.py run-all --rule AB01 --runs 1` then `summary`; the change file's Result holds every per-arm count and the decision rule's verdict.
-- [ ] **Agent-run** (delete branch only): `rg -n 'auto-mode notice' claude/.claude/orchestration.md` finds no match.
+- [x] **Agent-run** (delete branch only; N/A, the keep branch was taken): `rg -n 'auto-mode notice' claude/.claude/orchestration.md` finds no match.
 - [x] **Scenario-A-removed**: `rg -n -c '^  "A": \{' /home/brandon/agent-evals-toolkit-rules-nov22/bin/rule_meter_scenarios.json` finds no line (R1: 27 other scenarios fail `check_rule_texts` today and stay out of scope, so a bare `run-all --dry-run` is not the check).
 - [x] **Suite-verified**: `python3 tests/parallel_tests.py test_rule_anchors.py` passes.
 

@@ -7,11 +7,10 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-4 open benches, by rank. Each line is the question the bench asks.
+3 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
-* Bench: tests asked for only where a function is complex and uncovered, in place of the test reviewer's judgment (running): A score of complexity times missing coverage per changed function decides where a test is owed, so test lines fall where the code is simple or already covered.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
 * Review asks the user already answered the same way become standing rulings (blocked): Fewer interruptions: a review ask that matches a pattern the user answered the same way twice before is resolved from a ruling file, as pstack's bugbot-triage does.

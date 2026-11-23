@@ -21,7 +21,7 @@ No edit to `orchestration.md`: the Tools line "The auto-mode notice's Bash prefe
 
 ## Evidence
 
-Rule meter scenario AB01 on an Opus main session. The bench has no hooks and no auto-mode notice, so the task text carries the notice's words (Bash for reads and writes, dedicated tools only as a fallback) and forbids agents. The grade counts Bash file writes plus inline interpreter calls per run against Edit, Write and MultiEdit calls; each Bash call counts once, quoted strings and heredoc bodies are not read for redirects, and a redirect or `tee` to a path under `/tmp/` (such as a check log) does not count.
+Rule meter scenario AB01 on an Opus main session. The bench has no hooks and no auto-mode notice, so the task text carries the notice's words (Bash for reads and writes, dedicated tools only as a fallback) and forbids agents. The grade counts Bash file writes plus inline interpreter calls per run against Edit, Write and MultiEdit calls; each Bash call counts once, quoted strings and heredoc bodies are not read for redirects, and a redirect, `tee`, `cp` or `mv` to a path under `/tmp/` (such as a check log) does not count.
 
 ## Result
 

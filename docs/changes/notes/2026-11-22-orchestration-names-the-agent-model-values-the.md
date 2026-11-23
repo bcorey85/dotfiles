@@ -21,7 +21,7 @@ One new bullet under `### Delegation` in `orchestration.md`, after the Explore l
 
 ## Evidence
 
-Rule meter scenario AM01 on an Opus main session, one general-purpose dispatch per run, graded on every Agent call's `input.model`. A walk of `agent-model-guard.sh` over a general-purpose call with `model` `sonnet`, `haiku`, absent, `opus` and `inherit` passed the first three and denied the last two. AM01 metered the line before the fork clause was added (W5); AM02 metered it with the clause.
+Rule meter scenario AM01 on an Opus main session, one general-purpose dispatch per run, graded on every Agent call's `input.model`. A walk of `agent-model-guard.sh` over a general-purpose call with `model` `sonnet`, `haiku`, absent, `opus` and `inherit` passed the first three and denied the last two. AM01 metered the line before the fork clause was added; AM02 metered it with the clause.
 
 ## Result
 

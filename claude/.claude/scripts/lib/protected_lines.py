@@ -36,6 +36,8 @@ def lines_rewritten_in_place(before_lines, after_lines, rival_lines):
     and no line of `rival_lines` is more like it than its own (an update in place, not a reorder).
     Each old line takes the most like such new line (the earliest on a tie) after the previous match, so no two
     share one."""
+    # Not `closest_line`: that one breaks ties on the latest line and returns no score, and this order check needs the
+    # earliest line and its score.
     next_index = 0
     for before_line in before_lines:
         own_index = None

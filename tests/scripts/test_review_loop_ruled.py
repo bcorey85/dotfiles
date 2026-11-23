@@ -1308,6 +1308,20 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual(loaded["dropped_asks"], [line])
         self.assertEqual(loaded["ask"], [])
 
+    def test_an_owner_line_edit_stands_under_a_ruling_by_the_user(self):
+        # The reader does not check who wrote the ruling, so a ruling by the user covers owner lines too.
+        self.decisions.write_text("- Standing ruling by the user at 2026-11-23: owner lines need no ask "
+                                  "covers: owner-lines\n")
+        git_in(self.repo, "commit", "-q", "-am", "ruling by the user")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
+
+        host = self.coder_pass(self.edit_scripts_md(added))
+
+        self.assertEqual(self.scripts_md.read_text(), added)
+        self.assertEqual(host.reverted, [])
+        kept_reason = review_loop_findings.KEPT_OWNER_LINE_EDIT_REASON.format(ruling="the user at 2026-11-23")
+        self.assertEqual([reason for _ask, reason in host.dropped_asks], [kept_reason])
+
     def test_a_ruling_the_pass_adds_keeps_nothing(self):
         self.decisions.write_text("# Decisions\n")
         git_in(self.repo, "commit", "-q", "-am", "no ruling")
@@ -1414,19 +1428,28 @@ class OwnerLineEditTest(unittest.TestCase):
     def test_an_owner_line_edit_whose_index_entry_git_cannot_read_is_reverted(self):
         added = SCRIPTS_MD_WITH_NEW_BULLET
         real_index_entry = review_loop_ruled.script_utils.index_entry
-        # The first read is the owner-line judge's (`staged_and_committed_match_work_tree`), the only index read that
-        # decides whether the edit stands.
-        reads = []
+        edited = []
+        reads_after_the_edit = []
 
-        def index_entry_failing_once(*args):
-            reads.append(args)
-            if len(reads) == 1:
+        def edit():
+            self.scripts_md.write_text(added)
+            edited.append(True)
+
+        def index_entry_failing_for_the_judge(*args):
+            if not edited:
+                return real_index_entry(*args)
+            reads_after_the_edit.append(args)
+            # The first read after the edit is the owner-line judge's; the revert's own read then works.
+            if len(reads_after_the_edit) == 1:
                 raise review_loop_ruled.script_utils.GitCallError("ls-files")
             return real_index_entry(*args)
 
-        with mock.patch.object(review_loop_ruled.script_utils, "index_entry", side_effect=index_entry_failing_once):
-            host = self.coder_pass(lambda: self.scripts_md.write_text(added))
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entry",
+                               side_effect=index_entry_failing_for_the_judge):
+            host = self.coder_pass(edit)
 
+        # The judge's failed read sent the edit to the revert, which reads the index again.
+        self.assertGreaterEqual(len(reads_after_the_edit), 2)
         self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
         self.assertEqual([reason for _ask, reason in host.dropped_asks],
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
@@ -1694,7 +1717,8 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         (coder_call,) = [call for call in self.fake_calls() if call["key"] == "coder"]
         self.assertIn("issue 1 asks for", coder_call["prompt"])
         self.assertIn(f"{coder_report.ALREADY_APPLIED_MARKER} <n>", coder_call["prompt"])
-        self.assertNotIn("issue 2 asks for", coder_call["prompt"])
+        # Marking the plain finding too would turn the line into "issues 1, 2 ask for".
+        self.assertNotIn("issues 1, 2 ask for", coder_call["prompt"])
 
     def test_the_packet_lists_the_text_of_each_adopted_ruling_left_unapplied(self):
         packet = self.run_adopted({"result": "Fixed 1."})
@@ -1803,8 +1827,9 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
 
 class AlreadyAppliedBriefTest(unittest.TestCase):
     def brief(self, **options):
+        findings = [parse_finding("a.py:1 [bug] x"), parse_finding("a.py:2 [bug] y")]
         with tempfile.TemporaryDirectory() as folder:
-            return review_loop_prompts.coder_prompt("/repo", [parse_finding("a.py:1 [bug] x")], [], ["a.py"],
+            return review_loop_prompts.coder_prompt("/repo", findings, [], ["a.py"],
                                                     pathlib.Path(folder), **options)
 
     def test_the_brief_asks_for_the_marker_only_when_an_issue_is_adopted(self):
@@ -1812,6 +1837,7 @@ class AlreadyAppliedBriefTest(unittest.TestCase):
         plain = self.brief()
 
         self.assertIn("issue 2 asks for", adopted)
+        self.assertNotIn("issue 1 asks for", adopted)
         self.assertIn(f"{coder_report.ALREADY_APPLIED_MARKER} <n>", adopted)
         self.assertNotIn(coder_report.ALREADY_APPLIED_MARKER, plain)
 

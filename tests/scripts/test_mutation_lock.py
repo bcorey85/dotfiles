@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -14,10 +15,17 @@ import unittest
 
 import toolkit_paths
 
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import script_utils
+
 SCRIPT = pathlib.Path(os.environ.get("MUTATION_LOCK_PATH") or toolkit_paths.TOOLS_DIR / "mutation_lock.py")
 GUARD = toolkit_paths.GATES_DIR / "calibration_guard.py"
 STAMP_FORM = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 DEAD_PID = 99999999
+MUTATION_TESTER_PROMPTS = (
+    toolkit_paths.CLAUDE_DIR / "agents" / "mutation-tester.md",
+    toolkit_paths.REPO_ROOT / "opencode" / ".config" / "opencode" / "agents" / "mutation-tester.md",
+)
 
 spec = importlib.util.spec_from_file_location("mutation_lock_under_test", str(SCRIPT))
 mutation_lock = importlib.util.module_from_spec(spec)
@@ -220,6 +228,7 @@ class MutationLockTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, mutation_lock.EXIT_RESTORE_MISMATCH, finished.stdout)
         self.assertIn(mutation_lock.MISMATCH_HEADING, finished.stdout)
+        self.assert_ends_with(finished, "STOP:", mutation_lock.STOP_RESTORE_MISMATCH)
         self.assertIn(str(self.target), finished.stdout)
         self.assertIn(str(self.backup_file), finished.stdout)
         self.assertEqual(self.lock_file.read_bytes(), lock_before)
@@ -431,6 +440,63 @@ class MutationLockTest(unittest.TestCase):
         self.assert_stop(finished, mutation_lock.STOP_LOCK_NOT_REMOVED)
         self.assertIn(f'rm "{self.lock_file}"', finished.stdout)
         self.assertEqual(self.target.read_bytes(), self.original)
+
+    def test_both_mutation_tester_prompts_call_only_verbs_and_flags_the_script_takes(self):
+        call_pattern = re.compile(r"mutation_lock\.py (\w[\w-]*)([^\n`]*)")
+        placeholders = (("<target>", "f.py"), ("<line>", "1"), ('"$PPID"', "1"),
+                        ('"<one-line description>"', "x"))
+        for prompt_file in MUTATION_TESTER_PROMPTS:
+            calls = call_pattern.findall(prompt_file.read_text())
+            with self.subTest(str(prompt_file)):
+                self.assertEqual({verb for verb, _ in calls}, {"check", "lock", "restore"})
+                for verb, rest in calls:
+                    for placeholder, value in placeholders:
+                        rest = rest.replace(placeholder, value)
+                    argv = [verb, *shlex.split(rest)]
+                    try:
+                        mutation_lock.build_parser().parse_args(argv)
+                    except SystemExit:
+                        self.fail(f"the script rejects the prompt's call: {argv}")
+
+    def test_both_mutation_tester_prompts_name_no_lock_path_hash_tool_or_count(self):
+        banned = ("claude-calibration", "calibration-lock.json", "sha256sum", "jq -n", "all four", "all five")
+        for prompt_file in MUTATION_TESTER_PROMPTS:
+            text = prompt_file.read_text()
+            with self.subTest(str(prompt_file)):
+                for word in banned:
+                    self.assertNotIn(word, text)
+                bullets = [line for line in prompt_section(text, "## Step 0").splitlines() if line.startswith("- ")]
+                self.assertEqual(len(bullets), 3, bullets)
+                checking = [line for line in bullets if "mutation_lock.py check" in line]
+                self.assertEqual(len(checking), 1, bullets)
+
+    def test_mutation_tester_prompts_keep_the_restore_only_rule(self):
+        for prompt_file in MUTATION_TESTER_PROMPTS:
+            step_four = prompt_section(prompt_file.read_text(), "## Step 4")
+            with self.subTest(str(prompt_file)):
+                for forbidden in ("Never `git checkout`", "Never `Write`", "never `Edit`"):
+                    self.assertIn(forbidden, step_four)
+                self.assertIn("RESTORE HASH MISMATCH", step_four)
+                self.assertIn("print the exact command it names, if any, for your caller to run", step_four)
+                bullets = [line for line in step_four.splitlines() if line.startswith("- ")]
+                unremoved = [line for line in bullets if "lock could not be removed" in line]
+                other = [line for line in bullets if line.startswith("- Any other `STOP:`")]
+                self.assertEqual(len(unremoved), 1, bullets)
+                self.assertEqual(len(other), 1, bullets)
+                self.assertNotIn("stays mutated", unremoved[0])
+                self.assertIn("the target stays mutated: say so loudly at the top of your report", other[0])
+
+
+def prompt_section(text, heading_start):
+    """The lines of the `## ` section whose heading starts with heading_start."""
+    lines = text.splitlines()
+    starts = script_utils.top_level_sections(lines)
+    for position, start in enumerate(starts):
+        if not lines[start].startswith(heading_start):
+            continue
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        return "\n".join(lines[start:end])
+    return ""
 
 
 if __name__ == "__main__":

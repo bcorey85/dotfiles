@@ -24,18 +24,11 @@ interrupted mid-way.
 Anything missing → say which, and stop. Do not choose a mutation yourself, do not pick a
 target from the diff, and do not "test the general area." A mutation you invented breaks a file for no recorded reason.
 
-## Step 0 — Preconditions (all four, before touching anything)
+## Step 0 — Preconditions (before touching anything)
 
-```bash
-git rev-parse --show-toplevel && git status --porcelain
-```
-
-- Not a git repo → stop.
-- **Lock file exists** (`~/.claude/calibration-lock.json`) → **STOP**. A previous
-  `mutation-tester` or `/calibrate` run mutated a file and never restored it. Report the
-  lock's `file` and `backup_path` and stop. Never mutate on top of an unrestored mutation.
-  The lock is GLOBAL, not per-repo — stop either way; never clear someone else's lock.
-- **Target not in the working tree, or not the file named in the dispatch** → stop.
+- The dispatch does not state a test command → stop and say so. Never infer one from the repo.
+- The target is not the file named in the dispatch → stop.
+- Run `python3 ~/.claude/scripts/tools/mutation_lock.py check <target>` (`mutation_lock.py --help` lists what it checks). It ends with `STOP:` → stop and report what it printed. Never mutate on top of an unrestored mutation. Never clear someone else's lock.
 
 **Run the suite FIRST, unmutated, and record the result.** A red baseline voids the entire
 measurement: with a failing suite, "the mutant survived" and "the suite was already broken"
@@ -48,20 +41,10 @@ in Step 3.
 ## Step 1 — Back up, hash, lock
 
 ```bash
-mkdir -p ~/.claude/calibration
-cp <target> ~/.claude/calibration/$(basename <target>).bak
-sha256sum <target> | cut -c1-16          # pre-mutation CONTENT hash
+python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"
 ```
 
-Hash the **file's contents**, not `git diff` — a diff hash certifies restores that never happened.
-
-```bash
-jq -n --arg f "<target>" --arg b "$HOME/.claude/calibration/$(basename <target>).bak" \
-      --arg h "<pre-mutation hash>" --arg c "mutant: <one-line description>" --arg l "<line>" \
-      '{ts: (now|todate), kind: "mutation-test", file: $f, backup_path: $b,
-        pre_hash: $h, class: $c, line: $l}' \
-  > ~/.claude/calibration-lock.json
-```
+It ends with `STOP:` → stop and report it; the target and the lock are untouched.
 
 ## Step 2 — Apply the mutation
 
@@ -106,23 +89,16 @@ This runs whether the suite passed, failed, errored, hung, or you decided to abo
 **Restore by copying the backup file. Never `git checkout`** — it would also destroy the
 real uncommitted work in that file. **Never `Write`, and never `Edit`** — both make you the
 author of restored bytes, reconstructed from memory rather than the backup.
-The restore path is a file copy and nothing else:
+The restore is this one call and nothing else:
 
 ```bash
-cp <backup_path> <target>                # the only sanctioned restore
+python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID"
 ```
 
-Then verify by hash, not by eyeball:
-
-```bash
-sha256sum <target> | cut -c1-16          # must equal pre_hash
-```
-
-- Matches → `rm ~/.claude/calibration-lock.json`, and say in your report that the restore
-  was hash-verified. **If a safety gate blocks that removal, you are done: report the verdict, state the block, and print the exact command for the user to run. Never retry by another mechanism — a second attempt is a gate bypass.**
-- **Does not match** → **STOP and say so loudly**, with the target path and the backup path,
-  at the very top of your report. Do not delete the lock. Do not report a verdict as though
-  the run completed normally.
+- Exit 0 → say in your report that the restore was hash-verified.
+- Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally.
+- A `STOP:` saying the file is restored but the lock could not be removed → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
+- Any other `STOP:` → the target stays mutated: say so loudly at the top of your report, report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
 
 ## Hard limits
 

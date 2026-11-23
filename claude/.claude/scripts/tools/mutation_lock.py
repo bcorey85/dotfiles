@@ -53,6 +53,8 @@ STOP_NOT_OURS = "STOP: the lock belongs to another writer or owner; hand the rec
 STOP_BACKUP_MISSING = "STOP: the backup named by the lock is missing; the lock is kept; hand this to the caller"
 STOP_LOCK_NOT_REMOVED = (
     "STOP: the file is restored but the lock could not be removed; hand the rm line above to the caller")
+STOP_RESTORE_MISMATCH = (
+    "STOP: the restored file does not match its recorded hash; the lock is kept; report this loudly to the caller")
 STOP_RESTORE_FAILED = "STOP: the file could not be restored; the lock is kept; hand the cp line above to the caller"
 MISMATCH_HEADING = "RESTORE HASH MISMATCH"
 NEXT_LOCK_TEMPLATE = ("NEXT: run the unmutated suite (baseline), then mutation_lock.py lock <target> "
@@ -253,7 +255,8 @@ def refuse_unrestorable(own, args):
 
 
 def mismatch_stop(own, target):
-    lines = [MISMATCH_HEADING, f"target: {target}", f"backup: {own.view.backup}", f"lock kept: {own.path}"]
+    lines = [MISMATCH_HEADING, f"target: {target}", f"backup: {own.view.backup}", f"lock kept: {own.path}",
+             STOP_RESTORE_MISMATCH]
     return StopError(lines, EXIT_RESTORE_MISMATCH)
 
 

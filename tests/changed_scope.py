@@ -29,6 +29,7 @@ PROMPT_READING_TESTS = (
     "test_guidance_rules.py",
     "test_log_escape.py",
     "test_log_review_finding.py",
+    "test_mutation_lock.py",
     "test_refactor_flow.py",
     "test_review_loop_coder.py",
     "test_review_loop_named_tests.py",

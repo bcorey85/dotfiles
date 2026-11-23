@@ -16,8 +16,8 @@ Fields of the lock (a JSON object):
   line         string  the line the mutation touches, as given
   worktree     string  absolute path of the git work tree that holds the target
   owner_pid    int     process that owns the run
-The agent's jq writer still writes the old backups/<basename>.bak layout and may write `file` as an absolute
-path; read_lock_view accepts both. Drop this note when the writer moves to mutation_lock.py.
+A lock written before mutation_lock.py may hold the old backups/<basename>.bak layout or an absolute `file`;
+read_lock_view accepts both and `restore` stops on it (STOP_OLD_LAYOUT).
 A lock with no parseable ts is stale. A lock younger than MUTATION_RUN_TIMEOUT_SECONDS whose owner process still
 exists (or that names no owner) is live.
 """

@@ -1,8 +1,8 @@
 ---
 name: audit
-description: Toolkit health reports in four lanes, usage, skills, review and retro.
+description: Toolkit health reports in three lanes, usage, skills and review.
 disable-model-invocation: true
-allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__ledger__search, mcp__ledger__session]
+allowed-tools: [Bash, Read, Glob, Grep, Skill]
 ---
 
 # Audit
@@ -17,13 +17,12 @@ range).
 | `usage`  | `usage.md`  | Where are my tokens/limits going? (day × model, main vs subagent)        |
 | `skills` | `skills.md` | Which skills earn their always-loaded description tax?                   |
 | `review` | `review.md` | Is the review flywheel calibrated? (catches vs escapes vs specialist yield) |
-| `retro`  | `retro.md`  | What in the environment made one session hard, and what fixes it?        |
 
-Lane resolution: match the first argument or an obvious synonym (tokens/burn/limits → `usage`; flywheel/escapes/calibration → `review`; postmortem/what went wrong → `retro`). `all` runs usage, skills and review, usage first. No lane and no clear synonym → ask which lane, in one line.
+Lane resolution: match the first argument or an obvious synonym (tokens/burn/limits → `usage`; flywheel/escapes/calibration → `review`). `all` runs usage, skills and review, usage first. No lane and no clear synonym → ask which lane, in one line.
 
 ## Boundaries (all lanes)
 
-- **Report and recommend**: every change to a skill, agent or log is the user's call. The `retro` lane queues the candidates it judges worth a fix and logs each one it queued or skipped.
+- **Report and recommend**: every change to a skill, agent or log is the user's call.
 - Lead with the 1–3 findings that would change behavior; hold the rest for follow-ups.
 - Telemetry is per-machine and local-only — say which machine's data this is when it matters (usage lane especially).
 

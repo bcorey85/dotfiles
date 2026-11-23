@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1111 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
+1112 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The retro lane queues its own picks and reports a log of what it queued and skipped](notes/2026-11-22-the-retro-lane-queues-its-own-picks-and-reports-a.md).
+Latest change: 2026-11-22, [The session retro moves out of audit into its own hillclimb skill](notes/2026-11-22-the-session-retro-moves-out-of-audit-into-its-own.md).
 
 ## Top gains
 

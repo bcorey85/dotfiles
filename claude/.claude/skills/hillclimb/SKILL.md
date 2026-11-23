@@ -1,8 +1,19 @@
-# Lane: retro — fixes to the environment from one session
+---
+name: hillclimb
+description: Reads one session and queues the environment fixes that would have made it go better.
+disable-model-invocation: true
+allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__ledger__search, mcp__ledger__session]
+---
+
+# Hillclimb — fixes to the environment from one session
+
+Every change to a skill, agent or log is the user's call: queue the candidates you judge worth a fix and log each one you queued or skipped.
 
 Read one session and propose changes to the toolkit or repo that would have made it go better. The output is environment changes only; the session's own code stays as it is.
 
 ## Input
+
+$ARGUMENTS
 
 - Load the `toolkit-writing` skill first. Its terms (no-op, duplicate, cache, sprawl, weak pointer, sediment, dense rule) judge every steering file you read.
 - No argument: the current session.

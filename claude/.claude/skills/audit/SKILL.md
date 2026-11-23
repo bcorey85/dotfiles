@@ -23,7 +23,7 @@ Lane resolution: match the first argument or an obvious synonym (tokens/burn/lim
 
 ## Boundaries (all lanes)
 
-- **Report and recommend**: every change to a skill, agent or log is the user's call. The `retro` lane queues only the candidates the user picks.
+- **Report and recommend**: every change to a skill, agent or log is the user's call. The `retro` lane queues the candidates it judges worth a fix and logs each one it queued or skipped.
 - Lead with the 1–3 findings that would change behavior; hold the rest for follow-ups.
 - Telemetry is per-machine and local-only — say which machine's data this is when it matters (usage lane especially).
 

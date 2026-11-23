@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1110 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
+1111 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [A review fix pass holds a file another session first dirtied during an earlier phase](notes/2026-11-22-a-review-fix-pass-holds-a-file-another-session.md).
+Latest change: 2026-11-22, [The retro lane queues its own picks and reports a log of what it queued and skipped](notes/2026-11-22-the-retro-lane-queues-its-own-picks-and-reports-a.md).
 
 ## Top gains
 

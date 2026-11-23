@@ -130,8 +130,8 @@ import script_utils
 
 SCRIPTS_CLAUDE_MD = "claude/.claude/scripts/CLAUDE.md"
 OWNERS_HEADING = "Owners"
-# A bullet that names a fact, a colon, and a backticked module path. Written from every owner bullet ever added.
-OWNER_LINE = re.compile(r"^- [^:]+?.*?: .*`[\w./-]+\.(?:py|ts|sh)`")
+# A bullet that names a fact, a colon, and a backticked module path.
+OWNER_LINE = re.compile(r"^- [^:]+: .*`[\w./-]+\.(?:py|ts|sh)`")
 ```
 
 - `owner_line_indexes(lines) -> set[int]`: the 0-based indexes inside `script_utils.heading_section_indexes(lines, OWNERS_HEADING)` whose line matches `OWNER_LINE`.

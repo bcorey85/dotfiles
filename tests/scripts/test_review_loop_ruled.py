@@ -1281,6 +1281,27 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual([reason for _ask, reason in host.dropped_asks],
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
 
+    def test_a_kept_owner_line_edit_beside_a_reverted_root_claude_md_edit_keeps_one_and_reverts_the_other(self):
+        root_md = self.repo / "CLAUDE.md"
+        root_md.write_text("# Root\n")
+        git_in(self.repo, "add", "CLAUDE.md")
+        git_in(self.repo, "commit", "-q", "-m", "root claude md")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = PLAN_PATH
+        host.files_touched = set()
+        host.snapshot_approval_blobs()
+        self.scripts_md.write_text(added)
+        root_md.write_text("# Root\nchanged\n")
+
+        host.reverted = host.ask_for_approval_only_edits([SCRIPTS_CLAUDE_MD, "CLAUDE.md"], [])
+
+        self.assertEqual(self.scripts_md.read_text(), added)
+        self.assertEqual(root_md.read_text(), "# Root\n")
+        reasons = [reason for _ask, reason in host.dropped_asks]
+        self.assertEqual(reasons, [KEPT_REASON, review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
     def test_the_snapshot_clears_a_stale_ruling_and_pre_pass_text(self):
         host = approval_host(reverts=True)
         host.repo = str(self.repo)
@@ -1813,6 +1834,21 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(self.adopted_left(), (), "the adopted ruling is recorded as applied")
 
+    def test_a_bulleted_bold_already_applied_marker_counts_as_applied(self):
+        packet = self.run_adopted({"result": "- **ALREADY APPLIED 1:** app.py:2"})
+
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_a_bulleted_bold_skipped_marker_is_a_skip(self):
+        plain = "app.py:1 [bug] plain finding"
+
+        packet = self.run_adopted({"result": "ALREADY APPLIED 1: app.py:2\n- **SKIPPED 2:** not a bug"},
+                                  findings=(ADOPTED_FINDING, plain))
+
+        (skipped,) = packet["skipped_fp"]
+        self.assertIn(plain, json.dumps(skipped))
+
     def test_a_plain_finding_reported_already_applied_is_a_skip_with_the_coders_line_as_the_reason(self):
         plain = "app.py:1 [bug] plain finding"
 
@@ -1860,6 +1896,8 @@ class RepairMalformedRulingTest(unittest.TestCase):
 
             self.assertEqual(loop.open_fixes, findings)
             coder.assert_not_called()
+            self.assertEqual(loop.last_pass, "")
+            self.assertFalse(loop.untested_fix)
 
 
 if __name__ == "__main__":

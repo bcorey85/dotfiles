@@ -59,7 +59,8 @@ CODER_GATE = "coder"
 def approval_only_paths(changed):
     """The paths in `changed` whose basename is one of `PROMPT_MARKDOWN_NAMES` (CLAUDE.md, CLAUDE.local.md,
     AGENTS.md). A coder never changes these without the user's approval, so each edit is reverted and reported, or
-    asked about when it cannot be reverted."""
+    asked about when it cannot be reverted, unless a ruling covers it (see `ask_for_approval_only_edits`,
+    `keeps_owner_line_edit`)."""
     return [path for path in changed if PurePosixPath(path).name in PROMPT_MARKDOWN_NAMES]
 
 

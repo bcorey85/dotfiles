@@ -597,14 +597,14 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             raise CoderFailedError(coder_failure_blocker(call_name, error, scope_guard_failed=True)) from error
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out, diff_files,
                                                  issue_texts)
-        self.last_pass = "coder"
-        self.untested_fix = True
         try:
             self.snapshot_approval_blobs()
         except plan_format.PlanFormatError:
             # The pass has not started, so no file changed: keep the findings open, then let the stop name the line.
             self.keep_open(findings)
             raise
+        self.last_pass = "coder"
+        self.untested_fix = True
         comments = snapshot_comments(self.repo, files_in_scope)
         stats_before = len(FIX_DIFF_STATS)
         if restore_named:

@@ -9,6 +9,17 @@ import plan_format
 import review_user_ruled
 from review_fix_plan_impacts import PlanImpactSource
 
+ADOPTED_KEEP_LINE = ("The plan stays as written. The hand-back stopped on an adopted change the coder never "
+                     "applied: rerun your review loop (`/code resume`) so the keep ruling settles it.")
+
+
+def adopted_row_impacts(held):
+    """The (ruling text, finding text) pairs `decide keep` writes one row for, from the held impacts of
+    adopted_keep_source. A held impact with no finding text gives one pair with None. `write_ruling_entry` writes one
+    row per pair, so each replaces its own row for `handback_store.latest_rows_per_text`; a source without
+    `row_per_text` passes no pairs and gets the one joined row."""
+    return [(impact["text"], finding_text) for impact in held for finding_text in impact["finding_texts"] or [None]]
+
 
 def adopted_keep_source(decision, hand_back):
     """The PlanImpactSource `decide keep` rules on when the latest ruling on an impact of this session is `adopt` and

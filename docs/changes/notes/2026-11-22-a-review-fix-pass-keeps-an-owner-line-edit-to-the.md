@@ -46,3 +46,5 @@ None.
 ## Back-out
 
 Revert the commit and remove any `covers: owner-lines` line from plans, which would then raise `PlanFormatError`.
+
+The user-ruled packet step now finds the coder-report module on its own import path.

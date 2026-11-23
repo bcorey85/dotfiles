@@ -9,6 +9,7 @@ import script_utils
 
 OPEN_QUESTIONS_LINE = re.compile(r"^[ \t>*`_-]*OPEN QUESTIONS[*`_]*:[*`_]*[ \t]*(.*)$", re.M)
 ALREADY_APPLIED_MARKER = "ALREADY APPLIED"
+SKIPPED_MARKER = "SKIPPED"
 UNREADABLE_QUOTE_LIMIT = 120
 COVERING_ISSUE = re.compile(
     r"\b(?:(?:fixed|done|covered|applied|handled|addressed)\s+(?:with|by|in|under)\s+(?:issue\s+|#)"
@@ -102,7 +103,7 @@ def covered_issue(reason, number, issue_count):
 def issue_marker_lines(report, word, issue_count):
     """Issue number -> the first `<word> <n>: ...` line of the report that names it, for numbers that name a listed
     issue. `word` is the marker's words (`SKIPPED`, `ALREADY APPLIED`); a `SKIPPED small <n>` line is no match."""
-    pattern = re.compile(rf"\s*[-*]?\s*`?{re.escape(word)} (\d+):")
+    pattern = re.compile(rf"\s*[-*]?\s*(?:\*\*|`)?{re.escape(word)} (\d+):")
     lines = {}
     for line in report.splitlines():
         match = pattern.match(line)
@@ -125,7 +126,7 @@ def skipped_issues(report, issue_count):
     small <n>` line is a small item's, never an issue's. An issue whose reason names another listed issue as the one
     that covers it is fixed, so it is no skip, when its chain of covering issues ends at an issue the coder did not
     skip (see cover_chain_ends_fixed)."""
-    skips = issue_marker_lines(report, "SKIPPED", issue_count)
+    skips = issue_marker_lines(report, SKIPPED_MARKER, issue_count)
     coverings = {number: covered_issue(line.split(":", 1)[1], number, issue_count)
                  for number, line in skips.items()}
     fixed = [number for number, covering in coverings.items()

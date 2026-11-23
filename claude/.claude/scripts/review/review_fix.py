@@ -133,7 +133,7 @@ from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_blocker_text import blocker_text
-from review_fix_adopted import adopted_keep_source
+from review_fix_adopted import ADOPTED_KEEP_LINE, adopted_keep_source, adopted_row_impacts
 from review_fix_asks import (
     command_asks_done,
     findings_covered_by_impact,
@@ -805,7 +805,7 @@ def command_decide(argv):
     record_plan_ruling(source.state, options.decision, options.by, options.ruling, plan_path, relayed)
 
 
-def waiting_plan_impact_source(decision=None):
+def waiting_plan_impact_source(decision):
     """The PlanImpactSource for `decide`: either its state or its held impacts are set. The packet state is used while
     it waits and the latest hand-back's packet is missing, holds no impact (a fix round's hand-back) or holds the same
     impact, ruled or not. When the packet holds another impact, the state is stale, because the packet state outlives
@@ -853,21 +853,12 @@ def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None)
     state to re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
     impact_text = handback.held_plan_impact_text(source.held)
     rows_repo = handback_store.ruled_rows_repo(".")
-    # One ruled row per held text, so each replaces its own row for `handback_store.latest_rows_per_text`.
-    # Other held impacts keep the one joined row.
-    row_impacts = []
-    if source.row_per_text:
-        row_impacts = [(impact["text"], finding_text) for impact in source.held
-                       for finding_text in impact["finding_texts"] or [None]]
+    row_impacts = adopted_row_impacts(source.held) if source.row_per_text else []
     entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed,
                                row_impacts=row_impacts)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
-        if source.row_per_text:
-            kept_line = ("The plan stays as written. The hand-back stopped on an adopted change the coder never "
-                         "applied: rerun your review loop (`/code resume`) so the keep ruling settles it.")
-        else:
-            kept_line = "The plan stays as written: nothing is re-dispatched."
+        kept_line = ADOPTED_KEEP_LINE if source.row_per_text else "The plan stays as written: nothing is re-dispatched."
         return print_settled(settle_ruling("keep"), logged_line, *entry, kept_line)
     if handback.adopt_settles(source.packet, source.held):
         return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)

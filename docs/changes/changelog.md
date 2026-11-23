@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1108 changes
+1110 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -56,6 +56,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A review fix pass holds a file another session first dirtied during an earlier phase](notes/2026-11-22-a-review-fix-pass-holds-a-file-another-session.md) [script/code-phase-start, shared/review-loop] phase_start.py adds a file another session first dirtied during an earlier phase to the kept start record, so the review fix pass holds it like one dirty at the run start.
+* [A later /code review reviews the files the review loop's fix coder wrote instead of holding them](notes/2026-11-22-a-later-code-review-reviews-the-files-the-review.md) [script/review-loop, script/code-review-start] The review loop records the untracked files its claude -p fix coder wrote, and code_review_start reviews them as the run's own instead of holding them for another live session.
 * [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md) [script/test-suite] The MCP server-name test scans only git-tracked toolkit files, so it passes on the live checkout with its caches, plugins and synced skills.
 * [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md) [script/criteria-dry-run] The criteria dry run tells a real pipe from a regex bar inside quotes, so a ban such as rg -q 'a|b' f that exits 0 reads RED.
 * [The full suite passes under a relative PYTHONPATH such as tests/scripts](notes/2026-11-22-a-relative-pythonpath-in-a-plan-gate-no-longer.md) [script/review-loop] The test helper makes relative PYTHONPATH and NODE_PATH entries absolute, so nested fixture repos stop reading them as paths inside themselves.

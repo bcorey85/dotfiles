@@ -1,6 +1,6 @@
 # Reviewer Calibration (single source of truth)
 
-Read by the reviewers: `smell-reviewer` and `complexity-reviewer` adopt all four sections below. `code-reviewer` reads Disposition and Verify the Premise Before Flagging (its opencode port adopts all four). **Load-bearing headings**: the four `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
+Read by the reviewers: `smell-reviewer` and `complexity-reviewer` adopt all four sections below. `code-reviewer` reads Disposition and Verify the Premise Before Flagging (its opencode port reads the same two). **Load-bearing headings**: the four `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
 
 ## Calibration Anchor
 

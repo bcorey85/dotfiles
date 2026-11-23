@@ -8,9 +8,12 @@ def guidance_text(relative_path):
     return " ".join((toolkit_paths.CLAUDE_DIR / relative_path).read_text().split())
 
 
+def opencode_agent_text(name):
+    return " ".join((toolkit_paths.OPENCODE_AGENTS_DIR / f"{name}.md").read_text().split())
+
+
 def repo_doc_text(relative_path):
-    repo_root = toolkit_paths.TREE_CLAUDE_DIR.parents[1]
-    return " ".join((repo_root / "docs" / relative_path).read_text().split())
+    return " ".join((toolkit_paths.REPO_ROOT / "docs" / relative_path).read_text().split())
 
 
 class GuidanceRulesTest(unittest.TestCase):
@@ -151,11 +154,12 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("Zero-finding audits still log `kind=run`", text)
 
     def test_both_spec_criteria_copies_read_code_vocabulary_before_a_criterion_that_names_code(self):
-        copies = (toolkit_paths.CLAUDE_DIR / "agents/spec-criteria.md",
-                  toolkit_paths.TREE_CLAUDE_DIR.parents[1] / "opencode/.config/opencode/agents/spec-criteria.md")
-        for copy in copies:
-            with self.subTest(path=str(copy)):
-                text = " ".join(copy.read_text().split())
+        copies = {
+            "claude": guidance_text("agents/spec-criteria.md"),
+            "opencode": opencode_agent_text("spec-criteria"),
+        }
+        for name, text in copies.items():
+            with self.subTest(copy=name):
                 self.assertIn("before you write a criterion that names code", text)
                 self.assertIn("code-vocabulary.md", text)
 
@@ -265,8 +269,7 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("`code-reviewer`", calibration_text.split("## Calibration Anchor", 1)[0])
         self.assertIn("optional `kind: reword|cut|narrow` line", calibration_text)
 
-        opencode_path = toolkit_paths.TREE_CLAUDE_DIR.parents[1] / "opencode/.config/opencode/agents/code-reviewer.md"
-        opencode_text = " ".join(opencode_path.read_text().split())
+        opencode_text = opencode_agent_text("code-reviewer")
         opencode_ask = opencode_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
         opencode_plan_impact = opencode_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
         self.assertNotIn("PLAN-IMPACT:", opencode_ask)

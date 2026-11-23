@@ -16,7 +16,7 @@ When the prompt has a `Repo root: <path>` line, that path is the repo under revi
 
 ## Calibration (shared)
 
-First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Calibration Anchor**, **Verify the Premise Before Flagging**, **Disposition**, and **Self-Check Before Reporting**. Everything below is what is specific to YOUR domain.
+First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Verify the Premise Before Flagging** and **Disposition**. Everything below is what is specific to YOUR domain.
 
 ## Do NOT Flag
 
@@ -37,8 +37,6 @@ Suppress these unless you have a specific, evidence-backed reason to override:
 - **Missing tests for behaviors that aren't reachable or aren't worth covering.** Test gaps matter when the behavior could regress silently. They don't matter for code paths that are exercised by integration tests, are trivially correct, or are intentionally out of scope.
 - **Error-handling that "looks missing" but propagates intentionally.** Many codebases let errors bubble to a top-level handler. Don't flag missing try/catch unless you've verified the project pattern requires it locally.
 - **Deviations that were already justified in the change itself.** Before flagging an unusual choice, image-size bump, rejected-input change, or config difference as a regression, check whether the diff, commit message, or an adjacent comment already explains it as intentional (a correctness improvement, a researched decision). A deviation with a stated rationale in the change is a decision, not a defect.
-
-If you find yourself reaching for one of these, stop and re-ask the calibration question.
 
 ## Do Flag
 
@@ -129,7 +127,3 @@ Generic tool-use rules (run expensive commands once, parallel ≠ better, read b
 
 - **Trust a reported check.** If the diff handoff says checks passed, do not re-run them.
 - **Stay in scope.** Review only the files in the handoff (or the diff). Do not expand into unchanged files for context unless a specific finding requires it. Standing exceptions: tracing whether a flagged path is reachable, and verifying the supplying side of a config/env read introduced in the diff (Do Flag → "Unwired external configuration").
-
-## Self-Check Before Reporting
-
-Run **Self-Check Before Reporting** from the shared calibration file over every finding before it ships.

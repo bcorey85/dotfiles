@@ -24,7 +24,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 - [x] Phase 6: Item 2 remainder — review-fork-run, coder-core verify list, calibration dedupe, eng-spec agents (risk: high)
 - [x] Phase 7: Item 6 — PLAN-IMPACT rule owner and the code-reviewer calibration pointer (risk: high)
 - [x] Phase 8: Item 7 — derivable-list rule, plant, detector and scenario (risk: low)
-- [ ] Phase 9: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 9: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
 
@@ -420,7 +420,7 @@ review-fork-run gets `##` headings and a bulleted Resume; coder-core's verify pa
 - [ ] **Test-verified**: anchors — `bash claude/.claude/scripts/tools/rule-anchors.sh check`
 - [ ] **Test-verified**: guidance rules test — `python3 tests/parallel_tests.py test_guidance_rules.py`
 - [ ] **Test-verified**: agent tool tests — `python3 tests/parallel_tests.py test_spec_agent_tools.py`
-- [ ] **Test-verified**: calibration refs guard test — `python3 tests/parallel_tests.py test_calibration_refs_guard.py`
+- [ ] **Test-verified**: calibration refs guard test — `python3 tests/parallel_tests.py test_calibration_guard.py`
 - [ ] **Test-verified**: step 14 is a list (presence of a bullet right after the step line) — `rg -n -U '^14\. .*\n\s+- ' claude/.claude/skills/eng-spec/phases/5-decisions.md`
 - [ ] **Agent-run**: RF01B arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule RF01B`
 - [ ] **Agent-run**: RF01W arms, after the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule RF01W`
@@ -476,7 +476,7 @@ Meter the two code-reviewer lines live, then give the PLAN-IMPACT `acceptance_cr
 - [ ] **Test-verified**: the `kind:` line is present — `rg -n -F 'kind: reword|cut|narrow' claude/.claude/skills/_shared/reviewer-calibration.md`
 - [ ] **Test-verified**: anchors — `bash claude/.claude/scripts/tools/rule-anchors.sh check`
 - [ ] **Test-verified**: guidance rules test — `python3 tests/parallel_tests.py test_guidance_rules.py`
-- [ ] **Test-verified**: calibration refs guard test — `python3 tests/parallel_tests.py test_calibration_refs_guard.py`
+- [ ] **Test-verified**: calibration refs guard test — `python3 tests/parallel_tests.py test_calibration_guard.py`
 - [ ] **Test-verified**: the Plan impact section is present in both trees — `rg -c '^### Plan impact$' claude/.claude/agents/code-reviewer.md opencode/.config/opencode/agents/code-reviewer.md`
 - [ ] **Agent-run**: PI01 arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule PI01`
 - [ ] **Agent-run**: BL01 arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule BL01`
@@ -520,6 +520,8 @@ code-reviewer flags a committed list of names another source already holds; a pl
 
 ### Success Criteria
 
+(see 03-decisions.md ruling of agent-evals-c3, 2026-11-23)
+
 #### Automated Verification:
 
 - [ ] **Test-verified**: the rule is present — `rg -n 'Flag it as a .fix. that names the source to derive the values from' claude/.claude/agents/code-reviewer.md`
@@ -557,7 +559,7 @@ First, `tests/scripts/check_rule_texts_in_tree.py` (new, standard library only, 
 
 ## Testing Strategy
 
-Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `test_calibration_refs_guard.py`, `test_log_review_finding.py`, `test_adr_flow.py`) pin the strings other code reads; `test_spec_budget_gate.py` pins the gate tuple; the detector unittest pins the item-7 grader; rule-meter arms measure each cut, reword or new rule where an agent scenario can carry it; `rule-anchors.sh check` and `bash tests/run.sh` close every phase.
+Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `test_calibration_guard.py`, `test_log_review_finding.py`, `test_adr_flow.py`) pin the strings other code reads; `test_spec_budget_gate.py` pins the gate tuple; the detector unittest pins the item-7 grader; rule-meter arms measure each cut, reword or new rule where an agent scenario can carry it; `rule-anchors.sh check` and `bash tests/run.sh` close every phase.
 
 ## Plan Deviations
 
@@ -567,6 +569,12 @@ Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `tes
 - Phase 7: the code-reviewer pointer paragraph bolds the names **Disposition** and **Verify the Premise Before Flagging**; Phase 7 §3's "no bold" wording is overridden because the calibration-refs guard reads only bold names. Ruled by agent-evals-c3, 2026-11-22; no acceptance criterion changes.
 - Phase 7: the success criterion that expected no PI01/BL01 match in rule_meter_scenarios.json accepts them marked retired (repoint to the live toolkit or mark retired). Ruled by agent-evals-c3, 2026-11-22; no acceptance criterion changes.
 - Phase 5: test-audit drops the two `fix_induced` bullets because it has no fix loop; named beside `source=` in Phase 5 §1's drop clause. Ruled by the orchestrating session, 2026-11-22; no acceptance criterion changes.
+- Phase 9: tests/scripts/check_rule_texts_in_tree.py skips a scenario whose toolkit_root is a frozen copy outside the given root's git repository (compared through `git rev-parse --git-common-dir`); GD03-07 and the three research scenarios point at copies under ~/dev/evals that the meter checks against their own trees. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
+- Phase 9: check_rule_texts_in_tree.py is 78 lines, over the 60-line estimate, because of the frozen-copy skip; no acceptance criterion changes. Adopted by the orchestrating session (code), 2026-11-23.
+- Phase 8: the derivable-list rule was dropped per the standing ruling of agent-evals-c3 on 2026-11-23 (owner session, in 03-decisions.md), so AC7 is met by dropping the rule; DL01 off arm flagged in 2 of 3 framings. Dated 2026-11-23.
+- Phase 5: the code-vocabulary Consumers line also names the opencode code-reviewer port, and the consumer test counts opencode ports. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
+- Phase 6: the build-only-what-the-finding-does-not-touch sentence moved from the Check-the-plan section to the PLAN-IMPACT findings section of coder-core, stated once. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
+- Phase 7: the opencode code-reviewer port's calibration pointer is narrowed to two sections and its Self-Check section deleted, to match the claude agent. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
 
 ## References
 

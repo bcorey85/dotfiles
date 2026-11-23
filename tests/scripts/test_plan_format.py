@@ -45,20 +45,23 @@ def parse(text):
 
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
-        locations = {
-            "a line": "`app.py:13` ",
-            "a bare line": "app.py:13 ",
-            "a range": "`app.py:13-14` ",
-            "an en dash range": "`app.py:13\N{EN DASH}14` ",
-            "a list of ranges": "`backend/src/schema.ts:58-101,139-147` ",
-            "a list of lines": "`app.py:3,9` ",
-            "a tag after a range": "`app.py:3-5` [plan-drift] \N{EM DASH} ",
-            "a tag before a range": "[plan-drift] `app.py:3-5` ",
+        ask = "plan impact: needs a column"
+        lines = {
+            "a line": f"`app.py:13` {ask}",
+            "a bare line": f"app.py:13 {ask}",
+            "a range": f"`app.py:13-14` {ask}",
+            "an en dash range": f"`app.py:13\N{EN DASH}14` {ask}",
+            "a list of ranges": f"`backend/src/schema.ts:58-101,139-147` {ask}",
+            "a list of lines": f"`app.py:3,9` {ask}",
+            "a tag after a range": f"`app.py:3-5` [plan-drift] \N{EM DASH} {ask}",
+            "a tag before a range": f"[plan-drift] `app.py:3-5` {ask}",
+            "a wrapped prefix in backticks": "`PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
+            "a wrapped prefix in bold": "**PLAN-IMPACT:** app.py:3 \N{EM DASH} x",
+            "a wrapped prefix after a class tag": "[docs] `PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
         }
-        for name, location in locations.items():
+        for name, line in lines.items():
             with self.subTest(name):
-                marked = plan_format.PLAN_CHANGE_MARK.match(f"{location}plan impact: needs a column")
-                self.assertIsNotNone(marked)
+                self.assertIsNotNone(plan_format.PLAN_CHANGE_MARK.match(line))
 
     def test_text_that_only_mentions_a_plan_impact_later_is_not_marked(self):
         texts = ("`app.py:13-14` the limit is wrong; see the plan impact", "the plan holds", "app.py:13-x plan impact")
@@ -69,7 +72,8 @@ class PlanChangeMarkTest(unittest.TestCase):
     def test_an_ask_tagged_plan_impact_none_is_not_marked(self):
         texts = ("PLAN-IMPACT: none. The limit check belongs in the helper.", "plan_impact: none",
                  "**PLAN-IMPACT:** none.", "`app.py:13` [bug] PLAN-IMPACT: none of substance; move the guard",
-                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.")
+                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.", "`PLAN-IMPACT:` none",
+                 "**PLAN-IMPACT: none**")
         for text in texts:
             with self.subTest(text):
                 self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))

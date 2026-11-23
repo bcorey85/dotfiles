@@ -67,7 +67,7 @@ Then log the per-finding rows with `gate=test-intent-reviewer lane=test-audit sc
 - **`desc=` is accepted and never stored.** Leave it off new calls. A call that carries text passes `desc=-` and the text in a quoted heredoc (`<<'DESC'`), never inside the argument.
 - **Asks:** log an `actioned=ask` finding row with the same `file=` and `line=` as the ask's `file_line`. The caller reads the printed `finding_id=<id>` from the transcript and logs the outcome under it with `ask_outcome=`, which supersedes the ask row. The writer refuses an ask outcome with no `finding_id`.
 - Full field reference lives in the script's header.
-- The `kind=run` row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The metrics row above takes no diff field.
+- The metrics row above takes no diff field.
 - Each finding row passes the test `file=` and `line=` the auditor's finding names. A finding that names only a plan promise, such as an `absent` WEAK, passes `file=unlocated` and no line. Never guess a file.
 
 ## Review mode: `review [be|fe|fs|branch] [focus]`

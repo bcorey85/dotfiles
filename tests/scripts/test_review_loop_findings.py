@@ -10,7 +10,6 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
 import handback
-import plan_format
 import review_asks
 import review_loop_findings
 import standing_rulings
@@ -344,21 +343,6 @@ class ImpactHeadingSectionTest(unittest.TestCase):
 
     def test_a_plan_impact_section_reading_none_adds_no_ask(self):
         self.assertEqual(parsed_asks("## Fix\nNone\n### Plan impact\nNone\n"), [])
-
-    def test_the_prefix_is_found_when_wrapped_or_after_a_class_tag(self):
-        lines = {
-            "backticks": "`PLAN-IMPACT:` app.py:3 — x",
-            "class tag first": "[docs] `PLAN-IMPACT:` app.py:3 — x",
-            "bold": "**PLAN-IMPACT:** app.py:3 — x",
-        }
-        for name, line in lines.items():
-            with self.subTest(name):
-                self.assertTrue(plan_format.PLAN_CHANGE_MARK.match(line), line)
-
-    def test_a_none_prefix_is_no_plan_change_even_when_wrapped(self):
-        for line in ("`PLAN-IMPACT:` none", "**PLAN-IMPACT: none**"):
-            with self.subTest(line):
-                self.assertFalse(plan_format.PLAN_CHANGE_MARK.match(line), line)
 
     def test_a_wrapped_plan_impact_line_is_split_out_as_a_plan_change(self):
         text = "### Plan impact\n- `PLAN-IMPACT:` app.py:3 — x\n"

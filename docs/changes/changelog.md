@@ -7,14 +7,19 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1141 changes
+1143 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
 ## Week of 2026-11-23
 
+### Changed
+
+* [Lane close and phase-change lines name the herdr lane scripts](notes/2026-11-23-lane-close-and-phase-change-lines-name-the-herdr.md) [rule/orchestration] The orchestration Git section now tells the orchestrator to close a merged lane with herdr-lane-resume --close, and says herdr-phase-change takes the worker's ListAgents name and adds the report-to line itself; the dotfiles CLAUDE.md lists the two new lane scripts and where shared script defaults live.
+
 ### Fixed
 
+* [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md) [script/plan-check] A lane ticket that names a session-written queue item before a human-written one now reads as user-owned, so a session can no longer rule on the user's criteria; every queue Source line is now checked, not only the first.
 * [review_fix decide keep rules an adopted plan impact the coder never applied](notes/2026-11-23-review-fix-decide-keep-rules-an-adopted-plan.md) [script/review-fix, shared/review-loop] `decide keep` now re-rules a plan impact that was adopted and left unapplied, so the adopted-unapplied stop no longer holds the loop.
 
 ## Week of 2026-11-16

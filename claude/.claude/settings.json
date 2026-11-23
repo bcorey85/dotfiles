@@ -466,6 +466,15 @@
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/fork_write_scope.py"
           }
         ]
+      },
+      {
+        "matcher": "TaskStop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/code/fork_children.py hook"
+          }
+        ]
       }
     ],
     "SessionStart": [

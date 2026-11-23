@@ -209,7 +209,7 @@ def lock_under_hold(args):
     backup_copy = calibration_lock.backup_path(target.relpath)
     run_id = secrets.token_hex(8)
     fields = lock_fields(target, args, backup_copy, run_id)
-    lock = calibration_lock.lock_path()
+    lock = calibration_lock.calibration_lock_path()
     script_utils.write_text_atomically(lock, json.dumps(fields, indent=2) + "\n")
     next_line = NEXT_APPLY.format(run_id=run_id)
     lines += [f"lock: {lock}", f"backup: {backup_copy}", f"pre_hash: {fields['pre_hash']}", next_line]
@@ -232,7 +232,7 @@ class OwnLock(NamedTuple):
 
 def read_own_lock():
     """The state-path lock; StopError for a legacy-only or missing lock."""
-    lock = calibration_lock.lock_path()
+    lock = calibration_lock.calibration_lock_path()
     if os.path.isfile(lock):
         text = calibration_lock.read_lock_text(lock)
         return OwnLock(
@@ -322,7 +322,7 @@ def positive_int(text):
     return number
 
 
-def build_parser():
+def mutation_lock_parser():
     epilog = "preconditions, in check order:\n" + "\n".join(
         f"  {number}. {text}" for number, text in enumerate(PRECONDITIONS, 1))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0], epilog=epilog,
@@ -348,7 +348,7 @@ VERBS = {"check": check_verb, "lock": lock_verb, "restore": restore_verb}
 
 
 def main(argv):
-    args = build_parser().parse_args(argv[1:])
+    args = mutation_lock_parser().parse_args(argv[1:])
     try:
         lines = VERBS[args.verb](args)
     except StopError as stop:

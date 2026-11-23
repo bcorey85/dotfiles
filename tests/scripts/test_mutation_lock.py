@@ -547,7 +547,7 @@ class MutationLockTest(unittest.TestCase):
                         rest = rest.replace(placeholder, value)
                     argv = [verb, *shlex.split(rest)]
                     try:
-                        mutation_lock.build_parser().parse_args(argv)
+                        mutation_lock.mutation_lock_parser().parse_args(argv)
                     except SystemExit:
                         self.fail(f"the script rejects the prompt's call: {argv}")
 

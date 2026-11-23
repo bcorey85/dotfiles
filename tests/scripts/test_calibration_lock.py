@@ -22,16 +22,16 @@ SPEC.loader.exec_module(calibration_lock)
 class PathTest(unittest.TestCase):
     def test_lock_path_is_tidied_by_the_state_root_owner(self):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h", "XDG_STATE_HOME": "/a//b"}):
-            self.assertEqual(calibration_lock.lock_path(), "/a/b/claude-calibration/lock.json")
+            self.assertEqual(calibration_lock.calibration_lock_path(), "/a/b/claude-calibration/lock.json")
 
     def test_lock_path_uses_xdg_state_home_when_set(self):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h", "XDG_STATE_HOME": "/s"}):
-            self.assertEqual(calibration_lock.lock_path(), "/s/claude-calibration/lock.json")
+            self.assertEqual(calibration_lock.calibration_lock_path(), "/s/claude-calibration/lock.json")
 
     def test_lock_path_falls_back_to_the_home_state_folder(self):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h"}):
             os.environ.pop("XDG_STATE_HOME", None)
-            self.assertEqual(calibration_lock.lock_path(), "/h/.local/state/claude-calibration/lock.json")
+            self.assertEqual(calibration_lock.calibration_lock_path(), "/h/.local/state/claude-calibration/lock.json")
 
     def test_legacy_lock_path_is_under_home(self):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h"}):

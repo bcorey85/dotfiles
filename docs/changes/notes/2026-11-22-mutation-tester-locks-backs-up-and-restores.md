@@ -17,7 +17,7 @@ unmeasured: "The single Step 4 'Any STOP' bullet (report the verdict, state the 
 
 ## Change
 
-`claude/.claude/scripts/lib/calibration_lock.py` owns the lock path, the legacy path, the stamp format, the lock view and the liveness read. `gates/calibration_guard.py` imports it with its output and exit codes unchanged. `tools/mutation_lock.py` runs the lock, backup and restore steps that `mutation-tester.md` used to spell out in jq and shell; both the claude and the opencode agent files call its `check`, `lock` and `restore` verbs.
+`claude/.claude/scripts/lib/calibration_lock.py` owns the lock path, the legacy path, the stamp format, the lock view and the liveness read. `gates/calibration_guard.py` imports it with its output and exit codes unchanged. `tools/mutation_lock.py` runs the lock, backup and restore steps that `mutation-tester.md` used to spell out in jq and shell; both the claude and the opencode agent files call its `check`, `lock` and `restore` verbs. The lock path reader is `calibration_lock_path` and the argument parser builder is `mutation_lock_parser`: the toolkit's duplicate-code check refuses a top-level function name defined in two files, and master's `pull_keep_index.py` and `lanes.py` already hold `lock_path` and `build_parser`.
 
 ## Evidence
 

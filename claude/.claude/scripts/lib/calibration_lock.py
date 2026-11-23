@@ -54,7 +54,7 @@ def state_folder():
     return os.path.join(str(state_home), "claude-calibration")
 
 
-def lock_path():
+def calibration_lock_path():
     return os.path.join(state_folder(), "lock.json")
 
 
@@ -73,7 +73,7 @@ def backup_path(file):
 
 def find_lock():
     """The lock file to read: the state path first, then the legacy path; None when neither is a file."""
-    current = lock_path()
+    current = calibration_lock_path()
     if os.path.isfile(current):
         return current
     # A lock left by a run from before the lock moved out of ~/.claude still has to be reported.

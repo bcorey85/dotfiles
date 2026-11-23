@@ -23,7 +23,7 @@ class HunkReviewPaneRenameTest(unittest.TestCase):
         stub_dir.mkdir()
         self.stub_dir = stub_dir
         self.herdr_args = self.root / "herdr-args"
-        write_stub(stub_dir / "herdr", f'printf "%s\\n" "$*" >> {self.herdr_args}')
+        write_stub(stub_dir / "herdr-api", f'printf "%s\\n" "$*" >> {self.herdr_args}')
         write_stub(stub_dir / "hunk", "exit 0")
         write_stub(stub_dir / "hunk-untracked-flag", "exit 0")
         self.env = {
@@ -47,7 +47,7 @@ class HunkReviewPaneRenameTest(unittest.TestCase):
         self.assertFalse(self.herdr_args.exists())
 
     def test_failed_rename_does_not_stop_the_review(self):
-        write_stub(self.stub_dir / "herdr", "exit 1")
+        write_stub(self.stub_dir / "herdr-api", "exit 1")
         result = self.run_pane(HERDR_PANE_ID="p7")
         self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-705 fix notes
+716 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -28,11 +28,11 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop | 21 | 5 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 19 | 2 |
+| script/pull-keep-index | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 7 |
-| script/pull-keep-index | 14 | 3 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
 | script/code-review-start | 12 | 5 |
@@ -44,11 +44,12 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/check-output | 10 | 5 |
 | script/criteria-dry-run | 10 | 3 |
 | script/review-asks | 10 | 6 |
+| script/herdr-worktree | 9 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/review-fix-asks | 8 | 5 |
 | script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
-| script/herdr-worktree | 7 | 1 |
+| script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
 | script/phase-asks | 7 | 4 |
 | script/reviewer-dispatch | 7 | 2 |
@@ -69,11 +70,11 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
-| script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/phase-start | 4 | 3 |
 | script/reviewed-tree | 4 | 2 |
 | script/run-sh | 4 | 0 |
+| script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
@@ -83,6 +84,8 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
 | script/gate-commands | 3 | 2 |
+| script/herdr-dev | 3 | 1 |
+| script/herdr-worktree-watch | 3 | 2 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
 | script/plan-check | 3 | 3 |
@@ -103,9 +106,12 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 1 |
 | script/git-calls | 2 | 2 |
-| script/herdr-dev | 2 | 0 |
+| script/herdr-lane-resume | 2 | 2 |
+| script/herdr-worktree-prune | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
+| script/hunk-review-pane | 2 | 2 |
+| script/lanes | 2 | 2 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
@@ -157,11 +163,9 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/git-commit-calls | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-wake-limited | 1 | 0 |
-| script/herdr-worktree-prune | 1 | 0 |
-| script/herdr-worktree-watch | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
-| script/hunk-review-pane | 1 | 1 |
 | script/install-stow | 1 | 0 |
+| script/lane-status | 1 | 1 |
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
@@ -187,6 +191,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
+| script/system-resources | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |

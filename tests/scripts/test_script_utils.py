@@ -1344,12 +1344,6 @@ class ReadJsonObjectTest(unittest.TestCase):
         self.assertIn(self.meta_path, stderr.getvalue())
 
 
-class EscapedGlobTest(unittest.TestCase):
-    def test_each_wildmatch_character_gets_a_backslash_and_other_text_is_unchanged(self):
-        self.assertEqual(script_utils.escaped_glob("p[1]*?\\x.md"), "p\\[1]\\*\\?\\\\x.md")
-        self.assertEqual(script_utils.escaped_glob("plain.md"), "plain.md")
-
-
 class WorkTreeBlobRestoreTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

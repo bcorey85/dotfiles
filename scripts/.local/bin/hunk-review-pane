@@ -78,7 +78,7 @@ if [ -z "${HERDR_PANE_ID:-}" ]; then
 fi
 
 # nvim-jump finds this pane by its label; a pane started by hand has none. A failed rename never stops the review.
-herdr pane rename "$HERDR_PANE_ID" review >/dev/null 2>&1 || true
+herdr-api pane rename "$HERDR_PANE_ID" review >/dev/null 2>&1 || true
 
 dir=$(state_dir "$HERDR_PANE_ID")
 mkdir -p "$dir"

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1127 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
+1139 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Deleting the guide skill, unused since September, drops 1210 words](notes/2026-11-22-deleting-the-guide-skill-unused-since-september.md).
+Latest change: 2026-11-22, [Deleting the backlog skill, unused since August, drops 286 words](notes/2026-11-22-deleting-the-backlog-skill-unused-since-august.md).
 
 ## Top gains
 

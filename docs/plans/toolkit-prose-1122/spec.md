@@ -17,7 +17,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 
 - [x] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — plan-format tightening and the design-decision-format fold (risk: high)
-- [ ] Phase 2: Item 1 — contradictory lines and dispatcher descriptions (risk: low)
+- [x] Phase 2: Item 1 — contradictory lines and dispatcher descriptions (risk: low)
 - [ ] Phase 3: Item 3 — architect descriptions and the Reuse Map owner (risk: low)
 - [ ] Phase 4: Item 4 — general-purpose body (risk: low)
 - [ ] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)

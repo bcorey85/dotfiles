@@ -171,3 +171,6 @@
   - (2) The Phase 1 change note is kind `structured`: ES01W and ES02W run at 8 runs per arm on the default model, and a finding with task_class structured and runs_per_arm 8 is its proof.
   - (3) "Scope is the ticket-owner's call" leaves the note's dropped-clauses list (the sentence stays at 5-decisions.md:102): five clauses are dropped, not six.
   - (4) The removal of `_shared/design-decision-format.md` is staged with `git add`.
+
+- Phase 2 ruling (agent-evals-c3, 2026-11-22; owner `session`): Q2 verify-branch:44 ruling changed to drop. "It is the only run site." is removed with nothing added in its place; the /close-branch pointer sentence is not added.
+- Phase 2 ruling (agent-evals-c3, 2026-11-22; owner `session`): the Phase 2 change note stays kind `fix`; its `test` field names a prompt-reading test under tests/scripts (`tests/scripts/test_toolkit_prose_facts.py`) that pins facts (the false run-site sentence absent; orient and todos lines each state one fact; plan-verifier and test-intent-reviewer descriptions name close-branch; opencode test-intent-reviewer names test-audit only).

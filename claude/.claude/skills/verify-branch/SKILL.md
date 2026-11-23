@@ -41,7 +41,7 @@ The log row records the content of the tree, apart from the task dir and the not
 
 ## Step 2: plan-verifier
 
-Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prints. It is the only run site. Nothing else goes in the prompt.
+Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prints. Nothing else goes in the prompt.
 
 `N/A — no criteria in scope` is not a pass. The plan gave the gate nothing to check; surface it to the user. Log it with `verify-log --rows - --result NA` and `[]` as the rows.
 

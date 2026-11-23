@@ -19,8 +19,10 @@ unmeasured: "The oxlint file filter reads only the .eslintignore and .oxlintrc.j
 
 `lib/format_files.py`: `exclude_value` reads an `exclude:` key of a pre-commit config, as a one-line value or a `|` or
 `>` block scalar; a line indented further than the block keeps its extra spaces and its line breaks, as YAML reads
-it (6 of 6 shapes read the same as PyYAML). `run_formatters` and `lint_problems` read the pre-commit config once per
-call and hand it to `sort_files` and `ruff_targets`, which both take it as a required argument. `sort_files` drops
+it (6 of 6 shapes read the same as PyYAML). `lib/yaml_block_scalar.py` (new) owns the block read:
+`block_scalar_text` and `fold_lines`. An `exclude:` value the reader cannot read excludes no file, and
+`note_unread_exclude` names the config and the line on stderr. `run_formatters` and `lint_problems` read the pre-commit config once and
+hand it to `sort_files` and `ruff_targets`, which both take it as a required argument. `sort_files` drops
 each file the top-level exclude matches, for every tool. `ruff_targets` drops a Python file from `ruff format` or
 `ruff check` when every ruff hook of that kind excludes it, with or without a ruff
 config file. The turn-end format hook (`gates/format_changed.py`) calls the same function, so it skips those files
@@ -32,6 +34,10 @@ leave out: `.eslintignore` and the `ignorePatterns` of `.oxlintrc.json`, both at
 oxlint is not called. `lib/oxlint_ignore.py` owns the match and hands the patterns to git's own gitignore matcher
 (`git ls-files --ignored --exclude`), so no pattern matcher is written here. `lib/jsonc_text.py` reads the config,
 which may hold comments and trailing commas. Where git cannot answer, oxlint gets every file, as before.
+
+PyYAML (MIT) matched on 6 of 6 shapes and was not added, because a new package needs the user's yes. Both the YAML
+block-scalar reader and `lib/jsonc_text.py` stay. The user declined the package on 2026-11-22 (ruled by: user, relayed
+by agent-evals-73).
 
 No change for eslint (flat config and `.eslintrc`), prettier, oxfmt and biome. Each was run on a named ignored file:
 eslint 9.39 and 8.57, prettier 3, oxfmt and biome 1.9.4 all left the file alone and exited 0. The loop never runs
@@ -47,7 +53,7 @@ every named file, which the loop read as a lint problem.
 
 The new reader parsed 36 of 36 pre-commit configs under `~/dev` (two shapes: no exclude, and a top-level block
 scalar). `parse_jsonc` parsed 20 of 20 `.oxlintrc.json` files under `~/dev` (6 hold comments). `test_format_files.py`:
-62 tests pass; `test_jsonc_text.py`: 4.
+67 tests pass; `test_jsonc_text.py`: 4; `test_yaml_block_scalar.py`: 6.
 
 Two cases the loop now covers itself: oxlint 1.94 lints a named file under a folder pattern (`gen/`) of
 `.eslintignore`, and oxlint 1.0 and older lint every named file and have no flag for it.

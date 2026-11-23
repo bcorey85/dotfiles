@@ -1,6 +1,8 @@
 """Checks for format_files.py, the shared autofix formatter runner of the format hook and the review loop.
 
 Formatters are fake executables on PATH; the hook's own tests cover the web tool choice."""
+import contextlib
+import io
 import os
 import pathlib
 import shutil
@@ -14,6 +16,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import format_files
+import oxlint_ignore
 import script_utils
 
 # Found before any test narrows PATH to its fake bin.
@@ -634,6 +637,18 @@ class PreCommitExcludeTest(unittest.TestCase):
                 self.assertEqual((parsed.exclude, parsed.ruff_hooks[0].exclude), (None, None))
                 self.assertFalse(parsed.excludes("a/x.py"))
 
+    def test_an_exclude_the_parser_cannot_read_is_named_on_stderr_with_its_line(self):
+        config = "exclude: [^a/]\n" + HOOKS_PREFIX + "      - id: ruff\n        exclude: ^gen/\n"
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stderr(stderr):
+            top_level = format_files.top_level_exclude(config)
+            hooks = format_files.parse_ruff_hooks(config)
+
+        self.assertEqual((top_level, hooks[0].exclude), (None, "^gen/"))
+        self.assertEqual(stderr.getvalue(), "format_files: .pre-commit-config.yaml:1: exclude value not read "
+                                            "(expected a one-line regex or a | or > block)\n")
+
     def test_a_hooks_exclude_is_not_the_top_level_exclude(self):
         config = HOOKS_PREFIX + "      - id: ruff\n        exclude: ^gen/\n"
 
@@ -779,6 +794,27 @@ class WebLintProblemsTest(unittest.TestCase):
     def install_local_linter(self, name, exit_code):
         self.install_linter(self.repo / "node_modules" / ".bin", name, exit_code)
 
+    def test_oxlint_gets_every_file_when_git_cannot_match_the_ignore_patterns(self):
+        (self.repo / ".oxlintrc.json").write_text('{"ignorePatterns": ["a.ts"]}')
+
+        files = format_files.web_lint_files(str(self.repo), "oxlint", ["a.ts", "b.ts"])
+
+        self.assertEqual(files, ["a.ts", "b.ts"])
+
+    def test_oxlint_config_ignore_patterns_fall_back_to_none_for_every_unusable_shape(self):
+        config = self.repo / ".oxlintrc.json"
+        for text in ("{not json", "[1]", '{"ignorePatterns": "a/"}', '{"ignorePatterns": [3, ""]}', "{}"):
+            with self.subTest(text=text):
+                config.write_text(text)
+                with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    self.assertEqual(oxlint_ignore.config_ignore_patterns(self.repo), [])
+                if text == "{not json":
+                    self.assertIn(f"oxlint_ignore: {config} does not parse", stderr.getvalue())
+                else:
+                    self.assertEqual(stderr.getvalue(), "")
+        config.write_text('{"ignorePatterns": ["a/", 3, ""]}')
+        self.assertEqual(oxlint_ignore.config_ignore_patterns(self.repo), ["a/"])
+
     def test_a_failing_installed_oxlint_comes_back_as_a_problem_without_fix(self):
         (self.repo / ".oxlintrc.json").write_text("{}")
         self.install_local_linter("oxlint", 1)
@@ -836,6 +872,36 @@ class WebLintProblemsTest(unittest.TestCase):
 
         self.assertEqual(problems, [])
         self.assertEqual(calls.read_text(), "--no-error-on-unmatched-pattern a.ts\n")
+
+    def test_oxlint_help_is_probed_once_per_repo(self):
+        self.addCleanup(format_files.OXLINT_FLAG_PROBES.clear)
+        format_files.OXLINT_FLAG_PROBES.clear()
+        help_output = (0, f"  {format_files.OXLINT_ALLOW_NO_FILES_FLAG}  skip")
+
+        with mock.patch.object(script_utils, "run_command", return_value=help_output) as probe:
+            first = format_files.oxlint_ignore_flags(["oxlint"], str(self.repo))
+            second = format_files.oxlint_ignore_flags(["oxlint"], str(self.repo))
+
+        self.assertEqual(first, [format_files.OXLINT_ALLOW_NO_FILES_FLAG])
+        self.assertEqual(second, first)
+        self.assertEqual(probe.call_count, 1)
+
+    def test_a_failed_oxlint_help_probe_is_not_cached(self):
+        self.addCleanup(format_files.OXLINT_FLAG_PROBES.clear)
+        format_files.OXLINT_FLAG_PROBES.clear()
+        key = (("oxlint",), str(self.repo))
+        results = [(script_utils.TIMEOUT_EXIT_CODE, ""), (0, f"  {format_files.OXLINT_ALLOW_NO_FILES_FLAG}  skip")]
+
+        with mock.patch.object(script_utils, "run_command", side_effect=results) as probe:
+            first = format_files.oxlint_ignore_flags(["oxlint"], str(self.repo))
+            cached_after_first = key in format_files.OXLINT_FLAG_PROBES
+            second = format_files.oxlint_ignore_flags(["oxlint"], str(self.repo))
+
+        self.assertEqual(first, [], "a timed-out probe finds no flag")
+        self.assertFalse(cached_after_first, "a failed probe must not be cached")
+        self.assertEqual(second, [format_files.OXLINT_ALLOW_NO_FILES_FLAG])
+        self.assertIn(key, format_files.OXLINT_FLAG_PROBES)
+        self.assertEqual(probe.call_count, 2)
 
     def test_an_oxlint_without_the_unmatched_pattern_flag_is_run_without_it(self):
         (self.repo / ".oxlintrc.json").write_text("{}")

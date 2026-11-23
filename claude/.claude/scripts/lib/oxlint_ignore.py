@@ -3,6 +3,7 @@
 them. An oxlint.config.ts is not read: every oxlint that loads one skips a named file its patterns match."""
 import json
 import pathlib
+import sys
 
 import jsonc_text
 import script_utils
@@ -19,7 +20,9 @@ def config_ignore_patterns(repo):
         return []
     try:
         settings = jsonc_text.parse_jsonc(config.read_text(errors="replace"))
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as error:
+        # Fail-open on purpose: oxlint reports a config it cannot parse itself, so the hook only notes it.
+        print(f"oxlint_ignore: {config} does not parse: {error}", file=sys.stderr)
         return []
     patterns = settings.get("ignorePatterns") if isinstance(settings, dict) else None
     if not isinstance(patterns, list):

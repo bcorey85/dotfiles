@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-718 fix notes
+719 fix notes
 
 Recent: the 7 days up to 2026-11-23, the newest note.
 
@@ -201,6 +201,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/toml-file | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |
 | shared/reviewer-calibration | 1 | 0 |
+| skill/architect-core | 1 | 1 |
 | skill/close-branch | 1 | 0 |
 | skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |

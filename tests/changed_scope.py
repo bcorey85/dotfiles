@@ -38,6 +38,7 @@ PROMPT_READING_TESTS = (
     "test_rule_anchors.py",
     "test_spec_agent_tools.py",
     "test_telemetry_switch.py",
+    "test_toolkit_prose_facts.py",
 )
 
 # What a test file shows when it reads a prompt file of the real tree: a path helper for one, a prompt folder it

@@ -18,7 +18,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 - [x] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — plan-format tightening and the design-decision-format fold (risk: high)
 - [x] Phase 2: Item 1 — contradictory lines and dispatcher descriptions (risk: low)
-- [ ] Phase 3: Item 3 — architect descriptions and the Reuse Map owner (risk: low)
+- [x] Phase 3: Item 3 — architect descriptions and the Reuse Map owner (risk: low)
 - [ ] Phase 4: Item 4 — general-purpose body (risk: low)
 - [ ] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)
 - [ ] Phase 6: Item 2 remainder — review-fork-run, coder-core verify list, calibration dedupe, eng-spec agents (risk: high)
@@ -558,6 +558,12 @@ First, `tests/scripts/check_rule_texts_in_tree.py` (new, standard library only, 
 ## Testing Strategy
 
 Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `test_calibration_refs_guard.py`, `test_log_review_finding.py`, `test_adr_flow.py`) pin the strings other code reads; `test_spec_budget_gate.py` pins the gate tuple; the detector unittest pins the item-7 grader; rule-meter arms measure each cut, reword or new rule where an agent scenario can carry it; `rule-anchors.sh check` and `bash tests/run.sh` close every phase.
+
+## Plan Deviations
+
+- Phase 3: architect-core Reuse Map gate widened from "helper/service/util" to "unit (helper, service, util, component, hook)" so the frontend gate is kept (AC3 wording otherwise unchanged). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
+- Phase 3: opencode architect ports line 13 reworded (the "preloaded" clause dropped) because the added First-action line makes it contradict AC1. Ticket AC1 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
+- Phase 3: ruling rejected a change of the descriptions to "phases 4 and 6"; AC3 wording "Dispatched by /eng-spec phase 4." stands (phase 6 re-dispatch is a continuation of the phase 4 dispatch). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
 
 ## References
 

@@ -10,6 +10,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
 import handback
+import plan_format
 import review_asks
 import review_loop_findings
 import standing_rulings
@@ -312,6 +313,59 @@ class AskParsingTest(unittest.TestCase):
         self.assertTrue(asks[0].startswith("Checks run"), asks)
         self.assertIn("I checked the claim and it holds.", asks[0])
         self.assertIn("The ids are already used.", asks[0])
+
+
+class ImpactHeadingSectionTest(unittest.TestCase):
+    IMPACT = ("PLAN-IMPACT: `app.py:3` — the diff drops the 30 day cap the plan's AC2 names. "
+              "acceptance_criteria: AC2")
+
+    def test_a_plan_impact_line_under_its_own_heading_is_taken_in_as_an_ask(self):
+        text = f"## Fix\nNone\n\n## Ask\nNone\n\n### Plan impact\n- {self.IMPACT}\n\n## Nit\nNone\n"
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 1, asks)
+        self.assertTrue(asks[0].startswith("PLAN-IMPACT:"), asks)
+
+    def test_a_review_with_only_a_plan_impact_section_is_still_a_findings_layout(self):
+        asks = parsed_asks(f"### Plan impact\n{self.IMPACT}\n")
+
+        self.assertEqual(len(asks), 1, asks)
+
+    def test_an_ask_and_a_plan_impact_line_in_one_review_are_both_kept_in_order(self):
+        text = (f"## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] Should the cap be 3? — change: set it to 3\n\n"
+                f"### Plan impact\n- {self.IMPACT}\n\n## Nit\nNone\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("Should the cap be 3?", asks[0])
+        self.assertTrue(asks[1].startswith("PLAN-IMPACT:"), asks)
+
+    def test_a_plan_impact_section_reading_none_adds_no_ask(self):
+        self.assertEqual(parsed_asks("## Fix\nNone\n### Plan impact\nNone\n"), [])
+
+    def test_the_prefix_is_found_when_wrapped_or_after_a_class_tag(self):
+        lines = {
+            "backticks": "`PLAN-IMPACT:` app.py:3 — x",
+            "class tag first": "[docs] `PLAN-IMPACT:` app.py:3 — x",
+            "bold": "**PLAN-IMPACT:** app.py:3 — x",
+        }
+        for name, line in lines.items():
+            with self.subTest(name):
+                self.assertTrue(plan_format.PLAN_CHANGE_MARK.match(line), line)
+
+    def test_a_none_prefix_is_no_plan_change_even_when_wrapped(self):
+        for line in ("`PLAN-IMPACT:` none", "**PLAN-IMPACT: none**"):
+            with self.subTest(line):
+                self.assertFalse(plan_format.PLAN_CHANGE_MARK.match(line), line)
+
+    def test_a_wrapped_plan_impact_line_is_split_out_as_a_plan_change(self):
+        text = "### Plan impact\n- `PLAN-IMPACT:` app.py:3 — x\n"
+
+        items = review_loop_findings.parse_review(text)["ask"]
+
+        self.assertEqual(len(review_loop_findings.plan_change_items(items)), 1, items)
 
 
 class RejectedAskRepeatTest(unittest.TestCase):

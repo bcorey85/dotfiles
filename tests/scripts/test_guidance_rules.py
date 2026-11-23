@@ -243,6 +243,36 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("All phases complete. Next: read the queue, stage what you've read, then commit it. "
                       "`Commit subject: <subject>`.", block_text)
 
+    def test_the_plan_impact_criteria_rule_has_one_owner_per_side(self):
+        coder_text = guidance_text("skills/coder-core/SKILL.md")
+        self.assertIn("Write the finding's `acceptance_criteria:` line as PLAN-IMPACT findings below says", coder_text)
+        self.assertIn("Then build to the code: the plan follows it.", coder_text)
+        self.assertNotIn("the code wins", coder_text)
+
+        reviewer_text = guidance_text("agents/code-reviewer.md")
+        preamble = reviewer_text.split("## Review Process", 1)[0]
+        self.assertEqual(preamble.count("reviewer-calibration.md"), 1)
+        self.assertNotIn("`blocker` only when shipping", reviewer_text)
+        self.assertIn("or you weigh the `blocker` flag", preamble)
+        self.assertIn("Verify the Premise Before Flagging", preamble)
+        ask_section = reviewer_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
+        plan_impact_section = reviewer_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
+        self.assertNotIn("PLAN-IMPACT:", ask_section)
+        self.assertIn("PLAN-IMPACT:", plan_impact_section)
+        self.assertIn("acceptance_criteria: none", plan_impact_section)
+
+        calibration_text = guidance_text("skills/_shared/reviewer-calibration.md")
+        self.assertIn("`code-reviewer`", calibration_text.split("## Calibration Anchor", 1)[0])
+        self.assertIn("optional `kind: reword|cut|narrow` line", calibration_text)
+
+        opencode_path = toolkit_paths.TREE_CLAUDE_DIR.parents[1] / "opencode/.config/opencode/agents/code-reviewer.md"
+        opencode_text = " ".join(opencode_path.read_text().split())
+        opencode_ask = opencode_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
+        opencode_plan_impact = opencode_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
+        self.assertNotIn("PLAN-IMPACT:", opencode_ask)
+        self.assertIn("`PLAN-IMPACT:`", opencode_plan_impact)
+        self.assertIn("acceptance_criteria: none", opencode_plan_impact)
+
 
 if __name__ == "__main__":
     unittest.main()

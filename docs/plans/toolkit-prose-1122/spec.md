@@ -22,7 +22,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 - [x] Phase 4: Item 4 — general-purpose body (risk: low)
 - [x] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)
 - [x] Phase 6: Item 2 remainder — review-fork-run, coder-core verify list, calibration dedupe, eng-spec agents (risk: high)
-- [ ] Phase 7: Item 6 — PLAN-IMPACT rule owner and the code-reviewer calibration pointer (risk: high)
+- [x] Phase 7: Item 6 — PLAN-IMPACT rule owner and the code-reviewer calibration pointer (risk: high)
 - [ ] Phase 8: Item 7 — derivable-list rule, plant, detector and scenario (risk: low)
 - [ ] Phase 9: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -444,7 +444,7 @@ Meter the two code-reviewer lines live, then give the PLAN-IMPACT `acceptance_cr
 #### 1. Meter first (live text)
 
 **File**: `/home/brandon/agent-evals/bin/rule_meter_scenarios.json`
-**Changes**: PI01 (agent `code-reviewer`, `rule_text` = line 85, worktree `toolkit_root`, plant `plant_plan_contradicting_diff`: the base tree holds `docs/plans/x/acceptance-criteria.md` with one AC the HEAD diff contradicts; detector `pi_line_reported`: COMPLIED when a finding opens with `PLAN-IMPACT:`, names both sides and is not under `### Fix`); BL01 (`rule_text` = line 80, worktree `toolkit_root`, plant `plant_reachable_minor_defect`: an off-by-one in a reachable list formatter; detector `blocker_flag_scoped`: COMPLIED when the finding is a `fix` without `blocker`). Per D7 both plants go in `PLANTS`, both detectors as `detect_*` functions and `grade()` branches in rule_meter.py, payload files under `rule_meter_checks/`, tests in `bin/test_rule_meter_checks_item6.py`. Run both before any edit, record the counts, run `python3 /home/brandon/agent-evals/bin/rule_trials.py build`, then delete PI01 and BL01 from scenarios.json in the same commit as the cut (their text is gone).
+**Changes**: PI01 (agent `code-reviewer`, `rule_text` = line 85, worktree `toolkit_root`, plant `plant_plan_contradicting_diff`: the base tree holds `docs/plans/x/acceptance-criteria.md` with one AC the HEAD diff contradicts; detector `pi_line_reported`: COMPLIED when a finding opens with `PLAN-IMPACT:`, names both sides and is not under `### Fix`); BL01 (`rule_text` = line 80, worktree `toolkit_root`, plant `plant_reachable_minor_defect`: an off-by-one in a reachable list formatter; detector `blocker_flag_scoped`: COMPLIED when the finding is a `fix` without `blocker`). Per D7 both plants go in `PLANTS`, both detectors as `detect_*` functions and `grade()` branches in rule_meter.py, payload files under `rule_meter_checks/`, tests in `bin/test_rule_meter_checks_item6.py`. Run both before any edit, record the counts, run `python3 /home/brandon/agent-evals/bin/rule_trials.py build`, then, in the same commit as the cut (their text is gone), repoint PI01 and BL01 `toolkit_root` to the live toolkit or mark both `"retired": true` in scenarios.json (agent-evals-c3 ruling, 2026-11-22).
 
 #### 2. coder-core pointer
 
@@ -481,7 +481,7 @@ Meter the two code-reviewer lines live, then give the PLAN-IMPACT `acceptance_cr
 - [ ] **Agent-run**: PI01 arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule PI01`
 - [ ] **Agent-run**: BL01 arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule BL01`
 - [ ] **Agent-run**: item-6 detector tests — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 python3 -m unittest discover -s /home/brandon/agent-evals/bin -p test_rule_meter_checks_item6.py`
-- [ ] **Test-verified**: PI01 and BL01 are retired — `rg -n '"(PI01|BL01)"' /home/brandon/agent-evals/bin/rule_meter_scenarios.json`
+- [ ] **Test-verified**: PI01 and BL01 are marked retired (agent-evals-c3 ruling, 2026-11-22: repoint to the live toolkit or mark retired) — `rg -U -o '"(PI01|BL01)": \{\n    "name": "[^"]*",\n    "note": "[^"]*",\n    "retired": true' /home/brandon/agent-evals/bin/rule_meter_scenarios.json` prints two matches
 - [ ] **Agent-run**: full suite — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
 
 #### Manual Verification:
@@ -564,6 +564,8 @@ Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `tes
 - Phase 3: architect-core Reuse Map gate widened from "helper/service/util" to "unit (helper, service, util, component, hook)" so the frontend gate is kept (AC3 wording otherwise unchanged). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
 - Phase 3: opencode architect ports line 13 reworded (the "preloaded" clause dropped) because the added First-action line makes it contradict AC1. Ticket AC1 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
 - Phase 3: ruling rejected a change of the descriptions to "phases 4 and 6"; AC3 wording "Dispatched by /eng-spec phase 4." stands (phase 6 re-dispatch is a continuation of the phase 4 dispatch). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
+- Phase 7: the code-reviewer pointer paragraph bolds the names **Disposition** and **Verify the Premise Before Flagging**; Phase 7 §3's "no bold" wording is overridden because the calibration-refs guard reads only bold names. Ruled by agent-evals-c3, 2026-11-22; no acceptance criterion changes.
+- Phase 7: the success criterion that expected no PI01/BL01 match in rule_meter_scenarios.json accepts them marked retired (repoint to the live toolkit or mark retired). Ruled by agent-evals-c3, 2026-11-22; no acceptance criterion changes.
 - Phase 5: test-audit drops the two `fix_induced` bullets because it has no fix loop; named beside `source=` in Phase 5 §1's drop clause. Ruled by the orchestrating session, 2026-11-22; no acceptance criterion changes.
 
 ## References

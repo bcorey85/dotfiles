@@ -1,6 +1,6 @@
-"""The review loop's reading of reviewer text: the Fix/Ask/Nit sections of a review as finding records, the merge of
-findings that name the same code, and the splits that drop or reroute findings (pass notes, pointer asks, repeats,
-absent files, ruled plan lines)."""
+"""The review loop's reading of reviewer text: the Fix/Ask/Plan impact/Nit sections of a review as finding records,
+the merge of findings that name the same code, and the splits that drop or reroute findings (pass notes, pointer
+asks, repeats, absent files, ruled plan lines)."""
 
 import pathlib
 import re
@@ -251,10 +251,13 @@ def parse_tagged_bullets(text):
 
 def parse_review_texts(text):
     fix, ask, nit = section(text, "Fix"), section(text, "Ask"), section(text, "Nit")
-    if fix is None and ask is None and nit is None:
+    impact = section(text, "Plan impact")
+    if fix is None and ask is None and nit is None and impact is None:
         return parse_tagged_bullets(text)
     assessment = re.search(r"Overall Assessment\W*\s*:?\W*\s*([A-Z][A-Z ]+[A-Z])", text)
-    return {"fix": review_section_findings(fix), "ask": review_section_findings(ask, is_ask_section=True),
+    # A plan-impact line is taken in as an ask: it is never auto-fixed and the loop scans its prefix.
+    asks = review_section_findings(ask, is_ask_section=True) + review_section_findings(impact, is_ask_section=True)
+    return {"fix": review_section_findings(fix), "ask": asks,
             "nit": review_section_findings(nit),
             "assessment": assessment.group(1).strip() if assessment else ""}
 

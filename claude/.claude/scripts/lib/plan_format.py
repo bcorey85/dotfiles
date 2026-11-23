@@ -61,11 +61,12 @@ MOVED_TARGET = re.compile(rf"(?i:moved to)\s+({TICKET_KEY})(?![A-Za-z0-9])")
 DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
-# bracketed tags, in either order. `PLAN-IMPACT: none`, or a bare `no` ended by punctuation or the line, says the
+# bracketed tags, in either order, and the prefix itself may be wrapped in backticks or bold (`PLAN-IMPACT:`,
+# `**PLAN-IMPACT:**`). `PLAN-IMPACT: none`, or a bare `no` ended by punctuation or the line, says the
 # plan holds, so it is no plan change; `PLAN-IMPACT: no index on ...` still is one.
 LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
 PLAN_CHANGE_MARK = re.compile(
-    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*plan[-_ ]?impact"
+    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
     r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 # A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.

@@ -1,6 +1,6 @@
 # Reviewer Calibration (single source of truth)
 
-Shared by the specialist reviewers — `smell-reviewer` and `complexity-reviewer`. Each reads THIS file and adopts the sections its own agent file names. **Load-bearing headings**: the four `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
+Read by the reviewers: `smell-reviewer` and `complexity-reviewer` adopt all four sections below. `code-reviewer` reads Disposition and Verify the Premise Before Flagging (its opencode port adopts all four). **Load-bearing headings**: the four `##` headings below are referenced BY NAME from every adopting agent (and their opencode ports). Renaming one requires updating all of them.
 
 ## Calibration Anchor
 
@@ -92,6 +92,8 @@ write one of two things — never a bare question:
   End the finding with `acceptance_criteria: none` when every acceptance criterion
   holds either way: the code then wins and the plan follows it with no question to
   the user. Otherwise end it with `acceptance_criteria: <the criteria it changes>`.
+  Add an optional `kind: reword|cut|narrow` line: `reword` only when the
+  criterion stays and only its words change.
 
 If you genuinely cannot tell which side is wrong, that itself is what the finding says,
 prefixed `PLAN-IMPACT:` — the plan's authority is the thing in doubt. A plan

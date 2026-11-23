@@ -1067,7 +1067,7 @@ class StoreTest(HandbackTestBase):
         handback_store.record(SESSION, "handback", status="converged", message=json_packet(plan_impacts=[reword]))
         self.assertIn("await a ruling", handback.false_clean_reason(SESSION))
         plan = self.tmp / "plan.md"
-        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "rewords are fine" '
+        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: rewords are fine '
                         "covers: rewords\n")
         packet = {"plan_impacts": [{"settled": False, "applied": False, **reword}], "iter": 1, "spec_iter": None}
 

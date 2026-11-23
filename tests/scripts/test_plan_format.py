@@ -779,7 +779,7 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(plan_format.spec_ac_failures(spec), [])
 
 
-STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: "every criterion reword follows one rule" covers: rewords')
+STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords')
 CRITERIA_NAMING_TICKET = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, "
                           "reworded)\n")
 REWORD_IMPACT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n"
@@ -799,7 +799,7 @@ class StandingRulingTest(unittest.TestCase):
         rulings = standing_rulings.standing_rulings(self.plan)
 
         self.assertEqual(rulings, [{"who": "Pat", "at": "2026-11-19",
-                                    "quote": "every criterion reword follows one rule", "covers": "rewords"}])
+                                    "summary": "every criterion reword follows one rule", "covers": "rewords"}])
 
     def test_a_well_formed_line_in_the_decision_log_beside_the_plan_parses(self):
         self.plan.write_text("# Plan\n")
@@ -814,9 +814,10 @@ class StandingRulingTest(unittest.TestCase):
 
     def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):
         malformed = {
-            "covers cuts": 'Standing ruling by Pat at 2026-11-19: "x" covers: cuts',
-            "no quote": "Standing ruling by Pat at 2026-11-19 covers: rewords",
-            "bad date": 'Standing ruling by Pat at yesterday: "x" covers: rewords',
+            "covers cuts": 'Standing ruling by Pat at 2026-11-19: x covers: cuts',
+            "no summary": "Standing ruling by Pat at 2026-11-19 covers: rewords",
+            "quoted words": 'Standing ruling by Pat at 2026-11-19: "x" covers: rewords',
+            "bad date": 'Standing ruling by Pat at yesterday: x covers: rewords',
         }
         for label, line in malformed.items():
             with self.subTest(label):
@@ -857,7 +858,7 @@ class StandingRulingTest(unittest.TestCase):
     def test_a_malformed_line_in_the_decision_log_raises_naming_that_file_and_line(self):
         self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
         decisions = self.folder / "03-decisions.md"
-        decisions.write_text('# Decisions\n\nStanding ruling by Pat at yesterday: "x" covers: rewords\n')
+        decisions.write_text('# Decisions\n\nStanding ruling by Pat at yesterday: x covers: rewords\n')
 
         with self.assertRaises(plan_format.PlanFormatError) as raised:
             standing_rulings.standing_rulings(self.plan)

@@ -856,7 +856,7 @@ class RewordFlagTest(unittest.TestCase):
         to_coder, held = host.route_plan_items("code-reviewer", [item])
         return to_coder, held, host.plan_impacts
 
-    STANDING = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+    STANDING = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                 "covers: rewords\n")
 
     def test_a_standing_ruled_reword_goes_to_the_coder_adopted_and_unapplied(self):
@@ -900,7 +900,7 @@ class RewordFlagTest(unittest.TestCase):
                 self.assertFalse(impacts[0]["adopted"])
 
     def test_a_malformed_standing_ruling_raises_with_the_file_line_and_form(self):
-        bad_plan = '# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at yesterday: "x" covers: rewords\n'
+        bad_plan = '# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at yesterday: x covers: rewords\n'
 
         with self.assertRaises(plan_format.PlanFormatError) as raised:
             self.routed_with_plan(bad_plan)

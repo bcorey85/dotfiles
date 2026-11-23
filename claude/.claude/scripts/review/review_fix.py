@@ -76,9 +76,9 @@ still judges.
                                          session ruled on the asks itself. A call without it exits 2 and logs nothing.
                                          A user ruling given to another live session: add to --by user
                                          `{relay_usage}`
-                                         The script needs a real user turn of that session's transcript whose whole
-                                         text is the quote, typed after the asks were filed, and exits 2 with
-                                         nothing logged when any lookup fails.
+                                         The script needs a real user turn of that session's transcript typed
+                                         after the asks were filed, and exits 2 with nothing logged when any
+                                         lookup fails. The user's words are never passed or stored.
                                          Answers one packet. When a second packet handed back before the first one's
                                          asks were answered, both wait: asks-done then refuses and lists them, and
                                          --packet <packet_id> names the one the outcomes belong to.
@@ -99,9 +99,9 @@ still judges.
                                          owner, or owner `user`. A user ruling given to another live session:
                                          add to --by user
                                          `{relay_usage}`
-                                         The quote must be the whole text of a user turn of that session typed
-                                         after the impact was filed; the entry and a plan-ruling-relayed row
-                                         record the relayer and the quote.
+                                         That session must hold a user turn typed after the impact was filed;
+                                         the entry and a plan-ruling-relayed row record the relayer and the
+                                         turn's time.
   review_fix.py decide discuss          print the decide commands for a plan-impact ruling and record nothing.
   review_fix.py defer <handoff file>    /code's phase-end deferral of held plan impacts. The handoff file must hold
                                          `plan_impact: RESOLVED: deferred to phase end by the session, <date>:

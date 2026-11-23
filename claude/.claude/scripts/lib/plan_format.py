@@ -876,7 +876,8 @@ DECISION_WORDS = {ADOPT_DECISION: PLAN_IMPACT_OPTIONS[0], KEEP_DECISION: PLAN_IM
                   DISCUSS_DECISION: PLAN_IMPACT_OPTIONS[2]}
 PLAN_CHECK_OWNER_COMMAND = "python3 ~/.claude/scripts/code/plan_check.py owner <plan>"
 PLAN_OWNER_RULE_CONDITION = "the ticket's own words, or with no ticket the user's own request, stay met"
-DECIDE_BY_NOTE = ("If the user told you to make the call, pass `--by user` and quote that instruction in --ruling; "
+DECIDE_BY_NOTE = ("If the user told you to make the call, pass `--by user` and state the decision in --ruling in "
+                  "your own words, never the user's; "
                   "pass `--by session` only when you rule without asking and "
                   f"`{PLAN_CHECK_OWNER_COMMAND}` names `session` or `plan`, and for `plan` only while "
                   f"{PLAN_OWNER_RULE_CONDITION}. A user ruling another session relays: `--by user {RELAY_USAGE}`, "

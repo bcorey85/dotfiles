@@ -4,9 +4,9 @@ Prints the block that /code puts in the coder brief, verbatim: the plan line ran
 criteria, the existing files the phase names, the new files it names, one existing sibling per new file, the
 files outside the sibling's directory that the sibling imports, and the rest of any test helper directory among
 them. The coder reads all of it in its first response and does not explore. When the coder gate is set for the repo,
-the rules tell the coder not to run checks. `--gate-evidence` is who released a gated phase, when, and their quoted
-words; the packet opens with it. The script refuses the placeholder text, a phase whose Phase Status line has no
-`— gate:` clause, and a closing phase."""
+the rules tell the coder not to run checks. `--gate-evidence` is who released a gated phase, when, and what they
+released, in the caller's own words; the packet opens with it. The script refuses the placeholder text, a phase
+whose Phase Status line has no `— gate:` clause, and a closing phase."""
 import json
 import pathlib
 import re
@@ -162,7 +162,7 @@ def gate_evidence_text(argv, plan_lines):
     flag_words = argv[3:]
     if not flag_words:
         return ""
-    placeholder = "<who>, <when>: <quoted text>"
+    placeholder = "<who>, <when>: <what was released, in your own words>"
     if (len(flag_words) != 2 or flag_words[0] != "--gate-evidence" or not flag_words[1].strip()
             or flag_words[1].strip() == placeholder):
         sys.exit(USAGE.replace("<text>", placeholder))

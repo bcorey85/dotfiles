@@ -16,7 +16,7 @@ Three prose-rule changes in the stowed claude toolkit, each measured with the ru
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
 - [x] Phase 0: Contracts — detector module, scenario ids, grade() dispatch lines, frozen at plan approval (risk: high)
-- [ ] Phase 1: Walking skeleton — item 3: the Agent model line, scenario AM01 end to end through one meter run per cell (risk: low)
+- [x] Phase 1: Walking skeleton — item 3: the Agent model line, scenario AM01 end to end through one meter run per cell (risk: low)
 - [ ] Phase 2: Item 1: the go-ahead exception, scenario GA01 with the Owners plant (risk: low)
 - [ ] Phase 3: Item 2: scenario AB01 for the auto-mode line, runs, then delete or keep (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
@@ -281,20 +281,20 @@ The Delegation section states the one default (leave `model` out for a pinned ag
 
 #### Automated Verification:
 
-- [ ] **Line-present**: `rg -n -U 'leave .model. out when the agent.s file pins one' claude/.claude/orchestration.md` finds the line (presence).
-- [ ] **Line-names-the-values**: `rg -n -c 'set .sonnet. or .haiku.; the hook denies .opus. and .inherit. at the call site' claude/.claude/orchestration.md` finds 1 line (presence; the hook walk below is the check that can fail).
-- [ ] **Test-verified**: `python3 -m unittest discover -s /home/brandon/agent-evals-toolkit-rules-nov22/bin -p test_rule_meter_checks.py -k agent_model` passes (the other two detectors' tests are filled in Phases 2 and 3).
-- [ ] **Scenario-parses**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_meter.py run-all --rule AM01 --dry-run` exits 0.
-- [ ] **Anchors-verified**: `claude/.claude/scripts/tools/rule-anchors.sh check` prints nothing and exits 0.
-- [ ] **Change-file-verified**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/build_changes.py --check --root /home/brandon/dotfiles-toolkit-rules-nov22/docs/changes` exits 0.
-- [ ] **Agent-run**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_meter.py run-all --rule AM01 --runs 1` then `summary`; the change file's Result holds every cell's count.
-- [ ] **Suite-verified**: `python3 tests/parallel_tests.py test_rule_anchors.py` passes.
+- [x] **Line-present**: `rg -n -U 'leave .model. out when the agent.s file pins one' claude/.claude/orchestration.md` finds the line (presence).
+- [x] **Line-names-the-values**: `rg -n -c 'set .sonnet. or .haiku.; the hook denies .opus. and .inherit. at the call site' claude/.claude/orchestration.md` finds 1 line (presence; the hook walk below is the check that can fail).
+- [x] **Test-verified**: `python3 -m unittest discover -s /home/brandon/agent-evals-toolkit-rules-nov22/bin -p test_rule_meter_checks.py -k agent_model` passes (the other two detectors' tests are filled in Phases 2 and 3).
+- [x] **Scenario-parses**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_meter.py run-all --rule AM01 --dry-run` exits 0.
+- [x] **Anchors-verified**: `claude/.claude/scripts/tools/rule-anchors.sh check` prints nothing and exits 0.
+- [x] **Change-file-verified**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/build_changes.py --check --root /home/brandon/dotfiles-toolkit-rules-nov22/docs/changes` exits 0.
+- [x] **Agent-run**: `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_meter.py run-all --rule AM01 --runs 1` then `summary`; the change file's Result holds every cell's count.
+- [x] **Suite-verified**: `python3 tests/parallel_tests.py test_rule_anchors.py` passes.
 
 #### Manual Verification:
 
-- [ ] **Agent-verified**: open the first AM01 run's stream file under `~/dev/evals/rulemeter1/runs/` and confirm an assistant `tool_use` named `Agent` with `input.subagent_type` `general-purpose`; record whether `input.model` was present.
-- [ ] **Hook-walk** (AC11): feed `claude/.claude/scripts/agent-model-guard.sh` one PreToolUse Agent event per value the line names, with `subagent_type` `general-purpose` and `model` `sonnet`, `haiku`, absent, `opus`, `inherit` (fixture shape from the hook's own tests under `tests/scripts/`). The first three pass and the last two deny, and the line names no other value; any other outcome is a failing AC11, reported to agent-evals-c3 before the change file is written.
-- [ ] **AC10-read** (R6): the line ships when no on-arm run is VIOLATED. A VIOLATED run in the on arm is reported to agent-evals-c3 as AC10's headless-run sentence failing, with the counts, and the line is held until it rules.
+- [x] **Agent-verified**: open the first AM01 run's stream file under `~/dev/evals/rulemeter1/runs/` and confirm an assistant `tool_use` named `Agent` with `input.subagent_type` `general-purpose`; record whether `input.model` was present.
+- [x] **Hook-walk** (AC11): feed `claude/.claude/scripts/agent-model-guard.sh` one PreToolUse Agent event per value the line names, with `subagent_type` `general-purpose` and `model` `sonnet`, `haiku`, absent, `opus`, `inherit` (fixture shape from the hook's own tests under `tests/scripts/`). The first three pass and the last two deny, and the line names no other value; any other outcome is a failing AC11, reported to agent-evals-c3 before the change file is written.
+- [x] **AC10-read** (R6): the line ships when no on-arm run is VIOLATED. A VIOLATED run in the on arm is reported to agent-evals-c3 as AC10's headless-run sentence failing, with the counts, and the line is held until it rules.
 
 ---
 
@@ -491,6 +491,10 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 #### Manual Verification:
 
 - [ ] Manual Verification: N/A (close pass; the recap sheet is the deliverable)
+
+## Plan Deviations
+
+- Phase 1 review: orchestration.md:7 omits the fork exception that agent-model-guard.sh:46-48 makes (AC11); ruled option a by agent-evals-c3, 2026-11-22; line reworded.
 
 ## Testing Strategy
 

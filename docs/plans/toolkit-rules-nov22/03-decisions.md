@@ -134,3 +134,10 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: the hook denies opus at every call site, and the detector reads every Agent tool_use.
 - **Alternatives rejected**: general-purpose only (the ticket's example).
 - **Trade-off accepted**: none.
+
+### W5. Item 3 line and the fork exception (AC sign-off)
+
+- **Choice**: option a: the Agent model line ends "...frontmatter; a `fork` call skips the hook and runs on the parent model." Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`), option a, appended the fork exception to the Agent model line (AC11: guard lets fork through at agent-model-guard.sh:46-48).
+- **Reasoning**: the guard lets a fork call through, so the line without the exception stated more than the guard enforces.
+- **Alternatives rejected**: leave the line as signed off in Q5.
+- **Trade-off accepted**: the line is longer.

@@ -9,7 +9,7 @@ description: "The benches that are open now and the question each asks."
 
 7 open benches, by rank. Each line is the question the bench asks.
 
-0 further benches are left out of this page.
+1 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.

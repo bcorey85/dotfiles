@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-716 fix notes
+717 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -38,8 +38,8 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/code-review-start | 12 | 5 |
 | script/code-wait | 12 | 5 |
 | script/log-review-finding | 12 | 0 |
+| script/refactor-flow | 12 | 4 |
 | script/log-escape | 11 | 3 |
-| script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
 | script/criteria-dry-run | 10 | 3 |
@@ -176,6 +176,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
+| script/refactor-log-input | 1 | 1 |
 | script/reply-json | 1 | 0 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 0 |

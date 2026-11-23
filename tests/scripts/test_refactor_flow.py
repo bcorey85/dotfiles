@@ -1,3 +1,4 @@
+import copy
 import importlib.machinery
 import importlib.util
 import json
@@ -341,16 +342,30 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
 
-    def test_the_log_input_example_in_the_skill_logs_on_the_first_call(self):
-        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
-        example_match = re.search(r"```json\n(.*?)```", skill_text, re.S)
-        self.assertIsNotNone(example_match, "the skill shows no JSON log input example")
-        skill_example = json.loads(example_match.group(1))
+    def test_the_log_template_in_log_help_logs_on_the_first_call(self):
+        flow = load_script_module()
+        help_done = self.flow("log", "--help")
+        self.assertEqual(help_done.returncode, 0, help_done.stderr)
+        after_start = help_done.stdout.split(flow.refactor_log_input.TEMPLATE_START + "\n", 1)[1]
+        template_text = after_start.split("\n" + flow.refactor_log_input.TEMPLATE_END, 1)[0]
+        template = json.loads(template_text)
         self.pushed_feature_branch({"src/orders.py": "x = 1\n"})
 
-        done = self.log("branch", skill_example)
+        done = self.log("branch", template)
 
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        row_kinds = sorted(row["kind"] for row in self.finding_rows())
+        self.assertEqual(row_kinds, ["finding", "run"])
+
+    def test_the_log_grammar_lives_in_refactor_log_input(self):
+        flow = load_script_module()
+        grammar = flow.refactor_log_input
+        validated = grammar.validate_log("branch", copy.deepcopy(grammar.LOG_TEMPLATE))
+        self.assertIsInstance(validated, dict)
+        self.assertIs(flow.RefactorFlowError, grammar.RefactorFlowError)
+
+    def test_refactor_flow_is_at_most_1000_lines(self):
+        self.assertLessEqual(len(SCRIPT.read_text().splitlines()), 1000)
 
     def test_branch_prep_with_no_base_passes_the_helper_stop_line_through(self):
         self.git("branch", "-m", "main", "work")

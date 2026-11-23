@@ -10,7 +10,7 @@ components: ["rule/global-claude-md"]
 evidence: ["rule meter", "user rule"]
 watches: []
 test: ""
-asked: "2026-11-22: i need you to stop askingme about modifying scripts/claude.md"
+asked: "2026-11-22: asked to stop being asked about owner lines in the scripts CLAUDE.md"
 proof: []
 unmeasured: ""
 ---

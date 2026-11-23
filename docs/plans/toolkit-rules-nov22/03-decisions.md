@@ -149,14 +149,7 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: off equal to on, no margin (W2).
 - **Alternatives rejected**: ship the line as documentation of the guard.
 - **Trade-off accepted**: AM01 and AM02 stay in the meter as evidence of the no-effect; item 3 closes with a removal, not a line.
-- Correction 2026-11-22, agent-evals-c3 (criteria owner `session`): the removal stands; on equal to off is no effect whichever way both arms land, and the hook does the job, the line did not. The meter's results (`rule_meter.py summary`) match the Outcome: AM02 on 0 of 3 complied, off 0 of 3 complied, so 3 violated per arm and 6 of 6 runs pinned opus with the line removed; AM01 20 of 20 complied (10 per arm). AC10's sentence "A headless run that launches a general-purpose agent sends no opus pin" is FAILING (6 of 6 pinned opus when the task asks for it); it is not retired and not met. The "AM01 and AM02 stay in the meter" trade-off above no longer holds: both scenarios are removed from `bin/rule_meter_scenarios.json` and kept as notes `rule_meter:AM01` and `rule_meter:AM02` in `bin/rule_trial_notes.json`, with rule text and verdict (D7, Q7).
-
-### W8. AC3 narrowed to direct lane edits (AC sign-off)
-
-- **Choice**: AC3 reads "A lane that has the orchestrating session's go-ahead to add an owner line for a new module adds it to the scripts CLAUDE.md by a direct edit, without asking the user in its own pane." Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`). Gap recorded: a coder pass in the review loop cannot edit an owner line through `review_loop_ruled.py`; agent-evals-c3 queues the `review_loop_ruled.py` owner-line exemption as a separate item. Nothing is built for it here.
-- **Reasoning**: GA01 measures a lane's direct edit; the review-loop path is a separate script.
-- **Alternatives rejected**: build the exemption in this branch.
-- **Trade-off accepted**: a coder pass in the review loop still cannot add an owner line.
+- Correction 2026-11-22, agent-evals-c3 (criteria owner `session`): the removal stands; on equal to off is no effect whichever way both arms land, and the hook does the job, the line did not. The meter's results (`rule_meter.py summary`) match the Outcome: AM02 on 0 of 3 complied, off 0 of 3 complied, so 3 violated per arm and 6 of 6 runs pinned opus, in both arms; AM01 20 of 20 complied (10 per arm). AC10's sentence "A headless run that launches a general-purpose agent sends no opus pin" is FAILING (6 of 6 pinned opus when the task asks for it); it is not retired and not met. The "AM01 and AM02 stay in the meter" trade-off above no longer holds: both scenarios are removed from `bin/rule_meter_scenarios.json` and kept as notes `rule_meter:AM01` and `rule_meter:AM02` in `bin/rule_trial_notes.json`, with rule text and verdict (D7, Q7).
 
 ### W7. Item 3 run budget and the Phase 1 ship criterion (AC sign-off)
 
@@ -164,3 +157,10 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: the old criterion held a line on a VIOLATED on-arm run and did not cover a no-effect read, which W6 ruled.
 - **Alternatives rejected**: keep the 24 cap against all 26 runs.
 - **Trade-off accepted**: item 3 ran 2 over the stated cap.
+
+### W8. AC3 narrowed to direct lane edits (AC sign-off)
+
+- **Choice**: AC3 reads "A lane that has the orchestrating session's go-ahead to add an owner line for a new module adds it to the scripts CLAUDE.md by a direct edit, without asking the user in its own pane." Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`). Gap recorded: a coder pass in the review loop cannot edit an owner line through `review_loop_ruled.py`; agent-evals-c3 queues the `review_loop_ruled.py` owner-line exemption as a separate item. Nothing is built for it here.
+- **Reasoning**: GA01 measures a lane's direct edit; the review-loop path is a separate script.
+- **Alternatives rejected**: build the exemption in this branch.
+- **Trade-off accepted**: a coder pass in the review loop still cannot add an owner line.

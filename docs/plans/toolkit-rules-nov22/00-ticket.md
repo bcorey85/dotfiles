@@ -18,7 +18,7 @@ components: ["rule/global-claude-md"]
 ---
 
 ### Context
-2026-11-22: a lane added a new review loop module. The orchestrating session ruled to add its owner line to the scripts CLAUDE.md. The lane refused: a go-ahead never covers a CLAUDE.md file, and it asked for the user's yes in its own pane. The user: "i need you to stop askingme about modifying scripts/claude.md".
+2026-11-22: a lane added a new review loop module. The orchestrating session ruled to add its owner line to the scripts CLAUDE.md. The lane refused: a go-ahead never covers a CLAUDE.md file, and it asked for the user's yes in its own pane. The user asked, that day, to stop being asked about owner lines in the scripts CLAUDE.md.
 
 ### Done when
 - The global go-ahead rule says an owner line in the scripts CLAUDE.md is covered by the orchestrating session's ruling.

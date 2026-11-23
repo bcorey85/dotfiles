@@ -20,7 +20,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 2: hunk-review-pane labels its own pane (risk: low)
 - [x] Phase 3: pull_keep_index `--help` and the named save ref (risk: high)
 - [x] Phase 4: pull_keep_index built-page put-back through the merge driver (risk: high)
-- [ ] Phase 5: pull_keep_index in a shared checkout (risk: high)
+- [x] Phase 5: pull_keep_index in a shared checkout (risk: high)
 - [ ] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
 - [ ] Phase 7: herdr-phase-change names the report-to session (risk: low)
 - [ ] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
@@ -345,8 +345,8 @@ With a second live session in the repo, its files stay in the tree for the whole
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_pull_keep_index.py` (RED before: the keep-in-tree hook logs `kept=0`, because the edit was set aside while the rebase moved the branch)
-- [ ] `bash tests/lint.sh claude/.claude/scripts/tools/pull_keep_index.py`
+- [x] `python3 tests/parallel_tests.py test_pull_keep_index.py` (RED before: the keep-in-tree hook logs `kept=0`, because the edit was set aside while the rebase moved the branch)
+- [x] `bash tests/lint.sh claude/.claude/scripts/tools/pull_keep_index.py`
 
 #### Manual Verification
 

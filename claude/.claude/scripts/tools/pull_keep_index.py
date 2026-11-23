@@ -43,7 +43,14 @@ holds nothing the branch never had. An upstream tip that is not in the reflog (a
 usual. When the fetch fails (the upstream is deleted on the remote, or the remote is unreachable), the run goes on to
 the usual upstream checks and pull, so a deleted upstream still exits 1 naming it.
 When the rebase stops on a conflict that a merge of the pulled tip would not have (a replayed merge commit that had
-resolved conflicts), the rebase is undone and the pulled tip is merged instead; else the run exits 1 mid-rebase."""
+resolved conflicts), the rebase is undone and the pulled tip is merged instead; else the run exits 1 mid-rebase.
+Another live session in the repo (its registry `cwd` is the repo or inside it; a missing CLAUDE_CODE_SESSION_ID counts
+as another session) plus tracked changes is the shared route: nothing is set aside, because the other session's edits
+would leave the tree during the pull. The upstream tip is fetched and, when HEAD already holds it, nothing is pulled;
+when it has commits HEAD lacks and HEAD has none of its own, the branch is fast-forwarded in place; when HEAD has
+commits of its own the run exits 1 naming the dirty files, and when the fast-forward would overwrite a dirty file it
+exits 1 naming that file. Every run, `--put-back` included, holds `<git common dir>/pull-keep-index.lock`; it waits
+PULL_KEEP_INDEX_LOCK_SECONDS (a positive integer, default 300) and then exits 1."""
 import datetime
 import os
 import pathlib
@@ -56,8 +63,15 @@ import tempfile
 from typing import NamedTuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import file_lock
 import script_utils
+import session_registry
 
+LOCK_SECONDS_VARIABLE = "PULL_KEEP_INDEX_LOCK_SECONDS"
+DEFAULT_LOCK_SECONDS = 300
+LOCK_FILE_NAME = "pull-keep-index.lock"
+# Holds the fetched upstream tip for one run; the prefix differs from REF_PREFIX so the saved refs never list it.
+FETCH_REF_PREFIX = "refs/pull-keep-index-fetch/"
 # The variable ~/agent-evals/bin/merge_built_page.py reads for the stash commit a `git stash apply` is applying.
 BUILT_PAGE_STASH = "BUILT_PAGE_STASH"
 # The gitattributes value (`merge=built-page`) that marks a generated page.
@@ -585,31 +599,140 @@ def resolve_saved(repo, argument):
     return saved, keep_ref(repo, saved)
 
 
+class Incoming(NamedTuple):
+    """The fetched upstream tip of the shared route: the local branch name and the tip's commit."""
+    branch: str
+    commit: str
+
+
+def fetch_source(repo, branch, target):
+    """The remote and the full ref to fetch: the targeted pull's, else the configured upstream of the branch. The
+    upstream is read from config, never `@{u}`, which a single-branch clone does not resolve."""
+    if target:
+        remote, name = target
+        return remote, f"refs/heads/{name}"
+    return configured_remote(repo, branch), script_utils.branch_merge_ref(repo, branch)
+
+
+def fetch_incoming(repo, target):
+    """Fetch the upstream tip into a named ref of this run (`FETCH_HEAD` can be rewritten by another session's fetch),
+    read the commit, and delete the ref. Exit 1 on a detached HEAD, a remote that cannot name a ref, or a failed
+    fetch."""
+    branch = script_utils.current_branch(repo)
+    if not branch:
+        sys.exit(f"pull_keep_index: detached HEAD in a shared checkout ({repo}); nothing pulled or set aside")
+    remote, ref = fetch_source(repo, branch, target)
+    fetch_ref = f"{FETCH_REF_PREFIX}{remote}/{ref.rsplit('/', 1)[-1]}"
+    if run_in_repo(repo, "check-ref-format", fetch_ref).returncode != 0:
+        sys.exit(f"pull_keep_index: remote {remote} cannot name a fetch ref; nothing pulled or set aside")
+    fetched = run_in_repo(repo, "fetch", "--quiet", remote, f"+{ref}:{fetch_ref}")
+    if fetched.returncode != 0:
+        problem = script_utils.process_stderr_text(fetched)
+        sys.exit(f"pull_keep_index: git fetch {remote} {ref} failed in {repo}: {problem}")
+    commit = script_utils.git_output(repo, "rev-parse", "--verify", f"{fetch_ref}^{{commit}}")
+    run_in_repo(repo, "update-ref", "-d", fetch_ref)
+    if not commit:
+        sys.exit(f"pull_keep_index: could not read the fetched tip of {ref} from {remote} in {repo}")
+    return Incoming(branch, commit)
+
+
+def exit_shared_diverged(repo, other, dirty):
+    sys.exit(f"pull_keep_index: {session_registry.holder_label(other)} also works in {repo} and the branch has local "
+             f"commits; nothing pulled or set aside. Dirty files: {' '.join(dirty)}. Commit them, or wait for that "
+             "session to finish, then rerun.")
+
+
+def exit_shared_overlap(repo, other, overlap):
+    sys.exit(f"pull_keep_index: {session_registry.holder_label(other)} also works in {repo}; the pull would "
+             f"overwrite: {' '.join(overlap)}. Nothing was set aside. Commit those files, or wait for that session "
+             "to finish, then rerun.")
+
+
+def fast_forward(repo, incoming, other, dirty):
+    """`merge --ff-only` to the fetched tip. Exit 1 when the branch diverged, when the pull would overwrite a dirty
+    file, or when the merge fails."""
+    if not script_utils.is_ancestor(repo, "HEAD", incoming.commit):
+        exit_shared_diverged(repo, other, dirty)
+    overlap = sorted(set(listed_paths(repo, "HEAD", incoming.commit)) & set(dirty))
+    if overlap:
+        exit_shared_overlap(repo, other, overlap)
+    merged = run_in_repo(repo, "merge", "--ff-only", "--quiet", incoming.commit)
+    if merged.returncode != 0:
+        problem = script_utils.process_stderr_text(merged)
+        sys.exit(f"pull_keep_index: git merge --ff-only failed in {repo}:\n{problem}\nNothing was set aside.")
+
+
+def shared_pull(repo, target, other, dirty):
+    """Pull in a checkout another live session edits, with nothing set aside: that session's edits stay in the tree,
+    so a fast-forward is the only move that keeps them. Fetch; already held pulls nothing; else fast-forward.
+    Sets the upstream after a targeted pull."""
+    incoming = fetch_incoming(repo, target)
+    short = script_utils.git_output(repo, "rev-parse", "--short", incoming.commit) or incoming.commit
+    if script_utils.is_ancestor(repo, incoming.commit, "HEAD"):
+        print(f"pull_keep_index: {incoming.branch} already holds {short}; nothing pulled.")
+    else:
+        fast_forward(repo, incoming, other, dirty)
+    if target:
+        set_upstream(repo, *target)
+
+
+def lock_seconds():
+    """How long to wait for the lock: PULL_KEEP_INDEX_LOCK_SECONDS, read once, a positive integer; exit 1 otherwise."""
+    raw = os.environ.get(LOCK_SECONDS_VARIABLE)
+    if raw is None:
+        return DEFAULT_LOCK_SECONDS
+    if not re.fullmatch(r"[0-9]+", raw) or int(raw) <= 0:
+        sys.exit(f"pull_keep_index: {LOCK_SECONDS_VARIABLE} must be a positive integer, got {raw!r}")
+    return int(raw)
+
+
+def lock_path(repo):
+    """The lock file in the git common dir, shared by every work tree of the repo. Exit 1 outside a repo."""
+    common_dir = script_utils.git_output(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common_dir:
+        sys.exit(f"pull_keep_index: {repo} is not a git repository (git rev-parse --git-common-dir failed)")
+    return os.path.join(common_dir, LOCK_FILE_NAME)
+
+
+def run_put_back(repo, saved_argument):
+    saved, ref = resolve_saved(repo, saved_argument)
+    tracked_changes = run_in_repo(repo, "status", "--porcelain", "--untracked-files=no")
+    if tracked_changes.stdout:
+        sys.exit(f"pull_keep_index: {repo} has tracked changes; --put-back needs a clean tree. "
+                 f"{saved_text(saved, ref)}.\n{__doc__}")
+    put_back(repo, saved, ref)
+
+
+def parse_request(arguments):
+    """(saved argument or None, repo argument) for the two call forms; exit with the usage for any other."""
+    if len(arguments) == 3 and arguments[0] == PUT_BACK_VERB:
+        return arguments[1], arguments[2]
+    if len(arguments) == 1 and arguments[0] != PUT_BACK_VERB:
+        return None, arguments[0]
+    sys.exit(__doc__)
+
+
 def main(arguments):
     if arguments and arguments[0] in ("-h", "--help"):
         print(__doc__)
         return
-    if len(arguments) == 3 and arguments[0] == PUT_BACK_VERB:
-        # Run from a subfolder, `git apply` skips paths outside it and still exits 0, so every step runs from the top.
-        top = script_utils.repo_root(arguments[2])
-        repo = str(top) if top else arguments[2]
-        saved, ref = resolve_saved(repo, arguments[1])
-        tracked_changes = run_in_repo(repo, "status", "--porcelain", "--untracked-files=no")
-        if tracked_changes.stdout:
-            sys.exit(f"pull_keep_index: {repo} has tracked changes; --put-back needs a clean tree. "
-                     f"{saved_text(saved, ref)}.\n{__doc__}")
-        put_back(repo, saved, ref)
-        return
-    if arguments in (["-h"], ["--help"]):
-        print(__doc__)
-        return
-    is_put_back_call = bool(arguments) and arguments[0] == PUT_BACK_VERB
-    if len(arguments) != 1 or is_put_back_call:
-        sys.exit(__doc__)
-    # Same reason as above: a subfolder run would skip every path outside it.
-    top = script_utils.repo_root(arguments[0])
-    repo = str(top) if top else arguments[0]
+    saved_argument, repo_argument = parse_request(arguments)
+    # Run from a subfolder, `git apply` skips paths outside it and still exits 0, so every step runs from the top.
+    top = script_utils.repo_root(repo_argument)
+    repo = str(top) if top else repo_argument
+    seconds = lock_seconds()
+    lock = lock_path(repo)
+    try:
+        with file_lock.hold_exclusive(lock, seconds):
+            if saved_argument is None:
+                run_pull(repo)
+            else:
+                run_put_back(repo, saved_argument)
+    except file_lock.LockTimeoutError:
+        sys.exit(f"pull_keep_index: another run holds {lock}; nothing pulled or set aside")
 
+
+def run_pull(repo):
     state_dir = stopped_rebase_dir(repo)
     if state_dir:
         sys.exit("pull_keep_index: nothing was pulled or set aside: " + stopped_rebase_text(repo, state_dir))
@@ -622,6 +745,12 @@ def main(arguments):
     target = pull_target(repo)
     if target is None:
         print(f"pull_keep_index: the branch has no upstream and is not on {FALLBACK_REMOTE} yet; nothing to pull.")
+        return
+
+    dirty = listed_paths(repo, "HEAD")
+    other = session_registry.other_live_session_in(repo, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if dirty and other is not None:
+        shared_pull(repo, target, other, dirty)
         return
 
     saved, ref = set_aside(repo)

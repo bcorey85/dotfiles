@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1110 changes
+1111 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -70,6 +70,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [The session-start notice skips a loop of another branch or a detached loop](notes/2026-11-22-the-session-start-notice-skips-a-loop-of-another.md) [script/reviewer-dispatch, script/waiting-review-launch, script/review-launch] The session-start notice prints no dispatch action for a loop of another branch or a loop detached for a code fork, and names every loop's age and branch.
 * [A review launch refuses to stop a loop of another run mode](notes/2026-11-22-a-review-launch-refuses-to-stop-a-loop-of-another.md) [script/review-launch] review_launch exits with an error naming a live loop of the same repo started in another run mode, and stops only a same-mode loop.
 * [A no-code ruling that asks for a test edit is a change](notes/2026-11-22-a-no-code-ruling-that-asks-for-a-test-edit-is-a.md) [script/ruled-change-text] is_no_code_ruling reads a note as a change when a clause after the no-code words asks for a test edit.
+* [pull_keep_index never sets another session's edits aside in a shared checkout](notes/2026-11-22-pull-keep-index-never-sets-another-session-s-edits.md) [script/pull-keep-index] When another live session works in the same repo and tracked changes exist, pull_keep_index no longer sets them aside: it fetches into a named ref and fast-forwards in place, or refuses naming the dirty files and the way out. Every run, --put-back included, takes a per-repo lock.
 * [A phase ask that names a user-owned criterion is held for the user](notes/2026-11-22-a-phase-ask-that-names-a-user-owned-criterion-is.md) [script/phase-asks, script/code-review-start] phase_asks opens a reviewer ask that names a user-owned acceptance criterion as user-only, so the session cannot rule it.
 * [Reviewer dispatch lines give the exact prompt and say who writes the report](notes/2026-11-22-reviewer-dispatch-lines-give-the-exact-prompt-and.md) [script/reviewer-dispatch, script/code-wait, skill/code] Each reviewer dispatch line quotes the Agent prompt word for word and names who writes the report, so no reviewer is told to write a file it cannot.
 * [pull_keep_index puts staged files back and rebuilds clashing built pages through the merge driver](notes/2026-11-22-pull-keep-index-puts-staged-files-back-and.md) [script/pull-keep-index] When staged built pages clash with origin's changes, pull_keep_index puts every local change back (staged stay staged, unstaged stay unstaged, the pages rebuilt through the merge driver), in the run and through --put-back; a part that cannot apply resets the tree to the pulled HEAD and exits 1 naming the conflicted files, the ref and the command that puts the changes back.

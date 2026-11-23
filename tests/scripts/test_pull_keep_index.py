@@ -7,11 +7,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 import unittest.mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from toolkit_paths import TOOLS_DIR
+from toolkit_paths import LIB_DIR, TOOLS_DIR
 
 SCRIPT = pathlib.Path(os.environ.get("PULL_KEEP_INDEX_SCRIPT") or TOOLS_DIR / "pull_keep_index.py")
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
@@ -31,6 +32,22 @@ class PullKeepIndexTest(unittest.TestCase):
         self.git(self.repo, "add", "f", "g")
         self.git(self.repo, "commit", "-qm", "one")
         self.git(self.repo, "push", "-q", "-u", "origin", "HEAD:master")
+        # An empty session registry and a session id of its own keep every test on the solo route.
+        config_dir = self.tmp / "claude-config"
+        (config_dir / "sessions").mkdir(parents=True)
+        environment = {"CLAUDE_CONFIG_DIR": str(config_dir), "CLAUDE_CODE_SESSION_ID": "self-id"}
+        patcher = unittest.mock.patch.dict(os.environ, environment)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.config_dir = config_dir
+
+    def register_other(self, cwd, session_id="other"):
+        """Write a live registry row for a session working in `cwd`; its pid is a `sleep` child that cleanup kills."""
+        sleeper = subprocess.Popen(["sleep", "600"])
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        row = {"pid": sleeper.pid, "sessionId": session_id, "name": "lane-other", "cwd": str(cwd)}
+        (self.config_dir / "sessions" / f"{sleeper.pid}.json").write_text(json.dumps(row))
 
     def git(self, folder, *arguments):
         env = {**os.environ, **GIT_ENV}
@@ -184,6 +201,7 @@ class PullKeepIndexTest(unittest.TestCase):
         ref, saved = kept[0]
         self.assertEqual(self.git(self.repo, "show", f"{saved}:g"), "unstaged\n")
         self.assertIn(ref, finished.stderr)
+        self.assertIn("would be overwritten", finished.stderr)
 
     def test_a_clean_run_leaves_no_ref(self):
         self.push_from_other_machine("h", "2\n")
@@ -875,7 +893,7 @@ class PullKeepIndexTest(unittest.TestCase):
 
         self.assertEqual(second.returncode, 0, second.stderr)
 
-    def test_a_folder_that_is_not_a_repo_exits_1_naming_the_failed_branch_lookup(self):
+    def test_a_folder_that_is_not_a_repo_exits_1_saying_it_is_not_a_git_repository(self):
         not_a_repo = self.tmp / "plain"
         not_a_repo.mkdir()
         env = {**os.environ, **GIT_ENV, "GIT_CEILING_DIRECTORIES": str(self.tmp)}
@@ -884,7 +902,7 @@ class PullKeepIndexTest(unittest.TestCase):
                                   env=env)
 
         self.assertEqual(finished.returncode, 1)
-        self.assertIn("git branch --show-current failed", finished.stderr)
+        self.assertIn(f"{not_a_repo} is not a git repository", finished.stderr)
 
     def test_a_branch_with_no_upstream_and_no_origin_exits_1_with_the_git_error(self):
         self.git(self.repo, "checkout", "-q", "-b", "fresh")
@@ -1089,6 +1107,263 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertIn("--put-back ", finished.stderr)
         saved = finished.stderr.split("--put-back ")[1].split()[0]
         self.assertEqual(self.git(self.repo, "show", saved + ":g"), "unstaged\n")
+
+    def share_the_checkout_with_a_dirty_file(self):
+        """Commit `bin/x`, give it an unstaged line `local-edit`, and register another session in the repo."""
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo)
+
+    def head(self):
+        return self.git(self.repo, "rev-parse", "HEAD").strip()
+
+    def test_a_shared_pull_keeps_the_other_sessions_edit_in_the_tree_for_the_whole_pull(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.push_from_other_machine("h", "2\n")
+        log = self.tmp / "hook.log"
+        hook = self.repo / ".git" / "hooks" / "reference-transaction"
+        hook.write_text("#!/bin/sh\n[ \"$1\" = committed ] || exit 0\n"
+                        "while read old new ref; do\n"
+                        "  case \"$ref\" in refs/heads/*)\n"
+                        f"    if grep -q local-edit bin/x; then echo kept=1 >> {shlex.quote(str(log))};\n"
+                        f"    else echo kept=0 >> {shlex.quote(str(log))}; fi\n"
+                        "    echo writer >> bin/x ;;\n"
+                        "  esac\n"
+                        "done\n")
+        hook.chmod(0o755)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        lines = log.read_text().splitlines()
+        self.assertTrue(lines)
+        self.assertEqual(set(lines), {"kept=1"})
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\nwriter\n")
+        self.assertEqual(self.kept_refs(), [])
+        self.assertEqual(self.git(self.repo, "for-each-ref", "refs/pull-keep-index-fetch"), "")
+        self.assertEqual(self.head(), self.git(self.remote, "rev-parse", "master").strip())
+
+    def test_a_shared_pull_that_would_overwrite_a_dirty_file_refuses_and_sets_nothing_aside(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.push_from_other_machine("bin/x", "theirs\n")
+        head = self.head()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("bin/x", finished.stderr)
+        self.assertIn("Nothing was set aside", finished.stderr)
+        self.assertEqual(self.head(), head)
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_shared_dirty_diverged_branch_is_refused_naming_the_dirty_files(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+        head = self.head()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("Dirty files: bin/x", finished.stderr)
+        self.assertIn("nothing pulled or set aside", finished.stderr)
+        self.assertEqual(self.head(), head)
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_missing_session_id_reads_the_callers_own_row_as_another_session(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, session_id="self-id")
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+        del os.environ["CLAUDE_CODE_SESSION_ID"]
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("also works in", finished.stderr)
+
+    def test_a_shared_clean_tree_with_another_session_keeps_the_solo_rebase(self):
+        self.register_other(self.repo)
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s").strip(), "local k")
+        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s", "HEAD~1").strip(), "other h")
+
+    def test_a_row_with_the_callers_own_session_id_keeps_the_run_solo(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, session_id="self-id")
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s", "HEAD~1").strip(), "other h")
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+
+    def test_a_shared_pull_with_nothing_new_says_already_holds_and_still_sets_the_upstream(self):
+        self.add_files("bin/x")
+        self.git(self.repo, "checkout", "-q", "-b", "shared")
+        self.git(self.repo, "push", "-q", "origin", "shared")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("already holds", finished.stdout)
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+        self.assertEqual(self.git(self.repo, "config", "--get", "branch.shared.merge").strip(), "refs/heads/shared")
+
+    def test_a_shared_pull_on_a_detached_head_exits_1_and_sets_nothing_aside(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.git(self.repo, "checkout", "-q", "--detach")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("detached HEAD", finished.stderr)
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_shared_pull_whose_fetch_fails_exits_1_naming_the_fetch(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.git(self.repo, "remote", "set-url", "origin", str(self.tmp / "missing.git"))
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("git fetch origin", finished.stderr)
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+
+    def test_a_shared_pull_from_a_remote_that_cannot_name_a_fetch_ref_exits_1(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.git(self.repo, "config", "branch.master.remote", str(self.remote))
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("cannot name a fetch ref", finished.stderr)
+
+    def test_a_shared_pull_whose_merge_fails_exits_1_with_git_stderr_and_sets_nothing_aside(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.push_from_other_machine("h", "2\n")
+        hook = self.repo / ".git" / "hooks" / "reference-transaction"
+        hook.write_text("#!/bin/sh\n[ \"$1\" = prepared ] || exit 0\n"
+                        "while read old new ref; do\n"
+                        "  case \"$ref\" in refs/heads/*) echo hook-refused >&2; exit 1 ;; esac\n"
+                        "done\n")
+        hook.chmod(0o755)
+        head = self.head()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("git merge --ff-only failed", finished.stderr)
+        self.assertIn("hook-refused", finished.stderr)
+        self.assertIn("Nothing was set aside", finished.stderr)
+        self.assertEqual(self.head(), head)
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_targeted_first_pull_on_the_shared_route_sets_the_upstream(self):
+        self.add_files("bin/x")
+        self.git(self.repo, "checkout", "-q", "-b", "shared")
+        self.git(self.repo, "push", "-q", "origin", "shared")
+        other = self.clone("other-shared")
+        self.git(other, "checkout", "-q", "shared")
+        self.write(other, "h", "2\n")
+        self.git(other, "add", "h")
+        self.git(other, "commit", "-qm", "other h")
+        self.git(other, "push", "-q", "origin", "shared")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual((self.repo / "h").read_text(), "2\n")
+        self.assertEqual(self.git(self.repo, "config", "--get", "branch.shared.remote").strip(), "origin")
+        self.assertEqual(self.git(self.repo, "config", "--get", "branch.shared.merge").strip(), "refs/heads/shared")
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+
+    def test_a_single_branch_clone_without_a_resolving_upstream_fast_forwards_on_the_shared_route(self):
+        self.add_files("bin/x")
+        self.git(self.repo, "push", "-q", "origin", "HEAD:refs/heads/solo")
+        single = self.tmp / "single"
+        self.git(self.tmp, "clone", "-q", "--single-branch", "-b", "master", str(self.remote), str(single))
+        self.git(single, "fetch", "-q", "origin", "solo")
+        self.git(single, "checkout", "-q", "-b", "solo", "FETCH_HEAD")
+        self.git(single, "config", "branch.solo.remote", "origin")
+        self.git(single, "config", "branch.solo.merge", "refs/heads/solo")
+        other = self.clone("other-solo")
+        self.git(other, "fetch", "-q", "origin", "solo")
+        self.git(other, "checkout", "-q", "-b", "solo", "FETCH_HEAD")
+        self.write(other, "h", "2\n")
+        self.git(other, "add", "h")
+        self.git(other, "commit", "-qm", "other h")
+        self.git(other, "push", "-q", "origin", "solo")
+        self.write(single, "bin/x", "1\nlocal-edit\n")
+        self.repo = single
+        self.register_other(single)
+        self.assertEqual(self.git(single, "branch", "-r", "--list", "origin/solo"), "")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual((single / "h").read_text(), "2\n")
+        self.assertEqual((single / "bin" / "x").read_text(), "1\nlocal-edit\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def hold_the_lock(self):
+        """Start a child that holds the repo's lock until cleanup kills it; return the lock path."""
+        common_dir = pathlib.Path(self.git(self.repo, "rev-parse", "--path-format=absolute",
+                                           "--git-common-dir").strip())
+        lock = common_dir / "pull-keep-index.lock"
+        holder_code = textwrap.dedent(f"""
+            import sys, time
+            sys.path.insert(0, {str(LIB_DIR)!r})
+            import file_lock
+            with file_lock.hold_exclusive({str(lock)!r}, 5):
+                print("held", flush=True)
+                time.sleep(600)
+        """)
+        holder = subprocess.Popen([sys.executable, "-c", holder_code], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), "held")
+        return lock
+
+    def test_a_run_and_a_put_back_wait_for_the_lock_then_exit_1_naming_it(self):
+        lock = self.hold_the_lock()
+        saved = self.make_saved_commit("g", "unstaged\n")
+        self.push_from_other_machine("h", "2\n")
+        self.write(self.repo, "f", "staged\n")
+        os.environ["PULL_KEEP_INDEX_LOCK_SECONDS"] = "1"
+
+        for arguments in ((), ("--put-back", saved)):
+            finished = self.run_script(*arguments)
+
+            self.assertEqual(finished.returncode, 1, finished.stderr)
+            self.assertIn(f"another run holds {lock}", finished.stderr)
+            self.assertEqual(self.status(), [" M f"], arguments)
+            self.assertFalse((self.repo / "h").exists(), arguments)
+
+    def test_a_lock_wait_that_is_not_a_positive_integer_exits_1_naming_the_variable(self):
+        for value in ("x", "0", "-3", "1.5"):
+            os.environ["PULL_KEEP_INDEX_LOCK_SECONDS"] = value
+
+            finished = self.run_script()
+
+            self.assertEqual(finished.returncode, 1, value)
+            self.assertIn("PULL_KEEP_INDEX_LOCK_SECONDS", finished.stderr, value)
 
 
 class PrintedCommandQuotingTest(unittest.TestCase):

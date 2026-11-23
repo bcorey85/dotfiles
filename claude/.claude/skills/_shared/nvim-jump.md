@@ -2,7 +2,7 @@
 
 Any `file:line`-anchored walkthrough drives the user's view to each anchor as presented. Pick the command by what the walk shows:
 
-- **`nvim-jump`** for planning and decision walks (research, drill-downs, `/walk`, `/drive`, `/peer-review`): it opens the file in nvim. With no nvim owning the file, inside herdr it turns the tab's `review` pane (`hunk-review-pane`) into nvim in the repo root and jumps there.
+- **`nvim-jump`** for planning and decision walks (research, drill-downs, `/orient walk`, `/drive`, `/peer-review`): it opens the file in nvim. With no nvim owning the file, inside herdr it turns the tab's `review` pane (`hunk-review-pane`) into nvim in the repo root and jumps there.
 - **`hunk-notes`** for phase-end and review walks over the main checkout diff (`/stage`, `/verify-branch`, review asks): the review pane diffs against the branch base on a feature branch, so committed lines anchor too, but a note lands only on a line the diff shows. It posts the list as agent notes in the repo's live hunk session and focuses the first. Same arguments as `nvim-jump`; there is no `--push` and no `]v`/`[v`.
 
 ```

@@ -1,12 +1,14 @@
 ---
 name: test-audit
-description: The cross-phase test gate — the half of test-intent no single phase can judge. Cull test spam, sweep weak/absent assertions against the plan, all at branch scope. Use for "test audit", "cross-phase test audit", "/test-audit". The third closing phase, a gate — it routes findings to /fix and hands its receipt to /branch-recap.
+description: The cross-phase test gate: culls test spam and sweeps weak or absent assertions against the plan at branch scope; routes findings to /fix, hands its receipt to /branch-recap. `review [be|fe|fs|branch] [focus]` instead reviews a test suite for coverage gaps, weak assertions and stale tests. Use for "test audit", "review the tests", "test suite health", "coverage check", "cull the branch's tests".
 allowed-tools: [Bash, Read, Glob, Grep, Agent, Skill]
 ---
 
 # Test audit — the cross-phase test gate
 
 The third closing phase — the one test question no phase answers locally: do the branch's tests, taken whole, pin intent without spam or loose oracles? Bug-pinning is not run here. Cull + weak only.
+
+If `$ARGUMENTS` starts with `review`, run **Review mode** below and skip the rest. Otherwise run the audit.
 
 Output: findings to `/fix`, a flywheel log row, a receipt line for `/branch-recap`.
 
@@ -43,6 +45,15 @@ Then per-finding rows per `~/.claude/skills/_shared/finding-log.md` (read it): `
 
 - The finding-log `kind=run` row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The metrics row above takes no diff field. The script measures the branch and the working tree, so the audit's uncommitted fixes count.
 - Each finding row passes the test `file=` and `line=` the auditor's finding names. A finding that names only a plan promise, such as an `absent` WEAK, passes `file=unlocated` and no line. Never guess a file.
+
+## Review mode: `review [be|fe|fs|branch] [focus]`
+
+Ad-hoc suite review, off the closing pipeline. Dispatch `test-reviewer` (omit `model`; frontmatter pins Sonnet).
+
+1. Take the modifier: `be`/`backend`, `fe`/`frontend`, `fs`/`fullstack` or `branch`. Any text after it is a focus area passed to the agent.
+2. With no modifier, classify the diff and untracked files as fe or be per the project layout (CLAUDE.md if unclear): only fe is `frontend`, only be is `backend`, both is `fullstack`, ambiguous means ask.
+3. Dispatch `frontend` or `backend` as one agent, `fullstack` as two in parallel. `branch` is one agent with scope `branch` (it diffs the merge-base itself) and reviews only branch-added or modified tests plus a cull check. Never run `branch` on a pipeline branch: this audit already judges those tests.
+4. Present the report and ask about dispatching coders for fixes. Log nothing.
 
 ## What NOT to do
 

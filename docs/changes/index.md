@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1114 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
+1117 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The session retro moves out of audit into its own hillclimb skill](notes/2026-11-22-the-session-retro-moves-out-of-audit-into-its-own.md).
+Latest change: 2026-11-22, [Folding test-review into test-audit cuts one always-loaded skill description and a routing choice](notes/2026-11-22-folding-test-review-into-test-audit-cuts-one.md).
 
 ## Top gains
 

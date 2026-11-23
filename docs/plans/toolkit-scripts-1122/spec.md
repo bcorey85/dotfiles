@@ -18,7 +18,7 @@ Three toolkit texts give up the parts that a script owns. The refactor skill's 3
 - [x] Phase 0: Contracts — frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — `refactor_log_input.py` split out, `log --help` prints the template (risk: low)
 - [x] Phase 2: refactor skill and close-branch point to `log --help` (risk: low)
-- [ ] Phase 3: `lib/calibration_lock.py`, with `calibration_guard.py` importing it (risk: high)
+- [x] Phase 3: `lib/calibration_lock.py`, with `calibration_guard.py` importing it (risk: high)
 - [ ] Phase 4: `tools/mutation_lock.py` with its tests (risk: high)
 - [ ] Phase 5: mutation-tester and its opencode port call the script (risk: low)
 - [ ] Phase 6: the guide skill keeps one worked card (risk: low)

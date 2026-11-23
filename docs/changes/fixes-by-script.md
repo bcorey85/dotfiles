@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-717 fix notes
+718 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -79,6 +79,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
+| script/calibration-guard | 3 | 1 |
 | script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
@@ -99,7 +100,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
-| script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
 | script/directory-emptying-deletes | 2 | 2 |
@@ -145,6 +145,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/ask-outcome-words | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
+| script/calibration-lock | 1 | 1 |
 | script/clone-pairs | 1 | 1 |
 | script/code-phase-start | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
@@ -171,6 +172,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-skill-use | 1 | 0 |
 | script/memory-cap-scope | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
+| script/mutation-lock | 1 | 1 |
 | script/nvim-jump | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |

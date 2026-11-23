@@ -135,6 +135,30 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("agents/test-reviewer.md")
         self.assertIn("Never change a file in the tree, not even to mutate it and restore it", text)
 
+    def test_the_test_reviewer_s_cull_step_points_at_the_test_intent_reviewer_s_cull_paragraph(self):
+        text = guidance_text("agents/test-reviewer.md")
+        step_five = text.split("**Step 5: Cull check", 1)[1].split("## Output Format", 1)[0]
+        self.assertIn("test-intent-reviewer.md", step_five)
+        self.assertNotIn("Deleting pre-existing tests", text)
+
+    def test_test_audit_carries_its_finding_log_lane_and_scope(self):
+        text = guidance_text("skills/test-audit/SKILL.md")
+        self.assertIn("gate=test-intent-reviewer lane=test-audit", text)
+        self.assertIn("lane=test-audit scope=branch-exit", text)
+
+    def test_test_audit_logs_a_run_row_even_when_it_finds_nothing(self):
+        text = guidance_text("skills/test-audit/SKILL.md")
+        self.assertIn("Zero-finding audits still log `kind=run`", text)
+
+    def test_both_spec_criteria_copies_read_code_vocabulary_before_a_criterion_that_names_code(self):
+        copies = (toolkit_paths.CLAUDE_DIR / "agents/spec-criteria.md",
+                  toolkit_paths.TREE_CLAUDE_DIR.parents[1] / "opencode/.config/opencode/agents/spec-criteria.md")
+        for copy in copies:
+            with self.subTest(path=str(copy)):
+                text = " ".join(copy.read_text().split())
+                self.assertIn("before you write a criterion that names code", text)
+                self.assertIn("code-vocabulary.md", text)
+
     def test_spec_criteria_numbers_ids_flat_and_runs_plan_check_before_it_returns(self):
         text = guidance_text("agents/spec-criteria.md")
         raw_text = (toolkit_paths.CLAUDE_DIR / "agents/spec-criteria.md").read_text()

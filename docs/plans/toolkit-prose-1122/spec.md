@@ -20,7 +20,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 - [x] Phase 2: Item 1 — contradictory lines and dispatcher descriptions (risk: low)
 - [x] Phase 3: Item 3 — architect descriptions and the Reuse Map owner (risk: low)
 - [x] Phase 4: Item 4 — general-purpose body (risk: low)
-- [ ] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)
+- [x] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)
 - [ ] Phase 6: Item 2 remainder — review-fork-run, coder-core verify list, calibration dedupe, eng-spec agents (risk: high)
 - [ ] Phase 7: Item 6 — PLAN-IMPACT rule owner and the code-reviewer calibration pointer (risk: high)
 - [ ] Phase 8: Item 7 — derivable-list rule, plant, detector and scenario (risk: low)
@@ -331,7 +331,7 @@ finding-log folds into test-audit, skimmable-writing into adr-template; every es
 #### 1. finding-log fold
 
 **Files**: `claude/.claude/skills/test-audit/SKILL.md`, `claude/.claude/skills/_shared/finding-log.md` (deleted with `git rm`), `tests/scripts/test_log_review_finding.py`
-**Changes**: test-audit `## Logging` replaces the :42 pointer with finding-log's Emit section (:7-26) and Rules (:30-39, :44-53); drop :40-43 (`source=`) and the `[source=<round|class|gate|scoped>]` token on Emit :24; keep the single `<'file=<path>' line=<n>|file=unlocated>` form, the quoted `'root=<its absolute path>'`, never an unquoted `file=<path>`; keep `gate=test-intent-reviewer lane=test-audit scope=branch-exit` and "Zero-finding audits still log `kind=run`."; do not touch test-audit:3. test_log_review_finding.py:23 `FINDING_LOG_RULE` points at the test-audit SKILL.md path through `toolkit_paths`.
+**Changes**: test-audit `## Logging` replaces the :42 pointer with finding-log's Emit section (:7-26) and Rules (:30-39, :44-53); drop :40-43 (`source=`) and the two `fix_induced` bullets (:38-39) and the `[source=<round|class|gate|scoped>]` token on Emit :24; keep the single `<'file=<path>' line=<n>|file=unlocated>` form, the quoted `'root=<its absolute path>'`, never an unquoted `file=<path>`; keep `gate=test-intent-reviewer lane=test-audit scope=branch-exit` and "Zero-finding audits still log `kind=run`."; do not touch test-audit:3. test_log_review_finding.py:23 `FINDING_LOG_RULE` points at the test-audit SKILL.md path through `toolkit_paths`.
 
 #### 2. skimmable fold
 
@@ -564,6 +564,7 @@ Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `tes
 - Phase 3: architect-core Reuse Map gate widened from "helper/service/util" to "unit (helper, service, util, component, hook)" so the frontend gate is kept (AC3 wording otherwise unchanged). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
 - Phase 3: opencode architect ports line 13 reworded (the "preloaded" clause dropped) because the added First-action line makes it contradict AC1. Ticket AC1 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
 - Phase 3: ruling rejected a change of the descriptions to "phases 4 and 6"; AC3 wording "Dispatched by /eng-spec phase 4." stands (phase 6 re-dispatch is a continuation of the phase 4 dispatch). Ticket AC3 (no ticket number in 00-ticket.md); ruling by orchestrating session (code), 2026-11-22.
+- Phase 5: test-audit drops the two `fix_induced` bullets because it has no fix loop; named beside `source=` in Phase 5 §1's drop clause. Ruled by the orchestrating session, 2026-11-22; no acceptance criterion changes.
 
 ## References
 

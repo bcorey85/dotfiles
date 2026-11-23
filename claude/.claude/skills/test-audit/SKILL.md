@@ -41,9 +41,33 @@ Log the firing (non-blocking; skip if audit skipped):
   result=<clean|findings>
 ```
 
-Then per-finding rows per `~/.claude/skills/_shared/finding-log.md` (read it): `gate=test-intent-reviewer lane=test-audit scope=branch-exit`. Zero-finding audits still log `kind=run`.
+Then log the per-finding rows with `gate=test-intent-reviewer lane=test-audit scope=branch-exit`, after dispositions are known (`actioned` real, not predicted). Zero-finding audits still log `kind=run`.
 
-- The finding-log `kind=run` row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The metrics row above takes no diff field. The script measures the branch and the working tree, so the audit's uncommitted fixes count.
+```bash
+# Each row is its own plain Bash call by this path: no $HOME, variable, array or $(...).
+# Repeat iter on every call. The script adds repo and branch itself.
+# Single-quote every argument that holds a path, as written below.
+# When the reviewed repo is not your cwd, add 'root=<its absolute path>' to every call; the script runs there.
+
+# ONE run row.
+~/.claude/skills/review/log-review-finding kind=run lane=test-audit scope=branch-exit iter=<N> \
+  gate=test-intent-reviewer n_findings=<n> diff_base=<ref> result=<PASS|PASS_WITH_WARNINGS|NEEDS_CHANGES|NOT_DISPATCHED>
+
+# ONE finding row per finding.
+~/.claude/skills/review/log-review-finding kind=finding lane=test-audit scope=branch-exit iter=<N> \
+  gate=test-intent-reviewer disposition=<fix|ask|nit> [blocker=yes] \
+  class=<bug|smell|duplication|complexity|plan-drift|test-gap|weak-assertion|security|perf|correctness|docs|other> \
+  <'file=<path>' line=<n>|file=unlocated> actioned=<fixed|skipped_fp|deferred|ask|none>
+# Prints finding_id=<id>.
+```
+
+- `class=` uses the escape vocabulary. Do not invent values — unknown ones store as `other` and are counted in the yield header.
+- **`other` is a last resort.** Reach for `docs` when the prose is wrong about the code (stale comment, wrong quantity, contradicting doc, over-cap volume).
+- **`result=` is the gate's verdict, one of the four tokens above, with underscores.** The tool refuses any other value. Use `PASS` clean/intent-aligned, `NEEDS_CHANGES` gaps/residue, `NOT_DISPATCHED` surface-unmatched.
+- **`desc=` is accepted and never stored.** Leave it off new calls. A call that carries text passes `desc=-` and the text in a quoted heredoc (`<<'DESC'`), never inside the argument.
+- **Asks:** log an `actioned=ask` finding row with the same `file=` and `line=` as the ask's `file_line`. The caller reads the printed `finding_id=<id>` from the transcript and logs the outcome under it with `ask_outcome=`, which supersedes the ask row. The writer refuses an ask outcome with no `finding_id`.
+- Full field reference lives in the script's header.
+- The `kind=run` row passes `diff_base=<the base ref of the branch diff>`, never `diff_loc=`. The metrics row above takes no diff field.
 - Each finding row passes the test `file=` and `line=` the auditor's finding names. A finding that names only a plan promise, such as an `absent` WEAK, passes `file=unlocated` and no line. Never guess a file.
 
 ## Review mode: `review [be|fe|fs|branch] [focus]`

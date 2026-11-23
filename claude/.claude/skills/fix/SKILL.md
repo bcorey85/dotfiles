@@ -35,7 +35,7 @@ Read `~/.claude/skills/_shared/review-fork-run.md` whole first and follow it. **
      [--aikido "<path>:<line>=<comment_id>"]... [--pr <number>]
    ```
 
-   - `--escape`, one per distinct defect: only when the user reported it in conversation, on code a prior `/review` on this branch already passed, and it is a defect, not a new requirement or a change of direction. Pick `guard` from `~/.claude/skills/_shared/escape-ratchet.md` without pausing. When the user reports the defect after the packet ran, log it later with `python3 ~/.claude/scripts/review/review_fix.py escape --escape "..."`; the script records what it logged, so a repeat logs nothing twice.
+   - `--escape`, one per distinct defect: only when the user reported it in conversation, on code a prior `/review` on this branch already passed, and it is a defect, not a new requirement or a change of direction. Before you log the escape, read `~/.claude/skills/_shared/escape-ratchet.md` and pick `guard`, without pausing. When the user reports the defect after the packet ran, log it later with `python3 ~/.claude/scripts/review/review_fix.py escape --escape "..."`; the script records what it logged, so a repeat logs nothing twice.
    - `--aikido`, one per finding that is an Aikido PR comment (`author` is `aikido-pr-checks[bot]`, or the body carries `@AikidoSec` / `app.aikido.dev`, and it has a `comment_id`). With them, `--pr` with the PR number the findings came with.
 
 3. **Do what its `ACTION:` lines say.** State a proposed escape guard in your closing line; on resume, a coder applies it when the user approves.

@@ -2,7 +2,7 @@
 
 The boundary between private workflow and shipped tree. Read before writing or editing any project source or test file.
 
-Consumers: `spec-criteria`, `eng-spec`, `/code`, `/refactor`, `/branch-recap`. The coders carry a one-sentence ban of their own and do not load this file.
+Consumers: `spec-criteria`, and the gates `scripts/gates/stale_citation_gate.py` and `scripts/gates/comment_bloat_gate.py`, which cite this file in their block messages. The coders carry a one-sentence ban of their own and do not load this file.
 
 ## The rule
 

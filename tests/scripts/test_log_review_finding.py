@@ -20,7 +20,7 @@ import toolkit_paths
 LOG_REVIEW_FINDING = pathlib.Path(
     os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
 )
-FINDING_LOG_RULE = toolkit_paths.CLAUDE_DIR / "skills" / "_shared" / "finding-log.md"
+FINDING_LOG_RULE = toolkit_paths.CLAUDE_DIR / "skills" / "test-audit" / "SKILL.md"
 CODE_SKILL = toolkit_paths.CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",

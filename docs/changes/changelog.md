@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1145 changes
+1146 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [finding-log and skimmable-writing fold into their one loader, every escape-ratchet pointer names its trigger, and the test-reviewer cull rule has one owner](notes/2026-11-22-finding-log-and-skimmable-rules-fold-into-their-one-loader-and-every-escape-pointer-names-its-trigger.md) [skill/test-audit, skill/adr, skill/verify-branch, skill/pr-comments, skill/commit, skill/fix, skill/escape, skill/cc, skill/eng-spec, agent/spec-criteria, agent/test-reviewer] test-audit carries the per-finding log instructions and adr-template carries the skimmable-writing rules; the two shared files are deleted. Each escape-ratchet pointer says when to read it, and the consumer lists of escape-ratchet and code-vocabulary match what rg finds. The test-reviewer cull step points at the test-intent-reviewer cull paragraph.
 * [The session retro moves out of audit into its own hillclimb skill](notes/2026-11-22-the-session-retro-moves-out-of-audit-into-its-own.md) [skill/hillclimb, skill/audit] The lane that reads one session and queues environment fixes becomes its own skill, typed as /hillclimb in place of /audit retro; its steps are unchanged, and /audit keeps the usage, skills and review lanes.
 * [The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) [rule/orchestration] The orchestration line that keeps file I/O on Read, Edit and Write under the auto-mode notice was metered and kept: the on arm made 6 Bash writes or inline interpreter calls, the off arm 9, about 1.5 times as many.
 * [The retro lane queues its own picks and reports a log of what it queued and skipped](notes/2026-11-22-the-retro-lane-queues-its-own-picks-and-reports-a.md) [skill/audit] The retro lane of the audit skill decides which of its candidates to queue, queues them, and ends with a log of the queued and the skipped ones, so the user no longer picks numbers.

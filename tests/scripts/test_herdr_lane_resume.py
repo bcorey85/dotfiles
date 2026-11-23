@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import write_stub
+from stubs import copy_toolkit_tools_lib, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "herdr-lane-resume"))
@@ -89,6 +89,7 @@ class HerdrLaneResumeTest(unittest.TestCase):
         self.bin_dir.mkdir()
         self.script = self.bin_dir / "herdr-lane-resume"
         shutil.copy(HERDR_LANE_RESUME, self.script)
+        copy_toolkit_tools_lib(self.root)
         self.script.chmod(0o755)
         write_stub(self.bin_dir / "herdr", HERDR_BODY)
         write_stub(self.bin_dir / "herdr-api", HERDR_API_BODY)

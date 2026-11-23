@@ -29,7 +29,9 @@
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
-lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
+# $0 is a stow symlink, so the library is found from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/toolkit-tools.bash"
 
 [ $# -eq 5 ] || { echo "usage: herdr-worktree-watch <workspace id> <worktree> <main checkout> <claude pane> <parent session>" >&2; exit 1; }
 workspace="$1"

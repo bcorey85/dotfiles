@@ -15,7 +15,7 @@ import time
 import unittest
 
 import toolkit_paths
-from stubs import write_stub
+from stubs import TOOLKIT_TOOLS_LIB, copy_toolkit_tools_lib, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
@@ -56,6 +56,7 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
+        copy_toolkit_tools_lib(self.root)
         shutil.copy(DETACH, self.bin_dir / "detach")
         self.herdr_args = self.root / "herdr-args"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$@" > {self.herdr_args}
@@ -533,6 +534,8 @@ esac""")
         real_bin.mkdir(parents=True)
         real_script = real_bin / "herdr-worktree"
         shutil.copy(HERDR_WORKTREE, real_script)
+        (checkout / "scripts" / ".local" / "lib").mkdir()
+        shutil.copy(TOOLKIT_TOOLS_LIB, checkout / "scripts" / ".local" / "lib" / TOOLKIT_TOOLS_LIB.name)
         stowed_script = self.bin_dir / "herdr-worktree"
         stowed_script.unlink()
         stowed_script.symlink_to(os.path.relpath(real_script, self.bin_dir))

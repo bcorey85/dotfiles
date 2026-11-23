@@ -26,8 +26,9 @@
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 bin_dir="$(cd "$(dirname "$0")" && pwd)"
-lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
-session_pane=${HERDR_SESSION_PANE:-$HOME/.claude/scripts/tools/session_pane.py}
+# $0 is a stow symlink, so the library is found from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/toolkit-tools.bash"
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 

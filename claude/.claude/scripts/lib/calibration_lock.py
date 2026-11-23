@@ -22,7 +22,9 @@ A lock with no parseable ts is stale. A lock younger than MUTATION_RUN_TIMEOUT_S
 exists (or that names no owner) is live.
 """
 import calendar
+import hashlib
 import os
+import pathlib
 import time
 from typing import NamedTuple
 
@@ -33,6 +35,14 @@ STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # A mutation or calibration run longer than this has been abandoned, whatever its owner process says.
 MUTATION_RUN_TIMEOUT_SECONDS = 60 * 60
 LOCK_WAIT_SECONDS = 5
+MUTATION_KIND = "mutation-test"
+MUTATION_WRITER = "mutation-tester"
+PRE_HASH_LENGTH = 16
+
+
+def pre_hash(file):
+    """The lock's pre_hash for a file: the first PRE_HASH_LENGTH hex characters of the sha256 of its bytes."""
+    return hashlib.sha256(pathlib.Path(file).read_bytes()).hexdigest()[:PRE_HASH_LENGTH]
 
 
 def _home(environ):
@@ -58,6 +68,12 @@ def legacy_lock_path(environ=None):
 
 def backups_folder(environ=None):
     return os.path.join(state_folder(environ), "backups")
+
+
+def backup_path(file, environ=None):
+    """The backup of a work-tree-relative file. Joined as a string: a Path would tidy "//" and "/./" out of the
+    state root, and a lock records the untidied text."""
+    return os.path.join(backups_folder(environ), file)
 
 
 def find_lock(environ=None):
@@ -176,9 +192,15 @@ def live_notice(kind, file, worktree, owner_pid):
     )
 
 
+def recovery_commands(view, lock):
+    """The two shell commands that undo a seed by hand: (copy the backup over the file, remove the lock)."""
+    return f"cp \"{view.backup}\" \"{view.file}\"", f"rm \"{lock}\""
+
+
 def unrestored_message(view, lock):
     """The text for a lock whose run is over: where the seed may still be, and the commands that undo it."""
-    if view.kind == "mutation-test":
+    copy_command, remove_command = recovery_commands(view, lock)
+    if view.kind == MUTATION_KIND:
         what = "MUTATION SEED — a previous mutation-tester run did not finish."
     else:
         what = "CALIBRATION SEED — a previous /calibrate run did not finish."
@@ -189,10 +211,10 @@ def unrestored_message(view, lock):
         f"  {view.file}\n"
         "\n"
         "Restore it from the backup before doing ANY other work in that repo:\n"
-        f"  cp \"{view.backup}\" \"{view.file}\"\n"
+        f"  {copy_command}\n"
         "\n"
         "Then verify the file is back to what you expect and remove the lock:\n"
-        f"  rm \"{lock}\"\n"
+        f"  {remove_command}\n"
         "\n"
         "Do not commit until this is resolved. Do not run /calibrate or dispatch\n"
         "mutation-tester until this lock is gone — both refuse to seed on top of an\n"

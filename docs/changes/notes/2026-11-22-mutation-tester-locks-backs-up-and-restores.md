@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/calibration-lock", "script/calibration-guard", "script/mutation-lock", "agent/mutation-tester"]
 evidence: ["removal round", "census"]
 watches: []
-test: "tests/scripts/test_calibration_lock.py::PathTest::test_find_lock_returns_the_legacy_path_only_when_the_state_lock_is_absent"
+test: "tests/scripts/test_mutation_lock.py::MutationLockTest::test_check_stops_on_a_live_lock_and_leaves_it_alone"
 asked: ""
 proof: []
 unmeasured: ""

@@ -17,7 +17,7 @@ The /code review loop reverts every fix-pass edit to a CLAUDE.md. After this cha
 
 - [x] Phase 1: Owner-line grammar and the two-sided diff helper (risk: low)
 - [x] Phase 2: Standing rulings learn `covers: owner-lines` (risk: low)
-- [ ] Phase 3: The review loop keeps a ruled owner-line edit (risk: high)
+- [x] Phase 3: The review loop keeps a ruled owner-line edit (risk: high)
 - [ ] Phase 4: Item 2 replay pin, glossary, change file (risk: low)
 - [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -341,6 +341,8 @@ Real-git temp repos through the existing `coder_pass` pattern for the loop; pure
 ## Plan Deviations
 
 Phase 1 ruling (Ticket #AC7 criterion, owner session): owner_lines_only requires a replaced owner bullet to resemble its old text (similarity >= REWRITE_RATIO); ruled by the orchestrating session, 2026-11-22.
+
+Phase 3 held impact (narrow, no AC change): a fix pass could write the owner-lines ruling that a later round of the same run reads; deferred to phase end by the orchestrating session, 2026-11-22.
 
 ## References
 

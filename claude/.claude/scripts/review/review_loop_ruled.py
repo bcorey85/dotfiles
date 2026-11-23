@@ -1,7 +1,11 @@
 """review_loop_ruled.py: what a review loop does with asks it drops, with findings the user already ruled on, and with
 a coder's edit to an approval-only file (it reverts the edit and reports it; each finding on that file becomes a
-user-only ask carrying the wanted change), as a mixin for `LoopRun`. The host class holds asks, plan_impacts,
-resolved_texts, files_touched, repo and plan (the plan's path in repo, or ""), and provides `add_ask`."""
+user-only ask carrying the wanted change), as a mixin for `LoopRun`. The one exception is an edit to the scripts
+CLAUDE.md that only adds or updates owner bullets (`owner_lines.owner_lines_only`) under a standing ruling that covered
+owner lines before the pass: it stays and is reported in the dropped asks. The host class holds asks, plan_impacts,
+resolved_texts, files_touched, repo and plan (the plan's path in repo, or ""), and provides `add_ask`. The mixin sets
+`owner_file_before` (the scripts CLAUDE.md text before the latest pass) and `owner_line_ruling` (the ruling read
+before it) on the host."""
 import dataclasses
 import pathlib
 from pathlib import Path, PurePosixPath
@@ -9,6 +13,8 @@ from typing import NamedTuple
 
 import coder_report
 import handback_store
+import hook_input
+import owner_lines
 import plan_format
 import review_loop_ruled_out
 import script_utils
@@ -26,6 +32,7 @@ from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
 from review_asks import rejected_ask_text
 from review_loop_findings import (
+    KEPT_OWNER_LINE_EDIT_REASON,
     NOTE_ASK_REASON,
     REJECTED_ASK_REASON,
     REPEATED_ASK_REASON,
@@ -60,6 +67,12 @@ def approval_ask_text(path):
     """The text of the ask for a coder's edit to the approval-only file `path`."""
     return (f"`{path}:1` [other] A fix coder edited `{path}`, which needs the user's approval. "
             f"Change: {approval_change(path)}")
+
+
+def kept_owner_line_text(path):
+    """The text of the dropped-ask row for an owner-line edit to `path` that the loop kept. It holds no change and no
+    question, so the packet proposes no revert for it."""
+    return f"`{path}:1` [other] owner-line edit kept"
 
 
 def no_code_numbers(findings):
@@ -212,6 +225,10 @@ class RuledFindings:
         self.approval_head_before = None  # the commit HEAD named before the latest coder pass
         self.approval_snapshot_ok = False  # whether the latest snapshot could list the repo's files
         self.approval_unhashed = set()  # the existing approval-only files the latest snapshot could not hash
+        # work-tree text of the scripts CLAUDE.md before the latest pass (None: absent, unhashed, unreadable, unlisted)
+        self.owner_file_before = None
+        # the standing ruling that covers owner lines, read before the latest pass (None: none, or no such file)
+        self.owner_line_ruling = None
         # each wanted-change ask on the list, saved with the paths (shape: `read_saved_asks`)
         self.wanted_entries = []
         # the saved wanted-change entries that a kept held packet waits on; no ask is filed for them
@@ -341,12 +358,27 @@ class RuledFindings:
         """The standing ruling in the loop's plan that covers rewords, or None with no plan on disk or no such ruling.
         A standing ruling line that does not parse raises PlanFormatError (`file:line:` and the expected form); the
         loop stops on it."""
+        plan_path = self.plan_path_on_disk()
+        if plan_path is None:
+            return None
+        return standing_rulings.reword_ruling(plan_path)
+
+    def standing_owner_line_ruling(self):
+        """The standing ruling in the loop's plan that covers owner lines, or None with no plan on disk or no such
+        ruling. A malformed standing ruling line raises PlanFormatError, as `standing_reword_ruling` does."""
+        plan_path = self.plan_path_on_disk()
+        if plan_path is None:
+            return None
+        return standing_rulings.owner_line_ruling(plan_path)
+
+    def plan_path_on_disk(self):
+        """The loop's plan file as a Path, or None with no plan or no such file."""
         if not self.plan:
             return None
         plan_path = Path(self.repo) / self.plan
         if not plan_path.is_file():
             return None
-        return standing_rulings.reword_ruling(plan_path)
+        return plan_path
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
@@ -375,12 +407,15 @@ class RuledFindings:
         names (see `wanted_edit_target`), is left as edited: the ruling is the approval, and a same-named file in
         another folder still is reverted.
         A session's ruling is no approval, except on this ask itself (a revert), which would otherwise be filed
-        again."""
+        again. An owner-line edit to the scripts CLAUDE.md under a pre-pass standing ruling stays (see
+        `keeps_owner_line_edit`)."""
         ruled_paths = self.approval_ruled_paths(findings)
         filed = False
         reverted = []
         for path in approval_only_paths(changed):
             if path in ruled_paths or self.names_ruled_wanted_target(path, findings):
+                continue
+            if self.keeps_owner_line_edit(path):
                 continue
             if self.revert_approval_edit(path):
                 reverted.append(path)
@@ -457,6 +492,42 @@ class RuledFindings:
             return UNKNOWN_BASE
         return self.approval_blobs.get(path)
 
+    def keeps_owner_line_edit(self, path):
+        """True when the pass's edit to `path` stays: `path` is the scripts CLAUDE.md, a standing ruling covered owner
+        lines before the pass, and the edit only adds or updates owner bullets. The kept edit is reported in the
+        dropped asks. Fail closed: a missing ruling, missing pre-pass text, an unreadable file, or an index entry or
+        commit whose content differs from the work tree returns False, and the edit is reverted. It touches neither the
+        index nor HEAD."""
+        if path != owner_lines.SCRIPTS_CLAUDE_MD:
+            return False
+        if self.owner_line_ruling is None or self.owner_file_before is None:
+            return False
+        after = hook_input.read_file_text(Path(self.repo) / path)
+        if after is None:
+            return False
+        if not owner_lines.owner_lines_only(self.owner_file_before, after):
+            return False
+        if not self.staged_and_committed_match_work_tree(path):
+            return False
+        label = standing_rulings.ruling_label(self.owner_line_ruling)
+        reason = KEPT_OWNER_LINE_EDIT_REASON.format(ruling=label)
+        self.drop_asks([parse_finding(kept_owner_line_text(path))], reason)
+        return True
+
+    def staged_and_committed_match_work_tree(self, path):
+        """Whether the index entry of `path` is its pre-pass entry or holds the work-tree blob, and, when the pass
+        committed `path`, HEAD holds the work-tree blob. Otherwise the index or HEAD holds content the work tree
+        does not show, and the revert must run."""
+        work_blob = script_utils.work_tree_blob(self.repo, path)
+        index_now = script_utils.index_entry(self.repo, path)
+        index_blob = index_now.blob if index_now else None
+        if index_now != self.approval_index_entries.get(path) and index_blob != work_blob:
+            return False
+        if not self.committed_during_pass(path):
+            return True
+        head_blob = script_utils.blob_at_commit(self.repo, script_utils.head_commit(self.repo), path)
+        return head_blob == work_blob
+
     def revert_approval_edit(self, path):
         """Puts approval-only file `path` back to its pre-pass blob (deletes a file the pass created) and records the
         edit in the dropped asks under `REVERTED_APPROVAL_EDIT_REASON`. Returns True when the file needs no ask: it
@@ -503,7 +574,12 @@ class RuledFindings:
         """Before a coder pass: saves the blob id of each approval-only file's work-tree content (None for a file the
         tree lacks), so the pass's edit is measured against what the file held before it, a phase's own uncommitted
         edit included. Within the pass, a coder's commit of the edit cannot hide it, and a revert to this content
-        clears it. An existing file whose hash fails goes to `approval_unhashed`, never stored as absent."""
+        clears it. An existing file whose hash fails goes to `approval_unhashed`, never stored as absent. When the
+        scripts CLAUDE.md is listed, also saves its text and the standing ruling that covers owner lines, both read
+        before the pass so a ruling the pass writes grants nothing to that same pass; a malformed ruling line raises
+        PlanFormatError."""
+        self.owner_file_before = None
+        self.owner_line_ruling = None
         self.approval_blobs = {}
         self.approval_index_entries = {}
         self.approval_head_before = script_utils.head_commit(self.repo)
@@ -520,6 +596,13 @@ class RuledFindings:
                 continue
             self.approval_blobs[path] = blob
             self.approval_index_entries[path] = script_utils.index_entry(self.repo, path)
+        if self.approval_blobs.get(owner_lines.SCRIPTS_CLAUDE_MD) is None:
+            return
+        self.owner_file_before = hook_input.read_file_text(Path(self.repo) / owner_lines.SCRIPTS_CLAUDE_MD)
+        if self.owner_file_before is None:
+            # Fail closed: with no pre-pass text the edit is reverted as before.
+            return
+        self.owner_line_ruling = self.standing_owner_line_ruling()
 
     def approval_ruled_paths(self, findings):
         """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""

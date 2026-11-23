@@ -32,6 +32,8 @@ import ruled_change_text
 from approval_ask_chain import accepted_approval_ask_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
+from owner_lines import SCRIPTS_CLAUDE_MD
+from test_owner_lines import NEW_BULLET, SCRIPTS_MD
 from test_review_loop_script import APP_FIXED, CLEAN_REVIEW, CLOSED, SESSION, ReviewLoopHarness
 
 
@@ -917,6 +919,16 @@ class RewordFlagTest(unittest.TestCase):
 
         self.assertTrue(handback.load(message)["plan_impacts"][0]["reword"])
 
+def git_in(repo, *argv):
+    subprocess.run(["git", *argv], cwd=repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+
+
+def init_repo(repo):
+    """Makes `repo` a git repo on main with every file in it committed."""
+    for argv in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "init"]):
+        git_in(repo, *argv)
+
+
 class ApprovalEditRevertTest(unittest.TestCase):
     """A fix coder's edit to an approval-only file is put back and reported, never filed as an ask."""
 
@@ -926,9 +938,7 @@ class ApprovalEditRevertTest(unittest.TestCase):
         self.repo = pathlib.Path(folder.name).resolve()
         self.claude_md = self.repo / "CLAUDE.md"
         self.claude_md.write_text("rules\n")
-        for argv in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "init"]):
-            subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True,
-                           capture_output=True)
+        init_repo(self.repo)
 
     def coder_pass(self, edit, changed):
         """Runs `edit` between the snapshot and the ask step, as a coder pass does. Returns the host."""
@@ -941,7 +951,7 @@ class ApprovalEditRevertTest(unittest.TestCase):
         return host
 
     def git_run(self, *argv):
-        subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+        git_in(self.repo, *argv)
 
     def staged_names(self):
         done = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.repo, capture_output=True,
@@ -1106,6 +1116,228 @@ class ApprovalEditRevertTest(unittest.TestCase):
 
         self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
         self.assertEqual(host.dropped_asks, [])
+
+
+OWNER_RULING = ("- Standing ruling by the orchestrating session at 2026-11-22: owner lines need no ask "
+                "covers: owner-lines\n")
+REWORDS_RULING = "- Standing ruling by Pat at 2026-11-22: one rule covers: rewords\n"
+KEPT_REASON = review_loop_findings.KEPT_OWNER_LINE_EDIT_REASON.format(ruling="the orchestrating session at 2026-11-22")
+OTHER_SCRIPTS_MD_PATH = "other/scripts/CLAUDE.md"
+PLAN_PATH = "docs/plans/p/plan.md"
+
+
+class OwnerLineEditTest(unittest.TestCase):
+    """The fix coder's owner-line edit to the scripts CLAUDE.md stands under a ruling read before the pass."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name).resolve()
+        self.scripts_md = self.repo / SCRIPTS_CLAUDE_MD
+        self.other_md = self.repo / OTHER_SCRIPTS_MD_PATH
+        self.decisions = self.repo / "docs/plans/p/03-decisions.md"
+        for target in (self.scripts_md, self.other_md):
+            target.parent.mkdir(parents=True)
+            target.write_text(SCRIPTS_MD)
+        self.decisions.parent.mkdir(parents=True)
+        (self.repo / PLAN_PATH).write_text("# Plan\n")
+        self.decisions.write_text(OWNER_RULING)
+        init_repo(self.repo)
+
+    def coder_pass(self, edit, findings=(), changed=SCRIPTS_CLAUDE_MD, plan=PLAN_PATH):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = plan
+        host.files_touched = set()
+        host.snapshot_approval_blobs()
+        edit()
+        host.ask_for_approval_only_edits([changed], list(findings))
+        return host
+
+    def edit_scripts_md(self, text):
+        return lambda: self.scripts_md.write_text(text)
+
+    def test_only_an_owner_line_edit_stands_under_the_ruling(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        updated = SCRIPTS_MD.replace("`lib/plan_format.py`", "`lib/plan_format.py` `read_plan`")
+        cases = {
+            "owner bullet added": (added, True),
+            "owner bullet updated": (updated, True),
+            "prose bullet added under Data": (SCRIPTS_MD + "- Prose bullet.\n", False),
+            "owner bullet plus prose line": (added + "- Prose bullet.\n", False),
+            "owner bullet removed": (SCRIPTS_MD.replace("- Plan text: `lib/plan_format.py`.\n", ""), False),
+        }
+        for name, (edited, kept) in cases.items():
+            with self.subTest(name):
+                self.scripts_md.write_text(SCRIPTS_MD)
+
+                host = self.coder_pass(self.edit_scripts_md(edited))
+
+                self.assertEqual(self.scripts_md.read_text(), edited if kept else SCRIPTS_MD, name)
+                self.assertEqual(host.user_only_asks, [], name)
+                expected = KEPT_REASON if kept else review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON
+                self.assertEqual([reason for _ask, reason in host.dropped_asks], [expected], name)
+
+    def test_a_finding_on_the_kept_file_files_no_ask(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:5` [docs] missing owner — Change: add the bullet.")
+
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = PLAN_PATH
+        host.files_touched = set()
+        host.snapshot_approval_blobs()
+        self.scripts_md.write_text(added)
+
+        reverted = host.ask_for_approval_only_edits([SCRIPTS_CLAUDE_MD], [finding])
+        wanted_filed = host.ask_for_wanted_changes([finding], reverted)
+
+        self.assertEqual(reverted, [])
+        self.assertFalse(wanted_filed)
+        self.assertEqual(self.scripts_md.read_text(), added)
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual(host.asks, [])
+
+    def test_a_staged_mixed_edit_trimmed_to_owner_lines_in_the_work_tree_is_reverted(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+
+        def stage_mixed_then_trim():
+            self.scripts_md.write_text(added + "- Prose bullet.\n")
+            git_in(self.repo, "add", SCRIPTS_CLAUDE_MD)
+            self.scripts_md.write_text(added)
+
+        host = self.coder_pass(stage_mixed_then_trim)
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_a_committed_mixed_edit_trimmed_to_owner_lines_in_the_work_tree_is_reverted(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+
+        def commit_mixed_then_trim():
+            self.scripts_md.write_text(added + "- Prose bullet.\n")
+            git_in(self.repo, "commit", "-q", "-am", "mixed")
+            # Index back to the pre-pass entry, so only HEAD holds the prose.
+            git_in(self.repo, "reset", "-q", "HEAD~1", "--", SCRIPTS_CLAUDE_MD)
+            self.scripts_md.write_text(added)
+
+        host = self.coder_pass(commit_mixed_then_trim)
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_the_snapshot_clears_a_stale_ruling_and_pre_pass_text(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = PLAN_PATH
+        host.snapshot_approval_blobs()
+        self.assertIsNotNone(host.owner_line_ruling)
+        self.assertEqual(host.owner_file_before, SCRIPTS_MD)
+
+        self.scripts_md.unlink()
+        host.snapshot_approval_blobs()
+
+        self.assertIsNone(host.owner_line_ruling)
+        self.assertIsNone(host.owner_file_before)
+
+    def test_the_packet_line_reports_the_kept_edit_and_proposes_no_revert(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        host = self.coder_pass(self.edit_scripts_md(added))
+
+        message = review_loop_packet.packet_message({"status": "converged", "dropped_asks": host.dropped_asks})
+
+        loaded = handback.load(message)
+        line = ("no approval ask is needed for an owner-line edit kept under the standing ruling by the "
+                "orchestrating session at 2026-11-22, so it was dropped: "
+                "'`claude/.claude/scripts/CLAUDE.md:1` [other] owner-line edit kept'")
+        self.assertEqual(loaded["dropped_asks"], [line])
+        self.assertNotIn("revert", loaded["dropped_asks"][0])
+        self.assertEqual(loaded["ask"], [])
+
+    def test_a_ruling_the_pass_adds_keeps_nothing(self):
+        self.decisions.write_text("# Decisions\n")
+        git_in(self.repo, "commit", "-q", "-am", "no ruling")
+
+        def add_ruling_and_bullet():
+            self.decisions.write_text(OWNER_RULING)
+            self.scripts_md.write_text(SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data"))
+
+        host = self.coder_pass(add_ruling_and_bullet)
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_no_owner_line_ruling_reaches_the_pass_as_a_kept_edit(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        self.decisions.write_text(REWORDS_RULING)
+        cases = {"a rewords-only ruling": PLAN_PATH, "no plan": ""}
+        for name, plan in cases.items():
+            with self.subTest(name):
+                self.scripts_md.write_text(SCRIPTS_MD)
+
+                host = self.coder_pass(self.edit_scripts_md(added), plan=plan)
+
+                self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD, name)
+                self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                                 [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON], name)
+
+    def test_an_owner_shaped_edit_to_another_scripts_claude_md_is_reverted(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+
+        host = self.coder_pass(lambda: self.other_md.write_text(added), changed=OTHER_SCRIPTS_MD_PATH)
+
+        self.assertEqual(self.other_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_a_committed_owner_line_edit_stays_committed(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+
+        def commit_edit():
+            self.scripts_md.write_text(added)
+            git_in(self.repo, "commit", "-q", "-am", "owner line")
+
+        host = self.coder_pass(commit_edit)
+
+        self.assertEqual(self.scripts_md.read_text(), added)
+        shown = subprocess.run(["git", "show", f"HEAD:{SCRIPTS_CLAUDE_MD}"], cwd=self.repo, capture_output=True,
+                               text=True, check=True)
+        self.assertEqual(shown.stdout, added)
+        self.assertEqual(host.files_touched, set())
+        self.assertEqual([reason for _ask, reason in host.dropped_asks], [KEPT_REASON])
+
+    def test_a_staged_owner_line_edit_with_the_work_tree_matching_the_index_stays(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+
+        def stage_edit():
+            self.scripts_md.write_text(added)
+            git_in(self.repo, "add", SCRIPTS_CLAUDE_MD)
+
+        host = self.coder_pass(stage_edit)
+
+        self.assertEqual(self.scripts_md.read_text(), added)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks], [KEPT_REASON])
+
+    def test_a_file_unreadable_when_judged_is_reverted(self):
+        host = self.coder_pass(self.scripts_md.unlink)
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_a_malformed_ruling_stops_the_snapshot_naming_file_and_line(self):
+        self.decisions.write_text("Standing ruling by x at 2026-11-22: y covers: everything\n")
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = PLAN_PATH
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            host.snapshot_approval_blobs()
+
+        self.assertIn("03-decisions.md:1:", str(raised.exception))
 
 
 class ApprovalAskTextTest(unittest.TestCase):

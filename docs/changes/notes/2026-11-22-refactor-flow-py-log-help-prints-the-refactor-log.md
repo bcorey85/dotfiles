@@ -6,7 +6,7 @@ description: "The refactor log input grammar and its template move from refactor
 generated: {"by": "claude-code/claude-fable-5-1", "at": "2026-11-22T19:05:21-06:00"}
 seq: 35
 kind: "fix"
-components: ["script/refactor-flow", "script/refactor-log-input", "skill/refactor"]
+components: ["script/refactor-flow", "script/refactor-log-input", "skill/refactor", "skill/close-branch"]
 evidence: ["removal round", "census"]
 watches: []
 test: "tests/scripts/test_refactor_flow.py::RefactorFlowTest::test_the_log_template_in_log_help_logs_on_the_first_call"

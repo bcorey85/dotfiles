@@ -1292,6 +1292,17 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("refactor_flow.py log", skill_text)
         self.assertIn("--mode branch", skill_text)
 
+    def test_close_branch_step_five_points_to_log_help(self):
+        skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "close-branch" / "SKILL.md").read_text()
+        self.assertIn("log --help", skill_text)
+        self.assertNotIn("refactor/SKILL.md` Step 5", skill_text)
+
+    def test_the_refactor_skill_holds_no_log_json_template(self):
+        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
+        self.assertIsNone(re.search(r"^\s*`{3}json", skill_text, re.MULTILINE))
+        self.assertNotIn("JSON as in step 5", skill_text)
+        self.assertIn("refactor_flow.py log --help", skill_text)
+
     def test_simplify_prep_small_target_has_no_split_and_prompt_has_oracle(self):
         self.write("mod/a.py", "x = 1\n")
         self.git("add", "-A")

@@ -49,7 +49,7 @@ from review_loop_prompt_file import (
     read_prompt,
     reviewer_brief,
 )
-from review_loop_ruled import adopted_rulings, rejected_ask_records
+from review_loop_ruled import adopted_rulings, rejected_ask_questions, rejected_ask_records
 from review_loop_scoped_tests import test_commands_of
 from review_loop_script import (
     ROUND_BUDGET,
@@ -124,6 +124,7 @@ def build_loop(request):
     loop.resolved_texts = plan_format.resolved_plan_texts(handoff)
     loop.change = ChangeUnderReview(repo)
     loop.rejected_asks = rejected_ask_records(request.session, repo)
+    loop.rejected_questions = rejected_ask_questions(request.session, repo)
 
     log_call(repo, [str(SKILLS / "review-scope"), f"caller={header.get('caller', 'code')}"])
     found_command = full_check.configured_check_command(repo)

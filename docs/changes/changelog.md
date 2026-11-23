@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1141 changes
+1142 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -19,6 +19,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Comment put-back files one ask per block and never repeats a ruled ask](notes/2026-11-23-comment-put-back-files-one-ask-per-block-and-never.md) [script/review-loop] The review loop's comment put-back now files one ask per comment block, does not put back a comment an accepted ask deletes, does not re-ask a comment whose ask was rejected, and files no ask for a comment a fix pass only reworded, so lanes stop hitting the round cap on no-op asks.
 * [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md) [script/plan-check] A lane ticket that names a session-written queue item before a human-written one now reads as user-owned, so a session can no longer rule on the user's criteria; every queue Source line is now checked, not only the first.
 
 ## Week of 2026-11-16

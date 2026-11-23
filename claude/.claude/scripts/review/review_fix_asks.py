@@ -407,7 +407,7 @@ def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     forget_ruled_approval_paths(repo, [item])
     if new_outcome == REJECTED:
-        handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo)
+        review_asks.record_rejection(session_id, item, repo)
     elif old_outcome == REJECTED:
         handback_store.record_rejection_withdrawn(session_id, rejected_ask_text(item), repo)
 

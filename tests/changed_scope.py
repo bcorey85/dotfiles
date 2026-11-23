@@ -27,6 +27,7 @@ PROMPT_READING_TESTS = (
     "test_docs_kind.py",
     "test_fork_write_scope.py",
     "test_guidance_rules.py",
+    "test_lane_brief.py",
     "test_log_escape.py",
     "test_log_review_finding.py",
     "test_refactor_flow.py",

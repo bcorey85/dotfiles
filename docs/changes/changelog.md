@@ -7,14 +7,19 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1150 changes
+1152 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
 ## Week of 2026-11-23
 
+### Added
+
+* [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) [shared/lane-brief, rule/orchestration] A forked lane reads how it reports, runs every phase through, records rulings and runs its checks from skills/_shared/lane-brief.md, so the rules survive compaction and no lane stops after a phase to ask for a commit.
+
 ### Changed
 
+* [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) [agent/mutation-tester] The mutation tester compiles the mutated file before it reads the test run; a mutant that breaks import or compile is INDETERMINATE, so a false kill no longer hides a test gap. **raises % of unloadable mutants called INDETERMINATE (of 16 runs) by 79% (56 → 100)**
 * [Lane close and phase-change lines name the herdr lane scripts](notes/2026-11-23-lane-close-and-phase-change-lines-name-the-herdr.md) [rule/orchestration] The orchestration Git section now tells the orchestrator to close a merged lane with herdr-lane-resume --close, and says herdr-phase-change takes the worker's ListAgents name and adds the report-to line itself; the dotfiles CLAUDE.md lists the two new lane scripts and where shared script defaults live.
 
 ### Fixed
@@ -1343,6 +1348,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) - The run-through line ran on one TypeScript fixture; a second fixture is still owed. The reporting, ruling, toolkit-edit, memory-cap and final-report sections restate rules from orchestration.md, the global CLAUDE.md and the agent-evals CLAUDE.md, so they were not metered. No intake number reads lane stalls, since lanes run on this machine only.
+* [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) - No intake number reads mutation-tester verdicts, so no edit watch can read this change at work. Stacks with no run: every stack except Django (pytest) and TypeScript (vitest).
 * [Four rules the coder and reviewer already follow are deleted, 198 fewer words per load](notes/2026-11-22-four-rules-the-coder-and-reviewer-already-follow.md) - No intake number reads these four rules; the removal is read by the rule-meter trials. Not run: a Django or Vue coder fixture for the search-before-writing, red-test and nesting rules, and a Sonnet reviewer run for the nesting line.
 * [The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) - No intake number counts Bash file writes under auto mode.
 * [The Agent model line leaves orchestration: the model guard alone keeps opus off the call site](notes/2026-11-22-the-agent-model-line-leaves-orchestration-the.md) - No intake number counts Agent calls by call-site model value.

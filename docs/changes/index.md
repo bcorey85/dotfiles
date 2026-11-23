@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1150 changes, 23 with a measured gain, 276 behavior changes that no intake metric reads.
+1152 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md).
+Latest change: 2026-11-23, [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 14
+* quality: 15
 
 ## Pages
 

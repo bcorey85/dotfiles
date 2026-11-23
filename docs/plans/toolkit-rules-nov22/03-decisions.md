@@ -149,3 +149,10 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: off equal to on, no margin (W2).
 - **Alternatives rejected**: ship the line as documentation of the guard.
 - **Trade-off accepted**: AM01 and AM02 stay in the meter as evidence of the no-effect; item 3 closes with a removal, not a line.
+
+### W7. Item 3 run budget and the Phase 1 ship criterion (AC sign-off)
+
+- **Choice**: (1) AC20 for item 3 is met at 26 runs: 20 Opus AM01 runs plus 6 sonnet AM02 runs; the budget was set for Opus runs and the 6 sonnet runs were one extra scenario; no further item 3 runs. (2) The Phase 1 AC10-read criterion reads "the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row", with W6 as the sign-off. Sign-off: agent-evals-c3, 2026-11-22, relayed by the orchestrating session.
+- **Reasoning**: the old criterion held a line on a VIOLATED on-arm run and did not cover a no-effect read, which W6 ruled.
+- **Alternatives rejected**: keep the 24 cap against all 26 runs.
+- **Trade-off accepted**: item 3 ran 2 over the stated cap.

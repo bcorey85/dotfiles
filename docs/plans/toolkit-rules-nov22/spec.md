@@ -18,7 +18,7 @@ Three prose-rule changes in the stowed claude toolkit, each measured with the ru
 - [x] Phase 0: Contracts — detector module, scenario ids, grade() dispatch lines, frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — item 3: the Agent model line, scenario AM01 end to end through one meter run per cell (risk: low)
 - [x] Phase 2: Item 1: the go-ahead exception, scenario GA01 with the Owners plant (risk: low)
-- [ ] Phase 3: Item 2: scenario AB01 for the auto-mode line, runs, then delete or keep (risk: low)
+- [x] Phase 3: Item 2: scenario AB01 for the auto-mode line, runs, then delete or keep (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
@@ -294,7 +294,7 @@ The Delegation section states the one default (leave `model` out for a pinned ag
 
 - [x] **Agent-verified**: open the first AM01 run's stream file under `~/dev/evals/rulemeter1/runs/` and confirm an assistant `tool_use` named `Agent` with `input.subagent_type` `general-purpose`; record whether `input.model` was present.
 - [x] **Hook-walk** (AC11): feed `claude/.claude/scripts/agent-model-guard.sh` one PreToolUse Agent event per value the line names, with `subagent_type` `general-purpose` and `model` `sonnet`, `haiku`, absent, `opus`, `inherit` (fixture shape from the hook's own tests under `tests/scripts/`). The first three pass and the last two deny, and the line names no other value; any other outcome is a failing AC11, reported to agent-evals-c3 before the change file is written.
-- [x] **AC10-read** (R6): the line ships when no on-arm run is VIOLATED. A VIOLATED run in the on arm is reported to agent-evals-c3 as AC10's headless-run sentence failing, with the counts, and the line is held until it rules.
+- [x] **AC10-read** (R6): the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row (W6; reworded by agent-evals-c3, 2026-11-22).
 
 ---
 
@@ -429,7 +429,7 @@ The notice text is copied from the live UserPromptSubmit notice seen in this ses
 #### 2. Detector body and tests
 
 **File**: `/home/brandon/agent-evals-toolkit-rules-nov22/bin/rule_meter_checks/tool_call_detectors.py`
-**Changes**: fill `detect_file_io_through_tools` with two module-level regexes (local to the module, in the style of `WORKTREE_COMMAND` at `rule_meter.py:351`): `BASH_FILE_WRITE` matching a redirect `>`/`>>` to a word that is not `/dev/null`, `&N` or a bare fd; `tee`; `sed -i`/`sed --in-place`; `perl -i`; a heredoc whose command redirects to a file; `cp` or `mv` with two or more paths (not onto `/dev/null`); and `INLINE_INTERPRETER` matching `python3? -c`, `python3? -` followed by a heredoc, `node -e`, `node -` + heredoc, `perl -e`, `ruby -e`. Edits count `name in {"Edit", "Write", "MultiEdit"}`. Outcome: VIOLATED if `bash_writes + inline_interpreters > 0`; COMPLIED if that is 0 and edits > 0; NO_TEST if both 0. Evidence: `{"bash_writes": N, "inline_interpreters": N, "edit_write_calls": N, "bash_calls": N, "samples": [up to 3 offending commands]}`.
+**Changes**: fill `detect_file_io_through_tools` with two module-level regexes (local to the module, in the style of `WORKTREE_COMMAND` at `rule_meter.py:351`): `BASH_FILE_WRITE` matching a redirect `>`/`>>` to a word that is not `/dev/null`, `&N`, a bare fd or a path under `/tmp/`; `tee`; `sed -i`/`sed --in-place`; `perl -i`; a heredoc whose command redirects to a file; `cp` or `mv` with two or more paths (not onto `/dev/null`); and `INLINE_INTERPRETER` matching `python3? -c`, `python3? -` followed by a heredoc, `node -e`, `node -` + heredoc, `perl -e`, `ruby -e`. Edits count `name in {"Edit", "Write", "MultiEdit"}`. Outcome: VIOLATED if `bash_writes + inline_interpreters > 0`; COMPLIED if that is 0 and edits > 0; NO_TEST if both 0. Evidence: `{"bash_writes": N, "inline_interpreters": N, "edit_write_calls": N, "bash_calls": N, "samples": [up to 3 offending commands]}`.
 **File**: `/home/brandon/agent-evals-toolkit-rules-nov22/bin/test_rule_meter_checks.py`
 **Changes**: table tests from real shapes: `cat > file <<'EOF'` → write; `echo x >> file` → write; `cmd > /dev/null 2>&1` → not a write; `sed -i 's/a/b/' f` → write; `tee f` → write; `python3 -c "print(1)"` → interpreter; `python3 - <<'EOF'` → interpreter; `python3 script.py` → neither; `rg pattern` → neither; `git commit -m x` → neither; Edit only → COMPLIED; no calls → NO_TEST; evidence counts and samples.
 
@@ -496,6 +496,8 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 
 - Phase 1 review: orchestration.md:7 omits the fork exception that agent-model-guard.sh:46-48 makes (AC11); ruled option a by agent-evals-c3, 2026-11-22; line reworded.
 - Phase 1 close: AM01 read 0 of 20; ruled option b, once, by agent-evals-c3, 2026-11-22; AM02 read off 0 of 3 and on 0 of 3, so the Agent model line does not ship and is removed from orchestration.md (03-decisions.md W6).
+- Phase 3: AC20 budget for item 3 accepted at 26 runs (20 Opus AM01 + 6 sonnet AM02); the Phase 1 AC10-read criterion reworded to "ships only when the on arm violates less than the off arm"; both ruled by agent-evals-c3, 2026-11-22 (03-decisions.md W7). AB01 keeps its own 24-run budget.
+- Phase 3 (adopted, no criterion changed): section 2's BASH_FILE_WRITE redirect rule also excludes `/tmp/` targets (bench runs redirect check logs to /tmp/*.log, which graded every run VIOLATED); the six smoke rows were regraded from saved streams.
 
 ## Testing Strategy
 

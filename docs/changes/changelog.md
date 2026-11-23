@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1109 changes
+1110 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The auto-mode file-I/O line stays: the meter shows it changes the tools used](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) [rule/orchestration] The orchestration line that keeps file I/O on Read, Edit and Write under the auto-mode notice was metered and kept: the on arm made 8 Bash writes or inline interpreter calls, the off arm 15.
 * [The go-ahead covers an owner line in the scripts CLAUDE.md](notes/2026-11-22-the-go-ahead-covers-an-owner-line-in-the-scripts.md) [rule/global-claude-md] The global go-ahead rule gains one exception: the orchestrating session's go-ahead covers adding or updating an owner line in the scripts CLAUDE.md, and nothing else in that file.
 * [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md) [script/ruling-relay, script/review-fix, script/review-fix-asks, script/phase-asks, script/handback-store, script/plan-format, script/coder-packet, shared/review-fork-run, skill/code, agent/code-fork, rule/orchestration] A relayed user ruling is `--by user --relayed-by <session name>` with no words: the script checks that the relaying session's transcript holds a typed user turn after the ask and stores only that turn's time; `--quote` is refused, the standing ruling line holds a short paraphrase with no quote marks, and the prompts that asked for the user's words verbatim now ask for the outcome, who gave it and when.
 * [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
@@ -1294,6 +1295,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The auto-mode file-I/O line stays: the meter shows it changes the tools used](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) - No intake number counts Bash file writes under auto mode.
 * [The Agent model line leaves orchestration: the model guard alone keeps opus off the call site](notes/2026-11-22-the-agent-model-line-leaves-orchestration-the.md) - No intake number counts Agent calls by call-site model value.
 * [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) - No intake number counts Agent calls by call-site model value. Every AM01 cell graded; no cell stayed NO_TEST.
 * [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) - No intake number counts relayed user rulings refused by a user-only ask.

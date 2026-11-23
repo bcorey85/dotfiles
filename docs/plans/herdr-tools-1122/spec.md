@@ -26,7 +26,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
 - [x] Phase 9: lane-status (risk: low)
 - [x] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
-- [ ] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
+- [x] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
 - [ ] Phase 12: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
@@ -534,9 +534,9 @@ The whole suite and lint pass; the change pages are rebuilt; no stale reference 
 
 #### Automated Verification
 
-- [ ] `bash tests/run.sh`
-- [ ] `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-herdr-tools-nov22/docs/changes`
-- [ ] `rg -n --hidden "put_back_without_index" claude opencode scripts docs/changes/*.md` (ban: no match)
+- [x] `bash tests/run.sh`
+- [x] `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-herdr-tools-nov22/docs/changes`
+- [x] `rg -n --hidden "put_back_without_index" claude opencode scripts docs/changes/*.md` (ban: no match)
 
 #### Manual Verification
 

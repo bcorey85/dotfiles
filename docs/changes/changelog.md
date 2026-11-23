@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1119 changes
+1120 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -50,6 +50,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Deleting the guide skill, unused since September, drops 1210 words](notes/2026-11-22-deleting-the-guide-skill-unused-since-september.md) [skill/guide] The guide skill (write a JSON batch of judgment calls for a separate guide program to put to the user) ran 4 times at work, all on 2026-09-01, and never since; its program is not installed here, so deleting it removes a 1210-word skill and one always-loaded description.
 * [Cutting two edit hooks whose warnings never reached the model drops two Python starts per edit](notes/2026-11-22-cutting-two-edit-hooks-whose-warnings-never.md) [shared/hooks] The rationale-and-path prose check and the reviewer calibration heading check ran after every Write or Edit but exited 0, so their output showed only in transcript view; removing them saves about 70 ms of hook time per edit with no change in what the model sees.
 * [Folding test-review into test-audit cuts one always-loaded skill description and a routing choice](notes/2026-11-22-folding-test-review-into-test-audit-cuts-one.md) [skill/test-review, skill/test-audit, agent/test-reviewer] The test-review skill folds into test-audit as a review mode, so the always-loaded skill list drops one entry and the two descriptions (98 words) become one (60).
 * [Deleting brainstorm, brief, deps and walk cuts about 215 description words from every session](notes/2026-11-22-deleting-brainstorm-brief-deps-and-walk-cuts-about.md) [skill/brainstorm, skill/brief, skill/deps, skill/walk, skill/orient, agent/coder, skill/code] The brainstorm, brief and deps skills are deleted and walk folds into orient, so the skill list every session loads is four entries and about 215 description words shorter.

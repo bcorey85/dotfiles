@@ -189,8 +189,6 @@
     "artifact-design": "user-invocable-only",
     "artifact-diagramming": "user-invocable-only",
     "audit": "user-invocable-only",
-    "brainstorm": "user-invocable-only",
-    "brief": "user-invocable-only",
     "commit": "user-invocable-only",
     "guide": "user-invocable-only",
     "peer-review": "user-invocable-only",

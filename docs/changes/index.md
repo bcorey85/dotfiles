@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1113 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
+1114 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Four rules the coder and reviewer already follow are deleted, 198 fewer words per load](notes/2026-11-22-four-rules-the-coder-and-reviewer-already-follow.md).
+Latest change: 2026-11-22, [Deleting brainstorm, brief, deps and walk cuts about 215 description words from every session](notes/2026-11-22-deleting-brainstorm-brief-deps-and-walk-cuts-about.md).
 
 ## Top gains
 

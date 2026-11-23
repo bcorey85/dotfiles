@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1113 changes
+1114 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -49,6 +49,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Deleting brainstorm, brief, deps and walk cuts about 215 description words from every session](notes/2026-11-22-deleting-brainstorm-brief-deps-and-walk-cuts-about.md) [skill/brainstorm, skill/brief, skill/deps, skill/walk, skill/orient, agent/coder, skill/code] The brainstorm, brief and deps skills are deleted and walk folds into orient, so the skill list every session loads is four entries and about 215 description words shorter.
 * [Four rules the coder and reviewer already follow are deleted, 198 fewer words per load](notes/2026-11-22-four-rules-the-coder-and-reviewer-already-follow.md) [skill/coder-core, agent/code-reviewer] Four rules the meter found the coder and code-reviewer already follow without them are deleted, 198 fewer words on every coder and code-reviewer load, with no change in behavior.
 * [The plan-verifier reports per-criterion verdicts without a free-form gaps section](notes/2026-11-22-the-plan-verifier-reports-per-criterion-verdicts.md) [agent/plan-verifier] The plan-verifier drops the free-form Gaps section of its report and keeps one done, partial or missing verdict per criterion; across 16 metered runs every verdict matched the planted truth in both arms.
 * [The global rules drop the never-unstage and full-suite-at-end lines](notes/2026-11-22-the-global-rules-drop-the-never-unstage-and-full.md) [rule/global-claude-md] The global CLAUDE.md loses two rules the agent already followed without them (never-unstage) or that changed nothing (full suite once, at the end of review), so every session loads about 60 fewer words.

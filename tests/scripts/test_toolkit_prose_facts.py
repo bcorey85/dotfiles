@@ -198,7 +198,10 @@ class ToolkitProseFactsTest(unittest.TestCase):
 
     def test_every_claude_skill_and_agent_pointer_names_a_file_that_exists(self):
         pointer = re.compile(r"~/\.claude/((?:skills|agents)/[A-Za-z0-9_./-]+\.md)")
-        files = markdown_files(CLAUDE_DIR, OPENCODE_AGENTS_DIR)
+        all_files = markdown_files(CLAUDE_DIR, OPENCODE_AGENTS_DIR)
+        # Installed plugins live under plugins/ and carry their own docs, which point at their own agents.
+        plugin_dir = CLAUDE_DIR / "plugins"
+        files = [file for file in all_files if not file.is_relative_to(plugin_dir)]
         self.assertTrue(files)
         for file in files:
             for target in pointer.findall(file.read_text()):

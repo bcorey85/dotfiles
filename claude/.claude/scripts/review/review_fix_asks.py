@@ -205,8 +205,8 @@ def asks_done_options(argv):
 
 def verified_fix_relay(options, asks):
     """The RelayedRuling of the call's relay options, or None when the call has none. Refuses the call (nothing is
-    logged) when the quote is not in a real user turn, typed after the user-only asks of `asks` were filed, of the
-    relaying session. A user-only ask with no filed time is refused;
+    logged) when the relaying session holds no real user turn typed after the user-only asks of `asks` were
+    filed. A user-only ask with no filed time is refused;
     `read_state` stamps one saved before filed times existed."""
     if options.relay is None:
         return None

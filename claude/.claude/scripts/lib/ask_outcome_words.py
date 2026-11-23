@@ -27,8 +27,10 @@ OUTCOME_PLACEHOLDER = f"{ACCEPTED}|{REJECTED}:<one-line reason>"
 # The options that relay a user ruling given to another session, as the ruling parsers accept them and as the
 # refusals and usage lines print them.
 RELAYED_BY_FLAG = "--relayed-by"
-QUOTE_FLAG = "--quote"
-RELAY_USAGE = f'{RELAYED_BY_FLAG} <session name> {QUOTE_FLAG} "<the user\'s exact words>"'
+# The retired option that carried the user's words. A call that still passes it is refused: no ruling stores
+# the user's words.
+RETIRED_QUOTE_FLAG = "--quote"
+RELAY_USAGE = f"{RELAYED_BY_FLAG} <session name>"
 
 
 def rule_command(count, by_user=False):

@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-117 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+119 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-152 further findings are left out of this page.
+154 further findings are left out of this page.
 
 ## Rejected
 
@@ -58,6 +58,10 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-22 [A gh api rule for GitHub star counts adds nothing the research session does not already do](../../../agent-evals/findings/2026-11-22-a-gh-api-rule-for-github-star-counts-adds-nothing.md) - HOLD: A research-skill line telling the session to read GitHub stars and release dates with gh api changes nothing on a plain prompt: the session already used gh api in 8 of 8 runs without it. Under a hurry-up prompt it lifted 5/8 to 8/8. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-22 [Keeping the code reviewer on Opus keeps 5 more real-bug catches per pass than Sonnet; Sonnet cuts cache read 58%](../../../agent-evals/findings/2026-11-22-keeping-the-code-reviewer-on-opus-keeps-5-more.md) - HOLD: Sealed 8-pass bench on 41 real-bug trees: the live code reviewer on Opus caught a mean 13.0 per pass (11 to 16), on Sonnet 7.75 (4 to 10); Sonnet cuts cache read per review 58% but loses 4 trees Opus catches every pass and 10 of 17 outside-diff catches. [watch: no watch]
+  What would reopen it: Do not bench this swap again until a new model release, since every Sonnet pass of eight fell below the worst Opus pass.
 * 2026-11-22 [A Haiku coder raises Opus review spend 81% on one plan phase with no key gain](../../../agent-evals/findings/2026-11-22-a-haiku-coder-raises-opus-review-spend-81-on-one.md) - HOLD: Smoke pair on WH-200 phase 1, Opus main session, same frozen plan and pinned toolkit: a Haiku coder kept 12/12 keys but raised Opus review cache read 14.4M → 26.0M and wall-clock 94 → 146 min. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-21 [Outside write-less skills and code-health tools did not make a coder trim a toolkit script more than a plain coder](../../../agent-evals/findings/2026-11-21-outside-write-less-skills-and-code-health-tools.md) - HOLD: One coder run per brief on one 1,040-line toolkit script and its 6,847 test lines: a plain coder cut 33 script lines and 41 test lines, and the ponytail text, the ub-mode text and ub-mode with crapper and mutator each cut the same or less. [watch: no watch]

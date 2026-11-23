@@ -75,7 +75,8 @@ class CoderPacketTest(unittest.TestCase):
         self.assertIn("usage: coder_packet.py", result.stderr)
 
     def test_the_placeholder_text_is_refused_as_gate_evidence(self):
-        result = self.packet(GATED_PLAN, WHOLE_ID, "--gate-evidence", "<who>, <when>: <quoted text>")
+        placeholder = "<who>, <when>: <what was released, in your own words>"
+        result = self.packet(GATED_PLAN, WHOLE_ID, "--gate-evidence", placeholder)
 
         self.assertNotEqual(0, result.returncode)
         self.assertIn("usage: coder_packet.py", result.stderr)

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1104 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1105 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md).
+Latest change: 2026-11-22, [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md).
 
 ## Top gains
 

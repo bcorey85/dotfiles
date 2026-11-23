@@ -1441,13 +1441,25 @@ HUMAN_AUTHOR_PREFIX = "human:"
 QUEUE_ITEM_TYPE = "QueueItem"
 
 
+def home_queue_prefix():
+    """The queue folder spelled with the home folder, which a lane's brief may carry in place of `~`."""
+    return str(pathlib.Path.home()) + QUEUE_SOURCE_PREFIX[1:]
+
+
 def queue_source_line(ticket_lines):
-    """(line number, value) of the ticket's first `Source:` line whose value starts with the queue folder, with
-    markdown marks stripped; None when no line does."""
+    """(line number, value) of the ticket's first `Source:` line whose value starts with the queue folder (spelled
+    `~/agent-evals/queue/` or with the home folder), with markdown marks stripped and the home spelling turned into
+    `~`; None when no line does."""
+    home_prefix = home_queue_prefix()
     for number, line in enumerate(ticket_lines, 1):
         match = SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip())
-        if match and match.group(1).startswith(QUEUE_SOURCE_PREFIX):
-            return number, match.group(1)
+        if not match:
+            continue
+        value = match.group(1)
+        if value.startswith(home_prefix):
+            value = QUEUE_SOURCE_PREFIX + value[len(home_prefix):]
+        if value.startswith(QUEUE_SOURCE_PREFIX):
+            return number, value
     return None
 
 

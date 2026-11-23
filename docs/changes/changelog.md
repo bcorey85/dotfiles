@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1100 changes
+1101 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -54,6 +54,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A ticket whose Source line spells the queue path with the home folder reads as session-owned](notes/2026-11-22-a-lane-brief-that-names-a-session-written-queue.md) [script/plan-check, skill/verify-branch] A lane ticket whose Source line names a session-written queue item with the home folder spelled out (/home/<user>/agent-evals/queue/...) now reads as session-owned criteria, as the ~ spelling already did, so the lane takes the orchestrating session's ruling.
 * [Test that every mcp tool name in the toolkit names a registered server](notes/2026-11-22-test-that-every-mcp-tool-name-in-the-toolkit-names.md) [script/mcp-ledger, skill/audit] A test fails when a skill, agent, command or settings file names an mcp__<server>__ tool for a server the toolkit does not register, so a stale server name is caught before a lane breaks.
 * [run.sh skips the Python suite on a skill or agent markdown change](notes/2026-11-22-run-sh-skips-the-python-suite-on-a-skill-or-agent.md) [script/tests-run] tests/run.sh runs lint and only the 16 test files that read a skill or agent file when every change is skill or agent markdown, and the full suite otherwise.
 * [hunk-review-pane names its own herdr pane review](notes/2026-11-22-hunk-review-pane-names-its-own-herdr-pane-review.md) [script/hunk-review-pane, script/nvim-jump] A review pane started by hand now labels itself review, so nvim-jump finds it and opens nvim on a jump without a manual pane rename.

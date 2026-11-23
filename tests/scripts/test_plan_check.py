@@ -71,6 +71,41 @@ class PlanCheckCliTest(unittest.TestCase):
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
         self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["session"])
 
+    def queue_home(self, author):
+        home = self.folder / "home"
+        queue_dir = home / "agent-evals" / "queue"
+        queue_dir.mkdir(parents=True, exist_ok=True)
+        (queue_dir / "item.md").write_text(f'---\ngenerated: {{"by": "{author}", "at": "2026-11-01"}}\n---\n')
+        return home, {**os.environ, "HOME": str(home)}
+
+    def owner_with_source(self, author, source):
+        home, env = self.queue_home(author)
+        source_value = source.replace("<home>", str(home))
+        (self.folder / "00-ticket.md").write_text(
+            f"# Lane\n\nSource: {source_value}\n\nBrief restated.\n\n## Done when\n\n- Words.\n")
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return json.loads(done.stdout)
+
+    def test_owner_prints_session_when_the_source_line_spells_the_queue_path_with_the_home_folder(self):
+        owner = self.owner_with_source("claude-code/x", "<home>/agent-evals/queue/item.md")
+
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_stays_user_for_a_human_written_queue_item_in_either_spelling(self):
+        for source in ("<home>/agent-evals/queue/item.md", "~/agent-evals/queue/item.md"):
+            with self.subTest(source):
+                self.assertEqual(self.owner_with_source("human:brandon", source)["owner"], "user")
+
+    def test_owner_stays_user_for_a_ticket_with_no_queue_source(self):
+        self.queue_home("claude-code/x")
+        (self.folder / "00-ticket.md").write_text("# Lane\n\n## Done when\n\n- The user's words.\n")
+
+        done = self.run_plan_check("owner", str(self.plan))
+
+        self.assertEqual(json.loads(done.stdout)["owner"], "user")
+
     def test_owner_with_no_path_or_two_paths_prints_the_usage_and_fails(self):
         for args in (("owner",), ("owner", str(self.plan), str(self.plan))):
             with self.subTest(args):

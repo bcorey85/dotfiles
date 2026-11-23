@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1114 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
+1115 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Deleting brainstorm, brief, deps and walk cuts about 215 description words from every session](notes/2026-11-22-deleting-brainstorm-brief-deps-and-walk-cuts-about.md).
+Latest change: 2026-11-22, [Folding test-review into test-audit cuts one always-loaded skill description and a routing choice](notes/2026-11-22-folding-test-review-into-test-audit-cuts-one.md).
 
 ## Top gains
 

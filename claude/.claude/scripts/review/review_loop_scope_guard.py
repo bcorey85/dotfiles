@@ -1,7 +1,8 @@
 """review_loop_scope_guard.py: the files a fix pass must leave alone because they sit outside the review's scope. After
-each coder pass the loop puts back every file the pass changed that existed before it, that the pass's scope does not
-hold and that no finding of the pass names, and notes which. A file the pass created stays. The guard does not undo a
-commit the coder makes during the pass: the work tree and index go back, HEAD keeps the commit."""
+each coder pass the loop puts back every tracked or untracked file (not a gitignored one) the pass changed that existed
+before it, that the pass's scope does not hold and that no finding of the pass names, and notes which. A file the
+pass created stays. The guard does not undo a commit the coder makes during the pass: the work tree and index go
+back, HEAD keeps the commit."""
 import pathlib
 import typing
 

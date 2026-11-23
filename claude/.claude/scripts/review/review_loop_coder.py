@@ -110,7 +110,7 @@ def failed_call_error(error, changed, diffs=None, died=True):
     return CoderCallError(message, changed, str(error), diffs, died)
 
 
-def coder_call(role, prompt, repo, out, held, pass_guard, model="", scope_guard=None):
+def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model=""):
     """The fix coder. Returns a CoderResult (report, diffs, changed): the diffs of what it changed feed the round-two
     brief, and one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the
     class-closure check; changed lists the paths whose text differs. A held file that changed during the call is
@@ -180,15 +180,12 @@ def undo_pass(pass_guard, scope_guard):
     except UNDO_ERRORS as pass_error:
         undo_scope_after_failure(pass_error, scope_guard)
         raise
-    if scope_guard is not None:
-        scope_guard.undo()
+    scope_guard.undo()
 
 
 def undo_scope_after_failure(pass_error, scope_guard):
     """Runs the scope guard's undo after the pass guard failed, so the out-of-scope files are not left unrestored and
     unnoted. Raises one joined error when that undo fails too; returns when it works, and the caller re-raises."""
-    if scope_guard is None:
-        return
     try:
         scope_guard.undo()
     except UNDO_ERRORS as scope_error:

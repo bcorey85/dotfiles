@@ -1328,6 +1328,18 @@ class WorkTreeBlobRestoreTest(unittest.TestCase):
         self.assertIsNone(script_utils.index_entry(self.repo, "new.md"))
         self.assertTrue((self.repo / "new.md").exists())
 
+    def test_a_glob_character_path_is_taken_out_without_touching_a_path_the_glob_matches(self):
+        (self.repo / "ab.txt").write_text("tracked\n")
+        self.git_run("add", "ab.txt")
+        self.git_run("commit", "-q", "-m", "ab")
+        (self.repo / "a[b].txt").write_text("new\n")
+        self.git_run("add", "a[b].txt")
+
+        self.assertTrue(script_utils.restore_index_entry(self.repo, "a[b].txt", None))
+
+        self.assertIsNone(script_utils.index_entry(self.repo, "a[b].txt"))
+        self.assertIsNotNone(script_utils.index_entry(self.repo, "ab.txt"))
+
     def test_a_failed_index_listing_raises_in_place_of_reading_as_not_in_the_index(self):
         with unittest.mock.patch.object(script_utils, "git_output", return_value=None), \
                 self.assertRaises(RuntimeError):

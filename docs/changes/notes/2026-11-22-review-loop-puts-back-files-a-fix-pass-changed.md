@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Review loop puts back files a fix pass changed outside the review scope"
-description: "After each fix pass, lint and full-check repairs included, the review loop puts back every file the pass changed that existed before it, sits outside the review scope and is named by no finding of that pass, and the packet's tool_fault lists the files it put back."
+description: "After each fix pass, lint and full-check repairs included, the review loop puts back every tracked or untracked file (not a gitignored one) the pass changed that existed before it, sits outside the review scope and is named by no finding of that pass, and the packet's tool_fault lists the files it put back."
 generated: {"by": "claude-code/claude-fable-5-2", "at": "2026-11-22T13:24:50-06:00"}
 seq: 21
 kind: "fix"
@@ -18,7 +18,8 @@ unmeasured: ""
 ## Change
 
 `review/review_loop_scope_guard.py` (new): `guard_pass` copies the dirty files outside a pass's scope and keeps the
-commit HEAD names; `ScopeGuard.undo` copies those files back and restores every tracked file outside the scope that was
+commit HEAD names (only files git lists as changed or untracked; gitignored files are not guarded); `ScopeGuard.undo`
+copies those files back and restores every tracked file outside the scope that was
 clean before the pass and whose work tree now differs from that commit, in the work tree and the index. It also records
 the index entry of each dirty file outside the scope and puts back every entry the pass changed, so a `git add` of such
 a file does not survive. `review_loop_coder.coder_call` runs it after the ruled-out guard, on a finished and on a failed
@@ -71,9 +72,12 @@ phase touched. Only files the user ruled out were put back.
 The loop test fails with the guard off and passes with it on. `test_review_loop_script.py`: 449 tests pass, six of them
 new (the scope-guard GitCallError blocker, the absolute finding path, a plain RuntimeError passing through, an undo
 failure after a finished call, a plan-folder file outside the snapshot put back, a snapshot-held decision log left to
-the sign-off guard); `test_review_loop_scope_guard.py` has two more (two guards of one role keep both sets of bytes, a
-guard that kept nothing claims no folder); one test changed its setup so that the generated file its coder rewrites is
-part of the change under review. `test_review_loop_named_tests.py`: the three tests that delete or rename a
+the sign-off guard); `test_review_loop_scope_guard.py` (new, 50 tests), among them two guards of one role keeping both
+sets of bytes, a guard that kept nothing claiming no folder, and four loop cases (a file an earlier round fixed is kept
+when a later coder edits it again; a later-phase file is left for the later-phase stop; a ruled-out file is put back
+once, by its own guard; a held file is not put back), a ruled-out file that stays as the coder left it when the pass
+guard's undo fails; one test changed its setup so that the generated file its coder rewrites is part of the change
+under review. `test_review_loop_named_tests.py`: the three tests that delete or rename a
 plan-named test now change the named test file in the work tree first, so it is under review, and the scenario gives a
 third clean review; a new test shows that a pass deleting a plan-named test file outside the review scope has the file
 put back and named in the packet's `tool_fault`. `tests/changed_scope.py` lists the new test file as one that names a

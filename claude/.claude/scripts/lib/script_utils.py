@@ -424,7 +424,8 @@ def restore_index_entry(repo, path, entry):
     """Puts the index entry of `path` back to `entry` (an IndexEntry from `index_entry`), or takes the path out of the
     index when `entry` is None. Leaves the work tree alone. Returns True when the index now holds `entry`."""
     if entry is None:
-        return git_output(repo, "rm", "--cached", "-q", "--ignore-unmatch", "--", path) is not None
+        return git_output(repo, "--literal-pathspecs", "rm", "--cached", "-q", "--ignore-unmatch", "--",
+                          path) is not None
     cache_info = f"{entry.mode},{entry.blob},{path}"
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 

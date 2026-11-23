@@ -14,6 +14,7 @@ import file_backup
 import review_loop_coder
 import review_loop_ruled_out
 import review_loop_scope_guard
+import review_loop_script
 import script_utils
 import test_review_loop_script as loop_tests
 
@@ -567,12 +568,29 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(len(review_loop_scope_guard.SCOPE_FAULTS), 1)
         self.assertIn("put them back: tests.py", review_loop_scope_guard.SCOPE_FAULTS[0])
 
-    def test_a_failed_pass_guard_undo_without_a_scope_guard_raises_the_original_error_unjoined(self):
+    def test_a_ruled_out_file_stays_as_the_coder_left_it_when_the_pass_guard_undo_fails(self):
+        ruled_out = {"tests.py"}
+        pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", ruled_out, [], [])
+        run = mock.Mock(files_touched=set(), held_files=set(), ruled_out=ruled_out, later_phase_files=set())
+        allowed = review_loop_script.LoopRun.pass_scope(run, {"app.py"})
+        scope_guard = self.guard(allowed=allowed)
+        (self.repo / "tests.py").write_text("t = 3\n")
+        undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
+        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError):
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
+                                         scope_guard=scope_guard)
+
+        self.assertEqual(self.text("tests.py"), "t = 3\n")
+        self.assertEqual(review_loop_scope_guard.SCOPE_FAULTS, [])
+
+    def test_a_failed_pass_guard_undo_with_a_working_scope_guard_raises_the_original_error_unjoined(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
         model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
-            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard, scope_guard=None)
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
+                                         scope_guard=self.guard())
 
         self.assertEqual(str(raised.exception), "pass guard failed")
 
@@ -706,6 +724,62 @@ class ScopeGuardLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertIn("coder1 changed files outside the review scope that no finding names; the loop put them back: "
                       "notes.py", packet["tool_fault"])
         self.assertNotIn("notes.py", packet["files_touched"])
+
+    def test_a_file_an_earlier_round_fixed_is_kept_when_a_later_coder_edits_it_again(self):
+        notes_review = loop_tests.FIX_REVIEW.replace("`app.py:2`", "`notes.py:1`")
+        notes_second = 'value = {"a": 1, "b": 3}\n'
+        completed = self.run_script({
+            "code-reviewer": [{"result": notes_review}, {"result": loop_tests.FIX_REVIEW},
+                              {"result": loop_tests.CLEAN_REVIEW}, {"result": loop_tests.CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"notes.py": loop_tests.NOTES_REFLOWED}},
+                      {"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED, "notes.py": notes_second}}],
+            "closure": [{"result": loop_tests.CLOSED}, {"result": loop_tests.CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_text(), notes_second)
+        _, packet = self.stored_packet()
+        self.assertNotIn("notes.py", packet.get("tool_fault", ""))
+
+    def test_a_later_phase_file_a_coder_edits_is_left_for_the_later_phase_stop_not_put_back(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.",
+                       "edits": {"app.py": loop_tests.APP_FIXED, "notes.py": loop_tests.NOTES_REFLOWED}}],
+        }, header_extra="later-phase files: notes.py")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertIn("edited files the plan gives to a later phase: notes.py", packet["blockers"][0])
+        self.assertNotIn("notes.py", packet.get("tool_fault", ""))
+
+    def test_a_ruled_out_file_a_coder_edits_is_put_back_and_noted_once(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": loop_tests.CLEAN_REVIEW},
+                              {"result": loop_tests.CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.",
+                       "edits": {"app.py": loop_tests.APP_FIXED, "notes.py": loop_tests.NOTES_REFLOWED}}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra="ruled-out files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_text(), loop_tests.NOTES_BEFORE)
+        _, packet = self.stored_packet()
+        self.assertNotIn("no finding names", packet.get("tool_fault", ""))
+
+    def test_a_held_file_a_coder_edits_is_left_alone_not_put_back_by_the_scope_guard(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": loop_tests.CLEAN_REVIEW},
+                              {"result": loop_tests.CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.",
+                       "edits": {"app.py": loop_tests.APP_FIXED, "notes.py": loop_tests.NOTES_REFLOWED}}],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }, header_extra=loop_tests.SCOPED_WITH_NOTES_HELD + "held files: notes.py\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "notes.py").read_text(), loop_tests.NOTES_REFLOWED)
+        _, packet = self.stored_packet()
+        self.assertNotIn("no finding names", packet.get("tool_fault", ""))
 
 
 if __name__ == "__main__":

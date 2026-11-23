@@ -452,7 +452,8 @@ class RuledFindings:
 
     def approval_base(self, path):
         """The base a filed ask for `path` saves: its pre-pass blob id, None for a file the pass created, or
-        `UNKNOWN_BASE` when the snapshot could not list the files or hash this one."""
+        `UNKNOWN_BASE` when the snapshot could not list the files, or could not hash this one or read its
+        index entry."""
         if not self.approval_snapshot_ok or path in self.approval_unhashed:
             return UNKNOWN_BASE
         return self.approval_blobs.get(path)

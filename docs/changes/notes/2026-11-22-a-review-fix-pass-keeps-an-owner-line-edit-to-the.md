@@ -17,7 +17,7 @@ unmeasured: "No intake number reads it; the queue item that reported it is the e
 
 ## Change
 
-Phase 1: `lib/owner_lines.py` reads the owner-line format of the scripts CLAUDE.md and says whether an edit only adds or updates owner bullets. Phase 4 completes this note.
+Phase 1: `lib/owner_lines.py` reads the owner-line format of the scripts CLAUDE.md and says whether an edit only adds or updates owner bullets. Phase 2: `lib/standing_rulings.py` accepts `covers: owner-lines` beside `covers: rewords`, read by `owner_line_ruling`. Phase 4 completes this note.
 
 ## Evidence
 

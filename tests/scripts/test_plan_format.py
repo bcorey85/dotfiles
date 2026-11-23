@@ -780,6 +780,8 @@ class CriteriaOwnerTest(unittest.TestCase):
 
 
 STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords')
+OWNER_LINES_LINE = ("Standing ruling by the orchestrating session at 2026-11-22: owner lines in the scripts "
+                    "CLAUDE.md need no ask covers: owner-lines")
 CRITERIA_NAMING_TICKET = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, "
                           "reworded)\n")
 REWORD_IMPACT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n"
@@ -811,6 +813,27 @@ class StandingRulingTest(unittest.TestCase):
         self.plan.write_text(f"# Plan\n\n{STANDING_LINE}\n")
 
         self.assertEqual(standing_rulings.standing_rulings(self.plan), [])
+
+    def test_an_owner_lines_line_parses_and_only_the_owner_line_reader_returns_it(self):
+        self.plan.write_text("# Plan\n")
+        (self.folder / "03-decisions.md").write_text(f"# Decisions\n\n{OWNER_LINES_LINE}\n")
+
+        rulings = standing_rulings.standing_rulings(self.plan)
+
+        self.assertEqual(rulings[0]["covers"], "owner-lines")
+        self.assertEqual(standing_rulings.owner_line_ruling(self.plan), rulings[0])
+        self.assertIsNone(standing_rulings.reword_ruling(self.plan))
+
+    def test_a_rewords_line_alone_gives_no_owner_line_ruling(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
+
+        self.assertIsNone(standing_rulings.owner_line_ruling(self.plan))
+
+    def test_with_both_lines_each_reader_returns_its_own(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {OWNER_LINES_LINE}\n- {STANDING_LINE}\n")
+
+        self.assertEqual(standing_rulings.owner_line_ruling(self.plan)["covers"], "owner-lines")
+        self.assertEqual(standing_rulings.reword_ruling(self.plan)["covers"], "rewords")
 
     def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):
         malformed = {

@@ -16,7 +16,7 @@ The /code review loop reverts every fix-pass edit to a CLAUDE.md. After this cha
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
 - [x] Phase 1: Owner-line grammar and the two-sided diff helper (risk: low)
-- [ ] Phase 2: Standing rulings learn `covers: owner-lines` (risk: low)
+- [x] Phase 2: Standing rulings learn `covers: owner-lines` (risk: low)
 - [ ] Phase 3: The review loop keeps a ruled owner-line edit (risk: high)
 - [ ] Phase 4: Item 2 replay pin, glossary, change file (risk: low)
 - [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)

@@ -77,9 +77,9 @@ Plus **one orthogonal flag**, valid only on `fix`:
 
 **`ask` is not the plan-impact channel.** If the finding is that the code contradicts the
 plan or the ticket, say so in the finding text; the loop escalates that separately. `ask`
-is for questions about the code. Getting this wrong is silent in both directions, and one direction is expensive: a plan contradiction phrased as an ordinary code question never reaches the escalation path, so it arrives to a human as one more item on a list they are triaging for speed, rather than as the decision it actually is.
+is for questions about the code.
 
-**So make the routing mechanical.** Whenever the finding's substance is that the code
+**Make the routing mechanical.** Whenever the finding's substance is that the code
 and a plan, ADR, or acceptance criterion disagree, decide which document is wrong and
 write one of two things — never a bare question:
 
@@ -104,9 +104,7 @@ If a category is empty, omit the section.
 For each issue you're about to flag, run the calibration question one more time:
 
 1. Would I block a PR over this?
-2. Have I verified the bad path is actually reachable, not just theoretically possible? A `blocker` names its reproduction — the exact input, command, or sequence that exhibits it — or it ships without the flag.
-3. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
-4. Is the premise verified — right diff baseline, actual types/state, fresh typecheck?
-5. Is the disposition the honest one? In particular: does the failure need contrived inputs, unusual timing, or state real usage won't produce? Then it is not a `blocker` (Disposition). And is this `ask` really a question, or a check I could have finished myself?
+2. Is this a stated project convention, or my preference? If I'm citing a convention, did I re-read its exemption clause and confirm the code isn't exempt?
+3. Is the premise verified — right diff baseline, actual types/state, fresh typecheck, and a bad path that is actually reachable, not just theoretically possible?
 
-Score mechanically: #1 "no" → at most `nit`; #2/#4 unaffirmative → remove; #3 preference/exempt → remove; #5 nudges down → take the lower disposition.
+Score mechanically: #1 "no" → at most `nit`; #2 preference/exempt → remove; #3 unaffirmative → remove.

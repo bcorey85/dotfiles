@@ -118,5 +118,38 @@ class ToolkitProseFactsTest(unittest.TestCase):
             self.assertNotIn(removed, port_text)
 
 
+    def test_blocker_reproduction_sentence_is_gone_from_review_fork_run_and_calibration_self_check(self):
+        calibration = (CLAUDE_DIR / "skills" / "_shared" / "reviewer-calibration.md").read_text()
+        self_check = calibration.split("run the calibration question one more time", 1)[1]
+        self.assertNotIn("names its reproduction", self_check)
+        fork_run = (CLAUDE_DIR / "skills" / "_shared" / "review-fork-run.md").read_text()
+        self.assertNotIn("names its reproduction", fork_run)
+
+    def test_spec_research_search_rules_are_bullets_and_edit_rule_is_a_paragraph(self):
+        text = (CLAUDE_DIR / "agents" / "spec-research.md").read_text()
+        bullets = [line for line in text.splitlines() if line.startswith("- ")]
+        self.assertIn("- Search file contents only with `rg` in Bash.", bullets)
+        self.assertIn("- Never search file contents with `grep -r`, `find -exec` or `git grep`.", bullets)
+        edit_lines = [line for line in text.splitlines() if line.startswith("Change a file only with Edit or Write")]
+        self.assertEqual(len(edit_lines), 1)
+        self.assertNotIn("skips the Write and Edit hooks", text)
+
+    def test_decisions_step_14_has_no_nested_bold_paragraphs_and_coder_core_verify_tail_is_cut(self):
+        decisions = (CLAUDE_DIR / "skills" / "eng-spec" / "phases" / "5-decisions.md").read_text()
+        self.assertIn("    - **Before the list:**", decisions)
+        self.assertNotIn("\n    **Before the list:**", decisions)
+        coder_core = skill_text("coder-core")
+        self.assertNotIn("leaves the run going with no output", coder_core)
+        self.assertNotIn("so output you cut off is lost", coder_core)
+
+    def test_goal_blind_researcher_and_opencode_port_both_list_the_repair_loop_branches(self):
+        claude_text = (CLAUDE_DIR / "agents" / "goal-blind-researcher.md").read_text()
+        port_text = (OPENCODE_AGENTS_DIR / "goal-blind-researcher.md").read_text()
+        for text in (claude_text, port_text):
+            self.assertIn("**Repair loop, bounded at two cycles.**\n", text)
+            self.assertIn("   - A flag with no rewrite", text)
+            self.assertNotIn("Then go to step 4. A flag with no", text)
+
+
 if __name__ == "__main__":
     unittest.main()

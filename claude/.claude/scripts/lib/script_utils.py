@@ -232,6 +232,10 @@ def or_list(words):
     return ", ".join(words[:-1]) + f" or {words[-1]}"
 
 
+class GitCallError(RuntimeError):
+    """A git call that failed where the caller cannot go on without its answer."""
+
+
 class ItemNumberError(ValueError):
     """A 1-based item number that names no item."""
 
@@ -300,11 +304,6 @@ def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None)
         stdout, stderr = process.communicate()
         return ProcessResult(None, stdout, stderr)
     return ProcessResult(process.returncode, stdout, stderr)
-
-
-def escaped_glob(name):
-    """The name as a wildmatch pattern that matches only itself, for `git apply --exclude`."""
-    return re.sub(r"([*?\[\\])", r"\\\1", name)
 
 
 def git_output(cwd, *args, timeout=None):
@@ -387,24 +386,41 @@ def restore_blob(repo, path, blob):
 IndexEntry = namedtuple("IndexEntry", ["mode", "blob"])
 
 
-def index_entry(repo, path):
-    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
-    file) or git cannot say."""
-    listing = git_output(repo, "ls-files", "--stage", "-z", "--", path)
+def index_entries(repo, paths):
+    """The index entry of each of `paths` in `repo`, read with one git call: a dict of path to the IndexEntry, or to
+    None when the path is not in the index (an untracked file). Raises GitCallError when git fails, so a failed
+    listing never reads as "not in the index"."""
+    entries = dict.fromkeys(paths)
+    if not entries:
+        return entries
+    listing = git_output(repo, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", *entries)
+    if listing is None:
+        raise GitCallError(f"`git ls-files --stage` failed in {repo}")
     if not listing:
-        return None
+        return entries
     # One entry reads `<mode> <blob> <stage>\t<path>`; a path with a merge conflict lists several stages, and the
     # first is enough to tell the entry changed.
-    description = listing.split("\0")[0].split("\t")[0]
-    mode, blob, _stage = description.split(" ")
-    return IndexEntry(mode, blob)
+    for record in listing.split("\0"):
+        description, _tab, listed_path = record.partition("\t")
+        if listed_path not in entries or entries[listed_path] is not None:
+            continue
+        mode, blob, _stage = description.split(" ")
+        entries[listed_path] = IndexEntry(mode, blob)
+    return entries
+
+
+def index_entry(repo, path):
+    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
+    file). Raises GitCallError when git fails."""
+    return index_entries(repo, [path])[path]
 
 
 def restore_index_entry(repo, path, entry):
     """Puts the index entry of `path` back to `entry` (an IndexEntry from `index_entry`), or takes the path out of the
     index when `entry` is None. Leaves the work tree alone. Returns True when the index now holds `entry`."""
     if entry is None:
-        return git_output(repo, "rm", "--cached", "-q", "--ignore-unmatch", "--", path) is not None
+        return git_output(repo, "--literal-pathspecs", "rm", "--cached", "-q", "--ignore-unmatch", "--",
+                          path) is not None
     cache_info = f"{entry.mode},{entry.blob},{path}"
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 
@@ -454,6 +470,21 @@ def is_ancestor(repo, older, newer, timeout=None):
 def head_commit(cwd, timeout=None):
     """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
     return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+
+
+def head_commit_or_unborn(repo):
+    """The commit HEAD names in `repo`, or None for an unborn HEAD (a repo with no commit). Raises GitCallError when
+    HEAD cannot be named in a repo that has a commit."""
+    head = head_commit(repo)
+    if head is not None:
+        return head
+    branch_ref = git_output(repo, "symbolic-ref", "-q", "HEAD")
+    if branch_ref is None:
+        raise GitCallError(f"git could not name HEAD in {repo}")
+    branch_commit = git_output(repo, "for-each-ref", "--format=%(objectname)", branch_ref)
+    if branch_commit != "":
+        raise GitCallError(f"git could not name HEAD in {repo}")
+    return None
 
 
 def head_commit_time(top):
@@ -842,9 +873,30 @@ def write_command_outputs(output_file, command_outputs):
     output_file.write_text("\n\n".join(sections))
 
 
-def names_path(path, text):
-    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`)."""
+# What stands before and after a repo-relative path that a finding or note holds as a whole token: no longer path
+# around it (`pkg/app.py`, `app.py/x`, `app.pyc`), but a sentence's closing dot may follow (`edit app.py.`).
+PATH_TOKEN_START = r"(?<![\w./-])"
+PATH_TOKEN_END = r"(?![\w/-]|\.\w)"
+
+
+def names_path(path, text, as_token=False):
+    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`).
+    With `as_token`, the boundaries are PATH_TOKEN_START and PATH_TOKEN_END, for a repo-relative path in prose."""
+    if as_token:
+        return re.search(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}", text) is not None
     return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
+
+
+def texts_relative_to(finding_texts, root):
+    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    root_prefix = f"{root}/"
+    return [text.replace(root_prefix, "") for text in finding_texts]
+
+
+def texts_name_path(finding_texts, path, root):
+    """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
+    relative_texts = texts_relative_to(finding_texts, root)
+    return any(names_path(path, text, as_token=True) for text in relative_texts)
 
 
 def pop_option(arguments, flag):
@@ -908,9 +960,23 @@ def subagent_transcript_path(session_transcript, agent_id):
     return os.path.join(os.path.splitext(session_transcript)[0], "subagents", subagent_transcript_name(agent_id))
 
 
+SUBAGENT_NAME_PREFIX = "agent-"
+SUBAGENT_META_SUFFIX = ".meta.json"
+
+
 def subagent_transcript_name(agent_id):
     """The file name Claude Code gives the transcript of the subagent `agent_id`."""
-    return f"agent-{agent_id}.jsonl"
+    return f"{SUBAGENT_NAME_PREFIX}{agent_id}.jsonl"
+
+
+def subagent_meta_name(agent_id):
+    """The file name Claude Code gives the meta file of the subagent `agent_id`. Pass "*" for a glob pattern."""
+    return f"{SUBAGENT_NAME_PREFIX}{agent_id}{SUBAGENT_META_SUFFIX}"
+
+
+def subagent_id_from_meta_name(file_name):
+    """The agent id in the meta file name `subagent_meta_name` makes."""
+    return file_name.removeprefix(SUBAGENT_NAME_PREFIX).removesuffix(SUBAGENT_META_SUFFIX)
 
 
 def sibling_transcript_path(agent_transcript, agent_id):
@@ -942,25 +1008,47 @@ def _last_nonblank_line(lines):
     return last_line
 
 
+def read_json_object(file, report_torn=False):
+    """The JSON object in `file` (a str or a Path), or {} when it is missing, unreadable, torn (a writer part-way
+    through) or holds no object. A torn file is named on stderr only when `report_torn` is set, so a hook that reads
+    state files stays quiet."""
+    file = pathlib.Path(file)
+    try:
+        found = json.loads(file.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+    except ValueError as error:
+        if report_torn:
+            print(f"read_json_object: {file} is not valid JSON, {type(error).__name__}: {error}", file=sys.stderr)
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def last_transcript_record(transcript_path):
+    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
+    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+    try:
+        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
+        print(f"last_transcript_record: could not read {transcript_path}, {type(error).__name__}: {error}",
+              file=sys.stderr)
+        return None
+    try:
+        record = json.loads(_last_nonblank_line(tail_lines))
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def ends_on_api_error(transcript_path):
     """True when the last record of a transcript is an API error message: the agent may never report.
     False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
     record shows the agent went on."""
-    last_line = ""
-    try:
-        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
-        last_line = _last_nonblank_line(tail_lines)
-    except FileNotFoundError:
-        return False
-    except OSError as error:
-        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
-        print(f"ends_on_api_error: could not read {transcript_path}, {type(error).__name__}: {error}", file=sys.stderr)
-        return False
-    try:
-        record = json.loads(last_line)
-    except ValueError:
-        return False
-    return isinstance(record, dict) and record.get("isApiErrorMessage") is True
+    record = last_transcript_record(transcript_path)
+    return record is not None and record.get("isApiErrorMessage") is True
 
 
 def without_paths(files, paths):
@@ -1394,6 +1482,14 @@ def can_append(path):
     return os.access(path.parent, os.W_OK)
 
 
+def xdg_state_home():
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if not state_home:
+        return pathlib.Path.home() / ".local" / "state"
+    return pathlib.Path(state_home)
+
+
 def state_file_path(state_dir, name, suffix):
     """`name` plus `suffix` in `state_dir`, with every character outside letters, digits, dot, dash and underscore in
     `name` replaced by an underscore, so an id from a hook event or a branch name is one safe file name."""
@@ -1476,6 +1572,14 @@ def directory_relative_to(root_directory, directory):
     """The directory's path under root_directory as text, or "" when it is root_directory itself. Both are
     pathlib.Path."""
     return str(directory.relative_to(root_directory)) if directory != root_directory else ""
+
+
+def next_numbered_dir(parent):
+    """The path of the next free numbered subfolder of parent (a pathlib.Path): one above the highest folder
+    name there made only of ASCII decimal digits, or 1 when there is none. Creates nothing."""
+    taken = [int(folder.name) for folder in parent.glob("*")
+             if folder.is_dir() and folder.name.isascii() and folder.name.isdecimal()]
+    return parent / str(max(taken, default=0) + 1)
 
 
 def is_executable_file_inside(root_directory, relative_path):

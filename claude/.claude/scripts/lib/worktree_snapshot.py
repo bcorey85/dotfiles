@@ -7,7 +7,7 @@ import shutil
 import tempfile
 
 from numstat import changed_lines_by_path
-from script_utils import git_output, git_path, repo_root, run_or_raise
+from script_utils import GitCallError, git_output, git_path, repo_root, run_or_raise
 
 UNTRACKED = "??"
 # The hash of a file that exists but cannot be read.
@@ -21,11 +21,15 @@ HASH_CHUNK_SIZE = 1000
 CHANGE_KINDS = ("changed", "rewrote_edited", "created")
 
 
-def status_entries(root):
+def status_entries(root, strict=False):
     """({path: two-letter status}, {new path: old path} of each rename or copy) of every dirty or untracked file,
-    paths relative to the work tree root."""
+    paths relative to the work tree root. A failed `git status` reads as no dirty file, or raises GitCallError with
+    `strict`."""
     output = git_output(root, "status", "--porcelain", "-z", "--find-renames",
-                         "--untracked-files=all") or ""
+                         "--untracked-files=all")
+    if output is None and strict:
+        raise GitCallError(f"`git status` failed in {root}")
+    output = output or ""
     entries = output.split("\0")
     codes = {}
     origins = {}
@@ -44,9 +48,10 @@ def status_entries(root):
     return codes, origins
 
 
-def status_codes(root):
-    """{path: two-letter status} of every dirty or untracked file, paths relative to the work tree root."""
-    return status_entries(root)[0]
+def status_codes(root, strict=False):
+    """{path: two-letter status} of every dirty or untracked file, paths relative to the work tree root. `strict`
+    raises GitCallError when `git status` fails."""
+    return status_entries(root, strict)[0]
 
 
 def staged_paths(root):

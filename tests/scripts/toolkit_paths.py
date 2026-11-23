@@ -23,6 +23,7 @@ GATES_DIR = SCRIPTS_DIR / "gates"
 FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"
+CODE_PHASE_END_FILE = CLAUDE_DIR / "skills" / "code" / "phase-end-block.md"
 CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
 # The hooks come from the work repo's CB Security Hooks package and are not tested here, except
 # agent-model-guard.sh: it carries a local fork pass, tested in test_agent_model_guard.py,
@@ -103,4 +104,16 @@ def guard_real_ledger():
     return pathlib.Path(_ledger_guard.name)
 
 
+def absolutize_import_paths():
+    """Make each relative entry of PYTHONPATH and NODE_PATH absolute against the current folder. A test that runs a
+    check in a nested fixture repo would otherwise read `tests/scripts` as a path inside that repo."""
+    for variable in ("PYTHONPATH", "NODE_PATH"):
+        entries = os.environ.get(variable)
+        if not entries:
+            continue
+        os.environ[variable] = os.pathsep.join(
+            os.path.abspath(entry) if entry else entry for entry in entries.split(os.pathsep))
+
+
 guard_real_ledger()
+absolutize_import_paths()

@@ -1094,6 +1094,56 @@ class ApprovalEditRevertTest(unittest.TestCase):
         self.assertEqual(self.claude_md.read_text(), "rules\nnew rule\n")
         self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
 
+    def test_a_failed_index_listing_at_the_snapshot_keeps_the_edit_and_files_an_ask(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        git_error = review_loop_ruled.script_utils.GitCallError("ls-files")
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entries", side_effect=git_error):
+            host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+
+        host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        self.assertIn("CLAUDE.md", host.approval_unhashed)
+        self.assertNotIn("CLAUDE.md", host.approval_index_entries)
+        self.assertEqual(self.claude_md.read_text(), "rules\nnew rule\n")
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+
+    def test_a_plain_runtime_error_at_the_snapshot_index_listing_propagates(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entries", side_effect=RuntimeError("x")), \
+                self.assertRaises(RuntimeError):
+            host.snapshot_approval_blobs()
+
+    def test_a_plain_runtime_error_at_the_revert_index_read_propagates(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entry", side_effect=RuntimeError("x")), \
+                self.assertRaises(RuntimeError):
+            host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+    def test_a_failed_index_listing_at_the_revert_keeps_the_index_entry_and_files_an_ask(self):
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.snapshot_approval_blobs()
+        self.claude_md.write_text("rules\nnew rule\n")
+        subprocess.run(["git", "add", "CLAUDE.md"], cwd=self.repo, check=True, capture_output=True)
+
+        git_error = review_loop_ruled.script_utils.GitCallError("ls-files")
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entry", side_effect=git_error), \
+                mock.patch.object(review_loop_ruled.script_utils, "restore_index_entry") as restore:
+            host.ask_for_approval_only_edits(["CLAUDE.md"], [])
+
+        restore.assert_not_called()
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.repo, check=True,
+                                capture_output=True, text=True).stdout
+        self.assertEqual(staged.strip(), "CLAUDE.md")
+        self.assertEqual([ask.path for ask in host.user_only_asks], ["CLAUDE.md"])
+
     def test_a_snapshot_that_could_not_list_files_deletes_nothing_and_files_an_ask(self):
         host = approval_host(reverts=True)
         host.repo = str(self.repo)

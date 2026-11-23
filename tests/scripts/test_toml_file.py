@@ -60,10 +60,11 @@ NO_CONFIG_PATHS = PYTHON_310_STAND_IN + textwrap.dedent("""\
     import worktree_snapshot
 
     repo = pathlib.Path(sys.argv[2])
+    pre_commit = format_files.read_pre_commit_config(repo)
     print(json.dumps({
         "pytest_options": pytest_config.pytest_options(repo),
-        "configures_ruff": format_files.repo_configures_ruff(repo),
-        "formats_with_ruff": format_files.repo_formats_with_ruff(repo),
+        "configures_ruff": format_files.repo_configures_ruff(repo, pre_commit),
+        "formats_with_ruff": format_files.repo_formats_with_ruff(repo, pre_commit),
         "pyproject_names": sorted(full_check.pyproject_names(repo)),
         "discovered_check": check_discovery.discovered_check_command(repo),
         "makefile_hash": worktree_snapshot.file_hash(repo, "Makefile"),

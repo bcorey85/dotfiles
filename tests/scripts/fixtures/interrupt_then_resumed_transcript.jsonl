@@ -1,0 +1,6 @@
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "x"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}}
+{"type": "user", "message": {"role": "user", "content": "x"}}
+{"type": "attachment"}
+{"type": "api-request-blob", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "x"}, {"type": "text", "text": "[Request interrupted by user for tool use]\n"}, {"type": "text", "text": "x"}]}}
+{"type": "api-request-blob", "message": {"role": "system", "content": [{"type": "text", "text": "x"}]}}

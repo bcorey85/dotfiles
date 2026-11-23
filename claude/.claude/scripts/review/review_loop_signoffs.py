@@ -83,7 +83,10 @@ def snapshot_signoffs(repo, extra_paths):
     """A SignoffSnapshot of the plan folders' markdown files and of `extra_paths` that are decision logs."""
     root = pathlib.Path(repo)
     paths = {path.relative_to(root).as_posix() for path in root.glob(f"{plan_format.PLANS_DIR}**/*.md")}
-    paths.update(path for path in extra_paths if is_decision_log(path))
+    for extra_path in extra_paths:
+        repo_path = held_path_in_repo(extra_path, repo)
+        if is_decision_log(repo_path):
+            paths.add(repo_path)
     texts, lines = {}, {}
     for path in sorted(paths):
         text = hook_input.read_file_text(root / path)

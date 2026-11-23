@@ -1,0 +1,3 @@
+{"type": "api-request"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_x", "name": "Grep", "input": {}}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "hit: [Request interrupted by user]"}]}}

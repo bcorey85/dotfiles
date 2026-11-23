@@ -272,22 +272,13 @@ def reviewed_fingerprint(repo_dir, base="HEAD"):
     return str(top), tree_hash
 
 
-def read_json_object(file):
-    """The JSON object in `file`, or {} when it is missing, unreadable or holds no object."""
-    try:
-        found = json.loads(file.read_text())
-    except (OSError, ValueError):
-        return {}
-    return found if isinstance(found, dict) else {}
-
-
 def read_reviewed(session):
-    return read_json_object(reviewed_file(session))
+    return script_utils.read_json_object(reviewed_file(session))
 
 
 def read_shared_reviewed():
     """Every session's reviewed trees: repo top level -> the latest SHARED_LIMIT fingerprints, oldest first."""
-    return read_json_object(shared_reviewed_file())
+    return script_utils.read_json_object(shared_reviewed_file())
 
 
 def record_base(session, top, tree_hash, stored_tree=False):
@@ -305,7 +296,7 @@ def record_base(session, top, tree_hash, stored_tree=False):
         if against_head is None or against_head[1] != tree_hash:
             drop_base(session, top)
             return
-    bases = read_json_object(base_file(session))
+    bases = script_utils.read_json_object(base_file(session))
     bases[top] = {"base": head, "tree": tree_hash}
     script_utils.write_text_atomically(base_file(session), json.dumps(bases) + "\n")
     record_shared_base(top, head, tree_hash)
@@ -314,7 +305,7 @@ def record_base(session, top, tree_hash, stored_tree=False):
 def record_shared_base(top, head, tree_hash):
     """Add {"base": head, "tree": tree_hash} to the repo's latest SHARED_LIMIT pairs in the shared bases record."""
     entry = {"base": head, "tree": tree_hash}
-    shared = read_json_object(shared_bases_file())
+    shared = script_utils.read_json_object(shared_bases_file())
     stored = shared.get(top)
     entries = [value for value in stored if value != entry] if isinstance(stored, list) else []
     shared[top] = [*entries, entry][-SHARED_LIMIT:]
@@ -329,7 +320,7 @@ def push_review_state(repo_dir):
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return PUSH_NO_RECORD
-    stored = read_json_object(shared_bases_file()).get(str(top))
+    stored = script_utils.read_json_object(shared_bases_file()).get(str(top))
     entries = [entry for entry in stored if isinstance(entry, dict)] if isinstance(stored, list) else []
     if not entries:
         return PUSH_NO_RECORD
@@ -355,7 +346,7 @@ def push_review_state(repo_dir):
 def drop_base(session, top):
     """Remove the session's stored base for the repo: a record that stores no base must not leave the earlier tree's
     base to credit a split commit of the new one."""
-    bases = read_json_object(base_file(session))
+    bases = script_utils.read_json_object(base_file(session))
     if bases.pop(top, None) is None:
         return
     script_utils.write_text_atomically(base_file(session), json.dumps(bases) + "\n")
@@ -450,7 +441,7 @@ def matches_recorded_base(session, repo_dir, top):
     """True when the tree, taken against the HEAD stored at record time, is the tree recorded then: a reviewed tree
     that was partly committed since. Needs that HEAD to still be an ancestor of the current HEAD; a missing record,
     an unborn repo or a rewound branch gives False."""
-    stored = read_json_object(base_file(session)).get(top)
+    stored = script_utils.read_json_object(base_file(session)).get(top)
     if not isinstance(stored, dict):
         return False
     base = stored.get("base")

@@ -20,6 +20,9 @@ and holds finding asks, it also opens a `phase-asks-open` row in the hand-back s
 holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
 is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
 sentence that defers them to phase end (`review_fix.py defer`).
+On the phase route (not `--loop`), once the loop has ended, `review` also prints a `Tool fault:` line naming the held
+files whose bytes changed (the `held_changed` field of <git dir>/code-phase/review-scope.json), or a could-not-be-read
+line when that file does not parse or its `held_changed` is not a list of paths.
 `review --loop <loop dir>` waits the same way on a loop that `review_fix.py launch --detach` started for the /review
 or /fix fork: its pid is <loop dir>/loop.pid, and once the loop ends with a packet it prints the packet command to run.
 Each call waits at most WAIT_SECONDS, then says to run the same command again.
@@ -74,6 +77,9 @@ PHASE_RUN_FILE = "run.json"  # the lane, phase, loop folder and plan path of the
 LOOP_FOLDER_KEY = "loop_dir"  # the key of PHASE_RUN_FILE that holds this phase's loop folder
 LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
 PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last phase's loop-dir
+SCOPE_FILE = "review-scope.json"  # the phase review's scope, written by code_review_start.py --detach
+PREVIOUS_SCOPE_FILE = "review-scope.prev.json"  # where phase_start.py moves the last phase's scope
+HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files changed since the run start
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
 CODE_WAIT_WRITES_NOTE = "(written by `code_wait.py review`, never by the reviewer)"
@@ -221,6 +227,54 @@ def read_phase_run(repo):
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
                  f"(found {type(run_info).__name__}); delete it and run this wait again")
     return run_info
+
+
+def held_fault_text(paths):
+    """The tool-fault text for held files whose bytes changed since the run start. The prompt header, the scope note and
+    the wait output all use it."""
+    return ("held files changed since the run start (by the coder or by the session that holds them); review left them "
+            "out, so check them: " + ", ".join(paths))
+
+
+def unreadable_line(scope_file, problem):
+    """The line for a scope file that could not be read: its path and the problem."""
+    return f"code_wait: {scope_file} could not be read for held-file faults ({problem}); check the held files by hand."
+
+
+def held_fault_line(repo):
+    """The tool-fault line for the held files the phase's scope file lists as changed, "" when the file is absent or
+    lists none. A file that cannot be read gives a line that names it and the error; a repo outside a git checkout
+    gives a line that names the repo; this never exits."""
+    folder = phase_dir_or_none(repo)
+    if folder is None:
+        return f"code_wait: {repo} is not inside a git checkout, so held-file faults were not read; check the held " \
+               "files by hand."
+    scope_file = folder / SCOPE_FILE
+    if not scope_file.is_file():
+        return ""
+
+    try:
+        scope = json.loads(scope_file.read_text())
+    except (OSError, ValueError) as error:
+        return unreadable_line(scope_file, error)
+
+    paths, problem = scope_held_changed(scope)
+    if problem is not None:
+        return unreadable_line(scope_file, problem)
+    if not paths:
+        return ""
+    return "Tool fault: " + held_fault_text(paths)
+
+
+def scope_held_changed(scope):
+    """(the `held_changed` paths of a parsed scope file, None), or ([], the problem) when its shape is wrong."""
+    if not isinstance(scope, dict):
+        return [], f"the top level is a {type(scope).__name__}, not an object"
+
+    paths = scope.get(HELD_CHANGED_FIELD)
+    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+        return [], f"{HELD_CHANGED_FIELD} is not a list of paths"
+    return paths, None
 
 
 def plan_impact_notice(repo):
@@ -524,6 +578,7 @@ def follow_run(repo, run, words, launched_folder):
 
     if not run.running():
         code = print_ended_loop(run)
+        print_held_fault(repo, launched_folder)
         if code != 0 or launched_folder is not None:
             return code
         notice = phase_asks_notice_or_report(repo, run)
@@ -543,6 +598,15 @@ def follow_run(repo, run, words, launched_folder):
 
     print(STILL_WORKING)
     return 0
+
+
+def print_held_fault(repo, launched_folder):
+    """Prints the held-file fault line on the phase route; a launched loop's route (`launched_folder`) prints none."""
+    if launched_folder is not None:
+        return
+    fault_line = held_fault_line(repo)
+    if fault_line:
+        print(fault_line)
 
 
 def print_ended_loop(run):

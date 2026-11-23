@@ -17,6 +17,24 @@ MISE_INSTALL_FAILED = "mise ERROR Failed to install aqua:astral-sh/uv@0.1.0: err
 
 
 class ItemVerdictTest(unittest.TestCase):
+    def test_a_quoted_regex_bar_ban_that_exits_zero_reads_red_with_the_hit_count(self):
+        verdict = criteria_verdict.item_verdict("rg -q 'a|b' f", "`rg -q 'a|b' f` finds no match", 0, "")
+
+        self.assertEqual(("RED", 0), (verdict.outcome, verdict.hits))
+
+    def test_a_quoted_regex_bar_ban_with_listed_hits_counts_them(self):
+        verdict = criteria_verdict.item_verdict("rg 'a|b' f", "`rg 'a|b' f` finds no match", 0, "f:a\nf:b\n")
+
+        self.assertEqual(("RED", 2), (verdict.outcome, verdict.hits))
+
+    def test_a_real_pipe_ban_is_still_read_by_its_output(self):
+        command = "rg a f | wc -l"
+        line = "`rg a f | wc -l` prints nothing"
+
+        self.assertEqual("GREEN", criteria_verdict.item_verdict(command, line, 0, "0\n").outcome)
+        red = criteria_verdict.item_verdict(command, line, 0, "3\n")
+        self.assertEqual(("RED", 3), (red.outcome, red.hits))
+
     def test_each_kind_of_item_maps_to_one_outcome_exit_style_code_and_hit_count(self):
         cases = [
             ("ban, no hit", "grep foo a", "`grep foo a` finds no match", 1, "", "GREEN", 0, 0),

@@ -2,6 +2,7 @@
 
 Checks what the watcher logs and shows when the forked workspace is still open and when it is gone.
 """
+import json
 import os
 import pathlib
 import subprocess
@@ -9,10 +10,13 @@ import tempfile
 import time
 import unittest
 
-from stubs import write_stub
+import toolkit_paths
+from stubs import run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE_WATCH = pathlib.Path(os.environ.get("HERDR_WORKTREE_WATCH", BIN_DIR / "herdr-worktree-watch"))
+LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
+LANE_RECOVERY_LINES = ["workspace w1 closed. Recovery steps:", "1. herdr-lane-resume repo-fork"]
 PANE_WITH_SESSION = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"s1"}}}}'
 PARENT_PANE = '{"result":{"pane":{"agent":"claude","agent_session":{"value":"parent1"}}}}'
 PANE_WITHOUT_SESSION = '{"result":{"pane":null}}'
@@ -43,6 +47,7 @@ class HerdrWorktreeWatchTest(unittest.TestCase):
 
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
+        self.state_home = self.root / "state"
         self.herdr_calls = self.root / "herdr-calls"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$*" >> {self.herdr_calls}
 exit 0""")
@@ -69,10 +74,12 @@ exit 0""")
     "workspace get") {workspace_command} ;;
 esac""")
 
-    def run_watch(self, tuios=False, watch_seconds="0", parent_session=""):
+    def run_watch(self, tuios=False, watch_seconds="0", parent_session="", lanes_cli=LANES_CLI):
         env = {key: value for key, value in os.environ.items()
                if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS")}
         env["HOME"] = str(self.root)
+        env["HERDR_LANES_CLI"] = str(lanes_cli)
+        env["XDG_STATE_HOME"] = str(self.state_home)
         if watch_seconds is not None:
             env["HERDR_WORKTREE_WATCH_SECONDS"] = watch_seconds
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
@@ -82,8 +89,116 @@ esac""")
                                parent_session],
                               env=env, capture_output=True, text=True)
 
+    def add_lane(self):
+        """A lane entry for the fork, as herdr-worktree --fork writes it: no session id yet."""
+        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+        subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-fork", "--worktree", str(self.worktree),
+                        "--main-checkout", str(self.main_checkout), "--branch", "fork", "--reports-to", "boss"],
+                       input="the brief", env=env, check=True, capture_output=True, text=True)
+
+    def lane_session_id(self):
+        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+        finished = subprocess.run(["python3", str(LANES_CLI), "get", "repo-fork"], env=env,
+                                  check=True, capture_output=True, text=True)
+        return json.loads(finished.stdout)["entry"]["session_id"]
+
     def herdr_calls_text(self):
         return self.herdr_calls.read_text() if self.herdr_calls.exists() else ""
+
+    def test_a_lane_entry_gets_the_forks_session_id(self):
+        self.add_lane()
+        self.stub_herdr_api(workspace_open=True, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.lane_session_id(), "s1")
+        self.assertEqual(self.log.read_text(), "workspace w1 still open\n")
+
+    def test_a_gone_workspace_with_a_stored_session_id_logs_only_the_lane_resume_step(self):
+        for tuios in (False, True):
+            with self.subTest(tuios=tuios):
+                self.log.unlink(missing_ok=True)
+                (self.state_home / "herdr-lanes" / "repo-fork.json").unlink(missing_ok=True)
+                self.add_lane()
+                self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+                finished = self.run_watch(tuios=tuios)
+
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.assertEqual(self.log.read_text().splitlines(), LANE_RECOVERY_LINES)
+                self.assertEqual(self.lane_session_id(), "s1")
+
+    def test_an_entry_for_another_worktree_with_the_same_name_is_left_alone_and_the_manual_steps_stay(self):
+        other_worktree = self.root / "other-clone" / "repo-fork"
+        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+        subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-fork", "--worktree", str(other_worktree),
+                        "--main-checkout", str(self.root / "other-clone"), "--branch", "fork", "--reports-to", "boss"],
+                       input="the brief", env=env, check=True, capture_output=True, text=True)
+        subprocess.run(["python3", str(LANES_CLI), "set-session", "repo-fork", "other-id"],
+                       env=env, check=True, capture_output=True, text=True)
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.lane_session_id(), "other-id")
+        log_text = self.log.read_text()
+        self.assertNotIn("herdr-lane-resume", log_text)
+        self.assert_recovery_steps(log_text)
+
+    def test_an_entry_with_no_readable_fork_session_id_is_not_given_one_and_keeps_the_manual_steps(self):
+        self.add_lane()
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITHOUT_SESSION)
+
+        finished = self.run_watch()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.lane_session_id(), "")
+        self.assertIn(f"run claude --resume in {self.worktree}", self.log.read_text())
+
+    def test_no_lane_entry_keeps_the_manual_recovery_steps_and_the_log_text(self):
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        log_text = self.log.read_text()
+        self.assert_recovery_steps(log_text)
+        self.assertEqual(len(log_text.splitlines()), 4)
+
+    def test_a_lane_file_that_cannot_be_read_is_logged_not_taken_for_no_entry(self):
+        lanes_stub = self.root / "unreadable-lanes.py"
+        lanes_stub.write_text("import sys\n"
+                              "sys.stderr.write('bad lane file\\n')\n"
+                              "sys.exit(2)\n")
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch(lanes_cli=lanes_stub)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        log_lines = self.log.read_text().splitlines()
+        self.assertEqual(log_lines.count("lane repo-fork: lane lookup failed: bad lane file"), 1)
+        self.assert_recovery_steps("\n".join(line for line in log_lines if "lookup failed" not in line))
+
+    def test_an_entry_whose_session_id_cannot_be_stored_logs_one_line_and_keeps_the_manual_steps(self):
+        lanes_stub = self.root / "stub-lanes.py"
+        lanes_stub.write_text("import sys\n"
+                              "if sys.argv[1] == 'get':\n"
+                              "    print('{\"entry\": {\"name\": \"repo-fork\", \"worktree\": \""
+                              f"{self.worktree}\", \"session_id\": \"\"}}}}')\n"
+                              "else:\n"
+                              "    sys.stderr.write('boom\\n')\n"
+                              "    sys.exit(1)\n")
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch(lanes_cli=lanes_stub)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        log_lines = self.log.read_text().splitlines()
+        self.assertEqual(log_lines[0], "lane repo-fork: session id not stored: boom")
+        self.assertEqual(len(log_lines), 5)
+        self.assert_recovery_steps("\n".join(log_lines[1:]))
 
     def test_a_workspace_that_is_still_open_is_logged_and_no_notification_is_shown(self):
         self.stub_herdr_api(workspace_open=True, pane=PANE_WITH_SESSION)
@@ -285,6 +400,13 @@ esac""")
         self.assertIn("server_unavailable", finished.stderr)
         self.assertNotIn("closed", finished.stderr)
         self.assertNotIn("notification", self.herdr_calls_text())
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_WORKTREE_WATCH, self.root / "symlink-run")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertTrue(finished.stderr.startswith("usage: herdr-worktree-watch "), finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

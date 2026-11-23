@@ -1,0 +1,3 @@
+{"type": "api-request-blob", "message": {"role": "system", "content": [{"type": "text", "text": "x"}]}}
+{"type": "api-request"}
+{"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}}

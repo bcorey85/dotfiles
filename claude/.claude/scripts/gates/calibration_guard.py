@@ -20,6 +20,7 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import script_utils
 from hook_input import parse_documents_partial, raw_text
 from process_group import pid_is_alive
 
@@ -101,8 +102,7 @@ def main():
     live_only = sys.argv[1:2] == ["--live"]
     session_pid = session_pid_argument(sys.argv[1:])
     home = os.environ.get("HOME", "")
-    state_home = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local", "state")
-    lock = os.path.join(state_home, "claude-calibration", "lock.json")
+    lock = os.path.join(script_utils.xdg_state_home(), "claude-calibration", "lock.json")
     if not os.path.isfile(lock):
         # A lock left by a run from before the lock moved out of ~/.claude still has to be reported.
         lock = os.path.join(home, ".claude", "calibration-lock.json")

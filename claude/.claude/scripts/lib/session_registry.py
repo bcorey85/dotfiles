@@ -34,6 +34,13 @@ def projects_dir():
     return pathlib.Path.home() / ".claude" / "projects"
 
 
+def session_subagents_dir(session_id):
+    """The `subagents` folder of a session's transcripts (first match under any project), None when it has none."""
+    for folder in projects_dir().glob(f"*/{session_id}/subagents"):
+        return folder
+    return None
+
+
 def live_session_rows():
     """The readable `<pid>.json` rows of the registry folder whose pid is alive. A row that is not a JSON object with
     an integer `pid` (not a bool) is not a registry row (the folder also holds `.key` files) and is left out."""
@@ -49,6 +56,14 @@ def live_session_rows():
         if isinstance(pid, int) and not isinstance(pid, bool) and pid_is_alive(pid):
             rows.append(row)
     return rows
+
+
+def row_for_name(name):
+    """The first live row (file order, as `live_session_rows`) named `name`; None when none is."""
+    for row in live_session_rows():
+        if row.get("name") == name:
+            return row
+    return None
 
 
 def other_live_session_in(folder, own_session_id):

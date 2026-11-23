@@ -19,6 +19,9 @@ FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
 PRINTED_FINDING_ID = re.compile(r"(?m)^finding_id=(" + FINDING_ID_PATTERN.pattern + r")\s*$")
 AGENT_ID = re.compile(r"agentId:\s*([A-Za-z0-9-]+)")
 ASYNC_LAUNCH = "Async agent launched"
+# The text of the user record that ends a stopped subagent's transcript, in two shapes:
+# `[Request interrupted by user]` and `[Request interrupted by user for tool use]`.
+INTERRUPT_PREFIX = "[Request interrupted by user"
 RESUMED_AGENT_ID = re.compile(r"resumedAgentId\W+([A-Za-z0-9-]+)")
 RESUMING_MESSAGE = re.compile(r"Resuming agent\s+([A-Za-z0-9-]+)")
 # The statuses whose protocol ends the loop for a human ruling in place of Step 6's full check,
@@ -79,9 +82,7 @@ GATE_REASON = ("No valid full-check receipt exists for the work tree as it stand
 
 
 def text_of(content):
-    if isinstance(content, str):
-        return content
-    return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
+    return " ".join(block_texts(content))
 
 
 def finding_rows(command):
@@ -376,10 +377,26 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
+def agent_meta(transcript_path, report_torn=False):
+    """The parsed meta file beside an agent's transcript, {} when there is none, it is torn (an agent part-way through
+    a write) or it is not an object. `report_torn` names a torn file on stderr."""
+    meta_file = pathlib.Path(transcript_path).with_suffix(script_utils.SUBAGENT_META_SUFFIX)
+    return script_utils.read_json_object(meta_file, report_torn)
+
+
+def subagent_entries(folder, report_torn=False):
+    """(agent id, transcript path, meta) for each subagent with a meta file in the subagents `folder`, by agent id.
+    The transcript may not be written yet. `report_torn` is agent_meta's."""
+    folder = pathlib.Path(folder)
+    for meta_file in sorted(folder.glob(script_utils.subagent_meta_name("*"))):
+        agent_id = script_utils.subagent_id_from_meta_name(meta_file.name)
+        transcript = folder / script_utils.subagent_transcript_name(agent_id)
+        yield agent_id, transcript, agent_meta(transcript, report_torn)
+
+
 def finished_by_meta(transcript_path):
     """Whether the transcript's meta file says the subagent finished."""
-    meta_path = pathlib.Path(transcript_path).with_suffix(".meta.json")
-    return meta_path.exists() and bool(json.loads(meta_path.read_text()).get("finished"))
+    return bool(agent_meta(transcript_path).get("finished"))
 
 
 def agent_finished(transcript_path):
@@ -393,6 +410,59 @@ def agent_finished(transcript_path):
     if finished_by_meta(transcript_path):
         return True
     return bool(LoopTranscript(transcript_path).handback_lines)
+
+
+WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def written_paths(transcript_path):
+    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls."""
+    paths = set()
+    with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
+        for line in transcript:
+            paths.update(call_paths(line))
+    return paths
+
+
+def call_paths(line):
+    """The file paths the Write, Edit, MultiEdit and NotebookEdit calls of one transcript line name."""
+    paths = []
+    for name, tool_input in script_utils.tool_use_calls(line):
+        if name not in WRITE_TOOL_NAMES:
+            continue
+        paths.extend(input_paths(tool_input))
+    return paths
+
+
+def input_paths(tool_input):
+    """The non-empty file_path and notebook_path strings of one tool call's input."""
+    paths = []
+    for key in ("file_path", "notebook_path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            paths.append(value)
+    return paths
+
+
+def block_texts(content):
+    """The text of each text block of a message's content; a plain string is one text."""
+    if isinstance(content, str):
+        return [content]
+    text_blocks = [block for block in content or [] if isinstance(block, dict) and block.get("type") == "text"]
+    return [str(block.get("text") or "") for block in text_blocks]
+
+
+def agent_interrupted(transcript_path):
+    """Whether the subagent whose transcript this is was stopped: its last record is a user record whose text starts
+    with INTERRUPT_PREFIX. A stopped agent writes nothing after that record. False for a transcript that is not
+    written yet."""
+    last_record = script_utils.last_transcript_record(transcript_path)
+    if last_record is None:
+        return False
+    if last_record.get("type") != "user":
+        return False
+    texts = block_texts((last_record.get("message") or {}).get("content"))
+    return any(text.startswith(INTERRUPT_PREFIX) for text in texts)
 
 
 def last_coder_step(transcript):

@@ -8,10 +8,12 @@ import typing
 import file_backup
 import review_loop_held
 import review_loop_untracked
+import script_utils
 import worktree_snapshot
 
 RULED_OUT_REASON = "the user ruled the file out of scope"
-# Under it, per coder role: `ruled-out/` copies the ruled-out files, `diff/` copies the files of the diff under review.
+# Under it, per coder role: `ruled-out/` copies the ruled-out files, `diff/` copies the files of the diff under review,
+# `out-of-scope/` copies the dirty files outside the pass's scope.
 BACKUP_FOLDER = "pass-backup"
 # A move or rename takes the old path away, so a coder's `git mv` is a deletion of it that the finding names.
 DELETION_WORD = r"(?:delet|remov|mov|renam)\w*"
@@ -57,11 +59,11 @@ def names_deletion(finding_texts, path, root):
     """Whether one of the finding texts asks to delete, remove, move or rename `path`: such a word, then the path as a
     whole token, or the path followed by "is/should be/can be deleted/removed". A path under `root` counts as `path`."""
     escaped = re.escape(path)
-    as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?(?<![\w./-]){escaped}`?(?![\w/-]|\.\w)"
-    as_subject = rf"(?<![\w./-]){escaped}`?\s+(?:is|should\s+be|can\s+be)\s+{DELETION_WORD}"
+    token_start, token_end = script_utils.PATH_TOKEN_START, script_utils.PATH_TOKEN_END
+    as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?{token_start}{escaped}`?{token_end}"
+    as_subject = rf"{token_start}{escaped}`?\s+(?:is|should\s+be|can\s+be)\s+{DELETION_WORD}"
     pattern = re.compile(f"{as_object}|{as_subject}", re.IGNORECASE)
-    root_prefix = f"{root}/"
-    return any(pattern.search(text.replace(root_prefix, "")) for text in finding_texts)
+    return any(pattern.search(text) for text in script_utils.texts_relative_to(finding_texts, root))
 
 
 class PassGuard:

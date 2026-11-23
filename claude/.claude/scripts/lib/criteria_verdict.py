@@ -14,6 +14,7 @@ from check_output import (
     missing_tool,
     tool_not_found_text,
 )
+from shell_command import split_command_steps
 from test_run_output import matches_no_test
 
 # A run that exits 0 but ran no test, or whose runner summary reports failures, fails the box.
@@ -84,11 +85,16 @@ def is_search_ban(command, line):
     return not PRESENCE_WORDING.search(text)
 
 
+def has_pipe(command):
+    """True when the command has a real pipe: a `|` outside quotes, not a regex bar in `'a|b'`. `||` is not a pipe."""
+    return any(operator == "|" for operator, _step in split_command_steps(command))
+
+
 def ban_verdict(command, code, output):
     """(exit-style verdict, hit count) of a search ban. A plain search passes on exit 1 (no match) and fails on exit 0
     (a hit); any other exit is an error that stops. A pipe form is judged by its output: empty or 0 passes."""
     hit_rows = len([row for row in output.splitlines() if row.strip()])
-    if "|" in command:
+    if has_pipe(command):
         if output.strip() in ("", "0"):
             return 0, 0
         hits = int(output) if output.strip().isdigit() else hit_rows
@@ -133,7 +139,7 @@ def judge_item(command, line, code, output):
             output += SEARCH_BAN_NOTE
         if verdict == 0:
             outcome = "GREEN"
-        elif code in (0, 1) or "|" in command:
+        elif code in (0, 1) or has_pipe(command):
             outcome = "RED"
         else:
             outcome = "BROKEN"

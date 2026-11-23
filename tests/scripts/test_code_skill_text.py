@@ -13,7 +13,12 @@ GIT_COMMIT_COMMAND = re.compile(r"\bgit\s+(?:-\S+\s+\S+\s+)*commit\b")
 
 class CodeSkillTextTest(unittest.TestCase):
     def test_no_git_command_for_the_user(self):
-        for text_file in (toolkit_paths.CODE_SKILL_FILE, toolkit_paths.CODE_FORK_AGENT_FILE):
+        text_files = (
+            toolkit_paths.CODE_SKILL_FILE,
+            toolkit_paths.CODE_FORK_AGENT_FILE,
+            toolkit_paths.CODE_PHASE_END_FILE,
+        )
+        for text_file in text_files:
             for number, line in enumerate(text_file.read_text().splitlines(), start=1):
                 where = f"{text_file.name}:{number}"
                 with self.subTest(where=where):
@@ -22,8 +27,14 @@ class CodeSkillTextTest(unittest.TestCase):
                     self.assertNotIn("`! git", line, f"{where} holds a `! git` command")
 
     def test_stop_blocks_name_the_commit_subject(self):
-        text = toolkit_paths.CODE_SKILL_FILE.read_text()
+        text = toolkit_paths.CODE_SKILL_FILE.read_text() + toolkit_paths.CODE_PHASE_END_FILE.read_text()
         self.assertGreaterEqual(text.count("Commit subject: <subject>"), 3)
+
+    def test_the_phase_boundary_step_reads_the_phase_end_file_and_the_skill_holds_no_block(self):
+        text = toolkit_paths.CODE_SKILL_FILE.read_text()
+        self.assertIn("Read `~/.claude/skills/code/phase-end-block.md` and print the matching block", text)
+        self.assertNotIn("## Phase-Complete Block", text)
+        self.assertIn("## Phase-Complete Block", toolkit_paths.CODE_PHASE_END_FILE.read_text())
 
 
 if __name__ == "__main__":

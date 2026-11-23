@@ -38,6 +38,54 @@ class PathIsUnderTest(unittest.TestCase):
         self.assertFalse(script_utils.path_is_under("tas", "task"))
 
 
+class NamesPathTest(unittest.TestCase):
+    def test_the_default_boundary_rejects_a_trailing_dot_and_the_token_boundary_accepts_it(self):
+        self.assertFalse(script_utils.names_path("app.py", "edit app.py."))
+        self.assertTrue(script_utils.names_path("app.py", "edit app.py.", as_token=True))
+
+    def test_the_token_boundary_rejects_a_longer_path_or_name_around_the_path(self):
+        for text in ("pkg/app.py", "app.py/x", "app.pyc", "app.py.bak", "my-app.py", "xapp.py"):
+            with self.subTest(text=text):
+                self.assertFalse(script_utils.names_path("app.py", text, as_token=True))
+        for text in ("`app.py:3`", "see app.py, then", "(app.py)"):
+            with self.subTest(text=text):
+                self.assertTrue(script_utils.names_path("app.py", text, as_token=True))
+
+
+class TextsNamePathTest(unittest.TestCase):
+    def test_a_path_under_the_root_counts_as_the_repo_relative_path_and_only_as_a_whole_token(self):
+        cases = [
+            (["- `/repo/app.py:3` wrong"], "app.py", True),
+            (["- `app.py:3` wrong"], "app.py", True),
+            (["- `pkg/app.py:3` wrong"], "app.py", False),
+            (["- `/repo/pkg/app.py:3` wrong"], "app.py", False),
+            ([], "app.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts):
+                self.assertEqual(script_utils.texts_name_path(texts, path, "/repo"), expected)
+
+
+class NextNumberedDirTest(unittest.TestCase):
+    def test_the_next_folder_is_one_above_the_highest_digit_folder_and_nothing_is_created(self):
+        with tempfile.TemporaryDirectory() as temp:
+            parent = pathlib.Path(temp) / "put-back"
+            self.assertEqual(parent / "1", script_utils.next_numbered_dir(parent))
+            (parent / "2").mkdir(parents=True)
+            (parent / "x").mkdir()
+            (parent / "7").write_text("a file, not a folder\n")
+            self.assertEqual(parent / "3", script_utils.next_numbered_dir(parent))
+            self.assertFalse((parent / "3").exists())
+
+    def test_a_folder_named_with_a_superscript_or_non_ascii_digit_is_ignored(self):
+        with tempfile.TemporaryDirectory() as temp:
+            parent = pathlib.Path(temp) / "put-back"
+            (parent / "2").mkdir(parents=True)
+            (parent / "²").mkdir()
+            (parent / "٣").mkdir()
+            self.assertEqual(parent / "3", script_utils.next_numbered_dir(parent))
+
+
 class WithoutPathsTest(unittest.TestCase):
     def test_a_mapping_and_a_list_each_keep_their_shape_less_the_named_paths(self):
         self.assertEqual({"b": 2}, script_utils.without_paths({"a": 1, "b": 2}, ["a"]))
@@ -188,6 +236,37 @@ class FrontmatterCrlfTest(unittest.TestCase):
 class SubagentTranscriptPathTest(unittest.TestCase):
     def test_the_subagent_transcript_sits_in_a_folder_named_for_the_session_transcript(self):
         self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.subagent_transcript_path("/t/s.jsonl", "a1"))
+
+
+class SubagentMetaNameTest(unittest.TestCase):
+    def test_the_meta_name_and_its_inverse_agree(self):
+        self.assertEqual("agent-a1.meta.json", script_utils.subagent_meta_name("a1"))
+        self.assertEqual("a1", script_utils.subagent_id_from_meta_name("agent-a1.meta.json"))
+        self.assertEqual("a1", script_utils.subagent_id_from_meta_name(script_utils.subagent_meta_name("a1")))
+
+
+class LastTranscriptRecordTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.transcript = os.path.join(tmp.name, "agent-a1.jsonl")
+
+    def write(self, text):
+        with open(self.transcript, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_a_missing_file_and_an_empty_file_have_no_record(self):
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+        self.write("")
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+
+    def test_a_torn_last_line_has_no_record(self):
+        self.write('{"a": 1}\n{"b": ')
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+
+    def test_a_last_record_that_is_a_list_has_no_record(self):
+        self.write('{"a": 1}\n[1, 2]\n')
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
 
 
 class VisibleTextTest(unittest.TestCase):
@@ -1231,10 +1310,38 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
 
 
-class EscapedGlobTest(unittest.TestCase):
-    def test_each_wildmatch_character_gets_a_backslash_and_other_text_is_unchanged(self):
-        self.assertEqual(script_utils.escaped_glob("p[1]*?\\x.md"), "p\\[1]\\*\\?\\\\x.md")
-        self.assertEqual(script_utils.escaped_glob("plain.md"), "plain.md")
+class ReadJsonObjectTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.meta_path = os.path.join(tmp.name, "agent-a1.meta.json")
+
+    def write_meta(self, text):
+        with open(self.meta_path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_a_missing_file_reads_as_empty(self):
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {})
+
+    def test_a_str_path_and_a_path_read_the_same_object(self):
+        self.write_meta('{"finished": true}')
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {"finished": True})
+        self.assertEqual(script_utils.read_json_object(pathlib.Path(self.meta_path)), {"finished": True})
+
+    def test_a_file_that_is_a_list_reads_as_empty(self):
+        self.write_meta("[1, 2]")
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {})
+
+    def test_a_torn_file_reads_as_empty_and_is_named_on_stderr_only_when_asked(self):
+        self.write_meta('{"finished": tr')
+        with contextlib.redirect_stderr(io.StringIO()) as quiet_stderr:
+            quiet = script_utils.read_json_object(self.meta_path)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            found = script_utils.read_json_object(self.meta_path, report_torn=True)
+        self.assertEqual(quiet, {})
+        self.assertEqual(quiet_stderr.getvalue(), "")
+        self.assertEqual(found, {})
+        self.assertIn(self.meta_path, stderr.getvalue())
 
 
 class WorkTreeBlobRestoreTest(unittest.TestCase):
@@ -1279,6 +1386,73 @@ class WorkTreeBlobRestoreTest(unittest.TestCase):
 
         self.assertIsNone(script_utils.index_entry(self.repo, "new.md"))
         self.assertTrue((self.repo / "new.md").exists())
+
+    def test_a_glob_character_path_is_taken_out_without_touching_a_path_the_glob_matches(self):
+        (self.repo / "ab.txt").write_text("tracked\n")
+        self.git_run("add", "ab.txt")
+        self.git_run("commit", "-q", "-m", "ab")
+        (self.repo / "a[b].txt").write_text("new\n")
+        self.git_run("add", "a[b].txt")
+
+        self.assertTrue(script_utils.restore_index_entry(self.repo, "a[b].txt", None))
+
+        self.assertIsNone(script_utils.index_entry(self.repo, "a[b].txt"))
+        self.assertIsNotNone(script_utils.index_entry(self.repo, "ab.txt"))
+
+    def test_a_failed_index_listing_raises_in_place_of_reading_as_not_in_the_index(self):
+        with unittest.mock.patch.object(script_utils, "git_output", return_value=None), \
+                self.assertRaises(RuntimeError):
+            script_utils.index_entry(self.repo, "a.md")
+
+    def test_head_commit_or_unborn_raises_when_git_cannot_name_head_in_a_repo_with_a_commit(self):
+        real_git_output = script_utils.git_output
+        for failing_command in ("symbolic-ref", "for-each-ref"):
+            def lookup_fails(repo, *args, failing_command=failing_command, **kwargs):
+                if failing_command in args:
+                    return None
+                return real_git_output(repo, *args, **kwargs)
+
+            with self.subTest(failing_command=failing_command), \
+                    unittest.mock.patch.object(script_utils, "head_commit", return_value=None), \
+                    unittest.mock.patch.object(script_utils, "git_output", side_effect=lookup_fails), \
+                    self.assertRaises(RuntimeError):
+                script_utils.head_commit_or_unborn(self.repo)
+
+    def test_head_commit_or_unborn_raises_when_head_fails_but_the_branch_names_a_commit(self):
+        with unittest.mock.patch.object(script_utils, "head_commit", return_value=None), \
+                self.assertRaises(RuntimeError):
+            script_utils.head_commit_or_unborn(self.repo)
+
+    def test_head_commit_or_unborn_names_the_commit_or_none_for_a_repo_with_no_commit(self):
+        self.assertEqual(script_utils.head_commit_or_unborn(self.repo), script_utils.head_commit(self.repo))
+        unborn = tempfile.TemporaryDirectory()
+        self.addCleanup(unborn.cleanup)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=unborn.name, env={**os.environ, **GIT_ENV},
+                       check=True, capture_output=True)
+
+        self.assertIsNone(script_utils.head_commit_or_unborn(pathlib.Path(unborn.name)))
+
+    def test_index_entries_reads_tracked_untracked_and_oddly_named_paths_with_one_answer_each(self):
+        odd_names = ["with space.md", "naïve é.md"]
+        for name in odd_names:
+            (self.repo / name).write_text("odd\n")
+        self.git_run("add", *odd_names)
+        (self.repo / "new.md").write_text("new\n")
+        paths = ["a.md", "new.md", *odd_names]
+
+        entries = script_utils.index_entries(self.repo, paths)
+
+        self.assertEqual(sorted(entries), sorted(paths))
+        for name in paths:
+            self.assertEqual(entries[name], script_utils.index_entry(self.repo, name), name)
+        self.assertIsNone(entries["new.md"])
+        self.assertIsNotNone(entries["naïve é.md"])
+
+    def test_index_entries_of_no_paths_runs_no_git_call(self):
+        with unittest.mock.patch.object(script_utils, "git_output") as fake_git:
+            self.assertEqual(script_utils.index_entries(self.repo, []), {})
+
+        fake_git.assert_not_called()
 
     def test_the_blob_at_a_commit_matches_the_index_and_is_none_for_a_missing_file(self):
         head = script_utils.head_commit(self.repo)

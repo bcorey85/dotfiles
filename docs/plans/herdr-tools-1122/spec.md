@@ -23,7 +23,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 5: pull_keep_index in a shared checkout (risk: high)
 - [x] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
 - [x] Phase 7: herdr-phase-change names the report-to session (risk: low)
-- [ ] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
+- [x] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
 - [ ] Phase 9: lane-status (risk: low)
 - [ ] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
 - [ ] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
@@ -453,8 +453,8 @@ A dead lane restarts in one command from its lane file; a closed lane leaves the
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_herdr_lane_resume.py` (RED before: script missing)
-- [ ] `python3 tests/parallel_tests.py test_herdr_dev.py` (RED before: `--resume` taken as the directory)
+- [x] `python3 tests/parallel_tests.py test_herdr_lane_resume.py` (RED before: script missing)
+- [x] `python3 tests/parallel_tests.py test_herdr_dev.py` (RED before: `--resume` taken as the directory)
 
 #### Manual Verification
 

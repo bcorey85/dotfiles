@@ -1,0 +1,206 @@
+#!/bin/bash
+# Reopen a dead lane from its lane file, or close a finished one.
+#
+# Usage: herdr-lane-resume <name>
+#        herdr-lane-resume --close <name>
+#   <name>      the lane's name: its worktree folder name, as herdr-worktree --fork
+#               recorded it in ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<name>.json.
+#               Opens a workspace on the worktree (a tuios session under tuios) and
+#               runs herdr-dev --resume there: the claude pane resumes the lane's
+#               session under its name, with no fork, and is given the lane's
+#               latest brief. Stops, changing nothing, when the worktree is gone,
+#               the entry holds no session id, an agent of any kind already runs in
+#               the worktree or a workspace is already open on it.
+#   --close     for a finished lane: refuse while a claude agent in the worktree
+#               is working; close the lane's workspace and wait up to
+#               HERDR_LANE_CLOSE_WAIT seconds (default 10) for its agents, of any
+#               kind, to leave; remove the lane entry; then run herdr-worktree-prune --apply
+#               in the lane's main checkout, which removes the merged, clean
+#               worktrees. Exits with the prune's exit code. Under tuios, which
+#               gives its workspaces no worktree, a workspace labelled <name> is
+#               also closed.
+#
+# herdr-dev and herdr-worktree-prune run from this script's own folder.
+# Exit 1: a stop above, or an unknown name (the known names are listed).
+
+set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+bin_dir="$(cd "$(dirname "$0")" && pwd)"
+lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
+
+usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
+
+fail() {
+    echo "herdr-lane-resume: $*" >&2
+    exit 1
+}
+
+# The folder with links followed; a folder that is gone comes back as given.
+real_path() {
+    (cd -P "$1" 2>/dev/null && pwd) || printf '%s\n' "$1"
+}
+
+# Exit 0 when folder $1 is folder $2 or inside it. Both are real paths.
+is_inside() {
+    case "$1/" in
+        "$2"/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Print the entry of lane $1 as JSON, or stop with the known names when there is none.
+lane_entry() {
+    local reply entry names
+    reply=$(python3 "$lanes_cli" get "$1") || fail "lanes.py get $1 failed"
+    entry=$(jq -c '.entry // empty' <<<"$reply") || fail "lanes.py get $1 returned invalid JSON"
+    if [ -z "$entry" ]; then
+        names=$(python3 "$lanes_cli" list) || fail "lanes.py list failed"
+        names=$(jq -r '.lanes[].name' <<<"$names" | paste -sd ' ' -)
+        fail "no lane named $1; known lanes: ${names:-none}"
+    fi
+    printf '%s\n' "$entry"
+}
+
+# Print "<pane id> <status>" for each agent whose cwd is inside worktree $1.
+# $2 is what the failure message says about the state: "nothing changed" before any close.
+# $3 limits the rows to agents of that kind (for example "claude"); empty means every agent.
+# Fields are split on \x1f, not tab: tab is IFS whitespace and would drop an empty field.
+agents_in() {
+    local agent_list rows pane_id status cwd outcome="${2:-nothing changed}" kind="${3:-}"
+    agent_list=$(herdr-api agent list) || fail "herdr-api agent list failed; $outcome"
+    rows=$(jq -r --arg kind "$kind" '.result.agents[] | select($kind == "" or .agent == $kind) | [.pane_id, .agent_status, .cwd] | join("\u001f")' <<<"$agent_list") \
+        || fail "herdr-api agent list has an unexpected shape; $outcome"
+    while IFS=$'\x1f' read -r pane_id status cwd; do
+        [ -n "$pane_id" ] || continue
+        if is_inside "$(real_path "$cwd")" "$1"; then
+            printf '%s %s\n' "$pane_id" "$status"
+        fi
+    done <<<"$rows"
+}
+
+# Print the id of each workspace open on worktree $1. Under tuios, which gives its
+# workspaces no worktree, a workspace labelled $2 counts as well.
+workspaces_on() {
+    local workspace_list rows workspace_id label checkout
+    workspace_list=$(herdr-api workspace list) || fail "herdr-api workspace list failed; nothing changed"
+    rows=$(jq -r '.result.workspaces[] | [.workspace_id, .label, (.worktree.checkout_path // "")] | join("\u001f")' <<<"$workspace_list") \
+        || fail "herdr-api workspace list has an unexpected shape; nothing changed"
+    while IFS=$'\x1f' read -r workspace_id label checkout; do
+        [ -n "$workspace_id" ] || continue
+        if [ -n "$checkout" ] && [ "$(real_path "$checkout")" = "$1" ]; then
+            printf '%s\n' "$workspace_id"
+        elif [ -n "${TUIOS_SOCKET:-}" ] && [ "$label" = "$2" ]; then
+            printf '%s\n' "$workspace_id"
+        fi
+    done <<<"$rows"
+}
+
+resume_lane() {
+    local name="$1" entry wt main_checkout session brief live_pane open_ws opened ws
+
+    entry=$(lane_entry "$name")
+    wt=$(jq -r '.worktree' <<<"$entry")
+    main_checkout=$(jq -r '.main_checkout' <<<"$entry")
+    session=$(jq -r '.session_id' <<<"$entry")
+    brief=$(jq -r '.brief' <<<"$entry")
+
+    [ -d "$wt" ] || fail "worktree gone; run herdr-lane-resume --close $name"
+    wt=$(real_path "$wt")
+    [ -n "$session" ] \
+        || fail "the fork never reported a session id; open the worktree and run claude there"
+
+    live_pane=$(agents_in "$wt" | sed -n '1s/ .*//p')
+    [ -z "$live_pane" ] || fail "lane is live in pane $live_pane"
+    open_ws=$(workspaces_on "$wt" "$name" | sed -n 1p)
+    [ -z "$open_ws" ] || fail "workspace $open_ws is already open on it; close it, then rerun"
+
+    if [ -n "${TUIOS_SOCKET:-}" ]; then
+        opened=$(herdr-api workspace create --cwd "$wt" --label "$name" --focus) \
+            || fail "workspace create failed"
+    else
+        opened=$(herdr worktree open --cwd "$main_checkout" --path "$wt" --label "$name" --focus) \
+            || fail "herdr worktree open failed"
+    fi
+    ws=$(jq -r '.result.workspace.workspace_id // empty' <<<"$opened")
+    [ -n "$ws" ] || fail "open reply has no workspace id: $opened"
+    # tuios ignores --focus, and herdr-dev's layout calls need the client on this workspace.
+    if [ -n "${TUIOS_SOCKET:-}" ]; then
+        herdr-api workspace focus "$ws" >/dev/null
+    fi
+
+    "$bin_dir/herdr-dev" --resume "$wt" "$ws" "$session" "$brief"
+}
+
+# Close workspace $1 through the multiplexer this shell lives in.
+close_workspace() {
+    if [ -n "${TUIOS_SOCKET:-}" ]; then
+        herdr-api workspace close "$1"
+    else
+        herdr workspace close "$1"
+    fi
+}
+
+# Wait for the agents of worktree $1 to leave, 0.5 s apart, up to $2 seconds (a whole number).
+wait_for_agents_to_leave() {
+    local wait_seconds=$((10#$2)) attempt remaining
+    for ((attempt = 0; attempt <= wait_seconds * 2; attempt++)); do
+        remaining=$(agents_in "$1" "the workspaces are already closed and the lane entry is kept")
+        [ -n "$remaining" ] || return 0
+        if [ "$attempt" -lt $((wait_seconds * 2)) ]; then
+            sleep 0.5
+        fi
+    done
+    echo "herdr-lane-resume: an agent still runs in $1; the prune will keep it" >&2
+}
+
+close_lane() {
+    local name="$1" entry wt main_checkout working workspace_ids workspace_id prune_status
+    local close_wait="${HERDR_LANE_CLOSE_WAIT:-10}"
+
+    # Checked before any workspace closes, so a bad value changes nothing.
+    [[ "$close_wait" =~ ^[0-9]+$ ]] || fail "HERDR_LANE_CLOSE_WAIT must be a whole number of seconds, got: $close_wait"
+
+    entry=$(lane_entry "$name")
+    wt=$(jq -r '.worktree' <<<"$entry")
+    main_checkout=$(jq -r '.main_checkout' <<<"$entry")
+    [ ! -d "$wt" ] || wt=$(real_path "$wt")
+
+    # awk reads all its input: an early exit would SIGPIPE agents_in and fail the pipeline.
+    working=$(agents_in "$wt" "nothing changed" claude | awk '$2 == "working" && !found { print $1; found = 1 }')
+    [ -z "$working" ] \
+        || fail "lane $name has a working agent in pane $working; wait for it to finish, then rerun"
+
+    workspace_ids=$(workspaces_on "$wt" "$name")
+    for workspace_id in $workspace_ids; do
+        close_workspace "$workspace_id" >/dev/null \
+            || fail "could not close workspace $workspace_id; the lane entry is kept and nothing was pruned"
+    done
+    if [ -n "$workspace_ids" ]; then
+        wait_for_agents_to_leave "$wt" "$close_wait"
+    fi
+
+    [ -d "$wt" ] || echo "herdr-lane-resume: worktree $wt is already gone; removing the entry" >&2
+    python3 "$lanes_cli" remove "$name" >/dev/null
+
+    if [ ! -d "$main_checkout" ]; then
+        echo "herdr-lane-resume: main checkout $main_checkout is gone; nothing to prune"
+        return 0
+    fi
+    prune_status=0
+    (cd "$main_checkout" && "$bin_dir/herdr-worktree-prune" --apply) || prune_status=$?
+    return "$prune_status"
+}
+
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    --close)
+        [ $# -eq 2 ] || fail "--close needs one lane name"
+        close_lane "$2"
+        ;;
+    -*) echo "herdr-lane-resume: unknown option: $1" >&2; usage >&2; exit 1 ;;
+    "") usage >&2; exit 1 ;;
+    *)
+        [ $# -eq 1 ] || fail "one lane name only"
+        resume_lane "$1"
+        ;;
+esac

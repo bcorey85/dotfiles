@@ -34,16 +34,14 @@ class LaneFileError(Exception):
 class LaneExistsError(Exception):
     """An entry of that name exists and its worktree folder is still there."""
 
-    def __init__(self, name):
-        self.name = name
-        super().__init__(f"lane {name} already exists with a live worktree")
+    def __init__(self, name, file):
+        super().__init__(f"lane {name} already exists with a live worktree ({file})")
 
 
 class LaneNotFoundError(Exception):
     """No entry has that name."""
 
     def __init__(self, name):
-        self.name = name
         super().__init__(f"no lane named {name}")
 
 
@@ -241,7 +239,7 @@ def add_entry(name, worktree, main_checkout, branch, brief, reports_to):
     with _locked():
         existing = entry(name)
         if existing is not None and pathlib.Path(existing["worktree"]).exists():
-            raise LaneExistsError(name)
+            raise LaneExistsError(name, lane_file(name))
         _write(lane)
     return lane
 

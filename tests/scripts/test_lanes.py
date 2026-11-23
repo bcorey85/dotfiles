@@ -55,6 +55,19 @@ class LanesCliTest(unittest.TestCase):
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_an_add_that_hits_a_live_entry_exits_1_naming_the_lane_file(self):
+        self.assertEqual(0, self.add("one").returncode)
+        result = self.add("one")
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn(f"lanes: lane one already exists with a live worktree ({self.lanes_dir / 'one.json'})",
+                      result.stderr)
+
+    def test_an_add_that_cannot_write_exits_2_naming_the_lane_file(self):
+        (self.root / "state").write_text("a file where the state folder should be")
+        result = self.add("one")
+        self.assertEqual(2, result.returncode, result.stderr)
+        self.assertIn(f"lanes: {self.lanes_dir / 'one.json'}: ", result.stderr)
+
     def test_every_verb_prints_its_json_and_a_lane_round_trips(self):
         added = self.add("one")
         self.assertEqual(0, added.returncode, added.stderr)
@@ -213,7 +226,8 @@ class LanesCliTest(unittest.TestCase):
 
         result = self.add("one")
         self.assertEqual(2, result.returncode)
-        self.assertIn(f"lanes: lock {lock_path} held for 10s", result.stderr)
+        lane_file = self.lanes_dir / "one.json"
+        self.assertIn(f"lanes: {lane_file}: lock {lock_path} held for 10s", result.stderr)
 
 
 if __name__ == "__main__":

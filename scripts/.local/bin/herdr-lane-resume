@@ -72,6 +72,7 @@ agents_in() {
         || fail "herdr-api agent list has an unexpected shape; $outcome"
     while IFS=$'\x1f' read -r pane_id status cwd; do
         [ -n "$pane_id" ] || continue
+        [ -n "$cwd" ] || continue
         if is_inside "$(real_path "$cwd")" "$1"; then
             printf '%s %s\n' "$pane_id" "$status"
         fi

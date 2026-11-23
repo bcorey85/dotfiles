@@ -22,11 +22,10 @@ import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import herdr_agents
 import hook_input
 import lane_entries
 import script_utils
-import session_pane
 import system_resources
 
 EXIT_PROBLEMS = 1
@@ -91,7 +90,7 @@ def lane_line(lane, agents):
     if not os.path.isdir(lane["worktree"]):
         return f"{name}: worktree gone"
 
-    inside = session_pane.agents_in(lane["worktree"], agents)
+    inside = herdr_agents.agents_in(lane["worktree"], agents)
     if not inside:
         return f"{name}: no agent"
 
@@ -110,7 +109,7 @@ def lane_lines():
     if not lanes:
         return []
 
-    agents = session_pane.claude_agents()
+    agents = herdr_agents.claude_agents()
     lines = [lane_line(lane, agents) for lane in lanes]
     return [line for line in lines if line is not None]
 
@@ -125,7 +124,7 @@ def main(argv):
         minimum_scratch = threshold_gb("LANE_STATUS_MIN_SCRATCH_GB")
         scratch_cap = threshold_gb("LANE_STATUS_SCRATCH_CAP_GB")
         lines = memory_lines(minimum_memory) + scratch_lines(minimum_scratch, scratch_cap) + lane_lines()
-    except (StatusError, system_resources.ResourceReadError, session_pane.PaneCallError) as error:
+    except (StatusError, system_resources.ResourceReadError, herdr_agents.PaneCallError) as error:
         print(f"lane_status: {error}", file=sys.stderr)
         return EXIT_FAILED
 

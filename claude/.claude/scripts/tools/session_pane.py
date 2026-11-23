@@ -6,9 +6,10 @@ Both answers are JSON on stdout.
 Usage: session_pane.py sender
        session_pane.py resolve ARG
 
-resolve prints {"pane_id": "...", "via": "path"|"session"|"as-given"}. An existing directory ARG gives the one claude
-agent running inside it; else a live session name gives the agent that holds its session id; else ARG is returned
-as given. Exit 1 with a message on stderr when a directory holds no claude agent or several (each listed as
+resolve prints {"pane_id": "...", "via": "path"|"session"|"as-given"}. An ARG that contains "/" and is an existing
+directory gives the one claude agent running inside it; else a live session name gives the agent that holds its
+session id (a bare name is always a session name, even when a folder of that name exists); else ARG is returned as
+given. Exit 1 with a message on stderr when a directory holds no claude agent or several (each listed as
 `pane_id cwd`), or when the session has no pane; exit 2 when `herdr-api agent list` fails.
 
 sender prints {"name": "<ListAgents name>"} and exits 0 when the name is found. The name comes from
@@ -19,43 +20,17 @@ herdr-api call fails (the reason names the call). Callers read `.name` and `.rea
 import json
 import os
 import pathlib
-import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
-import script_utils
 import session_registry
+from herdr_agents import PaneCallError, agents_in, claude_agents, herdr_reply
 
 EXIT_NO_NAME = 1
 EXIT_TOOL_FAILED = 2
 VIA_PATH = "path"
 VIA_SESSION = "session"
 VIA_AS_GIVEN = "as-given"
-AGENT_LIST_CALL = "herdr-api agent list"
-
-
-class PaneCallError(Exception):
-    """The herdr-api call failed; the message names the call."""
-
-
-def herdr_reply(words):
-    """The JSON object `herdr-api <words>` prints. Raises PaneCallError, naming the call, when herdr-api is missing,
-    exits non-zero or prints no JSON object."""
-    call = "herdr-api " + " ".join(words)
-    try:
-        finished = subprocess.run(["herdr-api", *words], capture_output=True, text=True)
-    except OSError as error:
-        raise PaneCallError(f"{call} failed: {error}") from error
-    if finished.returncode != 0:
-        raise PaneCallError(f"{call} failed with exit {finished.returncode}")
-
-    try:
-        reply = json.loads(finished.stdout)
-    except ValueError as error:
-        raise PaneCallError(f"{call} printed no JSON: {error}") from error
-    if not isinstance(reply, dict):
-        raise PaneCallError(f"{call} printed no JSON object")
-    return reply
 
 
 def pane_session_id():
@@ -100,27 +75,9 @@ def sender():
     return found(pane_name)
 
 
-def claude_agents():
-    """The claude agents of `herdr-api agent list`. Raises PaneCallError when the call fails."""
-    reply = herdr_reply(["agent", "list"])
-    result = reply.get("result")
-    agents = result.get("agents") if isinstance(result, dict) else None
-    if not isinstance(agents, list):
-        raise PaneCallError(f"{AGENT_LIST_CALL} printed no agents list")
-    return [agent for agent in agents if isinstance(agent, dict) and agent.get("agent") == "claude"]
-
-
 def resolved(pane_id, via):
     print(json.dumps({"pane_id": pane_id, "via": via}))
     return 0
-
-
-def agents_in(directory, agents):
-    """The agents whose real cwd is inside the real path of `directory`."""
-    real_directory = os.path.realpath(directory)
-    return [agent for agent in agents
-            if isinstance(agent.get("cwd"), str)
-            and script_utils.path_is_under(os.path.realpath(agent["cwd"]), real_directory)]
 
 
 def resolve_path(directory, agents):
@@ -149,10 +106,16 @@ def resolve_session(row, name, agents):
     return EXIT_NO_NAME
 
 
+def names_a_directory(arg):
+    """True for an argument with a "/" that is an existing directory; a bare name is never a path."""
+    return "/" in arg and os.path.isdir(arg)
+
+
 def resolve(arg):
-    """An existing directory wins over a session of the same name; anything else is left as given (a pane id or a
-    herdr agent name). `herdr-api agent list` is called only when the argument is a directory or a session name."""
-    is_directory = os.path.isdir(arg)
+    """A path (an argument with a "/" that is an existing directory) wins over a session of the same name; a bare
+    name is a session name; anything else is left as given (a pane id or a herdr agent name). `herdr-api agent list`
+    is called only when the argument is a path or a session name."""
+    is_directory = names_a_directory(arg)
     row = None if is_directory else session_registry.row_for_name(arg)
     if not is_directory and row is None:
         return resolved(arg, VIA_AS_GIVEN)

@@ -73,10 +73,11 @@ echo '{CREATED_WORKSPACE}'""")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
         write_stub(self.bin_dir / "herdr-worktree-watch", "exit 0")
 
-    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None, watch_seconds=None):
+    def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None, watch_seconds=None,
+                           lanes_cli=None):
         env = {key: value for key, value in os.environ.items()
                if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS", "CLAUDE_CODE_SESSION_ID")}
-        env["HERDR_LANES_CLI"] = str(LANES_CLI)
+        env["HERDR_LANES_CLI"] = str(lanes_cli or LANES_CLI)
         env["HERDR_SESSION_PANE"] = str(SESSION_PANE)
         env["XDG_STATE_HOME"] = str(self.state_home)
         env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
@@ -349,8 +350,20 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         lane_file = self.state_home / "herdr-lanes" / "repo-new-thing.json"
-        self.assertIn(f"herdr-worktree: lane entry not written at {lane_file}: ", finished.stderr)
+        self.assertIn(f"herdr-worktree: lane entry not written: lanes: {lane_file}: ", finished.stderr)
         self.assertIn("herdr-lane-resume will not know this lane", finished.stderr)
+        self.wait_for_file(watch_args)
+
+    def test_a_missing_lanes_script_warns_naming_the_lane_file_and_the_fork_still_starts(self):
+        self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing",
+                                           lanes_cli=self.root / "no-such-lanes.py")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        lane_file = self.state_home / "herdr-lanes" / "repo-new-thing.json"
+        self.assertIn("herdr-worktree: lane entry not written: ", finished.stderr)
+        self.assertIn(f"the lane file is {lane_file};", finished.stderr)
         self.wait_for_file(watch_args)
 
     def add_origin_with_default_master(self):

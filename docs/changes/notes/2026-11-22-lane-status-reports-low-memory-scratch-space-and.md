@@ -19,7 +19,7 @@ unmeasured: "No count shows how often a lane sat idle or memory ran low unnotice
 
 `lane-status` reads memory available (`/proc/meminfo`, or `vm_stat` on macOS), free space on the scratch root and its size, and every lane file entry. It prints one line for low memory, low free scratch space, scratch use over a cap, and each lane with no claude agent, a missing worktree or an agent that is not working. It prints nothing and exits 0 when all is well, exits 1 when it printed, and exits 2 on a bad lane file, a bad threshold, or a failed `herdr-api`, `df` or `du` call. The thresholds come from `LANE_STATUS_MIN_MEMORY_GB`, `LANE_STATUS_MIN_SCRATCH_GB` and `LANE_STATUS_SCRATCH_CAP_GB`.
 
-A lane with several agents is silent when any is working. `du` exiting 1 while it prints a total, as happens when a file vanishes mid-walk, counts as a read. `session_pane.agents_in` now owns the "agents inside a folder" filter that `resolve` and `lane-status` share.
+A lane with several agents is silent when any is working. `du` exiting 1 while it prints a total, as happens when a file vanishes mid-walk, counts as a read. `herdr_agents.agents_in` (lib/herdr_agents.py) now owns the "agents inside a folder" filter that `resolve` and `lane-status` share.
 
 ## Evidence
 

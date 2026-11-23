@@ -131,10 +131,25 @@ class SessionPaneResolveTest(SessionPaneTestCase):
         listing = AGENT_LIST % {"wt": self.shared, "solo": self.solo}
         write_stub(self.bin_dir / "herdr-api", f'case "$1 $2" in\n    "agent list") echo \'{listing}\' ;;\nesac')
 
-    def run_resolve(self, arg):
+    def run_resolve(self, arg, cwd=None):
         env = dict(os.environ, CLAUDE_CONFIG_DIR=str(self.config_dir), PATH=f"{self.bin_dir}:{os.environ['PATH']}")
         return subprocess.run(["python3", str(SESSION_PANE), "resolve", arg], env=env, capture_output=True,
-                              text=True)
+                              text=True, cwd=cwd)
+
+    def test_a_bare_name_that_is_also_a_directory_in_the_cwd_resolves_as_a_session_name(self):
+        self.register_session("s-three", "lane-three")
+        (self.root / "lane-three").mkdir()
+
+        finished = self.run_resolve("lane-three", cwd=self.root)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), {"pane_id": "w1:p3", "via": "session"})
+
+    def test_a_relative_path_with_a_slash_resolves_as_a_directory(self):
+        finished = self.run_resolve("solo/", cwd=self.root)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), {"pane_id": "w1:p3", "via": "path"})
 
     def test_a_session_name_resolves_to_the_pane_holding_its_session(self):
         self.register_session("s-three", "lane-three")

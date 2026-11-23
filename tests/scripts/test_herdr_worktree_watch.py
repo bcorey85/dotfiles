@@ -160,12 +160,27 @@ esac""")
     def test_no_lane_entry_keeps_the_manual_recovery_steps_and_the_log_text(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
 
-        finished = self.run_watch(lanes_cli=self.root / "no-such-lanes.py")
+        finished = self.run_watch()
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_text = self.log.read_text()
         self.assert_recovery_steps(log_text)
         self.assertEqual(len(log_text.splitlines()), 4)
+
+    def test_a_lane_file_that_cannot_be_read_is_logged_not_taken_for_no_entry(self):
+        lanes_stub = self.root / "unreadable-lanes.py"
+        lanes_stub.write_text("import sys\n"
+                              "sys.stderr.write('bad lane file\\n')\n"
+                              "sys.exit(2)\n")
+        self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
+
+        finished = self.run_watch(lanes_cli=lanes_stub)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("bad lane file", finished.stderr)
+        log_lines = self.log.read_text().splitlines()
+        self.assertEqual(log_lines.count("lane repo-fork: lane file unreadable"), 2)
+        self.assert_recovery_steps("\n".join(line for line in log_lines if "unreadable" not in line))
 
     def test_an_entry_whose_session_id_cannot_be_stored_logs_one_line_and_keeps_the_manual_steps(self):
         lanes_stub = self.root / "stub-lanes.py"

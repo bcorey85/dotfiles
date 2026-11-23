@@ -140,10 +140,10 @@ class HerdrLaneResumeTest(unittest.TestCase):
     def lane_names(self):
         return [lane["name"] for lane in json.loads(self.lanes("list").stdout)["lanes"]]
 
-    def run_script(self, *args, tuios=False, extra_env=None):
+    def run_script(self, *args, tuios=False, extra_env=None, cwd=None):
         env = {**self.env(tuios), **(extra_env or {})}
         return subprocess.run(["bash", str(self.script), *args], env=env, capture_output=True,
-                              text=True, timeout=60)
+                              text=True, timeout=60, cwd=cwd)
 
     def recorded_events(self):
         if not self.events.exists():
@@ -257,6 +257,15 @@ class ResumeTest(HerdrLaneResumeTest):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("lane is live in pane p8", result.stderr)
+
+    def test_an_agent_with_no_cwd_does_not_count_as_inside_the_lane(self):
+        self.add_lane()
+        self.set_agents([agent("p6", "", "idle")])
+
+        result = self.run_script(NAME, cwd=self.worktree)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.recorded_events()), 2)
 
     def test_agent_with_a_null_status_still_blocks_resume(self):
         self.add_lane()
@@ -479,7 +488,7 @@ class CloseTest(HerdrLaneResumeTest):
         result = self.run_script("--close", NAME)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("nothing to prune", result.stdout)
+        self.assertIn(f"main checkout {self.main_checkout} is gone", result.stdout)
         self.assertEqual(self.recorded_events(), [])
         self.assertEqual(self.lane_names(), [])
 

@@ -649,6 +649,7 @@ class LaneTest(PruneTestCase):
         self.assertEqual(applied.returncode, 0, applied.stderr)
         self.assertTrue(tree.exists())
         self.assertIn("removed 0, freed 0 bytes", applied.stdout)
+        self.assertGreaterEqual(int(counter.read_text()), 2)
 
 
 class RunningFromTest(PruneTestCase):

@@ -69,6 +69,18 @@ read_session() {
         || echo ""
 }
 
+# Print the lane entry named by the worktree folder, when it is this worktree's; print nothing when
+# there is none or it belongs to another worktree. A lane file that cannot be read is logged, and
+# the lanes command's own stderr shows why.
+lane_entry_for_worktree() {
+    local reply
+    if ! reply=$(python3 "$lanes_cli" get "$label"); then
+        echo "lane $label: lane file unreadable" >>"$log"
+        return 0
+    fi
+    jq -c --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry // empty' <<<"$reply"
+}
+
 # The wait is wall time, so the poll calls count against it as well as the sleeps.
 start_seconds=$SECONDS
 session=$(read_session)
@@ -82,7 +94,7 @@ done
 # Only a fork that wrote a lane entry (herdr-worktree --fork) has one to fill. With no entry
 # nothing runs and nothing is logged.
 if [ -n "$session" ]; then
-    lane_entry=$(python3 "$lanes_cli" get "$label" 2>/dev/null | jq -r --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry // empty' 2>/dev/null) || lane_entry=""
+    lane_entry=$(lane_entry_for_worktree) || lane_entry=""
     if [ -n "$lane_entry" ] && ! store_error=$(python3 "$lanes_cli" set-session "$label" "$session" 2>&1 >/dev/null); then
         echo "lane $label: session id not stored: $store_error" >>"$log"
     fi
@@ -125,7 +137,9 @@ focus_step=""
 # A lane entry with a session id is resumed by herdr-lane-resume, which reopens the workspace
 # under herdr and tuios alike. An empty id (no entry, a failed add or a failed set-session)
 # keeps the manual steps.
-lane_session=$(python3 "$lanes_cli" get "$label" 2>/dev/null | jq -r --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry.session_id // empty' 2>/dev/null) || lane_session=""
+lane_session=""
+lane_entry=$(lane_entry_for_worktree) || lane_entry=""
+[ -z "$lane_entry" ] || lane_session=$(jq -r '.session_id // empty' <<<"$lane_entry")
 {
     echo "workspace $workspace closed. Recovery steps:"
     if [ -n "$lane_session" ]; then

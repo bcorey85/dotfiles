@@ -117,6 +117,17 @@ def dispatch(args, parser):
     return runners[args.verb](args)
 
 
+def os_error_subject(args):
+    """`<lane file>: ` for a verb that names one lane, so an OS error says which file it hit; else empty."""
+    name = getattr(args, "name", None)
+    if not name:
+        return ""
+    try:
+        return f"{lane_entries.lane_file(name)}: "
+    except lane_entries.LaneFileError:
+        return ""
+
+
 def main(argv):
     parser = build_parser()
     args = parser.parse_args(argv[1:])
@@ -129,11 +140,11 @@ def main(argv):
         print(f"lanes: {error}", file=sys.stderr)
         return 2
     except file_lock.LockTimeoutError:
-        print(f"lanes: lock {lane_entries.lane_lock_path()} held for {lane_entries.LOCK_TIMEOUT_SECONDS}s",
-              file=sys.stderr)
+        print(f"lanes: {os_error_subject(args)}lock {lane_entries.lane_lock_path()} held for "
+              f"{lane_entries.LOCK_TIMEOUT_SECONDS}s", file=sys.stderr)
         return 2
     except OSError as error:
-        print(f"lanes: {error}", file=sys.stderr)
+        print(f"lanes: {os_error_subject(args)}{error}", file=sys.stderr)
         return 2
 
 

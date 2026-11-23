@@ -559,3 +559,10 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 #### Manual Verification
 
 - The recap names the branch, the final hash, the suite count, the Agent-run evidence from Phases 4, 5 and 10, and the CLAUDE.md and orchestration.md lines handed to the orchestrating session.
+
+## Plan Deviations
+
+- Phase 4/10 names: World.lanes: LaneRead replaces lane_worktrees (herdr-worktree-prune); built_page_driver_configured is renamed built_page_driver_command and put_back_by_hand takes a template parameter (pull_keep_index.py); ruled by the /code session, 2026-11-22, no acceptance criterion touched.
+- Close pass: PaneCallError, herdr_reply, claude_agents and agents_in moved from tools/session_pane.py to lib/herdr_agents.py; ruled by the /code session, 2026-11-22.
+- Resolve rule (D5, Phase 1 §4, Phase 7): only an argument containing "/" that is an existing directory counts as a path; a bare name is a session name, so a directory that shares a session's name no longer wins over it; ruled by the agent-evals-c3 session, 2026-11-22, no acceptance criterion touched.
+- herdr-worktree's warning for a failed lane write is now `herdr-worktree: lane entry not written: <lanes stderr>; the lane file is <path>; herdr-lane-resume will not know this lane` (Phase 6 quotes the old `lane entry not written at <path>: <error>`); ruled by the agent-evals-c3 session, 2026-11-22, no acceptance criterion touched.

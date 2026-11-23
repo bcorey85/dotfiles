@@ -1001,6 +1001,19 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
         self.assertEqual(self.status(), ["M  f"])
 
+    def test_a_run_that_pulls_nothing_still_moves_the_remote_tracking_ref_to_the_fetched_tip(self):
+        stale_tip = self.git(self.repo, "rev-parse", "origin/master").strip()
+        self.push_from_other_machine("h", "2\n")
+        self.git(self.repo, "fetch", "-q", "origin", "master:refs/heads/held")
+        self.git(self.repo, "merge", "-q", "--ff-only", "held")
+        self.git(self.repo, "update-ref", "refs/remotes/origin/master", stale_tip)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("already holds the upstream tip", finished.stdout)
+        self.assertEqual(self.git(self.repo, "rev-parse", "@{u}").strip(), self.head())
+
     def test_a_fully_synced_branch_pulls_nothing_and_keeps_a_staged_file_staged(self):
         self.git(self.repo, "checkout", "-q", "-b", "feature")
         self.git(self.repo, "push", "-q", "-u", "origin", "feature")
@@ -1141,6 +1154,20 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\nwriter\n")
         self.assertEqual(self.kept_refs(), [])
         self.assertEqual(self.git(self.repo, "for-each-ref", "refs/pull-keep-index-fetch"), "")
+        self.assertEqual(self.head(), self.git(self.remote, "rev-parse", "master").strip())
+
+    def test_a_shared_pull_fetches_the_upstream_once(self):
+        self.share_the_checkout_with_a_dirty_file()
+        self.push_from_other_machine("h", "2\n")
+        trace = self.tmp / "git-trace.log"
+        env = {**os.environ, **GIT_ENV, "GIT_TRACE": str(trace)}
+
+        finished = subprocess.run([sys.executable, str(SCRIPT), str(self.repo)], capture_output=True, text=True,
+                                  env=env)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        fetches = [line for line in trace.read_text().splitlines() if "built-in: git fetch" in line]
+        self.assertEqual(len(fetches), 1, fetches)
         self.assertEqual(self.head(), self.git(self.remote, "rev-parse", "master").strip())
 
     def test_a_shared_pull_that_would_overwrite_a_dirty_file_refuses_and_sets_nothing_aside(self):
@@ -1439,7 +1466,8 @@ class PrintedCommandQuotingTest(unittest.TestCase):
             unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_add),
             self.assertRaises(SystemExit) as stopped,
         ):
-            self.module.put_back_by_hand(str(repo), saved, REF, ["f"], f"{sys.executable} {driver} %A")
+            template = f"{sys.executable} {driver} %A"
+            self.module.put_back_by_hand(str(repo), self.module.Saved(saved, REF), ["f"], template)
 
         message = str(stopped.exception)
         self.assertIn("could not stage the rebuilt pages: index is locked", message)

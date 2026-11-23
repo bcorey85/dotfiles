@@ -1,4 +1,5 @@
 """Runs lane_status.py against stub herdr-api, df and du commands, a temp lane folder and a temp scratch root."""
+import importlib.util
 import json
 import os
 import pathlib
@@ -231,7 +232,7 @@ class LaneStatusTest(unittest.TestCase):
         finished = self.run_status()
 
         self.assertEqual(finished.returncode, 2)
-        self.assertIn("broken.json", finished.stderr)
+        self.assertIn(f"{lanes / 'broken.json'}: field (file): expected valid JSON", finished.stderr)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "reads /proc/meminfo")
     def test_memory_under_the_threshold_prints_the_memory_line(self):
@@ -271,19 +272,29 @@ class LaneStatusTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 2)
                 self.assertIn(variable, finished.stderr)
 
-    def test_a_threshold_of_nan_or_inf_exits_2(self):
-        for value in ("nan", "inf"):
+    def test_a_threshold_that_is_nan_inf_or_not_a_number_exits_2_naming_the_variable(self):
+        for value in ("nan", "inf", "lots"):
             with self.subTest(value=value):
                 finished = self.run_status(LANE_STATUS_MIN_SCRATCH_GB=value)
 
                 self.assertEqual(finished.returncode, 2)
                 self.assertIn("LANE_STATUS_MIN_SCRATCH_GB", finished.stderr)
 
-    def test_a_threshold_that_is_not_a_number_exits_2_naming_the_variable(self):
-        finished = self.run_status(LANE_STATUS_MIN_SCRATCH_GB="lots")
+    def test_the_memory_threshold_is_8_gb_when_the_variable_is_unset(self):
+        spec = importlib.util.spec_from_file_location("lane_status_under_test", LANE_STATUS)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.dict(os.environ):
+            os.environ.pop("LANE_STATUS_MIN_MEMORY_GB", None)
+            threshold = module.threshold_gb("LANE_STATUS_MIN_MEMORY_GB")
+        self.assertEqual(8, threshold)
 
-        self.assertEqual(finished.returncode, 2)
-        self.assertIn("LANE_STATUS_MIN_SCRATCH_GB", finished.stderr)
+        with mock.patch.object(module.system_resources, "memory_available_gb", return_value=7.9):
+            under = module.memory_lines(threshold)
+        with mock.patch.object(module.system_resources, "memory_available_gb", return_value=8.0):
+            at = module.memory_lines(threshold)
+        self.assertEqual(["memory: 7.9 GB available, under 8 GB"], under)
+        self.assertEqual([], at)
 
 
 if __name__ == "__main__":

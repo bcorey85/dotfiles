@@ -4,7 +4,8 @@
 #
 # Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
 #   agent      a ListAgents session name, a worktree path, a pane id or a herdr agent name.
-#              An existing directory wins over a session of the same name; a directory
+#              Only an argument with a "/" that is an existing directory is a path, and it wins
+#              over a session of the same name; a bare name is a session name. A directory
 #              that holds no claude agent or several, or a session with no pane, sends nothing.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
 #              A slash command goes out without the pane prefix. A prompt that is not a slash command goes

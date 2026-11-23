@@ -17,7 +17,7 @@ unmeasured: "No count shows how often a prompt was aimed at a session name or a 
 
 ## Change
 
-`herdr-phase-change` now turns its target into a pane before it sends anything. A new `resolve` verb in `session_pane.py` does the turning. An existing directory wins over a session of the same name: the one claude agent whose working folder is inside it gives the pane. Otherwise a live ListAgents session name gives the pane of the agent that runs that session. Any other word goes on as given, a pane id or a herdr agent name, as before.
+`herdr-phase-change` now turns its target into a pane before it sends anything. A new `resolve` verb in `session_pane.py` does the turning. An argument with a "/" that is an existing directory wins: the one claude agent whose working folder is inside it gives the pane. A bare name is a session name: a live ListAgents session name gives the pane of the agent that runs that session. Any other word goes on as given, a pane id or a herdr agent name, as before.
 
 A directory with no claude agent or with several, and a session with no pane, send nothing and exit 1. The message names the directory and lists each `pane_id cwd`, or names the session. A failed `herdr-api agent list` exits 2 and names the call.
 

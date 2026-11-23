@@ -269,7 +269,7 @@ if [ -n "$fork" ]; then
     if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
         --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" 2>&1 >/dev/null); then
         lane_file="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/$label.json"
-        echo "herdr-worktree: lane entry not written at $lane_file: $add_error; herdr-lane-resume will not know this lane" >&2
+        echo "herdr-worktree: lane entry not written: $add_error; the lane file is $lane_file; herdr-lane-resume will not know this lane" >&2
     fi
 fi
 

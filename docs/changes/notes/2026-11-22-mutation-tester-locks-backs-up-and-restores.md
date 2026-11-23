@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_mutation_lock.py::MutationLockTest::test_check_stops_on_a_live_lock_and_leaves_it_alone"
 asked: ""
 proof: []
-unmeasured: ""
+unmeasured: "The Step 4 bullet for a STOP that says the file is restored but the lock could not be removed (the old gate-block rule: hand the printed command to the caller, never retry another way): no scenario can make the script's unlink fail on demand, so the meter cannot grade it. The Step 4 'Any other STOP' bullet was reworded and no meter scenario was run for it."
 ---
 
 ## Change

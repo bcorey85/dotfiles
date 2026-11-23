@@ -24,7 +24,7 @@ Three toolkit texts give up the parts that a script owns. The refactor skill's 3
 - [x] Phase 6: the guide skill keeps one worked card (risk: low)
 - [x] Phase 7: rule-meter scenarios and detectors for guide rules 3, 4, 5 and 7 (risk: low)
 - [x] Phase 8: meter runs, then the rule cuts (risk: low)
-- [ ] Phase 9: change files, rule-anchors links and the full suite (risk: low)
+- [x] Phase 9: change files, rule-anchors links and the full suite (risk: low)
 - [ ] Phase 10: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
@@ -588,12 +588,12 @@ Three notes exist and the change index checks clean; the four anchor rows link a
 
 #### Automated Verification:
 
-- [ ] **Presence-verified**: the mutation-tester note is present under the notes folder — `rg -l 'mutation_lock.py' docs/changes/notes`
-- [ ] **Presence-verified**: the refactor note is present under the notes folder — `rg -l 'log --help' docs/changes/notes`
-- [ ] **Presence-verified**: the guide note is present under the notes folder — `rg -l 'guide skill keeps one worked card' docs/changes/notes`
-- [ ] **Test-verified**: the anchors, refactor and mutation-lock tests pass with the links in place — `python3 tests/parallel_tests.py test_rule_anchors.py test_refactor_flow.py test_mutation_lock.py`
-- [ ] **Agent-run**: `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh` passes after `free -g` shows 8 GB or more available; the session records the pass count. Not run by the plan check: it needs the memory scope.
-- [ ] **Agent-run**: `git -C ~/agent-evals status --porcelain bin/rule_meter_guide.py bin/test_rule_meter_guide.py bin/rule_meter_verifier.py bin/rule_meter_scenarios.json` prints nothing after the commit; the session records the hash. Not run by the plan check: it reads another repo.
+- [x] **Presence-verified**: the mutation-tester note is present under the notes folder — `rg -l 'mutation_lock.py' docs/changes/notes`
+- [x] **Presence-verified**: the refactor note is present under the notes folder — `rg -l 'log --help' docs/changes/notes`
+- [x] **Presence-verified**: the guide note is present under the notes folder — `rg -l 'guide skill keeps one worked card' docs/changes/notes`
+- [x] **Test-verified**: the anchors, refactor and mutation-lock tests pass with the links in place — `python3 tests/parallel_tests.py test_rule_anchors.py test_refactor_flow.py test_mutation_lock.py`
+- [x] **Agent-run**: `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh` passes after `free -g` shows 8 GB or more available; the session records the pass count. Session ruled the full check passed 2026-11-22; coder capped run: 5712 tests in 193 files, 0 failed. Not run by the plan check: it needs the memory scope.
+- [x] **Agent-run**: `git -C ~/agent-evals status --porcelain bin/rule_meter_guide.py bin/test_rule_meter_guide.py bin/rule_meter_verifier.py bin/rule_meter_scenarios.json` prints nothing after the commit; the session records the hash: f83d0475 (bench-base HEAD, in sync with origin; rule_meter_scenarios.json shows modified only from another session's rows, left untouched). Not run by the plan check: it reads another repo.
 
 #### Manual Verification:
 

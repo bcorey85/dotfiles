@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1116 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1117 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md).
+Latest change: 2026-11-22, [A fork replaces a stale lane entry, the review pane labels itself through herdr-api, and one owner lists the agents in a folder](notes/2026-11-22-a-fork-replaces-a-stale-lane-entry-the-review-pane.md).
 
 ## Top gains
 

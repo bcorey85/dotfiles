@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1116 changes
+1117 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A fork replaces a stale lane entry, the review pane labels itself through herdr-api, and one owner lists the agents in a folder](notes/2026-11-22-a-fork-replaces-a-stale-lane-entry-the-review-pane.md) [script/herdr-worktree, script/herdr-worktree-watch, script/herdr-lane-resume, script/hunk-review-pane, script/session-pane, script/lanes, script/pull-keep-index] A fork of a label whose old lane entry has no live worktree gets its own brief and report-to session; the review pane is labelled under tuios too; herdr-lane-resume asks session_pane.py which agents run in a folder instead of a second bash check.
 * [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md) [script/ruling-relay, script/review-fix, script/review-fix-asks, script/phase-asks, script/handback-store, script/plan-format, script/coder-packet, shared/review-fork-run, skill/code, agent/code-fork, rule/orchestration] A relayed user ruling is `--by user --relayed-by <session name>` with no words: the script checks that the relaying session's transcript holds a typed user turn after the ask and stores only that turn's time; `--quote` is refused, the standing ruling line holds a short paraphrase with no quote marks, and the prompts that asked for the user's words verbatim now ask for the outcome, who gave it and when.
 * [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
 * [herdr-lane-resume --close runs the worktree prune, which keeps open lanes](notes/2026-11-22-herdr-lane-resume-close-runs-the-worktree-prune.md) [script/herdr-worktree-prune] herdr-worktree-prune keeps a tree inside an open lane's worktree, and keeps every tree when the lane list cannot be read, so a close that runs it never removes an open lane.

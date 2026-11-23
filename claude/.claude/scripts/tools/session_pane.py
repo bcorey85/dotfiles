@@ -5,12 +5,18 @@ Both answers are JSON on stdout.
 
 Usage: session_pane.py sender
        session_pane.py resolve ARG
+       session_pane.py agents-in FOLDER [KIND]
 
 resolve prints {"pane_id": "...", "via": "path"|"session"|"as-given"}. An ARG that contains "/" and is an existing
 directory gives the one claude agent running inside it; else a live session name gives the agent that holds its
 session id (a bare name is always a session name, even when a folder of that name exists); else ARG is returned as
 given. Exit 1 with a message on stderr when a directory holds no claude agent or several (each listed as
 `pane_id cwd`), or when the session has no pane; exit 2 when `herdr-api agent list` fails.
+
+agents-in prints, as a JSON list, the agents of `herdr-api agent list` whose cwd is inside FOLDER (links followed;
+a folder that is gone matches by its given path), limited to agents of KIND when KIND is given. Each item has the
+fields herdr reports. Exit 0, also for an empty list; exit 2 with the message on stderr when `herdr-api agent list`
+fails.
 
 sender prints {"name": "<ListAgents name>"} and exits 0 when the name is found. The name comes from
 $CLAUDE_CODE_SESSION_ID, else from the session id of the herdr pane the command runs in (`herdr-api pane current`),
@@ -24,7 +30,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 import session_registry
-from herdr_agents import PaneCallError, agents_in, claude_agents, herdr_reply
+from herdr_agents import PaneCallError, agents_in, claude_agents, herdr_reply, listed_agents
 
 EXIT_NO_NAME = 1
 EXIT_TOOL_FAILED = 2
@@ -130,11 +136,26 @@ def resolve(arg):
     return resolve_session(row, arg, agents)
 
 
+def list_agents_in(directory, kind):
+    """Print the agents running inside `directory`, only those of `kind` when it is not empty."""
+    try:
+        agents = listed_agents()
+    except PaneCallError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_TOOL_FAILED
+    if kind:
+        agents = [agent for agent in agents if agent.get("agent") == kind]
+    print(json.dumps(agents_in(directory, agents)))
+    return 0
+
+
 def main(argv):
     if argv[1:] == ["sender"]:
         return sender()
     if len(argv) == 3 and argv[1] == "resolve":
         return resolve(argv[2])
+    if len(argv) in (3, 4) and argv[1] == "agents-in":
+        return list_agents_in(argv[2], argv[3] if len(argv) == 4 else "")
     print(__doc__, file=sys.stderr)
     return 2
 

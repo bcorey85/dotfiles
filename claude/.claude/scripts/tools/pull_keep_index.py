@@ -419,6 +419,10 @@ def write_blob(repo, name, destination):
     pathlib.Path(destination).write_bytes(content)
 
 
+# git's conflict-marker size when no `conflict-marker-size` attribute is set.
+DEFAULT_CONFLICT_MARKER_SIZE = "7"
+
+
 def run_page_driver(repo, commit, page, template):
     """Rebuild one page through the configured merge driver command `template`: base `<commit>^1`, ours HEAD, theirs
     the saved tree. The driver runs through `sh -c` in `repo`, the top folder, with BUILT_PAGE_STASH set, as git runs
@@ -428,8 +432,8 @@ def run_page_driver(repo, commit, page, template):
         write_blob(repo, f"{commit}^1:{page}", base)
         write_blob(repo, f"HEAD:{page}", ours)
         write_blob(repo, f"{commit}:{page}", theirs)
-        values = {"O": base, "A": ours, "B": theirs, "P": page}
-        command = re.sub(r"%([OABP])", lambda found: shlex.quote(values[found.group(1)]), template)
+        values = {"O": base, "A": ours, "B": theirs, "P": page, "L": DEFAULT_CONFLICT_MARKER_SIZE}
+        command = re.sub(r"%([OABPL])", lambda found: shlex.quote(values[found.group(1)]), template)
         env = {**os.environ, BUILT_PAGE_STASH: commit}
         ran = subprocess.run(["sh", "-c", command], cwd=repo, env=env, capture_output=True)
         if ran.returncode != 0:

@@ -177,10 +177,9 @@ esac""")
         finished = self.run_watch(lanes_cli=lanes_stub)
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn("bad lane file", finished.stderr)
         log_lines = self.log.read_text().splitlines()
-        self.assertEqual(log_lines.count("lane repo-fork: lane file unreadable"), 2)
-        self.assert_recovery_steps("\n".join(line for line in log_lines if "unreadable" not in line))
+        self.assertEqual(log_lines.count("lane repo-fork: lane lookup failed: bad lane file"), 1)
+        self.assert_recovery_steps("\n".join(line for line in log_lines if "lookup failed" not in line))
 
     def test_an_entry_whose_session_id_cannot_be_stored_logs_one_line_and_keeps_the_manual_steps(self):
         lanes_stub = self.root / "stub-lanes.py"

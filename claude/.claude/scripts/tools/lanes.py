@@ -5,6 +5,7 @@ Usage: lanes.py add --name N --worktree W --main-checkout M --branch B [--report
        lanes.py set-session N ID [--brief-stdin]     (new brief on stdin)
        lanes.py remove N                             (prints the removed entry)
        lanes.py get N | get --containing PATH        ({"entry": {...} or null})
+       lanes.py path N                               ({"file": "<lane file of N>"}; N need not have an entry)
        lanes.py list                                 ({"lanes": [...]})
        lanes.py check [FILE...]                      (default: every lane file)
 
@@ -43,6 +44,9 @@ def build_parser():
     get = verbs.add_parser("get", help="print one entry, or null")
     get.add_argument("name", nargs="?")
     get.add_argument("--containing", metavar="PATH", help="the entry whose worktree holds PATH")
+
+    path = verbs.add_parser("path", help="print the lane file of a name, whether or not it exists")
+    path.add_argument("name")
 
     verbs.add_parser("list", help="print every entry, sorted by name")
 
@@ -93,6 +97,11 @@ def run_get(args, parser):
     return 0
 
 
+def run_path(args):
+    print_json({"file": str(lane_entries.lane_file(args.name))})
+    return 0
+
+
 def run_list(args):
     print_json({"lanes": lane_entries.all_entries()})
     return 0
@@ -112,8 +121,8 @@ def run_check(args):
 def dispatch(args, parser):
     if args.verb == "get":
         return run_get(args, parser)
-    runners = {"add": run_add, "set-session": run_set_session, "remove": run_remove, "list": run_list,
-               "check": run_check}
+    runners = {"add": run_add, "set-session": run_set_session, "remove": run_remove, "path": run_path,
+               "list": run_list, "check": run_check}
     return runners[args.verb](args)
 
 

@@ -204,6 +204,12 @@ class LanesCliTest(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("field brief", result.stderr)
 
+    def test_path_prints_the_lane_file_of_a_name_with_no_entry_and_refuses_a_bad_name(self):
+        result = self.run_lanes("path", "fresh")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"file": str(self.lanes_dir / "fresh.json")}, json.loads(result.stdout))
+        self.assertEqual(2, self.run_lanes("path", "bad+name").returncode)
+
     def test_get_takes_a_name_or_containing_but_not_both_or_neither(self):
         self.assertEqual(2, self.run_lanes("get").returncode)
         self.assertEqual(2, self.run_lanes("get", "one", "--containing", "/x").returncode)

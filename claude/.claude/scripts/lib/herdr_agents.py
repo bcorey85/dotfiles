@@ -34,14 +34,19 @@ def herdr_reply(words):
     return reply
 
 
-def claude_agents():
-    """The claude agents of `herdr-api agent list`. Raises PaneCallError when the call fails."""
+def listed_agents():
+    """Every agent of `herdr-api agent list`. Raises PaneCallError when the call fails."""
     reply = herdr_reply(["agent", "list"])
     result = reply.get("result")
     agents = result.get("agents") if isinstance(result, dict) else None
     if not isinstance(agents, list):
         raise PaneCallError(f"{AGENT_LIST_CALL} printed no agents list")
-    return [agent for agent in agents if isinstance(agent, dict) and agent.get("agent") == "claude"]
+    return [agent for agent in agents if isinstance(agent, dict)]
+
+
+def claude_agents():
+    """The claude agents of `herdr-api agent list`. Raises PaneCallError when the call fails."""
+    return [agent for agent in listed_agents() if agent.get("agent") == "claude"]
 
 
 def agents_in(directory, agents):

@@ -213,5 +213,54 @@ class SessionPaneResolveTest(SessionPaneTestCase):
         self.assertIn("herdr-api agent list", finished.stderr)
 
 
+class SessionPaneAgentsInTest(SessionPaneTestCase):
+    def setUp(self):
+        super().setUp()
+        self.folder = self.root / "folder"
+        (self.folder / "deeper").mkdir(parents=True)
+        self.link = self.root / "link"
+        self.link.symlink_to(self.folder)
+        self.sibling = self.root / "folder-sibling"
+        self.sibling.mkdir()
+        agents = [
+            {"pane_id": "p1", "cwd": str(self.link / "deeper"), "agent": "claude", "agent_status": "idle"},
+            {"pane_id": "p2", "cwd": str(self.folder), "agent": "codex", "agent_status": None},
+            {"pane_id": "p3", "cwd": str(self.sibling), "agent": "claude", "agent_status": "idle"},
+            {"pane_id": "p4", "cwd": "", "agent": "claude", "agent_status": "idle"},
+        ]
+        listing = json.dumps({"result": {"agents": agents}})
+        write_stub(self.bin_dir / "herdr-api", f"echo '{listing}'")
+
+    def run_agents_in(self, *words):
+        env = dict(os.environ, PATH=f"{self.bin_dir}:{os.environ['PATH']}")
+        return subprocess.run(["python3", str(SESSION_PANE), "agents-in", *words], env=env, capture_output=True,
+                              text=True)
+
+    def test_every_agent_inside_the_folder_is_listed_links_followed_and_siblings_and_empty_cwds_left_out(self):
+        finished = self.run_agents_in(str(self.folder))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual([agent["pane_id"] for agent in json.loads(finished.stdout)], ["p1", "p2"])
+
+    def test_a_kind_limits_the_list_to_that_agent(self):
+        finished = self.run_agents_in(str(self.folder), "claude")
+
+        self.assertEqual([agent["pane_id"] for agent in json.loads(finished.stdout)], ["p1"])
+
+    def test_a_folder_that_is_gone_gives_an_empty_list_and_exit_0(self):
+        finished = self.run_agents_in(str(self.root / "gone"))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(finished.stdout), [])
+
+    def test_a_failed_agent_list_exits_2_naming_the_call(self):
+        write_stub(self.bin_dir / "herdr-api", "exit 1")
+
+        finished = self.run_agents_in(str(self.folder))
+
+        self.assertEqual(finished.returncode, 2)
+        self.assertIn("herdr-api agent list", finished.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,7 @@ from stubs import write_stub
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "herdr-lane-resume"))
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
+SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
 
 BRIEF = "build the thing"
 NAME = "repo-fork"
@@ -119,6 +120,7 @@ class HerdrLaneResumeTest(unittest.TestCase):
             "PATH": f"{self.bin_dir}:{env['PATH']}",
             "XDG_STATE_HOME": str(self.state_home),
             "HERDR_LANES_CLI": str(LANES_CLI),
+            "HERDR_SESSION_PANE": str(SESSION_PANE),
             "HERDR_LANE_CLOSE_WAIT": "0",
             "EVENTS": str(self.events),
             "STATE_DIR": str(self.state_dir),
@@ -384,7 +386,8 @@ class CloseTest(HerdrLaneResumeTest):
                     result = self.run_script("--close", NAME)
 
                     self.assertEqual(result.returncode, 1)
-                    self.assertIn("unexpected shape", result.stderr)
+                    expected = "printed no agents list" if listing == "agents" else "unexpected shape"
+                    self.assertIn(expected, result.stderr)
                     self.assertEqual(self.recorded_events(), [])
                     self.assertEqual(self.lane_names(), [NAME])
 

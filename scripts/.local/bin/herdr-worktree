@@ -199,10 +199,17 @@ if [ -n "$fork" ]; then
     [ -n "$claude_session" ] || { echo "herdr-worktree: --fork needs a claude pane" >&2; exit 1; }
 fi
 
+# An entry left by an earlier lane of this name would keep its brief and report-to, because
+# `lanes.py add` replaces an entry only when its worktree folder is gone and the folder is made next.
+# No entry (exit 1) is the usual case; any other failure is reported by the add below.
+label="$(basename "$worktree")"
+if [ -n "$fork" ]; then
+    python3 "$lanes_cli" remove "$label" >/dev/null 2>&1 || true
+fi
+
 # herdr prints its own error to stderr, so only name the step that failed.
 # tuios answers no worktree.create, so under tuios git makes the worktree and
 # the workspace opens on it.
-label="$(basename "$worktree")"
 if [ -n "${TUIOS_SOCKET:-}" ]; then
     git -C "$checkout" worktree add -b "$branch" "$worktree" "$base" \
         || { echo "herdr-worktree: git worktree add failed" >&2; exit 1; }
@@ -268,8 +275,10 @@ if [ -n "$fork" ]; then
     reports_to=$(python3 "$session_pane" sender 2>/dev/null | jq -r '.name // empty' 2>/dev/null) || reports_to=""
     if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
         --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" 2>&1 >/dev/null); then
-        lane_file="${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/$label.json"
-        echo "herdr-worktree: lane entry not written: $add_error; the lane file is $lane_file; herdr-lane-resume will not know this lane" >&2
+        lane_file=$(python3 "$lanes_cli" path "$label" 2>/dev/null | jq -r '.file // empty' 2>/dev/null) || lane_file=""
+        lane_file_note=""
+        [ -z "$lane_file" ] || lane_file_note="; the lane file is $lane_file"
+        echo "herdr-worktree: lane entry not written: $add_error$lane_file_note; herdr-lane-resume will not know this lane" >&2
     fi
 fi
 

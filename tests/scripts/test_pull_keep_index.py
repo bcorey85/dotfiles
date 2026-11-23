@@ -519,14 +519,14 @@ class PullKeepIndexTest(unittest.TestCase):
         driver = self.tmp / "recording_driver.py"
         driver.write_text(
             "import json, os, pathlib, sys\n"
-            "base, ours, theirs, page = sys.argv[1:5]\n"
+            "base, ours, theirs, page, marker_size = sys.argv[1:6]\n"
             "read = lambda name: pathlib.Path(name).read_text()\n"
-            "pathlib.Path(sys.argv[5]).write_text(json.dumps({'base': read(base), 'ours': read(ours),\n"
-            "    'theirs': read(theirs), 'page': page, 'stash': os.environ['BUILT_PAGE_STASH'],\n"
-            "    'cwd': os.getcwd()}))\n"
+            "pathlib.Path(sys.argv[6]).write_text(json.dumps({'base': read(base), 'ours': read(ours),\n"
+            "    'theirs': read(theirs), 'page': page, 'marker_size': marker_size,\n"
+            "    'stash': os.environ['BUILT_PAGE_STASH'], 'cwd': os.getcwd()}))\n"
             "pathlib.Path(ours).write_text('rebuilt\\n')\n")
         self.git(self.repo, "config", "merge.built-page.driver",
-                 f"{sys.executable} {driver} %O %A %B %P {record}")
+                 f"{sys.executable} {driver} %O %A %B %P %L {record}")
         return record
 
     def test_the_incident_state_is_put_back_in_full_when_the_argument_is_a_subfolder(self):
@@ -555,6 +555,15 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(self.git(self.repo, "rev-parse", saved + "^1").strip(), head_before_pull)
         self.assertEqual(self.git(self.repo, "show", saved + ":docs/p.md"), "mine\n")
         self.assertEqual(self.git(self.repo, "show", saved + ":c"), "unstaged c\n")
+
+    def test_the_page_driver_gets_gits_default_conflict_marker_size_for_percent_l(self):
+        self.set_up_the_incident()
+        record = self.use_a_recording_driver()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(json.loads(record.read_text())["marker_size"], "7")
 
     def test_a_page_missing_from_the_base_reaches_the_driver_as_an_empty_base(self):
         self.mark_built_pages("docs/n.md")

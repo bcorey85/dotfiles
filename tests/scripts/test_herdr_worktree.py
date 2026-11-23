@@ -335,6 +335,22 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(self.lane_entry("repo-new-thing")["reports_to"], "")
 
+    def test_a_fork_replaces_a_stale_entry_of_the_same_label_with_no_live_worktree(self):
+        self.stub_fork(CLAUDE_PANE)
+        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+        gone = self.root / "gone"
+        subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-new-thing", "--worktree", str(gone),
+                        "--main-checkout", str(self.main_checkout), "--branch", "old", "--reports-to", "someone"],
+                       input="old", env=env, capture_output=True, text=True, check=True)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "new brief", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        entry = self.lane_entry("repo-new-thing")
+        self.assertEqual(entry["brief"], "new brief")
+        self.assertEqual(entry["reports_to"], "orchestrator")
+        self.assertEqual(entry["worktree"], str(self.root / "repo-new-thing"))
+
     def test_a_run_without_fork_writes_no_lane_entry(self):
         finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
 
@@ -354,16 +370,15 @@ esac""")
         self.assertIn("herdr-lane-resume will not know this lane", finished.stderr)
         self.wait_for_file(watch_args)
 
-    def test_a_missing_lanes_script_warns_naming_the_lane_file_and_the_fork_still_starts(self):
+    def test_a_missing_lanes_script_warns_and_the_fork_still_starts(self):
         self.stub_fork(CLAUDE_PANE)
         watch_args = self.stub_watcher()
         finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing",
                                            lanes_cli=self.root / "no-such-lanes.py")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        lane_file = self.state_home / "herdr-lanes" / "repo-new-thing.json"
         self.assertIn("herdr-worktree: lane entry not written: ", finished.stderr)
-        self.assertIn(f"the lane file is {lane_file};", finished.stderr)
+        self.assertNotIn("the lane file is", finished.stderr)
         self.wait_for_file(watch_args)
 
     def add_origin_with_default_master(self):

@@ -27,6 +27,7 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 bin_dir="$(cd "$(dirname "$0")" && pwd)"
 lanes_cli=${HERDR_LANES_CLI:-$HOME/.claude/scripts/tools/lanes.py}
+session_pane=${HERDR_SESSION_PANE:-$HOME/.claude/scripts/tools/session_pane.py}
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -38,14 +39,6 @@ fail() {
 # The folder with links followed; a folder that is gone comes back as given.
 real_path() {
     (cd -P "$1" 2>/dev/null && pwd) || printf '%s\n' "$1"
-}
-
-# Exit 0 when folder $1 is folder $2 or inside it. Both are real paths.
-is_inside() {
-    case "$1/" in
-        "$2"/*) return 0 ;;
-        *) return 1 ;;
-    esac
 }
 
 # Print the entry of lane $1 as JSON, or stop with the known names when there is none.
@@ -64,19 +57,14 @@ lane_entry() {
 # Print "<pane id> <status>" for each agent whose cwd is inside worktree $1.
 # $2 is what the failure message says about the state: "nothing changed" before any close.
 # $3 limits the rows to agents of that kind (for example "claude"); empty means every agent.
-# Fields are split on \x1f, not tab: tab is IFS whitespace and would drop an empty field.
+# session_pane.py decides which agents are inside the folder.
 agents_in() {
-    local agent_list rows pane_id status cwd outcome="${2:-nothing changed}" kind="${3:-}"
-    agent_list=$(herdr-api agent list) || fail "herdr-api agent list failed; $outcome"
-    rows=$(jq -r --arg kind "$kind" '.result.agents[] | select($kind == "" or .agent == $kind) | [.pane_id, .agent_status, .cwd] | join("\u001f")' <<<"$agent_list") \
-        || fail "herdr-api agent list has an unexpected shape; $outcome"
-    while IFS=$'\x1f' read -r pane_id status cwd; do
-        [ -n "$pane_id" ] || continue
-        [ -n "$cwd" ] || continue
-        if is_inside "$(real_path "$cwd")" "$1"; then
-            printf '%s %s\n' "$pane_id" "$status"
-        fi
-    done <<<"$rows"
+    local agents rows outcome="${2:-nothing changed}" kind="${3:-}"
+    agents=$(python3 "$session_pane" agents-in "$1" ${kind:+"$kind"} 2>&1) \
+        || fail "$agents; $outcome"
+    rows=$(jq -r '.[] | [.pane_id, (.agent_status // "")] | join(" ")' <<<"$agents") \
+        || fail "session_pane.py agents-in printed an unexpected shape; $outcome"
+    [ -z "$rows" ] || printf '%s\n' "$rows"
 }
 
 # Print the id of each workspace open on worktree $1. Under tuios, which gives its

@@ -16,6 +16,7 @@ Fields of the lock (a JSON object):
   line         string  the line the mutation touches, as given
   worktree     string  absolute path of the git work tree that holds the target
   owner_pid    int     process that owns the run
+  run_id       string  random id of the run that wrote the lock (mutation_lock.py); restore must present it
 A lock written before mutation_lock.py may hold the old backups/<basename>.bak layout or an absolute `file`;
 read_lock_view accepts both and `restore` stops on it (STOP_OLD_LAYOUT).
 A lock with no parseable ts is stale. A lock younger than MUTATION_RUN_TIMEOUT_SECONDS whose owner process still
@@ -28,7 +29,7 @@ import pathlib
 import time
 from typing import NamedTuple
 
-from hook_input import parse_documents_partial, raw_text
+from hook_input import parse_documents_partial, raw_text, read_file_text
 from process_group import pid_is_alive
 
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -90,11 +91,7 @@ def find_lock(environ=None):
 
 def read_lock_text(path):
     """The lock's text (utf-8, undecodable bytes replaced), or None when it cannot be read."""
-    try:
-        with open(path, "rb") as handle:
-            return handle.read().decode("utf-8", "replace")
-    except OSError:
-        return None
+    return read_file_text(path, errors="replace")
 
 
 def lock_field(text, key, default, fallback):

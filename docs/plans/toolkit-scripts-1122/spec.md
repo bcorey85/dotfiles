@@ -25,7 +25,7 @@ Three toolkit texts give up the parts that a script owns. The refactor skill's 3
 - [x] Phase 7: rule-meter scenarios and detectors for guide rules 3, 4, 5 and 7 (risk: low)
 - [x] Phase 8: meter runs, then the rule cuts (risk: low)
 - [x] Phase 9: change files, rule-anchors links and the full suite (risk: low)
-- [ ] Phase 10: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 10: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
 
@@ -35,7 +35,7 @@ Three toolkit texts give up the parts that a script owns. The refactor skill's 3
 2. Item 3 grammar — the log-input grammar and a `LOG_TEMPLATE` move to `refactor_log_input.py`; `refactor_flow.py` re-exports `RefactorFlowError`; `log --help` prints the template between two marker lines. No new verb.
 3. Item 3 skill — format lines leave `refactor/SKILL.md` Step 5; the three judgment bullets stay with their key lists stripped (exact text in Phase 2); `close-branch/SKILL.md:68` repoints to `log --help`.
 4. Item 4 modules — new `tools/mutation_lock.py` on a new `lib/calibration_lock.py`; the guard imports the module and keeps its hook contract and tests unchanged.
-5. Item 4 CLI — three verbs, `check <target>`, `lock <target> --class --line --owner-pid`, `restore --owner-pid`; named exit codes and output constants; every verb ends `NEXT:`, `STOP:` or `DONE:`.
+5. Item 4 CLI — three verbs, `check <target>`, `lock <target> --class --line --owner-pid`, `restore --owner-pid --run-id` (run id added in the close pass, D19); named exit codes and output constants; every verb ends `NEXT:`, `STOP:` or `DONE:`.
 6. Item 4 backups — `lib/file_backup.save_files` and `restore_changed` under `<state>/backups/<relpath>`; `discard` is never called. Trade-off: the old `backups/<basename>.bak` layout is not restorable by the script (D12).
 7. Item 4 prose — Step 0 keeps the two preconditions a script cannot check (test command named, file named) as bullets; the heading loses its count; Steps 1 and 4 become one script line each.
 8. Item 2 scope — the guide skill keeps the commands block, batch keys, card envelope, block and field tables, one worked card, rules 1, 2 and 6, and the answers shape; the pointer-to-binary cut of the tables waits on a `guide` build that prints the schema.
@@ -193,14 +193,14 @@ Written with `write_text_atomically(lock_path, json.dumps(fields, indent=2) + "\
 ```
 mutation_lock.py check <target>
 mutation_lock.py lock <target> --class TEXT --line TEXT --owner-pid PID
-mutation_lock.py restore --owner-pid PID
+mutation_lock.py restore --owner-pid PID --run-id ID
 ```
 
 `description = __doc__.splitlines()[0]`; the epilog lists `PRECONDITIONS`, a tuple of one-line strings in check order, the one owner of the precondition list. Exit codes: `EXIT_OK = 0`, `EXIT_STOP = 1` (precondition failed or request refused; nothing written, lock untouched), `EXIT_RESTORE_MISMATCH = 3`; 2 stays argparse's usage error. Every verb's last line is `NEXT: …`, `STOP: …` or `DONE: …`, each a named constant.
 
 `check`, in order, stopping at the first failure: (1) regular file, not a symlink — `STOP_NOT_A_FILE`; (2) the folder is in a git work tree — `STOP_NOT_A_REPO`; (3) inside that tree and not under `.git/` — `STOP_OUTSIDE_TREE`; (4) no lock at the state or legacy path — live: `live_notice(...)` then `STOP_LIVE_LOCK`; stale or unreadable: the lock's `file` and `backup_path`, `unrestored_message(...)`, then `STOP_UNRESTORED`; (5) the nearest existing parent of the backups folder is writable (`os.access`; `check` creates nothing) — `STOP_STATE_UNWRITABLE`. All pass: when `git status --porcelain -- <relpath>` prints anything, one line `NOTE: <relpath> has uncommitted edits (<that status line>); restore brings back the bytes as they are now` (D18), then `NEXT: run the unmutated suite (baseline), then mutation_lock.py lock <target> --class … --line … --owner-pid "$PPID"`. `check` writes nothing.
 
-`lock`: `os.makedirs(state_folder, exist_ok=True)`, then `hold_exclusive(state_folder / "lock.write", LOCK_WAIT_SECONDS)` (`LockTimeoutError` → `STOP_LOCK_BUSY`); re-run the five checks, printing the same `NOTE:` line on a dirty or untracked target (D18); `save_files(worktree, [relpath], backups)` (an `unsaved` entry → `STOP_BACKUP_FAILED`, no lock written); compute `pre_hash`; write the lock; print the lock path, backup path and `pre_hash`, then `NEXT: apply the mutation with Edit (Step 2)`. `--class` is one non-empty line, else `EXIT_STOP`; `--owner-pid` is `type=int` and positive.
+`lock`: `os.makedirs(state_folder, exist_ok=True)`, then `hold_exclusive(state_folder / "lock.write", LOCK_WAIT_SECONDS)` (`LockTimeoutError` → `STOP_LOCK_BUSY`); re-run the five checks, printing the same `NOTE:` line on a dirty or untracked target (D18); `save_files(worktree, [relpath], backups)` (an `unsaved` entry → `STOP_BACKUP_FAILED`, no lock written); compute `pre_hash`; write the lock with a random `run_id` (D19); print the lock path, backup path and `pre_hash`, then `NEXT: apply the mutation with Edit (Step 2); restore later with mutation_lock.py restore --owner-pid "$PPID" --run-id <id>`. `--class` is one non-empty line, else `EXIT_STOP`; `--owner-pid` is `type=int` and positive.
 
 `restore` reads the state-path lock only: legacy lock only → the guard's manual lines, `STOP_LEGACY_LOCK`; no lock → `STOP_NO_LOCK`; `worktree` or `file` missing, or `backup_path != backups/<file>` → `STOP_OLD_LAYOUT` with the manual `cp` and `rm` lines (D12); then `writer != "mutation-tester"` or `str(owner_pid) != str(--owner-pid)` → `STOP_NOT_OURS`, followed by the recovery line `cp "<backup>" "<target>" && rm "<lock>"`, `<target>` being `worktree/file` and all three paths absolute (D15); backup missing → `STOP_BACKUP_MISSING`, lock kept. Else `restore_changed(Backup(worktree, backups, [file], []))`, hash the target: mismatch → `RESTORE HASH MISMATCH`, `target: <abs>`, `backup: <abs>`, lock kept, exit 3; match → `os.unlink(lock)`; `OSError` → `STOP_LOCK_NOT_REMOVED` with `rm "<lock>"`, exit 1; success → `DONE: restore hash-verified (<copied|already identical>); lock removed`.
 
@@ -269,7 +269,7 @@ The grammar leaves `refactor_flow.py` for a sibling module that also owns the te
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: run `python3 claude/.claude/skills/refactor/scripts/refactor_flow.py log --help`; the output ends with the field notes, the start marker, an indented JSON object and the end marker.
+- [x] agent-verified: run `python3 claude/.claude/skills/refactor/scripts/refactor_flow.py log --help`; the output ends with the field notes, the start marker, an indented JSON object and the end marker. — evidence: `python3 claude/.claude/skills/refactor/scripts/refactor_flow.py log --help | grep -n "log input template"` → `32:--- log input template (branch mode, JSON) ---` and `65:--- end of log input template ---`; tail shows indented JSON closing `}` before the end marker.
 
 ---
 
@@ -353,7 +353,7 @@ The guard's existing tests pass unchanged against the import; the module's path,
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: with no lock on this machine, run `python3 claude/.claude/scripts/gates/calibration_guard.py`; it exits 0 and prints nothing, as before.
+- [x] agent-verified: with no lock on this machine, run `python3 claude/.claude/scripts/gates/calibration_guard.py`; it exits 0 and prints nothing, as before. — evidence: `python3 claude/.claude/scripts/gates/calibration_guard.py </dev/null; echo rc=$?` → no output, `rc=0`.
 
 ---
 
@@ -401,7 +401,7 @@ Both prompts replace the lock, backup and restore prose with one script line per
 #### 1. The claude agent
 
 **File**: `claude/.claude/agents/mutation-tester.md`
-**Changes**: Step 0 heading becomes `## Step 0 — Preconditions (before touching anything)`; the `git rev-parse && git status` block goes; bullets: first, word for word as its anchor row requires, "The dispatch does not state a test command → stop and say so. Never infer one from the repo."; then "The target is not the file named in the dispatch → stop."; then "Run `python3 ~/.claude/scripts/tools/mutation_lock.py check <target>` (`mutation_lock.py --help` lists what it checks). It ends with `STOP:` → stop and report what it printed. Never mutate on top of an unrestored mutation. Stop either way; never clear someone else's lock." The baseline paragraph and the executed-count line stay. Step 1 becomes one fenced line, `python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"`, then "It ends with `STOP:` → stop and report it; nothing was changed." Step 4 keeps word for word the "This runs whether…" line and "**Restore by copying the backup file. Never `git checkout`** — it would also destroy the real uncommitted work in that file. **Never `Write`, and never `Edit`.**", then "The restore is this one call and nothing else:", the fenced `python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID"`, and bullets: "Exit 0 → say in your report that the restore was hash-verified."; "Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally."; "Any other `STOP:` → you are done: report the verdict, state the stop, and print the exact command it names for your caller to run. Never retry by another mechanism." (D13). Steps 2 and 3, Hard limits and Output Format are unchanged.
+**Changes**: Step 0 heading becomes `## Step 0 — Preconditions (before touching anything)`; the `git rev-parse && git status` block goes; bullets: first, word for word as its anchor row requires, "The dispatch does not state a test command → stop and say so. Never infer one from the repo."; then "The target is not the file named in the dispatch → stop."; then "Run `python3 ~/.claude/scripts/tools/mutation_lock.py check <target>` (`mutation_lock.py --help` lists what it checks). It ends with `STOP:` → stop and report what it printed. Never mutate on top of an unrestored mutation. Stop either way; never clear someone else's lock." The baseline paragraph and the executed-count line stay. Step 1 becomes one fenced line, `python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"`, then "It ends with `STOP:` → stop and report it; nothing was changed." and, from the close pass (D19), "It ends with `NEXT: apply the mutation` → keep the `--run-id` value on that line for the Step 4 restore line." Step 4 opens with "This runs only after `lock` printed `NEXT: apply the mutation`, whether the suite passed, failed, errored, hung, or you decided to abort at Step 2. When `lock` stopped, there is nothing to restore." (D19; the original "This runs whether…" line) and keeps word for word "**Restore by copying the backup file. Never `git checkout`** — it would also destroy the real uncommitted work in that file. **Never `Write`, and never `Edit`.**", then "The restore is this one call and nothing else:", the fenced `python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID" --run-id <run-id>` (D19), and bullets: "Exit 0 → say in your report that the restore was hash-verified."; "Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally."; "Any other `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism." (D13, reworded by D19). Steps 2 and 3, Hard limits and Output Format are unchanged.
 
 #### 2. The opencode port
 

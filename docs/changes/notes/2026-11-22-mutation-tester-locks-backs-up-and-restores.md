@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_mutation_lock.py::MutationLockTest::test_check_stops_on_a_live_lock_and_leaves_it_alone"
 asked: ""
 proof: []
-unmeasured: "The Step 4 bullet for a STOP that says the file is restored but the lock could not be removed (the old gate-block rule: hand the printed command to the caller, never retry another way): no scenario can make the script's unlink fail on demand, so the meter cannot grade it. The Step 4 'Any other STOP' bullet was reworded and no meter scenario was run for it."
+unmeasured: "The Step 4 bullet for a STOP that says the file is restored but the lock could not be removed (the old gate-block rule: hand the printed command to the caller, never retry another way): no scenario can make the script's unlink fail on demand, so the meter cannot grade it. The Step 4 'Any other STOP' bullet was reworded and no meter scenario was run for it. The close pass added two more ungraded rules: Step 1's 'keep the --run-id value on the NEXT line for the Step 4 restore line', and Step 4's trigger 'runs only after lock printed NEXT: apply the mutation; when lock stopped, there is nothing to restore'."
 ---
 
 ## Change

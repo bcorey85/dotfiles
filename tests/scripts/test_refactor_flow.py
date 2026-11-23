@@ -1,4 +1,3 @@
-import copy
 import importlib.machinery
 import importlib.util
 import json
@@ -359,10 +358,12 @@ class RefactorFlowTest(unittest.TestCase):
 
     def test_the_log_grammar_lives_in_refactor_log_input(self):
         flow = load_script_module()
-        grammar = flow.refactor_log_input
-        validated = grammar.validate_log("branch", copy.deepcopy(grammar.LOG_TEMPLATE))
-        self.assertIsInstance(validated, dict)
-        self.assertIs(flow.RefactorFlowError, grammar.RefactorFlowError)
+        self.assertIs(flow.RefactorFlowError, flow.refactor_log_input.RefactorFlowError)
+
+    def test_the_log_template_equals_the_json_the_skill_held_before_it_moved(self):
+        flow = load_script_module()
+        fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "refactor_log_template_base.json"
+        self.assertEqual(flow.refactor_log_input.LOG_TEMPLATE, json.loads(fixture.read_text()))
 
     def test_refactor_flow_is_at_most_1000_lines(self):
         self.assertLessEqual(len(SCRIPT.read_text().splitlines()), 1000)
@@ -1302,6 +1303,17 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^\s*`{3}json", skill_text, re.MULTILINE))
         self.assertNotIn("JSON as in step 5", skill_text)
         self.assertIn("refactor_flow.py log --help", skill_text)
+
+    def test_the_refactor_skill_keeps_the_step_five_judgment_sentences_and_no_key_list(self):
+        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
+        for sentence in ("One entry per smell, not per file.",
+                         "Never `escape` mechanical-sweep matches or legacy targets",
+                         "a label from `escape-ratchet.md`; not `unknown`"):
+            self.assertIn(sentence, skill_text)
+        self.assertNotIn("{class, disposition", skill_text)
+        step_five = skill_text.split("**Log and hand off", 1)[1].split("**Auto-dispatch review**", 1)[0]
+        for key_text in ('"finder"', '"result"', "`finder`", "`result`"):
+            self.assertNotIn(key_text, step_five)
 
     def test_simplify_prep_small_target_has_no_split_and_prompt_has_oracle(self):
         self.write("mod/a.py", "x = 1\n")

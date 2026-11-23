@@ -1,0 +1,30 @@
+{
+  "finder": "smell-reviewer",
+  "lane": "code",
+  "result": "NEEDS CHANGES",
+  "findings": [
+    {
+      "class": "duplication",
+      "disposition": "fix",
+      "actioned": "fixed",
+      "file": "src/orders.py",
+      "line": 3,
+      "desc": "the same parse in two handlers",
+      "severity": "medium",
+      "escape": true,
+      "miss_reason": "overlooked"
+    }
+  ],
+  "guards": { "duplication": "convention" },
+  "handoff": {
+    "files": [
+      {
+        "path": "src/orders.py",
+        "change": "one parse helper for both handlers"
+      }
+    ],
+    "tests_run": "pytest tests/test_orders.py -> exit 0",
+    "flagged": "none",
+    "plan_impact": "none"
+  }
+}

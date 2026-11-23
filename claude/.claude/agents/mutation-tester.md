@@ -37,7 +37,7 @@ Capture from the baseline run the number of tests that actually **executed**.
 python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"
 ```
 
-It ends with `STOP:` → stop and report it; the target and the lock are untouched.
+It ends with `STOP:` → stop and report it; the target and the lock are untouched. It ends with `NEXT: apply the mutation` → keep the `--run-id` value on that line for the Step 4 restore line.
 
 ## Step 2 — Apply the mutation
 
@@ -72,19 +72,19 @@ Run the same test command as the baseline. Then classify, reading these in order
 
 ## Step 4 — Restore, on every path
 
-This runs whether the suite passed, failed, errored, hung, or you decided to abort at Step 2.
+This runs only after `lock` printed `NEXT: apply the mutation`, whether the suite passed, failed, errored, hung, or you decided to abort at Step 2. When `lock` stopped, there is nothing to restore.
 
 **Restore by copying the backup file. Never `git checkout`**. **Never `Write`, and never `Edit`.**
 The restore is this one call and nothing else:
 
 ```bash
-python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID"
+python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID" --run-id <run-id>
 ```
 
 - Exit 0 → say in your report that the restore was hash-verified.
 - Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally.
 - A `STOP:` saying the file is restored but the lock could not be removed → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
-- Any other `STOP:` → the target stays mutated: say so loudly at the top of your report, report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
+- Any other `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
 
 ## Hard limits
 

@@ -59,6 +59,7 @@ class MutationLockTest(unittest.TestCase):
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "a")
         self.lock_file = self.state / "lock.json"
         self.backup_file = self.state / "backups" / "src" / "a.py"
+        self.run_id = "0123456789abcdef"
 
     def git(self, *args):
         finished = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=True)
@@ -72,10 +73,14 @@ class MutationLockTest(unittest.TestCase):
         return ["lock", target or self.target, "--class", "off-by-one", "--line", "2",
                 "--owner-pid", pid or os.getpid()]
 
+    def restore_args(self):
+        return ["restore", "--owner-pid", os.getpid(), "--run-id", self.run_id]
+
     def make_lock(self, **overrides):
         fields = {"ts": now_stamp(), "kind": "mutation-test", "writer": "mutation-tester", "file": "src/a.py",
                   "backup_path": str(self.backup_file), "pre_hash": sha16(self.original),
-                  "class": "mutant: x", "line": "1", "worktree": str(self.repo), "owner_pid": os.getpid()}
+                  "class": "mutant: x", "line": "1", "worktree": str(self.repo), "owner_pid": os.getpid(),
+                  "run_id": self.run_id}
         fields.update(overrides)
         self.state.mkdir(parents=True, exist_ok=True)
         self.lock_file.write_text(json.dumps(fields, indent=2) + "\n")
@@ -85,9 +90,16 @@ class MutationLockTest(unittest.TestCase):
         self.backup_file.write_bytes(self.original if data is None else data)
 
     def locked_run(self):
-        """A real `lock` call owned by this test process."""
+        """A real `lock` call owned by this test process; self.run_id becomes the id it printed."""
         finished = self.run_script(*self.lock_args())
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.run_id = self.printed_run_id(finished)
+
+    def printed_run_id(self, finished):
+        next_line = finished.stdout.rstrip("\n").splitlines()[-1]
+        found = re.search(r"--run-id ([0-9a-f]{16})$", next_line)
+        self.assertIsNotNone(found, next_line)
+        return found.group(1)
 
     def assert_ends_with(self, finished, prefix, constant=None):
         last = finished.stdout.rstrip("\n").splitlines()[-1]
@@ -142,6 +154,7 @@ class MutationLockTest(unittest.TestCase):
         self.make_lock(owner_pid=DEAD_PID)
         stale_bytes = self.lock_file.read_bytes()
         stale = self.run_script("check", self.target)
+        self.assertEqual(self.lock_file.read_bytes(), stale_bytes)
         self.lock_file.unlink()
 
         legacy_file = self.home / ".claude" / "calibration-lock.json"
@@ -149,11 +162,13 @@ class MutationLockTest(unittest.TestCase):
         legacy_file.write_bytes(stale_bytes)
         legacy = self.run_script("check", self.target)
 
-        for name, finished in (("stale", stale), ("legacy", legacy)):
+        for name, finished, lock in (("stale", stale, self.lock_file), ("legacy", legacy, legacy_file)):
             with self.subTest(name):
                 self.assert_stop(finished, mutation_lock.STOP_UNRESTORED)
                 self.assertIn(str(self.target), finished.stdout)
                 self.assertIn(str(self.backup_file), finished.stdout)
+                self.assertIn(f'cp "{self.backup_file}" "{self.target}"', finished.stdout)
+                self.assertIn(f'rm "{lock}"', finished.stdout)
         self.assertEqual(legacy_file.read_bytes(), stale_bytes)
 
     def test_lock_writes_the_fields_the_guard_reads_and_a_byte_identical_backup(self):
@@ -163,8 +178,14 @@ class MutationLockTest(unittest.TestCase):
         self.assert_ends_with(finished, "NEXT:")
         fields = json.loads(self.lock_file.read_text())
         self.assertEqual(set(fields), {"ts", "kind", "writer", "file", "backup_path", "pre_hash", "class", "line",
-                                       "worktree", "owner_pid"})
+                                       "worktree", "owner_pid", "run_id"})
         self.assertRegex(fields["ts"], STAMP_FORM)
+        self.assertEqual(fields["kind"], "mutation-test")
+        self.assertEqual(fields["writer"], "mutation-tester")
+        self.assertEqual(fields["class"], "mutant: off-by-one")
+        self.assertEqual(fields["line"], "2")
+        self.assertEqual(fields["backup_path"], str(self.backup_file))
+        self.assertEqual(fields["run_id"], self.printed_run_id(finished))
         self.assertIsInstance(fields["owner_pid"], int)
         self.assertEqual(fields["pre_hash"], sha16(self.original))
         self.assertEqual(fields["file"], "src/a.py")
@@ -201,21 +222,20 @@ class MutationLockTest(unittest.TestCase):
         self.locked_run()
         self.target.write_bytes(b"x = 99\n")
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
-        self.assert_ends_with(finished, "DONE:")
+        self.assert_ends_with(finished, "DONE:", "DONE: restore hash-verified (copied); lock removed")
         self.assertEqual(self.target.read_bytes(), self.original)
         self.assertFalse(self.lock_file.exists())
 
     def test_restore_with_no_edit_says_the_file_was_already_identical(self):
         self.locked_run()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
-        self.assert_ends_with(finished, "DONE:")
-        self.assertIn("already identical", finished.stdout)
+        self.assert_ends_with(finished, "DONE:", "DONE: restore hash-verified (already identical); lock removed")
         self.assertFalse(self.lock_file.exists())
 
     def test_restore_with_a_tampered_backup_exits_3_and_changes_nothing(self):
@@ -224,7 +244,7 @@ class MutationLockTest(unittest.TestCase):
         self.backup_file.write_bytes(b"tampered\n")
         lock_before = self.lock_file.read_bytes()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assertEqual(finished.returncode, mutation_lock.EXIT_RESTORE_MISMATCH, finished.stdout)
         self.assertIn(mutation_lock.MISMATCH_HEADING, finished.stdout)
@@ -242,14 +262,15 @@ class MutationLockTest(unittest.TestCase):
         os.chmod(self.target, 0o400)
         lock_before = self.lock_file.read_bytes()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assert_stop(finished, mutation_lock.STOP_RESTORE_FAILED)
         self.assertIn(f'cp "{self.backup_file}" "{self.target}" && rm "{self.lock_file}"', finished.stdout)
         self.assertEqual(self.lock_file.read_bytes(), lock_before)
 
     def test_restore_refuses_another_owner_or_writer_and_prints_the_recovery_line(self):
-        cases = {"another owner": {"owner_pid": os.getpid() + 1}, "another writer": {"writer": "calibrate"}}
+        cases = {"another owner": {"owner_pid": os.getpid() + 1}, "another writer": {"writer": "calibrate"},
+                 "another run of the same owner": {"run_id": "fedcba9876543210"}}
         for name, overrides in cases.items():
             with self.subTest(name):
                 self.make_lock(**overrides)
@@ -257,12 +278,27 @@ class MutationLockTest(unittest.TestCase):
                 self.target.write_bytes(b"edited\n")
                 before = self.lock_file.read_bytes()
 
-                finished = self.run_script("restore", "--owner-pid", os.getpid())
+                finished = self.run_script(*self.restore_args())
 
                 self.assert_stop(finished, mutation_lock.STOP_NOT_OURS)
                 self.assertIn(f'cp "{self.backup_file}" "{self.target}" && rm "{self.lock_file}"', finished.stdout)
                 self.assertEqual(self.target.read_bytes(), b"edited\n")
                 self.assertEqual(self.lock_file.read_bytes(), before)
+
+    def test_restore_refuses_a_lock_with_no_run_id_even_for_the_placeholder_id(self):
+        self.make_lock()
+        fields = json.loads(self.lock_file.read_text())
+        del fields["run_id"]
+        self.lock_file.write_text(json.dumps(fields, indent=2) + "\n")
+        self.make_backup()
+        self.target.write_bytes(b"edited\n")
+        before = self.lock_file.read_bytes()
+
+        finished = self.run_script("restore", "--owner-pid", os.getpid(), "--run-id", "?")
+
+        self.assert_stop(finished, mutation_lock.STOP_NOT_OURS)
+        self.assertEqual(self.target.read_bytes(), b"edited\n")
+        self.assertEqual(self.lock_file.read_bytes(), before)
 
     def test_restore_of_an_old_layout_lock_prints_the_manual_lines_and_keeps_the_lock(self):
         old_backup = self.state / "backups" / "a.py.bak"
@@ -277,7 +313,7 @@ class MutationLockTest(unittest.TestCase):
                 self.make_backup()
                 before = self.lock_file.read_bytes()
 
-                finished = self.run_script("restore", "--owner-pid", os.getpid())
+                finished = self.run_script(*self.restore_args())
 
                 self.assert_stop(finished, mutation_lock.STOP_OLD_LAYOUT)
                 self.assertIn(f'rm "{self.lock_file}"', finished.stdout)
@@ -287,7 +323,7 @@ class MutationLockTest(unittest.TestCase):
         old_backup = self.state / "backups" / "a.py.bak"
         self.make_lock(backup_path=str(old_backup))
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assertIn(f'cp "{old_backup}" "{self.target}"', finished.stdout)
 
@@ -297,8 +333,9 @@ class MutationLockTest(unittest.TestCase):
 
         locked = self.run_script(*self.lock_args())
         self.assertEqual(locked.returncode, 0, locked.stdout + locked.stderr)
+        self.run_id = self.printed_run_id(locked)
         self.target.write_bytes(b"edited\n")
-        restored = self.run_script("restore", "--owner-pid", os.getpid())
+        restored = self.run_script(*self.restore_args())
 
         self.assertEqual(restored.returncode, 0, restored.stdout + restored.stderr)
         self.assert_ends_with(restored, "DONE:")
@@ -308,7 +345,13 @@ class MutationLockTest(unittest.TestCase):
         finished = self.run_script("--help")
 
         self.assertEqual(finished.returncode, 0)
-        positions = [finished.stdout.find(text) for text in mutation_lock.PRECONDITIONS]
+        plan_order = ("regular file", "git work tree", "not under .git", "no calibration or mutation lock",
+                      "backups folder can be written")
+        self.assertEqual(len(mutation_lock.PRECONDITIONS), len(plan_order))
+        positions = []
+        for entry, words in zip(mutation_lock.PRECONDITIONS, plan_order, strict=True):
+            self.assertIn(words, entry)
+            positions.append(finished.stdout.find(entry))
         self.assertNotIn(-1, positions, finished.stdout)
         self.assertEqual(positions, sorted(positions))
 
@@ -329,7 +372,7 @@ class MutationLockTest(unittest.TestCase):
                     self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
                     notes = [line for line in finished.stdout.splitlines() if line.startswith("NOTE:")]
                     self.assertEqual(len(notes), 1, f"{verb}: {finished.stdout}")
-                    self.assertTrue(notes[0].startswith(expected), notes[0])
+                    self.assertEqual(notes[0], expected + "; restore brings back the bytes as they are now")
                 self.assertEqual((self.state / "backups" / relpath).read_bytes(), target.read_bytes())
                 self.lock_file.unlink()
 
@@ -343,8 +386,54 @@ class MutationLockTest(unittest.TestCase):
         self.assert_stop(finished, mutation_lock.STOP_BACKUP_FAILED)
         self.assertFalse(self.lock_file.exists())
 
+    def test_restore_puts_the_target_mtime_at_now_not_at_the_backups_old_time(self):
+        self.locked_run()
+        long_ago = 1_000_000_000
+        os.utime(self.backup_file, (long_ago, long_ago))
+        self.target.write_bytes(b"edited\n")
+        lock_time = self.lock_file.stat().st_mtime
+
+        finished = self.run_script(*self.restore_args())
+
+        self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
+        self.assertGreaterEqual(self.target.stat().st_mtime, lock_time)
+
+    def test_a_refused_lock_creates_no_state_folder(self):
+        finished = self.run_script(*self.lock_args(self.repo / "src" / "gone.py"))
+
+        self.assert_stop(finished, mutation_lock.STOP_NOT_A_FILE)
+        self.assertFalse(self.state.exists())
+
+    def test_a_pid_that_is_not_positive_is_a_usage_error_and_writes_no_lock(self):
+        lock_call = self.lock_args()
+        lock_call[lock_call.index("--owner-pid") + 1] = "0"
+        for name, argv in {"lock pid 0": lock_call,
+                           "restore pid abc": ["restore", "--owner-pid", "abc", "--run-id", self.run_id]}.items():
+            with self.subTest(name):
+                finished = self.run_script(*argv)
+
+                self.assertNotEqual(finished.returncode, 0, finished.stdout)
+                self.assertFalse(self.lock_file.exists())
+                self.assert_nothing_written()
+
+    def test_check_stops_on_an_unreadable_lock_and_leaves_its_bytes(self):
+        self.state.mkdir(parents=True)
+        self.lock_file.write_bytes(b"not json")
+
+        finished = self.run_script("check", self.target)
+
+        self.assert_stop(finished, mutation_lock.STOP_UNRESTORED)
+        self.assertEqual(self.lock_file.read_bytes(), b"not json")
+
+    def test_the_guard_and_the_script_take_their_lock_facts_from_the_one_owner(self):
+        owner = toolkit_paths.LIB_DIR / "calibration_lock.py"
+        self.assertEqual(pathlib.Path(mutation_lock.calibration_lock.__file__).resolve(), owner.resolve())
+        guard_text = GUARD.read_text()
+        self.assertRegex(guard_text, r"(?m)^import calibration_lock$")
+        self.assertNotRegex(guard_text, r"(?m)^def (lock_is_live|parse_stamp)\b")
+
     def test_restore_with_no_lock_stops(self):
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assert_stop(finished, mutation_lock.STOP_NO_LOCK)
 
@@ -354,10 +443,14 @@ class MutationLockTest(unittest.TestCase):
         self.make_lock()
         legacy_file.write_bytes(self.lock_file.read_bytes())
         self.lock_file.unlink()
+        before = legacy_file.read_bytes()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assert_stop(finished, mutation_lock.STOP_LEGACY_LOCK)
+        self.assertEqual(legacy_file.read_bytes(), before)
+        self.assertEqual(self.target.read_bytes(), self.original)
+        self.assertIn(f'rm "{legacy_file}"', finished.stdout)
 
     def test_restore_with_a_missing_backup_stops_and_keeps_the_lock(self):
         self.locked_run()
@@ -365,7 +458,7 @@ class MutationLockTest(unittest.TestCase):
         self.backup_file.unlink()
         before = self.lock_file.read_bytes()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assert_stop(finished, mutation_lock.STOP_BACKUP_MISSING)
         self.assertEqual(self.lock_file.read_bytes(), before)
@@ -399,7 +492,7 @@ class MutationLockTest(unittest.TestCase):
         self.locked_run()
         self.target.unlink()
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assertEqual(finished.returncode, 0, finished.stdout + finished.stderr)
         self.assert_ends_with(finished, "DONE:")
@@ -435,7 +528,7 @@ class MutationLockTest(unittest.TestCase):
         self.addCleanup(os.chmod, self.state, 0o700)
         os.chmod(self.state, 0o500)
 
-        finished = self.run_script("restore", "--owner-pid", os.getpid())
+        finished = self.run_script(*self.restore_args())
 
         self.assert_stop(finished, mutation_lock.STOP_LOCK_NOT_REMOVED)
         self.assertIn(f'rm "{self.lock_file}"', finished.stdout)
@@ -443,7 +536,7 @@ class MutationLockTest(unittest.TestCase):
 
     def test_both_mutation_tester_prompts_call_only_verbs_and_flags_the_script_takes(self):
         call_pattern = re.compile(r"mutation_lock\.py (\w[\w-]*)([^\n`]*)")
-        placeholders = (("<target>", "f.py"), ("<line>", "1"), ('"$PPID"', "1"),
+        placeholders = (("<run-id>", "0123456789abcdef"), ("<target>", "f.py"), ("<line>", "1"), ('"$PPID"', "1"),
                         ('"<one-line description>"', "x"))
         for prompt_file in MUTATION_TESTER_PROMPTS:
             calls = call_pattern.findall(prompt_file.read_text())
@@ -459,12 +552,13 @@ class MutationLockTest(unittest.TestCase):
                         self.fail(f"the script rejects the prompt's call: {argv}")
 
     def test_both_mutation_tester_prompts_name_no_lock_path_hash_tool_or_count(self):
-        banned = ("claude-calibration", "calibration-lock.json", "sha256sum", "jq -n", "all four", "all five")
+        banned = ("claude-calibration", "calibration-lock.json", "sha256sum", "all four", "all five")
         for prompt_file in MUTATION_TESTER_PROMPTS:
             text = prompt_file.read_text()
             with self.subTest(str(prompt_file)):
                 for word in banned:
                     self.assertNotIn(word, text)
+                self.assertNotRegex(text, r"\bjq\b")
                 bullets = [line for line in prompt_section(text, "## Step 0").splitlines() if line.startswith("- ")]
                 self.assertEqual(len(bullets), 3, bullets)
                 checking = [line for line in bullets if "mutation_lock.py check" in line]
@@ -484,7 +578,19 @@ class MutationLockTest(unittest.TestCase):
                 self.assertEqual(len(unremoved), 1, bullets)
                 self.assertEqual(len(other), 1, bullets)
                 self.assertNotIn("stays mutated", unremoved[0])
-                self.assertIn("the target stays mutated: say so loudly at the top of your report", other[0])
+                self.assertNotIn("stays mutated", other[0])
+                self.assertIn("report the verdict, state the stop, and print the exact command it names, "
+                              "if any, for your caller to run", other[0])
+
+    def test_mutation_tester_prompts_pass_the_run_id_from_lock_to_restore_and_restore_only_after_a_lock(self):
+        for prompt_file in MUTATION_TESTER_PROMPTS:
+            text = prompt_file.read_text()
+            step_one = prompt_section(text, "## Step 1")
+            step_four = prompt_section(text, "## Step 4")
+            with self.subTest(str(prompt_file)):
+                self.assertIn("keep the `--run-id` value on that line", step_one)
+                self.assertIn('mutation_lock.py restore --owner-pid "$PPID" --run-id <run-id>', step_four)
+                self.assertIn("only after `lock` printed `NEXT: apply the mutation`", step_four)
 
 
 def prompt_section(text, heading_start):

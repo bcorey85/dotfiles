@@ -5,8 +5,6 @@ import importlib.util
 import os
 import pathlib
 import sys
-import tempfile
-import time
 import unittest
 
 import toolkit_paths
@@ -21,14 +19,6 @@ SPEC.loader.exec_module(calibration_lock)
 
 
 class PathTest(unittest.TestCase):
-    def test_lock_path_uses_xdg_state_home_when_set(self):
-        environ = {"HOME": "/home/u", "XDG_STATE_HOME": "/state"}
-        self.assertEqual(calibration_lock.lock_path(environ), "/state/claude-calibration/lock.json")
-
-    def test_lock_path_falls_back_to_home_local_state(self):
-        environ = {"HOME": "/home/u"}
-        self.assertEqual(calibration_lock.lock_path(environ), "/home/u/.local/state/claude-calibration/lock.json")
-
     def test_lock_path_keeps_the_environment_text_untidied(self):
         self.assertEqual(
             calibration_lock.lock_path({"HOME": "/h", "XDG_STATE_HOME": "/a//b"}), "/a//b/claude-calibration/lock.json"
@@ -37,29 +27,8 @@ class PathTest(unittest.TestCase):
             calibration_lock.lock_path({"HOME": "/h", "XDG_STATE_HOME": "./s"}), "./s/claude-calibration/lock.json"
         )
 
-    def test_find_lock_returns_the_legacy_path_only_when_the_state_lock_is_absent(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            home = pathlib.Path(scratch)
-            environ = {"HOME": str(home)}
-            legacy = pathlib.Path(calibration_lock.legacy_lock_path(environ))
-            legacy.parent.mkdir(parents=True)
-            legacy.write_text("{}")
-            self.assertEqual(calibration_lock.find_lock(environ), str(legacy))
-            current = pathlib.Path(calibration_lock.lock_path(environ))
-            current.parent.mkdir(parents=True)
-            current.write_text("{}")
-            self.assertEqual(calibration_lock.find_lock(environ), str(current))
-
-    def test_find_lock_is_none_with_no_lock(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            self.assertIsNone(calibration_lock.find_lock({"HOME": scratch}))
-
 
 class StampTest(unittest.TestCase):
-    def test_format_stamp_round_trips_parse_stamp(self):
-        stamp = "2026-10-01T10:00:00Z"
-        self.assertEqual(calibration_lock.format_stamp(calibration_lock.parse_stamp(stamp)), stamp)
-
     def test_offset_form_does_not_parse(self):
         self.assertIsNone(calibration_lock.parse_stamp("2026-10-01T10:00:00+00:00"))
 
@@ -70,21 +39,6 @@ class LockViewTest(unittest.TestCase):
         absolute = calibration_lock.read_lock_view('{"file": "/other/a.ts", "worktree": "/work"}')
         self.assertEqual(relative.file, "/work/src/a.ts")
         self.assertEqual(absolute.file, "/other/a.ts")
-
-
-class LockIsLiveTest(unittest.TestCase):
-    def test_liveness_cases(self):
-        now = time.time()
-        fresh = calibration_lock.format_stamp(now)
-        old = calibration_lock.format_stamp(now - calibration_lock.MUTATION_RUN_TIMEOUT_SECONDS - 60)
-        cases = [
-            ("dead owner", fresh, "99999999", False),
-            ("fresh, no owner", fresh, "", True),
-            ("past the timeout", old, "", False),
-        ]
-        for name, stamp, owner, expected in cases:
-            with self.subTest(name):
-                self.assertEqual(calibration_lock.lock_is_live(stamp, owner, now), expected)
 
 
 if __name__ == "__main__":

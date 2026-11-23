@@ -3,7 +3,7 @@
 
 Usage: mutation_lock.py check <target>
        mutation_lock.py lock <target> --class TEXT --line TEXT --owner-pid PID
-       mutation_lock.py restore --owner-pid PID
+       mutation_lock.py restore --owner-pid PID --run-id ID
 
 The lock file, its fields and its liveness rule belong to lib/calibration_lock.py; the byte copy and the copy back
 to lib/file_backup.py. Every verb prints its result and ends with a NEXT:, STOP: or DONE: line. Exit 0: done or
@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import pathlib
+import secrets
 import sys
 import time
 from typing import NamedTuple
@@ -49,7 +50,8 @@ STOP_BAD_ARGUMENT = "STOP: --class must be one non-empty line"
 STOP_NO_LOCK = "STOP: there is no lock; nothing to restore"
 STOP_LEGACY_LOCK = "STOP: the lock sits at the legacy path; restore it by hand with the commands above"
 STOP_OLD_LAYOUT = "STOP: the lock has the old backup layout; restore it by hand with the commands above"
-STOP_NOT_OURS = "STOP: the lock belongs to another writer or owner; hand the recovery line above to the caller"
+STOP_NOT_OURS = ("STOP: the lock belongs to another writer, owner or run; "
+                 "hand the recovery line above to the caller")
 STOP_BACKUP_MISSING = "STOP: the backup named by the lock is missing; the lock is kept; hand this to the caller"
 STOP_LOCK_NOT_REMOVED = (
     "STOP: the file is restored but the lock could not be removed; hand the rm line above to the caller")
@@ -59,7 +61,8 @@ STOP_RESTORE_FAILED = "STOP: the file could not be restored; the lock is kept; h
 MISMATCH_HEADING = "RESTORE HASH MISMATCH"
 NEXT_LOCK_TEMPLATE = ("NEXT: run the unmutated suite (baseline), then mutation_lock.py lock <target> "
                       "--class ... --line ... --owner-pid \"$PPID\"")
-NEXT_APPLY = "NEXT: apply the mutation with Edit (Step 2)"
+NEXT_APPLY = ("NEXT: apply the mutation with Edit (Step 2); restore later with "
+              "mutation_lock.py restore --owner-pid \"$PPID\" --run-id {run_id}")
 DONE_RESTORE = "DONE: restore hash-verified ({how}); lock removed"
 
 
@@ -157,7 +160,7 @@ def check_verb(args):
     return lines
 
 
-def lock_fields(target, args, backup_copy):
+def lock_fields(target, args, backup_copy, run_id):
     return {
         "ts": calibration_lock.format_stamp(time.time()),
         "kind": calibration_lock.MUTATION_KIND,
@@ -169,6 +172,7 @@ def lock_fields(target, args, backup_copy):
         "line": args.line,
         "worktree": str(target.worktree),
         "owner_pid": args.owner_pid,
+        "run_id": run_id,
     }
 
 
@@ -176,6 +180,8 @@ def lock_verb(args):
     if not args.seed_class.strip() or "\n" in args.seed_class or "\r" in args.seed_class:
         raise StopError([STOP_BAD_ARGUMENT])
 
+    # Checked once before the state folder exists, so a refused request creates nothing; lock_under_hold checks again.
+    check_preconditions(args.target)
     state_folder = pathlib.Path(calibration_lock.state_folder())
     try:
         os.makedirs(state_folder, exist_ok=True)
@@ -201,10 +207,12 @@ def lock_under_hold(args):
 
     # Joined as a string, as refuse_unrestorable rebuilds it: a Path would tidy "//" and "/./" out of the state root.
     backup_copy = calibration_lock.backup_path(target.relpath)
-    fields = lock_fields(target, args, backup_copy)
+    run_id = secrets.token_hex(8)
+    fields = lock_fields(target, args, backup_copy, run_id)
     lock = calibration_lock.lock_path()
     script_utils.write_text_atomically(lock, json.dumps(fields, indent=2) + "\n")
-    lines += [f"lock: {lock}", f"backup: {backup_copy}", f"pre_hash: {fields['pre_hash']}", NEXT_APPLY]
+    next_line = NEXT_APPLY.format(run_id=run_id)
+    lines += [f"lock: {lock}", f"backup: {backup_copy}", f"pre_hash: {fields['pre_hash']}", next_line]
     return lines
 
 
@@ -219,6 +227,7 @@ class OwnLock(NamedTuple):
     view: calibration_lock.LockView
     raw_file: str
     recorded_hash: str
+    run_id: str
 
 
 def read_own_lock():
@@ -231,6 +240,7 @@ def read_own_lock():
             view=calibration_lock.read_lock_view(text),
             raw_file=calibration_lock.lock_field(text, "file", "?", "?"),
             recorded_hash=calibration_lock.lock_field(text, "pre_hash", "?", "?"),
+            run_id=calibration_lock.lock_field(text, "run_id", "", ""),
         )
 
     legacy = calibration_lock.legacy_lock_path()
@@ -249,7 +259,9 @@ def refuse_unrestorable(own, args):
     if old_layout:
         raise StopError([f"lock: {own.path}", *manual_lines(view, own.path), STOP_OLD_LAYOUT])
 
-    if view.writer != calibration_lock.MUTATION_WRITER or view.owner_pid != str(args.owner_pid):
+    ours = (view.writer == calibration_lock.MUTATION_WRITER and view.owner_pid == str(args.owner_pid)
+            and own.run_id != "" and own.run_id == args.run_id)
+    if not ours:
         copy_command, remove_command = calibration_lock.recovery_commands(view, own.path)
         raise StopError([f"lock: {own.path}", f"{copy_command} && {remove_command}", STOP_NOT_OURS])
 
@@ -270,6 +282,9 @@ def copy_back_verified(own):
         if calibration_lock.pre_hash(view.backup) != own.recorded_hash:
             raise mismatch_stop(own, target)
         copied = file_backup.restore_changed(file_backup.Backup(view.worktree, backups, [own.raw_file], []))
+        if copied:
+            # copy2 gives the target the backup's old mtime; a build tool must see the file as changed.
+            os.utime(target)
         if not target.is_file() or calibration_lock.pre_hash(target) != own.recorded_hash:
             raise mismatch_stop(own, target)
     except OSError as error:
@@ -325,6 +340,7 @@ def build_parser():
 
     restore = verbs.add_parser("restore", help="put the target back from the backup, verify it, remove the lock")
     restore.add_argument("--owner-pid", type=positive_int, required=True, help="the process that owns the run")
+    restore.add_argument("--run-id", required=True, help="the run id that `lock` printed on its NEXT line")
     return parser
 
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1110 changes
+1114 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The retro lane queues its own picks and reports a log of what it queued and skipped](notes/2026-11-22-the-retro-lane-queues-its-own-picks-and-reports-a.md) [skill/audit] The retro lane of the audit skill decides which of its candidates to queue, queues them, and ends with a log of the queued and the skipped ones, so the user no longer picks numbers.
 * [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md) [script/ruling-relay, script/review-fix, script/review-fix-asks, script/phase-asks, script/handback-store, script/plan-format, script/coder-packet, shared/review-fork-run, skill/code, agent/code-fork, rule/orchestration] A relayed user ruling is `--by user --relayed-by <session name>` with no words: the script checks that the relaying session's transcript holds a typed user turn after the ask and stores only that turn's time; `--quote` is refused, the standing ruling line holds a short paraphrase with no quote marks, and the prompts that asked for the user's words verbatim now ask for the outcome, who gave it and when.
 * [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
 * [The /code phase-complete blocks move to a file read at phase end](notes/2026-11-22-the-code-phase-complete-blocks-move-to-a-file-read.md) [skill/code] The /code skill no longer carries the Phase-Complete blocks in the text it loads at start; the fork reads them from a sibling file at the phase-end step.
@@ -58,8 +59,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A review fix pass holds a file another session first dirtied during an earlier phase](notes/2026-11-22-a-review-fix-pass-holds-a-file-another-session.md) [script/code-phase-start, shared/review-loop] phase_start.py adds a file another session first dirtied during an earlier phase to the kept start record, so the review fix pass holds it like one dirty at the run start.
+* [A later /code review reviews the files the review loop's fix coder wrote instead of holding them](notes/2026-11-22-a-later-code-review-reviews-the-files-the-review.md) [script/review-loop, script/code-review-start] The review loop records the untracked files its claude -p fix coder wrote, and code_review_start reviews them as the run's own instead of holding them for another live session.
 * [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md) [script/test-suite] The MCP server-name test scans only git-tracked toolkit files, so it passes on the live checkout with its caches, plugins and synced skills.
 * [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md) [script/criteria-dry-run] The criteria dry run tells a real pipe from a regex bar inside quotes, so a ban such as rg -q 'a|b' f that exits 0 reads RED.
+* [The full suite passes under a relative PYTHONPATH such as tests/scripts](notes/2026-11-22-a-relative-pythonpath-in-a-plan-gate-no-longer.md) [script/review-loop] The test helper makes relative PYTHONPATH and NODE_PATH entries absolute, so nested fixture repos stop reading them as paths inside themselves.
 * [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md) [script/plan-check] A ticket's queue Source line keeps underscores and other markdown marks inside its path, so a home folder or slug that holds one still reads as the queue item it names.
 * [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md) [script/log-escape, skill/escape] The escape logger now keeps the catch text of every escape, at every stage, and refuses a row with no description or, outside the plan gate, no file, so each escape can be found and fixed later.
 * [A ticket whose Source line spells the queue path with the home folder reads as session-owned](notes/2026-11-22-a-lane-brief-that-names-a-session-written-queue.md) [script/plan-check, skill/verify-branch] A lane ticket whose Source line names a session-written queue item with the home folder spelled out (/home/<user>/agent-evals/queue/...) now reads as session-owned criteria, as the ~ spelling already did, so the lane takes the orchestrating session's ruling.

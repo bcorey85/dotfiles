@@ -21,6 +21,15 @@ class ToolkitPathsTest(unittest.TestCase):
             os.environ.update(environment)
             return importlib.reload(toolkit_paths)
 
+    def test_a_relative_pythonpath_entry_becomes_absolute_so_no_nested_repo_claims_it(self):
+        relative = {"PYTHONPATH": "tests/scripts::/abs/lib", "NODE_PATH": "node_modules"}
+        with unittest.mock.patch.dict(os.environ, relative):
+            toolkit_paths.absolutize_import_paths()
+
+            self.assertEqual(os.environ["PYTHONPATH"], os.pathsep.join(
+                [os.path.abspath("tests/scripts"), "", "/abs/lib"]))
+            self.assertEqual(os.environ["NODE_PATH"], os.path.abspath("node_modules"))
+
     def test_the_default_is_the_toolkit_folder_of_the_tree_the_tests_sit_in(self):
         tree_claude_dir = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 

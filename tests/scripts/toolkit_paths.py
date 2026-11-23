@@ -104,4 +104,16 @@ def guard_real_ledger():
     return pathlib.Path(_ledger_guard.name)
 
 
+def absolutize_import_paths():
+    """Make each relative entry of PYTHONPATH and NODE_PATH absolute against the current folder. A test that runs a
+    check in a nested fixture repo would otherwise read `tests/scripts` as a path inside that repo."""
+    for variable in ("PYTHONPATH", "NODE_PATH"):
+        entries = os.environ.get(variable)
+        if not entries:
+            continue
+        os.environ[variable] = os.pathsep.join(
+            os.path.abspath(entry) if entry else entry for entry in entries.split(os.pathsep))
+
+
 guard_real_ledger()
+absolutize_import_paths()

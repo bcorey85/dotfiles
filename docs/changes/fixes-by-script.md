@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-700 fix notes
+703 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -26,18 +26,18 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
+| script/review-loop | 19 | 3 |
 | skill/code | 19 | 2 |
 | script/verify-prep | 18 | 4 |
-| script/review-loop | 17 | 1 |
 | script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 7 |
 | script/pull-keep-index | 14 | 3 |
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
+| script/code-review-start | 12 | 5 |
 | script/code-wait | 12 | 5 |
 | script/log-review-finding | 12 | 0 |
-| script/code-review-start | 11 | 4 |
 | script/log-escape | 11 | 3 |
 | script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
@@ -140,6 +140,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
 | script/clone-pairs | 1 | 1 |
+| script/code-phase-start | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
 | script/concentration | 1 | 0 |

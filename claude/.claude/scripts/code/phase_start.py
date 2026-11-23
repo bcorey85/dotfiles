@@ -6,14 +6,17 @@ or the kept record's head under --resume).
 
 Run from the repo root before the phase's coder dispatch. Writes <git dir>/code-phase/start.json, once per call:
 {"head": <sha>, "dirty": {<path>: <sha-256 of its bytes, or null when gone>}, "holder": {"session", "cwd"} | null,
-"sessions": [<session id>, ...], "started_at": <epoch seconds> | null}. `dirty` lists every file dirty or untracked
-now; `holder` is the live session other than the run's that works in the repo now; `sessions` are the run's session
-ids (a kept record adds the current session id). code_review_start.py reads it: with a holder recorded, every file
-dirty here is held for the whole phase, and one whose bytes changed is named as a tool fault; with no holder, a file
-dirty here that holds the same bytes at review time is held while another live session works in the repo.
+"sessions": [<session id>, ...], "started_at": <epoch seconds> | null, "own": [<path>]}. `dirty` lists every file
+dirty or untracked now; `holder` is the live session other than the run's that works in the repo now; `sessions` are
+the run's session ids (a kept record adds the current session id); `own` lists the files earlier phases of the run
+named in their hand-offs. code_review_start.py reads it: with a holder recorded, every file dirty here is held for
+the whole phase, and one whose bytes changed is named as a tool fault; with no holder, a file dirty here that holds
+the same bytes at review time is held while another live session works in the repo.
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
-whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own. A
-missing record, or one for another HEAD, is replaced either way. Prints the HEAD sha, except under --resume (below).
+whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own; a file
+dirty now that the record lacks, and that no earlier phase's hand-off names, is added to it (another session's edit
+first seen at a later phase start). A missing record, or one for another HEAD, is replaced either way. Prints the
+HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept and its head is printed as the phase base. With no
 record, or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr.
@@ -35,6 +38,8 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
 import code_stop_record
 import code_wait
+import fix_coder_written
+import handoff_files
 import script_utils
 import session_registry
 import stop_file_names
@@ -49,7 +54,7 @@ class StartRecordError(ValueError):
 
 
 RECORD_SHAPE = ('{"head": <sha>, "dirty": {<path>: <hash>}, "holder": {"session": <text>, "cwd": <text>} | null, '
-                '"sessions": [<session id>], "started_at": <epoch seconds> | null}')
+                '"sessions": [<session id>], "started_at": <epoch seconds> | null, "own": [<path>]}')
 
 
 def current_holder(repo, own_session_id):
@@ -73,15 +78,16 @@ def start_record(repo, own_session_id=""):
     codes = worktree_snapshot.status_codes(root)
     dirty = {path: worktree_snapshot.file_hash(root, path) for path in sorted(codes)}
     return {"head": head, "dirty": dirty, "holder": current_holder(repo, own_session_id),
-            "sessions": [own_session_id] if own_session_id else [], "started_at": time.time()}
+            "sessions": [own_session_id] if own_session_id else [], "started_at": time.time(), "own": []}
 
 
 def checked_record(record):
-    """The five keys of a parsed record, with the defaults of a record written before holder, sessions and started_at
-    existed. A key of the wrong type raises TypeError."""
+    """The six keys of a parsed record, with the defaults of a record written before holder, sessions, started_at and
+    own existed. A key of the wrong type raises TypeError."""
     holder = record.get("holder")
     sessions = record.get("sessions", [])
     started_at = record.get("started_at")
+    own = record.get("own", [])
     holder_ok = holder is None or (isinstance(holder, dict) and isinstance(holder.get("session"), str)
                                    and isinstance(holder.get("cwd"), str))
     started_ok = started_at is None or (isinstance(started_at, (int, float)) and not isinstance(started_at, bool))
@@ -93,8 +99,10 @@ def checked_record(record):
         raise TypeError("sessions is not a list of session ids")
     if not started_ok:
         raise TypeError("started_at is neither null nor a number")
+    if not (isinstance(own, list) and all(isinstance(entry, str) for entry in own)):
+        raise TypeError("own is not a list of paths")
     return {"head": record["head"], "dirty": record["dirty"], "holder": holder, "sessions": sessions,
-            "started_at": started_at}
+            "started_at": started_at, "own": own}
 
 
 def read_start_record(repo):
@@ -137,6 +145,24 @@ def changed_dirty_files(repo, record):
     unless it was recorded as gone."""
     root = pathlib.Path(repo)
     return sorted(path for path, saved in record["dirty"].items() if worktree_snapshot.file_hash(root, path) != saved)
+
+
+def handed_off_paths(run_folder):
+    """The files the phase that just ended named in its hand-off; [] with no hand-off."""
+    handoff_file = run_folder / code_wait.HANDOFF_FILE
+    if not handoff_file.is_file():
+        return []
+
+    return handoff_files.handoff_entry_paths(handoff_file.read_text())
+
+
+def with_later_dirty_files(kept, record, handed_off):
+    """The kept record plus the files dirty now that it lacks and no phase so far handed off, and the handed-off files
+    as the run's own. Every other key of the kept record (head, holder, sessions, started_at) is unchanged."""
+    own = sorted({*kept["own"], *handed_off})
+    new_dirty = {path: saved for path, saved in record["dirty"].items()
+                 if path not in kept["dirty"] and path not in own}
+    return {**kept, "dirty": {**kept["dirty"], **new_dirty}, "own": own}
 
 
 def move_aside(folder, name, previous_name):
@@ -219,6 +245,7 @@ def main():
         refusal = other_run_refusal(run_folder)
         if refusal is not None:
             sys.exit(refusal)
+    handed_off = handed_off_paths(run_folder)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
     move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)
@@ -243,10 +270,14 @@ def main():
             write_record(repo, kept_record(kept, record, own_session_id))
             print(base)
             return 0
-    if "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]:
-        write_record(repo, kept_record(kept, record, own_session_id))
-        print(record["head"])
-        return 0
+    same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
+    if same_run:
+        record = with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off)
+        if record == kept:
+            print(record["head"])
+            return 0
+    else:
+        fix_coder_written.clear(repo)
 
     write_record(repo, record)
     print(record["head"])

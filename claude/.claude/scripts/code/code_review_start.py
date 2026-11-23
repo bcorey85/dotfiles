@@ -47,6 +47,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 import code_wait
 import coder_gate
 import expected_red
+import fix_coder_written
 import gate_commands
 import gate_env
 import handback_hook
@@ -233,19 +234,21 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_file
     if holder is None:
         return [], [], []
 
-    dirty_rows, held_changed = phase_held_files(repo, record, holder, named_files.earlier)
+    own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
+    dirty_rows, held_changed = phase_held_files(repo, record, holder, own_files)
     if held_changed:
         held_note(notes, "Tool fault: " + code_wait.held_fault_text(held_changed))
     untracked_rows = foreign_untracked(repo, record, holder, named_files, plan, notes)
     return dirty_rows, held_changed, untracked_rows
 
 
-def phase_held_files(repo, record, holder, earlier_files=()):
+def phase_held_files(repo, record, holder, own_files=()):
     """(holder rows {"path", "session", "claim"} of the held dirty files, the held paths whose bytes changed since the
     run start). With a holder recorded at a phase start (phase_start.py's record), every file dirty then is held for
-    the whole phase, less `earlier_files`, the files an earlier phase of the plan names, which are the run's own.
-    With no holder recorded, only a same-bytes file is held, for the live session `holder`."""
-    candidates = script_utils.without_paths(sorted(record["dirty"]), earlier_files)
+    the whole phase, less `own_files`, the files an earlier phase of the plan names and the files the review loop's
+    fix coder wrote (fix_coder_written), which are the run's own. With no holder recorded, only a same-bytes file is
+    held, for the live session `holder`."""
+    candidates = script_utils.without_paths(sorted(record["dirty"]), own_files)
     if not candidates:
         return [], []
     if record["holder"] is not None:
@@ -335,7 +338,8 @@ def foreign_untracked(repo, record, holder, named_files, plan, notes):
         sys.exit(f"code_review_start: git could not list the untracked files of {repo}, so none can be held. Fix the "
                  "repo, then run this step again.")
     plan_named = [*named_files.earlier, *named_files.this]
-    candidates = script_utils.without_paths(untracked, [*record["dirty"], *plan_named])
+    own_files = [*plan_named, *fix_coder_written.recorded(repo)]
+    candidates = script_utils.without_paths(untracked, [*record["dirty"], *own_files])
     candidates = plan_format.outside_plan_folder(candidates, plan)
     if not candidates:
         return []

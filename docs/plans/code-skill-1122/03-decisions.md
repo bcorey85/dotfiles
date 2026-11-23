@@ -181,3 +181,17 @@
 **Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill-nov22 lane. The criteria were written by the plan, so a session ruling is recorded here. The rule-meter read for the stop-rule sentences is 2/3 vs 1/3 (CF07, n=1), which supports no cut.
 **Alternatives rejected**: cutting SKILL.md:24 or the stop-rule sentence unmetered.
 **Trade-off accepted**: one rule keeps two owners until a graded run supports a cut.
+
+### 14. AC15 word-count clause reworded to the ruled limit (session ruling on a plan-written criterion)
+
+**Choice**: AC15's "at least 10% shorter by word count" clause reads "under the ruled limit of 3488 words (03-decisions.md block 12)". The start load is 3461 words on the bare-marker counter (2647 / 110 / 201 / 503); the old base on that counter is 3769.
+**Reasoning**: orchestrating session agent-evals-c3 ruled (Ask B, accepted), 2026-11-22, relayed by the code-skill-nov22 lane. The criterion was written by the plan, so a session ruling is recorded here. Block 12 already set the limit at 3488; the percent clause no longer matches it.
+**Alternatives rejected**: trimming unmetered text to reach 10%.
+**Trade-off accepted**: AC15 no longer states a percentage.
+
+### 15. Follow-up: the later-phase holder in `kept_record` is not held (Ask A, rejected)
+
+**Choice**: the code stays as it is. The later-phase holder at `claude/.claude/scripts/code/phase_start.py:189` (`kept_record`) is not held; this is outside the item's done clause. It is a follow-up, not a queue item of this branch.
+**Reasoning**: orchestrating session agent-evals-c3 ruled (Ask A, rejected), 2026-11-22, relayed by the code-skill-nov22 lane. agent-evals-c3 queues the follow-up.
+**Alternatives rejected**: changing `kept_record` in this phase.
+**Trade-off accepted**: the gap stays open until agent-evals-c3's queued item lands.

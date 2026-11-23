@@ -17,10 +17,10 @@ in <git dir>/code-phase/run.json, where `code_wait.py review` checks it.
 The prompt header is: lane, repo, plan, phase, later-phase files and held files (with a holder recorded in
 phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, a
 same-bytes file while a live session other than this run's works in the repo; and, with a recorded holder or while
-such a session is live, every untracked file no recorded coder of the run wrote and no phase section names; the
-held-by line names each
-holder), a `tool fault:` line when a held file changed during the phase, a `held files this phase names:` line for
-held files the phase's plan section names, then the handoff block and the repo's gate env.
+such a session is live, every untracked file no recorded coder of the run wrote and no earlier or current phase
+section names, outside the plan folder and the start record's dirty map; the held-by line names each holder), a
+`tool fault:` line when a held file changed during the phase, a `held files this phase names:` line for held files
+the phase's plan section names, then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
@@ -281,9 +281,7 @@ def coder_written_paths(repo, record, notes):
 def folder_written_paths(root, folder, started_at):
     """The repo-relative paths the coder transcripts of a subagents `folder` wrote; `root` is the resolved repo."""
     written = set()
-    for meta_file in sorted(folder.glob(script_utils.subagent_meta_name("*"))):
-        agent_id = script_utils.subagent_id_from_meta_name(meta_file.name)
-        transcript = meta_file.with_name(script_utils.subagent_transcript_name(agent_id))
+    for _agent_id, transcript, _meta in loop_transcript.subagent_entries(folder):
         if not coder_transcript_in_run(transcript, started_at):
             continue
         written |= transcript_repo_paths(root, transcript)
@@ -341,15 +339,13 @@ class ReviewScope(NamedTuple):
     """What a review covers: the holder rows of the held files, the handoff with its files from git, the files
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
-    changed during the phase, `held_untracked` the untracked files held, `held_targeted` the held files this phase's
-    section names."""
+    changed during the phase, `held_targeted` the held files this phase's section names."""
     holders: list
     handoff: str
     phase_changed: list
     review_base: str | None
     notes: tuple = ()
     held_changed: tuple = ()
-    held_untracked: tuple = ()
     held_targeted: tuple = ()
 
 
@@ -399,8 +395,7 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     review_base = diff_base(repo, base_commit)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
-    return ReviewScope(holders, handoff, phase_changed, review_base, notes, held_changed,
-                       [row["path"] for row in untracked_holders], held_targeted)
+    return ReviewScope(holders, handoff, phase_changed, review_base, notes, held_changed, held_targeted)
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",

@@ -35,9 +35,12 @@ def unresolved_launch_result(tool_use_id):
     return tool_result_record(tool_use_id, "Async agent launched successfully.")
 
 
-def bash_record(command):
+def bash_record(command, cwd=None):
     block = {"type": "tool_use", "id": "toolu_bash", "name": "Bash", "input": {"command": command}}
-    return {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
+    record = {"type": "assistant", "message": {"role": "assistant", "content": [block]}}
+    if cwd is not None:
+        record["cwd"] = cwd
+    return record
 
 
 class ForkChildrenTest(unittest.TestCase):
@@ -99,6 +102,8 @@ class ForkChildrenTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         reason = decision["permissionDecisionReason"]
         self.assertIn(f"fork_children.py {FORK_ID}", reason)
+        self.assertIn(f"code fork {FORK_ID} has live children: ", reason)
+        self.assertTrue(reason.endswith("TaskStop each id it names, then TaskStop the fork."), reason)
         for name in names:
             self.assertIn(name, reason)
 
@@ -107,6 +112,12 @@ class ForkChildrenTest(unittest.TestCase):
 
         self.assert_denied_naming(self.hook(), CODER_ID)
         self.assert_passes(self.hook())
+
+        store_file = os.path.join(self.env["HANDBACK_STORE_DIR"], "s1.jsonl")
+        with open(store_file, encoding="utf-8") as fh:
+            rows = [json.loads(line) for line in fh if line.strip()]
+        self.assertEqual([(row["kind"], row["agent_id"], row["children"]) for row in rows],
+                         [("taskstop_children_denied", FORK_ID, [CODER_ID])])
 
     def test_a_launch_with_no_agent_id_yet_is_named_in_the_deny(self):
         self.write_fork([launch("toolu_x", subagent_type="coder"), unresolved_launch_result("toolu_x")])
@@ -130,6 +141,7 @@ class ForkChildrenTest(unittest.TestCase):
         cases = {
             "a background task id": lambda session_id: self.hook(task_id="b1a2b3c4d", session_id=session_id),
             "another tool": lambda session_id: self.hook(tool_name="Bash", session_id=session_id),
+            "an agent id with no transcript": lambda session_id: self.hook(task_id=OTHER_ID, session_id=session_id),
             "a non-fork agent type": self.hook_with_non_fork_agent_type,
             "a child finished by meta": self.hook_with_child_finished_by_meta,
             "a fork with no child": self.hook_with_no_child,
@@ -287,6 +299,39 @@ class ForkChildrenTest(unittest.TestCase):
 
         self.assertEqual(loop, {"pid": process.pid, "stopped": False, "reason": "not_review_loop"})
         self.assertIsNone(process.poll())
+
+    def test_the_report_finds_the_repo_from_the_forks_last_cwd_when_run_from_another_folder(self):
+        self.write_fork([bash_record(REVIEW_START, cwd=self.repo)])
+        process = self.start_process(["code_review_start.py"])
+        self.record_loop_pid(process.pid)
+
+        proc = subprocess.run([sys.executable, "-B", SCRIPT, FORK_ID], capture_output=True, text=True, env=self.env,
+                              cwd=tempfile.gettempdir(), check=False)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["loop"], {"pid": process.pid, "stopped": True, "reason": "stopped"})
+
+    def test_the_report_without_repo_falls_back_to_the_current_folder_when_the_fork_records_no_cwd(self):
+        self.write_fork([bash_record(REVIEW_START)])
+        process = self.start_process(["code_review_start.py"])
+        self.record_loop_pid(process.pid)
+
+        proc = subprocess.run([sys.executable, "-B", SCRIPT, FORK_ID], capture_output=True, text=True, env=self.env,
+                              cwd=self.repo, check=False)
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["loop"], {"pid": process.pid, "stopped": True, "reason": "stopped"})
+
+    def test_a_repo_outside_a_git_checkout_reports_no_repo_with_the_children_named(self):
+        self.write_live_coder_fork()
+        not_a_repo = os.path.join(os.path.dirname(self.repo), "plain")
+        os.makedirs(not_a_repo)
+
+        proc = self.run_script([FORK_ID, "--repo", not_a_repo])
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout), {"fork": FORK_ID, "children": [CODER_ID], "unresolved_launches": [],
+                                                   "loop": {"pid": None, "stopped": False, "reason": "no_repo"}})
 
     def test_usage_errors_exit_2(self):
         self.write_agent(CODER_ID, [assistant_record()], {"agentType": "coder"})

@@ -266,7 +266,7 @@ def scope_held_changed(scope):
     if not isinstance(scope, dict):
         return [], f"the top level is a {type(scope).__name__}, not an object"
 
-    paths = scope.get(HELD_CHANGED_FIELD, [])
+    paths = scope.get(HELD_CHANGED_FIELD)
     if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
         return [], f"{HELD_CHANGED_FIELD} is not a list of paths"
     return paths, None

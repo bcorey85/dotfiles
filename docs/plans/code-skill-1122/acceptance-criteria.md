@@ -26,7 +26,7 @@
 
 ## Item 3 — trim the skill's duplicated prose (ticket)
 
-- **AC15** — The exact duplicates are cut, each reworded or removed rule has meter counts in its change file, and the text /code loads at start (SKILL.md plus the files it reads before phase end) is at least 10% shorter by word count, counting the template move from item 4; the change file records the before and after word counts.
+- **AC15** — The exact duplicates are cut, each reworded or removed rule has meter counts in its change file, and the text /code loads at start (SKILL.md plus the files it reads before phase end) is under the ruled limit of 3488 words (03-decisions.md block 12), counting the template move from item 4; the change file records the before and after word counts.
   Reworded by agent-evals-c3 at the criteria walk, 2026-11-22 (was "the skill is 10-15% shorter").
   Duplicate clause narrowed to the 6 exact-duplicate words already cut (session ruling, agent-evals-c3, 2026-11-22; 03-decisions.md block 13). The word meter skips bare list markers (block 12 addendum).
   Premise ruled wrong (ledger D4): measured exact duplicates inside the /code load are 14 words, not 150-250.

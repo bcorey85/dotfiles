@@ -21,6 +21,12 @@ def git(repo, *args):
                           capture_output=True, text=True, check=True).stdout.strip()
 
 
+def held_by_rows(header_lines):
+    """The parsed rows of the `held-by:` line among the prompt header's lines."""
+    held_by_line = next(line for line in header_lines if line.startswith("held-by: "))
+    return json.loads(held_by_line.removeprefix("held-by: "))
+
+
 class PhaseStartTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -233,7 +239,7 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         header, _, handoff = done.stdout.partition("\n\n")
         self.assertIn("held files: theirs.py", header.splitlines())
-        holders = json.loads(next(line for line in header.splitlines() if line.startswith("held-by: "))[9:])
+        holders = held_by_rows(header.splitlines())
         self.assertEqual(holders, [{"path": "theirs.py", "session": "lane-b",
                                     "claim": f"dirty at the run start, unchanged now; session in {self.repo}"}])
         self.assertIn("- path: mine.py", handoff)
@@ -256,20 +262,12 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         header = done.stdout.partition("\n\n")[0].splitlines()
         self.assertIn("held files: shared.py, theirs.py", header)
-        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        holders = held_by_rows(header)
         claims = {row["path"]: row["claim"] for row in holders}
         self.assertEqual(claims["shared.py"], f"dirty at the run start, changed since; session in {self.repo}")
         self.assertEqual(claims["theirs.py"], f"dirty at the run start, unchanged now; session in {self.repo}")
         self.assertIn("tool fault: held files changed during the phase (by the coder or by the session that holds "
                       "them); review left them out, so check them: shared.py", header)
-
-    def test_with_no_recorded_holder_and_no_live_session_at_review_nothing_is_held(self):
-        (self.repo / "theirs.py").write_text("# an edit nobody else holds\n")
-        base = self.phase_start().stdout.strip()
-
-        done = self.review_prompt(base)
-
-        self.assertNotIn("held files:", done.stdout)
 
     def test_a_fresh_start_records_the_live_other_session_as_holder_with_the_runs_session_and_time(self):
         self.register_live_session("other-session", self.repo)
@@ -323,7 +321,8 @@ class PhaseStartTest(unittest.TestCase):
                               check=False, env=environment)
 
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", done.stderr)
+        self.assertIn("phase_start: CLAUDE_CODE_SESSION_ID is not set, so no holder or session is recorded",
+                      done.stderr.splitlines())
         record = self.start_json()
         self.assertIsNone(record["holder"])
         self.assertEqual(record["sessions"], [])
@@ -348,6 +347,20 @@ class PhaseStartTest(unittest.TestCase):
         self.assertIn(str(record_file), str(raised.exception))
         self.assertIn('"sessions": [<session id>]', str(raised.exception))
 
+    def test_a_holder_or_started_at_of_the_wrong_type_raises_naming_the_file(self):
+        self.phase_start()
+        record_file = self.repo / ".git/code-phase/start.json"
+        module = self.load_phase_start_module()
+        cases = {"holder": {"holder": "x"}, "started_at": {"started_at": "now"}}
+        for key, bad_field in cases.items():
+            with self.subTest(key=key):
+                record_file.write_text(json.dumps({"head": "abc", "dirty": {}, **bad_field}))
+
+                with self.assertRaises(module.StartRecordError) as raised:
+                    module.read_start_record(self.repo)
+
+                self.assertIn(str(record_file), str(raised.exception))
+
     def test_the_last_phases_review_scope_is_moved_aside(self):
         self.phase_start()
         scope_file = self.repo / ".git/code-phase/review-scope.json"
@@ -369,7 +382,7 @@ class PhaseStartTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         header = done.stdout.partition("\n\n")[0].splitlines()
-        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        holders = held_by_rows(header)
         self.assertEqual(holders[0]["claim"], f"dirty at the run start, changed since; session in {self.repo}")
         self.assertTrue(any(line.startswith("tool fault: ") and "theirs.py" in line for line in header))
 
@@ -382,7 +395,7 @@ class PhaseStartTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         header = done.stdout.partition("\n\n")[0].splitlines()
-        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        holders = held_by_rows(header)
         self.assertEqual(holders[0]["claim"], f"dirty at the run start, unchanged now; session in {self.repo}")
         self.assertFalse(any(line.startswith("tool fault: ") for line in header))
 

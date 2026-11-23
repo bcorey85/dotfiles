@@ -5,9 +5,10 @@ code-fork that still has some.
 `fork_children.py <fork id> [--repo PATH]` prints one JSON object: the code-fork's id, the agent ids of the coders and
 reviewers it started that have not finished or been stopped, the launches whose result names no agent id yet, and
 what became of the repo's detached review loop (stopped only when its process is this code-fork's own review start).
-Exit 0 with the report; exit 2 for a usage error, a missing transcript, an id that is not a code-fork or a repo
-outside a git checkout. A traceback exit follows when `process_group.terminate_group` raises OSError (for example, a
-missing permission).
+The repo is `--repo`, else the git top level of the `cwd` of the code-fork transcript's last record, else the current
+folder; with none inside a git checkout the loop reads `no_repo`. Exit 0 with the report; exit 2 for a usage error, a
+missing transcript or an id that is not a code-fork. A traceback exit follows when `process_group.terminate_group`
+raises OSError (for example, a missing permission).
 
 `fork_children.py hook` reads a PreToolUse event on stdin. It denies, once per code-fork and session, a TaskStop of a
 code-fork that has a live child or an unresolved launch, and names them. Any other call passes. Any error passes and
@@ -29,7 +30,7 @@ import open_child_gate
 import process_group
 import script_utils
 
-KIND_TASKSTOP_DENIED = "taskstop_denied"
+KIND_TASKSTOP_DENIED = "taskstop_children_denied"
 HOOK_VERB = "hook"
 REVIEW_START_SCRIPT = "code_review_start.py"
 LOOP_NONE = "none"
@@ -37,19 +38,17 @@ LOOP_STOPPED = "stopped"
 LOOP_GONE = "gone"
 LOOP_NOT_THIS_RUN = "not_this_run"
 LOOP_NOT_REVIEW_LOOP = "not_review_loop"
-DENY_REASON = ("code-fork {fork} has live children: {ids}. Run python3 {script} "
-               "{fork}, TaskStop each id it names, then TaskStop the code-fork.")
+LOOP_NO_REPO = "no_repo"
+DENY_REASON = ("code fork {fork} has live children: {ids}. Run python3 {script} "
+               "{fork}, TaskStop each id it names, then TaskStop the fork.")
 UNRESOLVED_LAUNCH = "launch {launch} (no agent id yet)"
 
 
 def children_named_by_meta(fork_transcript, fork_id):
     """The agent ids of the sibling transcripts whose meta names the code-fork as parent."""
-    child_ids_found = []
-    meta_pattern = script_utils.subagent_meta_name("*")
-    for meta_path in sorted(pathlib.Path(fork_transcript).parent.glob(meta_pattern)):
-        if script_utils.read_json_object(meta_path).get("parentAgentId") == fork_id:
-            child_ids_found.append(script_utils.subagent_id_from_meta_name(meta_path.name))
-    return child_ids_found
+    folder = pathlib.Path(fork_transcript).parent
+    return [agent_id for agent_id, _transcript, meta in loop_transcript.subagent_entries(folder)
+            if meta.get("parentAgentId") == fork_id]
 
 
 def is_live_agent(fork_transcript, agent_id):
@@ -148,6 +147,16 @@ def run_hook_verb():
         script_utils.pre_tool_use_deny(reason)
 
 
+def fork_repo(fork_transcript):
+    """The git top level of the cwd the code-fork's transcript last recorded; the current folder's when the transcript
+    records none. None outside a git checkout."""
+    last_record = script_utils.last_transcript_record(fork_transcript) or {}
+    cwd = last_record.get("cwd")
+    if not isinstance(cwd, str) or not cwd:
+        cwd = os.getcwd()
+    return script_utils.work_tree_top(cwd)
+
+
 def run_report(parser, fork_id, repo):
     if not code_wait.AGENT_ID.fullmatch(fork_id):
         parser.error(f"{fork_id!r} is not an agent id: {code_wait.AGENT_ID_FORM}")
@@ -156,19 +165,20 @@ def run_report(parser, fork_id, repo):
         parser.error(f"no transcript found for agent {fork_id}")
     if not is_code_fork(transcript):
         parser.error(f"agent {fork_id} is not a {open_child_gate.CODE_FORK}")
-    if code_wait.phase_dir_or_none(repo) is None:
-        parser.error(f"{repo} is not inside a git checkout")
 
     children, unresolved = child_ids(transcript, fork_id)
-    report = {"fork": fork_id, "children": children, "unresolved_launches": unresolved,
-              "loop": stop_loop(repo, transcript)}
-    print(json.dumps(report))
+    repo = repo or fork_repo(transcript)
+    if repo is None or code_wait.phase_dir_or_none(repo) is None:
+        loop = loop_report(None, False, LOOP_NO_REPO)
+    else:
+        loop = stop_loop(repo, transcript)
+    print(json.dumps({"fork": fork_id, "children": children, "unresolved_launches": unresolved, "loop": loop}))
 
 
 def main():
     parser = argparse.ArgumentParser(description="Name a code-fork's live children and stop its review loop.")
     parser.add_argument("target", help=f"`{HOOK_VERB}` (PreToolUse hook, event on stdin) or a code-fork's agent id")
-    parser.add_argument("--repo", default=os.getcwd(), help="the repo whose review loop to stop (default: cwd)")
+    parser.add_argument("--repo", help="the repo whose review loop to stop (default: the code-fork's last cwd)")
     args = parser.parse_args()
     if args.target == HOOK_VERB:
         run_hook_verb()

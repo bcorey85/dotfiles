@@ -651,7 +651,7 @@ class CodeReviewStartTest(unittest.TestCase):
         self.commit_empty()
         code_review_start = self.load_module()
         scope_file = self.repo / "scope.json"
-        scope = code_review_start.ReviewScope([], "Done.", [], None, (), ["shared.py"], [], ["mine.py"])
+        scope = code_review_start.ReviewScope([], "Done.", [], None, (), ["shared.py"], ["mine.py"])
         scope_file.write_text(json.dumps(scope._asdict()))
         prompts = []
         real_write_script_prompt = code_review_start.write_script_prompt
@@ -720,16 +720,19 @@ class CodeReviewStartTest(unittest.TestCase):
     def held_paths(self, scope):
         return [row["path"] for row in scope.holders]
 
+    def untracked_held_paths(self, scope, module):
+        return [row["path"] for row in scope.holders if row["claim"].startswith(module.UNTRACKED_UNATTRIBUTED)]
+
     def test_an_untracked_file_no_recorded_coder_wrote_is_held_and_named(self):
         self.write_start_record()
         (self.repo / "other.py").write_text("x\n")
 
-        scope, _module = self.scope_of()
+        scope, module = self.scope_of()
 
         self.assertIn("other.py", self.held_paths(scope))
-        claim = f"untracked, written by no recorded coder of this run; session in {self.repo}"
+        claim =f"untracked, written by no recorded coder of this run; session in {self.repo}"
         self.assertIn({"path": "other.py", "session": "lane-b", "claim": claim}, scope.holders)
-        self.assertIn("other.py", scope.held_untracked)
+        self.assertIn("other.py", self.untracked_held_paths(scope, module))
         self.assertTrue(any("no recorded coder of this run wrote" in note and "other.py" in note
                             for note in scope.notes))
 
@@ -782,10 +785,10 @@ class CodeReviewStartTest(unittest.TestCase):
         (self.repo / "new_module.py").write_text("the phase's new file\n")
         (self.repo / "made_by_bash.py").write_text("x\n")
 
-        scope, _module = self.scope_of(plan_text=plan_text)
+        scope, module = self.scope_of(plan_text=plan_text)
 
         self.assertNotIn("new_module.py", self.held_paths(scope))
-        self.assertIn("made_by_bash.py", scope.held_untracked)
+        self.assertIn("made_by_bash.py", self.untracked_held_paths(scope, module))
 
     def test_a_recorded_holder_holds_untracked_files_though_the_session_id_is_unset_at_review(self):
         self.write_start_record()
@@ -810,9 +813,9 @@ class CodeReviewStartTest(unittest.TestCase):
         (self.repo / "newdir/a.py").write_text("x\n")
         (self.repo / "newdir/b.py").write_text("x\n")
 
-        scope, _module = self.scope_of()
+        scope, module = self.scope_of()
 
-        self.assertEqual([path for path in scope.held_untracked if path.startswith("newdir")],
+        self.assertEqual([path for path in self.untracked_held_paths(scope, module) if path.startswith("newdir")],
                          ["newdir/a.py", "newdir/b.py"])
 
     def test_an_untracked_file_a_coder_of_the_recorded_session_wrote_is_reviewed(self):
@@ -845,10 +848,10 @@ class CodeReviewStartTest(unittest.TestCase):
         (self.repo / "other.py").write_text("x\n")
         self.write_start_record(dirty={"other.py": None})
 
-        scope, _module = self.scope_of()
+        scope, module = self.scope_of()
 
         self.assertEqual(self.held_paths(scope).count("other.py"), 1)
-        self.assertNotIn("other.py", scope.held_untracked)
+        self.assertNotIn("other.py", self.untracked_held_paths(scope, module))
 
     def test_a_file_a_reviewer_transcript_wrote_is_held_because_the_agent_is_no_coder(self):
         self.write_start_record()

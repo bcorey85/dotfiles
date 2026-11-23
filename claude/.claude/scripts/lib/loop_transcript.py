@@ -82,9 +82,7 @@ GATE_REASON = ("No valid full-check receipt exists for the work tree as it stand
 
 
 def text_of(content):
-    if isinstance(content, str):
-        return content
-    return " ".join(b.get("text", "") for b in content or [] if isinstance(b, dict))
+    return " ".join(block_texts(content))
 
 
 def finding_rows(command):
@@ -383,6 +381,16 @@ def agent_meta(transcript_path):
     """The parsed meta file beside an agent's transcript, {} when there is none, it is torn (an agent part-way through
     a write) or it is not an object."""
     return script_utils.read_json_object(pathlib.Path(transcript_path).with_suffix(script_utils.SUBAGENT_META_SUFFIX))
+
+
+def subagent_entries(folder):
+    """(agent id, transcript path, meta) for each subagent with a meta file in the subagents `folder`, by agent id.
+    The transcript may not be written yet."""
+    folder = pathlib.Path(folder)
+    for meta_file in sorted(folder.glob(script_utils.subagent_meta_name("*"))):
+        agent_id = script_utils.subagent_id_from_meta_name(meta_file.name)
+        transcript = folder / script_utils.subagent_transcript_name(agent_id)
+        yield agent_id, transcript, agent_meta(transcript)
 
 
 def finished_by_meta(transcript_path):

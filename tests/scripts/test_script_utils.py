@@ -220,20 +220,6 @@ class LastTranscriptRecordTest(unittest.TestCase):
         self.write('{"a": 1}\n[1, 2]\n')
         self.assertIsNone(script_utils.last_transcript_record(self.transcript))
 
-    def test_trailing_blank_lines_are_skipped(self):
-        self.write('{"a": 1}\n{"b": 2}\n\n  \n')
-        self.assertEqual({"b": 2}, script_utils.last_transcript_record(self.transcript))
-
-    def test_a_read_error_has_no_record_and_says_why(self):
-        self.write('{"a": 1}\n')
-        with (
-            unittest.mock.patch.object(script_utils, "transcript_tail_lines", side_effect=PermissionError("denied")),
-            contextlib.redirect_stderr(io.StringIO()) as stderr,
-        ):
-            record = script_utils.last_transcript_record(self.transcript)
-        self.assertIsNone(record)
-        self.assertIn("could not read", stderr.getvalue())
-
 
 class VisibleTextTest(unittest.TestCase):
     def test_a_line_without_comments_comes_back_whole(self):

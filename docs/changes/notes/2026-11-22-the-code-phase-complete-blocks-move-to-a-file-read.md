@@ -29,13 +29,12 @@ handoff-block.md:
 - plan baseline (old counter): 3033 / 114 / 205 / 476 = 3828
 - at the start of this phase (old counter): 3052 / 114 / 205 / 496 = 3867
 - after (old counter): 2686 / 114 / 205 / 496 = 3501
-- after (counter skips a bare list marker): 2647 / 110 / 201 / 484 = 3442
+- after (counter skips a bare list marker): 2647 / 110 / 201 / 503 = 3461
 
 The orchestrating session ruled on 2026-11-22 that AC15's limit is the measured start load, 3488 words (block 12 of the
 plan's decision log), and that `skill_word_band.py` does not count a bare list marker (`-`, `*`, `+`, `<digits>.`) as
 a word (block 12 addendum). The list conversion had added 13 `-` markers that the old counter counted, which put the
-total at 3501, 13 over. With the new counter the total is 3442, 46 under 3488 and 10.1% below the 3828 baseline (3828 was
-counted with the old counter). No SKILL.md text was trimmed for this.
+total at 3501, 13 over. With the new counter the total is 3461, under the limit 3488: the old base on the same counter is 2994 / 110 / 201 / 464 = 3769. No SKILL.md text was trimmed for this.
 
 Duplicates: 6 words of exact duplicate are cut (the second `do not mark the phase done`). The 8-word
 `A coder makes every code and plan edit.` at SKILL.md:24 is a paraphrase of code-fork.md:8-9, not an exact duplicate,
@@ -84,7 +83,7 @@ or line 26. CF04 and CF06 have no graded cells, so they do not support a cut eit
 for CF04 and CF06.
 
 Start-load word counts (`python3 tests/scripts/skill_word_band.py 3488 <the four files>`, exit 0): SKILL.md 2647,
-modifiers.md 110, plan-reading.md 201, handoff-block.md 484, total 3442, limit 3488 (ruled), 46 words under. Baseline
+modifiers.md 110, plan-reading.md 201, handoff-block.md 503, total 3461, limit 3488 (ruled). Baseline
 total 3828 (3033 / 114 / 205 / 476, old counter).
 
 Measurement caveats:
@@ -101,11 +100,11 @@ Judgment, plus a rule-meter run (scenarios CF01-CF07, agent-evals d2fa6c3b).
 
 ## Result
 
-SKILL.md is 366 words shorter by the old counter (3052 to 2686). The start load is 3442 words with the new counter.
+SKILL.md is 366 words shorter by the old counter (3052 to 2686). The start load is 3461 words with the new counter.
 
 ## Watch
 
-AC15's word-count clause is met at 3442 against the ruled limit 3488 (10.1% below 3828); its duplicate clause is narrowed to the 6 exact-duplicate words, cut, with the 8-word paraphrase kept; AC17's one-owner clause is held and its lists clause is met; CF04 and CF06 have no graded cells; CF03 (phase-end trigger) complied 0/2 on and 0/3 off, so the trigger has no metered support until AC18's manual check runs.
+AC15's word-count clause is met at 3461 against the ruled limit 3488 (old base 3769 on the same counter); its duplicate clause is narrowed to the 6 exact-duplicate words, cut, with the 8-word paraphrase kept; AC17's one-owner clause is held and its lists clause is met; CF04 and CF06 have no graded cells; CF03 (phase-end trigger) complied 0/2 on and 0/3 off, so the trigger has no metered support until AC18's manual check runs.
 
 ## Back-out
 

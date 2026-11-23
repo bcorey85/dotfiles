@@ -282,11 +282,25 @@ class WaitReviewTest(unittest.TestCase):
 
     def test_a_scope_file_that_is_not_json_prints_the_could_not_be_read_line_and_keeps_the_exit_code(self):
         plain_code, _plain = self.wait_code_and_output(self.finished_review())
+        repo = self.finished_review("not json")
 
-        code, output = self.wait_code_and_output(self.finished_review("not json"))
+        code, output = self.wait_code_and_output(repo)
 
         self.assertEqual(code, plain_code)
         self.assertIn("could not be read for held-file faults", output)
+        self.assertIn(str(code_wait.phase_dir(repo) / code_wait.SCOPE_FILE), output)
+        self.assertIn("check the held files by hand.", output)
+
+    def test_a_scope_file_that_lists_no_held_changed_files_prints_no_fault_line(self):
+        self.assertEqual(code_wait.held_fault_line(self.finished_review('{"held_changed": []}')), "")
+
+    def test_the_held_changed_key_is_a_field_of_the_review_scope_the_start_script_writes(self):
+        spec = importlib.util.spec_from_file_location("code_review_start_for_fields",
+                                                      toolkit_paths.CODE_DIR / "code_review_start.py")
+        start_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(start_module)
+
+        self.assertIn(code_wait.HELD_CHANGED_FIELD, start_module.ReviewScope._fields)
 
     def test_an_unreadable_line_keeps_a_percent_sign_in_the_path_and_never_raises(self):
         scope_file = pathlib.Path("/tmp/100%s/review-scope.json")
@@ -297,6 +311,7 @@ class WaitReviewTest(unittest.TestCase):
 
     def test_a_scope_file_field_of_the_wrong_type_names_the_file_and_the_error(self):
         cases = [('{"held_changed": "a.py"}', "held_changed is not a list of paths"),
+                 ("{}", "held_changed is not a list of paths"),
                  ('{"held_changed": [1]}', "held_changed is not a list of paths"),
                  ("[]", "the top level is a list, not an object")]
         for scope_text, problem in cases:

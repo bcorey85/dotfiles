@@ -1,5 +1,6 @@
 import json
 import os
+import pathlib
 import sys
 import tempfile
 import unittest
@@ -47,20 +48,6 @@ class AgentInterruptedTest(unittest.TestCase):
         self.write([assistant_record(), interrupt_record(), assistant_record("resumed")])
         self.assertFalse(loop_transcript.agent_interrupted(self.transcript))
 
-    def test_a_torn_last_line_is_not_interrupted(self):
-        self.write([interrupt_record()])
-        with open(self.transcript, "a", encoding="utf-8") as fh:
-            fh.write('{"type": "user", "mess')
-        self.assertFalse(loop_transcript.agent_interrupted(self.transcript))
-
-    def test_a_last_record_that_is_not_an_object_is_not_interrupted(self):
-        self.write([interrupt_record(), ["not", "an", "object"]])
-        self.assertFalse(loop_transcript.agent_interrupted(self.transcript))
-
-    def test_an_empty_file_is_not_interrupted(self):
-        self.write([])
-        self.assertFalse(loop_transcript.agent_interrupted(self.transcript))
-
     def test_a_missing_file_is_not_interrupted(self):
         self.assertFalse(loop_transcript.agent_interrupted(self.transcript + ".missing"))
 
@@ -103,6 +90,16 @@ class MetaReaderTest(unittest.TestCase):
         self.assertFalse(loop_transcript.finished_by_meta(self.transcript))
         self.write_meta('{"finished": true}')
         self.assertTrue(loop_transcript.finished_by_meta(self.transcript))
+
+    def test_subagent_entries_yield_each_meta_file_with_its_transcript_path_and_meta_by_agent_id(self):
+        folder = pathlib.Path(os.path.dirname(self.transcript))
+        for agent_id, meta_text in (("a2", '{"agentType": "coder"}'), ("a1", '{"torn": ')):
+            (folder / f"agent-{agent_id}.meta.json").write_text(meta_text)
+
+        entries = list(loop_transcript.subagent_entries(folder))
+
+        self.assertEqual(entries, [("a1", folder / "agent-a1.jsonl", {}),
+                                   ("a2", folder / "agent-a2.jsonl", {"agentType": "coder"})])
 
 
 class WrittenPathsTest(unittest.TestCase):

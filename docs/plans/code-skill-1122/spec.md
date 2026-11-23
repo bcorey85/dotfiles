@@ -18,7 +18,7 @@ Three defects in the /code skill, one branch. A TaskStop on a /code fork leaves 
 - [x] Phase 1: fork_children.py, the interrupted reading and the cancel route (risk: low)
 - [x] Phase 2: hold every start-dirty path, name changed held files, hold foreign untracked files (risk: low)
 - [x] Phase 3: /code trim, phase-end file, stop-rule owners, anchors, meter runs (risk: low)
-- [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 Single-stream plan: the three phases share no new contract, so Phase 0 is folded into each phase's `**File**` list and the Data shapes in `## Approach`.
 
@@ -321,10 +321,10 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 
 #### Automated Verification:
 
-- [ ] **Suite**: `bash tests/run.sh`
-- [ ] **Test-verified**: `python3 tests/parallel_tests.py test_branch_bounds.py` (RED now: no file)
-- [ ] **Scope box**: `test -n "$(git diff --name-only <base-sha>..<head-sha>)"`, with the two recorded commit ids filled in at close
-- [ ] **Bounds**: `python3 tests/scripts/branch_bounds.py <base-sha> <head-sha>` (RED now: no checker)
+- [x] **Suite**: `bash tests/run.sh`
+- [x] **Test-verified**: `python3 tests/parallel_tests.py test_branch_bounds.py`
+- [x] **Scope box**: `test -n "$(git diff --name-only 8436be97f25cd96ffa9f4ae8c72f37ff32173768..c7c330eec43626055bfeb4cb2474aa1ab9325e9b)"`, with the two recorded commit ids filled in at close
+- [x] **Bounds**: `python3 tests/scripts/branch_bounds.py 8436be97f25cd96ffa9f4ae8c72f37ff32173768 c7c330eec43626055bfeb4cb2474aa1ab9325e9b`
 
 #### Manual Verification:
 
@@ -336,6 +336,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (the ticket carries no number; AC15 of the trim item): the limit becomes 3488 words, the measured start load, in place of 3445; recorded in `03-decisions.md` block 12 with the meter counts.
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (the trim item): the word meter does not count a bare list marker; the four start-load counts become 2647 / 110 / 201 / 484 = 3442 against the limit 3488; recorded in `03-decisions.md` block 12 addendum.
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (trim item) and #AC17: AC15's duplicate clause is narrowed to the 6 exact-duplicate words already cut (SKILL.md:24 stays as a paraphrase); AC17's one-owner clause is held, with no stop-rule dedupe; recorded in `03-decisions.md` block 13.
+- 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (trim item): AC15's "at least 10% shorter by word count" clause is reworded to "under the ruled limit of 3488 words (03-decisions.md block 12)"; recorded in `03-decisions.md` block 14.
 
 ## Acceptance Criteria
 

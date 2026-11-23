@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1105 changes
+1106 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -55,6 +55,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md) [script/test-suite] The MCP server-name test scans only git-tracked toolkit files, so it passes on the live checkout with its caches, plugins and synced skills.
 * [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md) [script/criteria-dry-run] The criteria dry run tells a real pipe from a regex bar inside quotes, so a ban such as rg -q 'a|b' f that exits 0 reads RED.
 * [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md) [script/plan-check] A ticket's queue Source line keeps underscores and other markdown marks inside its path, so a home folder or slug that holds one still reads as the queue item it names.
 * [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md) [script/log-escape, skill/escape] The escape logger now keeps the catch text of every escape, at every stage, and refuses a row with no description or, outside the plan gate, no file, so each escape can be found and fixed later.

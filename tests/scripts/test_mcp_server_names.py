@@ -5,6 +5,7 @@ outside this repo (the Jira and Atlassian connectors, the context7 plugin), so t
 """
 import pathlib
 import re
+import subprocess
 import tempfile
 import unittest
 
@@ -24,10 +25,19 @@ def registered_ledger_server():
     return found.group(1)
 
 
+def tracked_files(root):
+    """The files git tracks under root: caches, plugins and synced skills are untracked downloads."""
+    listing = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--full-name", "--", "."],
+                             capture_output=True, text=True, check=True).stdout
+    top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    return [pathlib.Path(top) / name for name in sorted(listing.split("\0")) if name]
+
+
 def named_servers(root):
-    """Map each server named as mcp__<server>__ under root to the files that name it."""
+    """Map each server named as mcp__<server>__ in a git-tracked file under root to the files that name it."""
     servers = {}
-    for file in sorted(pathlib.Path(root).rglob("*")):
+    for file in tracked_files(root):
         if not file.is_file() or file.suffix not in TEXT_SUFFIXES:
             continue
         for server in set(TOOL_NAME.findall(file.read_text(errors="replace"))):
@@ -41,12 +51,29 @@ class McpServerNames(unittest.TestCase):
         unknown = {s: f for s, f in named_servers(toolkit_paths.CLAUDE_DIR).items() if s not in known}
         self.assertEqual({}, unknown, f"servers this toolkit does not register: {unknown}")
 
+    def make_repo(self, temp):
+        subprocess.run(["git", "-C", temp, "init", "-q"], check=True)
+        return pathlib.Path(temp)
+
     def test_old_agent_memory_name_is_flagged(self):
         with tempfile.TemporaryDirectory() as temp:
-            (pathlib.Path(temp) / "SKILL.md").write_text("Call mcp__agent-memory__facts first.")
+            repo = self.make_repo(temp)
+            (repo / "SKILL.md").write_text("Call mcp__agent-memory__facts first.")
+            subprocess.run(["git", "-C", temp, "add", "SKILL.md"], check=True)
             servers = named_servers(temp)
         known = EXTERNAL_SERVERS | {registered_ledger_server()}
         self.assertEqual(["agent-memory"], [s for s in servers if s not in known])
+
+    def test_untracked_cache_and_plugin_files_are_ignored(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = self.make_repo(temp)
+            (repo / "SKILL.md").write_text("Call mcp__ledger__facts first.")
+            for folder in ("cache", "plugins", "skills/synced"):
+                (repo / folder).mkdir(parents=True)
+                (repo / folder / "x.md").write_text("mcp__thirdparty__tool")
+            subprocess.run(["git", "-C", temp, "add", "SKILL.md"], check=True)
+            servers = named_servers(temp)
+        self.assertEqual(["ledger"], list(servers))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1110 changes
+1112 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Research deep dives hand each cloned repo to its own subagent](notes/2026-11-22-research-deep-dives-hand-each-cloned-repo-to-its.md) [skill/research] A research deep dive into several cloned repos now starts one subagent per repo and compares their reports, which cuts the main session's cached reads 44% to 78% so a long dive stops compacting mid-task; the whole run spends 2.6 to 3.1 times the tokens on small repos. **cuts tokens by 78% (143k → 31k)**
 * [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) [rule/orchestration] The Delegation section tells the main session to leave model out when the agent's file pins one, else set sonnet or haiku, and says the model guard denies opus and inherit at the call site. (reverted by 2026-11-22-the-agent-model-line-leaves-orchestration-the)
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
@@ -28,7 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
-* [The auto-mode file-I/O line stays: the meter shows 6 Bash file writes with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) [rule/orchestration] The orchestration line that keeps file I/O on Read, Edit and Write under the auto-mode notice was metered and kept: the on arm made 6 Bash writes or inline interpreter calls, the off arm 9, about 1.5 times as many.
+* [The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) [rule/orchestration] The orchestration line that keeps file I/O on Read, Edit and Write under the auto-mode notice was metered and kept: the on arm made 6 Bash writes or inline interpreter calls, the off arm 9, about 1.5 times as many.
 * [The go-ahead covers an owner line in the scripts CLAUDE.md](notes/2026-11-22-the-go-ahead-covers-an-owner-line-in-the-scripts.md) [rule/global-claude-md] The global go-ahead rule gains one exception: the orchestrating session's go-ahead covers adding or updating an owner line in the scripts CLAUDE.md, and nothing else in that file.
 * [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md) [script/ruling-relay, script/review-fix, script/review-fix-asks, script/phase-asks, script/handback-store, script/plan-format, script/coder-packet, shared/review-fork-run, skill/code, agent/code-fork, rule/orchestration] A relayed user ruling is `--by user --relayed-by <session name>` with no words: the script checks that the relaying session's transcript holds a typed user turn after the ask and stores only that turn's time; `--quote` is refused, the standing ruling line holds a short paraphrase with no quote marks, and the prompts that asked for the user's words verbatim now ask for the outcome, who gave it and when.
 * [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
@@ -61,6 +62,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md) [script/test-suite] The MCP server-name test scans only git-tracked toolkit files, so it passes on the live checkout with its caches, plugins and synced skills.
 * [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md) [script/criteria-dry-run] The criteria dry run tells a real pipe from a regex bar inside quotes, so a ban such as rg -q 'a|b' f that exits 0 reads RED.
+* [The full suite passes under a relative PYTHONPATH such as tests/scripts](notes/2026-11-22-a-relative-pythonpath-in-a-plan-gate-no-longer.md) [script/review-loop] The test helper makes relative PYTHONPATH and NODE_PATH entries absolute, so nested fixture repos stop reading them as paths inside themselves.
 * [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md) [script/plan-check] A ticket's queue Source line keeps underscores and other markdown marks inside its path, so a home folder or slug that holds one still reads as the queue item it names.
 * [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md) [script/log-escape, skill/escape] The escape logger now keeps the catch text of every escape, at every stage, and refuses a row with no description or, outside the plan gate, no file, so each escape can be found and fixed later.
 * [A ticket whose Source line spells the queue path with the home folder reads as session-owned](notes/2026-11-22-a-lane-brief-that-names-a-session-written-queue.md) [script/plan-check, skill/verify-branch] A lane ticket whose Source line names a session-written queue item with the home folder spelled out (/home/<user>/agent-evals/queue/...) now reads as session-owned criteria, as the ~ spelling already did, so the lane takes the orchestrating session's ruling.
@@ -1295,8 +1297,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
-* [The auto-mode file-I/O line stays: the meter shows 6 Bash file writes with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) - No intake number counts Bash file writes under auto mode.
+* [The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md) - No intake number counts Bash file writes under auto mode.
 * [The Agent model line leaves orchestration: the model guard alone keeps opus off the call site](notes/2026-11-22-the-agent-model-line-leaves-orchestration-the.md) - No intake number counts Agent calls by call-site model value.
+* [Research deep dives hand each cloned repo to its own subagent](notes/2026-11-22-research-deep-dives-hand-each-cloned-repo-to-its.md) - No intake number reads it: research sessions run on this machine, and the work logs carry no main-session context size per skill call. Haiku subagents: the bench loads no session-start file, so its Explore subagents ran on Opus; live sessions send read-only lookups to Haiku. Real cloned repos larger than the synthetic plants: the main-session saving grows with repo size, the subagent cost grows with it too.
 * [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) - No intake number counts Agent calls by call-site model value. Every AM01 cell graded; no cell stayed NO_TEST.
 * [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) - No intake number counts relayed user rulings refused by a user-only ask.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) - No intake number counts session rulings logged as the user's.

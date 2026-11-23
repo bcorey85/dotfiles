@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1110 changes, 22 with a measured gain, 273 behavior changes that no intake metric reads.
+1112 changes, 23 with a measured gain, 274 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The auto-mode file-I/O line stays: the meter shows 6 Bash file writes with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md).
+Latest change: 2026-11-22, [The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md).
 
 ## Top gains
 
@@ -19,7 +19,7 @@ Latest change: 2026-11-22, [The auto-mode file-I/O line stays: the meter shows 6
 
 ## Total saved
 
-* tokens: 19.8M saved
+* tokens: 19.9M saved
 * cost: $53.01 saved
 * wall-clock: 1140 seconds saved
 
@@ -27,7 +27,7 @@ Each saving is the measured before and after of one change's finding, so a total
 
 ## Gains by metric
 
-* tokens: 3
+* tokens: 4
 * cost: 3
 * wall-clock: 1
 * quality: 14

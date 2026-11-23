@@ -165,3 +165,9 @@
 - Headings read by code: reviewer-calibration `##` headings (Calibration Anchor, Verify the Premise, Disposition, Self-Check); code-reviewer `### Step 3: Structure`.
 - Opencode ports: patch where the item names them; keep their adaptations (AGENTS.md, frontmatter, "First action: Read"); fix the false "preloaded via architect-core" in both architect ports; do not copy claude text over existing port drift.
 - No rationale in agent or skill bodies. Toolkit-edit propagation sweep before done.
+
+- Phase 1 rulings (agent-evals-c3, 2026-11-22; owner `session`):
+  - (1) The `design-decision-format` ban search in Phase 1 drops `tests` from its paths; tests/scripts/test_spec_budget_gate.py:160 stays as the guard.
+  - (2) The Phase 1 change note is kind `structured`: ES01W and ES02W run at 8 runs per arm on the default model, and a finding with task_class structured and runs_per_arm 8 is its proof.
+  - (3) "Scope is the ticket-owner's call" leaves the note's dropped-clauses list (the sentence stays at 5-decisions.md:102): five clauses are dropped, not six.
+  - (4) The removal of `_shared/design-decision-format.md` is staged with `git add`.

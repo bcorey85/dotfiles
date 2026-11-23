@@ -16,7 +16,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
 - [x] Phase 0: Contracts — frozen at plan approval (risk: high)
-- [ ] Phase 1: Walking skeleton — plan-format tightening and the design-decision-format fold (risk: high)
+- [x] Phase 1: Walking skeleton — plan-format tightening and the design-decision-format fold (risk: high)
 - [ ] Phase 2: Item 1 — contradictory lines and dispatcher descriptions (risk: low)
 - [ ] Phase 3: Item 3 — architect descriptions and the Reuse Map owner (risk: low)
 - [ ] Phase 4: Item 4 — general-purpose body (risk: low)
@@ -169,7 +169,7 @@ Line 71 stays byte-identical (ES01/ES02). In spec-template's External Contracts 
 
 #### Automated Verification:
 
-- [ ] **Test-verified**: no reference to the deleted file remains — `rg -n --hidden 'design-decision-format' claude/.claude opencode tests docs/rule-anchors.md`
+- [ ] **Test-verified**: no reference to the deleted file remains — `rg -n --hidden 'design-decision-format' claude/.claude opencode docs/rule-anchors.md`
 - [ ] **Test-verified**: the fold text is present — `rg -n -F 'Alternatives rejected' claude/.claude/skills/eng-spec/phases/5-decisions.md`
 - [ ] **Test-verified**: the declared-only line is present — `rg -n -F 'may NOT rest on declared-only' claude/.claude/skills/eng-spec/templates/spec-template.md`
 - [ ] **Test-verified**: the reworded criterion-test rule is present — `rg -n -F 'No mocks inside such a test.' claude/.claude/skills/_shared/plan-format.md`
@@ -357,7 +357,7 @@ finding-log folds into test-audit, skimmable-writing into adr-template; every es
 
 #### Automated Verification:
 
-- [ ] **Test-verified**: no reference to the two deleted files remains — `rg -n --hidden 'finding-log\.md|skimmable-writing' claude/.claude opencode tests docs/rule-anchors.md`
+- [ ] **Test-verified**: no reference to the two deleted files remains — `rg -n --hidden 'finding-log\.md|skimmable-writing' claude/.claude opencode docs/rule-anchors.md`
 - [ ] **Test-verified**: the quoted file form is present in test-audit — `rg -n -F "'file=<path>'" claude/.claude/skills/test-audit/SKILL.md`
 - [ ] **Test-verified**: no weak "per X" escape-ratchet pointer remains — `rg -n '(per|from) .~/.claude/skills/_shared/escape-ratchet.md.' claude/.claude/skills`
 - [ ] **Test-verified**: the stale `/audit review` consumer is gone from escape-ratchet — `rg -n -F '/audit review' claude/.claude/skills/_shared/escape-ratchet.md`

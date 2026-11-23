@@ -38,8 +38,15 @@
 
 13. **Write the answer down before you ask the next question.** The moment a
     decision resolves, `Edit` `03-decisions.md`: append the full four-field block
-    (format: `~/.claude/skills/_shared/design-decision-format.md`) under `## Resolved`,
-    tick its queue line, bump `Status:`. The finished block — Phase 6 reads this file.
+    under `## Resolved`, tick its queue line, bump `Status:`. The finished block — Phase 6 reads this file.
+
+    Record each decision as one block headed `### N. [Topic]` with:
+    - **Choice:** what was picked.
+    - **Reasoning:** why it wins here.
+    - **Alternatives rejected:** each with the user-visible failure mode it would cause.
+    - **Trade-off accepted:** what this choice costs.
+
+    Never batch decisions into a table. No real alternative = constraint: record it under `## Direction & Constraints`. A rejection that only narrows scope needs the user's explicit sign-off. A choice that leaves credentials or data alive past the user's removal intent: state it in security terms, and it needs the user's explicit sign-off.
 
     Compacted, or unsure what is settled → re-read `02-research.md` and
     `03-decisions.md`. **Never reconstruct a resolved decision from memory, and

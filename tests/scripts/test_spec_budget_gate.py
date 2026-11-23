@@ -146,15 +146,19 @@ class SpecBudgetGateTest(unittest.TestCase):
     def test_total_covers_every_guarded_agent_and_shared_file(self):
         names = ["agents/spec-questions.md", "agents/spec-leak-check.md", "agents/spec-research.md",
                  "agents/spec-criteria.md", "agents/goal-blind-researcher.md",
-                 "skills/_shared/design-decision-format.md", "skills/_shared/plan-format.md",
-                 "skills/_shared/closing-phases.md"]
+                 "skills/_shared/plan-format.md", "skills/_shared/closing-phases.md"]
         for name in names:
             self.put(name, words(1000))
         path = self.put("skills/eng-spec/SKILL.md", words(100))
-        reason = self.denial(self.write(str(self.base / "agents/spec-questions.md"), words(1601)))
+        reason = self.denial(self.write(str(self.base / "agents/spec-questions.md"), words(2601)))
         self.assertIn("~8701 words", reason)
-        self.assertIn("currently 8100", reason)
+        self.assertIn("currently 7100", reason)
         self.assert_allowed(self.write(path, words(100)))
+
+    def test_deleted_design_decision_file_is_not_guarded(self):
+        path = self.put("skills/eng-spec/SKILL.md", words(100))
+        self.put("skills/_shared/design-decision-format.md", words(9000))
+        self.assert_allowed(self.write(path, words(200)))
 
     def test_templates_and_unrelated_files_do_not_count_toward_total(self):
         path = self.put("skills/eng-spec/SKILL.md", words(100))

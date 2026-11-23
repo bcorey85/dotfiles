@@ -63,8 +63,10 @@ CASES = {
     ),
     "review_escape": (
         toolkit_paths.TELEMETRY_DIR / "log-escape",
-        # An eng-spec row with no miss_reason writes no local escape-text row, so each case sees one writer file.
-        ["gate_missed=eng-spec", "stage_found=pr-human", "severity=high", "class=bug", "guard=none"],
+        # Every escape also writes a local escape-text row; run_script sends it outside $HOME (ESCAPE_TEXT_FILE), so
+        # each case sees one writer file under $HOME.
+        ["gate_missed=eng-spec", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
+         "desc=planted gist zq"],
         "review-escapes.jsonl",
         {"class": "bug", "branch": BRANCH},
     ),
@@ -119,6 +121,8 @@ class LedgerWriteTest(unittest.TestCase):
             "CLAUDE_CODE_SESSION_ID": SESSION,
             **(extra_env or {}),
         }
+        if pathlib.Path(script).name == "log-escape":
+            env.setdefault("ESCAPE_TEXT_FILE", str(self.escape_text_file()))
         if not home_set:
             del env["HOME"]
         if with_ledger:
@@ -130,6 +134,14 @@ class LedgerWriteTest(unittest.TestCase):
         return subprocess.run(
             ["bash", str(script), *args], cwd=self.repo, env=env, capture_output=True, text=True, input=stdin
         )
+
+    def escape_text_file(self):
+        return self.temp_root / "escape-text-outside-home.jsonl"
+
+    def writer_stderr_lines(self, done):
+        """stderr lines with log-escape's escape-text append line left out."""
+        side_file = str(self.escape_text_file())
+        return [line for line in done.stderr.strip().splitlines() if side_file not in line]
 
     def logged_rows(self, file_name):
         log_path = self.home / ".claude" / file_name
@@ -146,7 +158,7 @@ class LedgerWriteTest(unittest.TestCase):
                 self.assertTrue(appended_row["date"].endswith("Z"), appended_row["date"])
                 self.assertEqual((appended_row["repo"], appended_row["session"]), (REPO_NAME, SESSION))
                 self.assertIsInstance(appended_row["schema_version"], int)
-                stderr_lines = done.stderr.strip().splitlines()
+                stderr_lines = self.writer_stderr_lines(done)
                 self.assertEqual(len(stderr_lines), 1, done.stderr)
                 log_path = self.home / ".claude" / file_name
                 self.assertIn(f"no ledger found; row appended to {log_path}", stderr_lines[0])
@@ -238,7 +250,7 @@ class LedgerWriteTest(unittest.TestCase):
         (self.home / ".claude").write_text("a file where the directory should be\n")
         done = self.run_script(script, args)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(len(done.stderr.strip().splitlines()), 1, done.stderr)
+        self.assertEqual(len(self.writer_stderr_lines(done)), 1, done.stderr)
         self.assertIn("could not append", done.stderr)
         self.assertIn("row dropped", done.stderr)
 

@@ -23,7 +23,7 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
 
 PLANTED_BRANCH = "planted-branch-zq"
 VALID_ARGS = ["gate_missed=review", "stage_found=pr-human", "severity=high", "class=bug", "guard=none",
-              "miss_reason=overlooked"]
+              "miss_reason=overlooked", "desc=planted gist zq", "file=src/planted_zq.py"]
 PROMPT_DIRS = ("skills", "agents", "commands")
 TEMPLATE_PAIR = re.compile(r'(\w+)=("[^"]*"|<[^>]*>|[^\s`)]+)')
 # A placeholder with no options of its own (`<...>`, `<comment gist>`) takes this value for its key.
@@ -133,7 +133,7 @@ class LogEscapeTest(unittest.TestCase):
         # zsh does not split an unquoted variable: C="gate_missed=review severity=high"; log-escape $C
         # sends one argument.
         done = self.run_escape("gate_missed=review stage_found=pr-human  severity=high", "class=bug", "guard=none",
-                               "miss_reason=unknown")
+                               "miss_reason=unknown", "desc=gist", "file=src/a.py")
         self.assertEqual(done.returncode, 0, done.stderr)
         row = self.escape_rows()[0]
         self.assertEqual((row["gate_missed"], row["stage_found"], row["severity"]), ("review", "pr-human", "high"))
@@ -233,34 +233,41 @@ class LogEscapeTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual([row["desc"] for row in self.text_rows()], ["kept zq"])
 
-    def test_only_a_hand_catch_stage_keeps_its_desc_in_the_text_row(self):
-        hand_stages = ("cc", "walkthrough", "pr-human", "peer-review", "prod", "other")
-        other_stages = ("pr-bot", "plan-review", "phase-gate", "refactor", "verify", "q-verify")
-        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
-        for stage in hand_stages + other_stages:
-            done = self.run_escape(*args, f"stage_found={stage}", f"desc=from {stage}".replace(" ", "-"),
-                                   env=self.text_env())
+    def test_every_stage_keeps_its_desc_in_the_text_row(self):
+        stages = ("cc", "walkthrough", "pr-human", "peer-review", "prod", "other",
+                  "pr-bot", "plan-review", "phase-gate", "refactor", "verify", "q-verify")
+        args = [arg for arg in VALID_ARGS if not arg.startswith(("stage_found=", "desc="))]
+        for stage in stages:
+            done = self.run_escape(*args, f"stage_found={stage}", f"desc=from-{stage}", env=self.text_env())
             self.assertEqual(done.returncode, 0, done.stderr)
         rows = self.text_rows()
-        self.assertEqual([row["stage_found"] for row in rows], list(hand_stages + other_stages))
-        stages_with_desc = [row["stage_found"] for row in rows if "desc" in row]
-        self.assertEqual(stages_with_desc, list(hand_stages))
-
-    def test_a_row_with_a_miss_reason_and_no_desc_writes_a_text_row_for_every_stage(self):
-        args = [arg for arg in VALID_ARGS if not arg.startswith("stage_found=")]
-        for stage in ("cc", "refactor", "plan-review", "pr-bot"):
-            done = self.run_escape(*args, f"stage_found={stage}", env=self.text_env())
-            self.assertEqual(done.returncode, 0, done.stderr)
-        rows = self.text_rows()
-        self.assertEqual([row["stage_found"] for row in rows], ["cc", "refactor", "plan-review", "pr-bot"])
+        self.assertEqual([row["stage_found"] for row in rows], list(stages))
+        self.assertEqual([row.get("desc") for row in rows], [f"from-{stage}" for stage in stages])
         self.assertEqual({row["miss_reason"] for row in rows}, {"overlooked"})
 
-    def test_an_eng_spec_row_with_no_miss_reason_and_no_desc_writes_no_text_row(self):
+    def test_a_row_with_no_desc_is_refused_and_writes_nothing(self):
+        for missing in ([], ["desc=   "]):
+            with self.subTest(missing=missing):
+                args = [arg for arg in VALID_ARGS if not arg.startswith("desc=")]
+                done = self.run_escape(*args, *missing, env=self.text_env())
+                self.assertEqual(done.returncode, 1)
+                self.assertIn("desc= is required", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+        self.assertFalse(self.text_file().exists())
+
+    def test_a_row_with_no_file_is_refused_outside_the_plan_gate(self):
+        args = [arg for arg in VALID_ARGS if not arg.startswith("file=")]
+        done = self.run_escape(*args, env=self.text_env())
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("file= is required", done.stderr)
+        self.assertEqual(self.escape_rows(), [])
+
+    def test_an_eng_spec_row_needs_no_file(self):
         args = [arg for arg in VALID_ARGS
-                if not arg.startswith(("miss_reason=", "gate_missed=", "stage_found="))]
+                if not arg.startswith(("miss_reason=", "gate_missed=", "stage_found=", "file="))]
         done = self.run_escape(*args, "gate_missed=eng-spec", "stage_found=plan-review", env=self.text_env())
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertFalse(self.text_file().exists())
+        self.assertEqual([row["desc"] for row in self.text_rows()], ["planted gist zq"])
 
     def test_a_ledger_that_refuses_miss_reason_leaves_it_in_the_text_file_and_the_note_names_the_file(self):
         env = self.text_env(FAKE_LEDGER_UNKNOWN_FIELDS="miss_reason")

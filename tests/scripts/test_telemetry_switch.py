@@ -332,6 +332,7 @@ class SwitchTest(unittest.TestCase):
         "guard=none",
         "miss_reason=overlooked",
         "desc=a bug",
+        "file=src/a.py",
     ]
 
     def test_log_escape_validation_still_runs_when_off(self):
@@ -341,7 +342,7 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
         self.assertIn("refusing to log", finished.stderr)
         finished = self.run_command([script, "gate_missed=review", "stage_found=cc", "class=nonsense", "guard=none",
-                                     "miss_reason=unknown"])
+                                     "miss_reason=unknown", "desc=a bug", "file=src/a.py"])
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(finished.stdout, "not logged: toolkit telemetry is off\n")
 

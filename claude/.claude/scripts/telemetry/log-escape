@@ -77,14 +77,12 @@
 #       ~/.claude/skills/_shared/escape-ratchet.md. Stored as plain text like
 #       class. A value outside the list is refused. `unknown` = a script with no
 #       judgment; a model caller picks a real label.)
-#     desc="one line"   the catch text. Appended with the row's other fields except scan_flagged to
+#     desc="one line"   REQUIRED: the catch text, enough to find and fix the defect later. Appended with the
+#                       row's other fields except scan_flagged to
 #                       ${ESCAPE_TEXT_FILE:-~/.claude/escape-text.jsonl} on this machine
-#                       (file and branch raw) through `ledger-write --local escape_text`, only when desc
-#                       is non-empty and stage_found is a hand-catch stage (the `hand_catch_stages`
-#                       variable below); any other stage keeps no catch text.
-#                       Never sent to the ledger. A row with a miss_reason is written to the same file
-#                       at every stage, with or without a desc.
-#     file=path         sent to the ledger as path_key (a keyed hash); stored raw in
+#                       (file and branch raw) through `ledger-write --local escape_text`, at every stage.
+#                       Never sent to the ledger.
+#     file=path         REQUIRED unless gate_missed=eng-spec. Sent to the ledger as path_key (a keyed hash); stored raw in
 #                       review-escapes.jsonl when there is no ledger or the ledger refuses or
 #                       fails on the row, and in the escape-text file
 #                       whenever a text row is written (see desc)
@@ -104,8 +102,7 @@
 # desc and scan_flagged are dropped from the ledger row, file becomes path_key and
 # branch becomes branch_key. With no ledger found (PATH, then `${CARGO_HOME:-~/.cargo}/bin`)
 # `ledger-write` appends the row to ~/.claude/review-escapes.jsonl and prints one stderr line.
-# A call with a miss_reason, or a non-empty desc from a hand-catch stage, prints ledger-write's
-# line for the escape-text row (the file it was appended to, or why it was dropped). A ledger
+# Every logged call prints ledger-write's line for the escape-text row (the file it was appended to, or why it was dropped). A ledger
 # build that refuses miss_reason gets the row without it, with one stderr note that names the escape text
 # file holding the miss_reason (ledger-write's own line is printed only when this call's row did not land in that file), and exit 0. Any other refusal or failure
 # of `ledger write` keeps the row in that file, with one stderr note and exit 0. gate_missed,
@@ -167,6 +164,18 @@ for required_field in gate_missed stage_found class; do
   fi
 done
 
+# An escape row is only useful if the defect can be found and fixed later: it needs the catch text and,
+# outside the plan gate, the file.
+desc_value=$(jq -r '.desc // ""' <<< "$json")
+if [ -z "${desc_value//[[:space:]]/}" ]; then
+  echo "refusing to log: desc= is required: one line that says what the defect is and where, enough to fix it later." >&2
+  exit 1
+fi
+if [ "$(jq -r '.gate_missed' <<< "$json")" != eng-spec ] && [ -z "$(jq -r '.file // ""' <<< "$json")" ]; then
+  echo "refusing to log: file= is required (the repo-relative path of the defect; add line= when known)." >&2
+  exit 1
+fi
+
 guard=$(jq -r '.guard // ""' <<< "$json")
 if [ -z "$guard" ]; then
   echo "refusing to log: guard= is required." >&2
@@ -197,7 +206,6 @@ fi
 
 [ -z "$check_only" ] || exit 0
 
-hand_catch_stages="cc walkthrough pr-human peer-review prod other"
 escape_text_note=""
 escape_text_kept=""
 
@@ -211,22 +219,10 @@ file_byte_size() {
 }
 
 # append_escape_text <row json> adds the local text row through ledger-write, which prints one stderr
-# line (kept in escape_text_note) and exits 0 even when the append fails: telemetry never blocks a caller. A row with a
-# miss_reason is written for every stage; the catch text is kept only for a hand-catch stage.
-# A row with neither a miss_reason nor a hand-catch desc writes nothing.
+# line (kept in escape_text_note) and exits 0 even when the append fails: telemetry never blocks a caller. Every
+# logged row is written, with its catch text, at every stage.
 append_escape_text() {
   local row_json="$1"
-  local row_stage desc row_miss_reason keeps_desc=""
-  row_stage=$(jq -r '.stage_found' <<< "$row_json")
-  desc=$(jq -r '.desc // ""' <<< "$row_json")
-  row_miss_reason=$(jq -r '.miss_reason // ""' <<< "$row_json")
-  if [[ " $hand_catch_stages " == *" $row_stage "* && -n "$desc" ]]; then
-    keeps_desc=1
-  fi
-  [ -n "$keeps_desc" ] || [ -n "$row_miss_reason" ] || return 0
-  if [ -z "$keeps_desc" ]; then
-    row_json=$(jq -c 'del(.desc)' <<< "$row_json")
-  fi
   local text_file size_before size_after
   text_file=$(bash "$script_dir/ledger-write" --local-path escape_text) || text_file=""
   size_before=$(file_byte_size "$text_file")

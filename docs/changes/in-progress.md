@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-12 open benches, by rank. Each line is the question the bench asks.
+13 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
@@ -23,3 +23,4 @@ description: "The benches that are open now and the question each asks."
 * Review asks the user already answered the same way become standing rulings (queued): Fewer interruptions: a review ask that matches a pattern the user answered the same way twice before is resolved from a ruling file, as pstack's bugbot-triage does.
 * Bench: one architect agent in place of the backend and frontend pair (queued): A full-stack ticket gets one plan from one architect, and the scope-fence handoff rule goes away.
 * Bench: one planning researcher in place of the four-agent goal-blind chain (queued): Planning research takes one handoff instead of four, with three fewer agents to maintain.
+* Test-first on new features against build-then-test: does it cut test-gap and weak-assertion review findings (queued): Finds out whether writing tests before the code on new features cuts the test-gap and weak-assertion findings that now cost about 0.6 fixes per review run.

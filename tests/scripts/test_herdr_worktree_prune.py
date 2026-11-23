@@ -23,6 +23,7 @@ from stubs import write_stub
 
 HERDR_WORKTREE_PRUNE = pathlib.Path(os.environ.get("HERDR_WORKTREE_PRUNE") or (
     pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-worktree-prune"))
+LANES_CLI = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude" / "scripts" / "tools" / "lanes.py"
 REAL_GIT = shutil.which("git")
 
 # State lives in $STATE_DIR: workspaces.json and agents.json are the answers; `fail` makes every call fail, `garbage`
@@ -246,6 +247,18 @@ class Lab:
         self.git(self.main, "worktree", "remove", str(tree))
         return tree
 
+    def lanes(self, *args):
+        """Run the lanes cli against this lab's lane state folder."""
+        done = subprocess.run([sys.executable, self.env["HERDR_LANES_CLI"], *args], env=self.env,
+                              input="brief\n", capture_output=True, text=True, timeout=60)
+        if done.returncode != 0:
+            raise AssertionError(f"lanes {args} failed: {done.stderr}")
+        return done
+
+    def open_lane(self, name, tree):
+        self.lanes("add", "--name", name, "--worktree", str(tree), "--main-checkout", str(self.main),
+                   "--branch", f"feature/{name}")
+
     def prune(self, *args, cwd=None, env=None):
         return subprocess.run([str(HERDR_WORKTREE_PRUNE), *args], cwd=str(cwd or self.main), env=env or self.env,
                               capture_output=True, text=True, timeout=120)
@@ -265,6 +278,10 @@ class PruneTestCase(unittest.TestCase):
         self.addCleanup(scratch.cleanup)
         self.root = pathlib.Path(scratch.name).resolve()
         self.lab = Lab(self.root / "lab")
+        lane_state = self.root / "lane-state"
+        lane_state.mkdir()
+        self.lab.env["XDG_STATE_HOME"] = str(lane_state)
+        self.lab.env["HERDR_LANES_CLI"] = str(LANES_CLI)
 
     def hold_cwd(self, folder):
         holder = subprocess.Popen(["sleep", "300"], cwd=str(folder))
@@ -346,6 +363,8 @@ class RemovalTest(PruneTestCase):
 
     def test_the_default_branch_may_be_trunk(self):
         lab = Lab(self.root / "trunk-lab", default="trunk")
+        lab.env["XDG_STATE_HOME"] = self.lab.env["XDG_STATE_HOME"]
+        lab.env["HERDR_LANES_CLI"] = self.lab.env["HERDR_LANES_CLI"]
         tree = lab.merged_lane("lane-a")
 
         applied = lab.prune("--apply")
@@ -557,6 +576,79 @@ class KeptTreeTest(PruneTestCase):
         self.assertIn("changed since the list: ", applied.stdout)
         self.assertIn("removed 2, freed ", applied.stdout)
         self.assertIn("kept 2, failed 0", applied.stdout)
+
+
+class LaneTest(PruneTestCase):
+    def test_a_tree_with_an_open_lane_entry_is_kept_and_goes_once_the_entry_is_removed(self):
+        tree = self.lab.merged_lane("lane-a")
+        self.lab.open_lane("lane-a", tree)
+
+        kept = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(tree, "feature/lane-a", kept, "lane lane-a is open")
+        self.assertIn("1 open lane", kept.stdout)
+        self.assertIn("herdr-lane-resume --close lane-a", line_of(kept, tree))
+
+        self.lab.lanes("remove", "lane-a")
+        removed = self.lab.prune("--apply")
+
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(tree.exists())
+
+    def test_a_folder_inside_an_open_lane_worktree_is_kept(self):
+        module = load_script_module()
+        world = types.SimpleNamespace(lanes=module.LaneRead([("lane-a", "/x/lane-a")]))
+
+        inside_keep = module.check_lane_open(None, world, module.Worktree(path="/x/lane-a/sub"))
+        apart_keep = module.check_lane_open(None, world, module.Worktree(path="/x/lane-ab"))
+
+        self.assertEqual(inside_keep.code, module.LANE_OPEN)
+        self.assertIsNone(apart_keep)
+
+    def test_a_lane_list_that_cannot_be_read_keeps_every_tree_and_removes_nothing(self):
+        tree = self.lab.merged_lane("lane-a")
+        self.lab.env["HERDR_LANES_CLI"] = str(self.root / "missing-lanes.py")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(tree, "feature/lane-a", applied, "the lane list could not be read")
+        self.assertIn("cannot check", applied.stdout)
+        self.assertIn("removed 0, freed 0 bytes", applied.stdout)
+
+    def test_a_lane_list_with_an_unexpected_answer_keeps_every_tree_and_removes_nothing(self):
+        answers = {"wrong shape": '{"lanes": [{"name": "x"}]}', "not json": "garbage"}
+        for label, printed in answers.items():
+            with self.subTest(label):
+                tree = self.lab.merged_lane(f"lane-{label.split()[0]}")
+                stub = self.root / f"stub-{label.split()[0]}.py"
+                stub.write_text(f"print({printed!r})\n")
+                self.lab.env["HERDR_LANES_CLI"] = str(stub)
+
+                applied = self.lab.prune("--apply")
+
+                self.assert_kept_and_untouched(
+                    tree, f"feature/lane-{label.split()[0]}", applied,
+                    "the lane list could not be read: lanes list has an unexpected answer")
+                self.assertIn("removed 0, freed 0 bytes", applied.stdout)
+
+    def test_a_lane_opened_after_the_listing_keeps_its_tree_at_apply_time(self):
+        tree = self.lab.merged_lane("lane-a")
+        counter = self.root / "lanes-calls"
+        stub = self.root / "stub-late-lane.py"
+        stub.write_text(
+            "import json, pathlib\n"
+            f"counter = pathlib.Path({str(counter)!r})\n"
+            "calls = int(counter.read_text()) if counter.exists() else 0\n"
+            "counter.write_text(str(calls + 1))\n"
+            f"lanes = [] if calls == 0 else [{{'name': 'lane-a', 'worktree': {str(tree)!r}}}]\n"
+            "print(json.dumps({'lanes': lanes}))\n")
+        self.lab.env["HERDR_LANES_CLI"] = str(stub)
+
+        applied = self.lab.prune("--apply")
+
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertTrue(tree.exists())
+        self.assertIn("removed 0, freed 0 bytes", applied.stdout)
 
 
 class RunningFromTest(PruneTestCase):
@@ -1160,6 +1252,11 @@ class UsageTest(PruneTestCase):
 
 class ParserTest(unittest.TestCase):
     def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        environment = mock.patch.dict(os.environ, {"XDG_STATE_HOME": scratch.name, "HERDR_LANES_CLI": str(LANES_CLI)})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.module = load_script_module()
 
     def test_stash_subjects_name_a_branch_only_in_the_two_forms_that_carry_one(self):

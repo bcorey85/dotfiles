@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-706 fix notes
+707 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -105,6 +105,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 1 |
 | script/git-calls | 2 | 2 |
+| script/herdr-worktree-prune | 2 | 1 |
 | script/herdr-worktree-watch | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
@@ -158,7 +159,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/git-push-main-check | 1 | 0 |
 | script/herdr-lane-resume | 1 | 1 |
 | script/herdr-wake-limited | 1 | 0 |
-| script/herdr-worktree-prune | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/hunk-review-pane | 1 | 1 |
 | script/install-stow | 1 | 0 |

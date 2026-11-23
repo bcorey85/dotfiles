@@ -25,7 +25,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 7: herdr-phase-change names the report-to session (risk: low)
 - [x] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
 - [x] Phase 9: lane-status (risk: low)
-- [ ] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
+- [x] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
 - [ ] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
 - [ ] Phase 12: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -511,9 +511,9 @@ Closing a merged lane with `herdr-lane-resume --close` closes its workspace, the
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_herdr_worktree_prune.py` (RED before: the open-lane tree is removed)
-- [ ] `awk 'END { exit NR >= 1000 }' scripts/.local/bin/herdr-worktree-prune`
-- [ ] `ruff check --no-cache scripts/.local/bin/herdr-worktree-prune`
+- [x] `python3 tests/parallel_tests.py test_herdr_worktree_prune.py` (RED before: the open-lane tree is removed)
+- [x] `awk 'END { exit NR >= 1000 }' scripts/.local/bin/herdr-worktree-prune`
+- [x] `ruff check --no-cache scripts/.local/bin/herdr-worktree-prune`
 
 #### Manual Verification
 

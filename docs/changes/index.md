@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1114 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
+1127 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The retro lane queues its own picks and reports a log of what it queued and skipped](notes/2026-11-22-the-retro-lane-queues-its-own-picks-and-reports-a.md).
+Latest change: 2026-11-22, [Deleting the guide skill, unused since September, drops 1210 words](notes/2026-11-22-deleting-the-guide-skill-unused-since-september.md).
 
 ## Top gains
 

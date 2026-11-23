@@ -75,6 +75,7 @@ import loop_transcript
 import plan_format
 import review_loop_held
 import review_loop_ruled_out
+import review_loop_scope_guard
 import review_loop_untracked
 import reviewer_dispatch
 import script_utils
@@ -114,7 +115,7 @@ from review_loop_findings import (
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_intake import ReviewIntake
 from review_loop_named_tests import NamedTestRuns
-from review_loop_partial_fix import PartialFixRuns
+from review_loop_partial_fix import PartialFixRuns, coder_failure_blocker
 from review_loop_pass_checks import PassChecks
 from review_loop_pass_names import (
     CLASS_FIX_PASS,
@@ -128,7 +129,13 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
-from review_loop_ruled import RuledFindings, no_code_numbers, prior_issue_entries, withheld_adopted
+from review_loop_ruled import (
+    RuledFindings,
+    approval_only_paths,
+    no_code_numbers,
+    prior_issue_entries,
+    withheld_adopted,
+)
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 from review_loop_signoffs import SignoffRuns, snapshot_signoffs
 from review_user_ruled import reasked_findings
@@ -163,6 +170,15 @@ class ReviewRequest(typing.NamedTuple):
     role: str
     agent: str
     prompt: str
+
+
+def own_guard_test(signoffs):
+    """The `has_own_guard(path)` function for a coder pass whose sign-off snapshot is `signoffs`: another guard of the
+    loop rules on a path the snapshot holds (its sign-off lines are put back line by line) and on an approval-only
+    file (reverted and reported). Any other file, a decision log with no sign-off line included, has no guard."""
+    def has_own_guard(path):
+        return path in signoffs.texts or bool(approval_only_paths([path]))
+    return has_own_guard
 
 
 class Sendable(typing.NamedTuple):
@@ -558,20 +574,30 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         when the passes so far removed half or more of the lines the change under review adds,
         NamedTestRemovedError when the pass removed a test the plan runs by name and one restore pass did not bring
         it back (`restore_named` False skips that check, for the restore pass), and CoderFailedError when the coder
-        call fails, with the findings kept in open_fixes except those on a reverted approval-only path, which are
-        filed as user-only asks (a repeat of a rejected ask is dropped, not filed)."""
-        finding_paths = [finding.path for finding in findings if finding.path]
+        call fails, and before the call when the scope guard cannot read the repo, with the findings kept in
+        open_fixes except those on a reverted approval-only path, which are filed as user-only asks (a repeat of a
+        rejected ask is dropped, not filed)."""
+        finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
+                         if finding.path]
         diff_files = self.review_scope()
         files_in_scope = list(dict.fromkeys([*diff_files, *finding_paths]))
         issue_texts = [self.issue_text(finding) for finding in findings]
         named = self.named_tests() if restore_named else []
         prompt = self.coder_brief(call_name, findings, nits, files_in_scope, issue_texts, named)
+        allowed = self.pass_scope(files_in_scope)
+        signoffs = snapshot_signoffs(self.repo, files_in_scope)
+        try:
+            scope_guard = review_loop_scope_guard.guard_pass(self.repo, self.out, call_name, allowed,
+                                                             own_guard_test(signoffs), issue_texts)
+        except script_utils.GitCallError as error:
+            # The pass has not started, so no file changed: keep the findings open and stop with a blocker.
+            self.keep_open(findings)
+            raise CoderFailedError(coder_failure_blocker(call_name, error, scope_guard_failed=True)) from error
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out, diff_files,
                                                  issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
         self.snapshot_approval_blobs()
-        signoffs = snapshot_signoffs(self.repo, files_in_scope)
         comments = snapshot_comments(self.repo, files_in_scope)
         stats_before = len(FIX_DIFF_STATS)
         if restore_named:
@@ -579,7 +605,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             self.put_back_findings = []
         try:
             result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
-                                 model=self.coder_model)
+                                 model=self.coder_model, scope_guard=scope_guard)
         except CoderCallError as error:
             blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
             raise CoderFailedError(blocker) from error
@@ -592,6 +618,14 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         result = without_reverted(result, reverted, stats_before)
         self.check_pass_result(call_name, result)
         return self.restore_named_tests(call_name, named, result)
+
+    def pass_scope(self, files_in_scope):
+        """The paths a coder pass may change: the files in its scope and the ones earlier passes touched. The held,
+        ruled-out and later-phase files count too, as has_own_guard's paths do: the loop rules on those by its own
+        rules. A ruled-out file is put back, a held file a holder row proves is left and noted; one with no holder row
+        is the coder's to change. A later-phase edit stops the loop. A file the sign-off snapshot holds is guarded
+        only on its sign-off lines; its other lines stay as the pass left them."""
+        return {*files_in_scope, *self.files_touched, *self.held_files, *self.ruled_out, *self.later_phase_files}
 
     def coder_brief(self, call_name, findings, nits, files_in_scope, issue_texts, named):
         """The coder's prompt for one pass, written under the pass's brief folder."""

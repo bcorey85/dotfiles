@@ -232,6 +232,10 @@ def or_list(words):
     return ", ".join(words[:-1]) + f" or {words[-1]}"
 
 
+class GitCallError(RuntimeError):
+    """A git call that failed where the caller cannot go on without its answer."""
+
+
 class ItemNumberError(ValueError):
     """A 1-based item number that names no item."""
 
@@ -387,24 +391,41 @@ def restore_blob(repo, path, blob):
 IndexEntry = namedtuple("IndexEntry", ["mode", "blob"])
 
 
-def index_entry(repo, path):
-    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
-    file) or git cannot say."""
-    listing = git_output(repo, "ls-files", "--stage", "-z", "--", path)
+def index_entries(repo, paths):
+    """The index entry of each of `paths` in `repo`, read with one git call: a dict of path to the IndexEntry, or to
+    None when the path is not in the index (an untracked file). Raises GitCallError when git fails, so a failed
+    listing never reads as "not in the index"."""
+    entries = dict.fromkeys(paths)
+    if not entries:
+        return entries
+    listing = git_output(repo, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", *entries)
+    if listing is None:
+        raise GitCallError(f"`git ls-files --stage` failed in {repo}")
     if not listing:
-        return None
+        return entries
     # One entry reads `<mode> <blob> <stage>\t<path>`; a path with a merge conflict lists several stages, and the
     # first is enough to tell the entry changed.
-    description = listing.split("\0")[0].split("\t")[0]
-    mode, blob, _stage = description.split(" ")
-    return IndexEntry(mode, blob)
+    for record in listing.split("\0"):
+        description, _tab, listed_path = record.partition("\t")
+        if listed_path not in entries or entries[listed_path] is not None:
+            continue
+        mode, blob, _stage = description.split(" ")
+        entries[listed_path] = IndexEntry(mode, blob)
+    return entries
+
+
+def index_entry(repo, path):
+    """The IndexEntry the index of `repo` holds for `path`, or None when the path is not in the index (an untracked
+    file). Raises GitCallError when git fails."""
+    return index_entries(repo, [path])[path]
 
 
 def restore_index_entry(repo, path, entry):
     """Puts the index entry of `path` back to `entry` (an IndexEntry from `index_entry`), or takes the path out of the
     index when `entry` is None. Leaves the work tree alone. Returns True when the index now holds `entry`."""
     if entry is None:
-        return git_output(repo, "rm", "--cached", "-q", "--ignore-unmatch", "--", path) is not None
+        return git_output(repo, "--literal-pathspecs", "rm", "--cached", "-q", "--ignore-unmatch", "--",
+                          path) is not None
     cache_info = f"{entry.mode},{entry.blob},{path}"
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 
@@ -454,6 +475,21 @@ def is_ancestor(repo, older, newer, timeout=None):
 def head_commit(cwd, timeout=None):
     """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
     return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
+
+
+def head_commit_or_unborn(repo):
+    """The commit HEAD names in `repo`, or None for an unborn HEAD (a repo with no commit). Raises GitCallError when
+    HEAD cannot be named in a repo that has a commit."""
+    head = head_commit(repo)
+    if head is not None:
+        return head
+    branch_ref = git_output(repo, "symbolic-ref", "-q", "HEAD")
+    if branch_ref is None:
+        raise GitCallError(f"git could not name HEAD in {repo}")
+    branch_commit = git_output(repo, "for-each-ref", "--format=%(objectname)", branch_ref)
+    if branch_commit != "":
+        raise GitCallError(f"git could not name HEAD in {repo}")
+    return None
 
 
 def head_commit_time(top):
@@ -842,9 +878,30 @@ def write_command_outputs(output_file, command_outputs):
     output_file.write_text("\n\n".join(sections))
 
 
-def names_path(path, text):
-    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`)."""
+# What stands before and after a repo-relative path that a finding or note holds as a whole token: no longer path
+# around it (`pkg/app.py`, `app.py/x`, `app.pyc`), but a sentence's closing dot may follow (`edit app.py.`).
+PATH_TOKEN_START = r"(?<![\w./-])"
+PATH_TOKEN_END = r"(?![\w/-]|\.\w)"
+
+
+def names_path(path, text, as_token=False):
+    """True when `text` holds `path` as a whole path: not the start or the middle of a longer name (`/x/app-v2`).
+    With `as_token`, the boundaries are PATH_TOKEN_START and PATH_TOKEN_END, for a repo-relative path in prose."""
+    if as_token:
+        return re.search(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}", text) is not None
     return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
+
+
+def texts_relative_to(finding_texts, root):
+    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    root_prefix = f"{root}/"
+    return [text.replace(root_prefix, "") for text in finding_texts]
+
+
+def texts_name_path(finding_texts, path, root):
+    """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
+    relative_texts = texts_relative_to(finding_texts, root)
+    return any(names_path(path, text, as_token=True) for text in relative_texts)
 
 
 def pop_option(arguments, flag):
@@ -1512,6 +1569,14 @@ def directory_relative_to(root_directory, directory):
     """The directory's path under root_directory as text, or "" when it is root_directory itself. Both are
     pathlib.Path."""
     return str(directory.relative_to(root_directory)) if directory != root_directory else ""
+
+
+def next_numbered_dir(parent):
+    """The path of the next free numbered subfolder of parent (a pathlib.Path): one above the highest folder
+    name there made only of ASCII decimal digits, or 1 when there is none. Creates nothing."""
+    taken = [int(folder.name) for folder in parent.glob("*")
+             if folder.is_dir() and folder.name.isascii() and folder.name.isdecimal()]
+    return parent / str(max(taken, default=0) + 1)
 
 
 def is_executable_file_inside(root_directory, relative_path):

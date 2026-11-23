@@ -22,6 +22,7 @@ import review_loop_coder
 import review_loop_comment_removal
 import review_loop_partial_fix
 import review_loop_ruled_out
+import review_loop_scope_guard
 import review_loop_signoffs
 import review_loop_untracked
 import test_review_loop_script as loop_tests
@@ -29,6 +30,14 @@ import test_review_loop_script as loop_tests
 
 def git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
+
+
+class FixDiffFileTest(unittest.TestCase):
+    def test_an_absolute_path_still_gets_its_diff_file_under_out(self):
+        with tempfile.TemporaryDirectory() as out:
+            diff_file = review_loop_coder.fix_diff_file(out, "coder1", "/repo/src/a.py")
+
+            self.assertEqual(pathlib.Path(out) / "fix-diffs" / "coder1" / "repo/src/a.py.diff", diff_file)
 
 
 class UntrackedDeletionTest(unittest.TestCase):
@@ -54,6 +63,10 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.addCleanup(review_loop_untracked.LOOP_WRITTEN.clear)
         self.addCleanup(review_loop_calls.CALLS.clear)
 
+    def no_op_scope_guard(self, role="coder1"):
+        """A scope guard that owns no path: every path counts as ruled on by another guard."""
+        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, ())
+
     def fake_model(self, action):
         """Patches the model process with a stand-in that runs `action(repo)` and replies `done`."""
         def run_process(*_args, **_kwargs):
@@ -67,13 +80,15 @@ class UntrackedDeletionTest(unittest.TestCase):
         """Runs coder_call with a stand-in model process that runs `action(repo)`."""
         with self.fake_model(action):
             guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], [])
-            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard)
+            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard,
+                                                self.no_op_scope_guard(role))
 
     def coder_model_sent(self, **coder_kwargs):
         """The model coder_call hands to claude_call."""
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         with mock.patch.object(review_loop_coder, "claude_call", return_value="done") as fake_call:
-            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard, **coder_kwargs)
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
+                                         self.no_op_scope_guard(), **coder_kwargs)
         return fake_call.call_args.kwargs["model"]
 
     def test_coder_call_passes_the_model_to_the_model_call(self):
@@ -94,7 +109,8 @@ class UntrackedDeletionTest(unittest.TestCase):
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         with mock.patch.object(review_loop_coder, "claude_call", side_effect=RuntimeError("a git read failed")), \
                 self.assertRaises(RuntimeError) as raised:
-            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard)
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
+                                         self.no_op_scope_guard())
 
         self.assertNotIsInstance(raised.exception, review_loop_coder.CoderCallError)
 
@@ -183,7 +199,8 @@ class UntrackedDeletionTest(unittest.TestCase):
                                  preloaded_skills_prompt=lambda _agent: ""):
             guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
             with self.assertRaisesRegex(review_loop_coder.CoderCallError, "usage limit reached"):
-                review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard)
+                review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
+                                             self.no_op_scope_guard())
 
     def test_a_call_that_is_interrupted_after_deleting_a_file_still_restores_it(self):
         (self.repo / "mine.py").write_text("mine\n")

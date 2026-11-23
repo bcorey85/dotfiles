@@ -7,6 +7,7 @@ import typing
 
 import review_loop_held
 import review_loop_ruled_out
+import review_loop_scope_guard
 import review_loop_untracked
 import script_utils
 from review_loop_calls import ModelCallError, claude_call
@@ -18,9 +19,10 @@ DIFF_CONTEXT = 12
 
 def coder_fault_notes():
     """The notes the loop's model calls left for the packet's tool_fault: untracked files a call removed, held files
-    a coder changed."""
+    a coder changed, ruled-out files put back, out-of-scope files put back, a failed put-back step and out-of-scope
+    files the loop could not copy."""
     return [*review_loop_untracked.UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS,
-            *review_loop_ruled_out.RULED_OUT_FAULTS]
+            *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS]
 
 
 def file_texts(repo, start=None):
@@ -39,20 +41,29 @@ class NoFinalReportError(ModelCallError):
     """A coder call that exited 0 and printed no final report."""
 
 
-class CoderCallError(RuntimeError):
-    """A coder call that failed after it may have edited the tree. `changed` lists the paths whose text differs;
-    `diffs` maps each of them to its diff text."""
+# The errors a guard's undo may raise; each one becomes a CoderCallError.
+UNDO_ERRORS = (RuntimeError, OSError)
 
-    def __init__(self, message, changed, cause=None, diffs=None):
+
+class GuardUndoError(RuntimeError):
+    """The pass guard's undo failed and the scope guard's undo failed too; the message holds both errors."""
+
+
+class CoderCallError(RuntimeError):
+    """A coder call that died, or finished while the loop could not undo all of its pass (`died` False), after it may
+    have edited the tree. `changed` lists the paths whose text differs; `diffs` maps each of them to its diff text."""
+
+    def __init__(self, message, changed, cause=None, diffs=None, died=True):
         super().__init__(message)
         self.changed = changed
         self.cause = message if cause is None else cause
         self.diffs = {} if diffs is None else diffs
+        self.died = died
 
     def keeping_only(self, kept):
         """This error as it reads when only the `kept` paths still hold the coder's edits."""
         kept_diffs = {path: self.diffs[path] for path in kept if path in self.diffs}
-        return failed_call_error(self.cause, kept, kept_diffs)
+        return failed_call_error(self.cause, kept, kept_diffs, self.died)
 
 
 def changed_paths(before, after):
@@ -87,25 +98,28 @@ def without_reverted(result, reverted, stats_before):
     return result._replace(diffs=kept_diffs, changed=kept_changed, reverted=tuple(reverted))
 
 
-def failed_call_error(error, changed, diffs=None):
-    """The CoderCallError for a coder call that died after it changed `changed` paths (`diffs` maps each to its diff
-    text). With none changed, the error names only the cause."""
+def failed_call_error(error, changed, diffs=None, died=True):
+    """The CoderCallError for a coder call that changed `changed` paths (`diffs` maps each to its diff text) and then
+    died (`died`), or finished while the loop could not undo all of its pass. With none changed, the error names only
+    the cause."""
     if not changed:
-        return CoderCallError(str(error), [])
-    message = (f"{error}; it changed {', '.join(changed)} before it died, so the tree holds a partial fix "
+        return CoderCallError(str(error), [], died=died)
+    outcome = "before it died" if died else "during the pass"
+    message = (f"{error}; it changed {', '.join(changed)} {outcome}, so the tree holds a partial fix "
                "that may fail its checks")
-    return CoderCallError(message, changed, str(error), diffs)
+    return CoderCallError(message, changed, str(error), diffs, died)
 
 
-def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
+def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model=""):
     """The fix coder. Returns a CoderResult (report, diffs, changed): the diffs of what it changed feed the round-two
     brief, and one diff file per changed path under `out` (listed in the global FIX_DIFF_STATS) feeds the
     class-closure check; changed lists the paths whose text differs. A held file that changed during the call is
     left as it is and noted, and never counts as changed. `pass_guard` (a review_loop_ruled_out.PassGuard) undoes
-    the pass's edits to ruled-out files and its unnamed deletions before the tree is read again. A commit the coder
+    the pass's edits to ruled-out files and its unnamed deletions before the tree is read again, and `scope_guard`
+    (a review_loop_scope_guard.ScopeGuard) puts back the files outside the pass's scope. A commit the coder
     made during the call is kept; its changes count against the commit HEAD named before the call. A failed call
-    raises CoderCallError naming the files it changed before it died. `model` is the model the coder runs on; ""
-    leaves the agent's own."""
+    raises CoderCallError naming the files it changed before it died, and so does a call whose guards could not undo
+    the pass. `model` is the model the coder runs on; "" leaves the agent's own."""
     head_before = script_utils.head_commit(repo)
     before = script_utils.without_paths(file_texts(repo), held)
     untracked = review_loop_untracked.unheld_untracked(repo, held)
@@ -117,19 +131,65 @@ def coder_call(role, prompt, repo, out, held, pass_guard, model=""):
             # A coder that exits 0 with no final report left its findings unverified, as a crash does.
             raise NoFinalReportError(f"the {role} call ended with no final report")
     except ModelCallError as error:
-        pass_guard.undo()
-        review_loop_untracked.record_loop_written(repo, held, untracked)
-        after = after_call(role, repo, held, held_before, head_before)
+        undo_failure, after = settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before,
+                                          head_before)
         changed = changed_paths(before, after)
-        diffs = {path: "\n".join(path_diff(repo, path, before, after, head_before)) for path in changed}
+        diffs = pass_diffs(repo, changed, before, after, head_before)
+        if undo_failure is not None:
+            raise failed_call_error(f"{error}; undoing the pass failed: {undo_failure}", changed, diffs) from error
         raise failed_call_error(error, changed, diffs) from error
 
-    pass_guard.undo()
+    undo_failure, after = settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before, head_before)
+    changed = changed_paths(before, after)
+    if undo_failure is not None:
+        diffs = pass_diffs(repo, changed, before, after, head_before)
+        raise failed_call_error(str(undo_failure), changed, diffs, died=False) from undo_failure
+    diffs = write_fix_diffs(repo, out, role, before, after, head_before)
+    return CoderResult(report, diffs, changed)
+
+
+def pass_diffs(repo, changed, before, after, head_before):
+    """{path: diff text} of each `changed` path between the tree texts before and after a coder call."""
+    return {path: "\n".join(path_diff(repo, path, before, after, head_before)) for path in changed}
+
+
+def settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before, head_before):
+    """After a coder call: undoes the pass with the two guards, records the files the loop wrote, and reads the tree.
+    Returns (undo failure or None, the tree texts after the call). `held_before` and `head_before` are the held
+    digests and the head commit taken before the call."""
+    undo_failure = failed_undo(pass_guard, scope_guard)
     review_loop_untracked.record_loop_written(repo, held, untracked)
     after = after_call(role, repo, held, held_before, head_before)
-    diffs = write_fix_diffs(repo, out, role, before, after, head_before)
-    changed = changed_paths(before, after)
-    return CoderResult(report, diffs, changed)
+    return undo_failure, after
+
+
+def failed_undo(pass_guard, scope_guard):
+    """The error a guard raised while undoing the pass of a coder call, or None when both undid it; the caller reads
+    the tree and turns a failure into a CoderCallError, so `repair` can catch it."""
+    try:
+        undo_pass(pass_guard, scope_guard)
+    except UNDO_ERRORS as undo_error:
+        return undo_error
+    return None
+
+
+def undo_pass(pass_guard, scope_guard):
+    """Undoes what the pass may not keep: the ruled-out files and unnamed deletions, then the files out of scope."""
+    try:
+        pass_guard.undo()
+    except UNDO_ERRORS as pass_error:
+        undo_scope_after_failure(pass_error, scope_guard)
+        raise
+    scope_guard.undo()
+
+
+def undo_scope_after_failure(pass_error, scope_guard):
+    """Runs the scope guard's undo after the pass guard failed, so the out-of-scope files are not left unrestored and
+    unnoted. Raises one joined error when that undo fails too; returns when it works, and the caller re-raises."""
+    try:
+        scope_guard.undo()
+    except UNDO_ERRORS as scope_error:
+        raise GuardUndoError(f"{pass_error}; {scope_error}") from scope_error
 
 
 def after_call(role, repo, held, held_before, head_before):
@@ -166,8 +226,10 @@ def text_diff(path, old_text, new_text):
 
 
 def fix_diff_file(out, role, path):
-    """The file that holds one path's diff of the pass `role`."""
-    return pathlib.Path(out) / "fix-diffs" / role / f"{path}.diff"
+    """The file that holds one path's diff of the pass `role`, always under `out`: an absolute `path` would make
+    pathlib drop `out`, so its leading slash is cut."""
+    relative = str(path).lstrip("/")
+    return pathlib.Path(out) / "fix-diffs" / role / f"{relative}.diff"
 
 
 def result_without_paths(result, paths, out, role):

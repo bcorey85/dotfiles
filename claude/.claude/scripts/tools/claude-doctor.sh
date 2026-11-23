@@ -212,19 +212,6 @@ else
   print_warn "orchestration rules are not wired — the main session will silently have no routing rules"
 fi
 
-# --- 4d. reviewer calibration reachability ----------------------------------
-# Whole-tree, not per-file: seven reviewer agents legitimately carry no
-# reference. Zero across all of them means calibration_refs_guard.py has nothing
-# left to guard.
-print_info "Reviewer calibration reachability"
-if ls "$CLAUDE_DIR"/agents/*reviewer*.md >/dev/null 2>&1; then
-  if grep -q "reviewer-calibration.md" "$CLAUDE_DIR"/agents/*reviewer*.md 2>/dev/null; then
-    print_success "reviewer-calibration.md is referenced"
-  else
-    print_warn "no reviewer agent references reviewer-calibration.md — calibration_refs_guard.py is now a no-op"
-  fi
-fi
-
 # --- 4e. rule anchors --------------------------------------------------------
 # Every heading block of a prompt file named in docs/rule-anchors.md has a row
 # there with the evidence behind it. Whitespace-only edits do not move a hash.

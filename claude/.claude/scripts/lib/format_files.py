@@ -8,10 +8,13 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 from collections import namedtuple
 
 import hook_input
+import oxlint_ignore
 import script_utils
+import yaml_block_scalar
 from plan_format import PLANS_DIR
 from toml_file import read_toml
 from worktree_snapshot import UNREADABLE, file_hash
@@ -37,6 +40,8 @@ PRE_COMMIT_RUFF_HOOK = re.compile(
 # any `id:` line, or a key at column 0.
 PRE_COMMIT_ENTRY_START = re.compile(r"^(?:[ \t]*-[ \t]+[\w-]+:|[ \t]*id:|[^\s#])")
 PRE_COMMIT_FILES_LINE = re.compile(r"^[ \t]*(?:-[ \t]+)?files:[ \t]*(.*?)[ \t\r]*$")
+# An `exclude:` line: `indent` ends at the column of the key, which the lines of a block scalar value stand right of.
+PRE_COMMIT_EXCLUDE_LINE = re.compile(r"^(?P<indent>[ \t]*(?:-[ \t]+)?)exclude:[ \t]*(?P<value>.*?)[ \t\r]*$")
 PRE_COMMIT_TRAILING_COMMENT = re.compile(r"[ \t]+#.*$")
 QUOTE_CHARACTERS = ('"', "'")
 # A `files:` value that starts with one of these (after one quote pair is stripped) is a block scalar, anchor, tag,
@@ -49,6 +54,9 @@ RUSTFMT_CONFIG_FILES = ("rustfmt.toml", ".rustfmt.toml")
 DEFAULT_RUST_EDITION = "2021"
 ESLINT_FLAT_CONFIG_FILES = ("eslint.config.js", "eslint.config.mjs", "eslint.config.cjs", "eslint.config.ts",
                             "eslint.config.mts", "eslint.config.cts")
+# With this flag oxlint exits 0 when its ignore config leaves out every named file. Older releases reject it.
+OXLINT_ALLOW_NO_FILES_FLAG = "--no-error-on-unmatched-pattern"
+OXLINT_FLAG_PROBES = {}
 # What marks a repo as configuring a web tool: a config file at the repo root, or this key in its package.json.
 WEB_TOOL_CONFIG_FILES = {
     "oxlint": (".oxlintrc.json", "oxlint.config.ts"),
@@ -139,7 +147,9 @@ def web_lint_command(repo, tool, lint_files, fix):
     launcher = web_tool_launcher(repo, tool)
     fix_flags = ["--fix"] if fix else []
     if tool == "oxlint":
-        return [*launcher, *fix_flags, *lint_files]
+        # The fix pass does not read the exit code, so only the check asks oxlint what it accepts.
+        ignore_flags = [] if fix else oxlint_ignore_flags(launcher, repo)
+        return [*launcher, *fix_flags, *ignore_flags, *lint_files]
     if not uses_eslint_flat_config(repo):
         # Legacy .eslintrc mode rejects --no-warn-ignored, and with --max-warnings=0
         # the "file ignored" warning for an ignored file would exit 1.
@@ -150,16 +160,42 @@ def web_lint_command(repo, tool, lint_files, fix):
     return [*launcher, *fix_flags, "--no-warn-ignored", "--max-warnings=0", *lint_files]
 
 
+def oxlint_ignore_flags(launcher, repo):
+    """[OXLINT_ALLOW_NO_FILES_FLAG] when this oxlint's --help lists the flag, else []. A process caches the first
+    probe per launcher and repo that exits 0; a failed probe runs again on the next call."""
+    key = (tuple(launcher), str(repo))
+    if key in OXLINT_FLAG_PROBES:
+        return list(OXLINT_FLAG_PROBES[key])
+
+    code, help_text = script_utils.run_command([*launcher, "--help"], repo, timeout=LINT_TIMEOUT_SECONDS)
+    flags = [OXLINT_ALLOW_NO_FILES_FLAG] if OXLINT_ALLOW_NO_FILES_FLAG in help_text else []
+    if code != 0:
+        return flags
+
+    OXLINT_FLAG_PROBES[key] = flags
+    return list(flags)
+
+
 def uses_eslint_flat_config(repo):
     """True when the repo root holds an eslint.config.* file."""
     repo_path = pathlib.Path(repo)
     return any((repo_path / config).is_file() for config in ESLINT_FLAT_CONFIG_FILES)
 
 
+def web_lint_files(repo, tool, lint_files):
+    """The `lint_files` the web linter `tool` is given. oxlint gets none that its ignore sources leave out: some
+    releases lint such a file when it is named."""
+    if tool != "oxlint":
+        return lint_files
+    ignored = oxlint_ignore.ignored_files(repo, lint_files)
+    return [path for path in lint_files if path not in ignored]
+
+
 def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False):
     lint_tool = web_fix_tool(repo, configured_only) if lint_files else None
-    if lint_tool:
-        run_quiet(web_lint_command(repo, lint_tool, lint_files, fix=True), repo)
+    tool_files = web_lint_files(repo, lint_tool, lint_files) if lint_tool else []
+    if tool_files:
+        run_quiet(web_lint_command(repo, lint_tool, tool_files, fix=True), repo)
 
     if not paths_to_format:
         return
@@ -177,33 +213,61 @@ def run_web_formatters(repo, lint_files, paths_to_format, configured_only=False)
 
 
 class RuffHook:
-    """A ruff hook entry of a .pre-commit-config.yaml: its id, and its `files:` regex (None: every file)."""
+    """A ruff hook entry of a .pre-commit-config.yaml: its id, its `files:` regex (None: every file) and its
+    `exclude:` regex (None: no file)."""
 
     def __init__(self, hook_id):
         self.hook_id = hook_id
         self.files = None
+        self.exclude = None
+
+    def excludes(self, path):
+        """True when this hook's `exclude:` regex matches `path`."""
+        return regex_matches(self.exclude, path)
+
+    def takes(self, path):
+        """True when pre-commit hands the hook this file: `files:` matches it and `exclude:` does not."""
+        if self.files is not None and not re.search(self.files, path):
+            return False
+        return not self.excludes(path)
 
 
 class PreCommitConfig:
-    """What the repo's .pre-commit-config.yaml says about ruff: its full text, and its ruff hooks."""
+    """What the repo's .pre-commit-config.yaml says about ruff and about files no hook reads: its full text, its
+    ruff hooks, and its top-level `exclude:` regex (None: no file)."""
 
-    def __init__(self, text, ruff_hooks):
+    def __init__(self, text, ruff_hooks, exclude):
         self.text = text
         self.ruff_hooks = ruff_hooks
+        self.exclude = exclude
 
     def hook_ids(self):
         return {hook.hook_id for hook in self.ruff_hooks}
 
+    def excludes(self, path):
+        """True when the config's top-level `exclude:` regex matches `path`."""
+        return regex_matches(self.exclude, path)
+
+
+def regex_matches(regex, path):
+    """True when `regex` (None: matches no file) finds a match in `path`."""
+    return regex is not None and bool(re.search(regex, path))
+
 
 def files_value(line):
-    """The regex of a `files:` line, with its trailing comment and one matching pair of quotes stripped; None when
-    the line is no `files:` line or its value is one the line match cannot read (empty, block-scalar, anchored, tagged
-    or flow) or a regex that does not compile, which means every file."""
+    """The regex of a `files:` line (see `plain_regex`); None when the line is no `files:` line or its value is one
+    the line match cannot read, which means every file."""
     match = PRE_COMMIT_FILES_LINE.match(line)
     if not match:
         return None
+    return plain_regex(match.group(1))
 
-    value = PRE_COMMIT_TRAILING_COMMENT.sub("", match.group(1))
+
+def plain_regex(raw_value):
+    """The regex of a one-line `files:` or `exclude:` value, with its trailing comment and one matching pair of
+    quotes stripped; None when the value is one the line match cannot read (empty, block-scalar, anchored, tagged or
+    flow) or a regex that does not compile."""
+    value = PRE_COMMIT_TRAILING_COMMENT.sub("", raw_value)
     if len(value) >= 2 and value[0] == value[-1] and value[0] in QUOTE_CHARACTERS:
         quote = value[0]
         value = value[1:-1]
@@ -215,21 +279,70 @@ def files_value(line):
     if not value or value.startswith(PRE_COMMIT_NON_PLAIN_FILES_STARTS):
         return None
 
+    return compiled_or_none(value)
+
+
+def compiled_or_none(regex):
+    """The regex when it compiles, else None."""
     try:
-        re.compile(value)
+        re.compile(regex)
     except re.error:
         return None
-    return value
+    return regex
+
+
+def exclude_value(lines, index):
+    """(column of the key, regex) for the `exclude:` line at `lines[index]`: a one-line value (see `plain_regex`) or
+    a block scalar (`|` or `>`), whose text is the lines after it that stand right of the key. None when the line is
+    no `exclude:` line; a regex of None when the value cannot be read, which excludes no file."""
+    match = PRE_COMMIT_EXCLUDE_LINE.match(lines[index])
+    if not match:
+        return None
+
+    key_column = len(match.group("indent"))
+    header_text = PRE_COMMIT_TRAILING_COMMENT.sub("", match.group("value"))
+    header = yaml_block_scalar.BLOCK_HEADER.match(header_text)
+    if not header:
+        return key_column, plain_regex(match.group("value"))
+
+    text = yaml_block_scalar.block_scalar_text(lines, index, key_column, header)
+    if not text:
+        return key_column, None
+
+    # YAML keeps the last line break unless the header ends in `-`, and pre-commit matches with it in the regex.
+    return key_column, compiled_or_none(text)
+
+
+def note_unread_exclude(index):
+    """Says on stderr that the `exclude:` value on line `index` (from 0) of the pre-commit config was not read, so
+    it excludes no file."""
+    print(f"format_files: {PRE_COMMIT_CONFIG}:{index + 1}: exclude value not read "
+          "(expected a one-line regex or a | or > block)", file=sys.stderr)
+
+
+def top_level_exclude(config_text):
+    """The regex of the config's top-level `exclude:` key, which no hook reads a matching file past; None when the
+    config has none or it cannot be read (`note_unread_exclude` then says so)."""
+    lines = config_text.splitlines()
+    for index in range(len(lines)):
+        found = exclude_value(lines, index)
+        if found is None or found[0] != 0:
+            continue
+        if found[1] is None:
+            note_unread_exclude(index)
+        return found[1]
+    return None
 
 
 def parse_ruff_hooks(config_text):
     """The ruff hooks of a .pre-commit-config.yaml text. The toolkit has no YAML parser, so each line is matched on
     its own: a hook entry runs from its `id:` line to the next list item that starts with a key, the next `id:`
-    line or the next key at column 0 (`PRE_COMMIT_ENTRY_START`), and a `files:` line after the `id:` line is the hook's
-    regex."""
+    line or the next key at column 0 (`PRE_COMMIT_ENTRY_START`), a `files:` line after the `id:` line is the hook's
+    regex, and an `exclude:` value after it (`exclude_value`) is the regex of the files the hook skips."""
     hooks = []
     current = None
-    for line in config_text.splitlines():
+    lines = config_text.splitlines()
+    for index, line in enumerate(lines):
         if PRE_COMMIT_ENTRY_START.match(line):
             current = None
         id_match = PRE_COMMIT_RUFF_HOOK.match(line)
@@ -244,13 +357,20 @@ def parse_ruff_hooks(config_text):
         files = files_value(line)
         if files is not None:
             current.files = files
+        exclude = exclude_value(lines, index)
+        if exclude is None:
+            continue
+        if exclude[1] is None:
+            note_unread_exclude(index)
+            continue
+        current.exclude = exclude[1]
     return hooks
 
 
 def read_pre_commit_config(repo):
     """The repo's pre-commit config as a PreCommitConfig; empty when the file is missing."""
     text = hook_input.read_file_text(pathlib.Path(repo) / PRE_COMMIT_CONFIG, "replace") or ""
-    return PreCommitConfig(text, parse_ruff_hooks(text))
+    return PreCommitConfig(text, parse_ruff_hooks(text), top_level_exclude(text))
 
 
 def repo_has_ruff_config_file(repo):
@@ -263,52 +383,58 @@ def repo_has_ruff_config_file(repo):
     return "ruff" in pyproject.get("tool", {})
 
 
-def repo_configures_ruff(repo):
+def repo_configures_ruff(repo, pre_commit):
     """True when the repo has a ruff config file (`repo_has_ruff_config_file`) or a .pre-commit-config.yaml hook
-    with id ruff, ruff-check or ruff-format."""
+    with id ruff, ruff-check or ruff-format. `pre_commit` is the repo's PreCommitConfig."""
     if repo_has_ruff_config_file(repo):
         return True
-    return bool(read_pre_commit_config(repo).ruff_hooks)
+    return bool(pre_commit.ruff_hooks)
 
 
-def ruff_enabled(repo):
+def ruff_enabled(repo, pre_commit):
     """True when ruff is on PATH and the repo configures it."""
-    return bool(shutil.which("ruff")) and repo_configures_ruff(repo)
+    return bool(shutil.which("ruff")) and repo_configures_ruff(repo, pre_commit)
 
 
 def files_seen_by_hooks(hooks, hook_ids, python_files):
-    """The `python_files` that the `files:` regex of at least one hook with an id in `hook_ids` matches (`exclude:` is
-    not read). A hook with no `files:` matches every file. When no hook has an id in `hook_ids`, no file: the
-    command has no hook of its kind. Every `files:` value here compiled in `files_value`."""
-    patterns = [re.compile(hook.files) if hook.files is not None else None
-                for hook in hooks if hook.hook_id in hook_ids]
-    if not patterns:
-        return []
-    if None in patterns:
+    """The `python_files` that at least one hook with an id in `hook_ids` takes (`RuffHook.takes`): its `files:`
+    regex matches the file and its `exclude:` regex does not. When no hook has an id in `hook_ids`, no file: the
+    command has no hook of its kind."""
+    own_hooks = [hook for hook in hooks if hook.hook_id in hook_ids]
+    return [path for path in python_files if any(hook.takes(path) for hook in own_hooks)]
+
+
+def files_not_excluded_by_every_hook(hooks, hook_ids, python_files):
+    """The `python_files` left after dropping each one that every hook with an id in `hook_ids` excludes. With no
+    such hook, all of them."""
+    own_hooks = [hook for hook in hooks if hook.hook_id in hook_ids]
+    if not own_hooks:
         return list(python_files)
-    return [path for path in python_files if any(pattern.search(path) for pattern in patterns)]
+    return [path for path in python_files if not all(hook.excludes(path) for hook in own_hooks)]
 
 
 # collections.namedtuple, not typing.NamedTuple: the Stop hook imports this module, and typing adds to its start-up.
 RuffTargets = namedtuple("RuffTargets", ["format", "check"])
 
 
-def ruff_targets(repo, python_files):
-    """The Python files that `ruff format` and `ruff check` run on. With a ruff config file, all of them. When only
-    pre-commit hooks enable ruff, the files that the `files:` regexes of a ruff-format hook, and of a ruff or
-    ruff-check hook, match (see `files_seen_by_hooks`)."""
+def ruff_targets(repo, python_files, pre_commit):
+    """The Python files that `ruff format` and `ruff check` run on. With a ruff config file, all of them but the
+    files that every ruff hook of the command's kind excludes (`files_not_excluded_by_every_hook`). When only
+    pre-commit hooks enable ruff, the files that a ruff-format hook, and a ruff or ruff-check hook, take (see
+    `files_seen_by_hooks`). `pre_commit` is the repo's PreCommitConfig."""
+    hooks = pre_commit.ruff_hooks
     if repo_has_ruff_config_file(repo):
-        return RuffTargets(list(python_files), list(python_files))
+        return RuffTargets(files_not_excluded_by_every_hook(hooks, (RUFF_FORMAT_HOOK_ID,), python_files),
+                           files_not_excluded_by_every_hook(hooks, RUFF_CHECK_HOOK_IDS, python_files))
 
-    hooks = read_pre_commit_config(repo).ruff_hooks
     return RuffTargets(files_seen_by_hooks(hooks, (RUFF_FORMAT_HOOK_ID,), python_files),
                        files_seen_by_hooks(hooks, RUFF_CHECK_HOOK_IDS, python_files))
 
 
-def repo_formats_with_ruff(repo, check_command=""):
+def repo_formats_with_ruff(repo, pre_commit, check_command=""):
     """True when the repo shows it formats with ruff: a [tool.ruff.format] table in pyproject.toml, a [format] table in
     ruff.toml or .ruff.toml, the hook id `ruff-format` or the text `ruff format` in .pre-commit-config.yaml, or
-    `ruff format` named in the check command."""
+    `ruff format` named in the check command. `pre_commit` is the repo's PreCommitConfig."""
     repo_path = pathlib.Path(repo)
     if RUFF_FORMAT_COMMAND in check_command:
         return True
@@ -321,16 +447,15 @@ def repo_formats_with_ruff(repo, check_command=""):
     if "format" in pyproject.get("tool", {}).get("ruff", {}):
         return True
 
-    config = read_pre_commit_config(repo)
-    return RUFF_FORMAT_HOOK_ID in config.hook_ids() or RUFF_FORMAT_COMMAND in config.text
+    return RUFF_FORMAT_HOOK_ID in pre_commit.hook_ids() or RUFF_FORMAT_COMMAND in pre_commit.text
 
 
-def run_python_formatters(repo, python_files, configured_only=False, check_command=""):
-    if not python_files or not ruff_enabled(repo):
+def run_python_formatters(repo, python_files, pre_commit, configured_only=False, check_command=""):
+    if not python_files or not ruff_enabled(repo, pre_commit):
         return
 
-    targets = ruff_targets(repo, python_files)
-    formats = not configured_only or repo_formats_with_ruff(repo, check_command)
+    targets = ruff_targets(repo, python_files, pre_commit)
+    formats = not configured_only or repo_formats_with_ruff(repo, pre_commit, check_command)
     if formats and targets.format:
         run_quiet(["ruff", "format", "--force-exclude", *targets.format], repo)
     if targets.check:
@@ -404,12 +529,15 @@ def is_prompt_markdown(path):
 SortedFiles = namedtuple("SortedFiles", ["lint", "web", "python", "rust"])
 
 
-def sort_files(repo, paths, include_python):
+def sort_files(repo, paths, include_python, pre_commit):
     """The existing files among `paths`, grouped by the tools that handle them. Leaves out docs/plans/ and prompt
-    markdown, which a model reads literally."""
+    markdown, which a model reads literally, and each file the top-level `exclude:` of the repo's pre-commit config
+    matches. `pre_commit` is the repo's PreCommitConfig."""
     sorted_files = SortedFiles([], [], [], [])
     for path in paths:
         if path.startswith(PLANS_DIR) or is_prompt_markdown(path) or not os.path.isfile(os.path.join(repo, path)):
+            continue
+        if pre_commit.excludes(path):
             continue
         add_to_groups(sorted_files, path, include_python)
     return sorted_files
@@ -441,40 +569,44 @@ def lint_command_problem(command, repo):
 def lint_problems(repo, paths):
     """The lint violations the repo's configured linters report on the existing files among `paths`, as a list of
     (command text, output), one per linter that exited non-zero. Nothing is fixed. Python files go to
-    `ruff check` when ruff is on PATH and the repo configures it (in a repo that configures ruff only through
-    pre-commit hooks, only the files `ruff_targets` returns); web files go to the oxlint or eslint the repo
-    configures and has installed. [] when every linter passes or none applies."""
-    files = sort_files(repo, paths, include_python=True)
+    `ruff check` when ruff is on PATH and the repo configures it (only the files `ruff_targets` returns); files the
+    top-level pre-commit `exclude:` matches are skipped; web files go to the oxlint or eslint the repo
+    configures and has installed (see `web_lint_files`). [] when every linter passes or none applies."""
+    pre_commit = read_pre_commit_config(repo)
+    files = sort_files(repo, paths, include_python=True, pre_commit=pre_commit)
     problems = []
-    if files.python and ruff_enabled(repo):
-        ruff_files = ruff_targets(repo, files.python).check
+    if files.python and ruff_enabled(repo, pre_commit):
+        ruff_files = ruff_targets(repo, files.python, pre_commit).check
         if ruff_files:
             ruff_command = ["ruff", "check", "--force-exclude", "--output-format", "concise", *ruff_files]
             problems += lint_command_problem(ruff_command, repo)
     web_tool = web_check_tool(repo) if files.lint else None
-    if web_tool:
-        problems += lint_command_problem(web_lint_command(repo, web_tool, files.lint, fix=False), repo)
+    tool_files = web_lint_files(repo, web_tool, files.lint) if web_tool else []
+    if tool_files:
+        problems += lint_command_problem(web_lint_command(repo, web_tool, tool_files, fix=False), repo)
     return problems
 
 
 def run_formatters(repo, paths, include_python=False, configured_only=False, check_command=""):
     """Run the autofix formatters on the existing files among `paths` (relative to `repo`), skipping docs/plans/ and
-    prompt markdown (`is_prompt_markdown`): a model reads both literally, so a reflow changes what it does.
+    prompt markdown (`is_prompt_markdown`) and files the top-level pre-commit `exclude:` matches: a model reads the
+    first two literally, so a reflow changes what it does.
     Python files get `ruff format` and `ruff check --fix` only with `include_python`, when ruff is on PATH and the repo
-    configures ruff (in a repo that configures ruff only through pre-commit hooks, only the files `ruff_targets`
-    returns). With `configured_only`, a web linter runs only when the repo configures it and it can run,
+    configures ruff (only the files `ruff_targets` returns).
+    With `configured_only`, a web linter runs only when the repo configures it and it can run,
     a web formatter only when the repo configures it or holds it in node_modules/.bin, and
     `ruff format` runs only when the repo shows it formats with ruff (`check_command` is the repo's check command).
     Rust files get `rustfmt` with their crate's edition when rustfmt is on PATH and the repo shows it formats with
     rustfmt (`repo_formats_with_rustfmt`).
     A missing tool is skipped silently. Returns the paths whose bytes changed."""
-    files = sort_files(repo, paths, include_python)
+    pre_commit = read_pre_commit_config(repo)
+    files = sort_files(repo, paths, include_python, pre_commit)
     candidates = files.web + files.python + files.rust
     root = pathlib.Path(repo)
     before = {path: file_hash(root, path) for path in candidates}
 
     run_web_formatters(repo, files.lint, files.web, configured_only)
-    run_python_formatters(repo, files.python, configured_only, check_command)
+    run_python_formatters(repo, files.python, pre_commit, configured_only, check_command)
     run_rust_formatters(repo, files.rust, check_command)
 
     return [path for path in candidates if file_hash(root, path) not in (before[path], UNREADABLE)]

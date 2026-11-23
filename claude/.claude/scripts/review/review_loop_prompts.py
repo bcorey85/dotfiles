@@ -36,6 +36,11 @@ SMALL_ITEMS = (
     'item never widens the change: no rename, no restructure, no new abstraction.'
 )
 
+OUT_OF_SCOPE_RULE = (
+    "A change to an existing file that is outside the review's files and that no issue names may be put back "
+    "after your pass."
+)
+
 NAMED_TESTS_RULE = "Tests the plan runs by name; never delete or rename them: "
 
 LATER_PHASE_RULE = (
@@ -170,6 +175,7 @@ def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), late
     if named_tests:
         body += ["", NAMED_TESTS_RULE + path_list(named_tests, list_dir / "named-tests.txt")]
     body += ["", "Files in scope: " + path_list(files, list_dir / "files-in-scope.txt")]
+    body += ["", OUT_OF_SCOPE_RULE]
     if later_phase_files:
         body += ["", LATER_PHASE_RULE + path_list(sorted(later_phase_files), list_dir / "later-phase-files.txt", files)]
     if held_files:

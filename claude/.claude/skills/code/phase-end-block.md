@@ -1,7 +1,5 @@
 ## Phase-Complete Block
 
-Deliver every block through the `brief` skill's shape (`~/.claude/skills/brief/SKILL.md`).
-
 **B — Stop for sign-off** (decision rules 2–6):
 
 ```

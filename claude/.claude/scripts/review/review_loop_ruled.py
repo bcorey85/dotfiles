@@ -211,7 +211,7 @@ class RuledFindings:
         self.approval_index_entries = {}
         self.approval_head_before = None  # the commit HEAD named before the latest coder pass
         self.approval_snapshot_ok = False  # whether the latest snapshot could list the repo's files
-        self.approval_unhashed = set()  # the existing approval-only files the latest snapshot could not hash
+        self.approval_unhashed = set()  # approval-only files the latest snapshot could not hash or index-read
         # each wanted-change ask on the list, saved with the paths (shape: `read_saved_asks`)
         self.wanted_entries = []
         # the saved wanted-change entries that a kept held packet waits on; no ask is filed for them
@@ -452,7 +452,8 @@ class RuledFindings:
 
     def approval_base(self, path):
         """The base a filed ask for `path` saves: its pre-pass blob id, None for a file the pass created, or
-        `UNKNOWN_BASE` when the snapshot could not list the files or hash this one."""
+        `UNKNOWN_BASE` when the snapshot could not list the files, or could not hash this one or read its
+        index entry."""
         if not self.approval_snapshot_ok or path in self.approval_unhashed:
             return UNKNOWN_BASE
         return self.approval_blobs.get(path)
@@ -461,8 +462,9 @@ class RuledFindings:
         """Puts approval-only file `path` back to its pre-pass blob (deletes a file the pass created) and records the
         edit in the dropped asks under `REVERTED_APPROVAL_EDIT_REASON`. Returns True when the file needs no ask: it
         was reverted, or the pass left its content as it was. False when the revert failed or the pre-pass content
-        is unknown (the snapshot could not list the files, or could not hash this one), so the edit stays and is
-        asked about (fail closed). A path the snapshot did not list was created by the pass.
+        is unknown (the snapshot could not list the files, or could not hash this one or read its index entry), or
+        git cannot read its index entry now, so the edit stays and is asked about (fail closed). A path the snapshot
+        did not list was created by the pass.
         The index entry goes back to its pre-pass entry when the pass changed it (a `git add` of the edit). When the
         pass committed the edit, the work tree goes back as above and the path joins `files_touched`, so the session
         commits the revert."""
@@ -471,7 +473,11 @@ class RuledFindings:
             return False
         content_changed = script_utils.content_changed_since(self.repo, path, base)
         index_before = self.approval_index_entries.get(path)
-        index_changed = script_utils.index_entry(self.repo, path) != index_before
+        try:
+            index_now = script_utils.index_entry(self.repo, path)
+        except script_utils.GitCallError:
+            return False
+        index_changed = index_now != index_before
         committed = self.committed_during_pass(path)
         if not (content_changed or index_changed or committed):
             return True
@@ -503,7 +509,8 @@ class RuledFindings:
         """Before a coder pass: saves the blob id of each approval-only file's work-tree content (None for a file the
         tree lacks), so the pass's edit is measured against what the file held before it, a phase's own uncommitted
         edit included. Within the pass, a coder's commit of the edit cannot hide it, and a revert to this content
-        clears it. An existing file whose hash fails goes to `approval_unhashed`, never stored as absent."""
+        clears it. An existing file whose hash fails, or whose index entry git cannot list, goes to
+        `approval_unhashed`, never stored as absent."""
         self.approval_blobs = {}
         self.approval_index_entries = {}
         self.approval_head_before = script_utils.head_commit(self.repo)
@@ -513,13 +520,19 @@ class RuledFindings:
         if listing is None:
             return
         self.approval_snapshot_ok = True
-        for path in approval_only_paths(listing):
+        paths = approval_only_paths(listing)
+        try:
+            entries = script_utils.index_entries(self.repo, paths)
+        except script_utils.GitCallError:
+            self.approval_unhashed.update(paths)
+            return
+        for path in paths:
             blob = script_utils.work_tree_blob(self.repo, path, keep_object=True)
             if blob is None and (pathlib.Path(self.repo) / path).is_file():
                 self.approval_unhashed.add(path)
                 continue
             self.approval_blobs[path] = blob
-            self.approval_index_entries[path] = script_utils.index_entry(self.repo, path)
+            self.approval_index_entries[path] = entries[path]
 
     def approval_ruled_paths(self, findings):
         """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""

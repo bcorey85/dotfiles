@@ -81,6 +81,17 @@ class UndoSignoffPassTest(unittest.TestCase):
             self.assertEqual([entry.path for entry in put_back], ["docs/plans/x/03-decisions.md"])
             self.assertEqual(log.read_text(), original + "\n- Ruled by the orchestrator, 2026-11-12.\n")
 
+    def test_an_absolute_scope_path_is_keyed_repo_relative_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            log = repo / "docs" / "plans" / "x" / "03-decisions.md"
+            log.parent.mkdir(parents=True)
+            log.write_text("# D\n\n- Ruled by the session, 2026-11-11.\n")
+
+            snapshot = review_loop_signoffs.snapshot_signoffs(repo, [str(log)])
+
+            self.assertEqual(list(snapshot.texts), ["docs/plans/x/03-decisions.md"])
+
 
 if __name__ == "__main__":
     unittest.main()

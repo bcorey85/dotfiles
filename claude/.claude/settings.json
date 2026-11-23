@@ -189,10 +189,7 @@
     "artifact-design": "user-invocable-only",
     "artifact-diagramming": "user-invocable-only",
     "audit": "user-invocable-only",
-    "brainstorm": "user-invocable-only",
-    "brief": "user-invocable-only",
     "commit": "user-invocable-only",
-    "guide": "user-invocable-only",
     "peer-review": "user-invocable-only",
     "pr-comments": "user-invocable-only",
     "pr-triage": "user-invocable-only",
@@ -262,15 +259,6 @@
         ]
       },
       {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/calibration_refs_guard.py"
-          }
-        ]
-      },
-      {
         "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
         "hooks": [
           {
@@ -312,10 +300,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/claudemd_linecount.py"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/dead_prose_gate.py"
           },
           {
             "type": "command",

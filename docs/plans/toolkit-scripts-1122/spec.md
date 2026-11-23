@@ -313,7 +313,7 @@ The refactor skill has no fenced JSON, keeps the trigger, the command, the point
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: read Step 5 of `claude/.claude/skills/refactor/SKILL.md`; it holds the paragraph with the `log --help` clause and exactly three bullets, no key list and no JSON. The extended close-branch test and the rehashed anchor row run with the whole files in Phase 9.
+- [x] agent-verified: read Step 5 of `claude/.claude/skills/refactor/SKILL.md`; it holds the paragraph with the `log --help` clause and exactly three bullets, no key list and no JSON. — evidence: `sed -n 64,67p` of the file shows the paragraph naming `refactor_flow.py log --help` then three bullets (`lane`, `findings`, `guards`); `rg -q '^\s*```json'` → rc=1 (no match).
 
 ---
 
@@ -386,7 +386,7 @@ The script that does the preconditions, backup, hash, lock and verified restore.
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: in a scratch git repo with `XDG_STATE_HOME` pointed at a scratch folder, run `check`, `lock --class x --line 1 --owner-pid $$`, edit the file, `restore --owner-pid $$`; the file is back to its bytes and the last line starts `DONE: restore hash-verified`.
+- [ ] human-only: in a scratch git repo with `XDG_STATE_HOME` pointed at a scratch folder, run `check`, `lock --class x --line 1 --owner-pid $$`, edit the file, `restore --owner-pid $$`; the file is back to its bytes and the last line starts `DONE: restore hash-verified`. — not run: it creates a scratch repo and files, which this run may not create; `test_restore_after_an_edit_puts_the_bytes_back_and_removes_the_lock` (passed) covers it.
 
 ---
 
@@ -434,7 +434,7 @@ Each agent step is one script line; Step 0's heading has no count; neither promp
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: read Steps 0, 1 and 4 of both files side by side; the three script lines are identical in both.
+- [x] agent-verified: read Steps 0, 1 and 4 of both files side by side; the three script lines are identical in both. — evidence: `grep -n mutation_lock` on both agent files → check line (claude:27, opencode:31), lock line (claude:37, opencode:44) and restore line (claude:81, opencode:95) carry identical text: `... mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"`, `... restore --owner-pid "$PPID" --run-id <run-id>`.
 
 ---
 
@@ -462,7 +462,7 @@ One worked card remains; the tables and all eight rules are untouched.
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: read `## A worked card`; the "A judgment call with evidence" card and its one jsonc block follow it, then `## Rules` with rules 1 to 8. `git diff --stat` shows `claude/.claude/settings.json` untouched.
+- [x] agent-verified: read `## A worked card`; the "A judgment call with evidence" card and its one jsonc block follow it, then `## Rules`. `git diff --stat` shows `claude/.claude/settings.json` untouched. — evidence: `grep -n '^## '` → `114:## A worked card`, `187:## Rules`; line 116 `**A judgment call with evidence**`; `git diff --stat 737ff9f67 -- claude/.claude/settings.json` → empty. Rules now run 1..6 because Phase 8 cut two.
 
 ---
 
@@ -518,7 +518,7 @@ Each detector grades its three fixtures as named; the verifier's table holds the
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: `git -C ~/agent-evals status bin/` shows only the four files this phase added or changed (committed in Phase 9 §4) plus any pre-existing untracked files of other sessions, untouched.
+- [ ] human-only: `git -C ~/agent-evals status bin/` shows only the four files this phase added or changed (committed in Phase 9 §4) plus any pre-existing untracked files of other sessions, untouched.
 
 ---
 
@@ -551,7 +551,7 @@ Every cell of the first pass has a graded row, or its rule is listed `unmeasured
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: read `## Rules` in `claude/.claude/skills/guide/SKILL.md`; the numbering is 1..N with no gap and every kept rule's text is unchanged.
+- [x] agent-verified: read `## Rules` in `claude/.claude/skills/guide/SKILL.md`; the numbering is 1..N with no gap and every kept rule's text is unchanged. — evidence: `grep -n '^[0-9]\. \*\*'` → rules 1..6 at lines 189-198; `git diff 737ff9f67` on the file shows only old rules 4 and 5 removed and the kept rules' numbers changed (old 6/7/8 → 4/5/6), text unchanged.
 
 ---
 

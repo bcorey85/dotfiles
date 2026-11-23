@@ -178,7 +178,7 @@ Ask outcome: the ruler declined the ask.
 
 _event_ · `RELAYED_BY_FLAG` in `claude/.claude/scripts/lib/ask_outcome_words.py`
 
-A user ruling given in one session and recorded by another, with the user's exact words.
+A user ruling given in one session and recorded by another, with the relaying session's name and the time of the user's turn, never the user's words.
 
 ### ruling
 

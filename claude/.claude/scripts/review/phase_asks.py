@@ -10,9 +10,9 @@ criterion of a plan whose criteria the user owns) is refused (exit 2, nothing lo
 unless the call carries `--by user`, which the session uses only to record the user's own ruling. A user
 ruling the user gave to another live session is recorded with
 `--by user {relay_usage}`
-The script needs a real user turn of that session's transcript whose whole text is the quote, typed after the
-newest open row of the batch (it comes after every ask it holds, carried ones included), and refuses (exit 2) when
-any lookup fails. The relay is stored as an `ask-ruling-relayed` row (who relayed, the quote, the turn's time).
+The script needs a real user turn of that session's transcript typed after the newest open row of the batch (it
+comes after every ask it holds, carried ones included), and refuses (exit 2) when any lookup fails. The relay is
+stored as an `ask-ruling-relayed` row (who relayed and the turn's time, never the user's words).
 Only a user_only ask is credited to the user; the session rules the rest.
 
 `code_wait.py review` opens the asks (one `phase-asks-open` row in the hand-back store) when it returns a clean
@@ -252,7 +252,7 @@ class RuledCall(NamedTuple):
 
 def split_ruler(words):
     """(RuledCall, None), or (None, the refusal text). `--by user` marks the ruling as the user's; no `--by` is the
-    session's. `--relayed-by` and `--quote` go with `--by user`."""
+    session's. `--relayed-by` goes with `--by user`."""
     outcome_words, ruler = script_utils.pop_option(words, "--by")
     if ruler is None:
         ruler = plan_format.SESSION_RULING

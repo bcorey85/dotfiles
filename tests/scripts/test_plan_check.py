@@ -160,7 +160,7 @@ def phase_plan(first_mark, second_mark, first_items="", second_items="", extra="
 
 
 class SpecAcRowsTest(unittest.TestCase):
-    STANDING = 'Standing ruling by Pat at 2026-11-19: "every criterion reword follows one rule" covers: rewords'
+    STANDING = 'Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords'
     CRITERIA = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, reworded)\n")
 
     def setUp(self):
@@ -186,7 +186,7 @@ class SpecAcRowsTest(unittest.TestCase):
         self.assertEqual(len(self.spec_rows("- none")), 1)
 
     def test_a_bad_standing_line_gives_one_row_naming_the_plan_file_and_line(self):
-        rows = self.spec_rows('Standing ruling by Pat at yesterday: "x" covers: rewords')
+        rows = self.spec_rows('Standing ruling by Pat at yesterday: x covers: rewords')
 
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].startswith(f"{self.spec}:5:"), rows[0])

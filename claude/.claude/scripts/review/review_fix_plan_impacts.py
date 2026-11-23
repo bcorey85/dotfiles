@@ -52,8 +52,8 @@ class PlanImpactSource(NamedTuple):
 
 
 def pop_decide_relay(argv):
-    """(the words of a `decide` call without the relay options, RelayRequest or None). Raises UsageError when only one
-    of `--relayed-by` and `--quote` is given."""
+    """(the words of a `decide` call without the relay option, RelayRequest or None). Raises UsageError for a bad
+    relay option (see ruling_relay.pop_relay_options)."""
     try:
         return ruling_relay.pop_relay_options(argv)
     except ruling_relay.RelayRefusedError as error:
@@ -62,8 +62,8 @@ def pop_decide_relay(argv):
 
 def verified_decide_relay(relay, by, source):
     """The RelayedRuling of a `decide` call's relay, or None for a call with none. Refuses (UsageError, nothing
-    logged) a relay under `--by session`, an impact with no filed time, and a quote that is not the whole text of a
-    real user turn of the relaying session typed after the impact was filed."""
+    logged) a relay under `--by session`, an impact with no filed time, and a relaying session with no real user
+    turn typed after the impact was filed."""
     if relay is None:
         return None
     try:
@@ -80,8 +80,8 @@ def refuse_session_ruling(decision, plan_arg):
     """Raises UsageError when the session may not rule: the plan's criteria are the user's, the owner cannot be read,
     or no plan names them. Only the user's word changes a criterion the user owns; with no plan the rules say ask."""
     refusal = f"decide {decision} --by session is refused: "
-    must_rule = ("The user must rule: ask the user, then run decide with --by user, or relay the user's words with "
-                 f"`--by user {ruling_relay.RELAY_USAGE}`.")
+    must_rule = ("The user must rule: ask the user, then run decide with --by user, or relay the user's ruling "
+                 f"with `--by user {ruling_relay.RELAY_USAGE}`.")
     if not plan_arg:
         raise UsageError(f"{refusal}no --plan names the criteria owner. {must_rule}")
 
@@ -95,11 +95,11 @@ def refuse_session_ruling(decision, plan_arg):
 
 
 def relayed_owner(owner, relayed):
-    """The `Ruled by` words of a ruling: `owner`, with the relaying session and the user's quoted words when
-    `relayed` is a RelayedRuling."""
+    """The `Ruled by` words of a ruling: `owner`, with the relaying session and the time of the user turn that backs
+    it when `relayed` is a RelayedRuling."""
     if relayed is None:
         return owner
-    return f'{owner}, relayed by session {relayed.request.relayed_by} (the user said: "{relayed.request.quote}")'
+    return f"{owner}, relayed by session {relayed.request.relayed_by} (user turn at {relayed.turn.timestamp})"
 
 
 def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=(), relayed=None):
@@ -116,7 +116,7 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo,
                                            decision=decision, owner=owner, ruled_at=ruled_at)
     if relayed is not None:
         handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.request.relayed_by,
-                                                  relayed.request.quote, relayed.turn.timestamp, impact_text)
+                                                  relayed.turn.timestamp, impact_text)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)
     return entry
@@ -200,9 +200,9 @@ def plan_impact_deviation_lines(adopted, ruled_at):
 
 def standing_reword_deviation_lines(rewords, ruling, ruled_at):
     """The `## Plan Deviations` lines for the reword impacts a standing ruling covers (held ones adopted now and
-    ones the loop adopted). The session is the owner; the standing ruling (who, at, quote) is in the ruling words,
+    ones the loop adopted). The session is the owner; the standing ruling (who, at, summary) is in the ruling words,
     so no sign-off is recorded at a time the user never ruled."""
-    ruling_words = f"covered by the standing ruling by {standing_rulings.ruling_label(ruling)}: {ruling['quote']}"
+    ruling_words = f"covered by the standing ruling by {standing_rulings.ruling_label(ruling)}: {ruling['summary']}"
     return session_adoption_lines(rewords, lambda impact: ruling_words, ruled_at)
 
 

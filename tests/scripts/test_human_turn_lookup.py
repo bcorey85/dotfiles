@@ -1,4 +1,5 @@
-"""lib/human_turn_lookup.py: a quote is tied to a real user turn of one live named session, or the lookup refuses."""
+"""lib/human_turn_lookup.py: a relay is backed by a real user turn of one live named session, or the lookup
+refuses."""
 import json
 import os
 import pathlib
@@ -51,35 +52,29 @@ class HumanTurnLookupTest(unittest.TestCase):
         folder_path.mkdir(parents=True, exist_ok=True)
         (folder_path / f"{session_id}.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
 
-    def verified(self, quote="rule it accepted", after=ASKED_AT):
-        return human_turn_lookup.verified_human_turn(NAME, quote, after)
+    def verified(self, after=ASKED_AT):
+        return human_turn_lookup.verified_human_turn(NAME, after)
 
-    def refused(self, quote="rule it accepted", after=ASKED_AT):
+    def refused(self, after=ASKED_AT):
         with self.assertRaises(HumanTurnRefusedError) as caught:
-            self.verified(quote, after)
+            self.verified(after)
         return str(caught.exception)
 
-    def test_a_human_turn_after_the_ask_equal_to_the_quote_is_returned(self):
+    def test_a_human_turn_after_the_ask_is_returned_with_its_time_and_no_words(self):
         self.register()
         self.transcript([user_row("  rule it accepted\n", HUMAN)])
         turn = self.verified()
         self.assertEqual(turn.timestamp, "2026-11-15T06:22:12.305Z")
         self.assertGreater(turn.epoch, ASKED_AT)
+        self.assertNotIn("rule it accepted", repr(turn))
 
-    def test_a_quote_inside_a_longer_human_turn_is_refused(self):
-        self.register()
-        self.transcript([user_row("the user says: rule it accepted please", HUMAN)])
-        self.assertIn("no human turn", self.refused())
-        self.transcript([user_row("ok, and also more", HUMAN)])
-        self.assertIn("no human turn", self.refused(quote="ok"))
-
-    def test_the_latest_matching_turn_is_returned(self):
+    def test_the_latest_turn_is_returned(self):
         self.register()
         self.transcript([user_row("rule it accepted", HUMAN, timestamp="2026-11-15T06:10:00.000Z"),
                          user_row("rule it accepted", HUMAN, timestamp="2026-11-15T06:30:00.000Z")])
         self.assertEqual(self.verified().timestamp, "2026-11-15T06:30:00.000Z")
 
-    def test_a_peer_message_holding_the_quote_is_not_a_user_turn(self):
+    def test_a_peer_message_is_not_a_user_turn(self):
         self.register()
         self.transcript([user_row("rule it accepted", PEER)])
         self.assertIn("no human turn", self.refused())
@@ -177,7 +172,7 @@ class HumanTurnLookupTest(unittest.TestCase):
                 turn = self.verified()
         self.assertEqual(turn.timestamp, "2026-11-15T06:22:12.305Z")
 
-    def test_a_typed_turn_with_an_appended_reminder_equals_the_quote(self):
+    def test_a_typed_turn_with_an_appended_reminder_is_a_user_turn(self):
         self.register()
         self.transcript([user_row("rule it accepted\n<system-reminder>x</system-reminder>", HUMAN)])
         self.assertEqual(self.verified().timestamp, "2026-11-15T06:22:12.305Z")
@@ -187,15 +182,15 @@ class HumanTurnLookupTest(unittest.TestCase):
         self.transcript([user_row("rule it accepted", HUMAN, isSidechain=True)])
         self.assertIn("no human turn", self.refused())
 
-    def test_a_quote_the_turns_do_not_hold_is_refused(self):
+    def test_any_typed_human_turn_backs_the_relay(self):
         self.register()
         self.transcript([user_row("something else", HUMAN)])
-        self.assertIn("no human turn", self.refused())
+        self.assertEqual(self.verified().timestamp, "2026-11-15T06:22:12.305Z")
 
-    def test_an_empty_quote_is_refused(self):
+    def test_a_blank_human_turn_is_not_a_typed_turn(self):
         self.register()
-        self.transcript([user_row("anything", HUMAN)])
-        self.assertIn("quote is empty", self.refused(quote="  "))
+        self.transcript([user_row("  ", HUMAN)])
+        self.assertIn("no human turn", self.refused())
 
     def test_no_registry_row_is_refused(self):
         self.transcript([user_row("rule it accepted", HUMAN)])

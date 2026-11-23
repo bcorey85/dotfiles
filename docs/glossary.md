@@ -142,9 +142,9 @@ Ask outcome: accepted, and the change is already made.
 
 ### approval-only file
 
-_noun_ · `claude/.claude/scripts/review/phase_asks.py`
+_noun_ · `claude/.claude/scripts/review/phase_asks.py`, `claude/.claude/scripts/review/review_loop_ruled.py`
 
-A file a coder edits only after the user's own ruling, such as a CLAUDE.md.
+A file a coder edits only after the user's own ruling, such as a CLAUDE.md. An owner-line edit to the scripts CLAUDE.md stands under a standing ruling that covers owner lines.
 
 ### ask
 
@@ -198,7 +198,7 @@ A decision-log line that says who ruled and when.
 
 _noun_ · `STANDING_RULING_FORM` in `claude/.claude/scripts/lib/standing_rulings.py`
 
-A user's ruling that covers every later reword of an AC.
+A ruling, by the user or the orchestrating session, that covers every later reword of an AC (`covers: rewords`) or every owner-line edit (`covers: owner-lines`).
 
 ### user-only ask
 
@@ -309,6 +309,12 @@ The file a code-fork writes when it stops.
 _adjective_ · `CLAUDE.md`, section "Working with This Repo"
 
 A repo where the session edits files itself instead of dispatching a coder.
+
+### owner line
+
+_noun_ · `OWNER_LINE` in `claude/.claude/scripts/lib/owner_lines.py`
+
+A bullet under `## Owners` in the scripts CLAUDE.md that names the module owning a fact.
 
 ### template
 

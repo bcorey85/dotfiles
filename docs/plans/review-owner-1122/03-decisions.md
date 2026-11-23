@@ -112,6 +112,7 @@
 
 **Choice**: This lane makes the three glossary edits in `docs/glossary.md`: "standing ruling" widens to a ruling, by the user or the orchestrating session, that covers every later reword of an AC or every owner-line edit; "approval-only file" gains the owner-line exception; "owner line" is added as a term. Recorded in the change file.
 **Reasoning**: Ruling by agent-evals-c3 at 2026-11-22: a definition is not a metered rule.
+**User ruling**: Relayed by agent-evals-c3-owner on 2026-11-23: the user approved the "owner line" term and the widened "standing ruling" and "approval-only file" entries in `docs/glossary.md`; AC16 stands. The review loop had reverted the three edits until this ruling.
 **Alternatives rejected**: Leave the glossary: the code accepts a session ruling that the glossary says only the user gives, and a reader of the glossary would call the kept edit a bug.
 **Trade-off accepted**: Three glossary entries change in a lane whose ticket did not name them.
 

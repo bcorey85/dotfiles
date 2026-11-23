@@ -326,7 +326,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 - Edits to `orchestration.md`, `claude/.claude/CLAUDE.md`, `S/code/**`, `claude/.claude/skills/code/**`.
 - Partial keeps of a mixed edit (D6).
 - Resume-path handling of a saved approval ask for the scripts CLAUDE.md from an earlier run.
-- Index-versus-work-tree divergence (only work-tree text is classified).
+- Classifying index or HEAD text: only work-tree text is classified; the index and HEAD checks in `staged_and_committed_match_work_tree` stay as a fail-closed guard (see the close pass ruling under Plan Deviations).
 - Who writes the ruling line in lanes not started by agent-evals-c3 (Q3).
 
 ## Testing Strategy
@@ -347,6 +347,26 @@ Phase 3 held impact (narrow, no AC change): a fix pass could write the owner-lin
 Close pass ruling: the index and HEAD checks in staged_and_committed_match_work_tree (and their tests) stay; a fail-closed guard against an edit staged or committed with prose, no AC changed; ruled by the orchestrating session, 2026-11-22.
 
 Close pass ruling: a standing ruling that a fix pass writes mid-run still counts for later passes of the same run; rejected as out of scope, no AC changed, listed as an open item; ruled by the orchestrating session, 2026-11-22.
+
+Open items (close pass, recorded here; ruled by the orchestrating session, 2026-11-23): (1) the mid-run-ruling gap: a standing ruling that a fix pass writes mid-run does not count for later passes of the same run. (2) The index and HEAD checks in staged_and_committed_match_work_tree stay, although the "What We're NOT Doing" list says otherwise. (3) closest_line is picked greedily (best score) in protected_lines.rewritten_stretch; that function needs neither order nor a guaranteed match, so it is left alone.
+
+- 2026-11-23: Adopt plan change. Ruled by the session, not the user at 2026-11-23 00:47.
+
+  The ruling: AC7 carve-out: a swap of mutually resembling owner bullets where each is also reworded counts as two updates in place and stands; any other reorder is reverted. Ruled by the orchestrating session, 2026-11-23.
+
+  The disagreement:
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:55-60 [plan-drift] PLAN-IMPACT: AC7 (and D5, Q8) says a reordering of owner bullets is reverted, but the code keeps a reorder of bullets that resemble each other once any of them is reworded. I ran it: before `[- Plan text: ..., - Plan text b: ...]`, after the two swapped with one word appended to each, gives one `replace` opcode, and `owner_lines_only` returns True. With the resemblance rule (REWRITE_RATIO 0.6), this edit looks the same as two updates in place. Question: should a moved, reworded bullet that resembles each other count as a reorder (revert), or is it accepted as an update in place? Change if accepted as a reorder: in `every_line_resembled`, make each before line resemble its own after slot better than any other line in the after block, and add the swapped-and-reworded similar-bullets case to `test_every_other_edit_is_false`. acceptance_criteria: AC7. kind: narrow
+  
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:56-60 [plan-drift] — PLAN-IMPACT: the plan and the code disagree on reorders. AC7 ("a reordering … is reverted whole"), D5 and Q8 say every reorder is reverted. The code keeps a swap of two bullets that resemble each other when both are also reworded (the case under Fix). It is unclear whether the Phase 1 resemblance ruling (spec.md Plan Deviations) meant to allow that, or whether the code should catch it. Question: does a reworded swap of bullets that resemble each other count as two updates in place, or as a reorder that AC7 must revert? Change if the code must revert it: before the resemblance check, return False for a `replace` block whose before lines match the after lines better in another order than in place, and add the case to `test_every_other_edit_is_false`. acceptance_criteria: AC7
+
+- 2026-11-23: Adopt plan change. Ruled by the session, not the user at 2026-11-23 00:47.
+
+  The ruling: A reworded swap of resembling bullets counts as two updates in place; AC7 narrowed with a carve-out, code kept (ruled by the orchestrating session 2026-11-23).
+
+  The disagreement:
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:55-60 [plan-drift] PLAN-IMPACT: AC7 (and D5, Q8) says a reordering of owner bullets is reverted, but the code keeps a reorder of bullets that resemble each other once any of them is reworded. I ran it: before `[- Plan text: ..., - Plan text b: ...]`, after the two swapped with one word appended to each, gives one `replace` opcode, and `owner_lines_only` returns True. With the resemblance rule (REWRITE_RATIO 0.6), this edit looks the same as two updates in place. Question: should a moved, reworded bullet that resembles each other count as a reorder (revert), or is it accepted as an update in place? Change if accepted as a reorder: in `every_line_resembled`, make each before line resemble its own after slot better than any other line in the after block, and add the swapped-and-reworded similar-bullets case to `test_every_other_edit_is_false`. acceptance_criteria: AC7. kind: narrow
+  
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:56-60 [plan-drift] — PLAN-IMPACT: the plan and the code disagree on reorders. AC7 ("a reordering … is reverted whole"), D5 and Q8 say every reorder is reverted. The code keeps a swap of two bullets that resemble each other when both are also reworded (the case under Fix). It is unclear whether the Phase 1 resemblance ruling (spec.md Plan Deviations) meant to allow that, or whether the code should catch it. Question: does a reworded swap of bullets that resemble each other count as two updates in place, or as a reorder that AC7 must revert? Change if the code must revert it: before the resemblance check, return False for a `replace` block whose before lines match the after lines better in another order than in place, and add the case to `test_every_other_edit_is_false`. acceptance_criteria: AC7
 
 ## References
 

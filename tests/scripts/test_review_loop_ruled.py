@@ -1152,7 +1152,7 @@ class OwnerLineEditTest(unittest.TestCase):
         host.files_touched = set()
         host.snapshot_approval_blobs()
         edit()
-        self.reverted = host.ask_for_approval_only_edits([changed], list(findings))
+        host.reverted = host.ask_for_approval_only_edits([changed], list(findings))
         return host
 
     def edit_scripts_md(self, text):
@@ -1184,9 +1184,9 @@ class OwnerLineEditTest(unittest.TestCase):
         finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:5` [docs] missing owner — Change: add the bullet.")
 
         host = self.coder_pass(self.edit_scripts_md(added), [finding])
-        wanted_filed = host.ask_for_wanted_changes([finding], self.reverted)
+        wanted_filed = host.ask_for_wanted_changes([finding], host.reverted)
 
-        self.assertEqual(self.reverted, [])
+        self.assertEqual(host.reverted, [])
         self.assertFalse(wanted_filed)
         self.assertEqual(self.scripts_md.read_text(), added)
         self.assertEqual(host.user_only_asks, [])
@@ -1351,6 +1351,8 @@ class RootClaudeMdOnlySnapshotTest(unittest.TestCase):
 
         host.snapshot_approval_blobs()
 
+        self.assertTrue(host.approval_snapshot_ok)
+        self.assertIn("CLAUDE.md", host.approval_blobs)
         self.assertIsNone(host.owner_line_ruling)
 
 

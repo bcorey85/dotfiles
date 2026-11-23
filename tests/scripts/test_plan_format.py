@@ -874,7 +874,6 @@ class StandingRulingTest(unittest.TestCase):
                 message = str(raised.exception)
                 self.assertIn(f"{self.plan}:5:", message)
                 self.assertIn(standing_rulings.STANDING_RULING_FORM, message)
-                self.assertIn("covers: rewords|owner-lines", message)
 
     def test_a_reword_whose_ac_names_the_ticket_criterion_passes_drift_only_with_the_ruling(self):
         ticket = f"## Acceptance Criteria\n\n- {CRITERION_TEXT}\n"

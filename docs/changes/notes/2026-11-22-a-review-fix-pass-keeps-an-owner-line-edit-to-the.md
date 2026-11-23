@@ -23,7 +23,7 @@ The ruling line has this exact form:
 
 `Standing ruling by <who> at <YYYY-MM-DD>: <paraphrase, no quote marks> covers: owner-lines`
 
-It goes in the lane's `03-decisions.md`, or in the plan's `## Plan Deviations`. It must be in place before the fix pass starts: a ruling the pass itself adds does not count. Under it, only adds and updates inside `## Owners` stand; any other edit, a mixed edit or a removed bullet reverts as before. Close pass: owner-line updates must map each old bullet to its own new bullet in order; the standing-ruling wording lets the session rule rewords only for criteria it owns.
+It goes in the lane's `03-decisions.md`, or in the plan's `## Plan Deviations`. It must be in place before the fix pass starts: a ruling the pass itself adds does not count. Under it, only adds and updates inside `## Owners` stand; any other edit, a mixed edit or a removed bullet reverts as before. Close pass: owner-line updates must map each old bullet to its own new bullet in order; the standing-ruling wording lets the session rule rewords only for criteria whose owner is `session` or `plan`.
 
 The queue item's second item closes on evidence: a replay of a pasted-brief lane ticket reads owner `session`, and a pin test in `CriteriaOwnerTest` holds that shape. No failing replay exists, so there is no code change for it.
 

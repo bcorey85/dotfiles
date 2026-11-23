@@ -198,7 +198,7 @@ A decision-log line that says who ruled and when.
 
 _noun_ · `STANDING_RULING_FORM` in `claude/.claude/scripts/lib/standing_rulings.py`
 
-A ruling that covers every later reword of an AC (`covers: rewords`; the user's, or the orchestrating session's for a criterion the session owns) or every owner-line edit (`covers: owner-lines`; the user or the orchestrating session).
+A ruling that covers every later reword of an AC (`covers: rewords`; by the user, or by the orchestrating session for a criterion whose owner is `session` or `plan`) or every owner-line add or update (`covers: owner-lines`; the user or the orchestrating session). The reader does not check who wrote it or who owns the criterion.
 
 ### user-only ask
 

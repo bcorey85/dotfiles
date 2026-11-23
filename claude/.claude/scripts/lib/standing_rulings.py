@@ -1,14 +1,14 @@
 """standing_rulings.py: the one form and the one reader for a standing ruling, an order that covers a whole class of
-changes (`covers: rewords`, the user's, or the orchestrating session's for a criterion the session owns;
-`covers: owner-lines`, the user or the orchestrating session), and the test for a plan impact that only rewords a
-criterion.
+changes (`covers: rewords`, by the user or the orchestrating session for a criterion whose owner is `session` or
+`plan`; `covers: owner-lines`, by the user or the orchestrating session), and the test for a plan impact that only
+rewords a criterion.
 
 A standing ruling is one line in the plan's `## Plan Deviations` section or in `03-decisions.md` beside the plan:
 
     Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase> covers: rewords|owner-lines
 
-`covers` is `rewords` or `owner-lines`. A cut or a narrowing is never covered. The paraphrase holds no quote mark: a
-standing ruling never stores the user's words."""
+The reader does not check who wrote it or who owns the criterion. `covers` is `rewords` or `owner-lines`. A cut or a
+narrowing is never covered. The paraphrase holds no quote mark: a standing ruling never stores the user's words."""
 import re
 
 import plan_format

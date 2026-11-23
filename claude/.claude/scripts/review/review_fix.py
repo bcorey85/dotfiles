@@ -810,7 +810,7 @@ def waiting_plan_impact_source(decision=None):
     it waits and the latest hand-back's packet is missing, holds no impact (a fix round's hand-back) or holds the same
     impact, ruled or not. When the packet holds another impact, the state is stale, because the packet state outlives
     its packet: the unruled held impacts of the latest hand-back are used, as the push check's record reads them.
-    Failing those, a `keep` takes an adopted impact the hand-back's blocker says the coder never applied.
+    Failing those, a `keep` takes an adopted impact the packet's `adopted_unapplied` list names.
     Raises UsageError when an existing state file is not readable, whatever the hand-back holds, and when no
     source holds an impact."""
     state = read_state()

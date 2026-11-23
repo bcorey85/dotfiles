@@ -74,7 +74,7 @@ The architect named three.
 - `drop_asks` dedupes by ask (`review_loop_ruled.py:232-235`), so one kept row per file per run. `exercised`.
 - Item 2 premise: 7 of 7 lane plans from 2026-11-22 print owner `session`; a survey of 87 local plan tickets finds no pasted-brief ticket reading `user`. `exercised` (`plan_check.py owner` over every `docs/plans/*/00-ticket.md` under `~/dotfiles*`, `~/dev/*`, `~/agent-evals*`).
 - The glossary (`docs/glossary.md`) is edited only under agent-evals-c3's ruling of 2026-11-22; no other domain term is coined.
-- Change file: `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by claude-code/claude-fable-5-1 --root /home/brandon/dotfiles/docs/changes`, kind `fix` with `test: path::name`, then `build_changes.py`. Sign-offs stay in `03-decisions.md`, never in the change file.
+- Change file: `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by claude-code/claude-fable-5-1 --root docs/changes`, kind `fix` with `test: path::name`, then `build_changes.py`. Sign-offs stay in `03-decisions.md`, never in the change file.
 - The ledger's `## Direction & Constraints` holds no line that starts `Standing ruling`, so this plan's own /code review adopts no reword impact by accident (`exercised`, grep after the reword of 2026-11-22).
 
 ## External Contracts
@@ -276,7 +276,7 @@ Item 2 closes on evidence with a test that pins the shape that works; the glossa
 
 ##### 3. Change file
 
-**File**: `docs/changes/notes/2026-11-22-<slug>.md` (created in this worktree by `python3 ~/agent-evals/bin/build_changes.py new "A review fix pass keeps an owner-line edit to the scripts CLAUDE.md under a standing ruling" --by claude-code/claude-fable-5-1 --root /home/brandon/dotfiles-review-owner-nov22/docs/changes`; filled, then the pages rebuilt with `python3 ~/agent-evals/bin/build_changes.py --root /home/brandon/dotfiles-review-owner-nov22/docs/changes`; nothing is written to the main checkout)
+**File**: `docs/changes/notes/2026-11-22-<slug>.md` (created in this worktree by `python3 ~/agent-evals/bin/build_changes.py new "A review fix pass keeps an owner-line edit to the scripts CLAUDE.md under a standing ruling" --by claude-code/claude-fable-5-1 --root docs/changes`; filled, then the pages rebuilt with `python3 ~/agent-evals/bin/build_changes.py --root docs/changes`; nothing is written to the main checkout)
 **Changes**: `change_type: "fixed"`, `kind: "fix"`, `components: ["script/review-loop-ruled", "script/standing-rulings", "script/owner-lines"]`, `evidence: ["queue item"]`, `test: "tests/scripts/test_review_loop_ruled.py::OwnerLineEditTest.test_only_an_owner_line_edit_stands_under_the_ruling; tests/scripts/test_plan_format.py::CriteriaOwnerTest.test_a_pasted_brief_lane_ticket_with_one_source_line_per_item_is_session_owned"` (the `path::Class.test` form the existing notes use). `## Change` states: the exact line `Standing ruling by <who> at <YYYY-MM-DD>: <paraphrase, no quote marks> covers: owner-lines`; where it goes (the lane's `03-decisions.md` or the plan's `## Plan Deviations`); that it is in place before the pass; that only adds and updates inside `## Owners` stand; item 2's close on evidence with the pin test; the three glossary edits; the merge dependency on `fix/toolkit-rules-nov22`. Back-out: revert the commit and remove any `covers: owner-lines` line from plans, which would then raise `PlanFormatError`. No sign-off text; those live in `03-decisions.md`.
 
 #### Success Criteria
@@ -290,7 +290,7 @@ The pin test passes; the glossary holds the three entries; the change file passe
 - [ ] **Presence-verified**: the glossary contains the owner line entry — `rg -q '^### owner line$' docs/glossary.md`
 - [ ] **Presence-verified**: the glossary contains the widened standing ruling — `rg -q 'or every owner-line edit' docs/glossary.md`
 - [ ] **Presence-verified**: a change note contains the exact ruling line form — `rg -l 'covers: owner-lines' docs/changes/notes`
-- [ ] **Build-verified**: the change pages build — `python3 /home/brandon/agent-evals/bin/build_changes.py --root /home/brandon/dotfiles-review-owner-nov22/docs/changes`
+- [ ] **Build-verified**: the change pages build — `python3 ~/agent-evals/bin/build_changes.py --root docs/changes`
 - [ ] **Agent-run**: full suite under the memory cap, in the background — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
 
 #### Manual Verification:
@@ -372,6 +372,8 @@ Ruling by agent-evals-c3 (lane owner) at 2026-11-23: ticket AC7 stands with no c
 
 Ruling by agent-evals-c3 at 2026-11-23: the lane owns queue/review-fix-decide-no-route-re-rules-an-adopted.md; covers: that fix, claiming and closing that item, and re-ruling this lane's ticket AC7 impact to keep through the new route.
 
+Ruling by agent-evals-c3 at 2026-11-23: the lane owns and closes both queue items; covers: the adopt-already-applied widening.
+
 - 2026-11-23: Keep plan as written. Ruled by the session, not the user at 2026-11-23 01:12.
 
   The ruling: ticket AC7 stands as written, ruled by agent-evals-c3 2026-11-23; the adopt carve-out is withdrawn
@@ -380,6 +382,13 @@ Ruling by agent-evals-c3 at 2026-11-23: the lane owns queue/review-fix-decide-no
   /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:55-60 [plan-drift] PLAN-IMPACT: AC7 (and D5, Q8) says a reordering of owner bullets is reverted, but the code keeps a reorder of bullets that resemble each other once any of them is reworded. I ran it: before `[- Plan text: ..., - Plan text b: ...]`, after the two swapped with one word appended to each, gives one `replace` opcode, and `owner_lines_only` returns True. With the resemblance rule (REWRITE_RATIO 0.6), this edit looks the same as two updates in place. Question: should a moved, reworded bullet that resembles each other count as a reorder (revert), or is it accepted as an update in place? Change if accepted as a reorder: in `every_line_resembled`, make each before line resemble its own after slot better than any other line in the after block, and add the swapped-and-reworded similar-bullets case to `test_every_other_edit_is_false`. acceptance_criteria: AC7. kind: narrow
   
   /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:56-60 [plan-drift] — PLAN-IMPACT: the plan and the code disagree on reorders. AC7 ("a reordering … is reverted whole"), D5 and Q8 say every reorder is reverted. The code keeps a swap of two bullets that resemble each other when both are also reworded (the case under Fix). It is unclear whether the Phase 1 resemblance ruling (spec.md Plan Deviations) meant to allow that, or whether the code should catch it. Question: does a reworded swap of bullets that resemble each other count as two updates in place, or as a reorder that AC7 must revert? Change if the code must revert it: before the resemblance check, return False for a `replace` block whose before lines match the after lines better in another order than in place, and add the case to `test_every_other_edit_is_false`. acceptance_criteria: AC7
+
+- 2026-11-23: Adopt plan change. Ruled by the session, not the user at 2026-11-23 03:16.
+
+  The ruling: build_changes.py new and the rebuild use the repo-relative --root docs/changes, run from the repo top; ruled by the orchestrating session 2026-11-23
+
+  The disagreement:
+  docs/plans/review-owner-1122/03-decisions.md:169 [plan-drift] — PLAN-IMPACT: the decision log and the spec now disagree. The decision log's recorded choice says `build_changes.py new` runs with `--root /home/brandon/dotfiles-review-owner-nov22/docs/changes`, "the same root the rebuild uses". spec.md:77, :279 and :293 now use the repo-relative `--root docs/changes`. This file is a decision record outside this round's owned files, so I have not proposed a coder edit to it. Question: should the decision at 03-decisions.md:169 be re-recorded as the repo-relative root, run from the repo top, with who ruled and when? Change if accepted: the orchestrating session updates the choice at 03-decisions.md:169 to `--root docs/changes`. acceptance_criteria: none kind: reword
 
 ## References
 

@@ -1312,8 +1312,12 @@ class ReviewFixScriptTest(unittest.TestCase):
         impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
         ruling = handback_store.AdoptedRuling(impact, None, "the user", "2026-11-19 10:00")
         marked = review_user_ruled.adopted_issue(impact, ruling)
-        blocker = review_loop_ruled.NOT_APPLIED_BLOCKER.format(why=review_loop_ruled.SKIPPED_WHY, ruling=marked)
-        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": blocker}])
+        # The round finding is the reviewer's own wording of the impact, not the ruling's text: the blocker names it,
+        # and only the packet's adopted_unapplied ties it to the ruling.
+        reraised = review_user_ruled.adopted_issue("PLAN-IMPACT: the AC2 wording again, in a reviewer's words", ruling)
+        blocker = review_loop_ruled.not_applied_blocker(review_loop_ruled.SKIPPED_WHY, reraised)
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": blocker}],
+                                  adopted_unapplied=[impact])
         repo_key = handback_store.ruled_rows_repo(str(self.repo))
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
@@ -1333,6 +1337,51 @@ class ReviewFixScriptTest(unittest.TestCase):
         carried = review_loop_ruled.unapplied_adopted([finding_record.parse_finding(text) for text in left_out.kept],
                                                       loop_adopted, {1: "SKIPPED 1: no"}, [], "/repo")
         self.assertEqual(carried, [], "no adopted-not-applied blocker is carried once the keep is the latest ruling")
+
+    def plant_adopted_impact(self, packet_unapplied):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": "blocked"}],
+                                  adopted_unapplied=packet_unapplied)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+        return impact
+
+    def test_decide_keep_finds_no_adopted_impact_the_packet_does_not_list_as_unapplied(self):
+        self.plant_adopted_impact([])
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+
+    def test_decide_keep_with_an_adopted_row_and_no_packet_in_the_hand_back_processes_no_packet(self):
+        self.store_dir.mkdir(exist_ok=True)
+        dispatch = {"kind": "dispatch", "session_id": SESSION, "ts": time.time(), "repo": str(self.repo.resolve())}
+        (self.store_dir / f"{SESSION}.jsonl").write_text(json.dumps(dispatch) + "\n")
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2",
+                                               repo_key, decision=plan_format.ADOPT_DECISION, owner="the user",
+                                               ruled_at="2026-11-19 10:00")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+
+    def test_decide_adopt_does_not_take_the_unapplied_adopted_impact_as_its_source(self):
+        impact = self.plant_adopted_impact(["PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "again"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            rulings = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual([ruling.text for ruling in rulings.adopted], [impact], "the adopt row is still the ruling")
 
     def test_decide_prefers_the_hand_back_impact_over_a_stale_state_waiting_on_another_one(self):
         self.plant_held_hand_back()

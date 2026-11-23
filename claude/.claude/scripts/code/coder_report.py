@@ -98,6 +98,20 @@ def covered_issue(reason, number, issue_count):
     return None
 
 
+ALREADY_APPLIED_LINE = re.compile(r"\s*[-*]?\s*`?ALREADY APPLIED (\d+):")
+
+
+def already_applied_issues(report, issue_count):
+    """The issue numbers the coder reported as already in the tree, by an `ALREADY APPLIED <n>: <where>` line, for
+    numbers that name a listed issue."""
+    numbers = set()
+    for line in report.splitlines():
+        match = ALREADY_APPLIED_LINE.match(line)
+        if match and 1 <= int(match.group(1)) <= issue_count:
+            numbers.add(int(match.group(1)))
+    return numbers
+
+
 def skipped_issues(report, issue_count):
     """Issue number -> the coder's `SKIPPED <n>: <reason>` line, for numbers that name a listed issue. A `SKIPPED
     small <n>` line is a small item's, never an issue's. An issue whose reason names another listed issue as the one

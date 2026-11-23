@@ -13,6 +13,15 @@ SCRIPTS_MD = (
     "- TOML files: `lib/toml_file.py` `read_toml`.\n\n## Data between steps\n\n- Steps pass JSON to each other.\n"
 )
 NEW_BULLET = "- A new fact: `lib/new_fact.py`.\n"
+SEPARATED_SWAP_HEAD = "# Toolkit scripts\n\n## Owners\n\n"
+SEPARATED_SWAP_BEFORE = (
+    f"{SEPARATED_SWAP_HEAD}- Plan text: `lib/plan_format.py`.\n- TOML files: `lib/toml_file.py` `read_toml`.\n"
+    "- Plan text b: `lib/plan_format_b.py`.\n"
+)
+SEPARATED_SWAP_AFTER = (
+    f"{SEPARATED_SWAP_HEAD}- Plan text b: `lib/plan_format_b.py` `read`.\n"
+    "- TOML files: `lib/toml_file.py` `read_toml`.\n- Plan text: `lib/plan_format.py` `read`.\n"
+)
 
 
 class OwnerLinesOnlyTest(unittest.TestCase):
@@ -38,15 +47,6 @@ class OwnerLinesOnlyTest(unittest.TestCase):
         )
 
         self.assertTrue(owner_lines.owner_lines_only(before, after))
-
-    def test_old_line_whose_best_match_is_a_later_line_is_not_an_update_in_place(self):
-        plan_line = "- Plan text: `lib/plan_format.py` reads every plan file."
-        longer_line = "- Plan text: `lib/plan_format.py` reads every plan file, too."
-        self.assertFalse(
-            owner_lines.every_line_resembled(
-                [plan_line, longer_line], [plan_line.replace("every", "each"), plan_line]
-            )
-        )
 
     def test_every_other_edit_is_false(self):
         lines = SCRIPTS_MD.splitlines(keepends=True)
@@ -84,6 +84,19 @@ class OwnerLinesOnlyTest(unittest.TestCase):
         for name, after in cases.items():
             with self.subTest(name):
                 self.assertFalse(owner_lines.owner_lines_only(SCRIPTS_MD, after), name)
+
+    def test_two_reworded_bullets_swapped_around_an_unchanged_bullet_is_false(self):
+        self.assertFalse(owner_lines.owner_lines_only(SEPARATED_SWAP_BEFORE, SEPARATED_SWAP_AFTER))
+
+    def test_a_bullet_updated_in_place_beside_an_untouched_look_alike_bullet_is_true(self):
+        head = "# Toolkit scripts\n\n## Owners\n\n"
+        first = "- Plan text: `lib/plan_format.py`."
+        sibling = "- Plan text b: `lib/plan_format_b.py`."
+
+        before = f"{head}{first}\n{sibling}\n"
+        after = f"{head}{first[:-1]} and `check`.\n{sibling}\n"
+
+        self.assertTrue(owner_lines.owner_lines_only(before, after))
 
     def test_a_swap_of_the_last_two_bullets_of_a_file_with_no_final_newline_is_false(self):
         head = "# Toolkit scripts\n\n## Owners\n\n"

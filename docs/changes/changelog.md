@@ -15,7 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
-* [review_fix decide keep rules an adopted plan impact the coder never applied](notes/2026-11-23-review-fix-decide-keep-rules-an-adopted-plan.md) [shared/review-loop] `decide keep` now re-rules a plan impact that was adopted and left unapplied, so the adopted-not-applied blocker stops carrying.
+* [review_fix decide keep rules an adopted plan impact the coder never applied](notes/2026-11-23-review-fix-decide-keep-rules-an-adopted-plan.md) [script/review-fix, shared/review-loop] `decide keep` now re-rules a plan impact that was adopted and left unapplied, so the adopted-unapplied stop no longer holds the loop.
 
 ## Week of 2026-11-16
 

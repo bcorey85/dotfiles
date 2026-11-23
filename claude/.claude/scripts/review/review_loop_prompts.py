@@ -166,7 +166,8 @@ def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), late
     body += listed_texts(findings, list_dir / "issues.txt", "issue")
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
                  "where n is the issue's number. When you stop on a PLAN-IMPACT, write that line for each issue "
-                 "you left unapplied.", "", SCOPED_TESTS]
+                 "you left unapplied. When the tree already holds the change an issue asks for, write "
+                 "`ALREADY APPLIED <n>: <file:line where it is>` for it instead.", "", SCOPED_TESTS]
     if no_code_numbers:
         body += ["", "## No code change", "", NO_CODE_CODER_RULE.format(numbers=", ".join(map(str, no_code_numbers)))]
     if small_items:

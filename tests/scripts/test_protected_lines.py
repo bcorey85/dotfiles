@@ -25,6 +25,18 @@ class StretchHelpersTest(unittest.TestCase):
 
         self.assertEqual(stretches, [(2, 2), (4, 4)])
 
+    def test_old_line_whose_best_match_is_a_later_line_is_not_an_update_in_place(self):
+        plan_line = "- Plan text: `lib/plan_format.py` reads every plan file."
+        longer_line = "- Plan text: `lib/plan_format.py` reads every plan file, too."
+        after_lines = [plan_line.replace("every", "each"), plan_line]
+        self.assertFalse(protected_lines.lines_rewritten_in_place([plan_line, longer_line], after_lines, after_lines))
+
+    def test_an_old_line_with_a_better_match_among_the_rivals_is_not_an_update_in_place(self):
+        before = "- Plan text: `lib/plan_format.py`."
+        own = before + " Changed a lot more than this."
+        rival = before + " `read`."
+        self.assertFalse(protected_lines.lines_rewritten_in_place([before], [own], [own, rival]))
+
     def test_changed_line_ranges_name_both_sides_and_are_empty_for_equal_texts(self):
         self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\nx\ny\n"), [("replace", 1, 2, 1, 3)])
         self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\nb\n"), [])

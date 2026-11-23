@@ -79,7 +79,7 @@ import review_loop_scope_guard
 import review_loop_untracked
 import reviewer_dispatch
 import script_utils
-from coder_report import open_questions, skipped_issues
+from coder_report import already_applied_issues, open_questions, skipped_issues
 from diff_ranges import added_ranges
 from finding_record import parse_finding
 from review_loop_calls import (
@@ -745,7 +745,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         skips = skipped_issues(report, len(findings))
         reasked = reasked_findings(findings, open_questions(report), self.ruled_texts)
         skips = {**reasked, **skips}
-        unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed)
+        already_applied = already_applied_issues(report, len(findings))
+        unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed,
+                                                                             already_applied)
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]
@@ -881,6 +883,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_impacts": self.plan_impacts,
             "no_code_ruling_broken": self.no_code_broken,
+            "adopted_unapplied": self.adopted_unapplied,
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,

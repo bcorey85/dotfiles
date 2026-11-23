@@ -12,9 +12,11 @@ from unittest import mock
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
 import approval_restore
+import coder_report
 import finding_record
 import handback
 import handback_store
@@ -1365,6 +1367,47 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual(self.scripts_md.read_text(), added)
         self.assertEqual([reason for _ask, reason in host.dropped_asks], [KEPT_REASON])
 
+    def test_an_owner_line_edit_whose_work_tree_blob_git_cannot_hash_is_reverted(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        edited = []
+
+        def edit():
+            self.scripts_md.write_text(added)
+            edited.append(True)
+
+        real_work_tree_blob = review_loop_ruled.script_utils.work_tree_blob
+
+        def blob_unhashable_after_the_edit(*args, **kwargs):
+            return None if edited else real_work_tree_blob(*args, **kwargs)
+
+        with mock.patch.object(review_loop_ruled.script_utils, "work_tree_blob",
+                               side_effect=blob_unhashable_after_the_edit):
+            host = self.coder_pass(edit)
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
+    def test_an_owner_line_edit_whose_index_entry_git_cannot_read_is_reverted(self):
+        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        real_index_entry = review_loop_ruled.script_utils.index_entry
+        # The first read is the owner-line judge's (`staged_and_committed_match_work_tree`), the only index read that
+        # decides whether the edit stands.
+        reads = []
+
+        def index_entry_failing_once(*args):
+            reads.append(args)
+            if len(reads) == 1:
+                raise review_loop_ruled.script_utils.GitCallError("ls-files")
+            return real_index_entry(*args)
+
+        with mock.patch.object(review_loop_ruled.script_utils, "index_entry", side_effect=index_entry_failing_once):
+            host = self.coder_pass(lambda: self.scripts_md.write_text(added))
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
     def test_a_file_unreadable_when_judged_is_reverted(self):
         host = self.coder_pass(self.scripts_md.unlink)
 
@@ -1534,6 +1577,17 @@ class UnappliedAdoptedBlockersTest(unittest.TestCase):
         self.assertEqual(self.blockers([ADOPTED_FINDING], {}, ["app.py"]), [])
         self.assertEqual(self.blockers(["a.py:1 [bug] plain"], {1: "SKIPPED 1: no"}, []), [])
 
+    def test_an_adopted_finding_the_coder_reported_already_in_the_tree_is_no_blocker(self):
+        findings = [parse_finding(ADOPTED_FINDING)]
+        adopted = {ADOPTED_FINDING: ADOPTED_RULING}
+
+        already_applied = coder_report.already_applied_issues("- `ALREADY APPLIED 1: app.py:2`", len(findings))
+        reported = review_loop_ruled.unapplied_adopted(findings, adopted, {}, [], "/repo", already_applied)
+        unreported = review_loop_ruled.unapplied_adopted(findings, adopted, {}, [], "/repo")
+
+        self.assertEqual(reported, [])
+        self.assertEqual(len(unreported), 1)
+
     def test_an_adopted_finding_with_no_path_needs_only_some_diff_in_the_pass(self):
         text = review_user_ruled.adopted_issue("PLAN-IMPACT: AC2 reworded.", ADOPTED_RULING)
         findings = [parse_finding(text)]
@@ -1607,6 +1661,11 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(packet["ask"], [])
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
+
+    def test_the_packet_lists_the_text_of_each_adopted_ruling_left_unapplied(self):
+        packet = self.run_adopted({"result": "Fixed 1."})
+
+        self.assertEqual(packet["adopted_unapplied"], [ADOPTED_RULING.text])
 
     def test_a_coder_that_skips_the_adopted_finding_ends_the_round_with_a_blocker_and_no_reviewer(self):
         packet = self.run_adopted({"result": "SKIPPED 1: needs a sign-off.", "edits": {"app.py": APP_FIXED}})

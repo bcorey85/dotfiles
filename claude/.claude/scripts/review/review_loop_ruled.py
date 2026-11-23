@@ -117,13 +117,11 @@ NO_DIFF_WHY = "the pass left no fix diff"
 NO_FILE_DIFF_WHY = "the pass left no fix diff in the finding's file"
 HELD_WHY = "its file is held by another session"
 RULED_OUT_WHY = "its file is ruled out of the review"
-NOT_APPLIED_WHYS = (SKIPPED_WHY, NO_DIFF_WHY, NO_FILE_DIFF_WHY, HELD_WHY, RULED_OUT_WHY)
 
 
-def not_applied_blockers(finding_text):
-    """Every blocker line the loop writes for the adopted `finding_text`, one per reason it can name."""
-    ruling = script_utils.one_line(finding_text, None)
-    return [NOT_APPLIED_BLOCKER.format(why=why, ruling=ruling) for why in NOT_APPLIED_WHYS]
+def not_applied_blocker(why, finding_text):
+    """The blocker line for the adopted `finding_text` that the coder did not apply, for the reason `why`."""
+    return NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding_text, None))
 
 
 class Unapplied(NamedTuple):
@@ -138,10 +136,12 @@ def adopted_rulings(rows):
             for text, row in rows.items()}
 
 
-def not_applied_why(finding, number, skips, changed, repo):
+def not_applied_why(finding, number, skips, changed, repo, already_applied=()):
     """Why the fix pass left the adopted `finding` unapplied, None when it applied it. It is unapplied when the coder
     skipped it (`number` is in `skips`), left no diff in the finding's file, or, for a finding with no path, left no
-    diff at all."""
+    diff at all. A number in `already_applied` is one the coder reported as already in the tree: it needs no diff."""
+    if number in already_applied:
+        return None
     if number in skips:
         return SKIPPED_WHY
     if not finding.path:
@@ -151,7 +151,7 @@ def not_applied_why(finding, number, skips, changed, repo):
     return NO_FILE_DIFF_WHY
 
 
-def unapplied_adopted(findings, adopted, skips, changed, repo):
+def unapplied_adopted(findings, adopted, skips, changed, repo, already_applied=()):
     """The Unapplied (finding, blocker) of each adopted finding (a text in `adopted`) of a fix pass that the coder
     left unapplied (see `not_applied_why`). Each blocker names the ruling: the marker's who and when, then the
     change."""
@@ -159,10 +159,10 @@ def unapplied_adopted(findings, adopted, skips, changed, repo):
     for number, finding in enumerate(findings, 1):
         if finding.text not in adopted:
             continue
-        why = not_applied_why(finding, number, skips, changed, repo)
+        why = not_applied_why(finding, number, skips, changed, repo, already_applied)
         if why is None:
             continue
-        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        blocker = not_applied_blocker(why, finding.text)
         unapplied.append(Unapplied(finding, blocker))
     return unapplied
 
@@ -175,7 +175,7 @@ def withheld_adopted(findings, adopted, kept, held):
         if finding.text not in adopted or finding in kept:
             continue
         why = HELD_WHY if finding in held else RULED_OUT_WHY
-        blocker = NOT_APPLIED_BLOCKER.format(why=why, ruling=script_utils.one_line(finding.text, None))
+        blocker = not_applied_blocker(why, finding.text)
         withheld.append(Unapplied(finding, blocker))
     return withheld
 
@@ -246,6 +246,7 @@ class RuledFindings:
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
         self.adopted = {}  # finding text -> the AdoptedRuling of each finding whose plan change a ruling adopted
+        self.adopted_unapplied = []  # the ruling text of each adopted finding the loop stopped on as unapplied
         self.session_id = ""  # the session whose store holds the rulings; an applied ruling is recorded there
 
     @property
@@ -527,7 +528,12 @@ class RuledFindings:
         committed `path`, HEAD holds the work-tree blob. Otherwise the index or HEAD holds content the work tree
         does not show, and the revert must run."""
         work_blob = script_utils.work_tree_blob(self.repo, path)
-        index_now = script_utils.index_entry(self.repo, path)
+        if work_blob is None:
+            return False
+        try:
+            index_now = script_utils.index_entry(self.repo, path)
+        except script_utils.GitCallError:
+            return False
         index_blob = index_now.blob if index_now else None
         if index_now != self.approval_index_entries.get(path) and index_blob != work_blob:
             return False
@@ -736,14 +742,15 @@ class RuledFindings:
         if not unapplied:
             return False
         self.stop("critical-blocker", [item.blocker for item in unapplied])
+        self.adopted_unapplied = [self.adopted[item.finding.text].text for item in unapplied]
         self.keep_open([item.finding for item in unapplied])
         return True
 
-    def settle_adopted_after_pass(self, findings, skips, changed):
+    def settle_adopted_after_pass(self, findings, skips, changed, already_applied=()):
         """After the fix-first pass on `findings`: (the Unapplied of each adopted ruling the pass left unapplied, the
         1-based numbers of those findings, `skips` without them). The applied findings are recorded as applied. An
         unapplied adopted finding stays open: it is no skipped false positive and no fix."""
-        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo)
+        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo, already_applied)
         unapplied_findings = [item.finding for item in unapplied]
         # A finding the sign-off put-back undid was not applied, so it is not recorded as applied.
         self.record_applied_adopted(self.not_put_back(item for item in findings if item not in unapplied_findings))

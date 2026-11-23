@@ -14,7 +14,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 171 | 5 |
-| script/review-fix | 72 | 13 |
+| script/review-fix | 73 | 14 |
 | script/review-loop-script | 72 | 14 |
 | script/handback | 56 | 2 |
 | script/review-commit-gate | 46 | 8 |
@@ -202,7 +202,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/warn-skip-hooks | 1 | 0 |
-| shared/review-loop | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
 | skill/close-branch | 1 | 0 |
 | skill/pr-comments | 1 | 0 |

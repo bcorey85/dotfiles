@@ -22,7 +22,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 4: pull_keep_index built-page put-back through the merge driver (risk: high)
 - [x] Phase 5: pull_keep_index in a shared checkout (risk: high)
 - [x] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
-- [ ] Phase 7: herdr-phase-change names the report-to session (risk: low)
+- [x] Phase 7: herdr-phase-change names the report-to session (risk: low)
 - [ ] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
 - [ ] Phase 9: lane-status (risk: low)
 - [ ] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
@@ -418,7 +418,7 @@ A cleared worker's first prompt names the session it reports to; the test fails 
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_herdr_phase_change.py` (RED before: no marker)
+- [x] `python3 tests/parallel_tests.py test_herdr_phase_change.py` (RED before: no marker)
 
 #### Manual Verification
 

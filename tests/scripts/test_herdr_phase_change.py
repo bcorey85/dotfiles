@@ -16,6 +16,18 @@ from stubs import write_stub
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
 SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
 HERDR_PHASE_CHANGE = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-phase-change"
+REPORT_TO = " [report to session orchestrator-a]"
+
+# A session_pane.py that finds the pane as given but names no sending session.
+STUB_SESSION_PANE_NO_SENDER = """import json
+import sys
+
+if sys.argv[1] == "resolve":
+    print(json.dumps({"pane_id": sys.argv[2], "via": "as-given"}))
+    sys.exit(0)
+print(json.dumps({"name": None, "reason": "no session"}))
+sys.exit(1)
+"""
 
 # The pane's state lives in files: its status, its session id, and every prompt
 # submitted, one per line. A /clear swaps the session id only after
@@ -94,13 +106,21 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         row = {"pid": sleeper.pid, "sessionId": "s1", "name": "lane-x"}
         (sessions / f"{sleeper.pid}.json").write_text(json.dumps(row))
 
-    def run_phase_change(self, *args, cwd=None, lanes_cli=LANES_CLI):
+        # The sending session: CLAUDE_CODE_SESSION_ID names it, and its registry row needs its own live pid.
+        orchestrator = subprocess.Popen(["sleep", "600"])
+        self.addCleanup(orchestrator.wait)
+        self.addCleanup(orchestrator.kill)
+        orchestrator_row = {"pid": orchestrator.pid, "sessionId": "orch", "name": "orchestrator-a"}
+        (sessions / f"{orchestrator.pid}.json").write_text(json.dumps(orchestrator_row))
+
+    def run_phase_change(self, *args, cwd=None, lanes_cli=LANES_CLI, session_pane=SESSION_PANE):
         env = dict(os.environ)
         env["HOME"] = str(self.root)
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["STATE_DIR"] = str(self.state_dir)
         env["HERDR_LANES_CLI"] = str(lanes_cli)
-        env["HERDR_SESSION_PANE"] = str(SESSION_PANE)
+        env["HERDR_SESSION_PANE"] = str(session_pane)
+        env["CLAUDE_CODE_SESSION_ID"] = "orch"
         env.pop("CLAUDE_CONFIG_DIR", None)
         env["XDG_STATE_HOME"] = str(self.root / "lane-state")
         return subprocess.run([str(self.bin_dir / "herdr-phase-change"), *args], env=env, cwd=cwd,
@@ -134,7 +154,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         sent = self.submitted_prompts()[-1]
-        self.assertEqual(sent, "[from orchestrator pane wS:pA9] Option 2. Go on.")
+        self.assertEqual(sent, "[from orchestrator pane wS:pA9] Option 2. Go on." + REPORT_TO)
         entry = self.lane_entry("lane-a")
         self.assertEqual(entry["session_id"], "s2")
         self.assertEqual(entry["brief"], sent)
@@ -182,7 +202,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("herdr-phase-change: lane lane-a not updated", finished.stderr)
-        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
+        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md" + REPORT_TO])
 
     def test_a_done_pane_gets_clear_and_the_prompt_as_two_submissions_after_the_session_changes(self):
         (self.state_dir / "clear-delay").write_text("2\n")
@@ -190,11 +210,11 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
+        self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md" + REPORT_TO])
         self.assertEqual((self.state_dir / "session").read_text().strip(), "s2")
         self.assertIn("--until idle --until done", (self.state_dir / "wait-args").read_text())
 
-    def test_a_slash_command_goes_out_exactly_as_given(self):
+    def test_a_slash_command_goes_out_as_given_followed_by_the_report_to_session(self):
         cases = (
             ("plain code", ("/code docs/plans/x/plan.md",), "/code docs/plans/x/plan.md"),
             ("modifier", ("/code +fast plan.md",), "/code +fast plan.md"),
@@ -213,7 +233,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 finished = self.run_phase_change(*args[:-1], "worker", args[-1])
 
                 self.assertEqual(finished.returncode, 0, finished.stderr)
-                self.assertEqual(self.submitted_prompts(), ["/clear", sent])
+                self.assertEqual(self.submitted_prompts(), ["/clear", sent + REPORT_TO])
 
     def test_a_plain_prompt_goes_out_marked_with_the_sending_pane(self):
         (self.state_dir / "clear-delay").write_text("0\n")
@@ -221,15 +241,44 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         finished = self.run_phase_change("worker", "Option 2. Go on.")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(self.submitted_prompts(), ["/clear", "[from orchestrator pane wS:pA9] Option 2. Go on."])
+        self.assertEqual(self.submitted_prompts(),
+                         ["/clear", "[from orchestrator pane wS:pA9] Option 2. Go on." + REPORT_TO])
 
-    def test_a_slash_prompt_goes_out_unmarked(self):
+    def test_a_slash_prompt_goes_out_without_the_pane_prefix(self):
         (self.state_dir / "clear-delay").write_text("0\n")
 
         finished = self.run_phase_change("worker", "/eng-spec docs/tickets/x.md +fast")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(self.submitted_prompts(), ["/clear", "/eng-spec docs/tickets/x.md +fast"])
+        self.assertEqual(self.submitted_prompts(), ["/clear", "/eng-spec docs/tickets/x.md +fast" + REPORT_TO])
+
+    def test_no_resolvable_sending_session_sends_nothing_and_says_why(self):
+        stub = self.root / "stub-session-pane.py"
+        stub.write_text(STUB_SESSION_PANE_NO_SENDER)
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md", session_pane=stub)
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertEqual(self.submitted_prompts(), [])
+        self.assertIn("(no session)", finished.stderr)
+
+    def test_a_sender_lookup_that_prints_no_json_sends_nothing_and_says_so(self):
+        stub = self.root / "stub-session-pane-silent.py"
+        stub.write_text("import json\n"
+                        "import sys\n"
+                        "\n"
+                        "if sys.argv[1] == 'resolve':\n"
+                        "    print(json.dumps({'pane_id': sys.argv[2], 'via': 'as-given'}))\n"
+                        "    sys.exit(0)\n"
+                        "sys.exit(1)\n")
+        (self.state_dir / "clear-delay").write_text("0\n")
+
+        finished = self.run_phase_change("worker", "/code docs/plans/x/plan.md", session_pane=stub)
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertEqual(self.submitted_prompts(), [])
+        self.assertIn("session_pane.py printed no JSON", finished.stderr)
 
     def test_a_plain_prompt_with_no_sending_pane_sends_nothing(self):
         (self.state_dir / "no-current-pane").write_text("")
@@ -282,7 +331,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 0, finished.stderr)
                 self.assertEqual(set(self.get_targets.read_text().split()), {"wS:pL1"}, label)
                 self.assertEqual(set(self.prompt_targets.read_text().split()), {"wS:pL1"}, label)
-                self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md"])
+                self.assertEqual(self.submitted_prompts(), ["/clear", "/code docs/plans/x/plan.md" + REPORT_TO])
 
     def test_a_directory_with_two_agents_or_a_session_with_no_pane_sends_nothing(self):
         (self.state_dir / "other").mkdir()

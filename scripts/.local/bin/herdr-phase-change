@@ -7,10 +7,14 @@
 #              An existing directory wins over a session of the same name; a directory
 #              that holds no claude agent or several, or a session with no pane, sends nothing.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
-#              A slash command goes out as given. A prompt that is not a slash command goes
+#              A slash command goes out without the pane prefix. A prompt that is not a slash command goes
 #              out prefixed with "[from orchestrator pane <sending pane id>] ",
 #              so the receiver can tell the prompt came from another pane, not
 #              from the user.
+#              Every prompt, slash command or not, ends with " [report to session <name>]",
+#              the sending session's ListAgents name (session_pane.py sender), so the
+#              cleared worker knows which session to report to. When that name cannot be
+#              found, nothing is sent and the exit code is 1.
 #   --timeout  seconds bounding each of the two waits: for /clear to take effect,
 #              then for the pane to settle. Defaults to 30.
 #
@@ -67,6 +71,13 @@ if [ "${prompt:0:1}" != "/" ]; then
         || { echo "herdr-phase-change: cannot name the sending pane, so the prompt cannot be marked; sent nothing" >&2; exit 1; }
     prompt="[from orchestrator pane $sender_pane] $prompt"
 fi
+
+sender_json=$(python3 "$session_pane" sender) || true
+sender=$(jq -r '.name // empty' <<<"$sender_json" 2>/dev/null) || sender=""
+reason=$(jq -r '.reason // empty' <<<"$sender_json" 2>/dev/null) || reason=""
+[ -n "$sender" ] \
+    || { echo "herdr-phase-change: cannot name the sending session (${reason:-session_pane.py printed no JSON}), so the report-to line cannot be added; sent nothing" >&2; exit 1; }
+prompt="$prompt [report to session $sender]"
 
 agent_field() {
     herdr-api agent get "$target" | jq -r ".result.agent.$1 // empty" || true

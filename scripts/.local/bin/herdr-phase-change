@@ -3,12 +3,19 @@
 # first prompt.
 #
 # Usage: herdr-phase-change [--timeout <seconds>] <agent> <prompt>
-#   agent      a live agent name or pane id.
+#   agent      a ListAgents session name, a worktree path, a pane id or a herdr agent name.
+#              Only an argument with a "/" that is an existing directory is a path, and it wins
+#              over a session of the same name; a bare name is a session name. A directory
+#              that holds no claude agent or several, or a session with no pane, sends nothing.
 #   prompt     the new phase's first prompt, e.g. "/code docs/plans/x/plan.md".
-#              A slash command goes out as given. A prompt that is not a slash command goes
+#              A slash command goes out without the pane prefix. A prompt that is not a slash command goes
 #              out prefixed with "[from orchestrator pane <sending pane id>] ",
 #              so the receiver can tell the prompt came from another pane, not
 #              from the user.
+#              Every prompt, slash command or not, ends with " [report to session <name>]",
+#              the sending session's ListAgents name (session_pane.py sender), so the
+#              cleared worker knows which session to report to. When that name cannot be
+#              found, nothing is sent and the exit code is 1.
 #   --timeout  seconds bounding each of the two waits: for /clear to take effect,
 #              then for the pane to settle. Defaults to 30.
 #
@@ -22,6 +29,9 @@
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
+# $0 is a stow symlink, so the library is found from the script's real path.
+# shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/toolkit-tools.bash"
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -54,12 +64,22 @@ done
 
 [ -n "$target" ] && [ -n "$prompt" ] || { usage >&2; exit 1; }
 
+resolved=$(python3 "$session_pane" resolve "$target") || exit 1
+target=$(jq -r .pane_id <<<"$resolved")
+
 if [ "${prompt:0:1}" != "/" ]; then
     sender_pane=$(herdr-api pane current 2>/dev/null | jq -r '.result.pane.pane_id // empty' || true)
     [ -n "$sender_pane" ] \
         || { echo "herdr-phase-change: cannot name the sending pane, so the prompt cannot be marked; sent nothing" >&2; exit 1; }
     prompt="[from orchestrator pane $sender_pane] $prompt"
 fi
+
+sender_json=$(python3 "$session_pane" sender) || true
+sender=$(jq -r '.name // empty' <<<"$sender_json" 2>/dev/null) || sender=""
+reason=$(jq -r '.reason // empty' <<<"$sender_json" 2>/dev/null) || reason=""
+[ -n "$sender" ] \
+    || { echo "herdr-phase-change: cannot name the sending session (${reason:-session_pane.py printed no JSON}), so the report-to line cannot be added; sent nothing" >&2; exit 1; }
+prompt="$prompt [report to session $sender]"
 
 agent_field() {
     herdr-api agent get "$target" | jq -r ".result.agent.$1 // empty" || true
@@ -92,3 +112,13 @@ done
 herdr-api agent wait "$target" --until idle --until "done" --timeout "$((timeout_seconds * 1000))" >/dev/null \
     || { echo "herdr-phase-change: $target did not settle after /clear; sent nothing more. Read the pane before you retry." >&2; exit 1; }
 herdr-api agent prompt "$target" "$prompt"
+
+# The lane file keeps the latest session id and prompt, so herdr-lane-resume resumes this
+# phase. This step is fail-open: the prompt already went out, so a failure only warns.
+# An empty cwd ends the step: an agent with no cwd is in no lane, and `get --containing ""` is a usage error.
+cwd=$(agent_field cwd)
+[ -n "$cwd" ] || exit 0
+lane=$(python3 "$lanes_cli" get --containing "$cwd" | jq -r '.entry.name // empty') || lane=""
+[ -n "$lane" ] || exit 0
+printf '%s' "$prompt" | python3 "$lanes_cli" set-session "$lane" "$new_session" --brief-stdin >/dev/null \
+    || echo "herdr-phase-change: lane $lane not updated" >&2

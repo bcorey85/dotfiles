@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1153 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1154 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md).
+Latest change: 2026-11-23, [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md).
 
 ## Top gains
 

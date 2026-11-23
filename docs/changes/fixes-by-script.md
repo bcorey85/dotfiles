@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-726 fix notes
+727 fix notes
 
 Recent: the 7 days up to 2026-11-23, the newest note.
 
@@ -112,6 +112,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/hunk-review-pane | 2 | 2 |
+| script/lane-status | 2 | 2 |
 | script/lanes | 2 | 2 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
@@ -166,7 +167,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/herdr-wake-limited | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/install-stow | 1 | 0 |
-| script/lane-status | 1 | 1 |
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |

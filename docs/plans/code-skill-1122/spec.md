@@ -225,7 +225,7 @@ With a holder recorded at the phase start, the review scope holds every file rec
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_code_review_start.py` (RED: detached prompt file and untracked cases)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_code_wait.py` (RED: no `held_fault_line`)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_loop_transcript.py test_expected_red.py` (RED: no `written_paths`, no `phase_own_paths`)
-- [ ] **Presence**: `rg -q "any untracked file no recorded coder of the run wrote; a file the plan gives to an earlier phase is never held" claude/.claude/skills/_shared/handoff-block.md` (RED now)
+- [x] **Presence**: `rg -q "any untracked file no recorded coder of the run wrote and no earlier or current phase section names; a file the plan gives to an earlier phase is never held" claude/.claude/skills/_shared/handoff-block.md` (sentence as reworded in Phase 2)
 - [ ] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check && python3 tests/parallel_tests.py test_rule_anchors.py` (green now; must be green at the end of this phase, with row `78d7b13d` re-hashed)
 - [ ] **Lint-verified**: `bash tests/lint.sh claude/.claude/scripts/code/phase_start.py claude/.claude/scripts/code/code_review_start.py claude/.claude/scripts/code/code_wait.py claude/.claude/scripts/lib/session_registry.py claude/.claude/scripts/lib/loop_transcript.py claude/.claude/scripts/lib/expected_red.py`
 
@@ -287,8 +287,8 @@ Cut the /code load by the structure move and the metered cuts, give each stop ru
 - [x] **Presence**: `test -f claude/.claude/skills/code/phase-end-block.md`
 - [x] **Ban**: `rg -q "^## Phase-Complete Block" claude/.claude/skills/code/SKILL.md` has no match
 - [x] **Presence**: `rg -q "phase-end-block.md" claude/.claude/skills/code/SKILL.md` finds the trigger
-- [x] **Count** (total 3442 with the meter skipping bare list markers, limit 3488): `python3 tests/scripts/skill_word_band.py 3488 claude/.claude/skills/code/SKILL.md claude/.claude/skills/_shared/modifiers.md claude/.claude/skills/_shared/plan-reading.md claude/.claude/skills/_shared/handoff-block.md`
-- [x] **Test-verified**: `python3 tests/parallel_tests.py test_skill_word_band.py` (RED now)
+- [x] **Count** (total 3487 after the branch review fixes, with the meter skipping bare list markers, limit 3488): `python3 tests/scripts/skill_word_band.py 3488 claude/.claude/skills/code/SKILL.md claude/.claude/skills/_shared/modifiers.md claude/.claude/skills/_shared/plan-reading.md claude/.claude/skills/_shared/handoff-block.md`
+- [x] ~~**Test-verified**: `python3 tests/parallel_tests.py test_skill_word_band.py`~~ dropped by `03-decisions.md` block 17: `skill_word_band.py` is the AC15 close check, not a suite gate
 - [x] **Test-verified**: `python3 tests/parallel_tests.py test_guidance_rules.py test_code_skill_text.py test_rule_anchors.py`
 - [x] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check`
 - [x] **Agent-run**: rule-meter per-arm counts for every metered sentence recorded in `docs/changes/notes/2026-11-22-the-code-phase-complete-blocks-move-to-a-file-read.md`
@@ -322,9 +322,9 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 #### Automated Verification:
 
 - [x] **Suite**: `bash tests/run.sh`
-- [x] **Test-verified**: `python3 tests/parallel_tests.py test_branch_bounds.py`
+- [x] ~~**Test-verified**: `python3 tests/parallel_tests.py test_branch_bounds.py`~~ ran once (8 tests OK), then deleted by `03-decisions.md` block 16
 - [x] **Scope box**: `test -n "$(git diff --name-only 8436be97f25cd96ffa9f4ae8c72f37ff32173768..c7c330eec43626055bfeb4cb2474aa1ab9325e9b)"`, with the two recorded commit ids filled in at close
-- [x] **Bounds**: `python3 tests/scripts/branch_bounds.py 8436be97f25cd96ffa9f4ae8c72f37ff32173768 c7c330eec43626055bfeb4cb2474aa1ab9325e9b`
+- [x] ~~**Bounds**: `python3 tests/scripts/branch_bounds.py 8436be97f25cd96ffa9f4ae8c72f37ff32173768 c7c330eec43626055bfeb4cb2474aa1ab9325e9b`~~ ran once with exit 0 before the rebase, then the checker was deleted by `03-decisions.md` block 16
 
 #### Manual Verification:
 
@@ -337,6 +337,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (the trim item): the word meter does not count a bare list marker; the four start-load counts become 2647 / 110 / 201 / 484 = 3442 against the limit 3488; recorded in `03-decisions.md` block 12 addendum.
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (trim item) and #AC17: AC15's duplicate clause is narrowed to the 6 exact-duplicate words already cut (SKILL.md:24 stays as a paraphrase); AC17's one-owner clause is held, with no stop-rule dedupe; recorded in `03-decisions.md` block 13.
 - 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (trim item): AC15's "at least 10% shorter by word count" clause is reworded to "under the ruled limit of 3488 words (03-decisions.md block 12)"; recorded in `03-decisions.md` block 14.
+- 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: branch review asks ruled: `tests/scripts/branch_bounds.py` and its test are deleted after one run (block 16); `tests/scripts/test_skill_word_band.py` is dropped and `skill_word_band.py` stays as the AC15 close check (block 17); a recorded-holder file the current coder edits stays flagged, follow-up queued (block 18). Commit `babb1e741`. The Phase 2 handoff Presence command and the Phase 3 and 4 Automated Verification lines above are updated to the tree; no acceptance criterion changes.
 
 ## Acceptance Criteria
 

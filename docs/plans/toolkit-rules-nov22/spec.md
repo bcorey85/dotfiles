@@ -484,7 +484,7 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 #### Automated Verification:
 
 - [ ] **Quality checks green**: `bash tests/run.sh` passes (run under the systemd-run cap by the session).
-- [ ] **Scope box**: `git diff --name-only dfb9fd4ef..HEAD -- . ':!claude/.claude/CLAUDE.md' ':!claude/.claude/orchestration.md' ':!opencode/.config/opencode/AGENTS.md' ':!docs/rule-anchors.md' ':!docs/changes' ':!docs/plans/toolkit-rules-nov22'` prints nothing (base sha dfb9fd4ef recorded at planning; any other path in the branch diff is out of scope).
+- [ ] **Scope box**: `git diff --name-only c1e89e106..HEAD -- . ':!claude/.claude/CLAUDE.md' ':!claude/.claude/orchestration.md' ':!opencode/.config/opencode/AGENTS.md' ':!docs/rule-anchors.md' ':!docs/changes' ':!docs/plans/toolkit-rules-nov22'` prints nothing (base sha c1e89e106 is the merge-base with origin/master after the rebase; dfb9fd4ef was recorded at planning; any other path in the branch diff is out of scope).
 - [ ] **Anchors**: `claude/.claude/scripts/tools/rule-anchors.sh check` prints nothing.
 - [ ] **Agent-run**: every reviewer finding fixed, shown wrong, or (an ask that changes a ticket AC) sent to agent-evals-c3; the fix-diff gate passed; every acceptance criterion mapped to a test, a meter run, or explicitly retired; recap and smoke-test checklist delivered.
 

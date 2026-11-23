@@ -84,7 +84,7 @@ def loop_report(pid, stopped, reason):
     return {"pid": pid, "stopped": stopped, "reason": reason}
 
 
-def stop_loop(repo, fork_transcript):
+def stop_fork_loop(repo, fork_transcript):
     """Stop the repo's detached review loop when it is this code-fork's: its pid is alive, its command line holds the
     review start script, and the code-fork's own Bash commands ran that script."""
     pid = code_wait.running_review_pid(repo)
@@ -171,7 +171,7 @@ def run_report(parser, fork_id, repo):
     if repo is None or code_wait.phase_dir_or_none(repo) is None:
         loop = loop_report(None, False, LOOP_NO_REPO)
     else:
-        loop = stop_loop(repo, transcript)
+        loop = stop_fork_loop(repo, transcript)
     print(json.dumps({"fork": fork_id, "children": children, "unresolved_launches": unresolved, "loop": loop}))
 
 

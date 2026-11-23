@@ -19,6 +19,8 @@ unmeasured: ""
 
 `fork_children.py <code-fork id>` lists the agents a code-fork started that have not finished or been stopped, and stops the repo's detached review loop when it is that code-fork's own. Its `hook` verb refuses a TaskStop of a code-fork with a live child once and names each child. The skill's cancel sentence tells the session to run the command when the code-fork does not stop. fork_children.py reads a child whose transcript ends on an interrupt record as stopped.
 
+The loop stop is `stop_fork_loop` in fork_children.py; `review_launch.py` owns a different `stop_loop`, so the names stay apart.
+
 ## Evidence
 
 work incident. The 2026-11-22 cancel was the main session running TaskStop on the code-fork directly. TaskStop returned success and named no children. The coder kept running and rewrote a deleted file.

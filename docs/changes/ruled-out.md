@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-119 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+120 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 155 further findings are left out of this page.
 
@@ -58,6 +58,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-22 [Tests the reviewer asks for on low-complexity code catch planted bugs no other test catches](../../../agent-evals/findings/2026-11-22-tests-the-reviewer-asks-for-on-low-complexity-code.md) - HOLD: Mutation check on one recorded warehouse build: 11 bugs planted where a complexity-score filter would have dropped the reviewer's test-gap ask; all 11 are caught only by the test written for that ask, against a bar of at most 2. Keeping every test-gap ask keeps all 11 catches. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-22 [A gh api rule for GitHub star counts adds nothing the research session does not already do](../../../agent-evals/findings/2026-11-22-a-gh-api-rule-for-github-star-counts-adds-nothing.md) - HOLD: A research-skill line telling the session to read GitHub stars and release dates with gh api changes nothing on a plain prompt: the session already used gh api in 8 of 8 runs without it. Under a hurry-up prompt it lifted 5/8 to 8/8. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-22 [Keeping the code reviewer on Opus keeps 5 more real-bug catches per pass than Sonnet; Sonnet cuts cache read 58%](../../../agent-evals/findings/2026-11-22-keeping-the-code-reviewer-on-opus-keeps-5-more.md) - HOLD: Sealed 8-pass bench on 41 real-bug trees: the live code reviewer on Opus caught a mean 13.0 per pass (11 to 16), on Sonnet 7.75 (4 to 10); Sonnet cuts cache read per review 58% but loses 4 trees Opus catches every pass and 10 of 17 outside-diff catches. [watch: no watch]

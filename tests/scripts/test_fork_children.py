@@ -356,7 +356,7 @@ class StopLoopBranchTest(unittest.TestCase):
                 mock.patch.object(module.process_group, "terminate_group", return_value=terminated), \
                 mock.patch.object(module.script_utils, "bash_commands", return_value=[REVIEW_START]), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            return module.stop_loop("repo", "transcript"), stderr.getvalue()
+            return module.stop_fork_loop("repo", "transcript"), stderr.getvalue()
 
     def test_a_failed_process_query_reads_as_not_a_review_loop(self):
         def failing_query(pid):

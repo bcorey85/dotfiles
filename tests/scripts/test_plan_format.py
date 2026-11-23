@@ -615,6 +615,23 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
         self.assertIsNone(owner["source"])
 
+    def test_a_human_item_named_after_a_session_item_keeps_the_user_as_owner(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="session-item")
+        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n', slug="human-item")
+        ticket = self.ticket("Source: ~/agent-evals/queue/session-item.md\nSource: ~/agent-evals/queue/human-item.md")
+
+        owner = plan_format.criteria_owner(ticket)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/human-item.md")
+
+    def test_a_later_queue_source_line_that_names_no_item_is_an_error(self):
+        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n')
+        ticket = self.ticket("Source: ~/agent-evals/queue/item.md\nSource: ~/agent-evals/queue/missing.md")
+
+        with self.assertRaisesRegex(plan_format.PlanFormatError, r"00-ticket\.md:4: queue file .*missing\.md"):
+            plan_format.criteria_owner(ticket)
+
     def test_an_unquoted_queue_item_type_is_read_as_a_queue_item(self):
         own_item = self.folder / "own.md"
         own_item.write_text('---\ntype: QueueItem\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n\n'

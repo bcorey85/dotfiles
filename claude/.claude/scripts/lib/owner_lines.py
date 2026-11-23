@@ -18,24 +18,31 @@ def owner_line_indexes(lines):
 
 
 def every_line_resembled(before_lines, after_lines):
-    """True when each of `before_lines`, in order, is like its own line of `after_lines` at REWRITE_RATIO or better.
+    """True when each of `before_lines`, in order, is like its own line of `after_lines` at REWRITE_RATIO or better,
+    and no other line of `after_lines` is more like it than its own (an update in place, not a reorder).
     Each old line takes the first such new line after the previous match, so no two share one."""
     next_index = 0
     for before_line in before_lines:
+        own_index = None
         for index in range(next_index, len(after_lines)):
             if script_utils.text_similarity(before_line, after_lines[index]) >= protected_lines.REWRITE_RATIO:
-                next_index = index + 1
+                own_index = index
                 break
-        else:
+        if own_index is None:
             return False
+        own_score = script_utils.text_similarity(before_line, after_lines[own_index])
+        for after_line in after_lines:
+            if script_utils.text_similarity(before_line, after_line) > own_score:
+                return False
+        next_index = own_index + 1
     return True
 
 
 def owner_lines_only(before_text, after_text):
     """True when `after_text` differs from `before_text` only by owner bullets added or updated in the Owners section.
     An updated bullet must still resemble its old text; an unrelated bullet put in place of one is a removal.
-    A delete, merge, drop, prose line, other section or renamed heading is False. A reorder is False, except two or
-    more bullets that resemble each other, reworded and moved, which pass as updates in place."""
+    A delete, merge, drop, prose line, other section or renamed heading is False. A reorder is False, even of
+    bullets that resemble each other and are reworded."""
     # A missing final newline would make the last line differ from the same line with one, hiding a swap from the diff.
     before_text = before_text if before_text.endswith("\n") else before_text + "\n"
     after_text = after_text if after_text.endswith("\n") else after_text + "\n"

@@ -39,10 +39,10 @@ class OwnerLinesOnlyTest(unittest.TestCase):
 
         self.assertTrue(owner_lines.owner_lines_only(before, after))
 
-    def test_old_line_whose_best_match_is_a_later_line_still_matches_in_order(self):
+    def test_old_line_whose_best_match_is_a_later_line_is_not_an_update_in_place(self):
         plan_line = "- Plan text: `lib/plan_format.py` reads every plan file."
         longer_line = "- Plan text: `lib/plan_format.py` reads every plan file, too."
-        self.assertTrue(
+        self.assertFalse(
             owner_lines.every_line_resembled(
                 [plan_line, longer_line], [plan_line.replace("every", "each"), plan_line]
             )
@@ -92,13 +92,23 @@ class OwnerLinesOnlyTest(unittest.TestCase):
 
         self.assertFalse(owner_lines.owner_lines_only(f"{head}{first}\n{second}", f"{head}{second}\n{first}"))
 
-    def test_a_swap_of_resembling_bullets_each_reworded_passes_as_two_updates_in_place(self):
+    def test_a_swap_of_resembling_bullets_each_reworded_is_false(self):
         head = "# Toolkit scripts\n\n## Owners\n\n"
         first = "- Plan text: `lib/plan_format.py`."
         second = "- Plan files: `lib/plan_files.py`."
 
         before = f"{head}{first}\n{second}\n"
         after = f"{head}{second} `read`\n{first} `read`\n"
+
+        self.assertFalse(owner_lines.owner_lines_only(before, after))
+
+    def test_each_bullet_updated_in_place_beside_an_added_bullet_is_true(self):
+        head = "# Toolkit scripts\n\n## Owners\n\n"
+        first = "- Plan text: `lib/plan_format.py`."
+        second = "- Plan files: `lib/plan_files.py`."
+
+        before = f"{head}{first}\n{second}\n"
+        after = f"{head}{first} `read`\n{second} `read`\n{NEW_BULLET}"
 
         self.assertTrue(owner_lines.owner_lines_only(before, after))
 

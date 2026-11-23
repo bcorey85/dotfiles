@@ -59,7 +59,8 @@ def calibration_lock_path():
 
 
 def legacy_lock_path():
-    return os.path.join(str(pathlib.Path.home()), ".claude", "calibration-lock.json")
+    home = pathlib.Path.home()
+    return os.path.join(str(home), ".claude", "calibration-lock.json")
 
 
 def backups_folder():

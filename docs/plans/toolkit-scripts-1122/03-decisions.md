@@ -175,7 +175,7 @@
 - Guide change note: written at Phase 6 instead of Phase 9 because the pre-commit hook needs a staged note, and the hook's test rule added `tests/scripts/test_guide_skill.py`. Ruled by the orchestrating session, 2026-11-22.
 - Refactor, mutation-tester and guide change notes: all three were created before Phase 9 (the pre-commit hook needs a staged note per commit) instead of by `build_changes.py new` in Phase 9; Phase 9 only filled them, indexed them and linked them from the anchor rows. Ruled by the orchestrating session, 2026-11-22.
 - Run id on the lock (D19): AC14 gains a `run_id` field, AC18 gains a run-id refusal, AC23's Step 4 line gains `--run-id`; no criterion is cut or narrowed. Ruled by the orchestrating session, 2026-11-23.
-- Anchor rows named in Phase 9 (`458c884f`, `6ca266a8`, `84cdf15f`, `d11ed9bc`) were rehashed by Phases 2 and 5 and now read `31855770`, `b32b9d70`, `8ec56916`, `3c5a3730`; the refactor row already carried its link from Phase 2, so Phase 9 appended the mutation-tester link to the three mutation-tester rows. No acceptance criterion changes.
+- Anchor rows named in Phase 9 (`458c884f`, `6ca266a8`, `84cdf15f`, `d11ed9bc`) were rehashed by Phases 2 and 5 and were rehashed again by the close pass and the post-rebase review (the current hashes are in `docs/rule-anchors.md`); the refactor row already carried its link from Phase 2, so Phase 9 appended the mutation-tester link to the three mutation-tester rows. No acceptance criterion changes.
 
 ## Direction & Constraints
 

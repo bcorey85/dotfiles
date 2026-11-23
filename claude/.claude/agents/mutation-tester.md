@@ -34,7 +34,7 @@ Capture from the baseline run the number of tests that actually **executed**.
 ## Step 1 — Back up, hash, lock
 
 ```bash
-python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line <line> --owner-pid "$PPID"
+python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line "<line>" --owner-pid "$PPID"
 ```
 
 It ends with `STOP:` → stop and report it; the target and the lock are untouched. It ends with `NEXT: apply the mutation` → keep the `--run-id` value on that line for the Step 4 restore line.
@@ -83,7 +83,7 @@ python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID" --r
 
 - Exit 0 → say in your report that the restore was hash-verified.
 - Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally.
-- Any `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
+- Any other `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
 
 ## Hard limits
 

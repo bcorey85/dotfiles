@@ -60,7 +60,7 @@ STOP_RESTORE_MISMATCH = (
 STOP_RESTORE_FAILED = "STOP: the file could not be restored; the lock is kept; hand the cp line above to the caller"
 MISMATCH_HEADING = "RESTORE HASH MISMATCH"
 NEXT_LOCK_TEMPLATE = ("NEXT: run the unmutated suite (baseline), then mutation_lock.py lock <target> "
-                      "--class ... --line ... --owner-pid \"$PPID\"")
+                      "--class ... --line \"...\" --owner-pid \"$PPID\"")
 NEXT_APPLY = ("NEXT: apply the mutation with Edit (Step 2); restore later with "
               "mutation_lock.py restore --owner-pid \"$PPID\" --run-id {run_id}")
 DONE_RESTORE = "DONE: restore hash-verified ({how}); lock removed"
@@ -125,14 +125,14 @@ def refuse_existing_lock():
 def require_writable_backups():
     """Precondition 5: the nearest existing parent of the backups folder is writable. Creates nothing."""
     folder = calibration_lock.backups_folder()
-    while folder and not os.path.exists(folder):
+    while not os.path.exists(folder):
         folder = os.path.dirname(folder)
-    if not os.access(folder or ".", os.W_OK | os.X_OK):
+    if not os.access(folder, os.W_OK | os.X_OK):
         raise StopError([f"not writable: {folder}", STOP_STATE_UNWRITABLE])
 
 
 def check_preconditions(target_text):
-    """Run the PRECONDITIONS in order; the Target when all pass, else Stop at the first failure.
+    """Run the PRECONDITIONS in order; the Target when all pass, else StopError at the first failure.
     Fail-closed: any state this cannot read is a stop, never a pass."""
     target = locate_target(target_text)
     refuse_existing_lock()

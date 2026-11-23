@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1099 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1100 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Test that every mcp tool name in the toolkit names a registered server](notes/2026-11-22-test-that-every-mcp-tool-name-in-the-toolkit-names.md).
+Latest change: 2026-11-22, [A ticket whose Source line spells the queue path with the home folder reads as session-owned](notes/2026-11-22-a-lane-brief-that-names-a-session-written-queue.md).
 
 ## Top gains
 

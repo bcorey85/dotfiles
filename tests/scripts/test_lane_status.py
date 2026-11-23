@@ -19,6 +19,18 @@ import lane_entries
 LANE_STATUS = pathlib.Path(os.environ.get("LANE_STATUS_SCRIPT", toolkit_paths.TOOLS_DIR / "lane_status.py"))
 ROOMY_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 99999999 1% /"
 TIGHT_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 100 99% /"
+# A Bash call sent to the background, the result that hands back its task id, the notification when it ends, and the
+# closing text of a turn that stops to wait on it.
+BACKGROUND_SHELL_CALL = {"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "make bench", "run_in_background": True}}]}}
+BACKGROUND_SHELL = {"type": "user", "toolUseResult": {"backgroundTaskId": "b1"}, "message": {"content": [
+    {"type": "tool_result", "tool_use_id": "t1", "content": "Command running in background with ID: b1"}]}}
+SHELL_NOTIFICATION = {"type": "user", "message": {"content": (
+    "<task-notification><task-id>b1</task-id><tool-use-id>t1</tool-use-id><status>completed</status>"
+    "<result>done</result></task-notification>")}}
+BACKGROUND_RUN = [BACKGROUND_SHELL_CALL, BACKGROUND_SHELL]
+CLOSING_TEXT = {"type": "assistant", "message": {"content": [
+    {"type": "text", "text": "The bench runs in the background; I will report when it ends."}]}}
 
 
 class LaneStatusTest(unittest.TestCase):
@@ -58,15 +70,67 @@ class LaneStatusTest(unittest.TestCase):
         env = {key: value for key, value in os.environ.items() if not key.startswith("LANE_STATUS_")}
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["CLAUDE_CODE_TMPDIR"] = str(self.temp_base)
+        env["CLAUDE_CONFIG_DIR"] = str(self.root / "config")
         env.update(overrides)
         return env
 
-    def run_status(self, **env_overrides):
+    def run_status(self, *arguments, **env_overrides):
         env = self.status_env(**{"LANE_STATUS_MIN_MEMORY_GB": "0", **env_overrides})
-        return subprocess.run(["python3", str(LANE_STATUS)], env=env, capture_output=True, text=True)
+        return subprocess.run(["python3", str(LANE_STATUS), *arguments], env=env, capture_output=True, text=True)
 
     def agent(self, status, cwd=None):
         return {"agent": "claude", "agent_status": status, "cwd": str(cwd or self.worktree), "pane_id": "p1"}
+
+    def agent_with_transcript(self, status, records):
+        """An agent whose session transcript holds `records`, one JSON object per line."""
+        session_id = "s-one"
+        transcript = self.root / "config" / "projects" / "-wt-one" / f"{session_id}.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
+        agent = self.agent(status)
+        agent["agent_session"] = {"value": session_id}
+        return agent
+
+    def test_an_idle_agent_with_an_unreported_background_shell_is_waiting(self):
+        self.add_lane()
+        self.stub_agents([self.agent_with_transcript("idle", [*BACKGROUND_RUN, CLOSING_TEXT])])
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.stdout, "one: waiting on 1 background job(s)\n", finished.stderr)
+
+    def test_an_idle_agent_whose_background_shell_reported_is_idle(self):
+        self.add_lane()
+        self.stub_agents([self.agent_with_transcript("idle", [*BACKGROUND_RUN, SHELL_NOTIFICATION, CLOSING_TEXT])])
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.stdout, "one: idle\n", finished.stderr)
+
+    def test_an_agent_whose_transcript_ends_on_an_api_error_is_dead(self):
+        self.add_lane()
+        cases = [("Please run /login. API Error: 401", "login expired"), ("API Error: 500 overloaded", "api error")]
+        for error_text, reason in cases:
+            with self.subTest(reason=reason):
+                error_record = {"type": "assistant", "isApiErrorMessage": True,
+                                "message": {"content": [{"type": "text", "text": error_text}]}}
+                self.stub_agents([self.agent_with_transcript("idle", [*BACKGROUND_RUN, error_record])])
+
+                finished = self.run_status()
+
+                self.assertEqual(finished.stdout, f"one: dead ({reason})\n", finished.stderr)
+
+    def test_changes_prints_a_state_once_and_working_when_the_lane_recovers(self):
+        self.add_lane()
+        self.stub_agents([self.agent("idle")])
+        first = self.run_status("--changes")
+        again = self.run_status("--changes")
+        self.stub_agents([self.agent("working")])
+        recovered = self.run_status("--changes")
+        quiet = self.run_status("--changes")
+
+        outputs = [(run.returncode, run.stdout) for run in (first, again, recovered, quiet)]
+        self.assertEqual(outputs, [(1, "one: idle\n"), (0, ""), (1, "one: working\n"), (0, "")])
 
     def test_working_agent_and_healthy_machine_print_nothing(self):
         self.add_lane()
@@ -92,7 +156,7 @@ class LaneStatusTest(unittest.TestCase):
         finished = self.run_status()
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
-        self.assertEqual(finished.stdout, "one: no agent\n")
+        self.assertEqual(finished.stdout, "one: dead (no agent)\n")
 
     def test_a_lane_with_one_working_agent_among_several_is_silent(self):
         self.add_lane()
@@ -126,7 +190,7 @@ class LaneStatusTest(unittest.TestCase):
 
         finished = self.run_status()
 
-        self.assertEqual(finished.stdout, "one: no agent\n")
+        self.assertEqual(finished.stdout, "one: dead (no agent)\n")
 
     def test_an_agent_whose_cwd_is_a_symlink_to_the_worktree_counts(self):
         self.add_lane()
@@ -146,7 +210,7 @@ class LaneStatusTest(unittest.TestCase):
 
         finished = self.run_status()
 
-        self.assertEqual(finished.stdout, "one: no agent\n")
+        self.assertEqual(finished.stdout, "one: dead (no agent)\n")
 
     def test_no_lanes_skips_the_herdr_call(self):
         write_stub(self.bin_dir / "herdr-api", "exit 1")
@@ -161,7 +225,7 @@ class LaneStatusTest(unittest.TestCase):
         finished = self.run_status()
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
-        self.assertEqual(finished.stdout, "one: worktree gone\n")
+        self.assertEqual(finished.stdout, "one: dead (worktree gone)\n")
 
     def test_a_closed_lane_is_absent(self):
         self.add_lane()

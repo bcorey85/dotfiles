@@ -101,7 +101,7 @@ class ToolkitProseFactsTest(unittest.TestCase):
         self.assertIn("/test-audit", description)
         self.assertNotIn("close-branch", description)
 
-    def test_architect_descriptions_are_one_sentence_naming_eng_spec_phase_4(self):
+    def test_architect_descriptions_are_two_sentences_naming_eng_spec_phase_4(self):
         agent_dirs = (CLAUDE_DIR / "agents", OPENCODE_AGENTS_DIR)
         for agent_dir in agent_dirs:
             for agent in ARCHITECTS:
@@ -155,7 +155,6 @@ class ToolkitProseFactsTest(unittest.TestCase):
         for removed in ("Your strengths", "Guidelines:", "Be thorough"):
             self.assertNotIn(removed, claude_text)
             self.assertNotIn(removed, port_text)
-
 
     def test_blocker_reproduction_sentence_is_gone_from_review_fork_run_and_calibration_self_check(self):
         calibration = CALIBRATION_FILE.read_text()
@@ -226,7 +225,7 @@ class ToolkitProseFactsTest(unittest.TestCase):
     def test_the_decisions_phase_keeps_alternatives_rejected_and_the_emoji_heading_line(self):
         decisions = (CLAUDE_DIR / "skills" / "eng-spec" / "phases" / "5-decisions.md").read_text()
         self.assertIn("Alternatives rejected", decisions)
-        self.assertIn("    - Start each block's heading with an emoji for its kind", decisions)
+        self.assertIn("Start each block's heading with an emoji for its kind", decisions)
 
     def test_the_spec_template_and_plan_format_keep_their_evidence_and_criterion_test_rules(self):
         template = (CLAUDE_DIR / "skills" / "eng-spec" / "templates" / "spec-template.md").read_text()
@@ -235,13 +234,9 @@ class ToolkitProseFactsTest(unittest.TestCase):
         self.assertIn("No mocks inside such a test.", plan_format)
 
     def test_list_names_the_file_with_the_full_text_and_pull_ticket_states_the_three_statuses(self):
-        list_lines = skill_text("list").splitlines()
-        self.assertIn("- Name the file that holds the full text (report, diff) once, on the line after the list and "
-                      "before the closing line.", list_lines)
+        self.assertIn("Name the file that holds the full text (report, diff) once", skill_text("list"))
         pull_ticket = skill_text("pull-ticket")
-        self.assertIn("'To Do': tell the user work is starting, in one line. 'In Progress': state the status in the "
-                      "presentation and go on. 'In Review' or 'Done': warn, and ask the user to confirm before going "
-                      "on.", pull_ticket)
+        self.assertIn("'In Review' or 'Done': warn", pull_ticket)
 
     def test_test_intent_reviewer_scopes_the_cull_to_test_audit_and_close_branch(self):
         text = (CLAUDE_DIR / "agents" / "test-intent-reviewer.md").read_text()

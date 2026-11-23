@@ -341,6 +341,49 @@ class ImpactHeadingSectionTest(unittest.TestCase):
         self.assertIn("Should the cap be 3?", asks[0])
         self.assertTrue(asks[1].startswith("PLAN-IMPACT:"), asks)
 
+    def test_two_unbulleted_plan_impact_lines_are_two_asks(self):
+        text = ("### Plan impact\n"
+                "`PLAN-IMPACT:` app.py:3 — the cap differs — `acceptance_criteria: none`\n"
+                "`PLAN-IMPACT:` app.py:9 — the age differs — `acceptance_criteria: AC2`\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("app.py:3", asks[0])
+        self.assertIn("acceptance_criteria: none", asks[0])
+        self.assertNotIn("AC2", asks[0])
+        self.assertIn("app.py:9", asks[1])
+        self.assertIn("acceptance_criteria: AC2", asks[1])
+
+    def test_bold_and_backtick_unbulleted_plan_impact_lines_each_start_an_ask(self):
+        for prefix in ("`PLAN-IMPACT:`", "**PLAN-IMPACT:**"):
+            with self.subTest(prefix=prefix):
+                text = f"### Plan impact\n{prefix} app.py:3 — x\n{prefix} app.py:9 — y\n"
+
+                self.assertEqual(len(parsed_asks(text)), 2)
+
+    def test_unbulleted_plan_impact_lines_after_a_lead_in_line_are_two_asks(self):
+        text = ("### Plan impact\n"
+                "Two plan changes:\n"
+                "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none\n"
+                "PLAN-IMPACT: app.py:9 — the age differs — acceptance_criteria: AC2\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("app.py:3", asks[0])
+        self.assertIn("acceptance_criteria: none", asks[0])
+        self.assertNotIn("app.py:9", asks[0])
+        self.assertIn("app.py:9", asks[1])
+        self.assertNotIn("app.py:3", asks[1])
+
+    def test_an_unbulleted_plan_impact_line_in_a_fix_section_stays_in_its_item(self):
+        text = "## Fix\napp.py:3 [bug] x — fix: y\nPLAN-IMPACT: app.py:9 — z — acceptance_criteria: none\n"
+
+        fixes = review_loop_findings.parse_review(text)["fix"]
+
+        self.assertEqual(len(fixes), 1, fixes)
+
     def test_a_plan_impact_section_reading_none_adds_no_ask(self):
         self.assertEqual(parsed_asks("## Fix\nNone\n### Plan impact\nNone\n"), [])
 

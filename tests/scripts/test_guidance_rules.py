@@ -263,9 +263,9 @@ class GuidanceRulesTest(unittest.TestCase):
         plan_impact_section = reviewer_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
         self.assertNotIn("PLAN-IMPACT:", ask_section)
         self.assertIn("PLAN-IMPACT:", plan_impact_section)
-        self.assertIn("acceptance_criteria: none", plan_impact_section)
 
         calibration_text = guidance_text("skills/_shared/reviewer-calibration.md")
+        self.assertIn("acceptance_criteria: none", calibration_text)
         self.assertIn("`code-reviewer`", calibration_text.split("## Calibration Anchor", 1)[0])
         self.assertIn("optional `kind: reword|cut|narrow` line", calibration_text)
 
@@ -274,7 +274,6 @@ class GuidanceRulesTest(unittest.TestCase):
         opencode_plan_impact = opencode_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
         self.assertNotIn("PLAN-IMPACT:", opencode_ask)
         self.assertIn("`PLAN-IMPACT:`", opencode_plan_impact)
-        self.assertIn("acceptance_criteria: none", opencode_plan_impact)
 
 
 if __name__ == "__main__":

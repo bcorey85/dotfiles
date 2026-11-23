@@ -106,6 +106,70 @@ class ReportBlockTest(unittest.TestCase):
                 self.assertIn("acceptance_criteria", found)
                 self.assertFalse(plan_format.changes_acceptance_criteria(found))
 
+    def test_a_trailing_kind_clause_does_not_make_an_answer_of_none_a_criteria_change(self):
+        lines = (
+            "`PLAN-IMPACT:` app.py:3 — the cap differs — `acceptance_criteria: none` — `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none — kind: reword",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none\nkind: reword",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none kind: reword",
+            "PLAN-IMPACT: app.py:3 — x — `acceptance_criteria: none` `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC3 holds either way)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none. Delegated.",
+        )
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: AC2 — kind: reword"))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none beyond AC1"))
+        self.assertEqual(plan_format.criteria_ids(
+            "PLAN-IMPACT: x — acceptance_criteria: none (AC3 holds either way)", answers_only=True), frozenset())
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: `AC2`, `AC3`"), frozenset({"AC2", "AC3"}))
+
+    def test_an_answer_of_none_followed_by_except_but_or_beyond_is_a_criteria_change(self):
+        answers = (
+            "none, but AC2 wording changes",
+            "none — except AC2 narrows",
+            "none beyond AC2",
+        )
+        wrapped = (
+            "`PLAN-IMPACT:` a.py:3 — x — `acceptance_criteria: none` but AC2 narrows",
+            "PLAN-IMPACT: a.py:3 — x — **acceptance_criteria:** **none** except AC2",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; but AC2 wording changes",
+        )
+        for line in wrapped:
+            with self.subTest(line=line):
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+        for answer in answers:
+            with self.subTest(answer=answer):
+                line = f"PLAN-IMPACT: app.py:3 — x — acceptance_criteria: {answer}"
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+
+    def test_an_answer_of_none_with_a_parenthetical_naming_a_criterion_stays_none(self):
+        line = "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC2 holds either way)"
+
+        self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset())
+
+    def test_below_criteria_summary_drops_the_answer_and_its_kind_clause(self):
+        shapes = (
+            "`PLAN-IMPACT:` a.py:3 — x `acceptance_criteria: none`\n`kind: reword`",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none **kind:** reword",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none.",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; kind: reword",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none, kind: reword",
+        )
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                summary = plan_format.below_criteria_summary(shape)
+                self.assertNotIn("kind", summary)
+                self.assertTrue(summary.endswith("— x"), summary)
+
 
 class SectionShapeTest(unittest.TestCase):
     def test_template_items_carry_phase_text_checked_state_and_line(self):

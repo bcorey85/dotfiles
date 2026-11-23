@@ -102,6 +102,30 @@ class CheckRuleTextsInTreeTest(unittest.TestCase):
         self.assertNotIn("FAIL A", run.stdout)
         self.assertIn("FAIL B", run.stdout)
 
+    def test_retired_scenarios_and_sources_outside_agents_and_skills_are_skipped(self):
+        scenarios = {
+            "A": {"rule_source": "skills/demo/SKILL.md", "rule_text": "Not in the file.", "retired": True},
+            "B": {"rule_source": "docs/notes.md", "rule_text": "Not in the file."},
+        }
+
+        run = run_check(scenarios, self.repo)
+
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+
+    def test_a_wrong_argument_count_exits_2_with_usage(self):
+        run = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False)
+
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("usage:", run.stderr)
+
+    def test_json_that_is_not_an_object_of_objects_exits_2(self):
+        for text in ("[1]", '{"A": 1}'):
+            with self.subTest(text=text):
+                run = run_check(text, self.repo)
+
+                self.assertEqual(run.returncode, 2)
+                self.assertIn("must be a JSON object of scenario objects", run.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

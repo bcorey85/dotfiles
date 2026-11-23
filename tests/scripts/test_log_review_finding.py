@@ -20,7 +20,7 @@ import toolkit_paths
 LOG_REVIEW_FINDING = pathlib.Path(
     os.environ.get("LOG_REVIEW_FINDING_SCRIPT") or toolkit_paths.CLAUDE_DIR / "skills" / "review" / "log-review-finding"
 )
-FINDING_LOG_RULE = toolkit_paths.CLAUDE_DIR / "skills" / "test-audit" / "SKILL.md"
+TEST_AUDIT_SKILL = toolkit_paths.CLAUDE_DIR / "skills" / "test-audit" / "SKILL.md"
 CODE_SKILL = toolkit_paths.CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 GIT_ENV = {
     "GIT_AUTHOR_NAME": "t",
@@ -311,7 +311,7 @@ class TestAuditRowTest(LoggerRepoCase):
                 self.assertEqual(fake_ledger.recorded_rows(self.ledger_env), [])
 
     def test_a_finding_logged_under_zsh_as_the_log_rule_writes_it_takes_a_bracketed_path(self):
-        log_rule_text = FINDING_LOG_RULE.read_text()
+        log_rule_text = TEST_AUDIT_SKILL.read_text()
         (file_argument,) = set(re.findall(r"'?file=<path>'?", log_rule_text))
         bracketed_path = "app/[id]/route.ts"
         bracketed_argument = file_argument.replace("<path>", bracketed_path)
@@ -337,7 +337,7 @@ class TestAuditRowTest(LoggerRepoCase):
 class PathQuotingTest(unittest.TestCase):
     def test_every_path_the_review_loop_templates_pass_to_a_command_is_single_quoted(self):
         unquoted_path = re.compile(r"(?<!')(?:file=<path>|root=<[^>]+>)|\bcd <|full_check\.py <|--(?:log|plan) [/<]")
-        for template in (FINDING_LOG_RULE, CODE_SKILL):
+        for template in (TEST_AUDIT_SKILL, CODE_SKILL):
             with self.subTest(template=template.name):
                 unquoted = [line for line in template.read_text().splitlines() if unquoted_path.search(line)]
                 self.assertEqual(unquoted, [])

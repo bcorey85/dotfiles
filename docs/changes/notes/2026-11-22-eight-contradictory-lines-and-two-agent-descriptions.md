@@ -17,7 +17,7 @@ unmeasured: "Factual corrections to eight lines (orient write line, todos source
 
 ## Change
 
-orient states its only writes (the vault note and the `note` capture line). todos allows exactly the two git commands. list names the full-text file on the line after the list. pull-ticket gives each ticket status one action. verify-branch no longer calls itself the only run site; the sentence was removed with nothing in its place. plan-verifier and test-intent-reviewer descriptions name /close-branch; the cull scope line names it too. The opencode test-intent-reviewer description names /test-audit only, since opencode has no close-branch command.
+orient states its only writes (the vault note, the saved walk and the `note` capture line). todos allows exactly the two git commands. list names the full-text file on the line after the list. pull-ticket gives each ticket status one action. verify-branch no longer calls itself the only run site; the sentence was removed with nothing in its place. plan-verifier and test-intent-reviewer descriptions name /close-branch; the cull scope line names it too. The opencode test-intent-reviewer description names /test-audit only, since opencode has no close-branch command.
 
 ## Evidence
 

@@ -69,8 +69,16 @@ PLAN_CHANGE_MARK = re.compile(
     rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
     r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
-# A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
-AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
+# `none` with its closing marks and separators, then except/but/beyond and the rest of the line: the answer
+# says none and then names a change.
+NONE_WITH_EXCEPTION = r"none\b[`*_]*[ \t,.:;\N{EM DASH}\N{EN DASH}-]*(?:except|but|beyond)\b[^\n]*"
+# A bare `none`; the branch before it takes a `none` that an except/but/beyond follows.
+NONE_ANSWER = r"none\b"
+# Any other answer: the criteria the change would alter, stopping before a `kind:` clause, a `;` or the line end.
+OTHER_ANSWER = r"(?:(?!\bkind[*`_]*:)[^;\n])*"
+# A PLAN-IMPACT's `acceptance_criteria:` line.
+AC_CHANGE_LINE = re.compile(
+    rf"acceptance[_ ]criteria[*`_]*:[ \t*`_]*({NONE_WITH_EXCEPTION}|{NONE_ANSWER}|{OTHER_ANSWER})", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
 
 # The `cause: plan` line of a PLAN-IMPACT block: the marks a line opens with, the field name, then its value.
@@ -84,8 +92,11 @@ NO_CAUSE_LINE = "no-cause-line"
 BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
                          "rule; no one was asked.")
 PLAN_IMPACT_HEADER_WORD = re.compile(r"[*`_]*plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
-# The `acceptance_criteria:` clause with the marks and separators before it, so removing it leaves no stray dash.
-AC_CHANGE_CLAUSE = re.compile(r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern, re.I)
+# The `acceptance_criteria:` clause, with the marks and separators before it so removing it leaves no stray dash,
+# and after it the closing marks, a trailing `(...)` parenthetical, a trailing period and a `kind: <word>` clause.
+AC_CHANGE_CLAUSE = re.compile(
+    r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern
+    + r"[`*_]*(?:[ \t]*\([^)\n]*\))?[ \t]*\.?(?:[\s;,—\N{EN DASH}-]*[`*_]*kind[*`_]*:[ \t*`_]*\w+[`*_]*)?", re.I)
 DEVIATION_RULING_PREFIX = "  The ruling: "
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)

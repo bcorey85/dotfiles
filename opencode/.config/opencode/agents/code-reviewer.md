@@ -112,7 +112,7 @@ Apply **Disposition** from calibration. An unreachable path is not a finding at 
 [file:line — issue — the question the human has to answer — change: the one edit an `accepted` answer makes]
 
 ### Plan impact
-[`PLAN-IMPACT:` file:line — both sides — `acceptance_criteria: none` or the ids it changes — optional `kind: reword|cut|narrow`]
+[`PLAN-IMPACT:` findings.]
 [Never auto-fixed; the loop scans the prefix. Omit when empty.]
 
 ### Nit

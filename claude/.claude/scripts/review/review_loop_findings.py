@@ -117,22 +117,29 @@ def states_an_ask(text):
                 or PLAN_CHANGE_MARK.match(text))
 
 
-def is_bare_finding_head(line):
-    return not ITEM_MARKER.match(line) and bool(FINDING_HEAD.match(line.strip()))
+def is_bare_finding_head(line, is_ask_section=False):
+    """A line that opens an unbulleted item: a bare file:line, or in an Ask-type section a plan-impact line."""
+    if ITEM_MARKER.match(line):
+        return False
+    if FINDING_HEAD.match(line.strip()):
+        return True
+    return is_ask_section and bool(PLAN_CHANGE_MARK.match(line.strip()))
 
 
 def item_start_lines(lines, is_ask_section=False):
     """The indexes of the section lines that start an item. A finding written as a paragraph opens with a bare
-    file:line, and the bullets under it are its points: when the section opens with one, each bare file:line line at
-    its indent starts an item. Otherwise a bullet or numbered marker at the first marker's indent starts one. A marker
-    indented deeper is a sub-bullet, and it and any other line, after a blank line too, continue the item before it.
+    file:line, and the bullets under it are its points: when the section opens with one (in an Ask-type section, also a
+    `PLAN-IMPACT:` line), each such line at its indent starts an item. Otherwise a bullet or numbered marker at the
+    first marker's indent starts one. A marker indented deeper is a sub-bullet, and it and any other line, after a
+    blank line too, continue the item before it.
     A line at the item indent that ends in a colon, after an item or as an Ask section's first line, leads in a list
     of the reviewer's notes ("The other claims check out:"): the markers under it continue the item too, until one opens
-    with a file:line or a plain line at the item indent closes the list."""
+    with a file:line or a plain line at the item indent closes the list. In an Ask-type section, an unbulleted
+    `PLAN-IMPACT:` line at the item indent starts an item and closes a notes list."""
     first_line = next(line for line in lines if line.strip())
-    if is_bare_finding_head(first_line):
+    if is_bare_finding_head(first_line, is_ask_section):
         return {index for index, line in enumerate(lines)
-                if is_bare_finding_head(line) and indent_of(line) <= indent_of(first_line)}
+                if is_bare_finding_head(line, is_ask_section) and indent_of(line) <= indent_of(first_line)}
 
     marker_indents = [indent_of(line) for line in lines if ITEM_MARKER.match(line)]
     item_indent = marker_indents[0] if marker_indents else 0
@@ -143,6 +150,11 @@ def item_start_lines(lines, is_ask_section=False):
         if not line.strip() or indent_of(line) > item_indent:
             continue
         if not ITEM_MARKER.match(line):
+            if is_ask_section and indent_of(line) == item_indent and PLAN_CHANGE_MARK.match(line.strip()):
+                starts.add(index)
+                opens_section = False
+                in_notes_list = False
+                continue
             in_notes_list = (bool(starts) or opens_section) and line.rstrip().endswith(":")
             opens_section = False
             continue

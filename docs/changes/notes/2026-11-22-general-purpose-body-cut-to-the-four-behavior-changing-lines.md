@@ -27,6 +27,12 @@ Rule-meter arms ran on the removed text (old lines 7-18) before the cut, one run
 
 Frontmatter plus four body lines in both trees.
 
+Final text, 2026-11-23, the four lines as the on arm and an empty body as the off arm, one run per cell, sonnet: GP01F
+with the lines 3/3, without 3/3 (supportive 1/1 against 1/1, neutral 1/1 against 1/1, competing 1/1 against 1/1);
+GP02F the same, 3/3 against 3/3. ALREADY on both. The four lines were in master before this branch, so they are kept
+and named in one agent-evals removal-round item with the review-fork-run `--by session` bullet; the ruling is in the
+plan's decision log (agent-evals-c3, 2026-11-23).
+
 ## Watch
 
 Run a new scenario against the old body if the loss of a rule is suspected.

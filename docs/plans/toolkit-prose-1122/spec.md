@@ -422,9 +422,9 @@ review-fork-run gets `##` headings and a bulleted Resume; coder-core's verify pa
 - [ ] **Test-verified**: agent tool tests — `python3 tests/parallel_tests.py test_spec_agent_tools.py`
 - [ ] **Test-verified**: calibration refs guard test — `python3 tests/parallel_tests.py test_calibration_guard.py`
 - [ ] **Test-verified**: step 14 is a list (presence of a bullet right after the step line) — `rg -n -U '^14\. .*\n\s+- ' claude/.claude/skills/eng-spec/phases/5-decisions.md`
-- [ ] **Agent-run**: RF01B arms, before the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule RF01B`
+- [x] **Agent-run**: RF01B arms, before the edit — ran 2026-11-22 (rows in `~/dev/evals/rulemeter1/runs/results.jsonl`); the scenario is removed from scenarios.json, so `run-all --rule RF01B` now runs nothing
 - [ ] **Agent-run**: RF01W arms, after the edit — `python3 /home/brandon/agent-evals/bin/rule_meter.py run-all --rule RF01W`
-- [ ] **Test-verified**: RF01B is retired — `rg -n '"RF01B"' /home/brandon/agent-evals/bin/rule_meter_scenarios.json`
+- [x] **Test-verified**: RF01B is removed from the scenarios — `! rg -q '"RF01B"' /home/brandon/agent-evals/bin/rule_meter_scenarios.json`
 - [ ] **Agent-run**: full suite — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
 
 #### Manual Verification:
@@ -472,7 +472,7 @@ Meter the two code-reviewer lines live, then give the PLAN-IMPACT `acceptance_cr
 
 - [ ] **Test-verified**: the duplicate coder rule is gone — `rg -n -F 'the code wins' claude/.claude/skills/coder-core/SKILL.md`
 - [ ] **Test-verified**: the coder pointer is present — `rg -n -F 'PLAN-IMPACT findings below says' claude/.claude/skills/coder-core/SKILL.md`
-- [ ] **Test-verified**: the code-reviewer pointer is present — `rg -n 'disagree, or you weigh the .blocker. flag' claude/.claude/agents/code-reviewer.md`
+- [x] **Test-verified**: the code-reviewer pointer is present — the Disposition pointer sentence was cut on the final-arm ruling (agent-evals-c3, 2026-11-23: PI01F NO-EFFECT, BL01F ALREADY); the kept pointer is checked by `rg -n -F 'Verify the Premise Before Flagging** section of' claude/.claude/agents/code-reviewer.md`
 - [ ] **Test-verified**: the `kind:` line is present — `rg -n -F 'kind: reword|cut|narrow' claude/.claude/skills/_shared/reviewer-calibration.md`
 - [ ] **Test-verified**: anchors — `bash claude/.claude/scripts/tools/rule-anchors.sh check`
 - [ ] **Test-verified**: guidance rules test — `python3 tests/parallel_tests.py test_guidance_rules.py`
@@ -573,6 +573,7 @@ Prompt-reading tests (`test_guidance_rules.py`, `test_spec_agent_tools.py`, `tes
 - Phase 9: check_rule_texts_in_tree.py is 78 lines, over the 60-line estimate, because of the frozen-copy skip; no acceptance criterion changes. Adopted by the orchestrating session (code), 2026-11-23.
 - Phase 8: the derivable-list rule was dropped per the standing ruling of agent-evals-c3 on 2026-11-23 (owner session, in 03-decisions.md), so AC7 is met by dropping the rule; DL01 off arm flagged in 2 of 3 framings. Dated 2026-11-23.
 - Phase 5: the code-vocabulary Consumers line also names the opencode code-reviewer port, and the consumer test counts opencode ports. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
+- Phases 7 and 9: on the final-wording arms, the code-reviewer Disposition pointer sentence (PI01F NO-EFFECT, BL01F ALREADY) and the verify-branch and close-branch plan-impact routing sentence (PR01 ALREADY) are cut; the master-origin general-purpose lines (GP01F, GP02F ALREADY) and the review-fork-run `--by session` bullet (RF01F ALREADY at n=1) stay and go to one agent-evals removal-round item. Ruled by agent-evals-c3, 2026-11-23 (03-decisions.md); AC9 is met by the counts in the change notes; no acceptance criterion changes.
 - Phase 6: the build-only-what-the-finding-does-not-touch sentence moved from the Check-the-plan section to the PLAN-IMPACT findings section of coder-core, stated once. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
 - Phase 7: the opencode code-reviewer port's calibration pointer is narrowed to two sections and its Self-Check section deleted, to match the claude agent. Adopted by the orchestrating session (code), 2026-11-23; no acceptance criterion changes.
 

@@ -257,7 +257,7 @@ class GuidanceRulesTest(unittest.TestCase):
         preamble = reviewer_text.split("## Review Process", 1)[0]
         self.assertEqual(preamble.count("reviewer-calibration.md"), 1)
         self.assertNotIn("`blocker` only when shipping", reviewer_text)
-        self.assertIn("or you weigh the `blocker` flag", preamble)
+        self.assertNotIn("**Disposition**", preamble)
         self.assertIn("Verify the Premise Before Flagging", preamble)
         ask_section = reviewer_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
         plan_impact_section = reviewer_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]

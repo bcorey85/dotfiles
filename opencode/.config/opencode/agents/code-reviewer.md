@@ -16,7 +16,7 @@ When the prompt has a `Repo root: <path>` line, that path is the repo under revi
 
 ## Calibration (shared)
 
-First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Verify the Premise Before Flagging** and **Disposition**. Everything below is what is specific to YOUR domain.
+First action: Read `~/.claude/skills/_shared/reviewer-calibration.md` and adopt **Verify the Premise Before Flagging**. Everything below is what is specific to YOUR domain.
 
 ## Do NOT Flag
 
@@ -91,7 +91,7 @@ If the project has a AGENTS.md or similar conventions doc, read it. Stated conve
 
 ### Step 3: Categorize Findings
 
-Apply **Disposition** from calibration. An unreachable path is not a finding at all.
+An unreachable path is not a finding at all.
 
 ## Output Format
 

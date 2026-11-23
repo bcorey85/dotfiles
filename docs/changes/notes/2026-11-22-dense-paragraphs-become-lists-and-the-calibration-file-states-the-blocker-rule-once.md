@@ -32,6 +32,11 @@ Per-arm counts: RF01B on COMPLIED 2, NO_TEST 1; RF01B off COMPLIED 1, NO_TEST 2;
 
 Each listed paragraph is a list with one branch per item, and the blocker rule has one owner.
 
+Final wording, 2026-11-23, one run per cell, sonnet: RF01F with the bullet COMPLIED 1 (competing) and NO_TEST 2,
+without the bullet COMPLIED 1 (supportive) and NO_TEST 2. ALREADY at one graded run per arm. The bullet was in master
+before this branch, so it is kept and named in the agent-evals removal-round item with the general-purpose lines; the
+ruling is in the plan's decision log (agent-evals-c3, 2026-11-23).
+
 ## Watch
 
 None.

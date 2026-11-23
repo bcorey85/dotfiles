@@ -71,8 +71,8 @@ def same_name_functions(root):
 
 
 def import_preamble_lines(path):
-    """Line numbers of the module docstring, the top-level imports and `sys.path` assignments in a Python file, and of
-    its blank lines."""
+    """Line numbers of the module docstring, the top-level imports, `sys.path` assignments and assignments computed from
+    `__file__` (the sibling-folder line a `sys.path` line is built from) in a Python file, and of its blank lines."""
     source = path.read_text()
     preamble_lines = {number for number, line in enumerate(source.splitlines(), 1) if not line.strip()}
     tree = ast.parse(source, filename=str(path))
@@ -82,7 +82,10 @@ def import_preamble_lines(path):
     for node in body:
         is_import = isinstance(node, ast.Import | ast.ImportFrom)
         is_sys_path = isinstance(node, ast.Assign) and "sys.path" in ast.unparse(node.targets[0])
-        if is_import or is_sys_path:
+        is_file_location = isinstance(node, ast.Assign) and any(
+            isinstance(part, ast.Name) and part.id == "__file__" for part in ast.walk(node.value)
+        )
+        if is_import or is_sys_path or is_file_location:
             preamble_lines.update(range(node.lineno, node.end_lineno + 1))
     return preamble_lines
 

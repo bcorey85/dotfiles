@@ -14,9 +14,13 @@ what the merge brought; a merge that conflicts
 stops the run, naming it. The loop's base goes in the prompt's `base:` line. The loop folder is recorded
 in <git dir>/code-phase/run.json, where `code_wait.py review` checks it.
 
-The prompt header is: lane, repo, plan, phase, later-phase files and held files (dirty at the run start per
-phase_start.py's record, same bytes now, while a live session other than this run's works in the repo; the held-by
-line names each holder), then the handoff block and the repo's gate env.
+The prompt header is: lane, repo, plan, phase, later-phase files and held files (with a holder recorded in
+phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, a
+same-bytes file while a live session other than this run's works in the repo; and, with a recorded holder or while
+such a session is live, every untracked file no recorded coder of the run wrote and no phase section names; the
+held-by line names each
+holder), a `tool fault:` line when a held file changed during the phase, a `held files this phase names:` line for
+held files the phase's plan section names, then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
@@ -47,13 +51,23 @@ import gate_commands
 import gate_env
 import handback_hook
 import handoff_files
+import loop_transcript
 import merge_free_base
 import phase_start
 import plan_format
 import reviewer_dispatch
 import script_utils
 import session_registry
-from code_wait import HANDOFF_FILE, LOOP_DIR_FILE, PID_FILE, REVIEW_OUTPUT, loop_dir, phase_dir, running_review_pid
+from code_wait import (
+    HANDOFF_FILE,
+    LOOP_DIR_FILE,
+    PID_FILE,
+    REVIEW_OUTPUT,
+    SCOPE_FILE,
+    loop_dir,
+    phase_dir,
+    running_review_pid,
+)
 from review_loop_prompt_file import (
     BASE_KEY,
     CODER_MODEL_KEY,
@@ -71,6 +85,17 @@ WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_PHASES_FILE = "handoff-phases.json"
+# The origins a holder row's claim names, and the two prompt header lines the loop stores and ignores.
+DIRTY_UNCHANGED = "dirty at the run start, unchanged now"
+DIRTY_CHANGED = "dirty at the run start, changed since"
+UNTRACKED_UNATTRIBUTED = "untracked, written by no recorded coder of this run"
+TOOL_FAULT_KEY = "tool fault"
+HELD_TARGETED_KEY = "held files this phase names"
+
+
+def held_claim(origin, cwd):
+    """The claim text of a holder row: why the file is held, and where the holder's session works."""
+    return f"{origin}; session in {cwd}"
 
 
 HANDOFF_FILE_PATH = re.compile(r"^\s*-\s*path:\s*(\S+)", re.M)
@@ -138,6 +163,14 @@ def earlier_phase_files(repo, plan, phase):
     return expected_red.earlier_phase_paths(plan_lines, phase)
 
 
+def this_phase_files(repo, plan, phase):
+    """The files this phase's plan section names. [] with no plan."""
+    if plan == NO_PLAN:
+        return []
+    plan_lines = (repo / plan).read_text().splitlines()
+    return expected_red.phase_own_paths(plan_lines, phase)
+
+
 def held_note(notes, message):
     """Prints `message` on stderr and adds it to `notes` (a list, or None), which a dry run prints on stdout."""
     print(message, file=sys.stderr)
@@ -145,52 +178,183 @@ def held_note(notes, message):
         notes.append(message)
 
 
-def phase_held_files(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
-    """The holder rows {"path", "session", "claim"} of the files another session holds: dirty at the run start
-    (phase_start.py's record) with the same bytes now, while a live session other than this run's works inside the
-    repo. With no such session the files are the run's own. A file an earlier phase of the plan names is the run's
-    own too. No record holds none; the missing record is noted on stderr and in `notes`."""
+def checked_start_record(repo, base_commit):
+    """The start record of the run, None when phase_start.py wrote none. Stops on a record that does not parse or whose
+    head does not relate to the base."""
     try:
-        unchanged = phase_start.unchanged_dirty_files(repo, base_commit)
+        record = phase_start.read_start_record(repo)
+        if record is not None:
+            phase_start.check_record_base(repo, base_commit, record)
     except phase_start.StartRecordError as error:
         sys.exit(f"code_review_start: {error}")
-    if unchanged is None:
+    return record
+
+
+def review_holder(repo, record, own_session_id):
+    """The holder of the files this run leaves out: the recorded one, else the other session live in the repo now,
+    else None. A holder is {"session", "cwd"}."""
+    return record["holder"] or phase_start.current_holder(repo, own_session_id)
+
+
+def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
+    """(holder rows of the held dirty files, the held paths whose bytes changed since the run start, holder rows of
+    the held untracked files). A holder recorded at the phase start is honored whether or not this session's id is
+    set. With no holder recorded, the live-holder fallback needs the id. No record, or no holder by either route,
+    holds none (the no-holder route); the reason is noted on stderr and in `notes`."""
+    record = checked_start_record(repo, base_commit)
+    if record is None:
         held_note(notes, "code_review_start: no phase start record, so files another session left dirty are reviewed "
                          f"as this phase's own. Run `{phase_start.COMMAND}` before each phase's coder dispatch.")
-        return []
+        return [], [], []
 
-    candidates = script_utils.without_paths(unchanged, earlier_phase_files(repo, plan, phase))
+    own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    holder = review_holder(repo, record, own_session_id)
+    if holder is None and not own_session_id:
+        held_note(notes, "code_review_start: CLAUDE_CODE_SESSION_ID is not set and the start record names no holder, "
+                         "so the run's own session cannot be told from a holder and no file is held; run it from the "
+                         "session's Bash")
+    if holder is None:
+        return [], [], []
+
+    dirty_rows, held_changed = phase_held_files(repo, record, holder, plan, phase)
+    if held_changed:
+        held_note(notes, "Tool fault: " + code_wait.held_fault_text(held_changed))
+    untracked_rows = foreign_untracked(repo, record, holder, plan, phase, notes)
+    return dirty_rows, held_changed, untracked_rows
+
+
+def phase_held_files(repo, record, holder, plan=NO_PLAN, phase=""):
+    """(holder rows {"path", "session", "claim"} of the held dirty files, the held paths whose bytes changed since the
+    run start). With a holder recorded at a phase start (phase_start.py's record), every file dirty then is held for
+    the whole phase, less the files an earlier phase of the plan names, which are the run's own. With no holder
+    recorded, only a same-bytes file is held, for the live session `holder`."""
+    candidates = script_utils.without_paths(sorted(record["dirty"]), earlier_phase_files(repo, plan, phase))
+    if not candidates:
+        return [], []
+    if record["holder"] is not None:
+        return recorded_holder_rows(repo, record, holder, candidates)
+    return live_holder_rows(repo, record, holder, candidates)
+
+
+def recorded_holder_rows(repo, record, recorded_holder, candidates):
+    """(rows, changed paths) holding every candidate for the recorded holder, claimed changed or unchanged."""
+    changed = set(phase_start.changed_dirty_files(repo, record))
+    rows = []
+    for path in candidates:
+        origin = DIRTY_CHANGED if path in changed else DIRTY_UNCHANGED
+        rows.append(holder_row(path, recorded_holder["session"], held_claim(origin, recorded_holder["cwd"])))
+    return rows, [path for path in candidates if path in changed]
+
+
+def live_holder_rows(repo, record, holder, candidates):
+    """(rows, []) holding the candidates whose bytes are unchanged, for the session live in the repo now."""
+    changed = set(phase_start.changed_dirty_files(repo, record))
+    claim = held_claim(DIRTY_UNCHANGED, holder["cwd"])
+    return [holder_row(path, holder["session"], claim) for path in candidates if path not in changed], []
+
+
+def targeted_held_files(repo, plan, phase, held_paths):
+    """The held paths this phase's plan section names; [] with no plan."""
+    own_paths = set(this_phase_files(repo, plan, phase))
+    return [path for path in held_paths if path in own_paths]
+
+
+def coder_written_paths(repo, record, notes):
+    """The repo-relative paths the recorded sessions' coder subagents wrote during the run (transcripts at or after
+    the record's started_at). A session with no subagents folder is named in `notes`, and so is a record with no
+    session."""
+    root = pathlib.Path(repo).resolve()
+    if not record["sessions"]:
+        held_note(notes, "code_review_start: start.json records no session (CLAUDE_CODE_SESSION_ID was unset at phase "
+                         "start), so no coder write can be attributed and every untracked file is held; run "
+                         "phase_start.py from the session's Bash")
+    written = set()
+    for session_id in record["sessions"]:
+        folder = session_registry.session_subagents_dir(session_id)
+        if folder is None:
+            held_note(notes, f"code_review_start: no coder transcripts found for session {session_id}")
+            continue
+        written |= folder_written_paths(root, folder, record["started_at"])
+    return written
+
+
+def folder_written_paths(root, folder, started_at):
+    """The repo-relative paths the coder transcripts of a subagents `folder` wrote; `root` is the resolved repo."""
+    written = set()
+    for meta_file in sorted(folder.glob(script_utils.subagent_meta_name("*"))):
+        agent_id = script_utils.subagent_id_from_meta_name(meta_file.name)
+        transcript = meta_file.with_name(script_utils.subagent_transcript_name(agent_id))
+        if not coder_transcript_in_run(transcript, started_at):
+            continue
+        written |= transcript_repo_paths(root, transcript)
+    return written
+
+
+def transcript_repo_paths(root, transcript):
+    """The repo-relative paths one coder `transcript` wrote; `root` is the resolved repo."""
+    written = set()
+    for name in loop_transcript.written_paths(transcript):
+        relative = script_utils.repo_relative(root, name)
+        if relative is not None:
+            written.add(relative)
+    return written
+
+
+def coder_transcript_in_run(transcript, started_at):
+    """Whether `transcript` exists, was written at or after `started_at`, and its meta file names a coder agent."""
+    agent_type = loop_transcript.agent_meta(transcript).get("agentType")
+    if not isinstance(agent_type, str) or not script_utils.CODERS.match(agent_type):
+        return False
+    if not transcript.is_file():
+        return False
+    return started_at is None or transcript.stat().st_mtime >= started_at
+
+
+def foreign_untracked(repo, record, holder, plan, phase, notes):
+    """The holder rows of the untracked files no recorded coder of the run wrote, held for `holder` ({"session",
+    "cwd"}); each file on its own, never a folder. Files in the record's `dirty`, the files an earlier phase names, the
+    files this phase's plan section names (the phase's own new files) and the files under the plan's folder are left
+    out."""
+    untracked = script_utils.untracked_paths(pathlib.Path(repo))
+    if untracked is None:
+        sys.exit(f"code_review_start: git could not list the untracked files of {repo}, so none can be held. Fix the "
+                 "repo, then run this step again.")
+    plan_named = [*earlier_phase_files(repo, plan, phase), *this_phase_files(repo, plan, phase)]
+    candidates = script_utils.without_paths(untracked, [*record["dirty"], *plan_named])
+    candidates = plan_format.outside_plan_folder(candidates, plan)
     if not candidates:
         return []
 
-    own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    if not own_session_id:
-        held_note(notes, "code_review_start: CLAUDE_CODE_SESSION_ID is not set, so the run's own session cannot be "
-                         "told from a holder and no file is held; run it from the session's Bash")
-        return []
-    holder = session_registry.other_live_session_in(repo, own_session_id)
-    if holder is None:
+    own = coder_written_paths(repo, record, notes)
+    foreign = sorted(script_utils.without_paths(candidates, own))
+    if not foreign:
         return []
 
-    session = session_registry.holder_label(holder)
-    claim = f"dirty at the run start, unchanged now; live session in {holder['cwd']}"
-    return [holder_row(path, session, claim) for path in candidates]
+    held_note(notes, "code_review_start: held untracked files no recorded coder of this run wrote (a file an earlier "
+                     "review round's fix coder made is among them until the loop records its writes): "
+                     f"{', '.join(foreign)}")
+    claim = held_claim(UNTRACKED_UNATTRIBUTED, holder["cwd"])
+    return [holder_row(path, holder["session"], claim) for path in foreign]
 
 
 class ReviewScope(NamedTuple):
     """What a review covers: the holder rows of the held files, the handoff with its files from git, the files
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
-    the lines a dry run prints on stdout about what the scope left out."""
+    the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
+    changed during the phase, `held_untracked` the untracked files held, `held_targeted` the held files this phase's
+    section names."""
     holders: list
     handoff: str
     phase_changed: list
     review_base: str | None
     notes: tuple = ()
+    held_changed: tuple = ()
+    held_untracked: tuple = ()
+    held_targeted: tuple = ()
 
 
 SCOPE_FILE_FLAG = "--scope-file"
 CODER_MODEL_FLAG = "--coder-model"
-SCOPE_FILE = "review-scope.json"
 
 
 def read_scope(scope_file):
@@ -225,15 +389,22 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
         return ReviewScope([], coder_handoff, [], None)
 
     notes = []
-    holders = phase_held_files(repo, base_commit, plan, phase, notes)
+    dirty_holders, held_changed, untracked_holders = held_scope(repo, base_commit, plan, phase, notes)
+    holders = [*dirty_holders, *untracked_holders]
     held_paths = [holder["path"] for holder in holders]
+    held_targeted = targeted_held_files(repo, plan, phase, held_paths)
+    if held_targeted:
+        held_note(notes, "code_review_start: this phase's plan names held files, which stay held, so the phase's "
+                         f"change to them is not reviewed: {', '.join(held_targeted)}")
     review_base = diff_base(repo, base_commit)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
-    return ReviewScope(holders, handoff, phase_changed, review_base, notes)
+    return ReviewScope(holders, handoff, phase_changed, review_base, notes, held_changed,
+                       [row["path"] for row in untracked_holders], held_targeted)
 
 
-def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model=""):
+def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",
+                  held_changed=(), held_targeted=()):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
     lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it; the
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
@@ -253,6 +424,10 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
     if holders:
         header.append(f"{HELD_FILES_KEY}: {LIST_SEPARATOR.join(holder['path'] for holder in holders)}")
         header.append(f"{HELD_BY_KEY}: {json.dumps(list(holders))}")
+    if held_changed:
+        header.append(f"{TOOL_FAULT_KEY}: {code_wait.held_fault_text(held_changed)}")
+    if held_targeted:
+        header.append(f"{HELD_TARGETED_KEY}: {LIST_SEPARATOR.join(held_targeted)}")
     if coder_model:
         header.append(f"{CODER_MODEL_KEY}: {coder_model}")
 
@@ -401,7 +576,7 @@ def main(argv):
     scope = run_scope(argv, repo, base, coder_handoff, plan, phase)
     handoff = scope.handoff
     prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base,
-                           coder_model_option(argv))
+                           coder_model_option(argv), scope.held_changed, scope.held_targeted)
     if "--dry-run" in argv:
         print(prompt)
         for note in scope.notes:

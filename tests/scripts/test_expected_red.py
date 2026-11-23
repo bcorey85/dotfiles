@@ -154,6 +154,14 @@ class LaterPhasePathsTest(unittest.TestCase):
     def test_a_phase_not_in_phase_status_closes_no_file(self):
         self.assertEqual([], expected_red.later_phase_paths(plan_lines(), "9"))
 
+    def test_phase_own_paths_are_the_current_sections_paths_and_not_an_earlier_or_later_phases(self):
+        own = expected_red.phase_own_paths(plan_lines(), "1")
+
+        self.assertIn("app/totals.py", own)
+        self.assertNotIn("app/audit.py", own)
+        self.assertEqual(own, sorted(own))
+        self.assertNotIn("app/totals.py", expected_red.phase_own_paths(plan_lines(), "2"))
+
 
 if __name__ == "__main__":
     unittest.main()

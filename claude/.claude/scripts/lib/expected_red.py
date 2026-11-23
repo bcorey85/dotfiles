@@ -155,6 +155,13 @@ def earlier_phase_paths(plan_lines, phase_id):
     return sorted(earlier_paths)
 
 
+def phase_own_paths(plan_lines, phase_id):
+    """Every backticked path (section_paths) of this phase's own section, sorted: the files the phase names, which
+    later_phase_paths and earlier_phase_paths leave out by design."""
+    plan = plan_format.parse_plan_with_closing_phases(plan_lines)
+    return sorted(section_paths(plan_lines, plan["sections"].get(str(phase_id))))
+
+
 def section_paths(plan_lines, section):
     # Every backticked path of the section, a bare `name.ext` included, so a root file a later phase also names stays
     # this phase's own.

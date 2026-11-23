@@ -1,5 +1,6 @@
 """Tests for phase_start.py, the record of the tree a /code phase starts from, and the held files code_review_start.py
 reads from it. Set PHASE_START_SCRIPT to run against another copy."""
+import importlib.util
 import json
 import os
 import pathlib
@@ -42,9 +43,20 @@ class PhaseStartTest(unittest.TestCase):
     def phase_start(self):
         return self.phase_start_with()
 
-    def phase_start_with(self, *flags):
+    def phase_start_with(self, *flags, session_id="test-session"):
+        environment = {**ENV, "HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
+                       "CLAUDE_CODE_SESSION_ID": session_id}
         return subprocess.run([sys.executable, str(PHASE_START), *flags], cwd=self.repo, capture_output=True,
-                              text=True, check=False, env={**ENV, "HOME": str(self.home)})
+                              text=True, check=False, env=environment)
+
+    def start_json(self):
+        return json.loads((self.repo / ".git/code-phase/start.json").read_text())
+
+    def load_phase_start_module(self):
+        module_spec = importlib.util.spec_from_file_location("phase_start_under_test", PHASE_START)
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        return module
 
     def recorded_dirty(self):
         return sorted(json.loads((self.repo / ".git/code-phase/start.json").read_text())["dirty"])
@@ -190,9 +202,9 @@ class PhaseStartTest(unittest.TestCase):
                                "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
                               env={**ENV, "CLAUDE_CONFIG_DIR": str(self.config_dir)})
 
-    def register_live_session(self, session_id, cwd):
+    def register_live_session(self, session_id, cwd, name="lane-b"):
         """A live registry row (this test process's pid) for a session working in `cwd`."""
-        row = {"pid": os.getpid(), "sessionId": session_id, "name": "lane-b", "cwd": str(cwd)}
+        row = {"pid": os.getpid(), "sessionId": session_id, "name": name, "cwd": str(cwd)}
         (self.config_dir / "sessions" / f"{session_id}.json").write_text(json.dumps(row))
 
     def test_the_record_names_head_and_every_dirty_file_and_the_sha_is_printed(self):
@@ -223,10 +235,156 @@ class PhaseStartTest(unittest.TestCase):
         self.assertIn("held files: theirs.py", header.splitlines())
         holders = json.loads(next(line for line in header.splitlines() if line.startswith("held-by: "))[9:])
         self.assertEqual(holders, [{"path": "theirs.py", "session": "lane-b",
-                                    "claim": f"dirty at the run start, unchanged now; live session in {self.repo}"}])
+                                    "claim": f"dirty at the run start, unchanged now; session in {self.repo}"}])
         self.assertIn("- path: mine.py", handoff)
         self.assertIn("- path: shared.py", handoff)
         self.assertNotIn("theirs.py", handoff)
+
+    def unregister_live_session(self, session_id):
+        (self.config_dir / "sessions" / f"{session_id}.json").unlink()
+
+    def test_with_a_recorded_holder_a_file_edited_after_the_start_stays_held_and_is_named_as_a_tool_fault(self):
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
+        (self.repo / "shared.py").write_text("# another session's edit\n")
+        self.register_live_session("other-session", self.repo)
+        base = self.phase_start().stdout.strip()
+        (self.repo / "shared.py").write_text("# edited during the phase\n")
+        self.unregister_live_session("other-session")
+
+        done = self.review_prompt(base)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0].splitlines()
+        self.assertIn("held files: shared.py, theirs.py", header)
+        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        claims = {row["path"]: row["claim"] for row in holders}
+        self.assertEqual(claims["shared.py"], f"dirty at the run start, changed since; session in {self.repo}")
+        self.assertEqual(claims["theirs.py"], f"dirty at the run start, unchanged now; session in {self.repo}")
+        self.assertIn("tool fault: held files changed during the phase (by the coder or by the session that holds "
+                      "them); review left them out, so check them: shared.py", header)
+
+    def test_with_no_recorded_holder_and_no_live_session_at_review_nothing_is_held(self):
+        (self.repo / "theirs.py").write_text("# an edit nobody else holds\n")
+        base = self.phase_start().stdout.strip()
+
+        done = self.review_prompt(base)
+
+        self.assertNotIn("held files:", done.stdout)
+
+    def test_a_fresh_start_records_the_live_other_session_as_holder_with_the_runs_session_and_time(self):
+        self.register_live_session("other-session", self.repo)
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        record = self.start_json()
+        self.assertEqual(record["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+        self.assertEqual(record["sessions"], ["test-session"])
+        self.assertIsInstance(record["started_at"], float)
+
+    def test_a_second_start_from_another_session_keeps_the_record_and_adds_its_session_id(self):
+        self.register_live_session("other-session", self.repo)
+        self.phase_start()
+        first = self.start_json()
+        self.unregister_live_session("other-session")
+        self.register_live_session("later-session", self.repo, name="lane-c")
+
+        done = self.phase_start_with(session_id="second-session")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        second = self.start_json()
+        for key in ("head", "dirty", "started_at", "holder"):
+            self.assertEqual(second[key], first[key], key)
+        self.assertEqual(second["sessions"], ["test-session", "second-session"])
+
+    def test_a_kept_record_with_no_holder_gets_the_session_live_at_the_next_start(self):
+        self.phase_start()
+        self.assertIsNone(self.start_json()["holder"])
+        self.register_live_session("other-session", self.repo)
+
+        self.phase_start_with(session_id="second-session")
+
+        self.assertEqual(self.start_json()["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+
+    def test_resume_adds_its_session_id_to_the_kept_record(self):
+        self.phase_start()
+
+        done = self.phase_start_with("--resume", session_id="resumed-session")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.start_json()["sessions"], ["test-session", "resumed-session"])
+
+    def test_an_unset_session_id_records_no_holder_and_no_session_and_says_so(self):
+        self.register_live_session("other-session", self.repo)
+        environment = {key: value for key, value in ENV.items() if key != "CLAUDE_CODE_SESSION_ID"}
+        environment.update(HOME=str(self.home), CLAUDE_CONFIG_DIR=str(self.config_dir))
+
+        done = subprocess.run([sys.executable, str(PHASE_START)], cwd=self.repo, capture_output=True, text=True,
+                              check=False, env=environment)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("CLAUDE_CODE_SESSION_ID is not set", done.stderr)
+        record = self.start_json()
+        self.assertIsNone(record["holder"])
+        self.assertEqual(record["sessions"], [])
+
+    def test_a_record_written_before_holder_sessions_and_started_at_reads_with_defaults(self):
+        self.phase_start()
+        (self.repo / ".git/code-phase/start.json").write_text(json.dumps({"head": "abc", "dirty": {}}))
+
+        record = self.load_phase_start_module().read_start_record(self.repo)
+
+        self.assertEqual(record, {"head": "abc", "dirty": {}, "holder": None, "sessions": [], "started_at": None})
+
+    def test_a_record_with_a_key_of_the_wrong_type_raises_naming_the_expected_shape(self):
+        self.phase_start()
+        record_file = self.repo / ".git/code-phase/start.json"
+        record_file.write_text(json.dumps({"head": "abc", "dirty": {}, "sessions": "x"}))
+        module = self.load_phase_start_module()
+
+        with self.assertRaises(module.StartRecordError) as raised:
+            module.read_start_record(self.repo)
+
+        self.assertIn(str(record_file), str(raised.exception))
+        self.assertIn('"sessions": [<session id>]', str(raised.exception))
+
+    def test_the_last_phases_review_scope_is_moved_aside(self):
+        self.phase_start()
+        scope_file = self.repo / ".git/code-phase/review-scope.json"
+        scope_file.write_text('{"held_changed": ["old.py"]}')
+
+        self.phase_start()
+
+        self.assertFalse(scope_file.exists())
+        self.assertEqual((self.repo / ".git/code-phase/review-scope.prev.json").read_text(),
+                         '{"held_changed": ["old.py"]}')
+
+    def test_a_recorded_dirty_file_deleted_after_the_start_is_held_as_changed(self):
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
+        self.register_live_session("other-session", self.repo)
+        base = self.phase_start().stdout.strip()
+        (self.repo / "theirs.py").unlink()
+
+        done = self.review_prompt(base)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0].splitlines()
+        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        self.assertEqual(holders[0]["claim"], f"dirty at the run start, changed since; session in {self.repo}")
+        self.assertTrue(any(line.startswith("tool fault: ") and "theirs.py" in line for line in header))
+
+    def test_a_file_recorded_as_deleted_and_still_gone_is_held_as_unchanged(self):
+        (self.repo / "theirs.py").unlink()
+        self.register_live_session("other-session", self.repo)
+        base = self.phase_start().stdout.strip()
+
+        done = self.review_prompt(base)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0].splitlines()
+        holders = json.loads(next(line for line in header if line.startswith("held-by: "))[9:])
+        self.assertEqual(holders[0]["claim"], f"dirty at the run start, unchanged now; session in {self.repo}")
+        self.assertFalse(any(line.startswith("tool fault: ") for line in header))
 
     def test_a_dirty_file_with_no_other_live_session_in_the_repo_is_the_runs_own_and_is_reviewed(self):
         (self.repo / "theirs.py").write_text("# an edit nobody else holds\n")

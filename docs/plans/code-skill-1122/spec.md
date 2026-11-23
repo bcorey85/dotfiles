@@ -16,7 +16,7 @@ Three defects in the /code skill, one branch. A TaskStop on a /code fork leaves 
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
 - [x] Phase 1: fork_children.py, the interrupted reading and the cancel route (risk: low)
-- [ ] Phase 2: hold every start-dirty path, name changed held files, hold foreign untracked files (risk: low)
+- [x] Phase 2: hold every start-dirty path, name changed held files, hold foreign untracked files (risk: low)
 - [ ] Phase 3: /code trim, phase-end file, stop-rule owners, anchors, meter runs (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -189,7 +189,7 @@ With a holder recorded at the phase start, the review scope holds every file rec
 #### 5. Shared handoff text and its anchor row
 
 **Files**: `claude/.claude/skills/_shared/handoff-block.md` (line 28), `docs/rule-anchors.md` (row `78d7b13d`, `skills/_shared/handoff-block.md | ## Who writes \`files\` for \`/code\``)
-**Changes**: replace the parenthetical after "less the held files" with: "(with a session other than the run's live in the repo at a phase start, every file dirty at the run start per `phase_start.py`'s start record, and any untracked file no recorded coder of the run wrote; a file the plan gives to an earlier phase is never held)". The rest of the sentence is unchanged. In this same phase, run `bash claude/.claude/scripts/tools/rule-anchors.sh list claude/.claude/skills/_shared/handoff-block.md`, put the new hash in place of `78d7b13d`, and add this phase's change-file link to the row. The reworded sentence is metered in Phase 3 step 4.
+**Changes**: replace the parenthetical after "less the held files" with: "(with a session other than the run's live in the repo at a phase start or at review, every file dirty at the run start per `phase_start.py`'s start record, and any untracked file no recorded coder of the run wrote; a file the plan gives to an earlier phase is never held)". The rest of the sentence is unchanged. In this same phase, run `bash claude/.claude/scripts/tools/rule-anchors.sh list claude/.claude/skills/_shared/handoff-block.md`, put the new hash in place of `78d7b13d`, and add this phase's change-file link to the row. The reworded sentence is metered in Phase 3 step 4.
 
 #### 6. Tests
 
@@ -219,7 +219,7 @@ With a holder recorded at the phase start, the review scope holds every file rec
 
 #### Automated Verification:
 
-- [ ] **Presence**: `rg -q "def recorded_dirty_files" claude/.claude/scripts/code/phase_start.py` (RED now)
+- [ ] **Presence**: `rg -q "def check_record_base" claude/.claude/scripts/code/phase_start.py` (RED now; `check_record_base(repo, base_commit, record)` is the single-read replacement for `recorded_dirty_files`, ruled in ledger block 10)
 - [ ] **Ban**: `! rg -q "unchanged_dirty_files" claude/.claude/scripts tests/scripts` (RED now)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_phase_start.py` (RED after the :211 flip)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_code_review_start.py` (RED: detached prompt file and untracked cases)

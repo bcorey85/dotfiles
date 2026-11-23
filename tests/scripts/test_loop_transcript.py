@@ -105,5 +105,27 @@ class MetaReaderTest(unittest.TestCase):
         self.assertTrue(loop_transcript.finished_by_meta(self.transcript))
 
 
+class WrittenPathsTest(unittest.TestCase):
+    def test_write_edit_multiedit_and_notebook_edit_paths_are_collected_and_bash_is_ignored(self):
+        calls = [
+            ("Write", {"file_path": "/r/a.py"}),
+            ("Edit", {"file_path": "/r/b.py"}),
+            ("MultiEdit", {"file_path": "/r/g.py"}),
+            ("NotebookEdit", {"notebook_path": "/r/c.ipynb"}),
+            ("NotebookEdit", {"file_path": "/r/d.ipynb"}),
+            ("Bash", {"command": "echo hi > /r/e.py", "file_path": "/r/f.py"}),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = os.path.join(folder, "agent-a1.jsonl")
+            with open(transcript, "w", encoding="utf-8") as fh:
+                for name, tool_input in calls:
+                    block = {"type": "tool_use", "name": name, "input": tool_input}
+                    fh.write(json.dumps({"message": {"content": [block]}}) + "\n")
+
+            written = loop_transcript.written_paths(transcript)
+
+        self.assertEqual(written, {"/r/a.py", "/r/b.py", "/r/g.py", "/r/c.ipynb", "/r/d.ipynb"})
+
+
 if __name__ == "__main__":
     unittest.main()

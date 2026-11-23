@@ -3,7 +3,7 @@ type: "Change"
 change_type: "fixed"
 title: "A stopped code-fork's live children are named, and a TaskStop of a code-fork with live children is refused once"
 description: "A cancel of a code-fork now names the coders and reviewers still running, so none keeps writing after the stop."
-generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-22T00:00:00-06:00"}
+generated: {"by": "claude-code/claude-fable-5-1", "at": "2026-11-22T00:00:00-06:00"}
 seq: 22
 kind: "fix"
 components: ["skill/code", "script/fork-children"]

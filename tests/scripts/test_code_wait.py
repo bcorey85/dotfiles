@@ -245,6 +245,78 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
+    def finished_review(self, scope_text=None):
+        """A repo whose phase review ended with a clean packet; `scope_text` is the review-scope.json it left."""
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / "review.out").write_text("status: converged\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
+        if scope_text is not None:
+            (phase_dir / code_wait.SCOPE_FILE).write_text(scope_text)
+        return repo
+
+    def wait_code_and_output(self, repo, *args):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = code_wait.wait_review(repo, *args)
+        return code, output.getvalue()
+
+    def test_the_phase_route_prints_the_tool_fault_line_after_the_packet(self):
+        plain_code, _plain = self.wait_code_and_output(self.finished_review())
+
+        code, output = self.wait_code_and_output(self.finished_review('{"held_changed": ["a.py"]}'))
+
+        self.assertEqual(code, plain_code)
+        self.assertTrue(output.startswith("status: converged"))
+        self.assertTrue(output.rstrip().endswith("Tool fault: " + code_wait.held_fault_text(["a.py"])))
+        self.assertTrue(output.rstrip().endswith("check them: a.py"))
+
+    def test_the_phase_route_with_no_scope_file_prints_no_fault_line_and_does_not_exit(self):
+        repo = self.finished_review()
+
+        self.assertEqual(code_wait.held_fault_line(repo), "")
+        _code, output = self.wait_code_and_output(repo)
+
+        self.assertNotIn("Tool fault", output)
+
+    def test_a_scope_file_that_is_not_json_prints_the_could_not_be_read_line_and_keeps_the_exit_code(self):
+        plain_code, _plain = self.wait_code_and_output(self.finished_review())
+
+        code, output = self.wait_code_and_output(self.finished_review("not json"))
+
+        self.assertEqual(code, plain_code)
+        self.assertIn("could not be read for held-file faults", output)
+
+    def test_an_unreadable_line_keeps_a_percent_sign_in_the_path_and_never_raises(self):
+        scope_file = pathlib.Path("/tmp/100%s/review-scope.json")
+
+        line = code_wait.unreadable_line(scope_file, "boom")
+
+        self.assertIn(f"{scope_file} could not be read for held-file faults (boom)", line)
+
+    def test_a_scope_file_field_of_the_wrong_type_names_the_file_and_the_error(self):
+        cases = [('{"held_changed": "a.py"}', "held_changed is not a list of paths"),
+                 ('{"held_changed": [1]}', "held_changed is not a list of paths"),
+                 ("[]", "the top level is a list, not an object")]
+        for scope_text, problem in cases:
+            with self.subTest(scope_text=scope_text):
+                repo = self.finished_review(scope_text)
+
+                line = code_wait.held_fault_line(repo)
+
+                self.assertIn(code_wait.SCOPE_FILE, line)
+                self.assertIn(problem, line)
+
+    def test_the_launched_loop_route_prints_no_fault_line_whatever_a_stale_phase_scope_file_holds(self):
+        repo = self.finished_review('{"held_changed": ["a.py"]}')
+        loop_folder = temp_dir(self)
+        (loop_folder / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")
+
+        _code, output = self.wait_code_and_output(repo, (), str(loop_folder))
+
+        self.assertNotIn("Tool fault", output)
+
     def test_a_loop_dir_other_than_the_recorded_one_returns_no_packet_and_names_both_folders(self):
         repo, phase_dir = self.repo_with_pid(999999999)
         (phase_dir / "review.out").write_text("status: converged\n")

@@ -403,6 +403,38 @@ def agent_finished(transcript_path):
     return bool(LoopTranscript(transcript_path).handback_lines)
 
 
+WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def written_paths(transcript_path):
+    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls."""
+    paths = set()
+    with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
+        for line in transcript:
+            paths.update(call_paths(line))
+    return paths
+
+
+def call_paths(line):
+    """The file paths the Write, Edit, MultiEdit and NotebookEdit calls of one transcript line name."""
+    paths = []
+    for name, tool_input in script_utils.tool_use_calls(line):
+        if name not in WRITE_TOOL_NAMES:
+            continue
+        paths.extend(input_paths(tool_input))
+    return paths
+
+
+def input_paths(tool_input):
+    """The non-empty file_path and notebook_path strings of one tool call's input."""
+    paths = []
+    for key in ("file_path", "notebook_path"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            paths.append(value)
+    return paths
+
+
 def block_texts(content):
     """The text of each text block of a message's content; a plain string is one text."""
     if isinstance(content, str):

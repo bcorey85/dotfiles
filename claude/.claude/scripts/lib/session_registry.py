@@ -34,6 +34,13 @@ def projects_dir():
     return pathlib.Path.home() / ".claude" / "projects"
 
 
+def session_subagents_dir(session_id):
+    """The `subagents` folder of a session's transcripts (first match under any project), None when it has none."""
+    for folder in projects_dir().glob(f"*/{session_id}/subagents"):
+        return folder
+    return None
+
+
 def live_session_rows():
     """The readable `<pid>.json` rows of the registry folder whose pid is alive. A row that is not a JSON object with
     an integer `pid` (not a bool) is not a registry row (the folder also holds `.key` files) and is left out."""

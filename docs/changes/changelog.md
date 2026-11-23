@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1108 changes
+1109 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Peer-session messages lose their 150-word cap](notes/2026-11-22-peer-session-messages-lose-their-150-word-cap.md) [rule/global-claude-md] A message to a peer session is kept short and carries the verdict, the numbers and the next step, in place of a fixed 150-word cap.
 * [Five prompt files drop shouted labels and retired-step narration](notes/2026-11-22-five-prompt-files-drop-shouted-labels-and-retired.md) [agent/frontend-architect, skill/refactor, agent/general-purpose, skill/audit, skill/adr] Shouted labels and history narration come out of five prompt files, so Opus 5.5 reads each rule at its real weight. The rules themselves are unchanged.
 * [Plan decision lists open each block with a kind emoji](notes/2026-11-22-plan-decision-lists-open-each-block-with-a-kind.md) [skill/eng-spec] The eng-spec recommendation list marks each decision block with 🔷 and each open question with ❓, puts ➡ before the recommendation and a rule line between blocks, so the user can tell the blocks apart at a glance.
+* [A /code review holds every start-dirty file for the whole phase and holds untracked files no coder of the run wrote](notes/2026-11-22-code-hold-dirty-and-foreign-untracked.md) [script/phase-start, script/code-review-start, script/code-wait, shared/handoff-block] With another session live in the repo at the phase start, the review holds every file dirty at the run start, and, with a recorded holder or a session live at review, every untracked file no recorded coder wrote; it names a changed held file as a tool fault.
 * [The review commit gate skips the heredoc text of a script-file run](notes/2026-11-17-the-review-commit-gate-skips-heredoc-text-and.md) [script/review-commit-gate] `review_commit_gate.py` no longer reads a commit in the heredoc body of an interpreter running a script file, such as `python3 bin/build_queue.py new <<'EOF'`. A commit beside that run is still denied.
 
 ### Removed

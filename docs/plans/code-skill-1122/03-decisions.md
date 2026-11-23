@@ -151,3 +151,10 @@
 **Alternatives rejected**: dropping the foreign-untracked hold to a note; a live-session gate for the whole phase; an automated AC2 replay test that holds by construction.
 **Trade-off accepted**: a loop fix coder's new file is held with a note until the review lane records its writes.
 **Addendum**: the architect's DESIGN GAP 1 (what "no recorded holder" means) reads as today's rule: same-bytes start-dirty files are held only while another session is live at review, with claim `dirty at the run start, unchanged now`; an old start.json with no holder key takes the same route. This is agent-evals-c3's "solo runs (no holder at start) unchanged", recorded as that ruling, 2026-11-22.
+
+### 10. Phase 2 review asks (cap reached, round 5)
+
+**Choice**: (1) `foreign_untracked` drops the paths this phase's plan section names (`expected_red.phase_own_paths`), so an untracked file a coder made through Bash (a change file, a copied fixture) is reviewed when the plan names it; AC13 holds. (2) An empty `sessions` list keeps the hold on every foreign untracked file, with the note naming the cause (`CLAUDE_CODE_SESSION_ID` was unset at phase start). (3) A recorded holder is honored whether or not `CLAUDE_CODE_SESSION_ID` is set at review; the own session id gates only the live-holder fallback route. (4) `check_record_base(repo, base_commit, record)` replaces the planned `recorded_dirty_files`; the Presence line follows. (5) handoff-block.md:28 parenthetical says "at a phase start or at review", since the no-holder fallback also holds. (6) The stale `review_loop_prompt_file.py:7-8` docstring is out of bounds: reported to agent-evals-c3 for the review lane, not edited here.
+**Reasoning**: code-skill-nov22 lane, 2026-11-22, within agent-evals-c3's block 9 rulings (AC9 not reduced to a note; AC13 keeps own-coder files reviewed).
+**Alternatives rejected**: skipping the hold on an empty `sessions` list (drops AC9 silently); attributing Bash-written files by parsing coder Bash commands (a second parser).
+**Trade-off accepted**: an unplanned file a coder made through Bash is still held under a holder.

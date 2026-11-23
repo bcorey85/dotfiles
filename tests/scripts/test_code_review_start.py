@@ -435,13 +435,23 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("is not a commit", done.stderr)
 
+    def dirty_record(self, unchanged, holder=None):
+        """A start record whose dirty files are all recorded as gone, so each is unchanged while it stays absent."""
+        return {"head": BASE, "dirty": dict.fromkeys(unchanged), "holder": holder, "sessions": [],
+                "started_at": None}
+
     def held_rows(self, unchanged, live_row, phase="2"):
         code_review_start = self.load_module()
-        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=unchanged), \
+        record = self.dirty_record(unchanged)
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
+                mock.patch.object(code_review_start, "foreign_untracked", return_value=[]), \
                 mock.patch.object(code_review_start.session_registry, "other_live_session_in",
                                   return_value=live_row), \
-                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}):
-            return code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", phase)
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
+                contextlib.redirect_stderr(io.StringIO()):
+            holders, _held_changed, _untracked = code_review_start.held_scope(
+                self.repo, "abc", "docs/plans/p/spec.md", phase)
+            return holders
 
     def test_a_dirty_file_is_held_only_when_another_live_session_works_in_the_repo(self):
         live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo / "sub")}
@@ -449,7 +459,7 @@ class CodeReviewStartTest(unittest.TestCase):
         held = self.held_rows(["theirs.py"], live_row)
         not_held = self.held_rows(["theirs.py"], None)
 
-        claim = f"dirty at the run start, unchanged now; live session in {self.repo / 'sub'}"
+        claim = f"dirty at the run start, unchanged now; session in {self.repo / 'sub'}"
         self.assertEqual(held, [{"path": "theirs.py", "session": "lane-b", "claim": claim}])
         self.assertEqual(not_held, [])
 
@@ -476,24 +486,26 @@ class CodeReviewStartTest(unittest.TestCase):
 
     def test_the_run_session_id_is_passed_so_it_is_never_its_own_holder(self):
         code_review_start = self.load_module()
-        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]), \
+        record = self.dirty_record(["theirs.py"])
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
                 mock.patch.object(code_review_start.session_registry, "other_live_session_in",
                                   return_value=None) as other_live_session_in, \
                 mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}):
-            code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", "2")
+            code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
 
         other_live_session_in.assert_called_once_with(self.repo, "test-session")
 
     def test_an_unset_session_id_holds_nothing_and_does_not_exit(self):
         code_review_start = self.load_module()
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
-        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]), \
+        record = self.dirty_record(["theirs.py"])
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
                 mock.patch.object(code_review_start.session_registry, "other_live_session_in") as other_live, \
                 mock.patch.dict(os.environ, environment, clear=True), \
                 contextlib.redirect_stderr(io.StringIO()) as note:
-            held = code_review_start.phase_held_files(self.repo, "abc", "docs/plans/p/spec.md", "2")
+            held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
 
-        self.assertEqual(held, [])
+        self.assertEqual(held, ([], [], []))
         other_live.assert_not_called()
         self.assertIn("CLAUDE_CODE_SESSION_ID", note.getvalue())
 
@@ -530,7 +542,8 @@ class CodeReviewStartTest(unittest.TestCase):
         code_review_start = self.load_module()
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
 
-        with mock.patch.object(code_review_start.phase_start, "unchanged_dirty_files", return_value=["theirs.py"]):
+        dirty_record = self.dirty_record(["theirs.py"])
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=dirty_record):
             printed, _errors = self.run_main(code_review_start, ["--dry-run"], environment)
 
         self.assertIn("CLAUDE_CODE_SESSION_ID is not set", printed)
@@ -593,7 +606,8 @@ class CodeReviewStartTest(unittest.TestCase):
 
     def test_the_prompt_carries_a_held_by_line_with_the_holder_rows(self):
         code_review_start = self.load_module()
-        holders = [{"path": "theirs.py", "session": "lane-b", "claim": "dirty at the run start, unchanged now"}]
+        claim = f"dirty at the run start, unchanged now; session in {self.repo}"
+        holders = [{"path": "theirs.py", "session": "lane-b", "claim": claim}]
 
         prompt = code_review_start.review_prompt(self.repo, "lane-a", "docs/plans/p/spec.md", "1", "Done.", (), holders)
 
@@ -627,6 +641,259 @@ class CodeReviewStartTest(unittest.TestCase):
         phase_dir = self.repo / ".git/code-phase"
         self.assertEqual((phase_dir / "pid").read_text(), "4242")
         self.assertTrue((phase_dir / "review.out").exists())
+
+    def test_the_scope_field_code_wait_reads_is_a_field_of_the_review_scope(self):
+        code_review_start = self.load_module()
+
+        self.assertIn(code_review_start.code_wait.HELD_CHANGED_FIELD, code_review_start.ReviewScope._fields)
+
+    def test_a_detached_prompt_file_carries_the_tool_fault_and_the_targeted_held_files(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        scope_file = self.repo / "scope.json"
+        scope = code_review_start.ReviewScope([], "Done.", [], None, (), ["shared.py"], [], ["mine.py"])
+        scope_file.write_text(json.dumps(scope._asdict()))
+        prompts = []
+        real_write_script_prompt = code_review_start.write_script_prompt
+
+        def write_script_prompt(state_dir, agent_id, prompt):
+            prompts.append(prompt)
+            return real_write_script_prompt(state_dir, agent_id, prompt)
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess, \
+                mock.patch.object(code_review_start, "handback_hook"), \
+                mock.patch.object(code_review_start, "write_script_prompt", write_script_prompt):
+            fake_subprocess.run.return_value = mock.Mock(returncode=0)
+            self.run_main(code_review_start, ["--scope-file", str(scope_file)],
+                          {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("tool fault: held files changed during the phase (by the coder or by the session that holds "
+                      "them); review left them out, so check them: shared.py", prompts[0])
+        self.assertIn("held files this phase names: mine.py", prompts[0])
+
+    def write_start_record(self, holder=True, **fields):
+        self.commit_empty()
+        head = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              check=True).stdout.strip()
+        record = {"head": head, "dirty": {}, "sessions": ["test-session"], "started_at": None,
+                  "holder": {"session": "lane-b", "cwd": str(self.repo)} if holder else None, **fields}
+        folder = self.repo / ".git" / "code-phase"
+        folder.mkdir(exist_ok=True)
+        (folder / "start.json").write_text(json.dumps(record))
+
+    def scope_of(self, plan_text=None, handoff=None, live_row=None, session_id="test-session"):
+        """(review_scope of the second plan phase under a fake config dir, the loaded module)."""
+        if plan_text is not None:
+            (self.repo / "docs/plans/p/spec.md").write_text(plan_text)
+        if handoff is not None:
+            (self.repo / "handoff.txt").write_text(handoff)
+        code_review_start = self.load_module()
+        environment = {"CLAUDE_CODE_SESSION_ID": session_id, "CLAUDE_CONFIG_DIR": str(self.config_dir())}
+        with mock.patch.dict(os.environ, environment), \
+                mock.patch.object(code_review_start.session_registry, "other_live_session_in", return_value=live_row), \
+                contextlib.redirect_stderr(io.StringIO()):
+            scope = code_review_start.review_scope(self.repo, "HEAD", (self.repo / "handoff.txt").read_text(),
+                                                   "docs/plans/p/spec.md", "2")
+        return scope, code_review_start
+
+    def config_dir(self):
+        if not hasattr(self, "_config_dir"):
+            folder = tempfile.TemporaryDirectory()
+            self.addCleanup(folder.cleanup)
+            self._config_dir = pathlib.Path(folder.name)
+        return self._config_dir
+
+    def coder_transcript(self, session_id, written, agent_type="coder", age_seconds=0):
+        """A subagent transcript of `session_id` whose agent wrote the file `written` (repo relative)."""
+        folder = self.config_dir() / "projects" / "p" / session_id / "subagents"
+        folder.mkdir(parents=True, exist_ok=True)
+        call = {"type": "tool_use", "name": "Write", "input": {"file_path": str(self.repo / written)}}
+        transcript = folder / f"agent-{agent_type}-{written.replace('/', '_')}.jsonl"
+        transcript.write_text(json.dumps({"message": {"content": [call]}}) + "\n")
+        transcript.with_suffix(".meta.json").write_text(json.dumps({"agentType": agent_type}))
+        if age_seconds:
+            modified = transcript.stat().st_mtime - age_seconds
+            os.utime(transcript, (modified, modified))
+        return transcript
+
+    def held_paths(self, scope):
+        return [row["path"] for row in scope.holders]
+
+    def test_an_untracked_file_no_recorded_coder_wrote_is_held_and_named(self):
+        self.write_start_record()
+        (self.repo / "other.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertIn("other.py", self.held_paths(scope))
+        claim = f"untracked, written by no recorded coder of this run; session in {self.repo}"
+        self.assertIn({"path": "other.py", "session": "lane-b", "claim": claim}, scope.holders)
+        self.assertIn("other.py", scope.held_untracked)
+        self.assertTrue(any("no recorded coder of this run wrote" in note and "other.py" in note
+                            for note in scope.notes))
+
+    def test_with_no_recorded_holder_a_session_live_at_review_holds_an_untracked_file(self):
+        self.write_start_record(holder=False)
+        (self.repo / "other.py").write_text("x\n")
+        live_row = {"sessionId": "s2", "name": "lane-c", "cwd": str(self.repo)}
+
+        scope, _module = self.scope_of(live_row=live_row)
+
+        self.assertIn({"path": "other.py", "session": "lane-c", "claim": f"untracked, written by no recorded coder of "
+                       f"this run; session in {self.repo}"}, scope.holders)
+
+    def test_a_record_with_no_session_notes_that_no_coder_write_can_be_attributed(self):
+        self.write_start_record(sessions=[])
+        (self.repo / "other.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertIn("other.py", self.held_paths(scope))
+        self.assertTrue(any("records no session" in note and "CLAUDE_CODE_SESSION_ID was unset at phase start" in note
+                            for note in scope.notes))
+
+    def test_an_untracked_file_an_earlier_phase_names_is_reviewed_and_the_plan_folder_is_never_held(self):
+        self.write_start_record()
+        (self.repo / "src").mkdir()
+        (self.repo / "src/one.py").write_text("x\n")
+        (self.repo / "docs/plans/p/notes.md").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertNotIn("src/one.py", self.held_paths(scope))
+        self.assertNotIn("docs/plans/p/notes.md", self.held_paths(scope))
+
+    def test_a_git_failure_listing_untracked_files_stops_the_run(self):
+        self.write_start_record()
+        code_review_start = self.load_module()
+        environment = {"CLAUDE_CODE_SESSION_ID": "test-session", "CLAUDE_CONFIG_DIR": str(self.config_dir())}
+
+        with mock.patch.dict(os.environ, environment), \
+                mock.patch.object(code_review_start.script_utils, "untracked_paths", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as stopped:
+            code_review_start.review_scope(self.repo, "HEAD", "  files: []\n", "docs/plans/p/spec.md", "2")
+
+        self.assertIn("git could not list the untracked files", str(stopped.exception))
+
+    def test_an_untracked_file_the_phase_plan_names_is_reviewed_and_an_unplanned_one_stays_held(self):
+        plan_text = PLAN.replace("**File**: `src/two.py`", "**File**: `src/two.py`\n**File**: `new_module.py`")
+        self.write_start_record()
+        (self.repo / "new_module.py").write_text("the phase's new file\n")
+        (self.repo / "made_by_bash.py").write_text("x\n")
+
+        scope, _module = self.scope_of(plan_text=plan_text)
+
+        self.assertNotIn("new_module.py", self.held_paths(scope))
+        self.assertIn("made_by_bash.py", scope.held_untracked)
+
+    def test_a_recorded_holder_holds_untracked_files_though_the_session_id_is_unset_at_review(self):
+        self.write_start_record()
+        (self.repo / "other.py").write_text("x\n")
+
+        scope, _module = self.scope_of(session_id="")
+
+        self.assertIn({"path": "other.py", "session": "lane-b", "claim": f"untracked, written by no recorded coder of "
+                       f"this run; session in {self.repo}"}, scope.holders)
+
+    def test_with_no_recorded_holder_and_no_session_id_at_review_nothing_is_held(self):
+        self.write_start_record(holder=False)
+        (self.repo / "other.py").write_text("x\n")
+
+        scope, _module = self.scope_of(session_id="", live_row={"sessionId": "s2", "name": "c", "cwd": str(self.repo)})
+
+        self.assertEqual(scope.holders, [])
+
+    def test_a_whole_untracked_folder_is_held_file_by_file(self):
+        self.write_start_record()
+        (self.repo / "newdir").mkdir()
+        (self.repo / "newdir/a.py").write_text("x\n")
+        (self.repo / "newdir/b.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertEqual([path for path in scope.held_untracked if path.startswith("newdir")],
+                         ["newdir/a.py", "newdir/b.py"])
+
+    def test_an_untracked_file_a_coder_of_the_recorded_session_wrote_is_reviewed(self):
+        self.write_start_record()
+        (self.repo / "mine.py").write_text("x\n")
+        self.coder_transcript("test-session", "mine.py")
+
+        scope, _module = self.scope_of()
+
+        self.assertNotIn("mine.py", self.held_paths(scope))
+
+    def test_an_untracked_file_a_coder_of_a_second_recorded_session_wrote_is_reviewed(self):
+        self.write_start_record(sessions=["test-session", "resumed-session"])
+        (self.repo / "mine.py").write_text("x\n")
+        self.coder_transcript("resumed-session", "mine.py")
+
+        scope, _module = self.scope_of()
+
+        self.assertNotIn("mine.py", self.held_paths(scope))
+
+    def test_with_no_holder_and_no_live_session_an_untracked_file_is_reviewed(self):
+        self.write_start_record(holder=False)
+        (self.repo / "other.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertEqual(scope.holders, [])
+
+    def test_an_untracked_file_in_the_start_record_is_in_one_holder_row_only(self):
+        (self.repo / "other.py").write_text("x\n")
+        self.write_start_record(dirty={"other.py": None})
+
+        scope, _module = self.scope_of()
+
+        self.assertEqual(self.held_paths(scope).count("other.py"), 1)
+        self.assertNotIn("other.py", scope.held_untracked)
+
+    def test_a_file_a_reviewer_transcript_wrote_is_held_because_the_agent_is_no_coder(self):
+        self.write_start_record()
+        (self.repo / "mine.py").write_text("x\n")
+        self.coder_transcript("test-session", "mine.py", agent_type="code-reviewer")
+
+        scope, _module = self.scope_of()
+
+        self.assertIn("mine.py", self.held_paths(scope))
+
+    def test_a_recorded_session_with_no_subagents_folder_holds_the_file_and_the_note_says_so(self):
+        self.write_start_record()
+        (self.repo / "mine.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertIn("mine.py", self.held_paths(scope))
+        self.assertTrue(any("no coder transcripts found for session test-session" in note for note in scope.notes))
+
+    def test_a_coder_transcript_older_than_the_run_start_does_not_attribute_the_file(self):
+        transcript = self.coder_transcript("test-session", "mine.py", age_seconds=1000)
+        self.write_start_record(started_at=transcript.stat().st_mtime + 500)
+        (self.repo / "mine.py").write_text("x\n")
+
+        scope, _module = self.scope_of()
+
+        self.assertIn("mine.py", self.held_paths(scope))
+
+    def test_a_held_file_the_phase_names_stays_held_and_is_named_and_left_out_of_the_handoff_files(self):
+        plan_text = PLAN.replace("**File**: `src/two.py`", "**File**: `src/two.py`\n**File**: `theirs.py`")
+        (self.repo / "theirs.py").write_text("their edit\n")
+        self.write_start_record(dirty={"theirs.py": "stale-hash"})
+        handoff = "  files:\n    - path: theirs.py\n      why: the phase change\n"
+
+        scope, code_review_start = self.scope_of(plan_text=plan_text, handoff=handoff)
+        prompt = code_review_start.review_prompt(self.repo, "lane-a", "docs/plans/p/spec.md", "2", scope.handoff,
+                                                 scope.phase_changed, scope.holders, scope.review_base, "",
+                                                 scope.held_changed, scope.held_targeted)
+
+        header = prompt.partition("\n\n")[0].splitlines()
+        held_line = next(line for line in header if line.startswith("held files: "))
+        self.assertIn("theirs.py", held_line.removeprefix("held files: ").split(", "))
+        self.assertIn("held files this phase names: theirs.py", header)
+        self.assertTrue(any("this phase's plan names held files" in note for note in scope.notes))
+        self.assertNotIn("path: theirs.py", scope.handoff)
 
 
 if __name__ == "__main__":

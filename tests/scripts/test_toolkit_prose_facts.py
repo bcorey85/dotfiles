@@ -98,6 +98,25 @@ class ToolkitProseFactsTest(unittest.TestCase):
             self.assertIsNotNone(first_action, agent)
             self.assertIn("architect-core/SKILL.md", first_action.group(0), agent)
 
+    def test_general_purpose_body_is_four_lines_and_keeps_the_report_rule(self):
+        claude_text = (CLAUDE_DIR / "agents" / "general-purpose.md").read_text()
+        frontmatter_end = claude_text.index("---", 3) + 3
+        body_lines = [line for line in claude_text[frontmatter_end:].splitlines() if line.strip()]
+        self.assertEqual(len(body_lines), 4)
+        port_text = (OPENCODE_AGENTS_DIR / "general-purpose.md").read_text()
+        kept_rule_fragments = (
+            "editing an existing file",
+            "README files",
+            "always absolute, never relative",
+            "Never state an unverified claim as fact.",
+        )
+        for fragment in kept_rule_fragments:
+            self.assertIn(fragment, claude_text)
+            self.assertIn(fragment, port_text)
+        for removed in ("Your strengths", "Guidelines:", "Be thorough"):
+            self.assertNotIn(removed, claude_text)
+            self.assertNotIn(removed, port_text)
+
 
 if __name__ == "__main__":
     unittest.main()

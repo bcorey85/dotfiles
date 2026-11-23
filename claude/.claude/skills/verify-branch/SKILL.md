@@ -41,7 +41,7 @@ The log row records the content of the tree, apart from the task dir and the not
 
 ## Step 2: plan-verifier
 
-Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prints. It is the only run site. Nothing else goes in the prompt.
+Dispatch `plan-verifier` (pinned; omit `model`) with the exact payload prep prints. Nothing else goes in the prompt.
 
 `N/A — no criteria in scope` is not a pass. The plan gave the gate nothing to check; surface it to the user. Log it with `verify-log --rows - --result NA` and `[]` as the rows.
 
@@ -60,7 +60,7 @@ One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ a
 
 ## Routing
 
-- **Gaps**: list them. Pick the guard rung per `~/.claude/skills/_shared/escape-ratchet.md` (batching rule across the list), add `"guard": "<rung>"` and `"severity": "<high|medium|low>"` to those rows, then rerun the same command with `--escapes-only` to log the drift-gate escapes. An escape already logged is not logged twice, and `--escapes-only` prints only the escapes it logged. Offer `/fix` (or `/code` for net-new work). Re-run `/verify-branch` after.
+- **Gaps**: list them. Before you pick the guard rung, read `~/.claude/skills/_shared/escape-ratchet.md` (batching rule across the list), then add `"guard": "<rung>"` and `"severity": "<high|medium|low>"` to those rows, then rerun the same command with `--escapes-only` to log the drift-gate escapes. An escape already logged is not logged twice, and `--escapes-only` prints only the escapes it logged. Offer `/fix` (or `/code` for net-new work). Re-run `/verify-branch` after.
 - **Clean**: the **branch-final smell gate** first. Run a bare `/refactor` now and let it converge, unless you can show one ran since the last code change. Then build the **review packet** from the checklist skeleton `verify-log` printed:
   1. (a) the completeness table; (b) the smoke-test checklist: fill the `steps:` of every line with concrete steps; (c) the diff hotspots it listed ("read these first, skim the rest"); (d) a pointer to agent-verified evidence. Do NOT situate here (`/orient`, on demand).
   2. Before presenting, `hunk-notes` the evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.

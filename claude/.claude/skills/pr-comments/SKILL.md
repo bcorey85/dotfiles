@@ -55,7 +55,7 @@ Pull every review comment on the branch PR (inline plus top-level, any author), 
 
 4. **Log escapes** — one line per **Valid (Actionable)** finding, before any fix. Nothing else logs: Already Fixed never escaped, Invalid is not a defect, Low Priority is calibrated suppression, new-requirement comments are not escapes.
 
-   Ratchet per `~/.claude/skills/_shared/escape-ratchet.md` including ADR addendum, batched by class; then per finding:
+   Before you log each escape, read `~/.claude/skills/_shared/escape-ratchet.md` and pick the rung, including the ADR addendum, batched by class; then per finding:
 
    ```bash
    ~/.claude/scripts/telemetry/log-escape stage_found=<pr-human|pr-bot> gate_missed=<review|test-intent|eng-spec> class=<bug|smell|duplication|complexity|plan-drift|test-gap|docs|other> severity=<high|medium|low> lane=<eng-spec|code|other> guard=<...> miss_reason=<...> desc="<comment gist>" file=<repo-relative path> line=<comment line; omit when the comment names none> commit=<comment commit_id>

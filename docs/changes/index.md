@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1143 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
+1155 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md).
+Latest change: 2026-11-23, [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 14
+* quality: 15
 
 ## Pages
 

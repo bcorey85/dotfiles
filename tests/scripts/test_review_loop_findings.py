@@ -314,6 +314,87 @@ class AskParsingTest(unittest.TestCase):
         self.assertIn("The ids are already used.", asks[0])
 
 
+class ImpactHeadingSectionTest(unittest.TestCase):
+    IMPACT = ("PLAN-IMPACT: `app.py:3` — the diff drops the 30 day cap the plan's AC2 names. "
+              "acceptance_criteria: AC2")
+
+    def test_a_plan_impact_line_under_its_own_heading_is_taken_in_as_an_ask(self):
+        text = f"## Fix\nNone\n\n## Ask\nNone\n\n### Plan impact\n- {self.IMPACT}\n\n## Nit\nNone\n"
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 1, asks)
+        self.assertTrue(asks[0].startswith("PLAN-IMPACT:"), asks)
+
+    def test_a_review_with_only_a_plan_impact_section_is_still_a_findings_layout(self):
+        asks = parsed_asks(f"### Plan impact\n{self.IMPACT}\n")
+
+        self.assertEqual(len(asks), 1, asks)
+
+    def test_an_ask_and_a_plan_impact_line_in_one_review_are_both_kept_in_order(self):
+        text = (f"## Fix\nNone\n\n## Ask\n- `app.py:9` [bug] Should the cap be 3? — change: set it to 3\n\n"
+                f"### Plan impact\n- {self.IMPACT}\n\n## Nit\nNone\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("Should the cap be 3?", asks[0])
+        self.assertTrue(asks[1].startswith("PLAN-IMPACT:"), asks)
+
+    def test_two_unbulleted_plan_impact_lines_are_two_asks(self):
+        text = ("### Plan impact\n"
+                "`PLAN-IMPACT:` app.py:3 — the cap differs — `acceptance_criteria: none`\n"
+                "`PLAN-IMPACT:` app.py:9 — the age differs — `acceptance_criteria: AC2`\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("app.py:3", asks[0])
+        self.assertIn("acceptance_criteria: none", asks[0])
+        self.assertNotIn("AC2", asks[0])
+        self.assertIn("app.py:9", asks[1])
+        self.assertIn("acceptance_criteria: AC2", asks[1])
+
+    def test_bold_and_backtick_unbulleted_plan_impact_lines_each_start_an_ask(self):
+        for prefix in ("`PLAN-IMPACT:`", "**PLAN-IMPACT:**"):
+            with self.subTest(prefix=prefix):
+                text = f"### Plan impact\n{prefix} app.py:3 — x\n{prefix} app.py:9 — y\n"
+
+                self.assertEqual(len(parsed_asks(text)), 2)
+
+    def test_unbulleted_plan_impact_lines_after_a_lead_in_line_are_two_asks(self):
+        text = ("### Plan impact\n"
+                "Two plan changes:\n"
+                "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none\n"
+                "PLAN-IMPACT: app.py:9 — the age differs — acceptance_criteria: AC2\n")
+
+        asks = parsed_asks(text)
+
+        self.assertEqual(len(asks), 2, asks)
+        self.assertIn("app.py:3", asks[0])
+        self.assertIn("acceptance_criteria: none", asks[0])
+        self.assertNotIn("app.py:9", asks[0])
+        self.assertIn("app.py:9", asks[1])
+        self.assertNotIn("app.py:3", asks[1])
+
+    def test_an_unbulleted_plan_impact_line_in_a_fix_section_stays_in_its_item(self):
+        text = "## Fix\napp.py:3 [bug] x — fix: y\nPLAN-IMPACT: app.py:9 — z — acceptance_criteria: none\n"
+
+        fixes = review_loop_findings.parse_review(text)["fix"]
+
+        self.assertEqual(len(fixes), 1, fixes)
+
+    def test_a_plan_impact_section_reading_none_adds_no_ask(self):
+        self.assertEqual(parsed_asks("## Fix\nNone\n### Plan impact\nNone\n"), [])
+
+    def test_a_wrapped_plan_impact_line_is_split_out_as_a_plan_change(self):
+        text = "### Plan impact\n- `PLAN-IMPACT:` app.py:3 — x\n"
+
+        items = review_loop_findings.parse_review(text)["ask"]
+
+        self.assertEqual(len(review_loop_findings.plan_change_items(items)), 1, items)
+
+
 class RejectedAskRepeatTest(unittest.TestCase):
     REJECTED = "app.py:3 should the window be pinned?"
 

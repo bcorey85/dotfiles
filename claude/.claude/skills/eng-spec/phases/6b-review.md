@@ -4,23 +4,22 @@
     `00-ticket.md`, and `acceptance-criteria.md` when step 17 wrote one. Never
     the ledger, research, or a conversation summary.
 
-19b. **Shard above 400 lines.** Run
-`python3 ~/.claude/scripts/tools/plan_review_shards.py cut <task dir>/spec.md`
-and send one parallel dispatch per path it prints, in place of `spec.md`. One
-path is the plan itself: one dispatch at the whole file. Two paths are shard A
-and shard B in a temp folder outside the task directory; never write a shard
-into the task directory. A non-zero exit names a plan defect: fix the plan and
-run it again.
+19b. **Shard above 400 lines.**
 
-    Right after each hand-back, Write it whole to
-    `review-round<n>-shard-<x>.md` in the task directory (`a` if unsharded).
-    Before round 2 run `python3 ~/.claude/scripts/tools/plan_review_reports.py check <task dir> 2`;
-    stop if it fails. Round 2 reads those files.
-
-    When `cut` printed two paths, once both hand-backs are written run
-    `python3 ~/.claude/scripts/tools/plan_review_shards.py clean <the folder holding them>`.
-    Dedup the two reports by (section, claim) before step 20. A finding only
-    one shard raised still counts.
+    - Run `python3 ~/.claude/scripts/tools/plan_review_shards.py cut <task dir>/spec.md`
+      and send one parallel dispatch per path it prints, in place of `spec.md`.
+    - One path is the plan itself: one dispatch at the whole file.
+    - Two paths are shard A and shard B in a temp folder outside the task
+      directory; never write a shard into the task directory.
+    - A non-zero exit names a plan defect: fix the plan and run it again.
+    - Right after each hand-back, Write it whole to
+      `review-round<n>-shard-<x>.md` in the task directory (`a` if unsharded).
+    - Before round 2 run `python3 ~/.claude/scripts/tools/plan_review_reports.py check <task dir> 2`;
+      stop if it fails. Round 2 reads those files.
+    - When `cut` printed two paths, once both hand-backs are written run
+      `python3 ~/.claude/scripts/tools/plan_review_shards.py clean <the folder holding them>`.
+    - Dedup the two reports by (section, claim) before step 20. A finding only
+      one shard raised still counts.
 
 20. **Review rounds: STANDARD max 1, DEEP max 2.** Round 1 is a NEW dispatch,
 never a `SendMessage` continuation. A DEEP round 2 is a NEW dispatch carrying
@@ -47,7 +46,7 @@ diff and what it touches, not a fresh read.
     cross-reference the repair touched — a stale pointer left by a repair returns
     as the next round's finding.
 
-20b. **Log every real BLOCKER and GAP** — one line each. Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below). `guard=` is the rung from `~/.claude/skills/_shared/escape-ratchet.md`: `check` when a finalization command would catch it, else `none`.
+20b. **Log every real BLOCKER and GAP** — one line each. Not a NIT, not out-of-scope, **never an `ALT`** (counted on the row below). Before you pick `guard=`, read `~/.claude/skills/_shared/escape-ratchet.md` for the rung: `check` when a finalization command would catch it, else `none`.
 
     ```bash
     ~/.claude/scripts/telemetry/log-escape stage_found=plan-review gate_missed=eng-spec class=<correctness|test-gap|security|perf|other> severity=<high|medium|low> guard=<check|none> desc="<finding gist>"

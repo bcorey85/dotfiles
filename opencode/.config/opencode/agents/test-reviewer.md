@@ -109,14 +109,7 @@ For each existing test, evaluate:
 
 ### Step 5: Cull Check — branch scope ONLY
 
-Branch scope ONLY — deleting pre-existing tests without diff context is out of bounds. For every test the branch **added** (modified pre-existing tests are out of bounds too): **name a concrete bug this test — and no sibling — would catch.** Can't → CULL. The typical shapes:
-
-- Asserts a mock/spy was called with the args the code just passed it
-- Exercises the framework or a library rather than our code
-- Restates the implementation with no behavioral oracle
-- Re-covers a branch a sibling test already owns with only cosmetic input changes
-
-Exemptions: acceptance specs and acceptance-criterion tests are requirements — out of bounds. One smoke test per unit is legitimate (the redundant 2nd+ culls). Genuinely-new-but-weak = weak-assertion finding (tighten), not cull.
+For every test the branch **added**, apply the first paragraph under `## Step 4 — Cull check (added tests only)` in `~/.config/opencode/agents/test-intent-reviewer.md`. Pre-existing and modified tests are out of bounds. Genuinely-new-but-weak = weak-assertion finding (tighten), not cull.
 
 ## Output Format
 

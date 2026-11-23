@@ -12,7 +12,7 @@ The user is deciding and routing, not reading. Output is a queue, not a report.
 
 The conversation, in priority order: deferred work, unstarted filed tickets, unfixed defects, session handoffs. Add `git status`/`git log --oneline -5` only when session state is stale or unclear.
 
-Do NOT go looking — no scans, queries, or subagents. Unestablished-in-conversation means not a todo.
+Run nothing beyond those two git commands: no scans, queries or subagents. An item the conversation never established is not a todo.
 
 ## Format
 

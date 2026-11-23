@@ -9,7 +9,7 @@
 
 ## Summary
 
-Three toolkit texts give up the parts that a script owns. The refactor skill's 30-line log-input JSON template moves into a new grammar module beside `refactor_flow.py`, which prints it from `log --help`, and the split brings `refactor_flow.py` under the 1000-line limit. The mutation-tester agent's lock, backup and restore prose becomes three calls to a new `tools/mutation_lock.py`, built on a new `lib/calibration_lock.py` that `gates/calibration_guard.py` also imports, so the lock format has one owner; the opencode port gets the same three calls. The guide skill drops two of its three worked cards, and rules 3, 4, 5 and 7 are cut only where rule-meter on and off arms show the rule line changes nothing; rule 8 stays as `unmeasured`. Every toolkit edit gets a change file under this worktree's `docs/changes`.
+Three toolkit texts give up the parts that a script owns. The refactor skill's 30-line log-input JSON template moves into a new grammar module beside `refactor_flow.py`, which prints it from `log --help`, and the split brings `refactor_flow.py` under the 1000-line limit. The mutation-tester agent's lock, backup and restore prose becomes three calls to a new `tools/mutation_lock.py`, built on a new `lib/calibration_lock.py` that `gates/calibration_guard.py` also imports, so the lock format has one owner; the opencode port gets the same three calls. The guide skill drops two of its three worked cards, and rules 3, 4, 5 and 7 are cut only where rule-meter on and off arms show the rule line changes nothing; rule 8 stays as `unmeasured` (cut, D20: master deleted the guide skill before the rebase). Every toolkit edit gets a change file under this worktree's `docs/changes`.
 
 ## Phase Status
 
@@ -457,8 +457,8 @@ One worked card remains; the tables and all eight rules are untouched.
 
 #### Automated Verification:
 
-- [ ] **Ban-verified**: the two cut cards and the old heading are gone (no match holds) — `rg -q -e 'An A/B comparison' -e '\*\*A rating\*\*' -e 'Three worked cards' claude/.claude/skills/guide/SKILL.md`
-- [ ] **Presence-verified**: the new heading is present — `rg -q '^## A worked card$' claude/.claude/skills/guide/SKILL.md`
+- [x] **Ban-verified**: the two cut cards and the old heading are gone (no match holds) — `rg -q -e 'An A/B comparison' -e '\*\*A rating\*\*' -e 'Three worked cards' claude/.claude/skills/guide/SKILL.md` — cut by D20: the file is deleted on master
+- [x] **Presence-verified**: the new heading is present — `rg -q '^## A worked card$' claude/.claude/skills/guide/SKILL.md` — cut by D20: the file is deleted on master
 
 #### Manual Verification:
 
@@ -584,13 +584,13 @@ Three change notes, their links from the anchor rows, and the full suite under `
 
 ### Success Criteria
 
-Three notes exist and the change index checks clean; the four anchor rows link a note; the full suite passes; the four agent-evals files are committed and pushed on `bench-base`.
+Two notes exist (the guide note is cut, D20) and the change index checks clean; the four anchor rows link a note; the full suite passes; the four agent-evals files are committed and pushed on `bench-base`.
 
 #### Automated Verification:
 
 - [x] **Presence-verified**: the mutation-tester note is present under the notes folder — `rg -l 'mutation_lock.py' docs/changes/notes`
 - [x] **Presence-verified**: the refactor note is present under the notes folder — `rg -l 'log --help' docs/changes/notes`
-- [x] **Presence-verified**: the guide note is present under the notes folder — `rg -l 'guide skill keeps one worked card' docs/changes/notes`
+- [x] **Presence-verified**: the guide note is present under the notes folder — `rg -l 'guide skill keeps one worked card' docs/changes/notes` — cut by D20: the guide note is dropped at the rebase
 - [x] **Test-verified**: the anchors, refactor and mutation-lock tests pass with the links in place — `python3 tests/parallel_tests.py test_rule_anchors.py test_refactor_flow.py test_mutation_lock.py`
 - [x] **Agent-run**: `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh` passes after `free -g` shows 8 GB or more available; the session records the pass count. Session ruled the full check passed 2026-11-22; coder capped run: 5712 tests in 193 files, 0 failed. Not run by the plan check: it needs the memory scope.
 - [x] **Agent-run**: `git -C ~/agent-evals status --porcelain bin/rule_meter_guide.py bin/test_rule_meter_guide.py bin/rule_meter_verifier.py bin/rule_meter_scenarios.json` prints nothing after the commit; the session records the hash: f83d0475 (bench-base HEAD, in sync with origin; rule_meter_scenarios.json shows modified only from another session's rows, left untouched). Not run by the plan check: it reads another repo.

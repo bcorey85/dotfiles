@@ -1,14 +1,15 @@
 """calibration_lock.py: owner of the calibration and mutation lock format. Import it; never read or write the lock
 another way.
 
-/calibrate and mutation-tester share one lock file,
+mutation-tester writes the one lock file and the SessionStart guard reads it:
 ${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json. The old ~/.claude/calibration-lock.json is
 read as a fallback only, never written. Backups live in <state folder>/backups/<file>.
 
 Fields of the lock (a JSON object):
   ts           string  UTC time of the write, STAMP_FORMAT
   kind         string  "mutation-test" (mutation-tester); a missing kind reads as "calibrate"
-  writer       string  "mutation-tester"; "calibrate" for a /calibrate lock
+  writer       string  "mutation-tester"; "calibrate" is a dormant value from the deleted /calibrate skill,
+                       with no live writer
   file         string  target path relative to worktree, POSIX form
   backup_path  string  absolute <state folder>/backups/<file>
   pre_hash     string  first 16 hex characters of the sha256 of the target's bytes
@@ -29,6 +30,7 @@ import pathlib
 import time
 from typing import NamedTuple
 
+import script_utils
 from hook_input import parse_documents_partial, raw_text, read_file_text
 from process_group import pid_is_alive
 
@@ -46,44 +48,36 @@ def pre_hash(file):
     return hashlib.sha256(pathlib.Path(file).read_bytes()).hexdigest()[:PRE_HASH_LENGTH]
 
 
-def _home(environ):
-    return environ.get("HOME", "")
+def state_folder():
+    """The folder that holds the lock and its backups, under the XDG state root."""
+    state_home = script_utils.xdg_state_home()
+    return os.path.join(str(state_home), "claude-calibration")
 
 
-def state_folder(environ=None):
-    """The folder that holds the lock and its backups.
-    Paths are strings joined from the raw environment text, so the guard prints them untidied."""
-    environ = os.environ if environ is None else environ
-    state_home = environ.get("XDG_STATE_HOME") or os.path.join(_home(environ), ".local", "state")
-    return os.path.join(state_home, "claude-calibration")
+def lock_path():
+    return os.path.join(state_folder(), "lock.json")
 
 
-def lock_path(environ=None):
-    return os.path.join(state_folder(environ), "lock.json")
+def legacy_lock_path():
+    return os.path.join(str(pathlib.Path.home()), ".claude", "calibration-lock.json")
 
 
-def legacy_lock_path(environ=None):
-    environ = os.environ if environ is None else environ
-    return os.path.join(_home(environ), ".claude", "calibration-lock.json")
+def backups_folder():
+    return os.path.join(state_folder(), "backups")
 
 
-def backups_folder(environ=None):
-    return os.path.join(state_folder(environ), "backups")
+def backup_path(file):
+    """The backup of a work-tree-relative file."""
+    return os.path.join(backups_folder(), file)
 
 
-def backup_path(file, environ=None):
-    """The backup of a work-tree-relative file. Joined as a string: a Path would tidy "//" and "/./" out of the
-    state root, and a lock records the untidied text."""
-    return os.path.join(backups_folder(environ), file)
-
-
-def find_lock(environ=None):
+def find_lock():
     """The lock file to read: the state path first, then the legacy path; None when neither is a file."""
-    current = lock_path(environ)
+    current = lock_path()
     if os.path.isfile(current):
         return current
     # A lock left by a run from before the lock moved out of ~/.claude still has to be reported.
-    legacy = legacy_lock_path(environ)
+    legacy = legacy_lock_path()
     if os.path.isfile(legacy):
         return legacy
     return None

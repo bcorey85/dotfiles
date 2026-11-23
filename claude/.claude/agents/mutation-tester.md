@@ -83,8 +83,7 @@ python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID" --r
 
 - Exit 0 → say in your report that the restore was hash-verified.
 - Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally.
-- A `STOP:` saying the file is restored but the lock could not be removed → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
-- Any other `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
+- Any `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
 
 ## Hard limits
 

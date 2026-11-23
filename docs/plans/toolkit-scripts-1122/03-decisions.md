@@ -160,6 +160,11 @@
 **Choice**: `origin/master` deleted the guide skill (`claude/.claude/skills/guide/SKILL.md`, unused since September) and its settings override before this branch rebased onto it. The rebase keeps the skill deleted: the Phase 6 and Phase 8 edits to `SKILL.md`, `tests/scripts/test_guide_skill.py`, its `PROMPT_READING_TESTS` entry in `tests/changed_scope.py` and the guide change note are dropped. The Phase 6 to 8 commits keep only their plan-document edits. The meter scenarios and detectors in `~/agent-evals` (Phase 7, D10) stay: they grade rules in the skill's history and are not toolkit files.
 **Reasoning**: a rebase that restored a skill master deleted would undo master's cut. ACs 26, 27 and 28 are cut, not met, and AC1's delivered scope with them. Ruled by agent-evals-c3, 2026-11-23.
 
+### 21. One Step 4 `STOP:` bullet, and the state root from `script_utils.xdg_state_home` (post-rebase review)
+
+**Choice**: the two Step 4 bullets of D13 and D19 ("restored but the lock could not be removed" and "any other `STOP:`") carried the same action word for word, so both mutation-tester prompts keep one bullet: any `STOP:` is reported with the exact command it names, never retried by another mechanism. The mutation-tester change note lists the merged bullet under `unmeasured`. `calibration_lock.state_folder` reads the XDG state root from its owner `script_utils.xdg_state_home()` and `legacy_lock_path` from `pathlib.Path.home()`; the `environ` parameters are gone.
+**Reasoning**: the D13 rule still binds; only its trigger text is folded. The toolkit rule gives each fact one owner, and the state root had a second reader. Raised by the post-rebase branch review, 2026-11-23.
+
 ### Sign-offs on ticket criteria (criteria owner: `session`)
 
 - ACs 26-28 cut: master deleted the guide skill before the rebase; the cut covers every guide deliverable, and AC1's delivered scope goes with it (D20). Ruled by agent-evals-c3, 2026-11-23.

@@ -205,7 +205,7 @@ def lock_under_hold(args):
     if backup.unsaved or target.relpath not in backup.saved:
         raise StopError([*lines, f"not backed up: {target.file}", STOP_BACKUP_FAILED])
 
-    # Joined as a string, as refuse_unrestorable rebuilds it: a Path would tidy "//" and "/./" out of the state root.
+    # Joined as a string, as refuse_unrestorable rebuilds it.
     backup_copy = calibration_lock.backup_path(target.relpath)
     run_id = secrets.token_hex(8)
     fields = lock_fields(target, args, backup_copy, run_id)

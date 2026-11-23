@@ -573,14 +573,11 @@ class MutationLockTest(unittest.TestCase):
                 self.assertIn("RESTORE HASH MISMATCH", step_four)
                 self.assertIn("print the exact command it names, if any, for your caller to run", step_four)
                 bullets = [line for line in step_four.splitlines() if line.startswith("- ")]
-                unremoved = [line for line in bullets if "lock could not be removed" in line]
-                other = [line for line in bullets if line.startswith("- Any other `STOP:`")]
-                self.assertEqual(len(unremoved), 1, bullets)
-                self.assertEqual(len(other), 1, bullets)
-                self.assertNotIn("stays mutated", unremoved[0])
-                self.assertNotIn("stays mutated", other[0])
+                stops = [line for line in bullets if line.startswith("- Any `STOP:`")]
+                self.assertEqual(len(stops), 1, bullets)
+                self.assertNotIn("stays mutated", stops[0])
                 self.assertIn("report the verdict, state the stop, and print the exact command it names, "
-                              "if any, for your caller to run", other[0])
+                              "if any, for your caller to run", stops[0])
 
     def test_mutation_tester_prompts_pass_the_run_id_from_lock_to_restore_and_restore_only_after_a_lock(self):
         for prompt_file in MUTATION_TESTER_PROMPTS:

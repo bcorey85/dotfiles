@@ -209,12 +209,14 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("skills/code/SKILL.md")
         self.assertIn("6. `(risk: low)` with all machine gates green → STOP, block B.", text)
         self.assertIn("The run never commits and never starts the next phase by itself.", text)
-        self.assertIn("2. Stage what you've read, then commit it. `Commit subject: <subject>`.", text)
+
+        block_text = guidance_text("skills/code/phase-end-block.md")
+        for banned in ("! git commit", "AUTO-ADVANCE", "a commit, a write and a confirmation are all reversible"):
+            self.assertNotIn(banned, text)
+            self.assertNotIn(banned, block_text)
+        self.assertIn("2. Stage what you've read, then commit it. `Commit subject: <subject>`.", block_text)
         self.assertIn("All phases complete. Next: read the queue, stage what you've read, then commit it. "
-                      "`Commit subject: <subject>`.", text)
-        self.assertNotIn("! git commit", text)
-        self.assertNotIn("AUTO-ADVANCE", text)
-        self.assertNotIn("a commit, a write and a confirmation are all reversible", text)
+                      "`Commit subject: <subject>`.", block_text)
 
 
 if __name__ == "__main__":

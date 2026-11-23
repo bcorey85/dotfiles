@@ -17,7 +17,7 @@ Three defects in the /code skill, one branch. A TaskStop on a /code fork leaves 
 
 - [x] Phase 1: fork_children.py, the interrupted reading and the cancel route (risk: low)
 - [x] Phase 2: hold every start-dirty path, name changed held files, hold foreign untracked files (risk: low)
-- [ ] Phase 3: /code trim, phase-end file, stop-rule owners, anchors, meter runs (risk: low)
+- [x] Phase 3: /code trim, phase-end file, stop-rule owners, anchors, meter runs (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 Single-stream plan: the three phases share no new contract, so Phase 0 is folded into each phase's `**File**` list and the Data shapes in `## Approach`.
@@ -32,7 +32,7 @@ Single-stream plan: the three phases share no new contract, so Phase 0 is folded
 4. Item 3 cut set — cut the in-load duplicates (6 + 8 words), meter and cut SKILL.md's restatement of global CLAUDE.md's Ticket AC rule, fold rank 1011: one owner per stop rule, dense paragraphs to lists, the Phase-Complete section to `skills/code/phase-end-block.md`, anchor rows updated. Trade-off: one more Read per phase end.
 5. Nature of the 2026-11-22 cancel — a mechanism gap on the direct-TaskStop route; the change file is worded on it.
 6. Architect design gaps — ruled by agent-evals-c3, 2026-11-22: rule-meter scenarios go in `~/agent-evals/bin/rule_meter_scenarios.json` (committed alone); item 1's first AC is pending the settings.json wiring, not met; rank-1011 bullet 4 is split to queue item `dedupe-the-acceptance-criteria-none-rule-across`; `code_wait.py` prints the held-changed tool-fault line; the whole Phase-Complete section moves; the hook fixture is built from a transcript TaskStop input until a captured event exists. Untracked folders need no expansion: `status_codes` already runs `--untracked-files=all` (the plan-review fact check of 2026-11-22 dropped the expansion ruling, which rested on a wrong reading).
-7. Plan review round 1 (ledger block 9) — the holder recorded at phase start holds for the whole phase; start.json records every session that ran the phase and attribution reads all of them; AC2 (a replay of a cancel during the coder step writes nothing after the stop) is manual-only via AC20; the AC15 count runs on the four-file start load (limit 3445). With no recorded holder, "unchanged" means today's rule: same-bytes start-dirty files held only while another session is live at review.
+7. Plan review round 1 (ledger block 9) — the holder recorded at phase start holds for the whole phase; start.json records every session that ran the phase and attribution reads all of them; AC2 (a replay of a cancel during the coder step writes nothing after the stop) is manual-only via AC20; the AC15 count runs on the four-file start load (limit 3445; the limit became 3488 in block 12). With no recorded holder, "unchanged" means today's rule: same-bytes start-dirty files held only while another session is live at review.
 
 ## Approaches Considered and Not Taken
 
@@ -265,18 +265,18 @@ Cut the /code load by the structure move and the metered cuts, give each stop ru
 
 #### 5. Change file and sweep
 
-**File**: `docs/changes/notes/2026-11-22-code-skill-trim-and-phase-end-file.md` (new, through `build_changes.py new`)
-**Changes**: records 14 duplicate words cut (6 + 8), the Phase-Complete move (about 375 of 3033 words), the four start-load counts before and after (`skills/code/SKILL.md`, `skills/_shared/modifiers.md`, `skills/_shared/plan-reading.md`, `skills/_shared/handoff-block.md`; before 3033, 114, 205 and 476, total 3828; limit 3445) as printed by `skill_word_band.py`, the meter counts, the fold of rank 1011, and the ticket's wrong premise (exact in-load duplicates measured at 14 words, not 150-250). Sweep: `rg -n "Phase-Complete Block|unchanged_dirty_files|fork_children" claude docs tests`; state that no opencode port of code-fork.md or the /code step text exists.
+**File**: `docs/changes/notes/2026-11-22-the-code-phase-complete-blocks-move-to-a-file-read.md` (new, through `build_changes.py new`)
+**Changes**: records 14 duplicate words cut (6 + 8), the Phase-Complete move (about 375 of 3033 words), the four start-load counts before and after (`skills/code/SKILL.md`, `skills/_shared/modifiers.md`, `skills/_shared/plan-reading.md`, `skills/_shared/handoff-block.md`; before 3033, 114, 205 and 476, total 3828; limit 3488) as printed by `skill_word_band.py`, the meter counts, the fold of rank 1011, and the ticket's wrong premise (exact in-load duplicates measured at 14 words, not 150-250). Sweep: `rg -n "Phase-Complete Block|unchanged_dirty_files|fork_children" claude docs tests`; state that no opencode port of code-fork.md or the /code step text exists.
 
 #### 6. Start-load word checker
 
 **Files**: `tests/scripts/skill_word_band.py` (new), `tests/scripts/test_skill_word_band.py` (new; script path from `SKILL_WORD_BAND_SCRIPT`)
-**Changes**: usage `python3 tests/scripts/skill_word_band.py <limit> <file> [<file> ...]`. For each file it prints `<words> <path>`, counted with `len(text.split())`, then `<total> total (limit <limit>)`. Exit 1 when the total is above the limit; exit 2 on a missing file or a limit that is not an integer, with a message naming the problem. Tests: under, at and above the limit; missing file; bad limit. Budget for the coder: the move and the two exact cuts remove about 389 words; Phase 1's added cancel sentence (about 20 words), the phase-end trigger (about 6) and Phase 2's handoff-block rewording (about 10) add about 36 back; so the :34 restatement cut and the stop-rule dedupe must remove at least about 30 words. If a meter run keeps a cut and the total stays above 3445, stop and report AC15 as failing. Do not trim unmetered text to make the count.
+**Changes**: usage `python3 tests/scripts/skill_word_band.py <limit> <file> [<file> ...]`. For each file it prints `<words> <path>`, counted with `str.split()` items, a bare list marker (`-`, `*`, `+`, `<digits>.`) not counted, then `<total> total (limit <limit>)`. Exit 1 when the total is above the limit; exit 2 on a missing file or a limit that is not an integer, with a message naming the problem. Tests: under, at and above the limit; missing file; bad limit. Budget for the coder: the move and the two exact cuts remove about 389 words; Phase 1's added cancel sentence (about 20 words), the phase-end trigger (about 6) and Phase 2's handoff-block rewording (about 10) add about 36 back; so the :34 restatement cut and the stop-rule dedupe must remove at least about 30 words. If a meter run keeps a cut and the total stays above 3488, stop and report AC15 as failing. Do not trim unmetered text to make the count.
 
 ### Success Criteria
 
 - `SKILL.md` holds no `## Phase-Complete Block` heading and names `phase-end-block.md` at the phase-boundary step.
-- The text /code loads at start (SKILL.md, `_shared/modifiers.md`, `_shared/plan-reading.md`, `_shared/handoff-block.md`) totals at most 3445 words, down from 3828 (at least 10% shorter).
+- The text /code loads at start (SKILL.md, `_shared/modifiers.md`, `_shared/plan-reading.md`, `_shared/handoff-block.md`) totals at most 3488 words, down from 3828 (limit ruled in block 12).
 - The change file records the four counts before and after.
 - Each pinned phrase in the three text-pin test files is still found, or its pin was retargeted to the file that now owns it.
 - Every anchored block hashes clean.
@@ -284,14 +284,14 @@ Cut the /code load by the structure move and the metered cuts, give each stop ru
 
 #### Automated Verification:
 
-- [ ] **Presence**: `test -f claude/.claude/skills/code/phase-end-block.md`
-- [ ] **Ban**: `rg -q "^## Phase-Complete Block" claude/.claude/skills/code/SKILL.md` has no match
-- [ ] **Presence**: `rg -q "phase-end-block.md" claude/.claude/skills/code/SKILL.md` finds the trigger
-- [ ] **Count**: `python3 tests/scripts/skill_word_band.py 3445 claude/.claude/skills/code/SKILL.md claude/.claude/skills/_shared/modifiers.md claude/.claude/skills/_shared/plan-reading.md claude/.claude/skills/_shared/handoff-block.md` (RED now: no checker, and the total is 3828)
-- [ ] **Test-verified**: `python3 tests/parallel_tests.py test_skill_word_band.py` (RED now)
-- [ ] **Test-verified**: `python3 tests/parallel_tests.py test_guidance_rules.py test_code_skill_text.py test_rule_anchors.py`
-- [ ] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check`
-- [ ] **Agent-run**: rule-meter per-arm counts for every metered sentence recorded in `docs/changes/notes/2026-11-22-code-skill-trim-and-phase-end-file.md`
+- [x] **Presence**: `test -f claude/.claude/skills/code/phase-end-block.md`
+- [x] **Ban**: `rg -q "^## Phase-Complete Block" claude/.claude/skills/code/SKILL.md` has no match
+- [x] **Presence**: `rg -q "phase-end-block.md" claude/.claude/skills/code/SKILL.md` finds the trigger
+- [x] **Count** (total 3442 with the meter skipping bare list markers, limit 3488): `python3 tests/scripts/skill_word_band.py 3488 claude/.claude/skills/code/SKILL.md claude/.claude/skills/_shared/modifiers.md claude/.claude/skills/_shared/plan-reading.md claude/.claude/skills/_shared/handoff-block.md`
+- [x] **Test-verified**: `python3 tests/parallel_tests.py test_skill_word_band.py` (RED now)
+- [x] **Test-verified**: `python3 tests/parallel_tests.py test_guidance_rules.py test_code_skill_text.py test_rule_anchors.py`
+- [x] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check`
+- [x] **Agent-run**: rule-meter per-arm counts for every metered sentence recorded in `docs/changes/notes/2026-11-22-the-code-phase-complete-blocks-move-to-a-file-read.md`
 
 #### Manual Verification:
 
@@ -329,6 +329,13 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 #### Manual Verification:
 
 - [ ] N/A (close pass)
+
+## Plan Deviations
+
+- 2026-11-22, code-skill-nov22 lane: the Phase 3 change file is `docs/changes/notes/2026-11-22-the-code-phase-complete-blocks-move-to-a-file-read.md` (the name `build_changes.py new` generated; the file exists) in place of `2026-11-22-code-skill-trim-and-phase-end-file.md` in "#### 5. Change file and sweep"; no acceptance criterion changes.
+- 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (the ticket carries no number; AC15 of the trim item): the limit becomes 3488 words, the measured start load, in place of 3445; recorded in `03-decisions.md` block 12 with the meter counts.
+- 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (the trim item): the word meter does not count a bare list marker; the four start-load counts become 2647 / 110 / 201 / 484 = 3442 against the limit 3488; recorded in `03-decisions.md` block 12 addendum.
+- 2026-11-22, orchestrating session agent-evals-c3, relayed by the code-skill-nov22 lane: ruling on Ticket #AC15 (trim item) and #AC17: AC15's duplicate clause is narrowed to the 6 exact-duplicate words already cut (SKILL.md:24 stays as a paraphrase); AC17's one-owner clause is held, with no stop-rule dedupe; recorded in `03-decisions.md` block 13.
 
 ## Acceptance Criteria
 

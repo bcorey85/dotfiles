@@ -28,6 +28,7 @@
 
 - **AC15** — The exact duplicates are cut, each reworded or removed rule has meter counts in its change file, and the text /code loads at start (SKILL.md plus the files it reads before phase end) is at least 10% shorter by word count, counting the template move from item 4; the change file records the before and after word counts.
   Reworded by agent-evals-c3 at the criteria walk, 2026-11-22 (was "the skill is 10-15% shorter").
+  Duplicate clause narrowed to the 6 exact-duplicate words already cut (session ruling, agent-evals-c3, 2026-11-22; 03-decisions.md block 13). The word meter skips bare list markers (block 12 addendum).
   Premise ruled wrong (ledger D4): measured exact duplicates inside the /code load are 14 words, not 150-250.
 - **AC16** — Every rule the skill stated before still reaches the /code run in the text it loads, except those the ledger names as cut.
 
@@ -35,6 +36,7 @@
 
 - **AC17** — One owner per rule; dense paragraphs are lists; Block B lives in a sibling file read on a named phase-end trigger; rule-meter arms run on each cut; `bash tests/run.sh` passes.
   Bullet 4 (the acceptance_criteria-none rule) is split to another queue item by ruling, so "one owner per rule" excludes it here.
+  The one-owner clause for the stop rule (SKILL.md lines 20, 26 and 81) is held: CF07 read on 2/3 vs off 1/3 at n=1, so the dedupe is unmetered (session ruling, agent-evals-c3, 2026-11-22; 03-decisions.md block 13; follow-up item meter-the-five-code-skill-md-prose-rules-at-n-of-3).
 - **AC18** — A /code run that reaches a phase end reads the Phase-Complete template from its sibling file and produces the same block as before.
 - **AC19** — A /code run that never reaches a phase end does not load the Phase-Complete template.
 
@@ -55,7 +57,7 @@ Automated Verification line that tests each behavioral criterion (coverage: 18 m
 | AC8, AC11, AC12 | 2 | `test_phase_start.py`, `test_code_review_start.py`, `test_code_wait.py` (held through byte change, phase-target hold, tool-fault note) |
 | AC9, AC13, AC14 | 2 | `test_code_review_start.py` (foreign untracked held, own-coder untracked reviewed, folder held per file) |
 | AC10 | 2 | each Phase 2 test is written to fail on the base tree before the change (Testing Strategy) |
-| AC15 | 3 | `skill_word_band.py` count check on the four-file start load (limit 3445); change file records the four before and after counts |
+| AC15 | 3 | `skill_word_band.py` count check on the four-file start load (limit 3488); change file records the four before and after counts |
 | AC16 | 3 | `test_code_skill_text.py`, `test_guidance_rules.py` (every kept rule still present in the loaded text) |
 | AC17 | 3 | `rule-anchors.sh check`, `test_rule_anchors.py`, Phase 4 `bash tests/run.sh` |
 | AC18, AC19 | 3 | Presence and Ban checks (`phase-end-block.md` exists, heading gone, trigger named); live read is Phase 3 Manual Verification |

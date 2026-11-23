@@ -158,3 +158,26 @@
 **Reasoning**: code-skill-nov22 lane, 2026-11-22, within agent-evals-c3's block 9 rulings (AC9 not reduced to a note; AC13 keeps own-coder files reviewed).
 **Alternatives rejected**: skipping the hold on an empty `sessions` list (drops AC9 silently); attributing Bash-written files by parsing coder Bash commands (a second parser).
 **Trade-off accepted**: an unplanned file a coder made through Bash is still held under a holder.
+
+### 11. Rule-meter detector registration for the /code sentences
+
+**Choice**: option (a). One registration-only dispatch entry in `~/agent-evals/bin/rule_meter.py` for a new `bin/rule_meter_code_skill.py`; detector bodies and tests stay in the new module. First check whether `rule_meter_fixture.DETECTORS` or `rule_meter_verifier.DETECTORS` already takes this kind of detector (the toolkit-scripts lane registers through `rule_meter_verifier.DETECTORS` with `rule_meter.py` untouched); if either fits, use it and leave `rule_meter.py` alone. `git -C ~/agent-evals status --short bin/` right before the edit; stop if any rule_meter file is dirty. The entry is committed with the scenarios file on bench-base in one commit, after `pull_keep_index.py`, then pushed. AC15 and AC21 stand as written.
+**Reasoning**: agent-evals-c3, 2026-11-22, in answer to the lane's three options.
+**Alternatives rejected**: shipping the cuts unmetered (AC21 fails); lowering the AC15 limit (AC15 changes).
+**Trade-off accepted**: one line in another lane's file.
+
+### 12. AC15 limit set to the measured start load (session ruling on a plan-written criterion)
+
+**Choice**: option (a). AC15's limit becomes 3488 words, the measured start load. No skill text is trimmed to reach 3445.
+**Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill-nov22 lane. The criterion was written by the plan, so a session ruling is recorded here. Rule-meter counts, complied/graded, on vs off (opus, n=1): CF01 2/3 vs 0/3, CF02 1/3 vs 0/3, CF03 0/2 vs 0/3, CF04 and CF06 no graded cells, CF05 1/3 vs 0/3, CF07 2/3 vs 1/3. In no scenario does the off arm beat the on arm, so the counts support no cut. Start-load words: SKILL.md 2673, `_shared/modifiers.md` 114, `_shared/plan-reading.md` 205, `_shared/handoff-block.md` 496, total 3488 against the old limit 3445, a 43-word gap; baseline 3828.
+**Alternatives rejected**: trimming unmetered text to reach 3445; cutting metered lines the counts support keeping.
+**Trade-off accepted**: the start load is 8.9% shorter than the 3828 baseline, not 10%. The plants for CF04 and CF06 are queued by agent-evals-c3.
+
+**Addendum (orchestrating session ruling, 2026-11-22)**: the word meter (`tests/scripts/skill_word_band.py`) does not count a bare list marker (`-`, `*`, `+` or `<digits>.`) as a word, because the list conversion of two dense paragraphs added 13 markers that are not words. No SKILL.md text is trimmed. Recounted start load: SKILL.md 2647, `_shared/modifiers.md` 110, `_shared/plan-reading.md` 201, `_shared/handoff-block.md` 484, total 3442 against the limit 3488 (still 3488), 46 under it and 10.1% below the 3828 baseline (3828 was counted with the old rule).
+
+### 13. AC15 duplicate clause narrowed and AC17 one-owner clause held (session ruling on plan-written criteria)
+
+**Choice**: AC15's duplicate clause covers the 6 exact-duplicate words already cut (the second `do not mark the phase done`). SKILL.md:24 stays as a paraphrase of code-fork.md:8-9; its 8 words are not an exact duplicate. AC17's one-owner clause is held: no stop-rule dedupe is made in this phase.
+**Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill-nov22 lane. The criteria were written by the plan, so a session ruling is recorded here. The rule-meter read for the stop-rule sentences is 2/3 vs 1/3 (CF07, n=1), which supports no cut.
+**Alternatives rejected**: cutting SKILL.md:24 or the stop-rule sentence unmetered.
+**Trade-off accepted**: one rule keeps two owners until a graded run supports a cut.

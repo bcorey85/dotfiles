@@ -190,7 +190,6 @@
     "artifact-diagramming": "user-invocable-only",
     "audit": "user-invocable-only",
     "commit": "user-invocable-only",
-    "guide": "user-invocable-only",
     "peer-review": "user-invocable-only",
     "pr-comments": "user-invocable-only",
     "pr-triage": "user-invocable-only",

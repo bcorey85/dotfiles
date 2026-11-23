@@ -25,6 +25,12 @@ class StretchHelpersTest(unittest.TestCase):
 
         self.assertEqual(stretches, [(2, 2), (4, 4)])
 
+    def test_changed_line_ranges_name_both_sides_and_are_empty_for_equal_texts(self):
+        self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\nx\ny\n"), [("replace", 1, 2, 1, 3)])
+        self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\nb\n"), [])
+        self.assertEqual(protected_lines.changed_line_ranges("a\n", "a\nb\n"), [("insert", 1, 1, 1, 2)])
+        self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\n"), [("delete", 1, 2, 1, 1)])
+
     def test_a_removed_stretch_comes_back_only_at_its_protected_lines_when_not_whole(self):
         restored = protected_lines.restore_protected_lines("a\nb\nc\nd\n", "a\nd\n", [2], whole_stretch=False)
 

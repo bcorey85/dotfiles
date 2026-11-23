@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1104 changes
+1105 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -55,6 +55,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A review fix pass keeps an owner-line edit to the scripts CLAUDE.md under a standing ruling](notes/2026-11-22-a-review-fix-pass-keeps-an-owner-line-edit-to-the.md) [script/owner-lines] A review fix pass keeps an owner-line edit to the scripts CLAUDE.md when a standing ruling covers owner lines; in progress, filled out in Phase 4.
 * [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md) [script/plan-check] A ticket's queue Source line keeps underscores and other markdown marks inside its path, so a home folder or slug that holds one still reads as the queue item it names.
 * [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md) [script/log-escape, skill/escape] The escape logger now keeps the catch text of every escape, at every stage, and refuses a row with no description or, outside the plan gate, no file, so each escape can be found and fixed later.
 * [A ticket whose Source line spells the queue path with the home folder reads as session-owned](notes/2026-11-22-a-lane-brief-that-names-a-session-written-queue.md) [script/plan-check, skill/verify-branch] A lane ticket whose Source line names a session-written queue item with the home folder spelled out (/home/<user>/agent-evals/queue/...) now reads as session-owned criteria, as the ~ spelling already did, so the lane takes the orchestrating session's ruling.

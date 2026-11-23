@@ -1,6 +1,7 @@
 """protected_lines.py: put selected lines of a text back after a later edit changed them, and keep every other edit.
 
-It knows nothing about what the lines mean: the caller names the 1-based line numbers of the earlier text to protect."""
+It knows nothing about what the lines mean: the caller names the 1-based line numbers of the earlier text to protect.
+`changed_line_ranges` gives the changed stretches of both texts; `changed_stretches` filters it to the first text's."""
 import difflib
 
 # A changed line counts as the rewrite of a protected line when it is at least this much like it.
@@ -21,16 +22,23 @@ def entries_missing(before_entries, after_entries):
     return missing
 
 
-def changed_stretches(before_text, after_text):
-    """The (first, last) 1-based line numbers of `before_text` of each stretch that `after_text` removed or rewrote."""
+def changed_line_ranges(before_text, after_text):
+    """The (tag, before_start, before_end, after_start, after_end) of each stretch that differs between the two texts:
+    0-based line indexes, exclusive ends, tag one of `insert`, `delete` or `replace`. [] for equal texts."""
     before_lines = before_text.splitlines(keepends=True)
     after_lines = after_text.splitlines(keepends=True)
     matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
-    stretches = []
-    for tag, before_start, before_end, _after_start, _after_end in matcher.get_opcodes():
-        if tag in ("delete", "replace"):
-            stretches.append((before_start + 1, before_end))
-    return stretches
+    return [opcode for opcode in matcher.get_opcodes() if opcode[0] != "equal"]
+
+
+def changed_stretches(before_text, after_text):
+    """The (first, last) 1-based line numbers of `before_text` of each stretch that `after_text` removed or rewrote."""
+    ranges = changed_line_ranges(before_text, after_text)
+    return [
+        (start + 1, end)
+        for tag, start, end, _after_start, _after_end in ranges
+        if tag in ("delete", "replace")
+    ]
 
 
 def consecutive_runs(entries):

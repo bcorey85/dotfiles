@@ -1231,12 +1231,6 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
 
 
-class EscapedGlobTest(unittest.TestCase):
-    def test_each_wildmatch_character_gets_a_backslash_and_other_text_is_unchanged(self):
-        self.assertEqual(script_utils.escaped_glob("p[1]*?\\x.md"), "p\\[1]\\*\\?\\\\x.md")
-        self.assertEqual(script_utils.escaped_glob("plain.md"), "plain.md")
-
-
 class WorkTreeBlobRestoreTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

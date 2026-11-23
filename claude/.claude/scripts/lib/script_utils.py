@@ -302,11 +302,6 @@ def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None)
     return ProcessResult(process.returncode, stdout, stderr)
 
 
-def escaped_glob(name):
-    """The name as a wildmatch pattern that matches only itself, for `git apply --exclude`."""
-    return re.sub(r"([*?\[\\])", r"\\\1", name)
-
-
 def git_output(cwd, *args, timeout=None):
     """Standard output of `git <args>` run in cwd, without its trailing newlines, or None when git fails, is missing or
     takes longer than `timeout` seconds. A warning on stderr never becomes part of the answer. Paths come back as

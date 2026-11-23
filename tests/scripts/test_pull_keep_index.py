@@ -1,4 +1,5 @@
 """Tests for tools/pull_keep_index.py: a pull before a push keeps the user's staged files staged."""
+import json
 import os
 import pathlib
 import shlex
@@ -43,13 +44,19 @@ class PullKeepIndexTest(unittest.TestCase):
         return folder
 
     def write(self, folder, name, text):
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
         (folder / name).write_text(text)
 
     def push_from_other_machine(self, name, text):
-        other = self.clone("other-" + name)
-        self.write(other, name, text)
-        self.git(other, "add", name)
-        self.git(other, "commit", "-qm", "other " + name)
+        self.push_files_from_other_machine({name: text})
+
+    def push_files_from_other_machine(self, files):
+        label = "-".join(name.replace("/", "_") for name in files)
+        other = self.clone("other-" + label)
+        for name, text in files.items():
+            self.write(other, name, text)
+        self.git(other, "add", *files)
+        self.git(other, "commit", "-qm", "other " + label)
         self.git(other, "push", "-q")
 
     def run_script(self, *arguments):
@@ -304,7 +311,19 @@ class PullKeepIndexTest(unittest.TestCase):
             self.assertNotEqual(finished.returncode, 0, extra)
             self.assertIn("Usage: pull_keep_index.py <repo>", finished.stderr, extra)
 
-    def test_a_staged_clash_on_a_built_page_and_an_ordinary_file_stops_with_the_put_back_command(self):
+    def assert_rolled_back(self, stderr, stage, conflicted, saved_file, saved_text):
+        """The stop of a part that would not apply: names the file and the ref, says the changes were not put back,
+        leaves no tracked change, and keeps the ref at the saved commit."""
+        self.assertIn(f"the {stage} local changes conflict with it in {conflicted} and were not put back", stderr)
+        kept = self.kept_refs()
+        self.assertEqual(len(kept), 1, stderr)
+        ref, saved = kept[0]
+        self.assertIn(f"(ref {ref})", stderr)
+        self.assertIn(f"BUILT_PAGE_STASH={saved} git -C {self.repo} stash apply {saved}", stderr)
+        self.assertEqual(self.git(self.repo, "show", f"{saved}:{saved_file}"), saved_text)
+        self.assertEqual(self.git(self.repo, "status", "--porcelain", "--untracked-files=no"), "")
+
+    def test_a_staged_clash_on_a_built_page_and_an_ordinary_file_rolls_back_and_names_the_ref(self):
         self.add_files("k")
         self.mark_built_pages("f")
         self.push_from_other_machine("f", "theirs\n")
@@ -316,11 +335,8 @@ class PullKeepIndexTest(unittest.TestCase):
 
         finished = self.run_script()
 
-        self.assertNotEqual(finished.returncode, 0)
-        self.assertIn("--put-back ", finished.stderr)
-        saved = finished.stderr.split("--put-back ")[1].split()[0]
-        self.assertEqual(self.git(self.repo, "show", saved + ":k"), "staged\n")
-        self.assertEqual(self.status(), [])
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assert_rolled_back(finished.stderr, "staged", "k", "k", "staged\n")
         self.assertEqual((self.repo / "f").read_text(), "theirs\n")
         self.assertEqual((self.repo / "k").read_text(), "theirs\n")
 
@@ -385,7 +401,7 @@ class PullKeepIndexTest(unittest.TestCase):
             self.assertEqual(finished.returncode, 0, finished.stderr)
             self.assertIn("Usage: pull_keep_index.py <repo>", finished.stdout)
 
-    def test_a_built_page_clash_with_an_unstaged_conflict_names_the_conflict_and_the_page_to_stage(self):
+    def test_a_built_page_clash_with_an_unstaged_conflict_rolls_back_and_names_the_ref(self):
         self.mark_built_pages("f")
         self.push_from_other_machine("f", "theirs\n")
         self.push_from_other_machine("g", "theirs\n")
@@ -396,19 +412,14 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
-        self.assertIn("conflict with the pull in: g", finished.stderr)
-        self.assertIn(f"git -C {self.repo} --literal-pathspecs reset -q ", finished.stderr)
-        self.assertIn(f"git -C {self.repo} --literal-pathspecs add -- f", finished.stderr)
-        self.assertNotIn("could not be told apart", finished.stderr)
-        self.assertEqual(sorted(self.status()), ["M  f", "UU g"])
-        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
-        self.assertEqual((self.repo / "f").read_text(), "rebuilt\n")
-        self.assertIn(f"The local changes are saved in {self.saved_commit(finished.stderr)}", finished.stderr)
+        self.assert_rolled_back(finished.stderr, "unstaged", "g", "g", "unstaged\n")
+        self.assertEqual(self.status(), [])
+        self.assertEqual((self.repo / "g").read_text(), "theirs\n")
 
-    def test_a_built_page_the_driver_gives_up_on_is_named_for_staging_with_no_reset_line(self):
+    def test_a_built_page_the_driver_gives_up_on_exits_1_naming_the_page_the_add_command_and_the_ref(self):
         self.mark_built_pages("f")
         failing = self.tmp / "failing_driver.py"
-        failing.write_text("import sys\nsys.exit(1)\n")
+        failing.write_text("import sys\nsys.stderr.write('no way')\nsys.exit(1)\n")
         self.git(self.repo, "config", "merge.built-page.driver", f"{sys.executable} {failing} %A")
         self.push_from_other_machine("f", "theirs\n")
         self.write(self.repo, "f", "mine\n")
@@ -417,11 +428,156 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
-        self.assertIn("UU f", self.status())
-        self.assertIn("conflict with the pull in: f.", finished.stderr)
-        self.assertIn(f"then run: git -C {self.repo} --literal-pathspecs add -- f\n", finished.stderr)
-        self.assertNotIn("reset -q", finished.stderr)
-        self.assertNotIn("run: Then", finished.stderr)
+        self.assertIn("the built-page driver could not rebuild f: no way", finished.stderr)
+        self.assertIn(f"git -C {self.repo} --literal-pathspecs add -- f", finished.stderr)
+        kept = self.kept_refs()
+        self.assertEqual(len(kept), 1, finished.stderr)
+        self.assertIn(f"(ref {kept[0][0]})", finished.stderr)
+        self.assertEqual(self.status(), [])
+        self.assertEqual((self.repo / "f").read_text(), "theirs\n")
+
+    def test_only_a_staged_built_page_is_rebuilt_with_no_conflict_message(self):
+        # Steps 1 and 3 have nothing to apply once the page is left out; both are skipped.
+        self.mark_built_pages("f")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.git(self.repo, "add", "f")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertNotIn("were not put back", finished.stderr)
+        self.assertEqual(self.status(), ["M  f"])
+        self.assertEqual(self.git(self.repo, "show", ":f"), "rebuilt\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def set_up_the_incident(self):
+        """Origin changes the built page `docs/p.md` and the file `a`; here `p.md`, `a` (other lines) and `b` are
+        staged, `b` is edited again unstaged on another line, and `c` is edited unstaged."""
+        lines = "".join(f"{number}\n" for number in range(1, 8))
+        for name in ("docs/p.md", "a", "b", "c"):
+            self.write(self.repo, name, lines)
+        self.git(self.repo, "add", "docs/p.md", "a", "b", "c")
+        self.git(self.repo, "commit", "-qm", "incident files")
+        self.git(self.repo, "push", "-q")
+        self.mark_built_pages("docs/p.md")
+        self.push_files_from_other_machine({"docs/p.md": "theirs\n", "a": lines.replace("1\n", "one\n", 1)})
+        self.write(self.repo, "docs/p.md", "mine\n")
+        self.write(self.repo, "a", lines.replace("7\n", "seven\n"))
+        self.write(self.repo, "b", lines.replace("1\n", "staged b\n", 1))
+        self.git(self.repo, "add", "docs/p.md", "a", "b")
+        self.write(self.repo, "b", lines.replace("1\n", "staged b\n", 1).replace("7\n", "unstaged b\n"))
+        self.write(self.repo, "c", "unstaged c\n")
+        return lines
+
+    def assert_the_incident_is_back(self, lines):
+        self.assertEqual(sorted(self.status()), [" M c", "M  a", "M  docs/p.md", "MM b"])
+        both_sides = lines.replace("1\n", "one\n", 1).replace("7\n", "seven\n")
+        self.assertEqual(self.git(self.repo, "show", ":a"), both_sides)
+        self.assertEqual(self.git(self.repo, "show", ":b"), lines.replace("1\n", "staged b\n", 1))
+        self.assertEqual((self.repo / "b").read_text(),
+                         lines.replace("1\n", "staged b\n", 1).replace("7\n", "unstaged b\n"))
+        self.assertEqual(self.git(self.repo, "show", ":docs/p.md"), "rebuilt\n")
+        self.assertEqual((self.repo / "docs/p.md").read_text(), "rebuilt\n")
+        self.assertEqual((self.repo / "c").read_text(), "unstaged c\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_the_incident_state_ends_with_every_local_change_back_staged_files_staged_and_the_page_rebuilt(self):
+        lines = self.set_up_the_incident()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assert_the_incident_is_back(lines)
+
+    def run_script_in_subfolder(self, *arguments):
+        env = {**os.environ, **GIT_ENV}
+        return subprocess.run([sys.executable, str(SCRIPT), *arguments, str(self.repo / "docs")],
+                              capture_output=True, text=True, env=env)
+
+    def use_a_recording_driver(self):
+        """Configure a built-page driver that records what it was given and rebuilds the page; return the record."""
+        record = self.tmp / "driver_args.json"
+        driver = self.tmp / "recording_driver.py"
+        driver.write_text(
+            "import json, os, pathlib, sys\n"
+            "base, ours, theirs, page = sys.argv[1:5]\n"
+            "read = lambda name: pathlib.Path(name).read_text()\n"
+            "pathlib.Path(sys.argv[5]).write_text(json.dumps({'base': read(base), 'ours': read(ours),\n"
+            "    'theirs': read(theirs), 'page': page, 'stash': os.environ['BUILT_PAGE_STASH'],\n"
+            "    'cwd': os.getcwd()}))\n"
+            "pathlib.Path(ours).write_text('rebuilt\\n')\n")
+        self.git(self.repo, "config", "merge.built-page.driver",
+                 f"{sys.executable} {driver} %O %A %B %P {record}")
+        return record
+
+    def test_the_incident_state_is_put_back_in_full_when_the_argument_is_a_subfolder(self):
+        lines = self.set_up_the_incident()
+
+        finished = self.run_script_in_subfolder()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assert_the_incident_is_back(lines)
+
+    def test_the_page_driver_gets_base_ours_theirs_and_the_saved_commit_in_the_top_folder(self):
+        lines = self.set_up_the_incident()
+        record = self.use_a_recording_driver()
+        head_before_pull = self.git(self.repo, "rev-parse", "HEAD").strip()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        seen = json.loads(record.read_text())
+        self.assertEqual(seen["base"], lines)
+        self.assertEqual(seen["ours"], "theirs\n")
+        self.assertEqual(seen["theirs"], "mine\n")
+        self.assertEqual(seen["page"], "docs/p.md")
+        self.assertEqual(os.path.realpath(seen["cwd"]), os.path.realpath(self.repo))
+        saved = seen["stash"]
+        self.assertEqual(self.git(self.repo, "rev-parse", saved + "^1").strip(), head_before_pull)
+        self.assertEqual(self.git(self.repo, "show", saved + ":docs/p.md"), "mine\n")
+        self.assertEqual(self.git(self.repo, "show", saved + ":c"), "unstaged c\n")
+
+    def test_a_page_missing_from_the_base_reaches_the_driver_as_an_empty_base(self):
+        self.mark_built_pages("docs/n.md")
+        self.push_files_from_other_machine({"docs/n.md": "theirs\n"})
+        self.write(self.repo, "docs/n.md", "mine\n")
+        self.git(self.repo, "add", "docs/n.md")
+        record = self.use_a_recording_driver()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        seen = json.loads(record.read_text())
+        self.assertEqual(seen["base"], "")
+        self.assertEqual(seen["ours"], "theirs\n")
+        self.assertEqual(seen["theirs"], "mine\n")
+        self.assertEqual(self.status(), ["M  docs/n.md"])
+        self.assertEqual(self.git(self.repo, "show", ":docs/n.md"), "rebuilt\n")
+
+    def test_put_back_run_from_a_subfolder_puts_the_incident_state_back_in_full(self):
+        lines = self.set_up_the_incident()
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+        self.git(self.repo, "update-ref", REF, saved)
+        self.git(self.repo, "pull", "-q", "--rebase")
+
+        finished = self.run_script_in_subfolder("--put-back", REF)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assert_the_incident_is_back(lines)
+
+    def test_put_back_of_the_incident_state_does_the_same_on_a_clean_tree(self):
+        lines = self.set_up_the_incident()
+        saved = self.git(self.repo, "stash", "create").strip()
+        self.git(self.repo, "reset", "-q", "--hard")
+        self.git(self.repo, "update-ref", REF, saved)
+        self.git(self.repo, "pull", "-q", "--rebase")
+
+        finished = self.run_script("--put-back", REF)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assert_the_incident_is_back(lines)
 
     def test_a_built_page_named_with_glob_characters_is_rebuilt_and_a_lookalike_file_keeps_its_staged_text(self):
         self.add_files("p[1]", "p1")
@@ -993,6 +1149,10 @@ class PrintedCommandQuotingTest(unittest.TestCase):
                                text=True, env=env).stdout.strip()
         subprocess.run(["git", "-C", str(repo), "reset", "--hard", "--quiet"], check=True, capture_output=True,
                        env=env)
+        driver = repo / "driver.py"
+        driver.write_text("import pathlib, sys\npathlib.Path(sys.argv[1]).write_text('rebuilt\\n')\n")
+        subprocess.run(["git", "-C", str(repo), "config", "merge.built-page.driver", f"{sys.executable} {driver} %A"],
+                       check=True, capture_output=True, env=env)
         real_run_in_repo = self.module.run_in_repo
 
         def fail_the_add(repo_path, *arguments, **options):
@@ -1004,33 +1164,13 @@ class PrintedCommandQuotingTest(unittest.TestCase):
             unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_add),
             self.assertRaises(SystemExit) as stopped,
         ):
-            self.module.put_back_without_index(str(repo), saved, REF, ["f"], env)
+            self.module.put_back_by_hand(str(repo), saved, REF, ["f"], f"{sys.executable} {driver} %A")
 
         message = str(stopped.exception)
         self.assertIn("could not stage the rebuilt pages: index is locked", message)
         self.assertIn(f"git -C {repo} --literal-pathspecs add -- f", message)
         self.assertNotIn("--put-back", message)
         self.assertIn(f"The local changes are saved in {saved} (ref {REF}).", message)
-
-    def test_a_failed_apply_with_no_conflicts_prints_the_put_back_command(self):
-        failed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"local changes would be overwritten")
-        no_conflicts = subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
-
-        def fail_the_apply(repo_path, *arguments, **options):
-            if arguments[:2] == ("stash", "apply"):
-                return failed
-            return no_conflicts
-
-        with (
-            unittest.mock.patch.object(self.module, "run_in_repo", side_effect=fail_the_apply),
-            self.assertRaises(SystemExit) as stopped,
-        ):
-            self.module.put_back_without_index("/a b", "abc123", REF, ["f"], {})
-
-        message = str(stopped.exception)
-        self.assertIn("did not go back on cleanly", message)
-        self.assertIn(f"--put-back {REF} '/a b'", message)
-        self.assertIn(f"saved in abc123 (ref {REF})", message)
 
 
 if __name__ == "__main__":

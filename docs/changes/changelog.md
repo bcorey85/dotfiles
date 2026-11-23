@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1109 changes
+1110 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -72,6 +72,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [A no-code ruling that asks for a test edit is a change](notes/2026-11-22-a-no-code-ruling-that-asks-for-a-test-edit-is-a.md) [script/ruled-change-text] is_no_code_ruling reads a note as a change when a clause after the no-code words asks for a test edit.
 * [A phase ask that names a user-owned criterion is held for the user](notes/2026-11-22-a-phase-ask-that-names-a-user-owned-criterion-is.md) [script/phase-asks, script/code-review-start] phase_asks opens a reviewer ask that names a user-owned acceptance criterion as user-only, so the session cannot rule it.
 * [Reviewer dispatch lines give the exact prompt and say who writes the report](notes/2026-11-22-reviewer-dispatch-lines-give-the-exact-prompt-and.md) [script/reviewer-dispatch, script/code-wait, skill/code] Each reviewer dispatch line quotes the Agent prompt word for word and names who writes the report, so no reviewer is told to write a file it cannot.
+* [pull_keep_index puts staged files back and rebuilds clashing built pages through the merge driver](notes/2026-11-22-pull-keep-index-puts-staged-files-back-and.md) [script/pull-keep-index] When staged built pages clash with origin's changes, pull_keep_index puts every local change back (staged stay staged, unstaged stay unstaged, the pages rebuilt through the merge driver), in the run and through --put-back; a part that cannot apply resets the tree to the pulled HEAD and exits 1 naming the conflicted files, the ref and the command that puts the changes back.
 * [pull_keep_index keeps a named ref for the saved changes and prints --help](notes/2026-11-22-pull-keep-index-keeps-a-named-ref-for-the-saved.md) [script/pull-keep-index] pull_keep_index keeps the set-aside changes under a named ref until they are put back, and prints its usage for --help.
 * [A fix pass's approval-file edit becomes a user-only ask with the wanted change](notes/2026-11-22-a-fix-pass-s-approval-file-edit-becomes-a-user.md) [script/review-loop-ruled, script/review-loop-script] After the loop reverts a fix coder's edit to an approval-only file, each finding on that file becomes a user-only ask carrying its proposed change.
 * [verify-prep keeps a logged branch review after a change-note-only commit](notes/2026-11-22-verify-prep-keeps-a-logged-branch-review-after-a.md) [script/verify-prep, script/reviewed-tree] A commit that changes only files under docs/changes/ no longer makes a logged branch review read as not run: verify-prep's tree fingerprint leaves that folder out, and any other change still changes it.

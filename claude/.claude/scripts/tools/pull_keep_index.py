@@ -11,11 +11,13 @@ pages rebuilt. <saved> is the commit hash or its ref; the argument is resolved t
 the prefix is chosen (the argument itself, else the first ref by name that points at the commit, else a new one), before
 the clean-tree check, so a failed put-back always leaves a named ref. Every message that leaves the local changes
 saved but not applied names the commit and its ref.
-When the staged changes clash with the pull on built pages (paths with `merge=built-page`), the rest of the staged
-changes go onto the pulled tree (a file both changed in other hunks does) and the repo configures the built-page merge
-driver (`merge.built-page.driver`), the saved changes go on with no index so the driver rebuilds those pages, and the
-rebuilt pages are staged. With no driver configured git text-merges those pages,
-so the run exits 1 naming `--put-back`.
+When the staged changes clash with the pull on built pages (paths with `merge=built-page`) and the repo configures
+the built-page merge driver (`merge.built-page.driver`), the saved changes go back by hand in six steps: the staged
+part with the pages left out goes on the index, the index is written as a tree, the unstaged part with the pages left
+out goes on the tree, the tree is read back into the index, each page is rebuilt through the driver command, and the
+rebuilt pages are staged. A part that conflicts rolls the tree back to the pulled HEAD with no local changes and
+exits 1 naming the conflicted files, the ref and the command that puts the changes back with conflict markers. With
+no driver configured git text-merges those pages, so the run exits 1 naming `--put-back`.
 A <saved> that is not a saved-changes commit (no second parent), or a repo with tracked changes
 (`git status --porcelain --untracked-files=no` prints anything), exits 1 with the usage.
 
@@ -44,7 +46,10 @@ When the rebase stops on a conflict that a merge of the pulled tip would not hav
 resolved conflicts), the rebase is undone and the pulled tip is merged instead; else the run exits 1 mid-rebase."""
 import datetime
 import os
+import pathlib
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -266,16 +271,15 @@ def listed_paths(repo, *diff_arguments):
     return [name for name in os.fsdecode(listed.stdout).split("\0") if name]
 
 
-def staged_tree(repo, saved, left_out=()):
+def staged_tree(repo, saved):
     """The tree the index would hold had the apply gone on cleanly: HEAD with the saved staged changes on it, built in
-    a scratch index. The `left_out` paths keep their HEAD text. None when git cannot build it."""
+    a scratch index. None when git cannot build it."""
     staged_changes = run_in_repo(repo, "diff", "--binary", f"{saved}^1", f"{saved}^2")
     if staged_changes.returncode != 0:
         return None
-    exclusions = [f"--exclude={script_utils.escaped_glob(name)}" for name in left_out]
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
-        apply_arguments = ("apply", "--cached", *exclusions)
+        apply_arguments = ("apply", "--cached")
         for arguments, stdin in ((("read-tree", "HEAD"), None), (apply_arguments, staged_changes.stdout)):
             if run_in_repo(repo, *arguments, env=env, stdin=stdin).returncode != 0:
                 return None
@@ -285,11 +289,10 @@ def staged_tree(repo, saved, left_out=()):
     return os.fsdecode(written.stdout).strip()
 
 
-def restore_the_split(repo, saved, ref, conflicts, left_out=()):
+def restore_the_split(repo, saved, ref, conflicts):
     """After a conflicted apply git stages every file that applied; give each one back the index entry it had.
-    The `left_out` paths (rebuilt pages the caller stages itself) are not in the staged tree.
     Return the staged tree, or exit 1 naming the recovery command when that fails."""
-    tree = staged_tree(repo, saved, left_out)
+    tree = staged_tree(repo, saved)
     if tree is None:
         sys.exit("pull_keep_index: the local changes conflict and the staged files could not be told apart. "
                  + recovery_text(repo, saved, ref))
@@ -326,73 +329,143 @@ def built_page_paths(repo, paths):
     return [name for name, _attribute, value in triples if value == BUILT_PAGE_DRIVER]
 
 
-def built_page_driver_configured(repo):
-    """Whether the repo configures the built-page merge driver. Git text-merges a page whose attribute names an
-    unconfigured driver, and that text must not be staged as a rebuilt page."""
+def built_page_driver_command(repo):
+    """The command of the built-page merge driver, or None when the repo configures none. Git text-merges a page
+    whose attribute names an unconfigured driver, and that text must not be staged as a rebuilt page."""
     found = run_in_repo(repo, "config", "--get", f"merge.{BUILT_PAGE_DRIVER}.driver")
-    return found.returncode == 0
+    if found.returncode != 0:
+        return None
+    return os.fsdecode(found.stdout).strip()
 
 
-def clashing_built_pages(repo, saved):
-    """The built pages that make the apply with the index fail, or [] when the apply needs another route. A page both
-    the saved staged changes and the pull changed clashes; so may an ordinary file they both changed, which applies
-    anyway when the hunks do not overlap. The staged changes minus those pages must go onto HEAD: when they do not, an
-    ordinary file really clashes and the caller stops. [] too when the repo configures no built-page merge driver, since
-    git text-merges such a page and that text must not be staged as rebuilt."""
-    clashes = staged_clash_paths(repo, saved)
-    pages = built_page_paths(repo, clashes) if clashes else []
-    if not pages or not built_page_driver_configured(repo):
-        return []
-    if staged_tree(repo, saved, left_out=pages) is None:
-        return []
-    return pages
+class DiffStep(NamedTuple):
+    """One part of the saved changes that `put_back_by_hand` applies: the commits a diff compares (`{saved}` stands
+    for the saved commit) and the `git apply` options."""
+    stage: str  # "staged" or "unstaged", as the rolled-back stop words it
+    older: str
+    newer: str
+    apply_options: tuple
 
 
-def put_back_without_index(repo, saved, ref, pages, env):
-    """The staged changes clash with the pull only on built pages: apply the saved changes with no index so the merge
-    driver rebuilds those pages, then give every other file its staged or unstaged state and stage the rebuilt pages."""
-    applied = run_in_repo(repo, "stash", "apply", "--quiet", saved, env=env)
+STAGED_DIFF = DiffStep("staged", "{saved}^1", "{saved}^2", ("--index", "--3way"))
+UNSTAGED_DIFF = DiffStep("unstaged", "{saved}^2", "{saved}", ("--3way",))
+
+
+def exit_rolled_back(repo, saved, ref, stage, pages, problem):
+    """Exit 1 after a part of the saved changes would not apply on the pulled HEAD: read the conflicted files (git's
+    `problem` text when there are none), then reset the tree to HEAD. The saved commit is under the ref, and untracked
+    files are not touched. The stop never says a file is back."""
+    conflicts = listed_paths(repo, "--diff-filter=U")
+    where = " ".join(conflicts) or problem
+    reset = run_in_repo(repo, "reset", "--hard", "--quiet")
+    if reset.returncode != 0:
+        reset_problem = script_utils.process_stderr_text(reset)
+        sys.exit(f"pull_keep_index: the {stage} local changes did not go back (in {where}) and git reset --hard "
+                 f"failed: {reset_problem}. " + recovery_text(repo, saved, ref))
+    apply_command = f"{BUILT_PAGE_STASH}={saved} " + git_command_text(repo, "stash", "apply", saved)
+    sys.exit(f"pull_keep_index: the pull worked, but the {stage} local changes conflict with it in {where} and were "
+             f"not put back. The tree is at the pulled HEAD with no local changes; the rebuilt pages "
+             f"{' '.join(pages)} were not made. {saved_text(saved, ref)}. To put them back with the conflicts "
+             f"marked, run: `{apply_command}`, fix the markers, then stage what was staged and `git add` the pages.")
+
+
+def apply_saved_diff(repo, saved, ref, pages, step):
+    """Apply one part of the saved changes, the pages left out. The diff names each page by a literal pathspec, so a
+    page called `p[1]` never matches `p1`. An empty diff is skipped: `git apply` exits 128 on empty input and git 2.34
+    has no `--allow-empty`. Roll back and exit 1 when the diff or the apply fails."""
+    excludes = [":(top)", *[f":(top,exclude,literal){name}" for name in pages]]
+    older, newer = step.older.format(saved=saved), step.newer.format(saved=saved)
+    diff = run_in_repo(repo, "diff", "--binary", older, newer, "--", *excludes)
+    if diff.returncode != 0:
+        exit_rolled_back(repo, saved, ref, step.stage, pages, script_utils.process_stderr_text(diff))
+    if not diff.stdout:
+        return
+    applied = run_in_repo(repo, "apply", *step.apply_options, stdin=diff.stdout)
     if applied.returncode != 0:
-        sys.stderr.write(os.fsdecode(applied.stderr))
-        exit_unapplied(repo, saved, ref, left_out=pages)
-    restore_the_split(repo, saved, ref, pages, left_out=pages)
+        exit_rolled_back(repo, saved, ref, step.stage, pages, script_utils.process_stderr_text(applied))
+
+
+def write_blob(repo, name, destination):
+    """Write the blob `name` (for example `<commit>:<path>`) to the file; empty when git has none, as for a page that
+    does not exist on that side."""
+    found = run_in_repo(repo, "cat-file", "blob", name)
+    content = found.stdout if found.returncode == 0 else b""
+    pathlib.Path(destination).write_bytes(content)
+
+
+def run_page_driver(repo, saved, page, template):
+    """Rebuild one page through the configured merge driver command `template`: base `saved^1`, ours HEAD, theirs the
+    saved tree. The driver runs through `sh -c` in `repo`, the top folder, with BUILT_PAGE_STASH set, as git runs it.
+    On success copy its result over the page and return None; else return the driver's stderr (or its exit code)."""
+    with tempfile.TemporaryDirectory() as scratch:
+        base, ours, theirs = (os.path.join(scratch, name) for name in ("base", "ours", "theirs"))
+        write_blob(repo, f"{saved}^1:{page}", base)
+        write_blob(repo, f"HEAD:{page}", ours)
+        write_blob(repo, f"{saved}:{page}", theirs)
+        values = {"O": base, "A": ours, "B": theirs, "P": page}
+        command = re.sub(r"%([OABP])", lambda found: shlex.quote(values[found.group(1)]), template)
+        env = {**os.environ, BUILT_PAGE_STASH: saved}
+        ran = subprocess.run(["sh", "-c", command], cwd=repo, env=env, capture_output=True)
+        if ran.returncode != 0:
+            return script_utils.process_stderr_text(ran) or f"the driver exited {ran.returncode}"
+        destination = pathlib.Path(repo) / page
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ours, destination)
+    return None
+
+
+def put_back_by_hand(repo, saved, ref, pages, template):
+    """The staged changes clash with the pull on built pages, which a stash apply cannot put on the index. Put the
+    changes back in six steps, the pages rebuilt through the driver command `template`. `repo` is the top folder.
+    (1) apply the staged part, the pages left out, to the index and tree; (2) write the
+    index as a tree; (3) apply the unstaged part, the pages left out, to the tree; (4) read the tree back into the
+    index, so only the staged part is staged; (5) rebuild each page through the built-page merge driver; (6) stage the
+    rebuilt pages. A part that conflicts (steps 1 and 3) rolls the tree back to HEAD and exits 1 with the ref
+    (`exit_rolled_back`); a driver that fails (step 5) or a failed staging (step 6) exits 1 with the add command."""
+    apply_saved_diff(repo, saved, ref, pages, STAGED_DIFF)
+    written = run_in_repo(repo, "write-tree")
+    if written.returncode != 0:
+        exit_rolled_back(repo, saved, ref, STAGED_DIFF.stage, pages, script_utils.process_stderr_text(written))
+    tree = os.fsdecode(written.stdout).strip()
+    apply_saved_diff(repo, saved, ref, pages, UNSTAGED_DIFF)
+    read = run_in_repo(repo, "read-tree", tree)
+    if read.returncode != 0:
+        exit_rolled_back(repo, saved, ref, UNSTAGED_DIFF.stage, pages, script_utils.process_stderr_text(read))
+
+    stage_command = git_command_text(repo, *page_stage_arguments(pages))
+    for page in pages:
+        problem = run_page_driver(repo, saved, page, template)
+        if problem is not None:
+            sys.exit(f"pull_keep_index: the built-page driver could not rebuild {page}: {problem}. Once the pages "
+                     f"are rebuilt, stage them with: {stage_command}\n{saved_text(saved, ref)}.")
     staged = run_in_repo(repo, *page_stage_arguments(pages))
     if staged.returncode != 0:
         problem = script_utils.process_stderr_text(staged)
         # The changes are already applied, so only the staging is left to do.
-        stage_command = git_command_text(repo, *page_stage_arguments(pages))
         sys.exit(f"pull_keep_index: could not stage the rebuilt pages: {problem}. To stage them, run: {stage_command}\n"
                  f"{saved_text(saved, ref)}.")
 
 
-def exit_unapplied(repo, saved, ref, left_out=()):
-    """Exit 1 for a failed apply: the conflict recovery when paths are conflicted, else the put-back command.
-    The `left_out` paths are rebuilt pages: the user stages them with `git add`, not a reset to the staged tree."""
+def exit_unapplied(repo, saved, ref):
+    """Exit 1 for a failed apply: the conflict recovery when paths are conflicted, else the put-back command."""
     conflicts = listed_paths(repo, "--diff-filter=U")
     if not conflicts:
         sys.exit("pull_keep_index: the local changes did not go back on cleanly. "
                  + recovery_text(repo, saved, ref))
 
-    tree = restore_the_split(repo, saved, ref, [*conflicts, *left_out], left_out)
-    conflicted_files = [name for name in conflicts if name not in left_out]
-    message = (f"pull_keep_index: the local changes conflict with the pull in: {' '.join(conflicts)}. The other files "
-               f"are back, staged or unstaged as before. Fix the conflict markers, then run: ")
-    stage_lead = ""
-    if conflicted_files:
-        reset_command = git_command_text(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *conflicted_files)
-        message += f"{reset_command}\nThat marks them resolved with their staged text. "
-        stage_lead = "Then stage the pages: "
-    if left_out:
-        add_command = git_command_text(repo, *page_stage_arguments(left_out))
-        message += f"{stage_lead}{add_command}\n"
-    sys.exit(message + f"{saved_text(saved, ref)}.")
+    tree = restore_the_split(repo, saved, ref, conflicts)
+    reset_command = git_command_text(repo, "--literal-pathspecs", "reset", "-q", tree, "--", *conflicts)
+    sys.exit(f"pull_keep_index: the local changes conflict with the pull in: {' '.join(conflicts)}. The other files "
+             f"are back, staged or unstaged as before. Fix the conflict markers, then run: {reset_command}\n"
+             f"That marks them resolved with their staged text. {saved_text(saved, ref)}.")
 
 
 def put_back(repo, saved, ref):
     """Apply the saved changes with their index, naming the saved commit (never the ref) to the built-page merge
-    driver of ~/agent-evals so it rebuilds a page it would else merge as text. When the index clash is on built pages
-    alone, apply without the index and stage the rebuilt pages. On success delete the ref. Exit 1 naming the recovery
-    command when that fails; on a conflict, first put back each applied file's staged or unstaged state."""
+    driver of ~/agent-evals so it rebuilds a page it would else merge as text. When that fails with no conflicted
+    path, the staged changes clash with the pull on a built page, and the driver is configured, `put_back_by_hand`
+    puts the changes back. On success delete the ref. Else exit 1 naming the recovery command; on a conflict, first
+    put back each applied file's staged or unstaged state."""
     env = {**os.environ, BUILT_PAGE_STASH: saved}
     applied = run_in_repo(repo, "stash", "apply", "--index", "--quiet", saved, env=env)
     if applied.returncode == 0:
@@ -400,9 +473,11 @@ def put_back(repo, saved, ref):
         return
     sys.stderr.write(os.fsdecode(applied.stderr))
     has_conflicts = bool(listed_paths(repo, "--diff-filter=U"))
-    pages = [] if has_conflicts else clashing_built_pages(repo, saved)
-    if pages:
-        put_back_without_index(repo, saved, ref, pages, env)
+    clashes = [] if has_conflicts else staged_clash_paths(repo, saved)
+    pages = built_page_paths(repo, clashes) if clashes else []
+    template = built_page_driver_command(repo) if pages else None
+    if template is not None:
+        put_back_by_hand(repo, saved, ref, pages, template)
         drop_ref(repo, saved, ref)
         return
     exit_unapplied(repo, saved, ref)
@@ -515,7 +590,9 @@ def main(arguments):
         print(__doc__)
         return
     if len(arguments) == 3 and arguments[0] == PUT_BACK_VERB:
-        repo = arguments[2]
+        # Run from a subfolder, `git apply` skips paths outside it and still exits 0, so every step runs from the top.
+        top = script_utils.repo_root(arguments[2])
+        repo = str(top) if top else arguments[2]
         saved, ref = resolve_saved(repo, arguments[1])
         tracked_changes = run_in_repo(repo, "status", "--porcelain", "--untracked-files=no")
         if tracked_changes.stdout:
@@ -529,7 +606,9 @@ def main(arguments):
     is_put_back_call = bool(arguments) and arguments[0] == PUT_BACK_VERB
     if len(arguments) != 1 or is_put_back_call:
         sys.exit(__doc__)
-    repo = arguments[0]
+    # Same reason as above: a subfolder run would skip every path outside it.
+    top = script_utils.repo_root(arguments[0])
+    repo = str(top) if top else arguments[0]
 
     state_dir = stopped_rebase_dir(repo)
     if state_dir:

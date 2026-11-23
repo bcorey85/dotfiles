@@ -919,6 +919,7 @@ class RewordFlagTest(unittest.TestCase):
 
         self.assertTrue(handback.load(message)["plan_impacts"][0]["reword"])
 
+
 def git_in(repo, *argv):
     subprocess.run(["git", *argv], cwd=repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
 
@@ -1151,7 +1152,7 @@ class OwnerLineEditTest(unittest.TestCase):
         host.files_touched = set()
         host.snapshot_approval_blobs()
         edit()
-        host.ask_for_approval_only_edits([changed], list(findings))
+        self.reverted = host.ask_for_approval_only_edits([changed], list(findings))
         return host
 
     def edit_scripts_md(self, text):
@@ -1182,17 +1183,10 @@ class OwnerLineEditTest(unittest.TestCase):
         added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
         finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:5` [docs] missing owner — Change: add the bullet.")
 
-        host = approval_host(reverts=True)
-        host.repo = str(self.repo)
-        host.plan = PLAN_PATH
-        host.files_touched = set()
-        host.snapshot_approval_blobs()
-        self.scripts_md.write_text(added)
+        host = self.coder_pass(self.edit_scripts_md(added), [finding])
+        wanted_filed = host.ask_for_wanted_changes([finding], self.reverted)
 
-        reverted = host.ask_for_approval_only_edits([SCRIPTS_CLAUDE_MD], [finding])
-        wanted_filed = host.ask_for_wanted_changes([finding], reverted)
-
-        self.assertEqual(reverted, [])
+        self.assertEqual(self.reverted, [])
         self.assertFalse(wanted_filed)
         self.assertEqual(self.scripts_md.read_text(), added)
         self.assertEqual(host.user_only_asks, [])
@@ -1338,6 +1332,26 @@ class OwnerLineEditTest(unittest.TestCase):
             host.snapshot_approval_blobs()
 
         self.assertIn("03-decisions.md:1:", str(raised.exception))
+
+
+class RootClaudeMdOnlySnapshotTest(unittest.TestCase):
+    def test_a_malformed_ruling_is_not_read_when_the_scripts_claude_md_is_absent(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        repo = pathlib.Path(folder.name).resolve()
+        (repo / "CLAUDE.md").write_text("rules\n")
+        decisions = repo / "docs/plans/p/03-decisions.md"
+        decisions.parent.mkdir(parents=True)
+        (repo / PLAN_PATH).write_text("# Plan\n")
+        decisions.write_text("Standing ruling by x at 2026-11-22: y covers: everything\n")
+        init_repo(repo)
+        host = approval_host(reverts=True)
+        host.repo = str(repo)
+        host.plan = PLAN_PATH
+
+        host.snapshot_approval_blobs()
+
+        self.assertIsNone(host.owner_line_ruling)
 
 
 class ApprovalAskTextTest(unittest.TestCase):

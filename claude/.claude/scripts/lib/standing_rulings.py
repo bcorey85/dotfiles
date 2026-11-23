@@ -1,5 +1,6 @@
-"""standing_rulings.py: the one form and the one reader for a standing ruling, an order of the user or the
-orchestrating session that covers a whole class of changes, and the test for a plan impact that only rewords a
+"""standing_rulings.py: the one form and the one reader for a standing ruling, an order that covers a whole class of
+changes (`covers: rewords`, the user's, or the orchestrating session's for a criterion the session owns;
+`covers: owner-lines`, the user or the orchestrating session), and the test for a plan impact that only rewords a
 criterion.
 
 A standing ruling is one line in the plan's `## Plan Deviations` section or in `03-decisions.md` beside the plan:

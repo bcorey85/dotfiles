@@ -18,11 +18,16 @@ def owner_line_indexes(lines):
 
 
 def every_line_resembled(before_lines, after_lines):
-    """True when each of `before_lines` is like at least one of `after_lines` at REWRITE_RATIO or better."""
+    """True when each of `before_lines` is like its own line of `after_lines` at REWRITE_RATIO or better: no two
+    old lines share a new line, and the matched new lines keep the order of the old ones."""
+    taken = set()
+    previous_index = -1
     for before_line in before_lines:
-        ratios = [script_utils.text_similarity(before_line, after_line) for after_line in after_lines]
-        if not ratios or max(ratios) < protected_lines.REWRITE_RATIO:
+        match = protected_lines.closest_line(before_line, after_lines, taken)
+        if match is None or match <= previous_index:
             return False
+        taken.add(match)
+        previous_index = match
     return True
 
 

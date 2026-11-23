@@ -7,12 +7,14 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-122 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+123 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 156 further findings are left out of this page.
 
 ## Rejected
 
+* 2026-11-22 [Deleting four rules the coder and reviewer already follow cuts 198 words per load with no behavior loss](../../../agent-evals/findings/2026-11-22-deleting-four-rules-the-coder-and-reviewer-already.md) - REMOVE: Four coder and reviewer rules score 8 of 8 with the rule and 8 of 8 without, so deleting them cuts about 198 words from each load and the agents behave the same. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-10-17 [Reuse line in architect plan steps, coder build: no hand-written sums in either arm](../../../agent-evals/findings/2026-10-17-reuse-line-in-architect-plan-steps-coder-build-no.md) - REMOVE: Reuse lines in architect plan steps changed no code: no coder hand-wrote the money sum with or without them (six payments-phase plans, one Sonnet coder each), and the rule adds 20% Opus architect output. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-14 [Quiet test output rule for the coder, dropped at smoke](../../../agent-evals/findings/2026-10-14-quiet-test-output-rule-for-the-coder-dropped-at.md) - REMOVE: The coder already reads about 3 tokens of test output per full-suite run by sending output to a log file, so a quiet-reporter rule has nothing to cut. [watch: no watch]

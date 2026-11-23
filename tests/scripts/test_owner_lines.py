@@ -45,6 +45,19 @@ class OwnerLinesOnlyTest(unittest.TestCase):
             "unrelated bullet put in place of a removed one": SCRIPTS_MD.replace(
                 "- Plan text: `lib/plan_format.py`.", "- Hook gates: `gates/x.py`."
             ),
+            "two bullets merged beside an unrelated added bullet": SCRIPTS_MD.replace(
+                "- Plan text: `lib/plan_format.py`.\n- TOML files: `lib/toml_file.py` `read_toml`.\n",
+                "- Plan text: `lib/plan_format.py` `lib/toml_file.py` `read_toml`.\n"
+                "- Hook gates: `gates/x.py`.\n",
+            ),
+            "two bullets swapped and lightly reworded": "".join(
+                [
+                    *lines[:4],
+                    lines[5].replace("TOML files", "TOML file"),
+                    lines[4].replace("Plan text", "Plan texts"),
+                    *lines[6:],
+                ]
+            ),
             "heading renamed": SCRIPTS_MD.replace("## Owners", "## Owner list"),
             "identical": SCRIPTS_MD,
             "blank line added with the bullet": SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n\n## Data"),
@@ -58,6 +71,12 @@ class OwnerLinesOnlyTest(unittest.TestCase):
         after = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
 
         self.assertFalse(owner_lines.owner_lines_only(before, after))
+
+
+    def test_a_non_bullet_line_in_owners_updated_to_the_bullet_form_is_false(self):
+        before = SCRIPTS_MD.replace("- Plan text: `lib/plan_format.py`.", "- Plan text: lib/plan_format.py.")
+
+        self.assertFalse(owner_lines.owner_lines_only(before, SCRIPTS_MD))
 
 
 class RealFileTest(unittest.TestCase):

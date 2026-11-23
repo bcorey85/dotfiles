@@ -344,6 +344,10 @@ Phase 1 ruling (Ticket #AC7 criterion, owner session): owner_lines_only requires
 
 Phase 3 held impact (narrow, no AC change): a fix pass could write the owner-lines ruling that a later round of the same run reads; deferred to phase end by the orchestrating session, 2026-11-22.
 
+Close pass ruling: the index and HEAD checks in staged_and_committed_match_work_tree (and their tests) stay; a fail-closed guard against an edit staged or committed with prose, no AC changed; ruled by the orchestrating session, 2026-11-22.
+
+Close pass ruling: a standing ruling that a fix pass writes mid-run still counts for later passes of the same run; rejected as out of scope, no AC changed, listed as an open item; ruled by the orchestrating session, 2026-11-22.
+
 ## References
 
 - ./00-ticket.md, ./01-questions.md, ./02-research.md, ./03-decisions.md

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1103 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1104 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md).
+Latest change: 2026-11-22, [A search ban with a quoted regex bar no longer reads GREEN on a hit](notes/2026-11-22-a-search-ban-with-a-quoted-regex-bar-no-longer.md).
 
 ## Top gains
 

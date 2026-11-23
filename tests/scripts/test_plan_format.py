@@ -632,6 +632,28 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
 
+    def test_a_pasted_brief_lane_ticket_with_one_source_line_per_item_is_session_owned(self):
+        # The ticket mirrors the real pasted-brief lane ticket shape;
+        # criteria_owner reads only the first queue Source line.
+        for slug in ("a", "b"):
+            self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug=slug)
+        pasted_item = '---\ntype: "QueueItem"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n'
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text(
+            "# Lane brief: x\n\n"
+            "Source: ~/agent-evals/queue/a.md\n"
+            "Source: ~/agent-evals/queue/b.md\n\n"
+            "## Brief (verbatim)\n\n"
+            "Do items a and b.\n"
+            "git -C ~/agent-evals show origin/bench-base:queue/a.md\n\n"
+            f"## Queue item 1 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n\n"
+            f"## Queue item 2 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n")
+
+        owner = plan_format.criteria_owner(ticket)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/a.md")
+
     def test_a_source_outside_the_queue_folder_never_changes_the_owner(self):
         owner = plan_format.criteria_owner(self.ticket("Source: product-specs/a.md"))
 

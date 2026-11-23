@@ -18,7 +18,7 @@ The /code review loop reverts every fix-pass edit to a CLAUDE.md. After this cha
 - [x] Phase 1: Owner-line grammar and the two-sided diff helper (risk: low)
 - [x] Phase 2: Standing rulings learn `covers: owner-lines` (risk: low)
 - [x] Phase 3: The review loop keeps a ruled owner-line edit (risk: high)
-- [ ] Phase 4: Item 2 replay pin, glossary, change file (risk: low)
+- [x] Phase 4: Item 2 replay pin, glossary, change file (risk: low)
 - [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 Single-slice plan: the contracts (the owner-line grammar, the ruling form, the host fields) are folded into Phases 1 and 2, which are also the walking skeleton. Phase 0 is omitted on purpose.

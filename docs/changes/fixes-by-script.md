@@ -71,6 +71,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/format-files | 4 | 0 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
+| script/review-loop-ruled | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
 | script/run-sh | 4 | 0 |
 | script/source-paths | 4 | 0 |
@@ -87,7 +88,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/phase-start | 3 | 2 |
 | script/plan-check | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
-| script/review-loop-ruled | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
 | script/wait-loop-gate | 3 | 0 |
@@ -186,6 +186,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
+| script/standing-rulings | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |

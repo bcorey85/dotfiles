@@ -27,7 +27,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 9: lane-status (risk: low)
 - [x] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
 - [x] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
-- [ ] Phase 12: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 12: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
 
@@ -552,9 +552,9 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 
 #### Automated Verification
 
-- [ ] `bash tests/run.sh`
-- [ ] `git diff --name-only 8436be97..HEAD | grep -c '^tests/scripts/test_' | awk '$1 >= 13 {exit 0} {exit 1}'` (phases 0-10 name 13 test files, 6 edited and 7 new; every one is in the diff)
-- [ ] `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-herdr-tools-nov22/docs/changes`
+- [x] `bash tests/run.sh`
+- [x] `git diff --name-only 8436be97..HEAD | grep -c '^tests/scripts/test_' | awk '$1 >= 13 {exit 0} {exit 1}'` (phases 0-10 name 13 test files, 6 edited and 7 new; every one is in the diff)
+- [x] `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-herdr-tools-nov22/docs/changes`
 
 #### Manual Verification
 

@@ -121,6 +121,16 @@ class OwnerLinesOnlyTest(unittest.TestCase):
 
         self.assertTrue(owner_lines.owner_lines_only(before, after))
 
+    def test_a_bullet_added_right_above_an_updated_look_alike_bullet_is_true(self):
+        head = "# Toolkit scripts\n\n## Owners\n\n"
+        first = "- Plan text: `lib/plan_format.py`."
+        added = "- Plan text sections: `lib/plan_sections.py`."
+
+        before = f"{head}{first}\n"
+        after = f"{head}{added}\n{first} `read`\n"
+
+        self.assertTrue(owner_lines.owner_lines_only(before, after))
+
     def test_a_non_owner_line_in_owners_replaced_by_an_owner_bullet_is_false(self):
         before = SCRIPTS_MD.replace("\n## Data", "Some prose.\n\n## Data")
         after = SCRIPTS_MD_WITH_NEW_BULLET

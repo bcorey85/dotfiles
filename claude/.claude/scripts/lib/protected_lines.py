@@ -34,17 +34,17 @@ def with_final_newline(text):
 def lines_rewritten_in_place(before_lines, after_lines, rival_lines):
     """True when each of `before_lines`, in order, is like its own line of `after_lines` at REWRITE_RATIO or better,
     and no line of `rival_lines` is more like it than its own (an update in place, not a reorder).
-    Each old line takes the first such new line after the previous match, so no two share one."""
+    Each old line takes the most like such new line (the earliest on a tie) after the previous match, so no two
+    share one."""
     next_index = 0
     for before_line in before_lines:
         own_index = None
         own_score = 0.0
         for index in range(next_index, len(after_lines)):
             score = script_utils.text_similarity(before_line, after_lines[index])
-            if score >= REWRITE_RATIO:
+            if score >= REWRITE_RATIO and score > own_score:
                 own_index = index
                 own_score = score
-                break
         if own_index is None:
             return False
         for rival_line in rival_lines:

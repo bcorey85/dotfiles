@@ -1343,6 +1343,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands as written"])
 
         self.assertEqual(code, 0, output)
+        self.assertIn("rerun your review loop (`/code resume`)", output)
+        self.assertNotIn("nothing is re-dispatched", output)
         with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
             kept = handback_store.rulings(SESSION, repo_key)
         self.assertEqual(kept.adopted, ())

@@ -64,7 +64,7 @@ The architect named three.
 <!-- Fixed-before-design non-negotiables. Probe-verified facts an implementation step needs go here with evidence, each tagged `exercised` or `declared-only`. -->
 
 - Script rules (`docs/toolkit-script-rules.md`): snake_case; `bash tests/lint.sh <files>` passes; tests under `tests/scripts/` with paths from `toolkit_paths.py`; run through `python3 tests/parallel_tests.py <file>`; one grammar per format with loud failures; search `lib/` before adding a helper. `exercised`: the rules file is in the tree.
-- Off-limits in this lane: `claude/.claude/skills/code/**`, `claude/.claude/scripts/code/**` (so `plan_check.py:48` stays as it is and `reword_ruling` keeps its signature), `claude/.claude/CLAUDE.md`, `orchestration.md`, every CLAUDE.md, `settings.json`. Ruling by agent-evals-c3, 2026-11-22.
+- Off-limits in this lane: `claude/.claude/skills/code/**`, `claude/.claude/scripts/code/**` (so `plan_check.py:48` stays as it is and `reword_ruling` keeps its signature), `claude/.claude/CLAUDE.md`, `orchestration.md`, every CLAUDE.md, `settings.json`. Ruling by agent-evals-c3, 2026-11-22. Exception: `claude/.claude/scripts/code/coder_report.py` is edited for the adopt-already-applied widening (`ALREADY_APPLIED_MARKER`, `issue_marker_lines`, `already_applied_issues`), with the `decide keep` route for an adopted, unapplied impact (`review_fix_adopted.py`, the `adopted_unapplied` packet key); ruling by agent-evals-c3, 2026-11-23.
 - No owner line is added to `claude/.claude/scripts/CLAUDE.md` for the new module; the owner is stated in the module docstring. Ruling by agent-evals-c3, 2026-11-22.
 - `review_loop_ruled.py` is 665 lines (`exercised`, `wc -l`), under the 1000-line split rule; the three new methods keep it under.
 - Every owner bullet in the in-tree history of the scripts CLAUDE.md (53 added bullets, 45 of them under `## Owners`) and all 26 current ones match `^- <fact>: … \`<dir>/<name>.py\``; the 8 history bullets that do not match are prose bullets outside Owners (`exercised`, the plan reviewer's `git log -p` sweep and the architect's). The grammar is written from that list.
@@ -348,7 +348,7 @@ Close pass ruling: the index and HEAD checks in staged_and_committed_match_work_
 
 Close pass ruling: a standing ruling that a fix pass writes mid-run still counts for later passes of the same run; rejected as out of scope, no AC changed, listed as an open item; ruled by the orchestrating session, 2026-11-22.
 
-Open items (close pass, recorded here; ruled by the orchestrating session, 2026-11-23): (1) the mid-run-ruling gap: a standing ruling that a fix pass writes mid-run does not count for later passes of the same run. (2) The index and HEAD checks in staged_and_committed_match_work_tree stay, although the "What We're NOT Doing" list says otherwise. (3) closest_line is picked greedily (best score) in protected_lines.rewritten_stretch; that function needs neither order nor a guaranteed match, so it is left alone.
+Open items (close pass, recorded here; ruled by the orchestrating session, 2026-11-23): (1) a standing ruling that a fix pass writes mid-run still counts for later passes of the same run. (2) The index and HEAD checks in staged_and_committed_match_work_tree stay. (3) closest_line is picked greedily (best score) in protected_lines.rewritten_stretch; that function needs neither order nor a guaranteed match, so it is left alone.
 
 - 2026-11-23: Adopt plan change. Ruled by the session, not the user at 2026-11-23 00:47.
 

@@ -863,8 +863,12 @@ def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None)
                                row_impacts=row_impacts)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
-        return print_settled(settle_ruling("keep"), logged_line, *entry,
-                             "The plan stays as written: nothing is re-dispatched.")
+        if source.row_per_text:
+            kept_line = ("The plan stays as written. The hand-back stopped on an adopted change the coder never "
+                         "applied: rerun your review loop (`/code resume`) so the keep ruling settles it.")
+        else:
+            kept_line = "The plan stays as written: nothing is re-dispatched."
+        return print_settled(settle_ruling("keep"), logged_line, *entry, kept_line)
     if handback.adopt_settles(source.packet, source.held):
         return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)
     return print_action("stop", logged_line, *entry,

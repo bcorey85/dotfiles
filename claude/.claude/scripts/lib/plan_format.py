@@ -1448,14 +1448,17 @@ def home_queue_prefix():
 
 def queue_source_line(ticket_lines):
     """(line number, value) of the ticket's first `Source:` line whose value starts with the queue folder (spelled
-    `~/agent-evals/queue/` or with the home folder), with markdown marks stripped and the home spelling turned into
-    `~`; None when no line does."""
+    `~/agent-evals/queue/` or with the home folder), with markdown marks stripped from its ends and the home spelling
+    turned into `~`; None when no line does. Marks are stripped only from the ends of the path word, never inside
+    it: a path may hold an underscore."""
     home_prefix = home_queue_prefix()
     for number, line in enumerate(ticket_lines, 1):
-        match = SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip())
-        if not match:
+        if not SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip()):
             continue
-        value = match.group(1)
+        after_label = line.split(":", 1)[1].strip().lstrip("*_`").strip()
+        path_word, _, trailing_text = after_label.partition(" ")
+        path = path_word.strip("*_`")
+        value = f"{path} {trailing_text}".strip()
         if value.startswith(home_prefix):
             value = QUEUE_SOURCE_PREFIX + value[len(home_prefix):]
         if value.startswith(QUEUE_SOURCE_PREFIX):

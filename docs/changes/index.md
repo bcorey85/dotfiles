@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1102 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1103 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md).
+Latest change: 2026-11-22, [The queue Source line keeps underscores inside a path](notes/2026-11-22-the-queue-source-line-keeps-underscores-inside-a.md).
 
 ## Top gains
 

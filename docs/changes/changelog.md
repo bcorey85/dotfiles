@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1117 changes
+1119 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Toolkit scripts guide names the owner of the review scope guard](notes/2026-11-22-toolkit-scripts-guide-names-the-owner-of-the.md) [rule/scripts-claude-md, script/review-loop] The owners list in the toolkit scripts guide now points to the module that owns which files a review fix pass must leave alone, so a later edit reuses it in place of writing a second guard.
 * [Research deep dives hand each cloned repo to its own subagent](notes/2026-11-22-research-deep-dives-hand-each-cloned-repo-to-its.md) [skill/research] A research deep dive into several cloned repos now starts one subagent per repo and compares their reports, which cuts the main session's cached reads 44% to 78% so a long dive stops compacting mid-task; the whole run spends 2.6 to 3.1 times the tokens on small repos. **cuts tokens by 78% (143k → 31k)**
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
@@ -49,6 +50,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [Cutting two edit hooks whose warnings never reached the model drops two Python starts per edit](notes/2026-11-22-cutting-two-edit-hooks-whose-warnings-never.md) [shared/hooks] The rationale-and-path prose check and the reviewer calibration heading check ran after every Write or Edit but exited 0, so their output showed only in transcript view; removing them saves about 70 ms of hook time per edit with no change in what the model sees.
 * [Folding test-review into test-audit cuts one always-loaded skill description and a routing choice](notes/2026-11-22-folding-test-review-into-test-audit-cuts-one.md) [skill/test-review, skill/test-audit, agent/test-reviewer] The test-review skill folds into test-audit as a review mode, so the always-loaded skill list drops one entry and the two descriptions (98 words) become one (60).
 * [Deleting brainstorm, brief, deps and walk cuts about 215 description words from every session](notes/2026-11-22-deleting-brainstorm-brief-deps-and-walk-cuts-about.md) [skill/brainstorm, skill/brief, skill/deps, skill/walk, skill/orient, agent/coder, skill/code] The brainstorm, brief and deps skills are deleted and walk folds into orient, so the skill list every session loads is four entries and about 215 description words shorter.
 * [Four rules the coder and reviewer already follow are deleted, 198 fewer words per load](notes/2026-11-22-four-rules-the-coder-and-reviewer-already-follow.md) [skill/coder-core, agent/code-reviewer] Four rules the meter found the coder and code-reviewer already follow without them are deleted, 198 fewer words on every coder and code-reviewer load, with no change in behavior.

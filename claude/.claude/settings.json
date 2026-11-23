@@ -260,15 +260,6 @@
         ]
       },
       {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/calibration_refs_guard.py"
-          }
-        ]
-      },
-      {
         "matcher": "(Write|Edit|MultiEdit|NotebookEdit)",
         "hooks": [
           {
@@ -310,10 +301,6 @@
           {
             "type": "command",
             "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/claudemd_linecount.py"
-          },
-          {
-            "type": "command",
-            "command": "sh ~/.claude/scripts/tools/hook-python ~/.claude/scripts/gates/dead_prose_gate.py"
           },
           {
             "type": "command",

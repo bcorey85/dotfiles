@@ -23,7 +23,7 @@ Prose edits to agents, skills and `_shared` files under `claude/.claude/` from t
 - [x] Phase 5: Item 5 — finding-log and skimmable folds, pointer triggers, consumer lists, cull-rule owner (risk: high)
 - [x] Phase 6: Item 2 remainder — review-fork-run, coder-core verify list, calibration dedupe, eng-spec agents (risk: high)
 - [x] Phase 7: Item 6 — PLAN-IMPACT rule owner and the code-reviewer calibration pointer (risk: high)
-- [ ] Phase 8: Item 7 — derivable-list rule, plant, detector and scenario (risk: low)
+- [x] Phase 8: Item 7 — derivable-list rule, plant, detector and scenario (risk: low)
 - [ ] Phase 9: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions

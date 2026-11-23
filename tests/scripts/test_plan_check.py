@@ -71,15 +71,15 @@ class PlanCheckCliTest(unittest.TestCase):
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
         self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["session"])
 
-    def queue_home(self, author):
-        home = self.folder / "home"
+    def queue_home(self, author, home_name="home"):
+        home = self.folder / home_name
         queue_dir = home / "agent-evals" / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
         (queue_dir / "item.md").write_text(f'---\ngenerated: {{"by": "{author}", "at": "2026-11-01"}}\n---\n')
         return home, {**os.environ, "HOME": str(home)}
 
-    def owner_with_source(self, author, source):
-        home, env = self.queue_home(author)
+    def owner_with_source(self, author, source, home_name="home"):
+        home, env = self.queue_home(author, home_name)
         source_value = source.replace("<home>", str(home))
         (self.folder / "00-ticket.md").write_text(
             f"# Lane\n\nSource: {source_value}\n\nBrief restated.\n\n## Done when\n\n- Words.\n")
@@ -89,6 +89,12 @@ class PlanCheckCliTest(unittest.TestCase):
 
     def test_owner_prints_session_when_the_source_line_spells_the_queue_path_with_the_home_folder(self):
         owner = self.owner_with_source("claude-code/x", "<home>/agent-evals/queue/item.md")
+
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_reads_a_home_folder_path_that_holds_an_underscore(self):
+        owner = self.owner_with_source("claude-code/x", "**<home>/agent-evals/queue/item.md**", "home_dir")
 
         self.assertEqual(owner["owner"], "session")
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
@@ -154,7 +160,7 @@ def phase_plan(first_mark, second_mark, first_items="", second_items="", extra="
 
 
 class SpecAcRowsTest(unittest.TestCase):
-    STANDING = 'Standing ruling by Pat at 2026-11-19: "every criterion reword follows one rule" covers: rewords'
+    STANDING = 'Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords'
     CRITERIA = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, reworded)\n")
 
     def setUp(self):
@@ -180,7 +186,7 @@ class SpecAcRowsTest(unittest.TestCase):
         self.assertEqual(len(self.spec_rows("- none")), 1)
 
     def test_a_bad_standing_line_gives_one_row_naming_the_plan_file_and_line(self):
-        rows = self.spec_rows('Standing ruling by Pat at yesterday: "x" covers: rewords')
+        rows = self.spec_rows('Standing ruling by Pat at yesterday: x covers: rewords')
 
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].startswith(f"{self.spec}:5:"), rows[0])

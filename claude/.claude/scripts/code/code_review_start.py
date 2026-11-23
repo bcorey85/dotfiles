@@ -43,6 +43,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 import code_wait
 import coder_gate
 import expected_red
+import fix_coder_written
 import gate_commands
 import gate_env
 import handback_hook
@@ -148,8 +149,9 @@ def held_note(notes, message):
 def phase_held_files(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
     """The holder rows {"path", "session", "claim"} of the files another session holds: dirty at the run start
     (phase_start.py's record) with the same bytes now, while a live session other than this run's works inside the
-    repo. With no such session the files are the run's own. A file an earlier phase of the plan names is the run's
-    own too. No record holds none; the missing record is noted on stderr and in `notes`."""
+    repo. With no such session the files are the run's own. A file an earlier phase of the plan names, or the review
+    loop's fix coder wrote (fix_coder_written), is the run's own too. No record holds none; the missing record is
+    noted on stderr and in `notes`."""
     try:
         unchanged = phase_start.unchanged_dirty_files(repo, base_commit)
     except phase_start.StartRecordError as error:
@@ -159,7 +161,8 @@ def phase_held_files(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
                          f"as this phase's own. Run `{phase_start.COMMAND}` before each phase's coder dispatch.")
         return []
 
-    candidates = script_utils.without_paths(unchanged, earlier_phase_files(repo, plan, phase))
+    own_files = [*earlier_phase_files(repo, plan, phase), *fix_coder_written.recorded(repo)]
+    candidates = script_utils.without_paths(unchanged, own_files)
     if not candidates:
         return []
 

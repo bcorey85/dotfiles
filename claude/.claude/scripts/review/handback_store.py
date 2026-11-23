@@ -42,8 +42,8 @@ ASK_REJECTED = "ask-rejected"
 # A correction that turned a rejected ask into an accepted one: it cancels the ASK_REJECTED row of the same text.
 ASK_REJECTION_WITHDRAWN = "ask-rejection-withdrawn"
 ASKS_LOGGED_ROW = "asks-logged"
-# One user ruling on user-only asks that another session relayed: who relayed it, the user's quoted words and the
-# timestamp of the user turn that holds them. No other transcript text is stored.
+# One user ruling on user-only asks that another session relayed: who relayed it and the timestamp of the user
+# turn that backs it. No transcript text is stored.
 ASK_RULING_RELAYED = "ask-ruling-relayed"
 # One user ruling on a held plan impact that another session relayed to `decide`, with the same fields and the
 # impact's text.
@@ -120,13 +120,12 @@ class AdoptedRuling(NamedTuple):
     ruled_at: str
 
 
-def record_relayed_plan_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, text):
+def record_relayed_plan_ruling(session_id, repo, ruler, relayed_by, turn_timestamp, text):
     """Records that `ruler` (the user) ruled the plan impact `text` in `repo` through the session `relayed_by`:
-    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them. Does nothing
-    without a session id."""
+    `turn_timestamp` is the time of the user turn that backs it. Does nothing without a session id."""
     if not session_id:
         return None
-    return record(session_id, PLAN_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+    return record(session_id, PLAN_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by,
                   turn_ts=turn_timestamp, text=text)
 
 
@@ -219,10 +218,10 @@ def record_rejected_ask(session_id, text, repo):
     return record(session_id, ASK_REJECTED, text=text, repo=repo)
 
 
-def record_relayed_ruling(session_id, repo, ruler, relayed_by, quote, turn_timestamp, finding_ids):
+def record_relayed_ruling(session_id, repo, ruler, relayed_by, turn_timestamp, finding_ids):
     """Records that `ruler` (the user) ruled the asks `finding_ids` in `repo` through the session `relayed_by`:
-    `quote` is the user's own words and `turn_timestamp` the time of the user turn that holds them."""
-    return record(session_id, ASK_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by, quote=quote,
+    `turn_timestamp` is the time of the user turn that backs it."""
+    return record(session_id, ASK_RULING_RELAYED, repo=repo, ruler=ruler, relayed_by=relayed_by,
                   turn_ts=turn_timestamp, finding_ids=finding_ids)
 
 

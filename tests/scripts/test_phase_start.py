@@ -79,12 +79,29 @@ class PhaseStartTest(unittest.TestCase):
         (self.repo / "theirs.py").write_text("# another session's edit\n")
         self.phase_start()
         (self.repo / "mine.py").write_text("# the first phase's file\n")
+        (self.repo / ".git/code-phase/handoff.txt").write_text(self.handoff.read_text())
 
         done = self.phase_start()
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), git(self.repo, "rev-parse", "HEAD"))
         self.assertEqual(self.recorded_dirty(), ["theirs.py"])
+
+    def test_a_holder_first_dirty_at_a_later_phase_start_is_held_and_the_phases_own_file_is_not(self):
+        self.phase_start()
+        (self.repo / "mine.py").write_text("# the first phase's file\n")
+        (self.repo / "theirs.py").write_text("# an edit another session made during phase one\n")
+        (self.repo / ".git/code-phase/handoff.txt").write_text(self.handoff.read_text())
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.recorded_dirty(), ["theirs.py"])
+        (self.repo / "shared.py").write_text("# the second phase's coder\n")
+        self.register_live_session("other-session", self.repo)
+        review = self.review_prompt(done.stdout.strip())
+        header = review.stdout.partition("\n\n")[0]
+        self.assertIn("held files: theirs.py", header.splitlines())
 
     def test_new_run_replaces_the_record(self):
         (self.repo / "theirs.py").write_text("# another session's edit\n")

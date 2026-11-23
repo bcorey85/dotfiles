@@ -634,7 +634,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_packet_reads_standing_rulings_from_the_plan_it_is_given(self):
         plan = self.temp_root / "plan.md"
-        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan.write_text('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                         "covers: rewords\n")
 
         _code, without_plan = self.reword_packet()
@@ -673,7 +673,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_a_held_reword_impact_with_a_standing_ruling_prints_a_deviation_line_naming_it_and_no_ask(self):
         reword = {**HELD_IMPACT, "reword": True}
-        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
         output = self.present_with_plan([reword], plan_text)
@@ -686,7 +686,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_a_reword_impact_the_loop_adopted_prints_the_standing_ruling_not_the_code_wins_line(self):
         adopted_reword = {**HELD_IMPACT, "reword": True, "ac_change": True, "adopted": True, "applied": True}
-        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
         output = self.present_with_plan([adopted_reword], plan_text)
@@ -694,7 +694,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("standing ruling by Pat at 2026-11-19", output)
         self.assertNotIn("the code wins", output)
 
-    STANDING_PLAN = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+    STANDING_PLAN = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
     def test_a_standing_adoption_credits_the_review_and_prints_the_refusal_when_there_is_one(self):
@@ -752,7 +752,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_the_standing_deviation_line_is_owned_by_the_session_with_one_time_and_no_rule_list(self):
         reword = {**HELD_IMPACT, "reword": True}
-        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
         output = self.present_with_plan([reword], plan_text)
@@ -765,7 +765,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_reword_and_a_rule_adopted_impact_each_print_once(self):
         reword = {**HELD_IMPACT, "reword": True}
         by_rule = {**ADOPTED_IMPACT, "reword": False}
-        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
         output = self.present_with_plan([reword, by_rule], plan_text)
@@ -778,7 +778,7 @@ class ReviewFixScriptTest(unittest.TestCase):
 
     def test_a_bad_standing_ruling_line_is_named_by_file_and_line_and_the_impact_stays_held(self):
         reword = {**HELD_IMPACT, "reword": True}
-        plan_text = '# Plan\n\n## Plan Deviations\n\nStanding ruling by Pat at yesterday: "x" covers: rewords\n'
+        plan_text = '# Plan\n\n## Plan Deviations\n\nStanding ruling by Pat at yesterday: x covers: rewords\n'
 
         output = self.present_with_plan([reword], plan_text)
 
@@ -789,7 +789,7 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_held_cut_impact_still_asks_when_a_standing_ruling_covers_rewords(self):
         reword = {**HELD_IMPACT, "reword": True}
         cut = {**HELD_IMPACT, "text": "AC-3 is dropped"}
-        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: "follow one rule" '
+        plan_text = ('# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at 2026-11-19: follow one rule '
                      "covers: rewords\n")
 
         output = self.present_with_plan([reword, cut], plan_text)

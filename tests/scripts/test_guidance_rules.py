@@ -106,8 +106,9 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("orchestration.md")
         self.assertIn("Never submit text in another session's input box to answer a question put to the user, and "
                       "never tell the user to answer in another pane.", text)
-        self.assertIn("Put the question to the user in this pane, then send that session the user's own words with "
-                      "SendMessage, quoted and dated", text)
+        self.assertIn("Put the question to the user in this pane, then send that session the user's ruling with "
+                      "SendMessage", text)
+        self.assertIn("Never send the user's words", text)
         self.assertNotIn("answer in that pane", text)
 
     def test_a_session_that_forks_a_worktree_keeps_the_user_in_its_own_pane(self):

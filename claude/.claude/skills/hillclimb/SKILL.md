@@ -1,8 +1,19 @@
-# Lane: retro — fixes to the environment from one session
+---
+name: hillclimb
+description: Reads one session and queues the environment fixes that would have made it go better.
+disable-model-invocation: true
+allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__ledger__search, mcp__ledger__session]
+---
+
+# Hillclimb — fixes to the environment from one session
+
+Every change to a skill, agent or log is the user's call: queue the candidates you judge worth a fix and log each one you queued or skipped.
 
 Read one session and propose changes to the toolkit or repo that would have made it go better. The output is environment changes only; the session's own code stays as it is.
 
 ## Input
+
+$ARGUMENTS
 
 - Load the `toolkit-writing` skill first. Its terms (no-op, duplicate, cache, sprawl, weak pointer, sediment, dense rule) judge every steering file you read.
 - No argument: the current session.
@@ -49,15 +60,17 @@ Classify each mistake first. A mechanical one (a fixed pattern, a banned API, a 
 
 ## Before you report
 
-For each candidate run `python3 ~/agent-evals/bin/build_queue.py prior "<title, no backticks or $>"`. A `same idea` hit: name that item and drop the candidate, or mark it "adds to <item>". `~/agent-evals` missing: say queue checks were not run.
+For each candidate run `python3 ~/agent-evals/bin/build_queue.py prior "<title, no backticks or $>"`. `~/agent-evals` missing: queue nothing and say so in the log.
 
-## Report
+## Queue
 
-A numbered list, most costly first, at most 7. Each: title, its row in the table above, the moment (index + quote), the fix and its file, the queue match. Findings from reading the environment cite the file and line in place of a moment. Queue nothing yet. End with one line: reply with the numbers to queue.
+Decide each candidate yourself. Never ask the user which to queue.
 
-## Queue the picks
+- Queue it when the moment lost work, wrote a wrong record, let a defect through unseen, or happened more than once.
+- Queue it when its `same idea` match is closed and the moment came after that fix: name the match in `--not-dup`.
+- Skip it when its `same idea` match is still open, or when it happened once and the session recovered with no help.
 
-Queue only the numbers the user picks, then list the queue file written for each. A component id is kebab-case, such as `script/build-queue`. One command each:
+A component id is kebab-case, such as `script/build-queue`. One command for each candidate you queue:
 
 ```bash
 python3 ~/agent-evals/bin/build_queue.py new "<title, no backticks or $>" --by <model>/main --kind <chore|method|live-edit> --source <toolkit path the fix touches> --components <ids> --description "<one sentence naming the gain, no backticks or $>" --body - <<'EOF'
@@ -70,3 +83,7 @@ EOF
 ```
 
 On the work machine, write only the toolkit part: no work code, paths, ticket text or tool output.
+
+## Report
+
+A log of every candidate, most costly first, at most 7, in two lists: `Queued` and `Skipped`. Each line: title, its row in the table above, the moment (index + quote), then the queue file written, or the reason it was skipped and the queue match. Findings from reading the environment cite the file and line in place of a moment.

@@ -30,6 +30,7 @@ Prefer current-year results; pre-2-year only if canonical (RFCs, specs).
 WebFetch the top 2-3 results (never snippets alone).
 
 - Version-specific guidance, official-vs-workaround, gotchas and deprecations, perf and security implications.
+- For a deep dive into several cloned repos, start one subagent per repo that returns each mechanism with its file path, then compare them in the main session. Never read every repo's files in the main session.
 
 ### Phase 4: Synthesize and Present
 

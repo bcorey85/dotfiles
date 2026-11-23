@@ -15,6 +15,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import finding_record
+import fix_coder_written
 import review_loop_calls
 import review_loop_closure
 import review_loop_coder
@@ -124,6 +125,11 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.assertFalse((self.repo / "dup.py").exists())
         self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
         self.assertNotIn("dup.py", review_loop_untracked.LOOP_WRITTEN)
+
+    def test_a_file_the_fix_coder_wrote_is_recorded_for_the_next_code_review_start(self):
+        self.call("coder1", lambda repo: (repo / "fix_made.py").write_text("x\n"))
+
+        self.assertEqual(fix_coder_written.recorded(self.repo), {"fix_made.py"})
 
     def test_a_file_a_failed_call_made_stays_deleted_with_no_fault_note(self):
         def write_then_die(repo):

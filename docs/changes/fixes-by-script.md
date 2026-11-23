@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-696 fix notes
+702 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -25,8 +25,8 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/script-utils | 26 | 5 |
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
+| script/review-loop | 21 | 5 |
 | agent/review-loop | 20 | 0 |
-| script/review-loop | 19 | 3 |
 | script/verify-prep | 18 | 4 |
 | skill/code | 18 | 1 |
 | script/shell-command | 17 | 9 |
@@ -36,14 +36,14 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
 | script/log-review-finding | 12 | 0 |
+| script/code-review-start | 11 | 4 |
 | script/code-wait | 11 | 4 |
 | script/log-escape | 11 | 3 |
 | script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
-| script/code-review-start | 10 | 3 |
+| script/criteria-dry-run | 10 | 3 |
 | script/review-asks | 10 | 6 |
-| script/criteria-dry-run | 9 | 2 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/review-fix-asks | 8 | 5 |
 | script/review-launch | 8 | 3 |
@@ -85,6 +85,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
 | script/phase-start | 3 | 2 |
+| script/plan-check | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-loop-ruled | 3 | 3 |
 | script/review-scope | 3 | 0 |
@@ -110,7 +111,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
 | script/permission-question | 2 | 1 |
-| script/plan-check | 2 | 2 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
@@ -140,6 +140,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
 | script/clone-pairs | 1 | 1 |
+| script/code-phase-start | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
 | script/concentration | 1 | 0 |
@@ -188,6 +189,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |
+| script/test-suite | 1 | 1 |
 | script/tests | 1 | 0 |
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |

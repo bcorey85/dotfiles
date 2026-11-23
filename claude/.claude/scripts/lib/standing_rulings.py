@@ -3,19 +3,20 @@ of criterion changes, and the test for a plan impact that only rewords a criteri
 
 A standing ruling is one line in the plan's `## Plan Deviations` section or in `03-decisions.md` beside the plan:
 
-    Standing ruling by <who> at <YYYY-MM-DD>: "<the user's quoted words>" covers: rewords
+    Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase> covers: rewords
 
-`covers` is `rewords` only. A cut or a narrowing is never covered."""
+`covers` is `rewords` only. A cut or a narrowing is never covered. The paraphrase holds no quote mark: a standing
+ruling never stores the user's words."""
 import re
 
 import plan_format
 import script_utils
 
 COVERS_REWORDS = "rewords"
-STANDING_RULING_FORM = 'Standing ruling by <who> at <YYYY-MM-DD>: "<the user\'s quoted words>" covers: rewords'
+STANDING_RULING_FORM = "Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase, no quote marks> covers: rewords"
 STANDING_RULING_START = re.compile(r"^\s*(?:[-*]\s+)?Standing ruling\b")
 STANDING_RULING_LINE = re.compile(
-    r'^\s*(?:[-*]\s+)?Standing ruling by (?P<who>\S.*?) at (?P<at>\d{4}-\d\d-\d\d): "(?P<quote>.+)" '
+    r'^\s*(?:[-*]\s+)?Standing ruling by (?P<who>\S.*?) at (?P<at>\d{4}-\d\d-\d\d): (?P<summary>[^"\u201c\u201d]+?) '
     rf"covers: (?P<covers>{COVERS_REWORDS})\s*\.?\s*$")
 # The `kind: reword` field of an impact block. It sits on its own line, or after a space or a dash when the lines of a
 # reviewer's ask were joined into one.
@@ -25,7 +26,7 @@ REWORD_KIND = "reword"
 
 def standing_rulings_in(lines, name, indexes=None):
     """The standing rulings among the 0-based `indexes` of `lines` (all of them by default) of the file `name`, as
-    [{who, at, quote, covers}]. A line that starts `Standing ruling` and does not match the form raises
+    [{who, at, summary, covers}]. A line that starts `Standing ruling` and does not match the form raises
     PlanFormatError (`name:line:`)."""
     rulings = []
     for index in range(len(lines)) if indexes is None else indexes:

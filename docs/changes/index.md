@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1104 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1114 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Every logged escape keeps its catch text and file, at every stage](notes/2026-11-22-every-logged-escape-keeps-its-catch-text-and-file.md).
+Latest change: 2026-11-22, [The session retro moves out of audit into its own hillclimb skill](notes/2026-11-22-the-session-retro-moves-out-of-audit-into-its-own.md).
 
 ## Top gains
 
@@ -19,7 +19,7 @@ Latest change: 2026-11-22, [Every logged escape keeps its catch text and file, a
 
 ## Total saved
 
-* tokens: 19.8M saved
+* tokens: 19.9M saved
 * cost: $53.01 saved
 * wall-clock: 1140 seconds saved
 
@@ -27,7 +27,7 @@ Each saving is the measured before and after of one change's finding, so a total
 
 ## Gains by metric
 
-* tokens: 3
+* tokens: 4
 * cost: 3
 * wall-clock: 1
 * quality: 14

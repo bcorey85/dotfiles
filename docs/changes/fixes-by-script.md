@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-694 fix notes
+695 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -26,9 +26,9 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/shell-write-gate | 24 | 9 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
+| script/review-loop | 18 | 2 |
 | script/verify-prep | 18 | 4 |
 | skill/code | 18 | 1 |
-| script/review-loop | 17 | 1 |
 | script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 7 |
@@ -58,6 +58,8 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/ledger-write | 6 | 2 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
+| script/format-changed | 5 | 1 |
+| script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
 | script/parallel-tests | 5 | 0 |
@@ -67,8 +69,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
-| script/format-changed | 4 | 0 |
-| script/format-files | 4 | 0 |
 | script/herdr-phase-change | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/reviewed-tree | 4 | 2 |

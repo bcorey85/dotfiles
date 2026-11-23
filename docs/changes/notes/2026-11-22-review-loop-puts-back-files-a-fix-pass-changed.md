@@ -76,7 +76,8 @@ guard that kept nothing claims no folder); one test changed its setup so that th
 part of the change under review. `test_review_loop_named_tests.py`: the three tests that delete or rename a
 plan-named test now change the named test file in the work tree first, so it is under review, and the scenario gives a
 third clean review; a new test shows that a pass deleting a plan-named test file outside the review scope has the file
-put back and named in the packet's `tool_fault`.
+put back and named in the packet's `tool_fault`. `tests/changed_scope.py` lists the new test file as one that names a
+signal module and reads no prompt.
 
 ## Watch
 

@@ -7,6 +7,7 @@ import tempfile
 import typing
 
 import file_backup
+import fix_coder_written
 import script_utils
 
 # One note per model call that deleted an untracked file no coder of this loop made, for the packet's tool_fault.
@@ -33,9 +34,12 @@ def unheld_untracked(repo, held):
 
 def record_loop_written(repo, held, untracked_before):
     """Adds the untracked files present now that were not there before the call to LOOP_WRITTEN, and drops the
-    recorded files that are gone."""
+    recorded files that are gone. The new files also go in the
+    fix_coder_written record, which code_review_start.py reads."""
     untracked_after = unheld_untracked(repo, held)
-    LOOP_WRITTEN.update(untracked_after - untracked_before)
+    written = untracked_after - untracked_before
+    LOOP_WRITTEN.update(written)
+    fix_coder_written.add_paths(repo, written)
     LOOP_WRITTEN.intersection_update(untracked_after)
 
 

@@ -453,6 +453,15 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertEqual(held, [{"path": "theirs.py", "session": "lane-b", "claim": claim}])
         self.assertEqual(not_held, [])
 
+    def test_a_file_the_review_loops_fix_coder_wrote_is_never_held(self):
+        import fix_coder_written
+        live_row = {"sessionId": "s2", "name": "lane-b", "cwd": str(self.repo)}
+        fix_coder_written.add_paths(self.repo, {"fix_made.py"})
+
+        held = self.held_rows(["fix_made.py", "theirs.py"], live_row)
+
+        self.assertEqual([row["path"] for row in held], ["theirs.py"])
+
     def test_a_holder_with_no_name_is_recorded_by_its_session_id(self):
         held = self.held_rows(["theirs.py"], {"sessionId": "s2", "cwd": str(self.repo)})
 

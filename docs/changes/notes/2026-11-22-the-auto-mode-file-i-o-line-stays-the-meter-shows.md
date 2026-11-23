@@ -1,7 +1,7 @@
 ---
 type: "Change"
 change_type: "changed"
-title: "The auto-mode file-I/O line stays: the meter shows 6 Bash file writes with it and 9 without"
+title: "The auto-mode file-I/O line stays: the meter shows 6 Bash writes or inline interpreter calls with it and 9 without"
 description: "The orchestration line that keeps file I/O on Read, Edit and Write under the auto-mode notice was metered and kept: the on arm made 6 Bash writes or inline interpreter calls, the off arm 9, about 1.5 times as many."
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-22T20:25:58-06:00"}
 seq: 39

@@ -1,6 +1,6 @@
 # Decisions
 
-Rulings by the orchestrating session agent-evals-c3, 2026-11-22, delivered in the lane brief before planning began. Criteria owner: `session` (queue items written by sessions); agent-evals-c3 rules on cuts and rewordings and the record goes here.
+Rulings by the orchestrating session agent-evals-c3, 2026-11-22: rulings 1 to 7 came in the lane brief before planning began, ruling 8 later by SendMessage. Criteria owner: `session` (queue items written by sessions); agent-evals-c3 rules on cuts and rewordings and the record goes here. W10 is the lane's own ruling on a review ask; it changes no AC.
 
 1. **Meter every new or reworded line** (agent-evals-c3, 2026-11-22). Rule-meter on and off arms run before commit. New scenarios go in `~/agent-evals/bin/rule_meter_scenarios.json`; detector bodies in `~/agent-evals/bin/rule_meter_checks/` with tests; registration-only lines in `~/agent-evals/bin/rule_meter.py` are allowed. Run `git -C ~/agent-evals status bin/` right before each edit there and stop if a rule_meter file is dirty. Each new scenario's `toolkit_root` is `/home/brandon/dotfiles/claude/.claude` at the final commit. Budget: 24 opus runs per item, one run per cell first.
 2. **toolkit-writing gates every line** (agent-evals-c3, 2026-11-22). Load the skill before writing; a line it flags as a no-op or duplicate does not ship.
@@ -13,7 +13,7 @@ Rulings by the orchestrating session agent-evals-c3, 2026-11-22, delivered in th
 
 ## Queue (from the backend-architect exploration brief, 2026-11-22)
 
-> Status: 12/12 resolved (agent-evals-c3, 2026-11-22, by SendMessage: "approve the rest"; D8 yes, Q4 yes, Q5 yes, Q7 changed).
+> Status: 13/13 resolved (agent-evals-c3, 2026-11-22, by SendMessage: "approve the rest"; D8 yes, Q4 yes, Q5 yes, Q7 changed).
 
 - [x] D1. Item 1 arms: the meter always appends the live global, so run pre-merge with `rule_source` CLAUDE.md and `toolkit_root` = this worktree (on = old global + new line, off = old global + old line); the final scenario is global form (no `rule_source`, no `toolkit_root`), which reads the live global after the merge. Rec: this. Other: a meter code change so `rule_source` CLAUDE.md replaces the global (beyond registration-only).
 - [x] D2. Item 1 wording. Rec: append one sentence after the go-ahead line: "An owner line in `claude/.claude/scripts/CLAUDE.md` is the exception: the orchestrating session's go-ahead covers it." The off arm is today's line exactly. Other: an inline carve-out in the never list (denser).
@@ -24,28 +24,29 @@ Rulings by the orchestrating session agent-evals-c3, 2026-11-22, delivered in th
 - [x] D7. Item 2 deleted-line scenario: `rule_trials build` reads `rule_text` from the scenarios file, so a deleted scenario loses its text on rebuild. Rec: keep the text in its `bin/rule_trial_notes.json` note. Other: accept the loss; extend rule_trials (beyond scope).
 - [x] D8. Commit order across repos. With live roots (ruling 1), `check_rule_texts` fails for items 1 and 3 until the dotfiles branch merges, and it runs on every `run-all` without `--rule`. Rec: the lane commits the agent-evals changes on branch `toolkit-rules-nov22` in `~/agent-evals` (live roots, global form for item 1) and pushes it; agent-evals-c3 merges it right after the dotfiles merge. Other: commit to the agent-evals default branch with worktree roots and queue the flip (roots rot).
 - [x] Q2. Plants as registration. Rec: a plant file set under `bin/rule_meter_plants/<name>/` is data and one `PLANTS` entry is registration; allowed under ruling 1.
-- [x] Q4. Change-file kind for items 2 and 3 (no user ask, so not `user-rule`). Rec: `structured`, each with one finding under `~/agent-evals/findings/` at `runs_per_arm` 8, neutral level (16 opus runs, inside the 24 budget) after the one-run-per-cell smoke. Item 1 is `user-rule` with the user's 2026-11-22 words. Other: `unmeasured` for the kind (misreports a measured line).
+- [x] Q4. Change-file kind for items 2 and 3 (no user ask, so not `user-rule`). Rec: `structured`, each with one finding under `~/agent-evals/findings/` at `runs_per_arm` 8, neutral level (16 neutral runs, 2 of them from the smoke; 20 opus runs in all, inside the 24 budget), counting the one-run-per-cell smoke. Item 1 is `user-rule` with the user's 2026-11-22 words. Other: `unmeasured` for the kind (misreports a measured line).
 - [x] Q5. Item 3 reword of the ticket's done-when. The hook denies an omitted `model` for any agent without a pinned file (Explore, Plan; `web-fetch` is rewritten to haiku), so "omit `model` or set sonnet or haiku" is wrong as written. Rec line (one bullet under Delegation): "On an Agent call leave `model` out when the agent's file pins one (every file under `agents/` does), else set `sonnet` or `haiku`; the hook denies `opus` and `inherit` at the call site, so opus runs only from an agent file's frontmatter." Ruling 7 covers the direction; agent-evals-c3 records the sign-off on the reword.
 - [x] Q7. Pre-existing breakage: scenario A's rule text was deleted from the live global on 2026-11-22 while the scenario stayed, so every `run-all` without `--rule` exits at `check_rule_texts`. Rec: out of this lane's scope; queue it. This lane's runs use `--rule <id>`.
 - [x] Q8. "Toolkit-prose lane pattern" for a deleted line: no agent-evals commit has ever removed a scenario (the prose lane kept A). Rec: read the ruling as "the agent-evals commit made alongside the dotfiles deletion", as ruling 8 states.
 
 ## Resolved
 
-All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the rest" plus a yes or change on each ⚠). The eight approved recommendations (D1 to D7, Q2, Q8) stand as written in the Queue; their Reasoning is the Rec sentence and the Alternatives rejected are the Other clause. The four ⚠ items:
+All thirteen ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the rest" plus a yes or change on each ⚠). The nine approved recommendations (D1 to D7, Q2, Q8) stand as written in the Queue; their Reasoning is the Rec sentence and the Alternatives rejected are the Other clause. The four ⚠ items:
 
 ### D8. Commit order across repos
 
 - **Choice**: the lane commits the agent-evals changes on branch `toolkit-rules-nov22` in `~/agent-evals` and pushes it; agent-evals-c3 merges it right after the dotfiles merge.
 - **Reasoning**: live roots in the scenarios fail `check_rule_texts` until the dotfiles branch merges; a branch keeps the default branch runnable meanwhile.
 - **Alternatives rejected**: commit to the default branch with worktree roots and queue the flip (roots rot).
-- **Trade-off accepted**: two merges in order, done by agent-evals-c3.
+- **Trade-off accepted**: two merges in order, done by agent-evals-c3. Gap: with dotfiles merged first, every `~/dotfiles` commit fails the `build_changes --check` pre-commit hook until the agent-evals branch merges, because the two proof findings exist only on that branch (`AGENT_EVALS_DIR=/home/brandon/agent-evals-toolkit-rules-nov22` is the workaround meanwhile); the hand-off to agent-evals-c3 names it. Ruled by agent-evals-c3, 2026-11-22.
 
 ### Q4. Change-file kind for items 2 and 3
 
-- **Choice**: `structured`, one finding each under `~/agent-evals/findings/` at `runs_per_arm` 8, neutral level: 16 opus runs per item after the one-run-per-cell smoke. Item 1 is `user-rule` with the user's 2026-11-22 words.
+- **Choice**: `structured`, one finding each under `~/agent-evals/findings/` at `runs_per_arm` 8, neutral level: 16 neutral runs per item, 2 of them from the smoke; 20 opus runs per item in all. Item 1 is `user-rule` with the user's 2026-11-22 words.
 - **Reasoning**: no user ask exists for items 2 and 3, and `unmeasured` would misreport a measured line.
 - **Alternatives rejected**: `unmeasured` as the kind.
-- **Trade-off accepted**: 16 opus runs per item on top of the smoke, inside the 24 budget.
+- **Trade-off accepted**: 20 opus runs per item in all (6 smoke plus 14 neutral), inside the 24 budget.
+- Correction 2026-11-22: the Queue line for Q4 now counts the one-run-per-cell smoke in the 20; the reworded text was approved by agent-evals-c3, 2026-11-22, by SendMessage.
 
 ### Q5. Item 3 reword of the ticket's done-when (AC sign-off)
 
@@ -84,7 +85,7 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Alternatives rejected**: a margin of one or more runs.
 - **Trade-off accepted**: a tie on noisy runs deletes.
 
-## Plan-review rulings (agent-evals-c3, 2026-11-22, by SendMessage: "yes to all five"; reports in `review-round1-shard-a.md` and `review-round1-shard-b.md`)
+## Plan-review rulings R1 to R6 (agent-evals-c3, 2026-11-22, by SendMessage, a yes on every one; reports in `review-round1-shard-a.md` and `review-round1-shard-b.md`)
 
 ### R1. Stale scenarios beyond A
 
@@ -128,6 +129,8 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Alternatives rejected**: ship and record the counts.
 - **Trade-off accepted**: the item can stall on a ruling.
 
+## Build rulings W4 to W9 (agent-evals-c3, 2026-11-22, by SendMessage during the build phases)
+
 ### W4. Item 3 scope of the opus-pin check
 
 - **Choice**: every Agent call, not only general-purpose.
@@ -146,17 +149,18 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 
 - **Choice**: option b, once. Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`), ruling words: "option b, once ... If the off arm shows violations and the on arm fewer: ship the line. If the off arm is still 0: the hook alone does the job, the line is a no-op and does not ship." One new scenario, AM02 (a review dispatched to general-purpose that asks for opus), 3 runs per arm at the neutral level on the default model (sonnet; 6 runs, none on opus, so the opus count stays at AM01's 20, inside the 24 budget).
 - **Outcome**: on arm 3 violated, 0 complied, off arm 3 violated, 0 complied, no NO_TEST, every run pinned opus; the meter reads NO-EFFECT. The line does not stop an explicit opus request; the hook denies it; on equals off, so the line has no effect and does not ship. The hook alone does the job, so the line does not ship: removed from `orchestration.md`, the Delegation anchor row restored to `2ebac3a6`, a removal change file with `reverts` names the AM01 change; the AM01 finding's recommendation reads "do not ship".
-- **Reasoning**: off equal to on, no margin (W2).
+- **Reasoning**: off equal to on, no margin (W3).
 - **Alternatives rejected**: ship the line as documentation of the guard.
 - **Trade-off accepted**: AM01 and AM02 stay in the meter as evidence of the no-effect; item 3 closes with a removal, not a line.
 - Correction 2026-11-22, agent-evals-c3 (criteria owner `session`): the removal stands; on equal to off is no effect whichever way both arms land, and the hook does the job, the line did not. The meter's results (`rule_meter.py summary`) match the Outcome: AM02 on 0 of 3 complied, off 0 of 3 complied, so 3 violated per arm and 6 of 6 runs pinned opus, in both arms; AM01 20 of 20 complied (10 per arm). AC10's sentence "A headless run that launches a general-purpose agent sends no opus pin" is FAILING (6 of 6 pinned opus when the task asks for it); it is not retired and not met. The "AM01 and AM02 stay in the meter" trade-off above no longer holds: both scenarios are removed from `bin/rule_meter_scenarios.json` and kept as notes `rule_meter:AM01` and `rule_meter:AM02` in `bin/rule_trial_notes.json`, with rule text and verdict (D7, Q7).
 
 ### W7. Item 3 run budget and the Phase 1 ship criterion (AC sign-off)
 
-- **Choice**: (1) AC20 for item 3 is met at 26 runs: 20 Opus AM01 runs plus 6 sonnet AM02 runs; the budget was set for Opus runs and the 6 sonnet runs were one extra scenario; no further item 3 runs. (2) The Phase 1 AC10-read criterion reads "the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row", with W6 as the sign-off. Sign-off: agent-evals-c3, 2026-11-22, relayed by the orchestrating session.
+- **Choice**: (1) AC20 for item 3 is met at 20 Opus AM01 runs; the 6 sonnet AM02 runs fall outside the Opus count and were one extra scenario; no further item 3 runs. (2) The Phase 1 AC10-read criterion reads "the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row", with W6 as the sign-off. Sign-off: agent-evals-c3, 2026-11-22, by SendMessage.
 - **Reasoning**: the old criterion held a line on a VIOLATED on-arm run and did not cover a no-effect read, which W6 ruled.
-- **Alternatives rejected**: keep the 24 cap against all 26 runs.
-- **Trade-off accepted**: item 3 ran 2 over the stated cap.
+- **Alternatives rejected**: count the 6 sonnet AM02 runs against the Opus cap.
+- **Trade-off accepted**: AC20 is met at 20 Opus runs for item 3; the 6 sonnet AM02 runs fall outside the Opus count.
+- Correction 2026-11-22: the Choice and Trade-off text above (AC20 met at 20 Opus runs, the 6 sonnet runs outside the count) is a reword of the first ruling; the reworded text was approved by agent-evals-c3, 2026-11-22, by SendMessage.
 
 ### W8. AC3 narrowed to direct lane edits (AC sign-off)
 
@@ -164,3 +168,19 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: GA01 measures a lane's direct edit; the review-loop path is a separate script.
 - **Alternatives rejected**: build the exemption in this branch.
 - **Trade-off accepted**: a coder pass in the review loop still cannot add an owner line.
+
+### W9. GA01 `Scenario-parses` box stays open until the merge
+
+- **Choice**: the Phase 2 `Scenario-parses` box for GA01 stays unchecked on the branch. GA01 is a global-form scenario, so `check_rule_texts` reads its rule text from the live `~/.claude/CLAUDE.md`, which carries the sentence only once the user merges the branch. Ruled by agent-evals-c3, 2026-11-22, by SendMessage.
+- **Reasoning**: the live global is never edited from a lane (AC16); the box can only pass after the merge.
+- **Alternatives rejected**: point GA01's `toolkit_root` at the worktree copy (AC17 needs the live tree); edit the live global (AC16 forbids it).
+- **Trade-off accepted**: `test_every_shipped_scenario_has_a_live_root_and_its_rule_text` lists GA01 until the merge.
+
+## Lane ruling W10 (dotfiles-toolkit-rules-nov22, 2026-11-22; a review ask, no AC changed)
+
+### W10. The kept auto-mode line's change note stays `change_type: changed`
+
+- **Choice**: `docs/changes/notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md` keeps `change_type: "changed"` and its changelog line; the review ask to refile it as an on-hold entry in `ruled-out.md` is rejected. Ruled by dotfiles-toolkit-rules-nov22, 2026-11-22.
+- **Reasoning**: AC9 says a kept line closes with its counts in a change file; an on-hold entry would say the decision is still open, and it was made. The ledger's `change_type` set has no value for a measured keep, and `changed` is the group the ledger already files meter closes under.
+- **Alternatives rejected**: on-hold entry in `ruled-out.md`; a new `change_type` value (a build_changes change out of this lane's scope).
+- **Trade-off accepted**: the changelog's Changed group lists a line whose text did not change.

@@ -5,12 +5,15 @@ or the kept record's head under --resume).
     python3 ~/.claude/scripts/code/phase_start.py [--new-run | --resume]
 
 Run from the repo root before the phase's coder dispatch. Writes <git dir>/code-phase/start.json:
-{"head": <sha>, "dirty": {<path>: <sha-256 of its bytes, or null when gone>}} for every file dirty or untracked now.
+{"head": <sha>, "dirty": {<path>: <sha-256 of its bytes, or null when gone>}, "own": [<path>]} for every file dirty or
+untracked now; "own" lists the files earlier phases of the run named in their hand-offs.
 code_review_start.py reads it: a file dirty here that holds the same bytes at review time, while a live session other
 than the run's works in the repo, is held by that session.
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
-whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own. A
-missing record, or one for another HEAD, is replaced either way. Prints the HEAD sha, except under --resume (below).
+whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own; a file
+dirty now that the record lacks, and that no earlier phase's hand-off names, is added to it (another session's edit
+first seen at a later phase start). A missing record, or one for another HEAD, is replaced either way. Prints the
+HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept and its head is printed as the phase base. With no
 record, or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr.
@@ -31,6 +34,8 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
 import code_stop_record
 import code_wait
+import fix_coder_written
+import handoff_files
 import script_utils
 import stop_file_names
 import worktree_snapshot
@@ -52,7 +57,7 @@ def start_record(repo):
     root = pathlib.Path(repo)
     codes = worktree_snapshot.status_codes(root)
     dirty = {path: worktree_snapshot.file_hash(root, path) for path in sorted(codes)}
-    return {"head": head, "dirty": dirty}
+    return {"head": head, "dirty": dirty, "own": []}
 
 
 def read_start_record(repo):
@@ -64,7 +69,7 @@ def read_start_record(repo):
 
     try:
         record = json.loads(record_file.read_text())
-        return {"head": record["head"], "dirty": record["dirty"]}
+        return {"head": record["head"], "dirty": record["dirty"], "own": record.get("own", [])}
     except (json.JSONDecodeError, KeyError, TypeError) as error:
         raise StartRecordError(f"{record_file}: {error}; expected {{\"head\": <sha>, \"dirty\": {{<path>: <hash>}}}}. "
                                "Re-run phase_start.py before the next coder dispatch.") from error
@@ -98,6 +103,24 @@ def unchanged_dirty_files(repo, base_commit):
 
     root = pathlib.Path(repo)
     return sorted(path for path, saved in dirty.items() if worktree_snapshot.file_hash(root, path) == saved)
+
+
+def handed_off_paths(run_folder):
+    """The files the phase that just ended named in its hand-off; [] with no hand-off."""
+    handoff_file = run_folder / code_wait.HANDOFF_FILE
+    if not handoff_file.is_file():
+        return []
+
+    return handoff_files.handoff_entry_paths(handoff_file.read_text())
+
+
+def with_later_dirty_files(kept, record, handed_off):
+    """The kept record plus the files dirty now that it lacks and no phase so far handed off, and the handed-off files
+    as the run's own. The record's head is unchanged."""
+    own = sorted({*kept["own"], *handed_off})
+    new_dirty = {path: saved for path, saved in record["dirty"].items()
+                 if path not in kept["dirty"] and path not in own}
+    return {"head": kept["head"], "dirty": {**kept["dirty"], **new_dirty}, "own": own}
 
 
 def move_aside(folder, name, previous_name):
@@ -164,6 +187,7 @@ def main():
         refusal = other_run_refusal(run_folder)
         if refusal is not None:
             sys.exit(refusal)
+    handed_off = handed_off_paths(run_folder)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
     move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)
@@ -183,12 +207,17 @@ def main():
         if base is not None:
             print(base)
             return 0
-    if "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]:
-        print(record["head"])
-        return 0
+    same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
+    if same_run:
+        record = with_later_dirty_files(kept, record, handed_off)
+        if record == kept:
+            print(record["head"])
+            return 0
 
     folder = code_wait.phase_dir(repo)
     folder.mkdir(exist_ok=True)
+    if not same_run:
+        fix_coder_written.clear(repo)
     script_utils.write_text_atomically(folder / START_FILE, json.dumps(record, indent=2) + "\n")
     print(record["head"])
     return 0

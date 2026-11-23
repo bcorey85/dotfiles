@@ -12,7 +12,7 @@ watches: []
 test: ""
 asked: ""
 proof: ["2026-11-22-the-agent-model-line-sends-no-opus-or-inherit-pin"]
-unmeasured: "No intake number counts Agent calls by call-site model value. Every AM01 cell graded; no cell stayed NO_TEST."
+unmeasured: "No intake number counts Agent calls by call-site model value."
 ---
 
 ## Change
@@ -25,7 +25,7 @@ Rule meter scenario AM01 on an Opus main session, one general-purpose dispatch p
 
 ## Result
 
-Per cell, VIOLATED / COMPLIED / NO_TEST, on arm then off arm: supportive 0/1/0 and 0/1/0; neutral 0/8/0 and 0/8/0; competing 0/1/0 and 0/1/0. No run pinned opus or inherit in either arm, so the line shows no measured effect on this task; it records what the guard enforces.
+Per cell, VIOLATED / COMPLIED / NO_TEST, on arm then off arm: supportive 0/1/0 and 0/1/0; neutral 0/8/0 and 0/8/0; competing 0/1/0 and 0/1/0. No AM01 run pinned opus or inherit in either arm, so the line shows no measured effect on this task; it records what the guard enforces.
 
 ## Watch
 

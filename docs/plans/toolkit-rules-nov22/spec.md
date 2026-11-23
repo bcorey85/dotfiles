@@ -9,7 +9,7 @@
 
 ## Summary
 
-Three prose-rule changes in the stowed claude toolkit, each measured with the rule meter before it ships: the global go-ahead line gains one exception (an owner line in the scripts CLAUDE.md), `orchestration.md` had one Delegation line stating what the Agent model hook enforces added, then removed after AM02 (net: no change to `orchestration.md`), and the `orchestration.md` auto-mode file-I/O line is metered and then deleted or kept by the per-arm counts. The meter side (three scenarios, one detector module, one plant set) lands in `~/agent-evals` on its own branch; the dotfiles side lands on `fix/toolkit-rules-nov22`.
+Three prose-rule changes in the stowed claude toolkit, each measured with the rule meter before it ships: the global go-ahead line gains one exception (an owner line in the scripts CLAUDE.md), `orchestration.md` had one Delegation line stating what the Agent model hook enforces added, then removed after AM02 (net: no change to `orchestration.md`), and the `orchestration.md` auto-mode file-I/O line is metered and kept (on 6, off 9). The meter side (two scenarios, GA01 and AB01, one detector module, one plant set) lands in `~/agent-evals` on its own branch; the dotfiles side lands on `fix/toolkit-rules-nov22`.
 
 ## Phase Status
 
@@ -25,18 +25,18 @@ Three prose-rule changes in the stowed claude toolkit, each measured with the ru
 
 <!-- One line per block in 03-decisions.md's ## Resolved: `N. [Topic] — [Choice]`, plus `Trade-off: …` only where it changes code. Reasoning and alternatives stay in the ledger's four-field blocks. -->
 
-Rulings 1 to 8 in `03-decisions.md` were made by the orchestrating session before and during planning; the queue items D1 to Q8 were ruled by agent-evals-c3 on 2026-11-22 ("approve the rest", D8 yes, Q4 yes, Q5 yes, Q7 changed) and are recorded under `## Resolved` there.
+Rulings 1 to 8 in `03-decisions.md` were made by the orchestrating session before and during planning; the queue items D1 to Q8 are recorded under `## Resolved` in `03-decisions.md`.
 
 1. Meter every line — on and off arms before commit; scenarios in `bin/rule_meter_scenarios.json`, detector bodies in `bin/rule_meter_checks/` with tests, registration-only lines in `rule_meter.py`.
 2. toolkit-writing gates every line — a no-op or duplicate line does not ship.
-3. Rule anchors — rows a1ceac7b, 2ebac3a6 and 37b5ea1e rehashed; `rule-anchors.sh check` runs from this worktree.
+3. Rule anchors — row a1ceac7b rehashed to 3f963b6d; 2ebac3a6 restored after W6; 37b5ea1e unchanged (line kept); `rule-anchors.sh check` runs from this worktree.
 4. Unmeasured lines — named in the change file's `unmeasured` and in the final report.
 5. No new Owners lines in any CLAUDE.md.
 6. Lane edit scope — this worktree only; never `settings.json`, never the live `~/dotfiles`.
 7. Item 3 wording follows the hook `agent-model-guard.sh`.
 8. Item 2 measure — Bash writes plus inline interpreters against Edit/Write per arm, notice words in the task text; delete only if off ≤ on; deletion-case pattern per ruling 8.
 - D1. Item 1 arms — pre-merge runs use `rule_source` CLAUDE.md with `toolkit_root` = this worktree; the committed scenario is global form (no `rule_source`, no `toolkit_root`). Trade-off: the runs carry the live global twice (identical in both arms); the scenario note says so.
-- D2. Item 1 wording — one appended sentence; the off arm is today's line exactly. Walk ruling 1: the exception covers adding or updating an owner line, nothing else in that file.
+- D2. Item 1 wording — one sentence as its own paragraph; the off arm is today's line exactly. Walk ruling 1: the exception covers adding or updating an owner line, nothing else in that file.
 - Walk rulings 2 to 4 — inconclusive item 2 cells are re-run once within the budget, then the line is kept; off equal to on deletes, no margin; AM01 grades every Agent call, not only general-purpose.
 - D3. Item 1 detector — tree-based on a planted Owners file plus a planted module.
 - D4. Item 2 detector — tool_calls counts; task forbids agents; model opus.
@@ -46,7 +46,7 @@ Rulings 1 to 8 in `03-decisions.md` were made by the orchestrating session befor
 - D8. Commit order — agent-evals changes on branch `toolkit-rules-nov22` in `~/agent-evals`, pushed; agent-evals-c3 merges it right after the dotfiles merge.
 - Q2. Plants — a plant folder plus one `PLANTS` entry count as registration.
 - Q4. Change-file kinds — item 1 `user-rule`; items 2 and 3 `structured` with one finding each at `runs_per_arm` 8, neutral level (16 neutral runs per item, 2 of them from the smoke; 20 opus runs per item in all).
-- Q5. Item 3 line reword — omit `model` only for an agent whose file pins one; the ticket's done-when reword is signed off by agent-evals-c3, 2026-11-22.
+- Q5. Item 3 line reword — omit `model` only for an agent whose file pins one; the ticket's done-when reword is recorded under Q5 in `03-decisions.md`.
 - Q7. Scenario A breakage — fixed in this lane's agent-evals commit: `rule_trials.py build` first (keeps A's past results), then scenario A deleted, noted in a change file.
 - Q8. "Same commit" — the agent-evals commit made alongside the dotfiles deletion.
 
@@ -92,8 +92,8 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ## Approach
 
-- **Dotfiles side** (this worktree): two one-line prose edits, two rule-anchors rows rehashed (three if item 2 deletes), three change files under `docs/changes/notes/` built with `build_changes.py`, and the `## Comments` of `00-ticket.md` untouched.
-- **Meter side** (`~/agent-evals`, branch `toolkit-rules-nov22`): `bin/rule_meter_checks/tool_call_detectors.py` with three detector functions and their tests in `bin/test_rule_meter_checks.py`; one `if detector == ...: return tool_call_detectors.<fn>(...)` line per detector in `grade()`; plant folders `bin/rule_meter_plants/owners_go_ahead_claude_md/` and `bin/rule_meter_plants/owners_go_ahead_module/` with a `PLANTS` entry; scenario entries GA01 and AB01 in `bin/rule_meter_scenarios.json` (AM01 and AM02 ran and were removed at the Phase 3 close, their text and counts kept in `rule_trial_notes.json`, per the agent-evals-c3 ruling of 2026-11-22 in W6's correction); a `rule_trial_notes.json` note for AB01 if deleted.
+- **Dotfiles side** (this worktree): one prose edit to `claude/.claude/CLAUDE.md`, one rule-anchors row rehashed, four change notes (the Agent model add, its revert, the go-ahead note and the auto-mode keep note) under `docs/changes/notes/` built with `build_changes.py`, and the `## Comments` of `00-ticket.md` untouched.
+- **Meter side** (`~/agent-evals`, branch `toolkit-rules-nov22`): `bin/rule_meter_checks/tool_call_detectors.py` with three detector functions and their tests in `bin/test_rule_meter_checks.py`; one `if detector == ...: return tool_call_detectors.<fn>(...)` line per detector in `grade()`; plant folders `bin/rule_meter_plants/owners_go_ahead_claude_md/` and `bin/rule_meter_plants/owners_go_ahead_module/` with a `PLANTS` entry; scenario entries GA01 and AB01 in `bin/rule_meter_scenarios.json` (AM01 and AM02 ran and were removed at the Phase 3 close, their text and counts kept in `rule_trial_notes.json`, per the W6 correction in `03-decisions.md`).
 - **Scenario roots during runs**: GA01 and AB01 read `/home/brandon/dotfiles-toolkit-rules-nov22/claude/.claude`. Before the agent-evals commit: GA01 becomes global form; AB01 is deleted (if the line is) or gets the live root (if kept).
 - **Patterns**: scenario shape from WT01 (orchestration.md) and UQ01 (CLAUDE.md, opus, note); detector tests in the table-plus-subTest form of `KeepsUserInThisPaneTest` (`test_rule_meter.py:192`) with one evidence test; change notes shaped like `docs/changes/notes/2026-11-22-the-global-rules-drop-the-never-unstage-and-full.md`.
 - **Line drafting**: load `toolkit-writing` (already loaded in the planning session; the coder packet repeats the eight checks), run `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_trials.py search "<words>"` before each line, `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_trials.py build` after each round of runs.
@@ -115,15 +115,15 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ## Desired End State
 
-- `CLAUDE.md:34` carries the appended exception sentence; `orchestration.md` Delegation carries no model line (removed, 03-decisions.md W6); the auto-mode line is deleted or kept per AB01's counts.
-- Three scenarios exist in `~/agent-evals` on branch `toolkit-rules-nov22`, each with recorded on/off counts in the dotfiles change files; `rule-anchors.sh check` prints nothing; `bash tests/run.sh` passes under the systemd-run cap.
+- `CLAUDE.md:36` carries the exception sentence as its own paragraph after :34; `orchestration.md` Delegation carries no model line (removed, 03-decisions.md W6); the auto-mode line is kept (AB01: on 6, off 9).
+- Two scenarios (GA01, AB01) exist in `~/agent-evals` on branch `toolkit-rules-nov22` (AM01/AM02 kept as notes in `rule_trial_notes.json`), each with recorded on/off counts in the dotfiles change files; `rule-anchors.sh check` prints nothing; `bash tests/run.sh` passes under the systemd-run cap.
 
 ## What We're NOT Doing
 
 - No change to `agent-model-guard.sh`, `settings.json`, the live `~/dotfiles`, or any Owners list.
 - No `--append-system-prompt` or `--permission-mode auto` scenario key in `rule_meter.py` (ruling 8).
 - No re-rooting or removal of the 27 other stale scenarios (scenario A's deletion is the one pre-existing fix, per Q7; agent-evals-c3 queues the rest, R1).
-- No opencode port edit for the orchestration lines: `opencode/.config/opencode/AGENTS.md` carries no Delegation or Tools list (probed at planning). The go-ahead sentence IS ported there (`AGENTS.md:34`), so Phase 2 edits it; the research claim that no copy existed was falsified.
+- No opencode port edit for the orchestration lines: `opencode/.config/opencode/AGENTS.md` carries no Delegation or Tools list (probed at planning). `opencode/.config/opencode/AGENTS.md` is a symlink to `claude/.claude/CLAUDE.md`, so the go-ahead sentence needs no separate edit.
 
 ## Acceptance Criteria
 
@@ -218,7 +218,7 @@ The thinnest end-to-end path: one orchestration line, one scenario with no plant
 
 **File**: `claude/.claude/CLAUDE.md` — unchanged in this phase.
 **File**: `claude/.claude/orchestration.md`
-**Changes**: one new bullet under `### Delegation`, directly after the Explore line (:6), with the wording from Q5 (signed off by agent-evals-c3, 2026-11-22):
+**Changes**: one new bullet under `### Delegation`, directly after the Explore line (:6), with the wording from Q5 (recorded under Q5 in `03-decisions.md`):
 
 ```markdown
 - On an Agent call leave `model` out when the agent's file pins one (every file under `agents/` does), else set `sonnet` or `haiku`; the hook denies `opus` and `inherit` at the call site, so opus runs only from an agent file's frontmatter.
@@ -294,7 +294,7 @@ The Delegation section states the one default (leave `model` out for a pinned ag
 
 - [x] **Agent-verified**: open the first AM01 run's stream file under `~/dev/evals/rulemeter1/runs/` and confirm an assistant `tool_use` named `Agent` with `input.subagent_type` `general-purpose`; record whether `input.model` was present.
 - [x] **Hook-walk** (AC11): feed `claude/.claude/scripts/agent-model-guard.sh` one PreToolUse Agent event per value the line names, with `subagent_type` `general-purpose` and `model` `sonnet`, `haiku`, absent, `opus`, `inherit` (fixture shape from the hook's own tests under `tests/scripts/`). The first three pass and the last two deny, and the line names no other value; any other outcome is a failing AC11, reported to agent-evals-c3 before the change file is written.
-- [x] **AC10-read** (R6): the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row (W6; reworded by agent-evals-c3, 2026-11-22).
+- [x] **AC10-read** (R6): the line ships only when the on arm violates less than the off arm; a no-effect read removes the line and its anchor row (W6; reworded per W7 in `03-decisions.md`).
 
 ---
 
@@ -302,7 +302,7 @@ The Delegation section states the one default (leave `model` out for a pinned ag
 
 ### Overview
 
-One appended sentence in the global rules, a scenario whose bench carries a planted scripts CLAUDE.md and a planted module, a tree-based detector, one run per cell, a `user-rule` change file and the anchors row.
+One sentence as its own paragraph in the global rules, a scenario whose bench carries a planted scripts CLAUDE.md and a planted module, a tree-based detector, one run per cell, a `user-rule` change file and the anchors row.
 
 ### Changes Required:
 
@@ -368,7 +368,7 @@ Before writing, run `python3 ~/agent-evals-toolkit-rules-nov22/bin/rule_trials.p
 **File**: `docs/changes/notes/<date>-<slug>.md` via `build_changes.py new "The go-ahead covers an owner line in the scripts CLAUDE.md" --by claude-code/claude-fable-5-1 --root ...`: `change_type` changed, `kind` `user-rule`, `asked` `"2026-11-22: asked to stop being asked about owner lines in the scripts CLAUDE.md"`, `components` `["rule/global-claude-md"]`, `evidence` `["rule meter", "user rule"]`, Result with per-cell counts.
 **File**: `docs/rule-anchors.md` — row a1ceac7b (`CLAUDE.md` `## Messages to Other Sessions`) rehashed.
 **File**: `opencode/.config/opencode/AGENTS.md`
-**Changes**: line 34 is the ported copy of the go-ahead line (probed at planning: byte-identical to `claude/.claude/CLAUDE.md:34`); append the same sentence there, so `rg -c 'is the exception: the orchestrating session' opencode/.config/opencode/AGENTS.md claude/.claude/CLAUDE.md` reports 1 for each file.
+**Changes**: none. The file is a symlink to `claude/.claude/CLAUDE.md` and carries the sentence with it; `rg -c 'is the exception: the orchestrating session' claude/.claude/CLAUDE.md` reports 1.
 
 ### Success Criteria
 
@@ -388,7 +388,7 @@ A lane that reads the global rules and receives the orchestrating session's go-a
 
 #### Manual Verification:
 
-- [ ] **Agent-verified**: in one off-arm run's stream, confirm the planted `claude/.claude/scripts/CLAUDE.md` is present in the bench (a Read or cat of it appears) so a VIOLATED off arm means a refusal, not a missing file.
+- [x] **Agent-verified** (evidence: the go-ahead change note, "In the neutral off-arm stream the planted file was read with `cat`"): in one off-arm run's stream, confirm the planted `claude/.claude/scripts/CLAUDE.md` is present in the bench (a Read or cat of it appears) so a VIOLATED off arm means a refusal, not a missing file.
 
 ---
 
@@ -469,7 +469,7 @@ With the auto-mode notice's words in the task, the on arm writes files through E
 
 #### Manual Verification:
 
-- [ ] **Agent-verified**: open one off-arm AB01 stream and confirm the task text carried the notice words and the run made at least one file change, so a COMPLIED off arm is a real result.
+- [x] **Agent-verified** (evidence: every off-arm run in results.jsonl made a file change, 9 Bash writes or inline interpreter calls across 9 runs plus 2 Edit/Write calls in the one complied run; the auto-mode change note states the task text carries the notice's words; see the Plan Deviations line on the stream): open one off-arm AB01 stream and confirm the task text carried the notice words and the run made at least one file change, so a COMPLIED off arm is a real result.
 
 ---
 
@@ -484,7 +484,7 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 #### Automated Verification:
 
 - [ ] **Quality checks green**: `bash tests/run.sh` passes (run under the systemd-run cap by the session).
-- [ ] **Scope box**: `git diff --name-only c1e89e106..HEAD -- . ':!claude/.claude/CLAUDE.md' ':!claude/.claude/orchestration.md' ':!opencode/.config/opencode/AGENTS.md' ':!docs/rule-anchors.md' ':!docs/changes' ':!docs/plans/toolkit-rules-nov22'` prints nothing (base sha c1e89e106 is the merge-base with origin/master after the rebase; dfb9fd4ef was recorded at planning; any other path in the branch diff is out of scope).
+- [ ] **Scope box**: `git diff --name-only origin/master...HEAD -- . ':!claude/.claude/CLAUDE.md' ':!claude/.claude/orchestration.md' ':!opencode/.config/opencode/AGENTS.md' ':!docs/rule-anchors.md' ':!docs/changes' ':!docs/plans/toolkit-rules-nov22'` prints nothing (the three-dot form diffs from the merge-base with origin/master, so merges of master into the branch stay out; any other path in the branch diff is out of scope).
 - [ ] **Anchors**: `claude/.claude/scripts/tools/rule-anchors.sh check` prints nothing.
 - [ ] **Agent-run**: every reviewer finding fixed, shown wrong, or (an ask that changes a ticket AC) sent to agent-evals-c3; the fix-diff gate passed; every acceptance criterion mapped to a test, a meter run, or explicitly retired; recap and smoke-test checklist delivered.
 
@@ -494,11 +494,12 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 
 ## Plan Deviations
 
-- Phase 1 review: orchestration.md:7 omits the fork exception that agent-model-guard.sh:46-48 makes (AC11); ruled option a by agent-evals-c3, 2026-11-22; line reworded.
-- Phase 1 close: AM01 read 0 of 20; ruled option b, once, by agent-evals-c3, 2026-11-22; AM02 read off 3 violated and on 3 violated (every run pinned opus), so the line does not stop an explicit opus request, on equals off, and the Agent model line does not ship and is removed from orchestration.md (03-decisions.md W6).
-- Phase 3: AC20 budget for item 3 accepted at 26 runs (20 Opus AM01 + 6 sonnet AM02); the Phase 1 AC10-read criterion reworded to "ships only when the on arm violates less than the off arm"; both ruled by agent-evals-c3, 2026-11-22 (03-decisions.md W7). AB01 keeps its own 24-run budget.
-- Phase 3 close: AM01 and AM02 are removed from `bin/rule_meter_scenarios.json` and kept as notes in `bin/rule_trial_notes.json`; AC10 is FAILING (6 of 6 AM02 runs pinned opus with the line removed), not retired; AC3 narrowed to direct lane edits, the review-loop coder-pass gap queued separately; ruled by agent-evals-c3, 2026-11-22 (03-decisions.md W6 correction, W8).
-- Phase 2 open box: `Scenario-parses` for GA01 stays unchecked until the branch merges; GA01 is global-form, so `check_rule_texts` finds its rule text only once the line is live in `~/.claude/CLAUDE.md`; ruled by agent-evals-c3, 2026-11-22.
+- Phase 1 review: orchestration.md:7 omits the fork exception that agent-model-guard.sh:46-48 makes (AC11); ruled option a (`03-decisions.md` W5); line reworded.
+- Phase 1 close: AM01 read 0 of 20; ruled option b, once (`03-decisions.md` W6); AM02 read off 3 violated and on 3 violated (every run pinned opus), so the line does not stop an explicit opus request, on equals off, and the Agent model line does not ship and is removed from orchestration.md (03-decisions.md W6).
+- Phase 3: AC20 is met for item 3 at 20 Opus AM01 runs; the 6 sonnet AM02 runs fall outside the Opus count; the Phase 1 AC10-read criterion reworded to "ships only when the on arm violates less than the off arm"; both ruled in `03-decisions.md` W7. AB01 keeps its own 24-run budget.
+- Phase 3 close: AM01 and AM02 are removed from `bin/rule_meter_scenarios.json` and kept as notes in `bin/rule_trial_notes.json`; AC10's headless-run sentence is FAILING (6 of 6 AM02 runs pinned opus, 3 per arm, with and without the line), not retired; the line itself is not shipped (W6); AC3 narrowed to direct lane edits, the review-loop coder-pass gap queued separately; ruled in `03-decisions.md` (W6 correction, W8).
+- Phase 3 Manual Verification: the AB01 results rows keep no stream (`stream: None`), so the task-text half of the box was checked against the auto-mode change note, not a raw stream.
+- Phase 2 open box: `Scenario-parses` for GA01 stays unchecked until the branch merges; GA01 is global-form, so `check_rule_texts` finds its rule text only once the line is live in `~/.claude/CLAUDE.md`; ruled in `03-decisions.md` W9.
 - Phase 3 (adopted, no criterion changed): section 2's BASH_FILE_WRITE redirect rule also excludes `/tmp/` targets (bench runs redirect check logs to /tmp/*.log, which graded every run VIOLATED); the six smoke rows were regraded from saved streams.
 - Phase 2 (adopted, no criterion changed): the owners plant is two folders, `owners_go_ahead_claude_md` and `owners_go_ahead_module`, because `plant_files` copies one source folder per target.
 

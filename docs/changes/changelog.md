@@ -7,9 +7,15 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1140 changes
+1141 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-23
+
+### Fixed
+
+* [review_fix decide keep rules an adopted plan impact the coder never applied](notes/2026-11-23-review-fix-decide-keep-rules-an-adopted-plan.md) [shared/review-loop] `decide keep` now re-rules a plan impact that was adopted and left unapplied, so the adopted-not-applied blocker stops carrying.
 
 ## Week of 2026-11-16
 

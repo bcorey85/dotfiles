@@ -370,6 +370,8 @@ Open items (close pass, recorded here; ruled by the orchestrating session, 2026-
 
 Ruling by agent-evals-c3 (lane owner) at 2026-11-23: ticket AC7 stands with no carve-out, and the decide --by session carve-out is withdrawn; covers: owner_lines.py:55-60 and the review loop's repeat of that blocker.
 
+Ruling by agent-evals-c3 at 2026-11-23: the lane owns queue/review-fix-decide-no-route-re-rules-an-adopted.md; covers: that fix, claiming and closing that item, and re-ruling this lane's ticket AC7 impact to keep through the new route.
+
 ## References
 
 - ./00-ticket.md, ./01-questions.md, ./02-research.md, ./03-decisions.md

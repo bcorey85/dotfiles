@@ -133,6 +133,7 @@ from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_blocker_text import blocker_text
+from review_fix_adopted import adopted_keep_source
 from review_fix_asks import (
     command_asks_done,
     findings_covered_by_impact,
@@ -782,7 +783,7 @@ def command_decide(argv):
     parser.add_argument("--by", nargs="?", const="", default=None)
     argv, relay = pop_decide_relay(argv)
     options = parser.parse_args(argv)
-    source = waiting_plan_impact_source()
+    source = waiting_plan_impact_source(options.decision)
     if options.decision == "discuss":
         return print_action("discuss", "Discuss the plan impact with the user, then run one of these. Do not "
                             "re-dispatch yet.", *discuss_commands(), plan_format.DECIDE_BY_NOTE)
@@ -804,12 +805,13 @@ def command_decide(argv):
     record_plan_ruling(source.state, options.decision, options.by, options.ruling, plan_path, relayed)
 
 
-def waiting_plan_impact_source():
+def waiting_plan_impact_source(decision=None):
     """The PlanImpactSource for `decide`: either its state or its held impacts are set. The packet state is used while
     it waits and the latest hand-back's packet is missing, holds no impact (a fix round's hand-back) or holds the same
     impact, ruled or not. When the packet holds another impact, the state is stale, because the packet state outlives
     its packet: the unruled held impacts of the latest hand-back are used, as the push check's record reads them.
-    Raises UsageError when an existing state file is not readable, whatever the hand-back holds, and when neither
+    Failing those, a `keep` takes an adopted impact the hand-back's blocker says the coder never applied.
+    Raises UsageError when an existing state file is not readable, whatever the hand-back holds, and when no
     source holds an impact."""
     state = read_state()
     if state is None and review_fix_state_file().exists():
@@ -821,6 +823,9 @@ def waiting_plan_impact_source():
             return PlanImpactSource(state, [], None, state.get(PLAN_IMPACT_FILED_AT_KEY))
     if hand_back.held:
         return PlanImpactSource(None, hand_back.held, hand_back.packet, hand_back.handed_back_at)
+    adopted_source = adopted_keep_source(decision, hand_back)
+    if adopted_source is not None:
+        return adopted_source
     if state is None:
         raise missing_fix_state_error()  # no packet was processed
     raise UsageError("no plan-impact is waiting in this session's packet or latest hand-back, so the push check is "

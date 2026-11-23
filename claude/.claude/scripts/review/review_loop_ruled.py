@@ -117,6 +117,13 @@ NO_DIFF_WHY = "the pass left no fix diff"
 NO_FILE_DIFF_WHY = "the pass left no fix diff in the finding's file"
 HELD_WHY = "its file is held by another session"
 RULED_OUT_WHY = "its file is ruled out of the review"
+NOT_APPLIED_WHYS = (SKIPPED_WHY, NO_DIFF_WHY, NO_FILE_DIFF_WHY, HELD_WHY, RULED_OUT_WHY)
+
+
+def not_applied_blockers(finding_text):
+    """Every blocker line the loop writes for the adopted `finding_text`, one per reason it can name."""
+    ruling = script_utils.one_line(finding_text, None)
+    return [NOT_APPLIED_BLOCKER.format(why=why, ruling=ruling) for why in NOT_APPLIED_WHYS]
 
 
 class Unapplied(NamedTuple):

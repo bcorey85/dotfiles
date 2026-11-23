@@ -32,6 +32,7 @@ import review_fix_names
 import review_fix_plan_impacts
 import review_loop_main
 import review_loop_prompt_file
+import review_loop_ruled
 import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
@@ -1306,6 +1307,32 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         self.assertNotEqual(code, 0)
         self.assertIn("no plan-impact is waiting", output)
+
+    def test_decide_keep_rules_an_adopted_impact_the_hand_back_says_the_coder_never_applied(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        ruling = handback_store.AdoptedRuling(impact, None, "the user", "2026-11-19 10:00")
+        marked = review_user_ruled.adopted_issue(impact, ruling)
+        blocker = review_loop_ruled.NOT_APPLIED_BLOCKER.format(why=review_loop_ruled.SKIPPED_WHY, ruling=marked)
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": blocker}])
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner=ruling.owner, ruled_at=ruling.ruled_at)
+            adopted = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(adopted.adopted, (ruling,), "the adopt row is the latest ruling before the keep")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands as written"])
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            kept = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(kept.adopted, ())
+        self.assertEqual(kept.impacts, [impact])
+        left_out = review_user_ruled.leave_out_ruled_impacts([marked], [], kept)
+        loop_adopted = {left_out.kept[number - 1]: item for number, item in left_out.adopted.items()}
+        carried = review_loop_ruled.unapplied_adopted([finding_record.parse_finding(text) for text in left_out.kept],
+                                                      loop_adopted, {1: "SKIPPED 1: no"}, [], "/repo")
+        self.assertEqual(carried, [], "no adopted-not-applied blocker is carried once the keep is the latest ruling")
 
     def test_decide_prefers_the_hand_back_impact_over_a_stale_state_waiting_on_another_one(self):
         self.plant_held_hand_back()

@@ -106,7 +106,7 @@ def checked_record(record):
 
 
 def read_start_record(repo):
-    """The start record on disk with its five keys; None when there is no file. A record that does not parse, or holds
+    """The start record on disk with its six keys; None when there is no file. A record that does not parse, or holds
     a key of the wrong type, raises StartRecordError."""
     record_file = code_wait.phase_dir(repo) / START_FILE
     if not record_file.is_file():
@@ -267,7 +267,7 @@ def main():
     if "--resume" in sys.argv[1:]:
         base = resume_base(repo, kept)
         if base is not None:
-            write_record(repo, kept_record(kept, record, own_session_id))
+            write_record(repo, with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off))
             print(base)
             return 0
     same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]

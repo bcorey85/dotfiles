@@ -377,20 +377,21 @@ class LoopTranscript:
         return len(open_launches) + len(open_resumes) + len(open_shells)
 
 
-def agent_meta(transcript_path):
+def agent_meta(transcript_path, report_torn=False):
     """The parsed meta file beside an agent's transcript, {} when there is none, it is torn (an agent part-way through
-    a write) or it is not an object."""
-    return script_utils.read_json_object(pathlib.Path(transcript_path).with_suffix(script_utils.SUBAGENT_META_SUFFIX))
+    a write) or it is not an object. `report_torn` names a torn file on stderr."""
+    meta_file = pathlib.Path(transcript_path).with_suffix(script_utils.SUBAGENT_META_SUFFIX)
+    return script_utils.read_json_object(meta_file, report_torn)
 
 
-def subagent_entries(folder):
+def subagent_entries(folder, report_torn=False):
     """(agent id, transcript path, meta) for each subagent with a meta file in the subagents `folder`, by agent id.
-    The transcript may not be written yet."""
+    The transcript may not be written yet. `report_torn` is agent_meta's."""
     folder = pathlib.Path(folder)
     for meta_file in sorted(folder.glob(script_utils.subagent_meta_name("*"))):
         agent_id = script_utils.subagent_id_from_meta_name(meta_file.name)
         transcript = folder / script_utils.subagent_transcript_name(agent_id)
-        yield agent_id, transcript, agent_meta(transcript)
+        yield agent_id, transcript, agent_meta(transcript, report_torn)
 
 
 def finished_by_meta(transcript_path):

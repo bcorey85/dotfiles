@@ -7,6 +7,7 @@ target that is not a later phase in Phase Status order, or a command that is not
 steps fails the plan check.
 """
 import re
+from typing import NamedTuple
 
 import plan_format
 import script_utils
@@ -140,26 +141,38 @@ def later_phase_paths(plan_lines, phase_id):
     return sorted(later_paths - own_paths)
 
 
-def earlier_phase_paths(plan_lines, phase_id):
-    """Every backticked path (section_paths) of every phase section before this one in Phase Status, sorted: files an
-    earlier phase of the plan names, which stay the run's own. A plan written as numbered steps names its files in
-    backticks, with no `**File**:` entry."""
+class PhasePaths(NamedTuple):
+    """The files a plan names for the phases before a phase and for the phase itself, each sorted."""
+    earlier: list
+    own: list
+
+
+def plan_phase_paths(plan_lines, phase_id):
+    """The PhasePaths of a phase from one parse of the plan. `earlier` is every backticked path (section_paths) of
+    every phase section before this one in Phase Status: files an earlier phase names, which stay the run's own. A
+    plan written as numbered steps names its files in backticks, with no `**File**:` entry. `own` is every backticked
+    path of this phase's own section, which later_phase_paths and `earlier` leave out by design. `earlier` is []
+    when the phase is not in Phase Status."""
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
+    own_paths = section_paths(plan_lines, plan["sections"].get(str(phase_id)))
     order = [entry["number"] for entry in plan["entries"]]
     if str(phase_id) not in order:
-        return []
+        return PhasePaths([], sorted(own_paths))
 
     earlier_paths = set()
     for earlier_id in order[:order.index(str(phase_id))]:
         earlier_paths |= section_paths(plan_lines, plan["sections"].get(earlier_id))
-    return sorted(earlier_paths)
+    return PhasePaths(sorted(earlier_paths), sorted(own_paths))
+
+
+def earlier_phase_paths(plan_lines, phase_id):
+    """The `earlier` paths of plan_phase_paths."""
+    return plan_phase_paths(plan_lines, phase_id).earlier
 
 
 def phase_own_paths(plan_lines, phase_id):
-    """Every backticked path (section_paths) of this phase's own section, sorted: the files the phase names, which
-    later_phase_paths and earlier_phase_paths leave out by design."""
-    plan = plan_format.parse_plan_with_closing_phases(plan_lines)
-    return sorted(section_paths(plan_lines, plan["sections"].get(str(phase_id))))
+    """The `own` paths of plan_phase_paths."""
+    return plan_phase_paths(plan_lines, phase_id).own
 
 
 def section_paths(plan_lines, section):

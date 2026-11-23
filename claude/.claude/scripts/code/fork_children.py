@@ -7,7 +7,8 @@ reviewers it started that have not finished or been stopped, the launches whose 
 what became of the repo's detached /code review loop (stopped only when its process is this code-fork's own review
 start, begun inside the code-fork's lifetime; the review-fix loop of a /review or /fix fork is never stopped here and
 reads `not_code_phase`). The loop reads `stopped` once its process group exited within two seconds of the SIGTERM and
-`signalled` when it is still alive then; `query_failed` when `ps` could not answer.
+`signalled` when a process of the group is still alive then (the leader may have exited while a child lives on);
+`query_failed` when `ps` could not answer.
 The repo is `--repo`, else the git top level of the `cwd` of the code-fork transcript's last record, else the current
 folder; with none inside a git checkout the loop reads `no_repo`. Exit 0 with the report; exit 2 for a usage error, a
 missing transcript or an id that is not a code-fork; exit 1 with a `fork_children: could not signal ...` line when
@@ -22,6 +23,7 @@ import json
 import os
 import pathlib
 import sys
+from typing import NamedTuple
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code")]
@@ -47,7 +49,7 @@ LOOP_NOT_CODE_PHASE = "not_code_phase"
 LOOP_UNKNOWN = "query_failed"
 LOOP_NO_REPO = "no_repo"
 REVIEW_FIX_LAUNCH = "review_fix.py launch"
-STOP_WAIT_SECONDS = 2
+STOP_WAIT_SECONDS = 2  # review/review_launch.py wait_for_exit is the sibling wait (5 s) to consolidate with
 DENY_REASON = ("code fork {fork} has live children: {ids}. Run python3 {script} {fork}: TaskStop each agent id it "
                "names; for a launch with no agent id yet, rerun it once the launch result names one. It stops a /code "
                "review loop only, never a /review or /fix loop. Then TaskStop the fork.")
@@ -57,8 +59,8 @@ UNRESOLVED_LAUNCH = "launch {launch} (no agent id yet)"
 def children_named_by_meta(fork_transcript, fork_id):
     """The agent ids of the sibling transcripts whose meta names the code-fork as parent."""
     folder = pathlib.Path(fork_transcript).parent
-    return [agent_id for agent_id, _transcript, meta in loop_transcript.subagent_entries(folder)
-            if meta.get("parentAgentId") == fork_id]
+    entries = loop_transcript.subagent_entries(folder, report_torn=True)
+    return [agent_id for agent_id, _transcript, meta in entries if meta.get("parentAgentId") == fork_id]
 
 
 def is_live_agent(fork_transcript, agent_id):
@@ -69,7 +71,7 @@ def is_live_agent(fork_transcript, agent_id):
 
 def is_code_fork(transcript):
     """Whether the agent whose transcript this is was started as a code-fork."""
-    return loop_transcript.agent_meta(transcript).get("agentType") == open_child_gate.CODE_FORK
+    return loop_transcript.agent_meta(transcript, report_torn=True).get("agentType") == open_child_gate.CODE_FORK
 
 
 def child_ids(fork_transcript, fork_id):
@@ -94,30 +96,61 @@ def loop_report(pid, stopped, reason):
     return {"pid": pid, "stopped": stopped, "reason": reason}
 
 
-def fork_run_window(fork_transcript):
-    """(epoch of the code-fork's first Bash call that ran the review start script, epoch of its last record), or None
-    when it ran none or a record's time is missing or unreadable (named on stderr)."""
-    first_start = None
-    with open(fork_transcript, encoding="utf-8", errors="replace") as transcript:
-        for line in transcript:
-            commands = [tool_input.get("command") for name, tool_input in script_utils.tool_use_calls(line)
-                        if name == "Bash"]
-            if any(isinstance(command, str) and REVIEW_START_SCRIPT in command for command in commands):
-                first_start = json.loads(line).get("timestamp")
-                break
-    last_record = script_utils.last_transcript_record(fork_transcript) or {}
+class ForkCommands(NamedTuple):
+    """What one pass over the code-fork's Bash commands found."""
+    ran_review_start: bool
+    first_start_timestamp: object  # the `timestamp` of the record of the first review start; None when it has none
+    ran_review_fix: bool
+    ends_on_review_start: bool  # the last record is a Bash call that runs the review start script
+
+
+def scan_fork_commands(fork_transcript):
+    """The ForkCommands of the code-fork's transcript, read once; None when the transcript cannot be read (named on
+    stderr)."""
+    ran_review_start = False
+    first_start_timestamp = None
+    ran_review_fix = False
+    ends_on_review_start = False
     try:
-        return (human_turn_lookup.epoch_of_timestamp(first_start),
-                human_turn_lookup.epoch_of_timestamp(last_record.get("timestamp")))
+        with open(fork_transcript, encoding="utf-8", errors="replace") as transcript:
+            for line in transcript:
+                if not line.strip():
+                    continue
+                calls = script_utils.tool_use_calls(line)
+                commands = [tool_input.get("command") for name, tool_input in calls if name == "Bash"]
+                commands = [command for command in commands if isinstance(command, str)]
+                starts_review = any(REVIEW_START_SCRIPT in command for command in commands)
+                ran_review_fix = ran_review_fix or any(REVIEW_FIX_LAUNCH in command for command in commands)
+                ends_on_review_start = starts_review
+                if starts_review and not ran_review_start:
+                    ran_review_start = True
+                    first_start_timestamp = json.loads(line).get("timestamp")
+    except OSError as error:
+        print(f"fork_children: could not read {fork_transcript}: {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+    return ForkCommands(ran_review_start, first_start_timestamp, ran_review_fix, ends_on_review_start)
+
+
+def fork_run_window(fork_transcript, commands):
+    """(epoch of the code-fork's first review start, epoch of its last record) from its ForkCommands, or None when a
+    time is missing or unreadable (named on stderr). The end is None, an open window, when the last record is the Bash
+    call that runs the review start script: the loop's pid file is written after that record, and the code-fork's next
+    record is not written yet."""
+    try:
+        first_start = human_turn_lookup.epoch_of_timestamp(commands.first_start_timestamp)
+        if commands.ends_on_review_start:
+            return first_start, None
+        last_record = script_utils.last_transcript_record(fork_transcript) or {}
+        return first_start, human_turn_lookup.epoch_of_timestamp(last_record.get("timestamp"))
     except (AttributeError, ValueError) as error:
         print(f"fork_children: {fork_transcript} has no readable record time for the review start: {error}",
               file=sys.stderr)
         return None
 
 
-def started_inside_fork_run(repo, fork_transcript):
+def started_inside_fork_run(repo, fork_transcript, commands):
     """Whether the loop's pid file was written between the code-fork's first review start and its last record."""
-    window = fork_run_window(fork_transcript)
+    window = fork_run_window(fork_transcript, commands)
     if window is None:
         return False
     pid_file = code_wait.phase_dir(repo) / code_wait.PID_FILE
@@ -127,14 +160,17 @@ def started_inside_fork_run(repo, fork_transcript):
         print(f"fork_children: could not stat {pid_file}: {error}", file=sys.stderr)
         return False
     first_start, last_record = window
+    if last_record is None:
+        return first_start <= written
     return first_start <= written <= last_record
 
 
 def loop_not_linked_reason(pid, repo, fork_transcript):
     """Why the loop with this pid is not this code-fork's /code review loop, or None when it is."""
-    fork_commands = script_utils.bash_commands(fork_transcript)
-    ran_review_start = any(REVIEW_START_SCRIPT in command for command in fork_commands)
-    if not ran_review_start and any(REVIEW_FIX_LAUNCH in command for command in fork_commands):
+    commands = scan_fork_commands(fork_transcript)
+    if commands is None:
+        return LOOP_NOT_THIS_RUN
+    if not commands.ran_review_start and commands.ran_review_fix:
         return LOOP_NOT_CODE_PHASE
 
     try:
@@ -146,9 +182,9 @@ def loop_not_linked_reason(pid, repo, fork_transcript):
         return LOOP_GONE
     if REVIEW_START_SCRIPT not in command:
         return LOOP_NOT_REVIEW_LOOP
-    if not ran_review_start:
+    if not commands.ran_review_start:
         return LOOP_NOT_THIS_RUN
-    if not started_inside_fork_run(repo, fork_transcript):
+    if not started_inside_fork_run(repo, fork_transcript, commands):
         return LOOP_NOT_THIS_RUN
     return None
 
@@ -156,8 +192,9 @@ def loop_not_linked_reason(pid, repo, fork_transcript):
 def stop_fork_loop(repo, fork_transcript):
     """Stop the repo's detached /code review loop when it is this code-fork's: its pid is alive, its command line holds
     the review start script, the code-fork's own Bash commands ran that script, and the loop started inside the
-    code-fork's lifetime. Reports `stopped` once the group exited, `signalled` when it is still alive after
-    STOP_WAIT_SECONDS. The review-fix loop of a /review or /fix fork is not stopped."""
+    code-fork's lifetime. Reports `stopped` once every process of the loop's group exited, `signalled` when one is
+    still alive after STOP_WAIT_SECONDS. The review-fix loop of a /review or /fix fork is not stopped. Exits with a
+    named error line when the signal raises OSError."""
     pid = code_wait.running_review_pid(repo)
     if pid is None:
         return loop_report(None, False, LOOP_NONE)
@@ -165,11 +202,28 @@ def stop_fork_loop(repo, fork_transcript):
     not_linked = loop_not_linked_reason(pid, repo, fork_transcript)
     if not_linked:
         return loop_report(pid, False, not_linked)
-    if not process_group.terminate_group(pid):
+    # The leader's group id is read before the signal: a leader that exits no longer names its group.
+    group = process_group.group_id(pid)
+    try:
+        signalled = process_group.terminate_group(pid)
+    except OSError as error:
+        sys.exit(f"fork_children: could not signal the review loop of {repo}: {type(error).__name__}: {error}")
+    if group is None or not signalled:
         return loop_report(pid, False, LOOP_GONE)
-    if not process_group.wait_until_gone(pid, STOP_WAIT_SECONDS):
+    if not process_group.wait_until_group_gone(group, STOP_WAIT_SECONDS):
         return loop_report(pid, False, LOOP_SIGNALLED)
     return loop_report(pid, True, LOOP_STOPPED)
+
+
+def hook_agent_transcript(hook, agent_id):
+    """The transcript of agent `agent_id`: the one beside the hook event's session transcript when it exists, else the
+    newest one under any session of the projects folder (None when there is none)."""
+    session_transcript = hook.get("transcript_path")
+    if isinstance(session_transcript, str) and session_transcript:
+        sibling = pathlib.Path(script_utils.subagent_transcript_path(session_transcript, agent_id))
+        if sibling.is_file():
+            return sibling
+    return code_wait.agent_transcript(agent_id)
 
 
 def taskstop_deny_reason(hook):
@@ -180,7 +234,7 @@ def taskstop_deny_reason(hook):
     if not isinstance(task_id, str) or not code_wait.AGENT_ID.fullmatch(task_id):
         return None
 
-    transcript = code_wait.agent_transcript(task_id)
+    transcript = hook_agent_transcript(hook, task_id)
     if transcript is None or not is_code_fork(transcript):
         return None
     children, unresolved = child_ids(transcript, task_id)
@@ -233,10 +287,7 @@ def run_report(parser, fork_id, repo):
     if repo is None or code_wait.phase_dir_or_none(repo) is None:
         loop = loop_report(None, False, LOOP_NO_REPO)
     else:
-        try:
-            loop = stop_fork_loop(repo, transcript)
-        except OSError as error:
-            sys.exit(f"fork_children: could not signal the review loop of {repo}: {type(error).__name__}: {error}")
+        loop = stop_fork_loop(repo, transcript)
     print(json.dumps({"fork": fork_id, "children": children, "unresolved_launches": unresolved, "loop": loop}))
 
 

@@ -19,7 +19,7 @@ phase_start.py's record, every file dirty at the run start, whatever its bytes n
 same-bytes file while a live session other than this run's works in the repo; and, with a recorded holder or while
 such a session is live, every untracked file no recorded coder of the run wrote and no earlier or current phase
 section names, outside the plan folder and the start record's dirty map; the held-by line names each holder), a
-`tool fault:` line when a held file changed during the phase, a `held files this phase names:` line for held files
+`tool fault:` line when a held file changed since the run start, a `held files this phase names:` line for held files
 the phase's plan section names, then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
@@ -156,31 +156,20 @@ def phase_changed_files(repo, base_commit, held=()):
     return script_utils.without_paths(script_utils.changed_files(repo, base_commit), held)
 
 
-def earlier_phase_files(repo, plan, phase):
-    """The files the plan gives to the phases before this one: the run's own, never held. [] with no plan."""
-    if plan == NO_PLAN:
-        return []
-    plan_lines = (repo / plan).read_text().splitlines()
-    return expected_red.earlier_phase_paths(plan_lines, phase)
-
-
-def this_phase_files(repo, plan, phase):
-    """The files this phase's plan section names. [] with no plan."""
-    if plan == NO_PLAN:
-        return []
-    plan_lines = (repo / plan).read_text().splitlines()
-    return expected_red.phase_own_paths(plan_lines, phase)
-
-
 class PlanFiles(NamedTuple):
-    """The files the plan names: those of the phases before this one and those of this phase."""
+    """The files the plan names: those of the phases before this one (the run's own, never held) and those of this
+    phase's section."""
     earlier: list
     this: list
 
 
 def plan_files(repo, plan, phase):
     """The PlanFiles of a phase; both lists are empty with no plan. The plan is read and parsed once."""
-    return PlanFiles(earlier_phase_files(repo, plan, phase), this_phase_files(repo, plan, phase))
+    if plan == NO_PLAN:
+        return PlanFiles([], [])
+    plan_lines = (repo / plan).read_text().splitlines()
+    paths = expected_red.plan_phase_paths(plan_lines, phase)
+    return PlanFiles(paths.earlier, paths.own)
 
 
 def held_note(notes, message):
@@ -360,7 +349,7 @@ class ReviewScope(NamedTuple):
     """What a review covers: the holder rows of the held files, the handoff with its files from git, the files
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
-    changed during the phase, `held_targeted` the held files this phase's section names."""
+    changed since the run start, `held_targeted` the held files this phase's section names."""
     holders: list
     handoff: str
     phase_changed: list

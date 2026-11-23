@@ -1284,10 +1284,14 @@ class ReadJsonObjectTest(unittest.TestCase):
         self.write_meta("[1, 2]")
         self.assertEqual(script_utils.read_json_object(self.meta_path), {})
 
-    def test_a_torn_file_reads_as_empty_and_is_named_on_stderr(self):
+    def test_a_torn_file_reads_as_empty_and_is_named_on_stderr_only_when_asked(self):
         self.write_meta('{"finished": tr')
+        with contextlib.redirect_stderr(io.StringIO()) as quiet_stderr:
+            quiet = script_utils.read_json_object(self.meta_path)
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            found = script_utils.read_json_object(self.meta_path)
+            found = script_utils.read_json_object(self.meta_path, report_torn=True)
+        self.assertEqual(quiet, {})
+        self.assertEqual(quiet_stderr.getvalue(), "")
         self.assertEqual(found, {})
         self.assertIn(self.meta_path, stderr.getvalue())
 

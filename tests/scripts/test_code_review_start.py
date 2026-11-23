@@ -692,7 +692,7 @@ class CodeReviewStartTest(unittest.TestCase):
                           {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
 
         self.assertEqual(len(prompts), 1)
-        self.assertIn("tool fault: held files changed during the phase (by the coder or by the session that holds "
+        self.assertIn("tool fault: held files changed since the run start (by the coder or by the session that holds "
                       "them); review left them out, so check them: shared.py", prompts[0])
         self.assertIn("held files this phase names: mine.py", prompts[0])
 
@@ -809,13 +809,12 @@ class CodeReviewStartTest(unittest.TestCase):
         environment = {"CLAUDE_CODE_SESSION_ID": "test-session", "CLAUDE_CONFIG_DIR": str(self.config_dir())}
 
         with mock.patch.dict(os.environ, environment), \
-                mock.patch.object(code_review_start, "earlier_phase_files", return_value=[]) as earlier, \
-                mock.patch.object(code_review_start, "this_phase_files", return_value=[]) as this, \
+                mock.patch.object(code_review_start.expected_red, "plan_phase_paths",
+                                  return_value=code_review_start.expected_red.PhasePaths([], [])) as parsed, \
                 contextlib.redirect_stderr(io.StringIO()):
             code_review_start.review_scope(self.repo, "HEAD", "  files: []\n", "docs/plans/p/spec.md", "2")
 
-        earlier.assert_called_once()
-        this.assert_called_once()
+        parsed.assert_called_once()
 
     def test_an_untracked_file_the_phase_plan_names_is_reviewed_and_an_unplanned_one_stays_held(self):
         plan_text = PLAN.replace("**File**: `src/two.py`", "**File**: `src/two.py`\n**File**: `new_module.py`")

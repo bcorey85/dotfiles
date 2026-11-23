@@ -31,14 +31,43 @@ def pid_is_alive(owner_pid):
     return True
 
 
-def wait_until_gone(pid, seconds, poll_seconds=0.05):
-    """True once process pid no longer exists, polling for at most `seconds`; False when it is still alive then."""
+def group_id(pid):
+    """The process group id of process pid, or None when no such process exists. Read it before signalling: a leader
+    that has exited no longer names its group."""
+    try:
+        return os.getpgid(pid)
+    except ProcessLookupError:
+        return None
+
+
+def group_is_alive(group):
+    """True when any process of process group `group` exists, even one this user may not signal."""
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_until_not(is_alive, subject, seconds, poll_seconds):
     deadline = time.monotonic() + seconds
-    while pid_is_alive(pid):
+    while is_alive(subject):
         if time.monotonic() >= deadline:
             return False
         time.sleep(poll_seconds)
     return True
+
+
+def wait_until_gone(pid, seconds, poll_seconds=0.05):
+    """True once process pid no longer exists, polling for at most `seconds`; False when it is still alive then."""
+    return _wait_until_not(pid_is_alive, pid, seconds, poll_seconds)
+
+
+def wait_until_group_gone(group, seconds, poll_seconds=0.05):
+    """True once no process of group `group` exists, polling for at most `seconds`; False while one is still alive."""
+    return _wait_until_not(group_is_alive, group, seconds, poll_seconds)
 
 
 def command_line(pid):

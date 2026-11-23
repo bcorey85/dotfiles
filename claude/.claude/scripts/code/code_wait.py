@@ -79,7 +79,7 @@ LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where
 PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last phase's loop-dir
 SCOPE_FILE = "review-scope.json"  # the phase review's scope, written by code_review_start.py --detach
 PREVIOUS_SCOPE_FILE = "review-scope.prev.json"  # where phase_start.py moves the last phase's scope
-HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files whose bytes changed during the phase
+HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files changed since the run start
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
 CODE_WAIT_WRITES_NOTE = "(written by `code_wait.py review`, never by the reviewer)"
@@ -230,9 +230,9 @@ def read_phase_run(repo):
 
 
 def held_fault_text(paths):
-    """The tool-fault text for held files whose bytes changed during the phase. The prompt header, the scope note and
+    """The tool-fault text for held files whose bytes changed since the run start. The prompt header, the scope note and
     the wait output all use it."""
-    return ("held files changed during the phase (by the coder or by the session that holds them); review left them "
+    return ("held files changed since the run start (by the coder or by the session that holds them); review left them "
             "out, so check them: " + ", ".join(paths))
 
 

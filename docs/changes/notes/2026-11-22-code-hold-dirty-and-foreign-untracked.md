@@ -23,7 +23,7 @@ The phase start records the other live session in the repo, the run's session id
 
 tests/scripts/test_phase_start.py, tests/scripts/test_code_review_start.py, tests/scripts/test_code_wait.py
 
-Verify-branch fixes: a solo run with a start record and a session id and no holder now notes that no file is held (stderr and the scope notes), as every other no-holder path does. `code_wait.held_fault_line` returns a line naming the repo when it is outside a git checkout, in place of exiting. `code_review_start.py` reads the plan's earlier-phase and this-phase files once per scope build (`plan_files`) and passes them to the held, untracked and targeted reads. The `phase_start.py` docstring says a kept record adds the current session id.
+Verify-branch fixes: a solo run with a start record and a session id and no holder now notes that no file is held (stderr and the scope notes), as every other no-holder path does. `code_wait.held_fault_line` returns a line naming the repo when it is outside a git checkout, in place of exiting. `code_review_start.py` reads and parses the plan once per scope build (`plan_files`, through `expected_red.plan_phase_paths`) for the earlier-phase and this-phase files and passes them to the held, untracked and targeted reads. The `phase_start.py` docstring says a kept record adds the current session id.
 
 ## Result
 

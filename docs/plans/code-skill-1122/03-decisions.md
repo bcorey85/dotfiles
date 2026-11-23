@@ -191,7 +191,7 @@
 
 ### 15. Follow-up: the later-phase holder in `kept_record` is not held (Ask A, rejected)
 
-**Choice**: the code stays as it is. The later-phase holder at `claude/.claude/scripts/code/phase_start.py:189` (`kept_record`) is not held; this is outside the item's done clause. It is a follow-up, not a queue item of this branch.
+**Choice**: the code stays as it is. The later-phase holder in `claude/.claude/scripts/code/phase_start.py` (`kept_record`) is not held; this is outside the item's done clause. It is a follow-up, not a queue item of this branch.
 **Reasoning**: orchestrating session agent-evals-c3 ruled (Ask A, rejected), 2026-11-22, relayed by the code-skill-nov22 lane. agent-evals-c3 queues the follow-up.
 **Alternatives rejected**: changing `kept_record` in this phase.
 **Trade-off accepted**: the gap stays open until agent-evals-c3's queued item lands.

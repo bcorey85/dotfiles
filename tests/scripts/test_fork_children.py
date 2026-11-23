@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -308,6 +309,51 @@ class ForkChildrenTest(unittest.TestCase):
         self.assertEqual(loop, {"pid": process.pid, "stopped": True, "reason": "stopped"})
         self.assertIsNotNone(process.wait(timeout=10))
 
+    def test_the_report_stops_a_loop_whose_start_is_the_forks_last_record(self):
+        self.write_fork([stamped(bash_record(REVIEW_START), -60)])
+        process = self.start_process(["code_review_start.py"])
+        self.record_loop_pid(process.pid)
+
+        loop = self.report()["loop"]
+
+        self.assertEqual(loop, {"pid": process.pid, "stopped": True, "reason": "stopped"})
+
+    def test_a_loop_whose_child_outlives_it_reads_as_signalled(self):
+        self.write_review_fork()
+        child_code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(120)"
+        leader_code = ("import subprocess, sys, time\n"
+                       f"child = subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+                       "print(child.pid, flush=True)\n"
+                       "time.sleep(120)\n")
+        leader = subprocess.Popen([sys.executable, "-c", leader_code, "code_review_start.py"],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  text=True, start_new_session=True)
+        reaper = threading.Thread(target=leader.wait, daemon=True)
+        reaper.start()
+        self.addCleanup(reaper.join)
+        self.addCleanup(leader.stdout.close)
+        self.addCleanup(os.killpg, leader.pid, signal.SIGKILL)
+        leader.stdout.readline()
+        self.record_loop_pid(leader.pid)
+
+        loop = self.report()["loop"]
+
+        self.assertEqual(loop, {"pid": leader.pid, "stopped": False, "reason": "signalled"})
+
+    def test_the_hook_finds_the_fork_beside_the_events_session_transcript(self):
+        self.write_live_coder_fork()
+        session_transcript = os.path.join(os.path.dirname(os.path.dirname(self.subagents)), "session.jsonl")
+        module_spec = importlib.util.spec_from_file_location("fork_children_hook_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(module)
+        hook = {"transcript_path": session_transcript}
+
+        with mock.patch.object(module.code_wait, "agent_transcript", return_value=None) as globbed:
+            found = module.hook_agent_transcript(hook, FORK_ID)
+
+        self.assertEqual(str(found), os.path.join(self.subagents, f"agent-{FORK_ID}.jsonl"))
+        globbed.assert_not_called()
+
     def test_the_report_leaves_a_review_loop_the_fork_did_not_start_running(self):
         self.write_fork([])
         process = self.start_process(["code_review_start.py"])
@@ -418,11 +464,15 @@ class StopLoopBranchTest(unittest.TestCase):
         with mock.patch.object(module.code_wait, "running_review_pid", return_value=4242), \
                 mock.patch.object(module.process_group, "command_line", command_line), \
                 mock.patch.object(module.process_group, "terminate_group", return_value=terminated), \
-                mock.patch.object(module.process_group, "wait_until_gone", return_value=exited), \
+                mock.patch.object(module.process_group, "group_id", return_value=4242), \
+                mock.patch.object(module.process_group, "wait_until_group_gone", return_value=exited), \
                 mock.patch.object(module, "started_inside_fork_run", return_value=True), \
-                mock.patch.object(module.script_utils, "bash_commands", return_value=[REVIEW_START]), \
+                mock.patch.object(module, "scan_fork_commands", return_value=self.review_start_commands()), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             return module.stop_fork_loop("repo", "transcript"), stderr.getvalue()
+
+    def review_start_commands(self, ends_on_review_start=False):
+        return self.module.ForkCommands(True, "2026-11-22T00:00:00.000Z", False, ends_on_review_start)
 
     def test_a_failed_process_query_reads_as_query_failed(self):
         def failing_query(pid):
@@ -440,16 +490,37 @@ class StopLoopBranchTest(unittest.TestCase):
 
     def test_an_os_error_from_the_signal_exits_with_a_named_error_line(self):
         module = self.module
-        with mock.patch.object(module.code_wait, "agent_transcript", return_value="transcript"), \
-                mock.patch.object(module, "is_code_fork", return_value=True), \
-                mock.patch.object(module, "child_ids", return_value=([], [])), \
-                mock.patch.object(module.code_wait, "phase_dir_or_none", return_value="phase"), \
-                mock.patch.object(module, "stop_fork_loop", side_effect=PermissionError("not permitted")), \
+        with mock.patch.object(module.code_wait, "running_review_pid", return_value=4242), \
+                mock.patch.object(module, "loop_not_linked_reason", return_value=None), \
+                mock.patch.object(module.process_group, "group_id", return_value=4242), \
+                mock.patch.object(module.process_group, "terminate_group",
+                                  side_effect=PermissionError("not permitted")), \
                 self.assertRaises(SystemExit) as raised:
-            module.run_report(None, FORK_ID, "repo")
+            module.stop_fork_loop("repo", "transcript")
 
-        self.assertIn("fork_children: could not signal the review loop", str(raised.exception.code))
+        self.assertIn("fork_children: could not signal the review loop of repo", str(raised.exception.code))
         self.assertIn("not permitted", str(raised.exception.code))
+
+    def test_an_unreadable_transcript_reads_as_not_this_run_and_not_as_a_failed_signal(self):
+        module = self.module
+        missing = "/nonexistent/agent-transcript.jsonl"
+        with mock.patch.object(module.code_wait, "running_review_pid", return_value=4242), \
+                mock.patch.object(module.process_group, "terminate_group") as terminate, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            loop = module.stop_fork_loop("repo", missing)
+
+        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "not_this_run"})
+        self.assertIn(f"could not read {missing}", stderr.getvalue())
+        terminate.assert_not_called()
+
+    def test_a_window_with_the_review_start_as_the_last_record_has_no_end(self):
+        module = self.module
+        commands = self.review_start_commands(ends_on_review_start=True)
+
+        window = module.fork_run_window("transcript", commands)
+
+        self.assertIsNone(window[1])
+        self.assertIsInstance(window[0], float)
 
     def test_a_process_that_died_before_its_command_line_was_read_reads_as_gone(self):
         loop, _ = self.stop_loop_with(lambda pid: "")

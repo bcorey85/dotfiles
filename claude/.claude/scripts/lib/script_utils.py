@@ -956,16 +956,18 @@ def _last_nonblank_line(lines):
     return last_line
 
 
-def read_json_object(file):
+def read_json_object(file, report_torn=False):
     """The JSON object in `file` (a str or a Path), or {} when it is missing, unreadable, torn (a writer part-way
-    through) or holds no object. A torn file is named on stderr."""
+    through) or holds no object. A torn file is named on stderr only when `report_torn` is set, so a hook that reads
+    state files stays quiet."""
     file = pathlib.Path(file)
     try:
         found = json.loads(file.read_text(encoding="utf-8"))
     except OSError:
         return {}
     except ValueError as error:
-        print(f"read_json_object: {file} is not valid JSON, {type(error).__name__}: {error}", file=sys.stderr)
+        if report_torn:
+            print(f"read_json_object: {file} is not valid JSON, {type(error).__name__}: {error}", file=sys.stderr)
         return {}
     return found if isinstance(found, dict) else {}
 

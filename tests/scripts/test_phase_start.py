@@ -283,7 +283,7 @@ class PhaseStartTest(unittest.TestCase):
         claims = {row["path"]: row["claim"] for row in holders}
         self.assertEqual(claims["shared.py"], f"dirty at the run start, changed since; session in {self.repo}")
         self.assertEqual(claims["theirs.py"], f"dirty at the run start, unchanged now; session in {self.repo}")
-        self.assertIn("tool fault: held files changed during the phase (by the coder or by the session that holds "
+        self.assertIn("tool fault: held files changed since the run start (by the coder or by the session that holds "
                       "them); review left them out, so check them: shared.py", header)
 
     def test_a_fresh_start_records_the_live_other_session_as_holder_with_the_runs_session_and_time(self):
@@ -328,6 +328,16 @@ class PhaseStartTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.start_json()["sessions"], ["test-session", "resumed-session"])
+
+    def test_resume_after_a_commit_folds_in_a_file_dirtied_since_the_record_like_a_same_head_start(self):
+        self.phase_start()
+        git(self.repo, "commit", "-q", "--allow-empty", "-m", "the phase, committed by the user")
+        (self.repo / "dirtied_since.py").write_text("# another session's edit\n")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("dirtied_since.py", self.start_json()["dirty"])
 
     def test_an_unset_session_id_records_no_holder_and_no_session_and_says_so(self):
         self.register_live_session("other-session", self.repo)

@@ -17,7 +17,7 @@ Three prose-rule changes in the stowed claude toolkit, each measured with the ru
 
 - [x] Phase 0: Contracts — detector module, scenario ids, grade() dispatch lines, frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — item 3: the Agent model line, scenario AM01 end to end through one meter run per cell (risk: low)
-- [ ] Phase 2: Item 1: the go-ahead exception, scenario GA01 with the Owners plant (risk: low)
+- [x] Phase 2: Item 1: the go-ahead exception, scenario GA01 with the Owners plant (risk: low)
 - [ ] Phase 3: Item 2: scenario AB01 for the auto-mode line, runs, then delete or keep (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -495,6 +495,7 @@ Before the close pass, the lane-end steps that are not phases: the propagation s
 ## Plan Deviations
 
 - Phase 1 review: orchestration.md:7 omits the fork exception that agent-model-guard.sh:46-48 makes (AC11); ruled option a by agent-evals-c3, 2026-11-22; line reworded.
+- Phase 1 close: AM01 read 0 of 20; ruled option b, once, by agent-evals-c3, 2026-11-22; AM02 read off 0 of 3 and on 0 of 3, so the Agent model line does not ship and is removed from orchestration.md (03-decisions.md W6).
 
 ## Testing Strategy
 

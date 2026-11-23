@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1107 changes
+1109 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,7 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
-* [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) [rule/orchestration] The Delegation section tells the main session to leave model out when the agent's file pins one, else set sonnet or haiku, and says the model guard denies opus and inherit at the call site.
+* [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) [rule/orchestration] The Delegation section tells the main session to leave model out when the agent's file pins one, else set sonnet or haiku, and says the model guard denies opus and inherit at the call site. (reverted by 2026-11-22-the-agent-model-line-leaves-orchestration-the)
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
 * [Deny a docker run without --name and print the fixed form](notes/2026-11-22-deny-a-docker-run-without-name-and-print-the-fixed.md) [script/git-discipline-gate, script/docker-run-names, script/shell-command, script/shell-command-words, script/directory-emptying-deletes, script/plan-format] git-discipline-gate denies a Bash command whose docker run, docker container run or podman run step carries no --name, and prints the step as it is to be run: the same words with --rm --name <ticket>-<purpose> inserted after run, <ticket> filled from the branch's leading KEY-123 when it has one. docker compose run and docker exec pass. The hook's median time on a matched call equals its time on an unmatched one.
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The go-ahead covers an owner line in the scripts CLAUDE.md](notes/2026-11-22-the-go-ahead-covers-an-owner-line-in-the-scripts.md) [rule/global-claude-md] The global go-ahead rule gains one exception: the orchestrating session's go-ahead covers adding or updating an owner line in the scripts CLAUDE.md, and nothing else in that file.
 * [Relayed rulings and gate releases record who ruled and when, never the user's words](notes/2026-11-22-relayed-rulings-and-gate-releases-record-who-ruled.md) [script/ruling-relay, script/review-fix, script/review-fix-asks, script/phase-asks, script/handback-store, script/plan-format, script/coder-packet, shared/review-fork-run, skill/code, agent/code-fork, rule/orchestration] A relayed user ruling is `--by user --relayed-by <session name>` with no words: the script checks that the relaying session's transcript holds a typed user turn after the ask and stores only that turn's time; `--quote` is refused, the standing ruling line holds a short paraphrase with no quote marks, and the prompts that asked for the user's words verbatim now ask for the outcome, who gave it and when.
 * [Main sessions run full test suites in the background](notes/2026-11-22-main-sessions-run-full-test-suites-in-the.md) [script/inline-interpreter-hint, script/memory-cap-scope] The Bash hook denies a full test suite in the foreground of a main session and says to rerun it with run_in_background, so the conversation stays open while the suite runs.
 * [Review stop ask lines open with a marker emoji](notes/2026-11-22-review-stop-ask-lines-open-with-a-marker-emoji.md) [shared/review-fork-run, skill/review] Each ask line a review stop shows the user opens with a marker emoji and its number, so the user can tell the asks apart at a glance.
@@ -47,6 +48,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [The Agent model line leaves orchestration: the model guard alone keeps opus off the call site](notes/2026-11-22-the-agent-model-line-leaves-orchestration-the.md) [rule/orchestration] The Delegation bullet about the Agent model values is removed, because no run pinned opus or inherit with or without it.
 * [The plan-verifier reports per-criterion verdicts without a free-form gaps section](notes/2026-11-22-the-plan-verifier-reports-per-criterion-verdicts.md) [agent/plan-verifier] The plan-verifier drops the free-form Gaps section of its report and keeps one done, partial or missing verdict per criterion; across 16 metered runs every verdict matched the planted truth in both arms.
 * [The global rules drop the never-unstage and full-suite-at-end lines](notes/2026-11-22-the-global-rules-drop-the-never-unstage-and-full.md) [rule/global-claude-md] The global CLAUDE.md loses two rules the agent already followed without them (never-unstage) or that changed nothing (full suite once, at the end of review), so every session loads about 60 fewer words.
 * [Fourteen unused skills are deleted and post-review folds into peer-review](notes/2026-11-22-fourteen-unused-skills-are-deleted-and-post-review.md) [skill/peer-review, skill/post-review, skill/calibrate, skill/eng-arch, agent/code-reviewer, agent/mutation-tester] vault-ask, vault-progress, vault-review, save-note, daily-recap, weekly-recap, msg, calibrate, falsify, eng-arch, pull-design, go and stop are deleted, and posting approved review comments moves into /peer-review as its step 8, so the skill list every session loads is 14 entries shorter.
@@ -1292,6 +1294,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The Agent model line leaves orchestration: the model guard alone keeps opus off the call site](notes/2026-11-22-the-agent-model-line-leaves-orchestration-the.md) - No intake number counts Agent calls by call-site model value.
 * [orchestration names the Agent model values the hook passes](notes/2026-11-22-orchestration-names-the-agent-model-values-the.md) - No intake number counts Agent calls by call-site model value. Every AM01 cell graded; no cell stayed NO_TEST.
 * [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) - No intake number counts relayed user rulings refused by a user-only ask.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) - No intake number counts session rulings logged as the user's.

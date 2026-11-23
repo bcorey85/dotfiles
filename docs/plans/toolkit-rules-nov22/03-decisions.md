@@ -141,3 +141,11 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 - **Reasoning**: the guard lets a fork call through, so the line without the exception stated more than the guard enforces.
 - **Alternatives rejected**: leave the line as signed off in Q5.
 - **Trade-off accepted**: the line is longer.
+
+### W6. Item 3 ship or drop after AM01 read 0 of 20 (AC sign-off)
+
+- **Choice**: option b, once. Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`), ruling words: "option b, once ... If the off arm shows violations and the on arm fewer: ship the line. If the off arm is still 0: the hook alone does the job, the line is a no-op and does not ship." One new scenario, AM02 (a review dispatched to general-purpose that asks for opus), 3 runs per arm at the neutral level on the default model (sonnet; 6 runs, none on opus, so the opus count stays at AM01's 20, inside the 24 budget).
+- **Outcome**: off arm 0 violated of 3, on arm 0 violated of 3, no NO_TEST; the meter reads NO-EFFECT. The hook alone does the job, so the line does not ship: removed from `orchestration.md`, the Delegation anchor row restored to `2ebac3a6`, a removal change file with `reverts` names the AM01 change; the AM01 finding's recommendation reads "do not ship".
+- **Reasoning**: off equal to on, no margin (W2).
+- **Alternatives rejected**: ship the line as documentation of the guard.
+- **Trade-off accepted**: AM01 and AM02 stay in the meter as evidence of the no-effect; item 3 closes with a removal, not a line.

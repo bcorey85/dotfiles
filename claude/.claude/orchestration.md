@@ -4,7 +4,6 @@
 
 - Never code directly — dispatch via `/code`. Anything that picks a shape, a new name, or a behavior dispatches, however few lines. Edit directly only: a few lines in one file with no design choice; a mechanical sweep where every hunk is the same substitution, then run a repo check; rules, agents, skills and CLAUDE.md files; repos whose CLAUDE.md declares **direct-edit repo**.
 - Send a read-only lookup (find where something lives, what calls it, what a file does) to `Explore` with `model: "haiku"`, not to `general-purpose`. Use `general-purpose` only when the agent must edit, run a build or test, or judge a design.
-- On an Agent call leave `model` out when the agent's file pins one (every file under `agents/` does), else set `sonnet` or `haiku`; the hook denies `opus` and `inherit` at the call site, so opus runs only from an agent file's frontmatter; a `fork` call skips the hook and runs on the parent model.
 - Do not read a file in main only to hand it to a subagent that will read it. Send its path and what to look for. Read it in main only when its content decides what to dispatch.
 - Parallel writing agents need disjoint file scopes. The orchestrator owns all git operations.
 - A ListAgents peer named `child of <name>` is a headless step of that session's run, not a rival worker: never message it, and go on with your work.

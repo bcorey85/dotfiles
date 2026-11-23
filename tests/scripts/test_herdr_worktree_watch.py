@@ -11,7 +11,7 @@ import time
 import unittest
 
 import toolkit_paths
-from stubs import write_stub
+from stubs import run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE_WATCH = pathlib.Path(os.environ.get("HERDR_WORKTREE_WATCH", BIN_DIR / "herdr-worktree-watch"))
@@ -400,6 +400,13 @@ esac""")
         self.assertIn("server_unavailable", finished.stderr)
         self.assertNotIn("closed", finished.stderr)
         self.assertNotIn("notification", self.herdr_calls_text())
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_WORKTREE_WATCH, self.root / "symlink-run")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertTrue(finished.stderr.startswith("usage: herdr-worktree-watch "), finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

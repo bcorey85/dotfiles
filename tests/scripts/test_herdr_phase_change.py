@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, write_stub
+from stubs import copy_toolkit_tools_lib, run_through_stow_symlink, write_stub
 
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
 SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
@@ -361,6 +361,13 @@ class HerdrPhaseChangeTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 1)
                 self.assertEqual(self.submitted_prompts(), [])
                 self.assertIn(f"worker is {status}", finished.stderr)
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_PHASE_CHANGE, self.root / "symlink-run")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertTrue(finished.stderr.startswith("Clear a settled Claude agent's conversation"), finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

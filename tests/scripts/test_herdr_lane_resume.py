@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, write_stub
+from stubs import copy_toolkit_tools_lib, run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "herdr-lane-resume"))
@@ -546,6 +546,13 @@ class CloseTest(HerdrLaneResumeTest):
         self.assertIn("already gone", result.stderr)
         self.assertEqual(self.recorded_events(), [self.prune_event([])])
         self.assertEqual(self.lane_names(), [])
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_LANE_RESUME, self.root / "symlink-run")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertTrue(finished.stderr.startswith("Reopen a dead lane from its lane file"), finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

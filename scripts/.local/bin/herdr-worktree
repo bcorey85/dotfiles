@@ -64,8 +64,9 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 bin_dir="$(cd "$(dirname "$0")" && pwd)"
 # $0 is a stow symlink, so the library is found from the script's real path.
+script_dir="$(dirname "$(readlink -f "$0")")"
 # shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
-. "$(dirname "$(readlink -f "$0")")/../lib/toolkit-tools.bash"
+. "$script_dir/../lib/toolkit-tools.bash"
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -126,15 +127,7 @@ if [ -n "$fork" ]; then
     done
     if [ "${#missing_helpers[@]}" -gt 0 ]; then
         # The checkout is three folders above scripts/.local/bin/herdr-worktree, after following links.
-        script_file="$0"
-        while [ -L "$script_file" ]; do
-            link_target="$(readlink "$script_file")"
-            case "$link_target" in
-                /*) script_file="$link_target" ;;
-                *) script_file="$(dirname "$script_file")/$link_target" ;;
-            esac
-        done
-        dotfiles_dir="$(cd -P "$(dirname "$script_file")/../../.." && pwd)"
+        dotfiles_dir="$(cd -P "$script_dir/../../.." && pwd)"
         quoted_helpers="$(printf ' %q' "${missing_helpers[@]}")"
         echo "herdr-worktree: missing helpers:$quoted_helpers; link them with: stow -d $(printf '%q' "$dotfiles_dir") -t \"\$HOME\" -R scripts" >&2
         exit 1

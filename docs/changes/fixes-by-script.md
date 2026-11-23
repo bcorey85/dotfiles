@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-705 fix notes
+706 fix notes
 
 Recent: the 7 days up to 2026-11-22, the newest note.
 
@@ -91,6 +91,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-ruled | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
+| script/session-pane | 3 | 3 |
 | script/wait-loop-gate | 3 | 0 |
 | script/worktree-snapshot | 3 | 1 |
 | agent/code-fork | 2 | 0 |
@@ -116,7 +117,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
-| script/session-pane | 2 | 2 |
 | script/shell-quoting | 2 | 2 |
 | script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
@@ -162,6 +162,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/hook-local-row | 1 | 0 |
 | script/hunk-review-pane | 1 | 1 |
 | script/install-stow | 1 | 0 |
+| script/lane-status | 1 | 1 |
 | script/lanes | 1 | 1 |
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
@@ -188,6 +189,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
+| script/system-resources | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |
 | script/test-ownership-gate | 1 | 0 |

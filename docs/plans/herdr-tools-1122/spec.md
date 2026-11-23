@@ -24,7 +24,7 @@ A lane started with `herdr-worktree --fork` writes a durable lane file; `herdr-l
 - [x] Phase 6: herdr-phase-change resolves a session name or a worktree path (risk: low)
 - [x] Phase 7: herdr-phase-change names the report-to session (risk: low)
 - [x] Phase 8: herdr-dev resume mode and herdr-lane-resume (risk: high)
-- [ ] Phase 9: lane-status (risk: low)
+- [x] Phase 9: lane-status (risk: low)
 - [ ] Phase 10: prune keeps open lanes; `--close` runs it (risk: high)
 - [ ] Phase 11: Close-out — change pages, propagation sweep, full suite (risk: low)
 - [ ] Phase 12: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
@@ -482,8 +482,8 @@ One command a Monitor until-loop can call reports memory, scratch and every open
 
 #### Automated Verification
 
-- [ ] `python3 tests/parallel_tests.py test_lane_status.py` (RED before: missing)
-- [ ] `bash tests/lint.sh claude/.claude/scripts/tools/lane_status.py`
+- [x] `python3 tests/parallel_tests.py test_lane_status.py` (RED before: missing)
+- [x] `bash tests/lint.sh claude/.claude/scripts/tools/lane_status.py`
 
 #### Manual Verification
 

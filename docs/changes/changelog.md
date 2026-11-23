@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1114 changes
+1115 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [lane-status reports low memory, scratch space and open lanes that are not working](notes/2026-11-22-lane-status-reports-low-memory-scratch-space-and.md) [script/lane-status, script/system-resources, script/session-pane] lane-status prints low memory, low or crowded scratch space and each open lane with no agent, a missing worktree or a non-working agent, and nothing when all is well.
 * [herdr-lane-resume reopens a dead lane from its lane file and closes finished ones](notes/2026-11-22-herdr-lane-resume-reopens-a-dead-lane-from-its.md) [script/herdr-lane-resume, script/herdr-dev] A lane whose herdr workspace died restarts in one command from its lane file, and a finished lane is closed and its merged worktrees pruned in another.
 * [herdr lane file grammar and lanes CLI](notes/2026-11-22-herdr-lane-file-grammar-and-lanes-cli.md) [script/lanes, shared/lane-entries] Each herdr lane gets one JSON file under herdr-lanes with a single grammar in lib/lane_entries.py, a lanes.py command for every bash caller, and a registry lookup by name.
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.

@@ -115,13 +115,18 @@ def resolved(pane_id, via):
     return 0
 
 
+def agents_in(directory, agents):
+    """The agents whose real cwd is inside the real path of `directory`."""
+    real_directory = os.path.realpath(directory)
+    return [agent for agent in agents
+            if isinstance(agent.get("cwd"), str)
+            and script_utils.path_is_under(os.path.realpath(agent["cwd"]), real_directory)]
+
+
 def resolve_path(directory, agents):
     """The pane of the one claude agent whose cwd is inside `directory`. Prints why and returns an exit code when
     there is none or several."""
-    real_directory = os.path.realpath(directory)
-    inside = [agent for agent in agents
-              if isinstance(agent.get("cwd"), str)
-              and script_utils.path_is_under(os.path.realpath(agent["cwd"]), real_directory)]
+    inside = agents_in(directory, agents)
     if not inside:
         print(f"no claude agent runs in {directory}", file=sys.stderr)
         return EXIT_NO_NAME

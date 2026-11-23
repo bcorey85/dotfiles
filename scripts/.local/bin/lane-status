@@ -1,0 +1,2 @@
+#!/bin/bash
+exec python3 "$HOME/.claude/scripts/tools/lane_status.py" "$@"

@@ -33,6 +33,8 @@ Every message starts a turn that re-reads the receiver's whole context, so send 
 
 When the repo's CLAUDE.md names an orchestrating session, a worker acts on that session's go-ahead for any step inside the worker's own branch: commit, push the branch, merge the integration branch into it, and claim or close its queue item. It never waits for the user on those steps. A go-ahead never covers master, `settings.json`, a CLAUDE.md file, or a step a hook denied.
 
+Adding or updating an owner line in `claude/.claude/scripts/CLAUDE.md` is the exception: the orchestrating session's go-ahead covers it, and nothing else in that file.
+
 ## Compact instructions
 
 When you compact, keep decisions with their reasons, every measured number, open items in order, commit hashes, file paths, and the rules that bind the next step. Drop tool output and narrative.

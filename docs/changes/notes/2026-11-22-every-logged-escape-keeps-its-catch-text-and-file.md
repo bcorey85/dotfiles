@@ -21,7 +21,7 @@ unmeasured: ""
 
 ## Evidence
 
-Census of work escapes: 83 high- or medium-severity bug, correctness or security escapes got past code review; 48 were caught by the PR bot and kept no text, 70 carry no miss reason, and 20 have a line number. The user, 2026-11-22: "[the user's ask]".
+Census of work escapes: 83 high- or medium-severity bug, correctness or security escapes got past code review; 48 were caught by the PR bot and kept no text, 70 carry no miss reason, and 20 have a line number. The user asked on 2026-11-22 that every escape keep enough data to fix it later.
 
 ## Result
 

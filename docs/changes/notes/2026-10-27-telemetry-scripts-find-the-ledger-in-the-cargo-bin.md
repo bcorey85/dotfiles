@@ -29,7 +29,8 @@ unmeasured: ""
 ## Evidence
 
 - The ticket's first criterion asked for a resolvable ledger and "a missing ledger is a loud error, not a silent
-  fallback". The user narrowed it on 2026-10-27 to no hard error. Earlier the same day: "[the user's ask]". So the fallback stays and is made loud in the user's report instead.
+  fallback". The user narrowed it on 2026-10-27 to no hard error, and earlier the same day ruled out any
+  hard dependency on the ledger. So the fallback stays and is made loud in the user's report instead.
 - The ticket's second criterion (every finding a round raises gets one ledger row) is already met on master: the
   stop hook counts finding rows per finding, and the scripted review loop logs every finding in code.
 - The ledger installs to `~/.cargo/bin` through `cargo install`; the work intake reports "ledger not installed"

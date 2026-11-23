@@ -7,20 +7,18 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-13 open benches, by rank. Each line is the question the bench asks.
+11 open benches, by rank. Each line is the question the bench asks.
 
 0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Run the plan as an Opus-driven loop so a Sonnet main session only hands off (blocked): Keeps plan quality on a Sonnet main session and cuts its Opus reads by moving draft, challenge and revise into a scripted Opus loop that returns a finished plan.
-* Bench: tests asked for only where a function is complex and uncovered, in place of the test reviewer's judgment (queued): A score of complexity times missing coverage per changed function decides where a test is owed, so test lines fall where the code is simple or already covered.
+* Bench: tests asked for only where a function is complex and uncovered, in place of the test reviewer's judgment (running): A score of complexity times missing coverage per changed function decides where a test is owed, so test lines fall where the code is simple or already covered.
 * Coders chain rg lookups because LSP has no Rust server (queued): Install rust-analyzer so the coder's LSP tool works on Rust, then bench whether working LSP cuts coder tokens and Bash lookups on a Rust ticket.
 * Review loop writes a condensed prior-issues list in round two (queued): A one-line-per-issue prior-issues list in the script's round-two and last-read requests could cut 5-10% of the loop's Opus tokens, the part of the agent driver's cut that ports to the script.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
-* Re-bench the code reviewer on Sonnet against Opus on current models and toolkit (running): A Sonnet code reviewer that keeps Opus's catch rate would move the biggest Opus subagent cost onto Sonnet.
 * A review finding counts only when rerunning its command shows the failure (queued): Fewer false-alarm fix rounds: a finding survives only if a rerun of its command shows the failure, as pstack's interrogate does.
 * Reviewer proves the one fact a change's safety rests on, or labels it unproven (queued): Fewer bugs past review: the reviewer names the fact the change is safe because of and runs a script that proves it, as pstack's blast-radius does.
-* Review asks the user already answered the same way become standing rulings (queued): Fewer interruptions: a review ask that matches a pattern the user answered the same way twice before is resolved from a ruling file, as pstack's bugbot-triage does.
 * Bench: one architect agent in place of the backend and frontend pair (queued): A full-stack ticket gets one plan from one architect, and the scope-fence handoff rule goes away.
 * Bench: one planning researcher in place of the four-agent goal-blind chain (queued): Planning research takes one handoff instead of four, with three fewer agents to maintain.
 * Test-first on new features against build-then-test: does it cut test-gap and weak-assertion review findings (queued): Finds out whether writing tests before the code on new features cuts the test-gap and weak-assertion findings that now cost about 0.6 fixes per review run.

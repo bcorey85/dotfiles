@@ -10,7 +10,7 @@ components: ["skill/close-branch", "skill/code", "script/plan-format"]
 evidence: ["closing bench", "tests"]
 watches: ["close-pass-escapes"]
 test: "tests/scripts/test_plan_format.py"
-asked: "asked by the user"
+asked: "2026-11-04: asked by the user"
 proof: ["2026-11-07-one-close-pass-cuts-closing-tokens-36-but-fixes"]
 unmeasured: ""
 overlap: "close-pass-escapes reads escapes per review run, the metric that review-lens-split-escapes (the round-one lens split) also reads, and that earlier open watch is still running, so a move in escapes after this edit is read against both."

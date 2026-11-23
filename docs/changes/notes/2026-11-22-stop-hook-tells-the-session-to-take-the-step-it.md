@@ -10,7 +10,7 @@ components: ["script/staged-claim-gate"]
 evidence: ["replacement bench", "census", "tests"]
 watches: ["stop-hook-take-the-step"]
 test: "tests/scripts/test_staged_claim_gate.py"
-asked: "asked by the user"
+asked: "2026-11-22: asked by the user"
 proof: ["2026-11-22-a-stop-hook-reason-that-says-take-the-step-you"]
 unmeasured: "A step the user would have refused: the bench's offered step is one the user wants. Unasked work that replaces an answer to the user's question: the pass for a reply to a user's question is unchanged and the bench does not exercise it. Sonnet main sessions: the bench ran Opus only."
 overlap: "closing-permission-stop-hook (closed 2026-11-07) read the share of turn ends closing on a permission question; this edit changes only the reason text, so that share is not expected to move. stop-hook-take-the-step reads a different count, the bare go-ahead after a report with no question."

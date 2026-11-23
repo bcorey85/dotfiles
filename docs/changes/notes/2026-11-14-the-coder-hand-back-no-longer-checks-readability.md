@@ -21,7 +21,7 @@ unmeasured: "The change removes a check; no run measures its effect."
 
 ## Evidence
 
-User rule, 2026-11-14: "[the user's ask]".
+User rule, 2026-11-14: the user asked to remove the gate.
 
 ## Result
 

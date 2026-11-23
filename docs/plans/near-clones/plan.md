@@ -40,7 +40,7 @@ each added function the pass prints its nearest non-test helpers (questions cut,
 - Done-when "flags a domain-named function with a generic body as a generic-helper candidate by analysis of
   domain-specific attributes or calls" becomes: the script prints the catalog nearest-neighbours and the two questions
   for the smell-reviewer to judge, and the criterion is met by the catalog entry plus the question, not a script
-  verdict; ruling by agent-evals-5e citing the user ("[the user's ask]"), 2026-11-20; Ticket
+  verdict; ruling by agent-evals-5e citing the user's ruling that a script cannot cover this, 2026-11-20; Ticket
   `branch-refactor-finds-renamed-near-clones-and`.
 - AC3 loses "asks the smell-reviewer whether an existing helper already does this and whether it is a generic
   operation under a domain name": rule-meter NC01 (on 6/6, off 6/6), NC02 (12/12 each arm) and NC03 (12/12 each arm)

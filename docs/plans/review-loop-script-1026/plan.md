@@ -163,7 +163,7 @@ snapshot is written.
      (b) The handoff's `files:` entries are filtered to the owned files.
      (c) The full block stays, relabelled as phase context.
 
-- 2026-10-26 (Phase 2): Keep the benched routes. Ruled by Brandon Corey on 2026-10-26: "[the user's ask]". This replaces the earlier rule that blocked a clean mark when no reviewer ran after the last coder pass (item 8).
-- 2026-10-26 (Phase 2): Work repos get no toolkit line. Ruled by Brandon Corey on 2026-10-26: "[the user's ask]". Work repos use pnpm, make and python, with CI gates that differ per repo, so a haiku call finds the full check (item 9).
+- 2026-10-26 (Phase 2): Keep the benched routes. Ruled by the user on 2026-10-26: keep the gains the original eval showed. This replaces the earlier rule that blocked a clean mark when no reviewer ran after the last coder pass (item 8).
+- 2026-10-26 (Phase 2): Work repos get no toolkit line. Ruled by the user on 2026-10-26: work repos are not shaped by the toolkit. Work repos use pnpm, make and python, with CI gates that differ per repo, so a haiku call finds the full check (item 9).
 - 2026-10-27 (Phase 3): The launch agent id is `loop-script-<run id>-<dispatch id>`, not `loop-script-<dispatch id>`: dispatch ids restart per run, so the run id keeps two runs' launches apart in the hand-back store. Ruled by the user on 2026-10-27.
 - 2026-10-27 (Done when): Watch directions are tokens down, escapes flat. Ruled by the user on 2026-10-27.

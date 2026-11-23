@@ -38,7 +38,7 @@ user reports it has happened many times.
 The section adds 9 lines; the file stays under the 150-line target. The bench substrate now carries
 `test.maxWorkers: 2` in `backend/vitest.config.ts`, and its clean suite passes 311/311 in 91 s with 2 workers.
 
-Moved the same day. The user, 2026-10-25: "[the user's ask]". The section is deleted from
+Moved the same day. The user asked on 2026-10-25 to keep it out of the global CLAUDE.md. The section is deleted from
 `claude/.claude/CLAUDE.md`; the same rules now live in `~/agent-evals/CLAUDE.md`, scoped to bench substrates,
 where the crash came from.
 

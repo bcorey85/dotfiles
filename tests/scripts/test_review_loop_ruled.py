@@ -34,8 +34,8 @@ import ruled_change_text
 from approval_ask_chain import accepted_approval_ask_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
+from owner_line_fixtures import SCRIPTS_MD, SCRIPTS_MD_WITH_NEW_BULLET
 from owner_lines import SCRIPTS_CLAUDE_MD
-from test_owner_lines import NEW_BULLET, SCRIPTS_MD
 from test_review_loop_script import APP_FIXED, CLEAN_REVIEW, CLOSED, SESSION, ReviewLoopHarness
 
 
@@ -1211,7 +1211,7 @@ class OwnerLineEditTest(unittest.TestCase):
         return lambda: self.scripts_md.write_text(text)
 
     def test_only_an_owner_line_edit_stands_under_the_ruling(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         updated = SCRIPTS_MD.replace("`lib/plan_format.py`", "`lib/plan_format.py` `read_plan`")
         cases = {
             "owner bullet added": (added, True),
@@ -1232,7 +1232,7 @@ class OwnerLineEditTest(unittest.TestCase):
                 self.assertEqual([reason for _ask, reason in host.dropped_asks], [expected], name)
 
     def test_a_finding_on_the_kept_file_files_no_ask(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:5` [docs] missing owner — Change: add the bullet.")
 
         host = self.coder_pass(self.edit_scripts_md(added), [finding])
@@ -1245,7 +1245,7 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual(host.asks, [])
 
     def test_a_staged_mixed_edit_trimmed_to_owner_lines_in_the_work_tree_is_reverted(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
 
         def stage_mixed_then_trim():
             self.scripts_md.write_text(added + "- Prose bullet.\n")
@@ -1259,7 +1259,7 @@ class OwnerLineEditTest(unittest.TestCase):
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
 
     def test_a_committed_mixed_edit_trimmed_to_owner_lines_in_the_work_tree_is_reverted(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
 
         def commit_mixed_then_trim():
             self.scripts_md.write_text(added + "- Prose bullet.\n")
@@ -1289,17 +1289,16 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertIsNone(host.owner_file_before)
 
     def test_the_packet_line_reports_the_kept_edit_and_proposes_no_revert(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         host = self.coder_pass(self.edit_scripts_md(added))
 
         message = review_loop_packet.packet_message({"status": "converged", "dropped_asks": host.dropped_asks})
 
         loaded = handback.load(message)
         line = ("no approval ask is needed for an owner-line edit kept under the standing ruling by the "
-                "orchestrating session at 2026-11-22, so it was dropped: "
-                "'`claude/.claude/scripts/CLAUDE.md:1` [other] owner-line edit kept'")
+                f"orchestrating session at 2026-11-22, so it was dropped: '`{SCRIPTS_CLAUDE_MD}:1` [other] "
+                "owner-line edit kept'")
         self.assertEqual(loaded["dropped_asks"], [line])
-        self.assertNotIn("revert", loaded["dropped_asks"][0])
         self.assertEqual(loaded["ask"], [])
 
     def test_a_ruling_the_pass_adds_keeps_nothing(self):
@@ -1308,7 +1307,7 @@ class OwnerLineEditTest(unittest.TestCase):
 
         def add_ruling_and_bullet():
             self.decisions.write_text(OWNER_RULING)
-            self.scripts_md.write_text(SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data"))
+            self.scripts_md.write_text(SCRIPTS_MD_WITH_NEW_BULLET)
 
         host = self.coder_pass(add_ruling_and_bullet)
 
@@ -1317,7 +1316,7 @@ class OwnerLineEditTest(unittest.TestCase):
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
 
     def test_no_owner_line_ruling_reaches_the_pass_as_a_kept_edit(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         self.decisions.write_text(REWORDS_RULING)
         cases = {"a rewords-only ruling": PLAN_PATH, "no plan": ""}
         for name, plan in cases.items():
@@ -1330,8 +1329,25 @@ class OwnerLineEditTest(unittest.TestCase):
                 self.assertEqual([reason for _ask, reason in host.dropped_asks],
                                  [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON], name)
 
+    def test_an_owner_line_edit_with_a_ruling_but_no_pre_pass_text_is_reverted(self):
+        added = SCRIPTS_MD_WITH_NEW_BULLET
+        host = approval_host(reverts=True)
+        host.repo = str(self.repo)
+        host.plan = PLAN_PATH
+        host.files_touched = set()
+        host.snapshot_approval_blobs()
+        self.assertIsNotNone(host.owner_line_ruling)
+        host.owner_file_before = None
+        self.scripts_md.write_text(added)
+
+        host.reverted = host.ask_for_approval_only_edits([SCRIPTS_CLAUDE_MD], [])
+
+        self.assertEqual(self.scripts_md.read_text(), SCRIPTS_MD)
+        self.assertEqual([reason for _ask, reason in host.dropped_asks],
+                         [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
+
     def test_an_owner_shaped_edit_to_another_scripts_claude_md_is_reverted(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
 
         host = self.coder_pass(lambda: self.other_md.write_text(added), changed=OTHER_SCRIPTS_MD_PATH)
 
@@ -1340,7 +1356,7 @@ class OwnerLineEditTest(unittest.TestCase):
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
 
     def test_a_committed_owner_line_edit_stays_committed(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
 
         def commit_edit():
             self.scripts_md.write_text(added)
@@ -1356,7 +1372,7 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual([reason for _ask, reason in host.dropped_asks], [KEPT_REASON])
 
     def test_a_staged_owner_line_edit_with_the_work_tree_matching_the_index_stays(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
 
         def stage_edit():
             self.scripts_md.write_text(added)
@@ -1368,7 +1384,7 @@ class OwnerLineEditTest(unittest.TestCase):
         self.assertEqual([reason for _ask, reason in host.dropped_asks], [KEPT_REASON])
 
     def test_an_owner_line_edit_whose_work_tree_blob_git_cannot_hash_is_reverted(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         edited = []
 
         def edit():
@@ -1389,7 +1405,7 @@ class OwnerLineEditTest(unittest.TestCase):
                          [review_loop_ruled.REVERTED_APPROVAL_EDIT_REASON])
 
     def test_an_owner_line_edit_whose_index_entry_git_cannot_read_is_reverted(self):
-        added = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        added = SCRIPTS_MD_WITH_NEW_BULLET
         real_index_entry = review_loop_ruled.script_utils.index_entry
         # The first read is the owner-line judge's (`staged_and_committed_match_work_tree`), the only index read that
         # decides whether the edit stands.
@@ -1714,6 +1730,78 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(plain, json.dumps(packet["fixed"]))
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
         self.assertEqual(packet["skipped_fp"], [])
+
+    def test_an_adopted_finding_reported_already_applied_in_a_pass_with_no_diff_is_fixed(self):
+        packet = self.run_adopted({"result": "ALREADY APPLIED 1: app.py:2"})
+
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_a_no_diff_pass_reporting_both_an_adopted_and_a_plain_finding_already_applied_fixes_only_the_adopted(self):
+        self.seed_adopt_row()
+        plain = "app.py:1 [bug] plain finding"
+
+        packet = self.run_adopted({"result": "ALREADY APPLIED 1: app.py:2\nALREADY APPLIED 2: app.py:3"},
+                                  findings=(ADOPTED_FINDING, plain))
+
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
+        self.assertNotIn(plain, json.dumps(packet["fixed"]))
+        (skipped,) = packet["skipped_fp"]
+        self.assertIn(plain, json.dumps(skipped))
+        self.assertIn("ALREADY APPLIED 2: app.py:3", json.dumps(skipped))
+        self.assertEqual(self.adopted_left(), (), "the adopted ruling is recorded as applied")
+
+    def test_an_adopted_finding_reported_both_skipped_and_already_applied_is_applied_not_skipped(self):
+        packet = self.run_adopted({"result": "SKIPPED 1: not needed.\nALREADY APPLIED 1: app.py:2"})
+
+        self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_a_plain_finding_reported_already_applied_is_a_skip_with_the_coders_line_as_the_reason(self):
+        plain = "app.py:1 [bug] plain finding"
+
+        packet = self.run_adopted({"result": "ALREADY APPLIED 2: app.py:2", "edits": {"app.py": APP_FIXED}},
+                                  findings=(ADOPTED_FINDING, plain))
+
+        (skipped,) = packet["skipped_fp"]
+        self.assertIn(plain, json.dumps(skipped))
+        self.assertIn("ALREADY APPLIED 2: app.py:2", json.dumps(skipped))
+        self.assertNotIn(plain, json.dumps(packet["fixed"]))
+
+
+class AlreadyAppliedBriefTest(unittest.TestCase):
+    def brief(self, **options):
+        with tempfile.TemporaryDirectory() as folder:
+            return review_loop_prompts.coder_prompt("/repo", [parse_finding("a.py:1 [bug] x")], [], ["a.py"],
+                                                    pathlib.Path(folder), **options)
+
+    def test_the_brief_asks_for_the_marker_only_when_an_issue_is_adopted(self):
+        adopted = self.brief(adopted_numbers=(2,))
+        plain = self.brief()
+
+        self.assertIn("issue 2 asks for", adopted)
+        self.assertIn(f"{coder_report.ALREADY_APPLIED_MARKER} <n>", adopted)
+        self.assertNotIn(coder_report.ALREADY_APPLIED_MARKER, plain)
+
+
+class RepairMalformedRulingTest(unittest.TestCase):
+    def test_a_malformed_standing_ruling_stops_repair_with_the_findings_still_open_and_no_coder_call(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            (repo / "app.py").write_text("x = 1\n")
+            init_repo(repo)
+            loop = review_loop_script.LoopRun(str(repo), repo / "out", "", (), {"fixed": [], "files_touched": set()})
+            findings = [parse_finding("`app.py:1` [bug] wrong")]
+            error = plan_format.PlanFormatError("plan.md:5: a standing ruling line reads 'x'; expected `form`")
+            with (
+                mock.patch.object(loop, "snapshot_approval_blobs", side_effect=error),
+                mock.patch.object(review_loop_script, "coder_call") as coder,
+                self.assertRaises(plan_format.PlanFormatError),
+            ):
+                loop.repair("fix", findings)
+
+            self.assertEqual(loop.open_fixes, findings)
+            coder.assert_not_called()
 
 
 if __name__ == "__main__":

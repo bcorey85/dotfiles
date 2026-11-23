@@ -166,7 +166,7 @@
 
 ### Q11. Plan review BLOCKER: change file written to the main checkout
 
-**Choice**: `build_changes.py new` runs with `--root /home/brandon/dotfiles-review-owner-nov22/docs/changes`, the same root the rebuild uses; nothing is written to the main checkout.
+**Choice**: `build_changes.py new` runs from the repo top with `--root docs/changes`, the same root the rebuild uses; ruled by the orchestrating session 2026-11-23; nothing is written to the main checkout.
 **Reasoning**: Plan-reviewer finding, 2026-11-22. The branch holds the change file or AC3 fails.
 **Alternatives rejected**: Create in the main checkout and copy: an edit in another checkout, which the lane rules forbid.
 **Trade-off accepted**: None.

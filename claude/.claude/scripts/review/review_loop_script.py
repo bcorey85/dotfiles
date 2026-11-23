@@ -131,8 +131,10 @@ from review_loop_prompt_file import (
 from review_loop_prompts import coder_prompt, reviewer_prompt
 from review_loop_ruled import (
     RuledFindings,
+    adopted_numbers,
     approval_only_paths,
     no_code_numbers,
+    ordinary_already_applied_skips,
     prior_issue_entries,
     withheld_adopted,
 )
@@ -574,7 +576,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         when the passes so far removed half or more of the lines the change under review adds,
         NamedTestRemovedError when the pass removed a test the plan runs by name and one restore pass did not bring
         it back (`restore_named` False skips that check, for the restore pass), and CoderFailedError when the coder
-        call fails, and before the call when the scope guard cannot read the repo, with the findings kept in
+        call fails, and before the call when the scope guard cannot read the repo, or the standing rulings are malformed
+        (PlanFormatError, re-raised), with the findings kept in
         open_fixes except those on a reverted approval-only path, which are filed as user-only asks (a repeat of a
         rejected ask is dropped, not filed)."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
@@ -597,7 +600,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
                                                  issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
-        self.snapshot_approval_blobs()
+        try:
+            self.snapshot_approval_blobs()
+        except plan_format.PlanFormatError:
+            # The pass has not started, so no file changed: keep the findings open, then let the stop name the line.
+            self.keep_open(findings)
+            raise
         comments = snapshot_comments(self.repo, files_in_scope)
         stats_before = len(FIX_DIFF_STATS)
         if restore_named:
@@ -631,7 +639,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         """The coder's prompt for one pass, written under the pass's brief folder."""
         return coder_prompt(self.repo, issue_texts, [nit.text for nit in nits], files_in_scope,
                             self.out / "coder-briefs" / call_name, self.gate_env, self.later_phase_files,
-                            self.guidance, self.coder_held_files(), no_code_numbers(findings), named, self.ruled_out)
+                            self.guidance, self.coder_held_files(), no_code_numbers(findings), named, self.ruled_out,
+                            adopted_numbers(findings, self.adopted))
 
     def fix_round(self, round_fix, round_nits):
         """The coder pass on the round's merged fixes, and the plan for the next round. Returns False when the loop
@@ -745,9 +754,15 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         skips = skipped_issues(report, len(findings))
         reasked = reasked_findings(findings, open_questions(report), self.ruled_texts)
         skips = {**reasked, **skips}
-        already_applied = already_applied_issues(report, len(findings))
+        already_applied_lines = already_applied_issues(report, len(findings))
+        already_applied = set(already_applied_lines)
+        ordinary = ordinary_already_applied_skips(findings, self.adopted, already_applied_lines)
+        skips = {**ordinary, **skips}
         unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed,
                                                                              already_applied)
+        # An adopted finding reported ALREADY APPLIED counts as applied even when the coder also wrote SKIPPED for it.
+        adopted_applied = already_applied.intersection(adopted_numbers(findings, self.adopted))
+        skips = {number: line for number, line in skips.items() if number not in adopted_applied}
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]
@@ -755,8 +770,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
                                  if number not in skips and number not in unapplied_numbers
                                  and item not in reverted_findings)
         if not changed:
-            skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept]
-            kept = []
+            # An adopted finding the coder reported as already in the tree is applied, not a no-change skip.
+            # An already-applied finding that is in `kept` is an adopted one: ordinary ones are already in `skips`.
+            already_items = [findings[number - 1] for number in already_applied]
+            skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept
+                        if item not in already_items]
+            kept = [item for item in kept if item in already_items]
         self.skipped_fp += skipped
         self.given_skipped += len(skipped)
         self.fixed += kept

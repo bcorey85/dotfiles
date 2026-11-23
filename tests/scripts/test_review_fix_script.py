@@ -1210,6 +1210,21 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("The ruling: keep the retry", plan_file.read_text())
         self.assertIn("the queue is at-most-once", plan_file.read_text())
 
+    def test_decide_keep_rules_two_held_impacts_as_the_one_joined_row_when_none_is_adopted(self):
+        second_impact = {**HELD_IMPACT, "text": "the retry cap contradicts AC-3"}
+        self.plant_held_hand_back(HELD_IMPACT, second_impact)
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep both",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled = handback_store.rulings(SESSION, repo_key).impacts
+        joined = handback.held_plan_impact_text([HELD_IMPACT, second_impact])
+        self.assertEqual(list(ruled), [joined], "a non-adopted keep must write the single joined row")
+
     def test_decide_adopt_with_no_state_logs_the_deviation_and_stops_for_the_callers_own_loop(self):
         self.plant_held_hand_back()
         plan_file = self.session_plan_file()
@@ -1347,6 +1362,30 @@ class ReviewFixScriptTest(unittest.TestCase):
             handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
                                                owner="the user", ruled_at="2026-11-19 10:00")
         return impact
+
+    def test_decide_keep_rules_every_unapplied_adopted_impact_and_a_ruling_that_covers_two_findings(self):
+        first = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        second = "PLAN-IMPACT: AC3 cut. acceptance_criteria: AC3"
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": "blocked"}],
+                                  adopted_unapplied=[first, second])
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            for finding_text in ("finding one", "finding two"):
+                handback_store.record_ruled_impact(SESSION, first, repo_key, finding_text=finding_text,
+                                                   decision=plan_format.ADOPT_DECISION, owner="the user",
+                                                   ruled_at="2026-11-19 10:00")
+            handback_store.record_ruled_impact(SESSION, second, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands as written"])
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            kept = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(kept.adopted, (), "each adopted text has its own keep row")
+        self.assertEqual(sorted(kept.finding_texts), ["finding one", "finding two"],
+                         "each per-finding adopt row is replaced by a keep row with the same finding text")
+        self.assertEqual(sorted(set(kept.impacts)), sorted([first, second]))
 
     def test_decide_keep_finds_no_adopted_impact_the_packet_does_not_list_as_unapplied(self):
         self.plant_adopted_impact([])

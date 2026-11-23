@@ -80,6 +80,19 @@ def no_code_numbers(findings):
     return [number for number, finding in enumerate(findings, 1) if is_no_code_finding(finding.text)]
 
 
+def adopted_numbers(findings, adopted):
+    """The 1-based issue numbers of the findings whose text is a key of `adopted`."""
+    return [number for number, finding in enumerate(findings, 1) if finding.text in adopted]
+
+
+def ordinary_already_applied_skips(findings, adopted, already_applied_lines):
+    """{number: the coder's `ALREADY APPLIED` line} of the reported numbers that are no adopted finding. Only an
+    adopted finding reads that line as applied; any other finding the coder found in the tree is a skip with the
+    coder's reason."""
+    adopted_set = set(adopted_numbers(findings, adopted))
+    return {number: line for number, line in already_applied_lines.items() if number not in adopted_set}
+
+
 def rejected_ask_records(session_id, repo):
     """The finding records of the asks the session rejected in `repo` (the reviewed repo's top level, the key
     asks-done writes under: the packet's own `--repo`), [] with no session id."""

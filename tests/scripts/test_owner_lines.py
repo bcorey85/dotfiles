@@ -7,12 +7,8 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import owner_lines
 import script_utils
+from owner_line_fixtures import NEW_BULLET, SCRIPTS_MD, SCRIPTS_MD_WITH_NEW_BULLET
 
-SCRIPTS_MD = (
-    "# Toolkit scripts\n\n## Owners\n\n- Plan text: `lib/plan_format.py`.\n"
-    "- TOML files: `lib/toml_file.py` `read_toml`.\n\n## Data between steps\n\n- Steps pass JSON to each other.\n"
-)
-NEW_BULLET = "- A new fact: `lib/new_fact.py`.\n"
 SEPARATED_SWAP_HEAD = "# Toolkit scripts\n\n## Owners\n\n"
 SEPARATED_SWAP_BEFORE = (
     f"{SEPARATED_SWAP_HEAD}- Plan text: `lib/plan_format.py`.\n- TOML files: `lib/toml_file.py` `read_toml`.\n"
@@ -27,7 +23,7 @@ SEPARATED_SWAP_AFTER = (
 class OwnerLinesOnlyTest(unittest.TestCase):
     def test_edits_that_only_add_or_update_owner_bullets_are_true(self):
         cases = {
-            "bullet added": SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data"),
+            "bullet added": SCRIPTS_MD_WITH_NEW_BULLET,
             "bullet updated": SCRIPTS_MD.replace("`lib/plan_format.py`", "`lib/plan_format.py` `read_plan`"),
             "two bullets updated": SCRIPTS_MD.replace("Plan text", "Plan texts").replace("TOML files", "TOML"),
             "bullet updated with a new bullet beside it": SCRIPTS_MD.replace(
@@ -127,7 +123,7 @@ class OwnerLinesOnlyTest(unittest.TestCase):
 
     def test_a_non_owner_line_in_owners_replaced_by_an_owner_bullet_is_false(self):
         before = SCRIPTS_MD.replace("\n## Data", "Some prose.\n\n## Data")
-        after = SCRIPTS_MD.replace("\n## Data", NEW_BULLET + "\n## Data")
+        after = SCRIPTS_MD_WITH_NEW_BULLET
 
         self.assertFalse(owner_lines.owner_lines_only(before, after))
 

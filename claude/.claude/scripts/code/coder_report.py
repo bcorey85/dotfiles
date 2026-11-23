@@ -8,6 +8,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent.parent / "lib")]
 import script_utils
 
 OPEN_QUESTIONS_LINE = re.compile(r"^[ \t>*`_-]*OPEN QUESTIONS[*`_]*:[*`_]*[ \t]*(.*)$", re.M)
+ALREADY_APPLIED_MARKER = "ALREADY APPLIED"
 UNREADABLE_QUOTE_LIMIT = 120
 COVERING_ISSUE = re.compile(
     r"\b(?:(?:fixed|done|covered|applied|handled|addressed)\s+(?:with|by|in|under)\s+(?:issue\s+|#)"
@@ -98,18 +99,25 @@ def covered_issue(reason, number, issue_count):
     return None
 
 
-ALREADY_APPLIED_LINE = re.compile(r"\s*[-*]?\s*`?ALREADY APPLIED (\d+):")
+def issue_marker_lines(report, word, issue_count):
+    """Issue number -> the first `<word> <n>: ...` line of the report that names it, for numbers that name a listed
+    issue. `word` is the marker's words (`SKIPPED`, `ALREADY APPLIED`); a `SKIPPED small <n>` line is no match."""
+    pattern = re.compile(rf"\s*[-*]?\s*`?{re.escape(word)} (\d+):")
+    lines = {}
+    for line in report.splitlines():
+        match = pattern.match(line)
+        if not match:
+            continue
+        number = int(match.group(1))
+        if 1 <= number <= issue_count:
+            lines.setdefault(number, line.strip())
+    return lines
 
 
 def already_applied_issues(report, issue_count):
-    """The issue numbers the coder reported as already in the tree, by an `ALREADY APPLIED <n>: <where>` line, for
-    numbers that name a listed issue."""
-    numbers = set()
-    for line in report.splitlines():
-        match = ALREADY_APPLIED_LINE.match(line)
-        if match and 1 <= int(match.group(1)) <= issue_count:
-            numbers.add(int(match.group(1)))
-    return numbers
+    """Issue number -> the coder's `ALREADY APPLIED <n>: <where>` line, for the issues the coder reported as already
+    in the tree, for numbers that name a listed issue."""
+    return issue_marker_lines(report, ALREADY_APPLIED_MARKER, issue_count)
 
 
 def skipped_issues(report, issue_count):
@@ -117,17 +125,9 @@ def skipped_issues(report, issue_count):
     small <n>` line is a small item's, never an issue's. An issue whose reason names another listed issue as the one
     that covers it is fixed, so it is no skip, when its chain of covering issues ends at an issue the coder did not
     skip (see cover_chain_ends_fixed)."""
-    skips = {}
-    coverings = {}
-    for line in report.splitlines():
-        match = re.match(r"\s*[-*]?\s*`?SKIPPED (\d+):(.*)", line)
-        if not match:
-            continue
-        number = int(match.group(1))
-        if not 1 <= number <= issue_count:
-            continue
-        skips.setdefault(number, line.strip())
-        coverings.setdefault(number, covered_issue(match.group(2), number, issue_count))
+    skips = issue_marker_lines(report, "SKIPPED", issue_count)
+    coverings = {number: covered_issue(line.split(":", 1)[1], number, issue_count)
+                 for number, line in skips.items()}
     fixed = [number for number, covering in coverings.items()
              if covering is not None and cover_chain_ends_fixed(covering, skips, coverings)]
     for number in fixed:

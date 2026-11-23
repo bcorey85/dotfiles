@@ -5,6 +5,7 @@ import handback
 import path_summary
 import plan_format
 import script_utils
+from coder_report import ALREADY_APPLIED_MARKER
 
 ISSUE_CHARS = 240
 MAX_LISTED_ISSUES = 50
@@ -159,15 +160,19 @@ def path_list(paths, list_file, in_scope=()):
 
 
 def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), later_phase_files=(), guidance="",
-                 held_files=(), no_code_numbers=(), named_tests=(), ruled_out_files=()):
+                 held_files=(), no_code_numbers=(), named_tests=(), ruled_out_files=(), adopted_numbers=()):
     """The fix coder's brief. `list_dir` is the folder that takes the full issue texts, the full small-item texts
     and each path list the brief folds."""
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += listed_texts(findings, list_dir / "issues.txt", "issue")
     body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
                  "where n is the issue's number. When you stop on a PLAN-IMPACT, write that line for each issue "
-                 "you left unapplied. When the tree already holds the change an issue asks for, write "
-                 "`ALREADY APPLIED <n>: <file:line where it is>` for it instead.", "", SCOPED_TESTS]
+                 "you left unapplied.", "", SCOPED_TESTS]
+    if adopted_numbers:
+        numbers = ", ".join(map(str, adopted_numbers))
+        asking = "issue " + numbers + " asks" if len(adopted_numbers) == 1 else "issues " + numbers + " ask"
+        body += ["", f"When the tree already holds the change that {asking} for, write "
+                     f"`{ALREADY_APPLIED_MARKER} <n>: <file:line where it is>` for it instead of `SKIPPED <n>`."]
     if no_code_numbers:
         body += ["", "## No code change", "", NO_CODE_CODER_RULE.format(numbers=", ".join(map(str, no_code_numbers)))]
     if small_items:

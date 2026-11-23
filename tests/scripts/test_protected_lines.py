@@ -31,6 +31,19 @@ class StretchHelpersTest(unittest.TestCase):
         after_lines = [plan_line.replace("every", "each"), plan_line]
         self.assertFalse(protected_lines.lines_rewritten_in_place([plan_line, longer_line], after_lines, after_lines))
 
+    def test_two_old_lines_never_share_one_new_line_and_each_match_starts_after_the_previous_one(self):
+        first = "- Plan text: `lib/plan_format.py` reads every plan file."
+        second = "- Review text: `review/handback.py` reads every hand-back row."
+        cases = {
+            "two similar old lines, one new line": ([first, first + " Twice."], [first + " Once."]),
+            "the new lines come in the reverse order": ([first, second], [second + " Edited.", first + " Edited."]),
+        }
+        for name, (before_lines, after_lines) in cases.items():
+            with self.subTest(name):
+                rewritten = protected_lines.lines_rewritten_in_place(before_lines, after_lines, after_lines)
+
+                self.assertFalse(rewritten, name)
+
     def test_an_old_line_with_a_better_match_among_the_rivals_is_not_an_update_in_place(self):
         before = "- Plan text: `lib/plan_format.py`."
         own = before + " Changed a lot more than this."

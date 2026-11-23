@@ -853,7 +853,14 @@ def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None)
     state to re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
     impact_text = handback.held_plan_impact_text(source.held)
     rows_repo = handback_store.ruled_rows_repo(".")
-    entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed)
+    # One ruled row per held text, so each replaces its own row for `handback_store.latest_rows_per_text`.
+    # Other held impacts keep the one joined row.
+    row_impacts = []
+    if source.row_per_text:
+        row_impacts = [(impact["text"], finding_text) for impact in source.held
+                       for finding_text in impact["finding_texts"] or [None]]
+    entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed,
+                               row_impacts=row_impacts)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
         return print_settled(settle_ruling("keep"), logged_line, *entry,

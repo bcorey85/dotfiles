@@ -27,7 +27,7 @@ It goes in the lane's `03-decisions.md`, or in the plan's `## Plan Deviations`. 
 
 The queue item's second item closes on evidence: a replay of a pasted-brief lane ticket reads owner `session`, and a pin test in `CriteriaOwnerTest` holds that shape. No failing replay exists, so there is no code change for it.
 
-The glossary gains three edits: the approval-only file entry names the owner-line exception and `review/review_loop_ruled.py`, the standing ruling entry covers owner-line edits, and a new owner line entry names `lib/owner_lines.py`.
+The glossary is unchanged until the user rules on three edits: the approval-only file entry, the standing ruling entry and a new owner line entry.
 
 Merge dependency: this branch merges after `fix/toolkit-rules-nov22`, which owns the neighboring edits to the scripts CLAUDE.md.
 

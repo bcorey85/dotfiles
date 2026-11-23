@@ -7,7 +7,7 @@ okf_version: "0.2"
 
 1110 changes, 22 with a measured gain, 273 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [The auto-mode file-I/O line stays: the meter shows it changes the tools used](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md).
+Latest change: 2026-11-22, [The auto-mode file-I/O line stays: the meter shows 6 Bash file writes with it and 9 without](notes/2026-11-22-the-auto-mode-file-i-o-line-stays-the-meter-shows.md).
 
 ## Top gains
 

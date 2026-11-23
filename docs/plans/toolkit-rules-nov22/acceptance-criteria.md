@@ -8,7 +8,7 @@
 - **AC1** — The global go-ahead rule says an owner line in the scripts CLAUDE.md is covered by the orchestrating session's ruling.
   - Walk ruling W1 (agent-evals-c3, 2026-11-22, `03-decisions.md`): the rule covers adding or updating an owner line, and nothing else in that file.
 - **AC2** — Rule-meter on and off arms have run for the reworded rule, with counts in the change file.
-- **AC3** — A lane that has the orchestrating session's go-ahead to add an owner line for a new module adds it to the scripts CLAUDE.md without asking the user in its own pane.
+- **AC3** — A lane that has the orchestrating session's go-ahead to add an owner line for a new module adds it to the scripts CLAUDE.md by a direct edit, without asking the user in its own pane.
 - **AC4** — The go-ahead still does not cover master, `settings.json`, any other CLAUDE.md file, or a step a hook denied.
 
 ## Item 2 — auto-mode Bash line on file edits

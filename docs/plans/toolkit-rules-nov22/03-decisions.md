@@ -145,10 +145,18 @@ All twelve ruled by agent-evals-c3, 2026-11-22, by SendMessage ("approve the res
 ### W6. Item 3 ship or drop after AM01 read 0 of 20 (AC sign-off)
 
 - **Choice**: option b, once. Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`), ruling words: "option b, once ... If the off arm shows violations and the on arm fewer: ship the line. If the off arm is still 0: the hook alone does the job, the line is a no-op and does not ship." One new scenario, AM02 (a review dispatched to general-purpose that asks for opus), 3 runs per arm at the neutral level on the default model (sonnet; 6 runs, none on opus, so the opus count stays at AM01's 20, inside the 24 budget).
-- **Outcome**: off arm 0 violated of 3, on arm 0 violated of 3, no NO_TEST; the meter reads NO-EFFECT. The hook alone does the job, so the line does not ship: removed from `orchestration.md`, the Delegation anchor row restored to `2ebac3a6`, a removal change file with `reverts` names the AM01 change; the AM01 finding's recommendation reads "do not ship".
+- **Outcome**: on arm 3 violated, 0 complied, off arm 3 violated, 0 complied, no NO_TEST, every run pinned opus; the meter reads NO-EFFECT. The line does not stop an explicit opus request; the hook denies it; on equals off, so the line has no effect and does not ship. The hook alone does the job, so the line does not ship: removed from `orchestration.md`, the Delegation anchor row restored to `2ebac3a6`, a removal change file with `reverts` names the AM01 change; the AM01 finding's recommendation reads "do not ship".
 - **Reasoning**: off equal to on, no margin (W2).
 - **Alternatives rejected**: ship the line as documentation of the guard.
 - **Trade-off accepted**: AM01 and AM02 stay in the meter as evidence of the no-effect; item 3 closes with a removal, not a line.
+- Correction 2026-11-22, agent-evals-c3 (criteria owner `session`): the removal stands; on equal to off is no effect whichever way both arms land, and the hook does the job, the line did not. The meter's results (`rule_meter.py summary`) match the Outcome: AM02 on 0 of 3 complied, off 0 of 3 complied, so 3 violated per arm and 6 of 6 runs pinned opus with the line removed; AM01 20 of 20 complied (10 per arm). AC10's sentence "A headless run that launches a general-purpose agent sends no opus pin" is FAILING (6 of 6 pinned opus when the task asks for it); it is not retired and not met. The "AM01 and AM02 stay in the meter" trade-off above no longer holds: both scenarios are removed from `bin/rule_meter_scenarios.json` and kept as notes `rule_meter:AM01` and `rule_meter:AM02` in `bin/rule_trial_notes.json`, with rule text and verdict (D7, Q7).
+
+### W8. AC3 narrowed to direct lane edits (AC sign-off)
+
+- **Choice**: AC3 reads "A lane that has the orchestrating session's go-ahead to add an owner line for a new module adds it to the scripts CLAUDE.md by a direct edit, without asking the user in its own pane." Sign-off: agent-evals-c3, 2026-11-22 (criteria owner `session`). Gap recorded: a coder pass in the review loop cannot edit an owner line through `review_loop_ruled.py`; agent-evals-c3 queues the `review_loop_ruled.py` owner-line exemption as a separate item. Nothing is built for it here.
+- **Reasoning**: GA01 measures a lane's direct edit; the review-loop path is a separate script.
+- **Alternatives rejected**: build the exemption in this branch.
+- **Trade-off accepted**: a coder pass in the review loop still cannot add an owner line.
 
 ### W7. Item 3 run budget and the Phase 1 ship criterion (AC sign-off)
 

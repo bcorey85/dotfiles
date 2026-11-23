@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1103 changes
+1104 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -80,6 +80,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Code runs the coder checks itself when a coder skips the hand-back](notes/2026-11-22-code-runs-the-coder-checks-itself-when-a-coder.md) [script/coder-gate, skill/code] A coder that ends without handing back through the gate no longer sends failing checks to review: /code runs the gate's checks itself and sends any failure back to the coder.
 * [A quoted path:line later in a finding is not its location](notes/2026-11-22-a-quoted-path-line-later-in-a-finding-is-not-its.md) [script/finding-record, script/script-utils] parse_finding takes the first path a finding names as its location and skips a path:line inside a quoted span.
 * [verify-prep keeps a branch review current when only change notes were added](notes/2026-11-22-verify-prep-keeps-a-branch-review-current-when.md) [script/verify-prep, script/verify-common] verify-prep and verify-log leave committed change-note paths out of the tree fingerprint, so notes written after the branch review do not ask for a second review.
+* [Review loop puts back files a fix pass changed outside the review scope](notes/2026-11-22-review-loop-puts-back-files-a-fix-pass-changed.md) [script/review-loop] After each fix pass, lint and full-check repairs included, the review loop puts back every file the pass changed that existed before it, sits outside the review scope and is named by no finding of that pass, and the packet's tool_fault lists the files it put back.
 * [The inline interpreter hint docstring says the gate blocks stdin code](notes/2026-11-22-the-inline-interpreter-hint-docstring-says-the.md) [script/inline-interpreter-hint] The inline-interpreter hint's docstring said the Bash gate does not block code fed on stdin to a bare interpreter; the gate does block it, and the docstring now says so.
 * [Branch-recap and close-branch drop ledger wait seconds copied from a script](notes/2026-11-22-branch-recap-and-close-branch-drop-ledger-wait.md) [skill/branch-recap, skill/close-branch] Branch-recap and close-branch keep the 600000 ms Bash timeout and drop the 204 s and 90 s figures copied from ledger_deferred.py, which drift when the script changes.
 * [Toolkit script rules point at lib/ instead of listing its modules](notes/2026-11-22-toolkit-script-rules-point-at-lib-instead-of.md) [rule/toolkit-script-rules] The script rules drop two hand-kept lists of lib/ modules that had fallen 14 modules behind, so a search-before-you-write check looks at the whole folder.

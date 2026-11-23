@@ -2769,6 +2769,73 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertNotIn("coder call failed", str(raised.exception))
         self.assertIn("diff write broke", str(raised.exception))
 
+    def test_a_git_failure_at_the_scope_guard_is_a_failed_coder_call_that_keeps_the_findings_open(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        loop_script = sys.modules["review_loop_script"]
+        scope_guard_module = sys.modules["review_loop_scope_guard"]
+        ruled_out_module = sys.modules["review_loop_ruled_out"]
+        finding = mock.MagicMock(path="", text="`app.py:2` the limit is wrong")
+
+        git_error = sys.modules["script_utils"].GitCallError("scope guard: git failed")
+        with mock.patch.object(scope_guard_module, "guard_pass", side_effect=git_error), \
+                mock.patch.object(ruled_out_module, "begin_pass") as begin_pass, \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(loop_script.CoderFailedError) as raised:
+            loop.repair("coder1", [finding])
+
+        self.assertIn("the coder1 pass could not start: the scope guard could not read the repo: "
+                      "scope guard: git failed", str(raised.exception))
+        self.assertIn(finding, loop.open_fixes)
+        begin_pass.assert_not_called()
+
+    def test_an_undo_failure_after_a_finished_coder_call_is_a_blocker_saying_the_pass_finished(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        loop_script = sys.modules["review_loop_script"]
+        coder_module = sys.modules["review_loop_coder"]
+        scope_guard_module = sys.modules["review_loop_scope_guard"]
+        finding = mock.MagicMock(path="", text="`app.py:2` the limit is wrong")
+        scope_guard = mock.MagicMock()
+        scope_guard.undo.side_effect = RuntimeError("restore failed")
+
+        with mock.patch.object(scope_guard_module, "guard_pass", return_value=scope_guard), \
+                mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(loop_script.CoderFailedError) as raised:
+            loop.repair("coder1", [finding])
+
+        message = str(raised.exception)
+        self.assertIn("coder1 coder pass finished but the loop could not undo all of it", message)
+        self.assertIn("restore failed", message)
+        self.assertNotIn("coder call failed", message)
+
+    def test_an_absolute_finding_path_reaches_the_scope_guard_as_a_repo_relative_path(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        scope_guard_module = sys.modules["review_loop_scope_guard"]
+        finding = mock.MagicMock(path=str(pathlib.Path(loop.repo) / "pkg" / "app.py"), text="`app.py:2` wrong")
+        stop = RuntimeError("stop after the guard call")
+
+        with mock.patch.object(scope_guard_module, "guard_pass", side_effect=stop) as guard_pass, \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(RuntimeError):
+            loop.repair("coder1", [finding])
+
+        allowed = guard_pass.call_args.args[3]
+        self.assertIn("pkg/app.py", str(allowed))
+        self.assertNotIn(str(loop.repo), str(allowed))
+
+    def test_a_plain_runtime_error_at_the_scope_guard_is_not_a_failed_coder_call(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        loop_script = sys.modules["review_loop_script"]
+        scope_guard_module = sys.modules["review_loop_scope_guard"]
+        finding = mock.MagicMock(path="", text="`app.py:2` the limit is wrong")
+
+        with mock.patch.object(scope_guard_module, "guard_pass", side_effect=RuntimeError("x")), \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(RuntimeError) as raised:
+            loop.repair("coder1", [finding])
+
+        self.assertNotIsInstance(raised.exception, loop_script.CoderFailedError)
+
     def test_the_fix_coder_prompt_stays_small_with_a_huge_finding_set_and_held_file_list(self):
         many_findings = "".join(f"- `app.py:2` [bug] finding {index} " + "the value is wrong " * 100 + "\n"
                                 for index in range(200))
@@ -4873,6 +4940,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_the_class_closure_prompt_names_one_diff_file_per_path_and_holds_no_diff_text(self):
         (self.repo / "generated").mkdir()
         self.commit_files({"generated/snapshot.json": "{}\n"})
+        # The snapshot is part of the change under review, so the fix pass may rewrite it.
+        (self.repo / "generated/snapshot.json").write_text("{ }\n")
         snapshot = "".join(f'{{"row": {number}, "marker": "SNAPSHOT-LINE"}}\n' for number in range(20000))
         self.assertGreater(len(snapshot), 400_000)
 
@@ -6356,6 +6425,28 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.run_loop(FIX_REVIEW, coder)
 
         self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
+
+    def test_a_plan_folder_file_the_sign_off_snapshot_does_not_hold_is_put_back_by_the_scope_guard(self):
+        evidence_path = "docs/plans/x/evidence.json"
+        nested_path = "packages/a/docs/plans/p/03-decisions.md"
+        (self.repo / "packages/a/docs/plans/p").mkdir(parents=True)
+        self.commit_files({evidence_path: "{}\n", nested_path: DECISIONS_TEXT})
+        coder = {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, evidence_path: '{"a": 1}\n',
+                                                 nested_path: "# Decisions\n"}}
+
+        self.run_loop(FIX_REVIEW, coder)
+
+        self.assertEqual((self.repo / evidence_path).read_text(), "{}\n")
+        self.assertEqual((self.repo / nested_path).read_text(), DECISIONS_TEXT)
+
+    def test_a_decision_log_the_sign_off_snapshot_holds_is_left_to_the_sign_off_guard(self):
+        """The scope guard puts back nothing here: the sign-off guard keeps the pass's other edits to the file."""
+        edited = DECISIONS_TEXT + "\nA note the coder added.\n"
+        coder = {"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, DECISIONS_PATH: edited}}
+
+        self.run_loop(FIX_REVIEW, coder)
+
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), edited)
 
     def test_a_coder_that_deletes_a_sign_off_in_a_plan_deviations_section_gets_the_file_put_back(self):
         plan_path = "docs/plans/x/plan.md"

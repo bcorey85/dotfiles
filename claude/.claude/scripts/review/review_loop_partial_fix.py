@@ -167,9 +167,16 @@ def remove_partial_fix(repo):
         record_file.unlink(missing_ok=True)
 
 
-def coder_failure_blocker(call_name, error):
-    """The blocker for a failed coder call: what failed, that its findings were not all applied, and the way out."""
-    return (f"the {call_name} coder call failed: {error}. Its findings were not all applied "
+def coder_failure_blocker(call_name, error, scope_guard_failed=False, died=True):
+    """The blocker for a failed coder pass: what failed, that its findings were not all applied, and the way out.
+    `scope_guard_failed` is true when the scope guard failed before any coder ran, so none were applied. `died` is
+    false when the call finished and the loop could not undo all of its pass."""
+    what_failed = f"the {call_name} coder call failed"
+    if not died:
+        what_failed = f"the {call_name} coder pass finished but the loop could not undo all of it"
+    if scope_guard_failed:
+        what_failed = f"the {call_name} pass could not start: the scope guard could not read the repo"
+    return (f"{what_failed}: {error}. Its findings were not all applied "
             "and are in findings_remaining. Never apply them outside the review loop: "
             "a fix made outside it is unreviewed. "
             "Fix the cause of the failure and rerun the review.")
@@ -218,7 +225,7 @@ class PartialFixRuns:
         self.drop_open(reverted_findings)
         self.keep_open([item for item in findings if item not in reverted_findings])
         kept_error = error.keeping_only(kept)
-        blocker = coder_failure_blocker(call_name, kept_error)
+        blocker = coder_failure_blocker(call_name, kept_error, died=error.died)
         dead = dead_pass_record(self.repo, call_name, findings, reverted_findings, self.saved_record_texts,
                                 self.held_unfixed, kept_error)
         if dead.pending is not None:

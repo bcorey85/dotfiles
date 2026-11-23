@@ -30,6 +30,14 @@ def git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
 
 
+class FixDiffFileTest(unittest.TestCase):
+    def test_an_absolute_path_still_gets_its_diff_file_under_out(self):
+        with tempfile.TemporaryDirectory() as out:
+            diff_file = review_loop_coder.fix_diff_file(out, "coder1", "/repo/src/a.py")
+
+            self.assertEqual(pathlib.Path(out) / "fix-diffs" / "coder1" / "repo/src/a.py.diff", diff_file)
+
+
 class UntrackedDeletionTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

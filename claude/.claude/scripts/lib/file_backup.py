@@ -1,5 +1,5 @@
 """Copy a set of files to a folder on disk before a step that may delete them, and put back the ones that vanished or,
-through restore_changed, the ones that changed.
+through restore_changed or restore_paths, the ones that changed.
 
 It knows nothing about the files: the caller names the paths and the folder for the copies. A file over the size cap,
 or one that cannot be read, is not copied, so its loss can be reported but not undone."""
@@ -63,20 +63,32 @@ def restore_missing(backup):
     return sorted(restored), sorted(lost)
 
 
-def restore_changed(backup):
-    """Copy back every saved file that is missing or whose bytes differ from its copy, with its mode bits. Returns
-    the sorted paths put back."""
-    restored = []
+def saved_paths_that_differ(backup):
+    """The sorted saved paths whose file is missing or whose bytes differ from the copy."""
+    differing = []
     for path in backup.saved:
         target = backup.root / path
         copy = backup.backup_dir / path
         if target.is_file() and target.read_bytes() == copy.read_bytes():
             continue
+        differing.append(path)
+    return sorted(differing)
 
+
+def restore_changed(backup):
+    """Copy back every saved file that is missing or whose bytes differ from its copy, with its mode bits. Returns
+    the sorted paths put back."""
+    return restore_paths(backup, saved_paths_that_differ(backup))
+
+
+def restore_paths(backup, paths):
+    """Copy back each of `paths` (saved ones) from its copy, with its mode bits. Returns them sorted."""
+    restored = sorted(paths)
+    for path in restored:
+        target = backup.root / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(copy, target)
-        restored.append(path)
-    return sorted(restored)
+        shutil.copy2(backup.backup_dir / path, target)
+    return restored
 
 
 def discard(backup):

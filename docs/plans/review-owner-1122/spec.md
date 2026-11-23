@@ -372,6 +372,15 @@ Ruling by agent-evals-c3 (lane owner) at 2026-11-23: ticket AC7 stands with no c
 
 Ruling by agent-evals-c3 at 2026-11-23: the lane owns queue/review-fix-decide-no-route-re-rules-an-adopted.md; covers: that fix, claiming and closing that item, and re-ruling this lane's ticket AC7 impact to keep through the new route.
 
+- 2026-11-23: Keep plan as written. Ruled by the session, not the user at 2026-11-23 01:12.
+
+  The ruling: ticket AC7 stands as written, ruled by agent-evals-c3 2026-11-23; the adopt carve-out is withdrawn
+
+  The disagreement:
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:55-60 [plan-drift] PLAN-IMPACT: AC7 (and D5, Q8) says a reordering of owner bullets is reverted, but the code keeps a reorder of bullets that resemble each other once any of them is reworded. I ran it: before `[- Plan text: ..., - Plan text b: ...]`, after the two swapped with one word appended to each, gives one `replace` opcode, and `owner_lines_only` returns True. With the resemblance rule (REWRITE_RATIO 0.6), this edit looks the same as two updates in place. Question: should a moved, reworded bullet that resembles each other count as a reorder (revert), or is it accepted as an update in place? Change if accepted as a reorder: in `every_line_resembled`, make each before line resemble its own after slot better than any other line in the after block, and add the swapped-and-reworded similar-bullets case to `test_every_other_edit_is_false`. acceptance_criteria: AC7. kind: narrow
+  
+  /home/brandon/dotfiles-review-owner-nov22/claude/.claude/scripts/lib/owner_lines.py:56-60 [plan-drift] — PLAN-IMPACT: the plan and the code disagree on reorders. AC7 ("a reordering … is reverted whole"), D5 and Q8 say every reorder is reverted. The code keeps a swap of two bullets that resemble each other when both are also reworded (the case under Fix). It is unclear whether the Phase 1 resemblance ruling (spec.md Plan Deviations) meant to allow that, or whether the code should catch it. Question: does a reworded swap of bullets that resemble each other count as two updates in place, or as a reorder that AC7 must revert? Change if the code must revert it: before the resemblance check, return False for a `replace` block whose before lines match the after lines better in another order than in place, and add the case to `test_every_other_edit_is_false`. acceptance_criteria: AC7
+
 ## References
 
 - ./00-ticket.md, ./01-questions.md, ./02-research.md, ./03-decisions.md

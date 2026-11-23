@@ -154,6 +154,7 @@
 - AC1 "points to the binary for the format": narrowed out of this branch; the tables stay (D8), delivered scope is AC26-AC28, the pointer waits on a guide build that prints the schema, owner agent-evals-c3. Ruled by agent-evals-c3, 2026-11-22.
 - AC3 "the agent calls it in one line": met by three one-line calls, one per step (`check`, `lock`, `restore`; AC23). Ruled by agent-evals-c3, 2026-11-22.
 - Ticket #1 and Ticket #2 (item 1's Done-when): item 1 dropped (D1). Ruled by agent-evals-c3, 2026-11-22; recorded in `spec.md` `## Plan Deviations`.
+- Guide change note: written at Phase 6 instead of Phase 9 because the pre-commit hook needs a staged note, and the hook's test rule added `tests/scripts/test_guide_skill.py`. Ruled by the orchestrating session, 2026-11-22.
 
 ## Direction & Constraints
 

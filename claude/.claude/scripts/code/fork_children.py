@@ -8,7 +8,7 @@ what became of the repo's detached /code review loop (stopped only when its proc
 start, begun inside the code-fork's lifetime; the review-fix loop of a /review or /fix fork is never stopped here and
 reads `not_code_phase`). The loop reads `stopped` once its process group exited within two seconds of the SIGTERM and
 `signalled` when a process of the group is still alive then (the leader may have exited while a child lives on);
-`query_failed` when `ps` could not answer.
+`query_failed` when `ps` could not answer or the code-fork transcript could not be read.
 The repo is `--repo`, else the git top level of the `cwd` of the code-fork transcript's last record, else the current
 folder; with none inside a git checkout the loop reads `no_repo`. Exit 0 with the report; exit 2 for a usage error, a
 missing transcript or an id that is not a code-fork; exit 1 with a `fork_children: could not signal ...` line when
@@ -49,7 +49,7 @@ LOOP_NOT_CODE_PHASE = "not_code_phase"
 LOOP_UNKNOWN = "query_failed"
 LOOP_NO_REPO = "no_repo"
 REVIEW_FIX_LAUNCH = "review_fix.py launch"
-STOP_WAIT_SECONDS = 2  # review/review_launch.py wait_for_exit is the sibling wait (5 s) to consolidate with
+STOP_WAIT_SECONDS = 2
 DENY_REASON = ("code fork {fork} has live children: {ids}. Run python3 {script} {fork}: TaskStop each agent id it "
                "names; for a launch with no agent id yet, rerun it once the launch result names one. It stops a /code "
                "review loop only, never a /review or /fix loop. Then TaskStop the fork.")
@@ -149,7 +149,8 @@ def fork_run_window(fork_transcript, commands):
 
 
 def started_inside_fork_run(repo, fork_transcript, commands):
-    """Whether the loop's pid file was written between the code-fork's first review start and its last record."""
+    """Whether the loop's pid file was written between the code-fork's first review start and its last record, or at
+    any time after the first review start when the last record is that review-start Bash call."""
     window = fork_run_window(fork_transcript, commands)
     if window is None:
         return False
@@ -169,7 +170,7 @@ def loop_not_linked_reason(pid, repo, fork_transcript):
     """Why the loop with this pid is not this code-fork's /code review loop, or None when it is."""
     commands = scan_fork_commands(fork_transcript)
     if commands is None:
-        return LOOP_NOT_THIS_RUN
+        return LOOP_UNKNOWN
     if not commands.ran_review_start and commands.ran_review_fix:
         return LOOP_NOT_CODE_PHASE
 

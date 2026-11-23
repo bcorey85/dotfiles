@@ -151,7 +151,8 @@ def plan_phase_paths(plan_lines, phase_id):
     """The PhasePaths of a phase from one parse of the plan. `earlier` is every backticked path (section_paths) of
     every phase section before this one in Phase Status: files an earlier phase names, which stay the run's own. A
     plan written as numbered steps names its files in backticks, with no `**File**:` entry. `own` is every backticked
-    path of this phase's own section, which later_phase_paths and `earlier` leave out by design. `earlier` is []
+    path of this phase's own section, which later_phase_paths leaves out; a path an earlier phase also names is in
+    `earlier` too. `earlier` is []
     when the phase is not in Phase Status."""
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
     own_paths = section_paths(plan_lines, plan["sections"].get(str(phase_id)))
@@ -163,16 +164,6 @@ def plan_phase_paths(plan_lines, phase_id):
     for earlier_id in order[:order.index(str(phase_id))]:
         earlier_paths |= section_paths(plan_lines, plan["sections"].get(earlier_id))
     return PhasePaths(sorted(earlier_paths), sorted(own_paths))
-
-
-def earlier_phase_paths(plan_lines, phase_id):
-    """The `earlier` paths of plan_phase_paths."""
-    return plan_phase_paths(plan_lines, phase_id).earlier
-
-
-def phase_own_paths(plan_lines, phase_id):
-    """The `own` paths of plan_phase_paths."""
-    return plan_phase_paths(plan_lines, phase_id).own
 
 
 def section_paths(plan_lines, section):

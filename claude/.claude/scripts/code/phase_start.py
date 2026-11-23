@@ -18,8 +18,9 @@ dirty now that the record lacks, and that no earlier phase's hand-off names, is 
 first seen at a later phase start). A missing record, or one for another HEAD, is replaced either way. Prints the
 HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
-kept record's head is an ancestor of HEAD, the record is kept and its head is printed as the phase base. With no
-record, or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr.
+kept record's head is an ancestor of HEAD, the record is kept, with the same additions as a same-HEAD start (later
+dirty files, handed-off files as own), and its head is printed as the phase base. With no record, or a head that is
+not an ancestor, it prints HEAD as without the flag and says so on stderr.
 Before anything is moved, `--resume` exits non-zero when this repo's run folder holds no stop.md and no stop.prev.md
 newer than the session's last relayed stop (lib/code_stop_record.py), and that stop is in another run folder: it
 names both and the stop's recorded `To go on:` line (`/code resume <repo top>` for a finished stop).

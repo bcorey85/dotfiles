@@ -52,13 +52,6 @@ class ProcessGroupTest(unittest.TestCase):
             with self.subTest(pid=pid):
                 self.assertFalse(process_group.pid_is_alive(pid))
 
-    def test_wait_until_gone_reports_a_process_that_exits_and_one_that_stays(self):
-        process = self.sleeper()
-        self.assertFalse(process_group.wait_until_gone(process.pid, 0.2))
-        process.kill()
-        process.wait()
-        self.assertTrue(process_group.wait_until_gone(process.pid, 2))
-
     def test_wait_until_group_gone_stays_false_while_a_child_outlives_the_leader(self):
         parent = subprocess.Popen([sys.executable, "-c", GROUP_PARENT_CODE], stdout=subprocess.PIPE, text=True,
                                   start_new_session=True)

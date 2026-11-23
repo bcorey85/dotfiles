@@ -501,7 +501,7 @@ class StopLoopBranchTest(unittest.TestCase):
         self.assertIn("fork_children: could not signal the review loop of repo", str(raised.exception.code))
         self.assertIn("not permitted", str(raised.exception.code))
 
-    def test_an_unreadable_transcript_reads_as_not_this_run_and_not_as_a_failed_signal(self):
+    def test_an_unreadable_transcript_reads_as_query_failed_and_not_as_a_failed_signal(self):
         module = self.module
         missing = "/nonexistent/agent-transcript.jsonl"
         with mock.patch.object(module.code_wait, "running_review_pid", return_value=4242), \
@@ -509,7 +509,7 @@ class StopLoopBranchTest(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             loop = module.stop_fork_loop("repo", missing)
 
-        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "not_this_run"})
+        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "query_failed"})
         self.assertIn(f"could not read {missing}", stderr.getvalue())
         terminate.assert_not_called()
 

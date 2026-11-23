@@ -118,10 +118,10 @@ class CheckForPhaseTest(unittest.TestCase):
 
 class EarlierPhasePathsTest(unittest.TestCase):
     def test_the_first_phase_has_no_earlier_path(self):
-        self.assertEqual([], expected_red.earlier_phase_paths(plan_lines(), "1"))
+        self.assertEqual([], expected_red.plan_phase_paths(plan_lines(), "1").earlier)
 
     def test_the_paths_of_every_phase_before_this_one_come_back_sorted(self):
-        self.assertEqual(["app/shared.py", "app/totals.py"], expected_red.earlier_phase_paths(plan_lines(), "2"))
+        self.assertEqual(["app/shared.py", "app/totals.py"], expected_red.plan_phase_paths(plan_lines(), "2").earlier)
 
 
 class LaterPhasePathsTest(unittest.TestCase):
@@ -155,12 +155,12 @@ class LaterPhasePathsTest(unittest.TestCase):
         self.assertEqual([], expected_red.later_phase_paths(plan_lines(), "9"))
 
     def test_phase_own_paths_are_the_current_sections_paths_and_not_an_earlier_or_later_phases(self):
-        own = expected_red.phase_own_paths(plan_lines(), "1")
+        own = expected_red.plan_phase_paths(plan_lines(), "1").own
 
         self.assertIn("app/totals.py", own)
         self.assertNotIn("app/audit.py", own)
         self.assertEqual(own, sorted(own))
-        self.assertNotIn("app/totals.py", expected_red.phase_own_paths(plan_lines(), "2"))
+        self.assertNotIn("app/totals.py", expected_red.plan_phase_paths(plan_lines(), "2").own)
 
 
 if __name__ == "__main__":

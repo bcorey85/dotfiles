@@ -4,6 +4,7 @@ import os
 import shlex
 import signal
 import subprocess
+import time
 
 PS_TIMEOUT_SECONDS = 10
 
@@ -27,6 +28,16 @@ def pid_is_alive(owner_pid):
         return False
     except PermissionError:
         return True
+    return True
+
+
+def wait_until_gone(pid, seconds, poll_seconds=0.05):
+    """True once process pid no longer exists, polling for at most `seconds`; False when it is still alive then."""
+    deadline = time.monotonic() + seconds
+    while pid_is_alive(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_seconds)
     return True
 
 

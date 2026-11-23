@@ -171,6 +171,17 @@ def this_phase_files(repo, plan, phase):
     return expected_red.phase_own_paths(plan_lines, phase)
 
 
+class PlanFiles(NamedTuple):
+    """The files the plan names: those of the phases before this one and those of this phase."""
+    earlier: list
+    this: list
+
+
+def plan_files(repo, plan, phase):
+    """The PlanFiles of a phase; both lists are empty with no plan. The plan is read and parsed once."""
+    return PlanFiles(earlier_phase_files(repo, plan, phase), this_phase_files(repo, plan, phase))
+
+
 def held_note(notes, message):
     """Prints `message` on stderr and adds it to `notes` (a list, or None), which a dry run prints on stdout."""
     print(message, file=sys.stderr)
@@ -196,11 +207,14 @@ def review_holder(repo, record, own_session_id):
     return record["holder"] or phase_start.current_holder(repo, own_session_id)
 
 
-def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
+def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_files=None):
     """(holder rows of the held dirty files, the held paths whose bytes changed since the run start, holder rows of
     the held untracked files). A holder recorded at the phase start is honored whether or not this session's id is
     set. With no holder recorded, the live-holder fallback needs the id. No record, or no holder by either route,
-    holds none (the no-holder route); the reason is noted on stderr and in `notes`."""
+    holds none (the no-holder route); the reason is noted on stderr and in `notes`. `named_files` is the phase's
+    PlanFiles when the caller has them, else they are read from the plan here."""
+    if named_files is None:
+        named_files = plan_files(repo, plan, phase)
     record = checked_start_record(repo, base_commit)
     if record is None:
         held_note(notes, "code_review_start: no phase start record, so files another session left dirty are reviewed "
@@ -213,22 +227,25 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None):
         held_note(notes, "code_review_start: CLAUDE_CODE_SESSION_ID is not set and the start record names no holder, "
                          "so the run's own session cannot be told from a holder and no file is held; run it from the "
                          "session's Bash")
+    if holder is None and own_session_id:
+        held_note(notes, "code_review_start: the start record names no holder and no other session is live in the "
+                         "repo, so no file is held.")
     if holder is None:
         return [], [], []
 
-    dirty_rows, held_changed = phase_held_files(repo, record, holder, plan, phase)
+    dirty_rows, held_changed = phase_held_files(repo, record, holder, named_files.earlier)
     if held_changed:
         held_note(notes, "Tool fault: " + code_wait.held_fault_text(held_changed))
-    untracked_rows = foreign_untracked(repo, record, holder, plan, phase, notes)
+    untracked_rows = foreign_untracked(repo, record, holder, named_files, plan, notes)
     return dirty_rows, held_changed, untracked_rows
 
 
-def phase_held_files(repo, record, holder, plan=NO_PLAN, phase=""):
+def phase_held_files(repo, record, holder, earlier_files=()):
     """(holder rows {"path", "session", "claim"} of the held dirty files, the held paths whose bytes changed since the
     run start). With a holder recorded at a phase start (phase_start.py's record), every file dirty then is held for
-    the whole phase, less the files an earlier phase of the plan names, which are the run's own. With no holder
-    recorded, only a same-bytes file is held, for the live session `holder`."""
-    candidates = script_utils.without_paths(sorted(record["dirty"]), earlier_phase_files(repo, plan, phase))
+    the whole phase, less `earlier_files`, the files an earlier phase of the plan names, which are the run's own.
+    With no holder recorded, only a same-bytes file is held, for the live session `holder`."""
+    candidates = script_utils.without_paths(sorted(record["dirty"]), earlier_files)
     if not candidates:
         return [], []
     if record["holder"] is not None:
@@ -253,9 +270,9 @@ def live_holder_rows(repo, record, holder, candidates):
     return [holder_row(path, holder["session"], claim) for path in candidates if path not in changed], []
 
 
-def targeted_held_files(repo, plan, phase, held_paths):
+def targeted_held_files(named_files, held_paths):
     """The held paths this phase's plan section names; [] with no plan."""
-    own_paths = set(this_phase_files(repo, plan, phase))
+    own_paths = set(named_files.this)
     return [path for path in held_paths if path in own_paths]
 
 
@@ -308,7 +325,7 @@ def coder_transcript_in_run(transcript, started_at):
     return started_at is None or transcript.stat().st_mtime >= started_at
 
 
-def foreign_untracked(repo, record, holder, plan, phase, notes):
+def foreign_untracked(repo, record, holder, named_files, plan, notes):
     """The holder rows of the untracked files no recorded coder of the run wrote, held for `holder` ({"session",
     "cwd"}); each file on its own, never a folder. Files in the record's `dirty`, the files an earlier phase names, the
     files this phase's plan section names (the phase's own new files) and the files under the plan's folder are left
@@ -317,7 +334,7 @@ def foreign_untracked(repo, record, holder, plan, phase, notes):
     if untracked is None:
         sys.exit(f"code_review_start: git could not list the untracked files of {repo}, so none can be held. Fix the "
                  "repo, then run this step again.")
-    plan_named = [*earlier_phase_files(repo, plan, phase), *this_phase_files(repo, plan, phase)]
+    plan_named = [*named_files.earlier, *named_files.this]
     candidates = script_utils.without_paths(untracked, [*record["dirty"], *plan_named])
     candidates = plan_format.outside_plan_folder(candidates, plan)
     if not candidates:
@@ -385,10 +402,11 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
         return ReviewScope([], coder_handoff, [], None)
 
     notes = []
-    dirty_holders, held_changed, untracked_holders = held_scope(repo, base_commit, plan, phase, notes)
+    named_files = plan_files(repo, plan, phase)
+    dirty_holders, held_changed, untracked_holders = held_scope(repo, base_commit, plan, phase, notes, named_files)
     holders = [*dirty_holders, *untracked_holders]
     held_paths = [holder["path"] for holder in holders]
-    held_targeted = targeted_held_files(repo, plan, phase, held_paths)
+    held_targeted = targeted_held_files(named_files, held_paths)
     if held_targeted:
         held_note(notes, "code_review_start: this phase's plan names held files, which stay held, so the phase's "
                          f"change to them is not reviewed: {', '.join(held_targeted)}")

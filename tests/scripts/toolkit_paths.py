@@ -24,11 +24,6 @@ FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"
 CODE_PHASE_END_FILE = CLAUDE_DIR / "skills" / "code" / "phase-end-block.md"
-# The files /code loads at start: the word meter totals these.
-START_LOAD_FILES = (CODE_SKILL_FILE,
-                    CLAUDE_DIR / "skills" / "_shared" / "modifiers.md",
-                    CLAUDE_DIR / "skills" / "_shared" / "plan-reading.md",
-                    CLAUDE_DIR / "skills" / "_shared" / "handoff-block.md")
 CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
 # The hooks come from the work repo's CB Security Hooks package and are not tested here, except
 # agent-model-guard.sh: it carries a local fork pass, tested in test_agent_model_guard.py,

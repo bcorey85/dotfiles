@@ -484,6 +484,21 @@ class CodeReviewStartTest(unittest.TestCase):
 
         self.assertEqual([row["path"] for row in held], ["theirs.py"])
 
+    def test_a_solo_run_with_a_session_id_and_no_holder_notes_that_no_file_is_held(self):
+        code_review_start = self.load_module()
+        record = self.dirty_record(["theirs.py"])
+        notes = []
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
+                mock.patch.object(code_review_start.session_registry, "other_live_session_in", return_value=None), \
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2", notes)
+
+        self.assertEqual(held, ([], [], []))
+        self.assertEqual(len(notes), 1)
+        self.assertIn("no other session is live in the repo, so no file is held", notes[0])
+        self.assertIn(notes[0], stderr.getvalue())
+
     def test_the_run_session_id_is_passed_so_it_is_never_its_own_holder(self):
         code_review_start = self.load_module()
         record = self.dirty_record(["theirs.py"])
@@ -778,6 +793,20 @@ class CodeReviewStartTest(unittest.TestCase):
             code_review_start.review_scope(self.repo, "HEAD", "  files: []\n", "docs/plans/p/spec.md", "2")
 
         self.assertIn("git could not list the untracked files", str(stopped.exception))
+
+    def test_the_plan_files_of_a_phase_are_read_once_per_scope_build(self):
+        self.write_start_record()
+        code_review_start = self.load_module()
+        environment = {"CLAUDE_CODE_SESSION_ID": "test-session", "CLAUDE_CONFIG_DIR": str(self.config_dir())}
+
+        with mock.patch.dict(os.environ, environment), \
+                mock.patch.object(code_review_start, "earlier_phase_files", return_value=[]) as earlier, \
+                mock.patch.object(code_review_start, "this_phase_files", return_value=[]) as this, \
+                contextlib.redirect_stderr(io.StringIO()):
+            code_review_start.review_scope(self.repo, "HEAD", "  files: []\n", "docs/plans/p/spec.md", "2")
+
+        earlier.assert_called_once()
+        this.assert_called_once()
 
     def test_an_untracked_file_the_phase_plan_names_is_reviewed_and_an_unplanned_one_stays_held(self):
         plan_text = PLAN.replace("**File**: `src/two.py`", "**File**: `src/two.py`\n**File**: `new_module.py`")

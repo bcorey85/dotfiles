@@ -8,9 +8,9 @@ Run from the repo root before the phase's coder dispatch. Writes <git dir>/code-
 {"head": <sha>, "dirty": {<path>: <sha-256 of its bytes, or null when gone>}, "holder": {"session", "cwd"} | null,
 "sessions": [<session id>, ...], "started_at": <epoch seconds> | null}. `dirty` lists every file dirty or untracked
 now; `holder` is the live session other than the run's that works in the repo now; `sessions` are the run's session
-ids (a resume adds its own). code_review_start.py reads it: with a holder recorded, every file dirty here is held for
-the whole phase, and one whose bytes changed is named as a tool fault; with no holder, a file dirty here that holds the
-same bytes at review time is held while another live session works in the repo.
+ids (a kept record adds the current session id). code_review_start.py reads it: with a holder recorded, every file
+dirty here is held for the whole phase, and one whose bytes changed is named as a tool fault; with no holder, a file
+dirty here that holds the same bytes at review time is held while another live session works in the repo.
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
 whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own. A
 missing record, or one for another HEAD, is replaced either way. Prints the HEAD sha, except under --resume (below).

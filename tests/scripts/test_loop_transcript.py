@@ -72,6 +72,17 @@ class AgentInterruptedTest(unittest.TestCase):
         self.write([{"type": "user"}])
         self.assertFalse(loop_transcript.agent_interrupted(self.transcript))
 
+    def test_real_transcript_endings_read_as_interrupted_only_when_the_interrupt_is_last(self):
+        fixtures = pathlib.Path(__file__).resolve().parent / "fixtures"
+        cases = {
+            "interrupt_ends_transcript.jsonl": True,
+            "interrupt_then_resumed_transcript.jsonl": False,
+            "interrupt_quoted_in_tool_result_transcript.jsonl": False,
+        }
+        for name, expected in cases.items():
+            with self.subTest(fixture=name):
+                self.assertEqual(loop_transcript.agent_interrupted(fixtures / name), expected)
+
 
 class MetaReaderTest(unittest.TestCase):
     def setUp(self):

@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import importlib.util
 import io
 import json
@@ -6,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -41,6 +43,12 @@ def bash_record(command, cwd=None):
     if cwd is not None:
         record["cwd"] = cwd
     return record
+
+
+def stamped(record, seconds_from_now):
+    """The record with a transcript `timestamp` this many seconds from now."""
+    moment = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=seconds_from_now)
+    return {**record, "timestamp": moment.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"}
 
 
 class ForkChildrenTest(unittest.TestCase):
@@ -81,8 +89,9 @@ class ForkChildrenTest(unittest.TestCase):
                               env=self.env, check=False)
 
     def hook(self, task_id=FORK_ID, tool_name="TaskStop", session_id="s1"):
-        # A transcript TaskStop event: tool_input holds the task id. A captured event replaces this fixture once
-        # the hook is wired in settings.json.
+        # No captured TaskStop hook event exists on this machine. The fields follow the PreToolUse hook schema
+        # (tool_name, tool_input.task_id, session_id, transcript_path); a real TaskStop call in a transcript holds
+        # the same tool_input.task_id.
         event = {"hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": {"task_id": task_id},
                  "session_id": session_id, "transcript_path": os.path.join(self.subagents, "..", "main.jsonl")}
         return self.run_script(["hook"], stdin=json.dumps(event))
@@ -103,7 +112,10 @@ class ForkChildrenTest(unittest.TestCase):
         reason = decision["permissionDecisionReason"]
         self.assertIn(f"fork_children.py {FORK_ID}", reason)
         self.assertIn(f"code fork {FORK_ID} has live children: ", reason)
-        self.assertTrue(reason.endswith("TaskStop each id it names, then TaskStop the fork."), reason)
+        self.assertIn("TaskStop each agent id it names; for a launch with no agent id yet, rerun it once the launch "
+                      "result names one.", reason)
+        self.assertIn("stops a /code review loop only, never a /review or /fix loop.", reason)
+        self.assertTrue(reason.endswith("Then TaskStop the fork."), reason)
         for name in names:
             self.assertIn(name, reason)
 
@@ -255,10 +267,21 @@ class ForkChildrenTest(unittest.TestCase):
 
         self.assertEqual(self.report()["children"], [CODER_ID])
 
+    def write_review_fork(self, cwd=None, command=REVIEW_START, start_offset=-60, end_offset=60):
+        """A code-fork whose Bash ran `command` at start_offset seconds from now and whose last record is at
+        end_offset."""
+        last = stamped(assistant_record(), end_offset)
+        if cwd is not None:
+            last["cwd"] = cwd
+        self.write_fork([stamped(bash_record(command), start_offset), last])
+
     def start_process(self, marker):
         argv = [sys.executable, "-c", "import time; time.sleep(120)", *marker]
         process = subprocess.Popen(argv, start_new_session=True)
-        self.addCleanup(process.wait)
+        # Reap a stopped loop at once: a zombie still counts as alive until its parent waits.
+        reaper = threading.Thread(target=process.wait, daemon=True)
+        reaper.start()
+        self.addCleanup(reaper.join)
         self.addCleanup(process.kill)
         return process
 
@@ -267,11 +290,16 @@ class ForkChildrenTest(unittest.TestCase):
                                    "code-phase"], capture_output=True, text=True, check=True)
         phase_dir = git_path.stdout.strip()
         os.makedirs(phase_dir, exist_ok=True)
-        with open(os.path.join(phase_dir, "pid"), "w", encoding="utf-8") as fh:
+        self.pid_file = os.path.join(phase_dir, "pid")
+        with open(self.pid_file, "w", encoding="utf-8") as fh:
             fh.write(str(pid))
 
+    def set_pid_file_time(self, seconds_from_now):
+        moment = datetime.datetime.now().timestamp() + seconds_from_now
+        os.utime(self.pid_file, (moment, moment))
+
     def test_the_report_stops_the_loop_this_fork_started(self):
-        self.write_fork([bash_record(REVIEW_START)])
+        self.write_review_fork()
         process = self.start_process(["code_review_start.py"])
         self.record_loop_pid(process.pid)
 
@@ -290,8 +318,44 @@ class ForkChildrenTest(unittest.TestCase):
         self.assertEqual(loop, {"pid": process.pid, "stopped": False, "reason": "not_this_run"})
         self.assertIsNone(process.poll())
 
-    def test_the_report_leaves_a_process_that_is_not_a_review_loop_running(self):
+    def test_a_loop_another_fork_started_in_the_same_repo_is_not_stopped(self):
+        self.write_review_fork()
+        cases = {"before this fork's first review start": -3600, "after this fork's last record": 3600}
+        for label, written_offset in cases.items():
+            with self.subTest(case=label):
+                process = self.start_process(["code_review_start.py"])
+                self.record_loop_pid(process.pid)
+                self.set_pid_file_time(written_offset)
+
+                loop = self.report()["loop"]
+
+                self.assertEqual(loop, {"pid": process.pid, "stopped": False, "reason": "not_this_run"})
+                self.assertIsNone(process.poll())
+
+    def test_the_report_leaves_a_review_fix_loop_of_a_review_fork_running(self):
+        self.write_review_fork(command="python3 ~/.claude/scripts/review/review_fix.py launch --detach")
+        process = self.start_process([])
+        self.record_loop_pid(process.pid)
+
+        loop = self.report()["loop"]
+
+        self.assertEqual(loop, {"pid": process.pid, "stopped": False, "reason": "not_code_phase"})
+        self.assertIsNone(process.poll())
+
+    def test_a_fork_transcript_with_no_record_times_does_not_stop_the_loop(self):
         self.write_fork([bash_record(REVIEW_START)])
+        process = self.start_process(["code_review_start.py"])
+        self.record_loop_pid(process.pid)
+
+        proc = self.run_script([FORK_ID, "--repo", self.repo])
+
+        self.assertEqual(json.loads(proc.stdout)["loop"],
+                         {"pid": process.pid, "stopped": False, "reason": "not_this_run"})
+        self.assertIn("no readable record time", proc.stderr)
+        self.assertIsNone(process.poll())
+
+    def test_the_report_leaves_a_process_that_is_not_a_review_loop_running(self):
+        self.write_review_fork()
         process = self.start_process([])
         self.record_loop_pid(process.pid)
 
@@ -301,7 +365,7 @@ class ForkChildrenTest(unittest.TestCase):
         self.assertIsNone(process.poll())
 
     def test_the_report_finds_the_repo_from_the_forks_last_cwd_when_run_from_another_folder(self):
-        self.write_fork([bash_record(REVIEW_START, cwd=self.repo)])
+        self.write_review_fork(cwd=self.repo)
         process = self.start_process(["code_review_start.py"])
         self.record_loop_pid(process.pid)
 
@@ -312,7 +376,7 @@ class ForkChildrenTest(unittest.TestCase):
         self.assertEqual(json.loads(proc.stdout)["loop"], {"pid": process.pid, "stopped": True, "reason": "stopped"})
 
     def test_the_report_without_repo_falls_back_to_the_current_folder_when_the_fork_records_no_cwd(self):
-        self.write_fork([bash_record(REVIEW_START)])
+        self.write_review_fork()
         process = self.start_process(["code_review_start.py"])
         self.record_loop_pid(process.pid)
 
@@ -349,23 +413,43 @@ class StopLoopBranchTest(unittest.TestCase):
         self.module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.module)
 
-    def stop_loop_with(self, command_line, terminated=True):
+    def stop_loop_with(self, command_line, terminated=True, exited=True):
         module = self.module
         with mock.patch.object(module.code_wait, "running_review_pid", return_value=4242), \
                 mock.patch.object(module.process_group, "command_line", command_line), \
                 mock.patch.object(module.process_group, "terminate_group", return_value=terminated), \
+                mock.patch.object(module.process_group, "wait_until_gone", return_value=exited), \
+                mock.patch.object(module, "started_inside_fork_run", return_value=True), \
                 mock.patch.object(module.script_utils, "bash_commands", return_value=[REVIEW_START]), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             return module.stop_fork_loop("repo", "transcript"), stderr.getvalue()
 
-    def test_a_failed_process_query_reads_as_not_a_review_loop(self):
+    def test_a_failed_process_query_reads_as_query_failed(self):
         def failing_query(pid):
             raise self.module.process_group.ProcessQueryError("ps timed out")
 
         loop, stderr = self.stop_loop_with(failing_query)
 
-        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "not_review_loop"})
+        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "query_failed"})
         self.assertIn("ps timed out", stderr)
+
+    def test_a_loop_still_alive_after_the_wait_reads_as_signalled(self):
+        loop, _ = self.stop_loop_with(lambda pid: "python3 code_review_start.py", exited=False)
+
+        self.assertEqual(loop, {"pid": 4242, "stopped": False, "reason": "signalled"})
+
+    def test_an_os_error_from_the_signal_exits_with_a_named_error_line(self):
+        module = self.module
+        with mock.patch.object(module.code_wait, "agent_transcript", return_value="transcript"), \
+                mock.patch.object(module, "is_code_fork", return_value=True), \
+                mock.patch.object(module, "child_ids", return_value=([], [])), \
+                mock.patch.object(module.code_wait, "phase_dir_or_none", return_value="phase"), \
+                mock.patch.object(module, "stop_fork_loop", side_effect=PermissionError("not permitted")), \
+                self.assertRaises(SystemExit) as raised:
+            module.run_report(None, FORK_ID, "repo")
+
+        self.assertIn("fork_children: could not signal the review loop", str(raised.exception.code))
+        self.assertIn("not permitted", str(raised.exception.code))
 
     def test_a_process_that_died_before_its_command_line_was_read_reads_as_gone(self):
         loop, _ = self.stop_loop_with(lambda pid: "")

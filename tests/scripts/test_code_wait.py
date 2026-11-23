@@ -291,6 +291,14 @@ class WaitReviewTest(unittest.TestCase):
         self.assertIn(str(code_wait.phase_dir(repo) / code_wait.SCOPE_FILE), output)
         self.assertIn("check the held files by hand.", output)
 
+    def test_a_repo_outside_a_git_checkout_gives_a_line_naming_it_and_does_not_exit(self):
+        outside = temp_dir(self)
+
+        line = code_wait.held_fault_line(outside)
+
+        self.assertIn(str(outside), line)
+        self.assertIn("is not inside a git checkout", line)
+
     def test_a_scope_file_that_lists_no_held_changed_files_prints_no_fault_line(self):
         self.assertEqual(code_wait.held_fault_line(self.finished_review('{"held_changed": []}')), "")
 

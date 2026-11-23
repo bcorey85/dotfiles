@@ -243,8 +243,13 @@ def unreadable_line(scope_file, problem):
 
 def held_fault_line(repo):
     """The tool-fault line for the held files the phase's scope file lists as changed, "" when the file is absent or
-    lists none. A file that cannot be read gives a line that names it and the error; this never exits."""
-    scope_file = phase_dir(repo) / SCOPE_FILE
+    lists none. A file that cannot be read gives a line that names it and the error; a repo outside a git checkout
+    gives a line that names the repo; this never exits."""
+    folder = phase_dir_or_none(repo)
+    if folder is None:
+        return f"code_wait: {repo} is not inside a git checkout, so held-file faults were not read; check the held " \
+               "files by hand."
+    scope_file = folder / SCOPE_FILE
     if not scope_file.is_file():
         return ""
 

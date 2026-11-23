@@ -195,3 +195,24 @@
 **Reasoning**: orchestrating session agent-evals-c3 ruled (Ask A, rejected), 2026-11-22, relayed by the code-skill-nov22 lane. agent-evals-c3 queues the follow-up.
 **Alternatives rejected**: changing `kept_record` in this phase.
 **Trade-off accepted**: the gap stays open until agent-evals-c3's queued item lands.
+
+### 16. `branch_bounds.py` is close-pass scaffolding, deleted before merge (branch review ask 1, accepted)
+
+**Choice**: `tests/scripts/branch_bounds.py` and `tests/scripts/test_branch_bounds.py` are deleted before merge. The Phase 4 Bounds check ran once on this branch and passed: `python3 tests/scripts/branch_bounds.py 8436be97f25cd96ffa9f4ae8c72f37ff32173768 c7c330eec43626055bfeb4cb2474aa1ab9325e9b` exit 0 (pre-rebase hashes; the rebased diff touches the same paths). The plan's Phase 4 Files line stands as the record of what was built and then removed.
+**Reasoning**: standing ruling by orchestrating session agent-evals-c3, 2026-11-22, relayed by the code-skill-nov22 lane. The checker hardcodes one lane's bounds; after merge it describes a closed lane and would run in every suite.
+**Alternatives rejected**: keeping it as a general tool (no other lane has this bounds list).
+**Trade-off accepted**: a later lane with its own bounds writes its own check.
+
+### 17. The 3488 start-load limit is an AC15 close check, not a suite gate (branch review ask 2, accepted)
+
+**Choice**: `tests/scripts/test_skill_word_band.py` is dropped. `tests/scripts/skill_word_band.py` stays as the AC15 close check; the Phase 3 change file names its 3461 reading against the 3488 limit.
+**Reasoning**: standing ruling by orchestrating session agent-evals-c3, 2026-11-22, relayed by the code-skill-nov22 lane. `_shared/handoff-block.md` is shared with /review and /fix, so a permanent gate 27 words under the limit would fail a lane that never touched /code.
+**Alternatives rejected**: keeping the suite test with a wider limit.
+**Trade-off accepted**: a later growth of the /code start load is caught by a meter run, not by the suite.
+
+### 18. A recorded-holder file the current coder edits stays flagged (branch review ask 3, rejected for this branch)
+
+**Choice**: `recorded_holder_rows` keeps flagging a change to a held file from an earlier phase as a tool fault, even when the current coder's `coder_written_paths` holds that change. The release-of-own-write case is a follow-up queue item in `~/agent-evals`, filed by the code-skill-nov22 lane.
+**Reasoning**: standing ruling by orchestrating session agent-evals-c3, 2026-11-22, relayed by the code-skill-nov22 lane; this is the same class as decision 15 (the later-phase holder) and is ruled out of this branch with it.
+**Alternatives rejected**: dropping the changed file from the held rows when the current coder wrote it.
+**Trade-off accepted**: a phase that edits an earlier phase's leftover is reported as a fault until the follow-up lands.

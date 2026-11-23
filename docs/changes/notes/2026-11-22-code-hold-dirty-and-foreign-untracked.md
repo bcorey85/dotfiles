@@ -23,6 +23,8 @@ The phase start records the other live session in the repo, the run's session id
 
 tests/scripts/test_phase_start.py, tests/scripts/test_code_review_start.py, tests/scripts/test_code_wait.py
 
+Verify-branch fixes: a solo run with a start record and a session id and no holder now notes that no file is held (stderr and the scope notes), as every other no-holder path does. `code_wait.held_fault_line` returns a line naming the repo when it is outside a git checkout, in place of exiting. `code_review_start.py` reads the plan's earlier-phase and this-phase files once per scope build (`plan_files`) and passes them to the held, untracked and targeted reads. The `phase_start.py` docstring says a kept record adds the current session id.
+
 ## Result
 
 A coder edit to a held file is named as a tool fault in the scope note, the review prompt header and the `code_wait.py review` output. The packet's `tool_fault` field is unchanged. A held file that the phase's own plan section names stays held and is listed on a `held files this phase names:` line and in the scope notes.

@@ -7,12 +7,14 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-120 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+123 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 156 further findings are left out of this page.
 
 ## Rejected
 
+* 2026-11-22 [Deleting four rules the coder and reviewer already follow cuts 198 words per load with no behavior loss](../../../agent-evals/findings/2026-11-22-deleting-four-rules-the-coder-and-reviewer-already.md) - REMOVE: Four coder and reviewer rules score 8 of 8 with the rule and 8 of 8 without, so deleting them cuts about 198 words from each load and the agents behave the same. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-10-17 [Reuse line in architect plan steps, coder build: no hand-written sums in either arm](../../../agent-evals/findings/2026-10-17-reuse-line-in-architect-plan-steps-coder-build-no.md) - REMOVE: Reuse lines in architect plan steps changed no code: no coder hand-wrote the money sum with or without them (six payments-phase plans, one Sonnet coder each), and the rule adds 20% Opus architect output. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-14 [Quiet test output rule for the coder, dropped at smoke](../../../agent-evals/findings/2026-10-14-quiet-test-output-rule-for-the-coder-dropped-at.md) - REMOVE: The coder already reads about 3 tokens of test output per full-suite run by sending output to a log file, so a quiet-reporter rule has nothing to cut. [watch: no watch]
@@ -58,6 +60,10 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-22 [The stale prose check could not have seen six of seven stale lines a fix pass left on one branch](../../../agent-evals/findings/2026-11-22-the-stale-prose-check-could-not-have-seen-six-of.md) - HOLD: A read of the seven stale docstring, comment and note lines left open at one branch's review stops: six name no changed symbol, so a symbol search cannot list them, and no single cause holds three. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-22 [A regression run finds all 10 shipped rules still hold on the live toolkit](../../../agent-evals/findings/2026-11-22-a-regression-run-finds-all-10-shipped-rules-still.md) - HOLD: Rerunning the proof scenarios of every shipped coder, backend and reviewer rule with the rule on, against the live toolkit files: 158 of 160 runs complied, and no rule fell under its recorded count. One full run costs 160 runs and about $19.50. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-22 [Tests the reviewer asks for on low-complexity code catch planted bugs no other test catches](../../../agent-evals/findings/2026-11-22-tests-the-reviewer-asks-for-on-low-complexity-code.md) - HOLD: Mutation check on one recorded warehouse build: 11 bugs planted where a complexity-score filter would have dropped the reviewer's test-gap ask; all 11 are caught only by the test written for that ask, against a bar of at most 2. Keeping every test-gap ask keeps all 11 catches. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-22 [A gh api rule for GitHub star counts adds nothing the research session does not already do](../../../agent-evals/findings/2026-11-22-a-gh-api-rule-for-github-star-counts-adds-nothing.md) - HOLD: A research-skill line telling the session to read GitHub stars and release dates with gh api changes nothing on a plain prompt: the session already used gh api in 8 of 8 runs without it. Under a hurry-up prompt it lifted 5/8 to 8/8. [watch: no watch]

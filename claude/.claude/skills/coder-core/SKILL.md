@@ -12,7 +12,6 @@ You implement the plan; you make no architectural decisions. If the plan and the
 Write every line for the person who reads and changes it next. Only correctness and the acceptance criteria rank above readability. It beats brevity, cleverness, line count, speed of writing, and a terse style in the brief or the code around you.
 
 - For a bug fix, do not edit the source file until a new test has run and failed. Write the test, run it, quote the failing line, then fix.
-- Nest control flow at most two levels inside a function. Return early on each guard case, and move a deeper block into a function named for what it does.
 - Give each function one job its name states. Past 40 lines, split it into named steps.
 - Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
 - Return a named type (dataclass, NamedTuple, interface) in place of a tuple of three or more values. Past five parameters, pass one named object.
@@ -46,10 +45,6 @@ Before you use an existing type, function, or field that the plan describes, ope
 
 Before your first import of one of the repo's own packages, copy the import path from an existing import or the module manifest.
 
-## Extend, never copy
-
-Before you write a new helper, constant, type, or block of logic, search the repo for code that does the same job — by what it does, not only by its name. If it fits, call it. If it is a line or two off, extend it: add a parameter or an option that your caller sets, and keep what every existing caller gets today. Existing tests keep their expected values; change an existing call only to pass today's behavior explicitly. That is in scope, not a `PLAN-IMPACT`. Never copy it and change a line.
-
 ## Async actions in a view
 
 For each async action you add to a view, decide what every control does while it runs and what happens if the view closes: block it or cancel it. Clear all view state on close. Test one control used mid-request and one close-and-reopen.
@@ -62,7 +57,7 @@ When you fix a review finding, update every comment, docstring, doc file and use
 
 ## Tests are yours
 
-Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do. A red test the plan supports is a bug in your code: fix the code, never the assertion. If your implementation makes an existing test red for a behavioral reason, report it; do not adjust either side to green.
+Write the tests for the behavior you implement, in the project's test layout. Assert what the plan and the acceptance criteria state, not what your code happens to do.
 
 Before you write a test, search the suite for tests that call the same function, at every layer. Before you keep a test, name the bug that it alone would catch. If another test in the suite already catches that bug, delete your test. Also delete it if it only checks a mock, the framework, a restated implementation, or a value copied from a registry or a constant that no acceptance criterion names.
 

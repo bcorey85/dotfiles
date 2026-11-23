@@ -36,12 +36,12 @@ Single-slice plan: the contracts (the owner-line grammar, the ruling form, the h
 - D7. Report — a `drop_asks` row with a new reason constant naming the ruling.
 - D8. Pre-pass text — read from the work tree in the snapshot.
 - D9. Item 2 — no prose rule; a deterministic replay test in `test_plan_format.py`; the phase-1 prose bullet is cut (agent-evals-c3, 2026-11-22).
-- D10. First-Source-line fail-open — not fixed here; queued as `criteria-owner-reads-only-the-first-queue-source`.
+- D10. First-Source-line fail-open — fixed on master by commit 1b3987227 (`criteria_owner` reads every queue Source line); the queued item is done.
 - Q1. The `## Owners` section stays; this lane adds no line to it.
 - Q2. The three glossary edits are reverted; they wait for the user's approval.
 - Q3. agent-evals-c3's lane briefs write the `covers: owner-lines` line; the change file states its exact form.
 - Q4. No failing replay for item 2 exists.
-- Q5. D10 is queued, not fixed here.
+- Q5. D10 was not fixed here; commit 1b3987227 on master fixed it and the queued item is done.
 - Q6. `fix/toolkit-rules-nov22` merges first; the final report names the dependency.
 - Q7. A malformed `Standing ruling` line stops the run with a critical blocker naming file and line (agent-evals-c3, 2026-11-22).
 - Q8. A merge or reorder of owner bullets reverts and goes through the ask (agent-evals-c3, 2026-11-22).
@@ -321,7 +321,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 
 ## What We're NOT Doing
 
-- `criteria_owner` reading every Source line (D10): queued as `criteria-owner-reads-only-the-first-queue-source`.
+- `criteria_owner` reading every Source line (D10): fixed on master by commit 1b3987227, not in this lane.
 - Any eng-spec phase-1 prose edit or rule-meter arms (D9, ruling by agent-evals-c3 at 2026-11-22; this cuts the item's phase-1 "Done when" bullet).
 - Edits to `orchestration.md`, `claude/.claude/CLAUDE.md`, `S/code/**`, `claude/.claude/skills/code/**`.
 - Partial keeps of a mixed edit (D6).

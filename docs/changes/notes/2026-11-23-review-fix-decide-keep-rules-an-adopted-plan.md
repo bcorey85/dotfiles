@@ -39,3 +39,5 @@ Before, `decide keep` refused with no waiting plan impact and the adopted-unappl
 ## Back-out
 
 Revert the `already_applied` argument of `not_applied_why`, `unapplied_adopted` and `settle_adopted_after_pass`, `coder_report.already_applied_issues` and `ALREADY_APPLIED_MARKER`, the `adopted_numbers` argument of `coder_prompt` with its coder-brief line (`review_loop_prompts.py`), `adopted_numbers` and `ordinary_already_applied_skips` (`review_loop_ruled.py`) with their calls in `review_loop_script.py`, the `row_impact_texts` argument of `write_ruling_entry` and the `row_per_text` field of `PlanImpactSource`, and `review_fix_adopted.py` and its call in `waiting_plan_impact_source`, the `adopted_unapplied` field of the loop outcome, packet and `handback.py` packet keys (`review_loop_ruled.py`, `review_loop_script.py`, `review_loop_packet.py`, `handback.py`).
+
+A fix pass that reports an adopted finding as both SKIPPED and ALREADY APPLIED counts it as applied: `settle_adopted_after_pass` leaves it out of the kept skips.

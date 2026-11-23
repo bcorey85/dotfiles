@@ -1752,10 +1752,13 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(self.adopted_left(), (), "the adopted ruling is recorded as applied")
 
     def test_an_adopted_finding_reported_both_skipped_and_already_applied_is_applied_not_skipped(self):
+        self.seed_adopt_row()
+
         packet = self.run_adopted({"result": "SKIPPED 1: not needed.\nALREADY APPLIED 1: app.py:2"})
 
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
         self.assertEqual(packet["skipped_fp"], [])
+        self.assertEqual(self.adopted_left(), (), "the adopted ruling is recorded as applied")
 
     def test_a_plain_finding_reported_already_applied_is_a_skip_with_the_coders_line_as_the_reason(self):
         plain = "app.py:1 [bug] plain finding"

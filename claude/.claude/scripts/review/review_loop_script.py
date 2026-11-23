@@ -760,9 +760,6 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         skips = {**ordinary, **skips}
         unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed,
                                                                              already_applied)
-        # An adopted finding reported ALREADY APPLIED counts as applied even when the coder also wrote SKIPPED for it.
-        adopted_applied = already_applied.intersection(adopted_numbers(findings, self.adopted))
-        skips = {number: line for number, line in skips.items() if number not in adopted_applied}
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]

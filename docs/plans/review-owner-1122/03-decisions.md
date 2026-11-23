@@ -82,10 +82,10 @@
 
 ### D10. `criteria_owner` reads only the first Source line
 
-**Choice**: Not fixed in this lane. Queued as its own item: `criteria_owner` reads every queue `Source:` line, validates each, and returns `user` when any item is `human:`-authored.
+**Choice**: Not fixed in this lane. Commit 1b3987227 on master fixed it: `criteria_owner` reads every queue `Source:` line, validates each, and returns `user` when any item is `human:`-authored. The queued item `criteria-owner-reads-only-the-first-queue-source` is done.
 **Reasoning**: Lane call, 2026-11-22. The lane's ticket names two items; this is a third behavior change with its own test, and the scripts rules add code for a defect only when a session hit it. No session has.
 **Alternatives rejected**: Fix it here: widens the ticket without the criteria owner's ruling, and couples item 2's close to a `plan_format.py` change nobody asked for. Leave it unrecorded: a mixed-author ticket with a session item's Source line first lets a session cut the user's ACs.
-**Trade-off accepted**: The fail-open stays until the new item runs.
+**Trade-off accepted**: The fail-open stayed in this lane until commit 1b3987227 landed on master.
 
 ### Q1. Does the ruling retire the Owners section?
 
@@ -96,7 +96,7 @@
 
 ### Q5. Fix D10 here or queue it
 
-**Choice**: Queue it. See D10.
+**Choice**: Queue it. See D10. Commit 1b3987227 on master fixed it and the queued item is done.
 **Reasoning**: Lane call, 2026-11-22.
 **Alternatives rejected**: In this lane: see D10.
 **Trade-off accepted**: See D10.

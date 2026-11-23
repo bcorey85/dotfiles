@@ -649,12 +649,11 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
 
-    def test_a_pasted_brief_lane_ticket_reads_only_its_first_source_line(self):
+    def test_a_pasted_brief_lane_ticket_with_one_source_line_per_item_is_session_owned(self):
         # The ticket mirrors the real pasted-brief lane ticket shape: one Source line per queue item, each item
-        # pasted verbatim under its own heading. criteria_owner reads only the first queue Source line, so the
-        # human item `b` behind it does not make the owner `user`.
+        # pasted verbatim under its own heading.
         self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="a")
-        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n', slug="b")
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="b")
         pasted_item = '---\ntype: "QueueItem"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n'
         ticket = self.folder / "00-ticket.md"
         ticket.write_text(

@@ -761,14 +761,17 @@ class RuledFindings:
 
     def settle_adopted_after_pass(self, findings, skips, changed, already_applied=()):
         """After the fix-first pass on `findings`: (the Unapplied of each adopted ruling the pass left unapplied, the
-        1-based numbers of those findings, `skips` without them). The applied findings are recorded as applied. An
-        unapplied adopted finding stays open: it is no skipped false positive and no fix."""
+        1-based numbers of those findings, `skips` without them and without the adopted findings reported ALREADY
+        APPLIED: such a finding counts as applied even when the coder also wrote SKIPPED for it). The applied findings
+        are recorded as applied. An unapplied adopted finding stays open: it is no skipped false positive and no fix."""
         unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo, already_applied)
         unapplied_findings = [item.finding for item in unapplied]
         # A finding the sign-off put-back undid was not applied, so it is not recorded as applied.
         self.record_applied_adopted(self.not_put_back(item for item in findings if item not in unapplied_findings))
         unapplied_numbers = {number for number, item in enumerate(findings, 1) if item in unapplied_findings}
-        kept_skips = {number: line for number, line in skips.items() if number not in unapplied_numbers}
+        adopted_applied = set(already_applied).intersection(adopted_numbers(findings, self.adopted))
+        dropped = unapplied_numbers | adopted_applied
+        kept_skips = {number: line for number, line in skips.items() if number not in dropped}
         return unapplied, unapplied_numbers, kept_skips
 
     def record_applied_adopted(self, findings):

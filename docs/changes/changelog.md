@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1106 changes
+1107 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Research deep dives hand each cloned repo to its own subagent](notes/2026-11-22-research-deep-dives-hand-each-cloned-repo-to-its.md) [skill/research] A research deep dive into several cloned repos now starts one subagent per repo and compares their reports, which cuts the main session's cached reads 44% to 78% so a long dive stops compacting mid-task; the whole run spends 2.6 to 3.1 times the tokens on small repos. **cuts tokens by 78% (143k → 31k)**
 * [Add toolkit-writing skill and load it in retro](notes/2026-11-22-add-toolkit-writing-skill-and-load-it-in-retro.md) [skill/toolkit-writing, skill/audit, skill/debug] Adds a toolkit-writing skill of eight checks for agent-read text, has the audit retro lane load it and read the environment, makes retro queue only the picks the user names, and rewrites the audit and debug skills to its checks.
 * [A /glossary skill looks up, builds and unifies the project's domain terms](notes/2026-11-22-a-glossary-skill-looks-up-builds-and-unifies-the.md) [skill/glossary] A new /glossary skill answers whether a term exists and what it means, builds docs/glossary.md from the code on request, and lists concepts the code names more than one way with a proposed canonical name.
 * [Deny a docker run without --name and print the fixed form](notes/2026-11-22-deny-a-docker-run-without-name-and-print-the-fixed.md) [script/git-discipline-gate, script/docker-run-names, script/shell-command, script/shell-command-words, script/directory-emptying-deletes, script/plan-format] git-discipline-gate denies a Bash command whose docker run, docker container run or podman run step carries no --name, and prints the step as it is to be run: the same words with --rm --name <ticket>-<purpose> inserted after run, <ticket> filled from the branch's leading KEY-123 when it has one. docker compose run and docker exec pass. The hook's median time on a matched call equals its time on an unmatched one.
@@ -1291,6 +1292,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [Research deep dives hand each cloned repo to its own subagent](notes/2026-11-22-research-deep-dives-hand-each-cloned-repo-to-its.md) - No intake number reads it: research sessions run on this machine, and the work logs carry no main-session context size per skill call. Haiku subagents: the bench loads no session-start file, so its Explore subagents ran on Opus; live sessions send read-only lookups to Haiku. Real cloned repos larger than the synthetic plants: the main-session saving grows with repo size, the subagent cost grows with it too.
 * [Review fork relays a user ruling the resume text quotes](notes/2026-11-19-review-fork-relays-a-user-ruling-the-resume-text.md) - No intake number counts relayed user rulings refused by a user-only ask.
 * [Review resume records session rulings with --by session](notes/2026-11-14-review-resume-records-session-rulings-with-by.md) - No intake number counts session rulings logged as the user's.
 * [The test reviewer opens the fixture of every test that asserts an order](notes/2026-11-11-the-test-reviewer-opens-the-fixture-of-every-test.md) - No intake number reads it: the work logs do not tag a test-reviewer finding as a fixture finding. Measured on a TypeScript billing app, a small TypeScript case and a small Django case; the Django case shows no gain because the reviewer already reports it there. No run on any other stack or on a frontend test.

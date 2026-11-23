@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1106 changes, 22 with a measured gain, 270 behavior changes that no intake metric reads.
+1107 changes, 23 with a measured gain, 271 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-22, [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md).
 
@@ -19,7 +19,7 @@ Latest change: 2026-11-22, [The MCP server-name test ignores downloaded caches, 
 
 ## Total saved
 
-* tokens: 19.8M saved
+* tokens: 19.9M saved
 * cost: $53.01 saved
 * wall-clock: 1140 seconds saved
 
@@ -27,7 +27,7 @@ Each saving is the measured before and after of one change's finding, so a total
 
 ## Gains by metric
 
-* tokens: 3
+* tokens: 4
 * cost: 3
 * wall-clock: 1
 * quality: 14

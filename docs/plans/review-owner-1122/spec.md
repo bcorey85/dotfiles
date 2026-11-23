@@ -9,7 +9,7 @@
 
 ## Summary
 
-The /code review loop reverts every fix-pass edit to a CLAUDE.md. After this change it keeps an edit to `claude/.claude/scripts/CLAUDE.md` whose only changed lines are added or updated owner bullets under `## Owners`, when the run's decision log held a standing ruling covering owner lines before the pass started, and it reports the kept edit in the packet's dropped asks. Every other CLAUDE.md edit is still reverted. Item 2 (a pasted-brief lane reading owner `user`) does not reproduce; it closes with a replay test that pins the working shape, and no prose rule. One change file lands with it; the three glossary edits are reverted pending the user's approval (Q2).
+The /code review loop reverts every fix-pass edit to a CLAUDE.md. After this change it keeps an edit to `claude/.claude/scripts/CLAUDE.md` whose only changed lines are added or updated owner bullets under `## Owners`, when the run's decision log held a standing ruling covering owner lines before the pass started, and it reports the kept edit in the packet's dropped asks. Every other CLAUDE.md edit is still reverted. Item 2 (a pasted-brief lane reading owner `user`) does not reproduce; it closes with a replay test that pins the working shape, and no prose rule. One change file lands with it; the three glossary edits landed under the user's 2026-11-23 ruling (Q2).
 
 ## Phase Status
 
@@ -28,7 +28,7 @@ Single-slice plan: the contracts (the owner-line grammar, the ruling form, the h
 <!-- One line per block in 03-decisions.md's ## Resolved: `N. [Topic] — [Choice]`, plus `Trade-off: …` only where it changes code. -->
 
 - D1. Grammar location — new `lib/owner_lines.py` owns the path, heading and bullet form; a two-sided changed-line helper goes in `lib/protected_lines.py`. No owner line is added to `scripts/CLAUDE.md`.
-- D2. Ruling form — `standing_rulings` `covers:` takes `rewords` or `owner-lines`; `owner_line_ruling(plan_path)` beside `reword_ruling`. Trade-off: the docstring and glossary say "a user's ruling" and now cover a session's.
+- D2. Ruling form — `standing_rulings` `covers:` takes `rewords` or `owner-lines`; `first_ruling_covering(plan_path, COVERS_OWNER_LINES)` beside `reword_ruling`.
 - D3. Ruling read — pre-pass in `snapshot_approval_blobs`, stored on the host. Trade-off: a ruling written between snapshot and pass is missed and the edit reverted, with the usual reverted-approval-edit row in the packet (Q9).
 - D4. Path — exact repo-relative `claude/.claude/scripts/CLAUDE.md`.
 - D5. Owner-lines-only — every removed and added line is an owner bullet inside `## Owners`, heading unchanged; a delete, a shrinking replace and a reorder are reverted. Trade-off: a merge of two bullets goes back through the ask.
@@ -38,7 +38,7 @@ Single-slice plan: the contracts (the owner-line grammar, the ruling form, the h
 - D9. Item 2 — no prose rule; a deterministic replay test in `test_plan_format.py`; the phase-1 prose bullet is cut (agent-evals-c3, 2026-11-22).
 - D10. First-Source-line fail-open — fixed on master by commit 1b3987227 (`criteria_owner` reads every queue Source line); the queued item is done.
 - Q1. The `## Owners` section stays; this lane adds no line to it.
-- Q2. The three glossary edits are reverted; they wait for the user's approval.
+- Q2. The three glossary edits landed under the user's 2026-11-23 ruling (03-decisions.md Q2).
 - Q3. agent-evals-c3's lane briefs write the `covers: owner-lines` line; the change file states its exact form.
 - Q4. No failing replay for item 2 exists.
 - Q5. D10 was not fixed here; commit 1b3987227 on master fixed it and the queued item is done.
@@ -55,7 +55,7 @@ Single-slice plan: the contracts (the owner-line grammar, the ruling form, the h
 
 The architect named three.
 
-- Read the ruling from the post-pass decision log, as `standing_reword_ruling` does at decision time: a coder pass can add the ruling line and sign-off protection keeps added lines, so the coder would authorize its own edit.
+- Read the ruling from the post-pass decision log, as `standing_ruling_covering(COVERS_REWORDS)` does at decision time: a coder pass can add the ruling line and sign-off protection keeps added lines, so the coder would authorize its own edit.
 - Make owner-line asks rulable by the session through `phase_asks`: the edit is still reverted and asked about on every pass, which is the asking the ticket wants stopped.
 - Loosen `criteria_owner` to any queue path in the ticket text: real briefs name slugs, not paths, so no surveyed shape is fixed, and a user's ticket that mentions a session item would flip to `session`.
 
@@ -73,7 +73,7 @@ The architect named three.
 - The loop holds `self.plan` (repo-relative plan path, possibly empty) and `self.repo` (`review_loop_script.py:319`). Both callers of `ask_for_approval_only_edits` (`review_loop_script.py:573-592`, `review_loop_partial_fix.py:205-213`) go through the one method. `exercised`.
 - `drop_asks` dedupes by ask (`review_loop_ruled.py:232-235`), so one kept row per file per run. `exercised`.
 - Item 2 premise: 7 of 7 lane plans from 2026-11-22 print owner `session`; a survey of 87 local plan tickets finds no pasted-brief ticket reading `user`. `exercised` (`plan_check.py owner` over every `docs/plans/*/00-ticket.md` under `~/dotfiles*`, `~/dev/*`, `~/agent-evals*`).
-- The glossary (`docs/glossary.md`) edits are reverted, pending the user's approval (Q2); no other domain term is coined.
+- The glossary (`docs/glossary.md`) edits landed under the user's 2026-11-23 ruling (Q2); no other domain term is coined.
 - Change file: `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by claude-code/claude-fable-5-1 --root docs/changes`, kind `fix` with `test: path::name`, then `build_changes.py`. Sign-offs stay in `03-decisions.md`, never in the change file.
 - The ledger's `## Direction & Constraints` holds no line that starts `Standing ruling`, so this plan's own /code review adopts no reword impact by accident (`exercised`, grep after the reword of 2026-11-22).
 
@@ -169,16 +169,16 @@ The one ruling form gains a second `covers` value and a second reader, so a lane
 ##### 1. The form and the readers
 
 **File**: `S/lib/standing_rulings.py`
-**Changes**: Docstring (lines 1-9): the line form, `covers` is `rewords` or `owner-lines`, a standing ruling is given by the user or the orchestrating session; keep "a cut or a narrowing is never covered" and the no-quote-marks sentence. After line 15 add `COVERS_OWNER_LINES = "owner-lines"`. Line 16: `STANDING_RULING_FORM = "Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase, no quote marks> covers: rewords|owner-lines"`. Lines 18-20: the covers group becomes `(?P<covers>{COVERS_REWORDS}|{COVERS_OWNER_LINES})`. Lines 60-65: add `first_ruling_covering(plan_path, covers)` returning the first ruling whose `covers` equals the argument, or None; `reword_ruling(plan_path)` returns `first_ruling_covering(plan_path, COVERS_REWORDS)`; new `owner_line_ruling(plan_path)` returns `first_ruling_covering(plan_path, COVERS_OWNER_LINES)`. `S/code/plan_check.py:48` calls only `reword_ruling` and is not edited.
+**Changes**: Docstring (lines 1-9): the line form, `covers` is `rewords` or `owner-lines`, a standing ruling is given by the user or the orchestrating session; keep "a cut or a narrowing is never covered" and the no-quote-marks sentence. After line 15 add `COVERS_OWNER_LINES = "owner-lines"`. Line 16: `STANDING_RULING_FORM = "Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase, no quote marks> covers: rewords|owner-lines"`. Lines 18-20: the covers group becomes `(?P<covers>{COVERS_REWORDS}|{COVERS_OWNER_LINES})`. Lines 60-65: add `first_ruling_covering(plan_path, covers)` returning the first ruling whose `covers` equals the argument, or None; `reword_ruling(plan_path)` returns `first_ruling_covering(plan_path, COVERS_REWORDS)`; owner-line callers call `first_ruling_covering(plan_path, COVERS_OWNER_LINES)` directly. `S/code/plan_check.py:48` calls only `reword_ruling` and is not edited.
 
 ##### 2. Tests
 
 **File**: `tests/scripts/test_plan_format.py`
-**Changes**: Beside `STANDING_LINE` (line 782) add `OWNER_LINES_LINE = "Standing ruling by the orchestrating session at 2026-11-22: owner lines in the scripts CLAUDE.md need no ask covers: owner-lines"`. In `StandingRulingTest`, after the test at 858-865: an owner-lines line in the decision log parses with `covers == "owner-lines"`; `owner_line_ruling` returns it and `reword_ruling` returns None for that plan; with only `STANDING_LINE`, `owner_line_ruling` returns None; with both lines, each reader returns its own. The malformed table (815-831) still raises for `covers: cuts`.
+**Changes**: Beside `STANDING_LINE` (line 782) add `OWNER_LINES_LINE = "Standing ruling by the orchestrating session at 2026-11-22: owner lines in the scripts CLAUDE.md need no ask covers: owner-lines"`. In `StandingRulingTest`, after the test at 858-865: an owner-lines line in the decision log parses with `covers == "owner-lines"`; `first_ruling_covering(plan_path, COVERS_OWNER_LINES)` returns it and `reword_ruling` returns None for that plan; with only `STANDING_LINE`, `first_ruling_covering(plan_path, COVERS_OWNER_LINES)` returns None; with both lines, each reader returns its own. The malformed table (815-831) still raises for `covers: cuts`.
 
 #### Success Criteria
 
-A `covers: owner-lines` line is read by `owner_line_ruling` and ignored by `reword_ruling`; a `covers: rewords` line the reverse; any other `covers` value raises `PlanFormatError` naming file and line.
+A `covers: owner-lines` line is read by `first_ruling_covering(plan_path, COVERS_OWNER_LINES)` and ignored by `reword_ruling`; a `covers: rewords` line the reverse; any other `covers` value raises `PlanFormatError` naming file and line.
 
 #### Automated Verification:
 
@@ -213,8 +213,8 @@ The approval path reads the ruling and the file text before the pass, and after 
 - Module docstring (1-4): name the exception and the two new host attributes.
 - Beside `approval_ask_text` (59-62) add `kept_owner_line_text(path)`, which returns `` f"`{path}:1` [other] owner-line edit kept" ``. It has no `Change:` part and no question, so the packet's `normalize_ask` finds nothing askable, the row prints as a dropped-ask line, and it proposes no revert. For `claude/.claude/scripts/CLAUDE.md` it is 65 characters, under the 80 that `dropped_ask_warning` keeps.
 - `init_ruled_state` (197-225): after line 214 add `self.owner_file_before = None` (work-tree text of `owner_lines.SCRIPTS_CLAUDE_MD` before the latest pass; None when absent, unhashed, unreadable or unlisted) and `self.owner_line_ruling = None` (the `{who, at, summary, covers}` ruling read before the latest pass, or None).
-- Lines 340-349: extract `plan_path_on_disk()` returning `Path(self.repo) / self.plan` when `self.plan` is set and that file exists, else None; `standing_reword_ruling` uses it. Add `standing_owner_line_ruling()` beside it with the same guard and `standing_rulings.owner_line_ruling`; a malformed line raises `PlanFormatError` as at 342-343.
-- `snapshot_approval_blobs` (502-522): at the top reset both new fields to None. After the loop, when `self.approval_blobs.get(owner_lines.SCRIPTS_CLAUDE_MD)` is not None, read the file text into `owner_file_before` (on `OSError` or `UnicodeDecodeError` leave None; comment: fail closed, the edit is then reverted as before) and set `self.owner_line_ruling = self.standing_owner_line_ruling()`. A repo without that file never reads the decision log here. Update the docstring (503-506).
+- Lines 340-349: extract `plan_path_on_disk()` returning `Path(self.repo) / self.plan` when `self.plan` is set and that file exists, else None; `standing_ruling_covering(covers)` uses it and calls `standing_rulings.first_ruling_covering(plan_path, covers)`; a malformed line raises `PlanFormatError` as at 342-343.
+- `snapshot_approval_blobs` (502-522): at the top reset both new fields to None. After the loop, when `self.approval_blobs.get(owner_lines.SCRIPTS_CLAUDE_MD)` is not None, read the file text into `owner_file_before` (on `OSError` or `UnicodeDecodeError` leave None; comment: fail closed, the edit is then reverted as before) and set `self.owner_line_ruling = self.standing_ruling_covering(standing_rulings.COVERS_OWNER_LINES)`. A repo without that file never reads the decision log here. Update the docstring (503-506).
 - New `keeps_owner_line_edit(path)` before `revert_approval_edit` (insert before 460). Returns False when `path != owner_lines.SCRIPTS_CLAUDE_MD`, when `self.owner_line_ruling is None`, when `self.owner_file_before is None`, when the work-tree file is missing or unreadable (fail closed), or when `owner_lines.owner_lines_only(before, after)` is False. Otherwise: `label = standing_rulings.ruling_label(self.owner_line_ruling)`; `reason = KEPT_OWNER_LINE_EDIT_REASON.format(ruling=label)`; `self.drop_asks([parse_finding(kept_owner_line_text(path))], reason)`; return True. It touches neither the index nor HEAD.
 - `ask_for_approval_only_edits` (366-393): after the ruled-path `continue` (383-384) add `if self.keeps_owner_line_edit(path): continue`. One docstring sentence for the exception.
 - `review_loop_script.py:643-644` (`record_skips`): no edit. A kept path is not in `reverted`, so findings on it count as fixed through the normal path.
@@ -250,7 +250,7 @@ Under a pre-pass `covers: owner-lines` ruling, a fix-pass edit to `claude/.claud
 
 #### Overview
 
-Item 2 closes on evidence with a test that pins the shape that works; the three glossary edits are reverted pending the user's approval (Q2); the change file records item 1 and states the exact ruling line for lane briefs.
+Item 2 closes on evidence with a test that pins the shape that works; the three glossary edits landed under the user's 2026-11-23 ruling (Q2); the change file records item 1 and states the exact ruling line for lane briefs.
 
 #### Changes Required:
 
@@ -271,7 +271,7 @@ Item 2 closes on evidence with a test that pins the shape that works; the three 
 
 ##### 2. Glossary
 
-**File**: `docs/glossary.md` (REVERTED to master pending the user's approval, Q2; the edits below are not applied)
+**File**: `docs/glossary.md` (edits landed under the user's 2026-11-23 ruling, Q2)
 **Changes**: Line 147 (approval-only file): "A file a coder edits only after the user's own ruling, such as a CLAUDE.md. An owner-line edit to the scripts CLAUDE.md stands under a standing ruling that covers owner lines." Line 145 code ref: add `claude/.claude/scripts/review/review_loop_ruled.py`. Line 201 (standing ruling): "A ruling, by the user or the orchestrating session, that covers every later reword of an AC or every owner-line edit." New entry under `## Dotfiles` before `### template` (line 313): `### owner line`, `_noun_ · \`OWNER_LINE\` in \`claude/.claude/scripts/lib/owner_lines.py\``, "A bullet under `## Owners` in the scripts CLAUDE.md that names the module owning a fact."
 
 ##### 3. Change file
@@ -281,14 +281,14 @@ Item 2 closes on evidence with a test that pins the shape that works; the three 
 
 #### Success Criteria
 
-The pin test passes; the glossary is unchanged pending the user's approval of the three edits (Q2); the change file passes the builder's check and names both tests and the exact ruling line.
+The pin test passes; the three glossary edits landed under the user's 2026-11-23 ruling (Q2); the change file passes the builder's check and names both tests and the exact ruling line.
 
 #### Automated Verification:
 
 - [ ] **Test-verified**: the regression cover passes — `python3 tests/parallel_tests.py test_plan_format.py`
 - [ ] **Replay-verified**: this lane's pasted-brief ticket prints owner `session` (needs `~/agent-evals` on `bench-base` or any branch holding both queue items) — `python3 claude/.claude/scripts/code/plan_check.py owner docs/plans/review-owner-1122/spec.md | jq -e '.owner == "session"'`
-- [ ] **Presence-verified** (REVERTED pending the user's approval, Q2; fails until the glossary edit lands): the glossary contains the owner line entry — `rg -q '^### owner line$' docs/glossary.md`
-- [ ] **Presence-verified** (REVERTED pending the user's approval, Q2; fails until the glossary edit lands): the glossary contains the widened standing ruling — `rg -q 'or every owner-line edit' docs/glossary.md`
+- [x] **Presence-verified**: the glossary contains the owner line entry — `rg -q '^### owner line$' docs/glossary.md`
+- [x] **Presence-verified**: the glossary contains the widened standing ruling — `rg -q 'or every owner-line edit' docs/glossary.md`
 - [ ] **Presence-verified**: a change note contains the exact ruling line form — `rg -l 'covers: owner-lines' docs/changes/notes`
 - [ ] **Build-verified**: the change pages build — `python3 ~/agent-evals/bin/build_changes.py --root docs/changes`
 - [ ] **Agent-run**: full suite under the memory cap, in the background — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`

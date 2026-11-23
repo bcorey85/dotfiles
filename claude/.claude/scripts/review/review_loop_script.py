@@ -134,7 +134,6 @@ from review_loop_ruled import (
     adopted_numbers,
     approval_only_paths,
     no_code_numbers,
-    ordinary_already_applied_skips,
     prior_issue_entries,
     withheld_adopted,
 )
@@ -755,11 +754,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         reasked = reasked_findings(findings, open_questions(report), self.ruled_texts)
         skips = {**reasked, **skips}
         already_applied_lines = already_applied_issues(report, len(findings))
-        already_applied = set(already_applied_lines)
-        ordinary = ordinary_already_applied_skips(findings, self.adopted, already_applied_lines)
+        # Only an adopted finding reads `ALREADY APPLIED` as applied; any other is a skip with the coder's line.
+        adopted_applied = frozenset(already_applied_lines).intersection(adopted_numbers(findings, self.adopted))
+        ordinary = {number: line for number, line in already_applied_lines.items() if number not in adopted_applied}
         skips = {**ordinary, **skips}
         unapplied, unapplied_numbers, skips = self.settle_adopted_after_pass(findings, skips, changed,
-                                                                             already_applied)
+                                                                             adopted_applied)
         skipped = [{"item": findings[number - 1], "reason": line, "given": True}
                    for number, line in sorted(skips.items())]
         skipped = [entry for entry in skipped if entry["item"] not in reverted_findings]
@@ -768,8 +768,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
                                  and item not in reverted_findings)
         if not changed:
             # An adopted finding the coder reported as already in the tree is applied, not a no-change skip.
-            # An already-applied finding that is in `kept` is an adopted one: ordinary ones are already in `skips`.
-            already_items = [findings[number - 1] for number in already_applied]
+            already_items = [findings[number - 1] for number in adopted_applied]
             skipped += [{"item": item, "reason": NO_CHANGE_REASON, "given": True} for item in kept
                         if item not in already_items]
             kept = [item for item in kept if item in already_items]

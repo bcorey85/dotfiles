@@ -860,18 +860,21 @@ class StandingRulingTest(unittest.TestCase):
         rulings = standing_rulings.standing_rulings(self.plan)
 
         self.assertEqual(rulings[0]["covers"], "owner-lines")
-        self.assertEqual(standing_rulings.owner_line_ruling(self.plan), rulings[0])
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling, rulings[0])
         self.assertIsNone(standing_rulings.reword_ruling(self.plan))
 
     def test_a_rewords_line_alone_gives_no_owner_line_ruling(self):
         self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
 
-        self.assertIsNone(standing_rulings.owner_line_ruling(self.plan))
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertIsNone(owner_ruling)
 
     def test_with_both_lines_each_reader_returns_its_own(self):
         self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {OWNER_LINES_LINE}\n- {STANDING_LINE}\n")
 
-        self.assertEqual(standing_rulings.owner_line_ruling(self.plan)["covers"], "owner-lines")
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling["covers"], "owner-lines")
         self.assertEqual(standing_rulings.reword_ruling(self.plan)["covers"], "rewords")
 
     def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):

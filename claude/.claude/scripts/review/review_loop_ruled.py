@@ -85,14 +85,6 @@ def adopted_numbers(findings, adopted):
     return [number for number, finding in enumerate(findings, 1) if finding.text in adopted]
 
 
-def ordinary_already_applied_skips(findings, adopted, already_applied_lines):
-    """{number: the coder's `ALREADY APPLIED` line} of the reported numbers that are no adopted finding. Only an
-    adopted finding reads that line as applied; any other finding the coder found in the tree is a skip with the
-    coder's reason."""
-    adopted_set = set(adopted_numbers(findings, adopted))
-    return {number: line for number, line in already_applied_lines.items() if number not in adopted_set}
-
-
 def rejected_ask_records(session_id, repo):
     """The finding records of the asks the session rejected in `repo` (the reviewed repo's top level, the key
     asks-done writes under: the packet's own `--repo`), [] with no session id."""
@@ -354,7 +346,8 @@ class RuledFindings:
 
             ac_change = plan_format.changes_acceptance_criteria(item.text)
             reword = standing_rulings.impact_rewords_criterion(item.text)
-            under_standing_ruling = reword and self.standing_reword_ruling() is not None
+            under_standing_ruling = (reword
+                                     and self.standing_ruling_covering(standing_rulings.COVERS_REWORDS) is not None)
             adopted = not ac_change or under_standing_ruling
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
                                      "cause": plan_format.PLAN_CAUSE, "adopted": adopted,
@@ -375,22 +368,14 @@ class RuledFindings:
             if impact["adopted"] and impact["reword"] and impact["ac_change"] and not impact["settled"]:
                 impact["applied"] = True
 
-    def standing_reword_ruling(self):
-        """The standing ruling in the loop's plan that covers rewords, or None with no plan on disk or no such ruling.
-        A standing ruling line that does not parse raises PlanFormatError (`file:line:` and the expected form); the
-        loop stops on it."""
+    def standing_ruling_covering(self, covers):
+        """The standing ruling in the loop's plan that covers `covers`, or None with no plan on disk or no such
+        ruling. A standing ruling line that does not parse raises PlanFormatError (`file:line:` and the
+        expected form); the loop stops on it."""
         plan_path = self.plan_path_on_disk()
         if plan_path is None:
             return None
-        return standing_rulings.reword_ruling(plan_path)
-
-    def standing_owner_line_ruling(self):
-        """The standing ruling in the loop's plan that covers owner lines, or None with no plan on disk or no such
-        ruling. A malformed standing ruling line raises PlanFormatError, as `standing_reword_ruling` does."""
-        plan_path = self.plan_path_on_disk()
-        if plan_path is None:
-            return None
-        return standing_rulings.owner_line_ruling(plan_path)
+        return standing_rulings.first_ruling_covering(plan_path, covers)
 
     def plan_path_on_disk(self):
         """The loop's plan file as a Path, or None with no plan or no such file."""
@@ -641,7 +626,7 @@ class RuledFindings:
         if self.owner_file_before is None:
             # Fail closed: with no pre-pass text the edit is reverted as before.
             return
-        self.owner_line_ruling = self.standing_owner_line_ruling()
+        self.owner_line_ruling = self.standing_ruling_covering(standing_rulings.COVERS_OWNER_LINES)
 
     def approval_ruled_paths(self, findings):
         """The repo-relative paths that a finding the user ruled on (or a session's accepted approval ask) names."""
@@ -759,17 +744,16 @@ class RuledFindings:
         self.keep_open([item.finding for item in unapplied])
         return True
 
-    def settle_adopted_after_pass(self, findings, skips, changed, already_applied=()):
+    def settle_adopted_after_pass(self, findings, skips, changed, adopted_applied=frozenset()):
         """After the fix-first pass on `findings`: (the Unapplied of each adopted ruling the pass left unapplied, the
         1-based numbers of those findings, `skips` without them and without the adopted findings reported ALREADY
         APPLIED: such a finding counts as applied even when the coder also wrote SKIPPED for it). The applied findings
         are recorded as applied. An unapplied adopted finding stays open: it is no skipped false positive and no fix."""
-        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo, already_applied)
+        unapplied = unapplied_adopted(findings, self.adopted, skips, changed, self.repo, adopted_applied)
         unapplied_findings = [item.finding for item in unapplied]
         # A finding the sign-off put-back undid was not applied, so it is not recorded as applied.
         self.record_applied_adopted(self.not_put_back(item for item in findings if item not in unapplied_findings))
         unapplied_numbers = {number for number, item in enumerate(findings, 1) if item in unapplied_findings}
-        adopted_applied = set(already_applied).intersection(adopted_numbers(findings, self.adopted))
         dropped = unapplied_numbers | adopted_applied
         kept_skips = {number: line for number, line in skips.items() if number not in dropped}
         return unapplied, unapplied_numbers, kept_skips

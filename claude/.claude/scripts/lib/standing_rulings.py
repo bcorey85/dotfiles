@@ -74,11 +74,6 @@ def reword_ruling(plan_path):
     return first_ruling_covering(plan_path, COVERS_REWORDS)
 
 
-def owner_line_ruling(plan_path):
-    """The first standing ruling of the plan that covers owner lines, or None."""
-    return first_ruling_covering(plan_path, COVERS_OWNER_LINES)
-
-
 def impact_rewords_criterion(impact_text):
     """True when every PLAN-IMPACT in the text names a criterion id on its `acceptance_criteria:` line and says
     `kind: reword`: the impact keeps the criterion and changes only its words."""

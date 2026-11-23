@@ -913,6 +913,13 @@ class RewordFlagTest(unittest.TestCase):
         self.assertIn("plan.md:5:", message)
         self.assertIn("expected", message)
 
+    def test_a_malformed_standing_ruling_is_not_read_for_an_impact_that_is_not_a_reword(self):
+        bad_plan = '# Plan\n\n## Plan Deviations\n\n- Standing ruling by Pat at yesterday: x covers: rewords\n'
+
+        to_coder, held, _impacts = self.routed_with_plan(bad_plan, kind="cut")
+
+        self.assertEqual((to_coder, len(held)), ([], 1))
+
     def test_the_flag_reaches_the_packet_and_survives_loading_it(self):
         host = Host()
         host.record_coder_plan_impact(self.REPORT.format(kind="reword"), [])
@@ -1654,12 +1661,12 @@ class UnappliedAdoptedBlockersTest(unittest.TestCase):
 class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
     """The fix-first round of a resume that adopts a plan change."""
 
-    def run_adopted(self, coder_reply, findings=(ADOPTED_FINDING,)):
+    def run_adopted(self, coder_reply, findings=(ADOPTED_FINDING,), extra_header=""):
         findings_file = self.scratch / "findings.json"
         findings_file.write_text(json.dumps(list(findings)))
         row = {"number": 1, **ADOPTED_RULING._asdict()}
         header = (f"mode: fix-first\nfindings: {findings_file}\nuser-ruled: 1\n"
-                  f"user-ruled-at: 2026-11-19 10:00:00Z\nadopted: {json.dumps([row])}\n")
+                  f"user-ruled-at: 2026-11-19 10:00:00Z\nadopted: {json.dumps([row])}\n{extra_header}")
         scenario = {"coder": [coder_reply], "code-reviewer": [{"result": CLEAN_REVIEW}] * 2,
                     "closure": [{"result": CLOSED}]}
         completed = self.run_script(scenario, header_extra=header)
@@ -1678,10 +1685,32 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["ask"], [])
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))
 
+    def test_the_coder_brief_asks_for_the_already_applied_marker_only_for_the_adopted_finding(self):
+        plain = "app.py:1 [bug] plain finding"
+
+        self.run_adopted({"result": "Fixed 1.\nFixed 2.", "edits": {"app.py": APP_FIXED}},
+                         findings=(ADOPTED_FINDING, plain))
+
+        (coder_call,) = [call for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertIn("issue 1 asks for", coder_call["prompt"])
+        self.assertIn(f"{coder_report.ALREADY_APPLIED_MARKER} <n>", coder_call["prompt"])
+        self.assertNotIn("issue 2 asks for", coder_call["prompt"])
+
     def test_the_packet_lists_the_text_of_each_adopted_ruling_left_unapplied(self):
         packet = self.run_adopted({"result": "Fixed 1."})
 
         self.assertEqual(packet["adopted_unapplied"], [ADOPTED_RULING.text])
+
+    def test_the_packet_lists_the_adopted_ruling_the_loop_withheld_on_a_held_file(self):
+        holder = {"path": "app.py", "session": "lane-b", "claim": "dirty at the run start, unchanged now"}
+        header = f"files: other.py\nheld-by: {json.dumps([holder])}\n"
+
+        packet = self.run_adopted({"result": "Fixed 1."}, extra_header=header)
+
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(review_loop_ruled.HELD_WHY, packet["blockers"][0])
+        self.assertEqual(packet["adopted_unapplied"], [ADOPTED_RULING.text])
+        self.assertEqual(self.fake_calls(), [])
 
     def test_a_coder_that_skips_the_adopted_finding_ends_the_round_with_a_blocker_and_no_reviewer(self):
         packet = self.run_adopted({"result": "SKIPPED 1: needs a sign-off.", "edits": {"app.py": APP_FIXED}})

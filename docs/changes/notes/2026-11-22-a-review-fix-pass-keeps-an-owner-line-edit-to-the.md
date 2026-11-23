@@ -17,7 +17,7 @@ unmeasured: "No intake number reads it; the queue item that reported it is the e
 
 ## Change
 
-`lib/owner_lines.py` reads the owner-line format of the scripts CLAUDE.md and says whether an edit only adds or updates owner bullets. `lib/standing_rulings.py` accepts `covers: owner-lines` beside `covers: rewords`, read by `owner_line_ruling`. The review loop (`review/review_loop_ruled.py`) keeps a ruled owner-line edit instead of reverting it.
+`lib/owner_lines.py` reads the owner-line format of the scripts CLAUDE.md and says whether an edit only adds or updates owner bullets. `lib/standing_rulings.py` accepts `covers: owner-lines` beside `covers: rewords`, read by `first_ruling_covering(plan_path, COVERS_OWNER_LINES)`. The review loop (`review/review_loop_ruled.py`) keeps a ruled owner-line edit instead of reverting it.
 
 The ruling line has this exact form:
 
@@ -27,7 +27,7 @@ It goes in the lane's `03-decisions.md`, or in the plan's `## Plan Deviations`. 
 
 The queue item's second item closes on evidence: a replay of a pasted-brief lane ticket reads owner `session`, and a pin test in `CriteriaOwnerTest` holds that shape. No failing replay exists, so there is no code change for it.
 
-The glossary is unchanged until the user rules on three edits: the approval-only file entry, the standing ruling entry and a new owner line entry.
+The glossary takes three edits after the user's ruling: the approval-only file and standing ruling entries are reworded, and a new owner line entry is added.
 
 Merge dependency: this branch merges after `fix/toolkit-rules-nov22`, which owns the neighboring edits to the scripts CLAUDE.md.
 

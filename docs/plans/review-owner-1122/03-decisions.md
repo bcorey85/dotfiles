@@ -33,10 +33,10 @@
 
 ### D2. How the decision log records the owner-line ruling
 
-**Choice**: Extend the standing-ruling form in `lib/standing_rulings.py`: `covers:` takes `rewords` or `owner-lines`. Add `owner_line_ruling(plan_path)` beside `reword_ruling`; `reword_ruling` keeps filtering on `rewords`, so `code/plan_check.py:48` (off-limits) needs no edit.
-**Reasoning**: Lane call, 2026-11-22. One form, one reader, malformed lines already raise `PlanFormatError name:line:`. The glossary wording then lags the code (Q2, sent to the user through agent-evals-c3; non-blocking).
+**Choice**: Extend the standing-ruling form in `lib/standing_rulings.py`: `covers:` takes `rewords` or `owner-lines`. Callers use `first_ruling_covering(plan_path, COVERS_OWNER_LINES)`; `reword_ruling` keeps filtering on `rewords`, so `code/plan_check.py:48` (off-limits) needs no edit.
+**Reasoning**: Lane call, 2026-11-22. One form, one reader, malformed lines already raise `PlanFormatError name:line:`. The glossary wording was widened after the user's ruling (Q2, 2026-11-23).
 **Alternatives rejected**: A new line form (`Owner-line ruling by …`): a second ruling grammar, two readers for one kind of fact, and a lane that writes the wrong one gets a silent revert and an ask. Matching sign-off line text: fuzzy, so a paraphrase in a sign-off would keep an edit nobody ruled on.
-**Trade-off accepted**: The `standing_rulings.py` docstring and the glossary entry say "a user's ruling"; the code now accepts a session's. Both texts need the user's yes to change (Q2).
+**Trade-off accepted**: The `standing_rulings.py` docstring and the glossary entry were widened to "by the user or the orchestrating session"; the user approved the glossary edits in Q2 (2026-11-23).
 
 ### D3. When and from where the ruling is read
 

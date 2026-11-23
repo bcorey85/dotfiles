@@ -625,6 +625,13 @@ Each script gets its own `tests/scripts/test_<script>.py` at the public boundary
 
 ## Plan Deviations
 
+- 2026-11-23: deviate. Ruled by agent-evals-c3 at 2026-11-23.
+
+  The ruling: `origin/master` deleted the guide skill before the rebase, so every guide deliverable (the Phase 6 and 8 `SKILL.md` edits, `tests/scripts/test_guide_skill.py`, its `changed_scope.py` entry and the guide change note) is dropped and ACs 26-28 are cut (D20). The Phase 7 detectors in `~/agent-evals` stay.
+
+  The disagreement:
+  The plan's Phases 6 and 8 edit a file master no longer has; restoring it would undo master's cut.
+
 - 2026-11-22: keep. Ruled by agent-evals-c3 at 2026-11-22 15:10.
 
   The ruling: Ticket #1 ("A test in ~/dotfiles/tests/scripts/ gives the gate `cd /abs/repo && git commit -m x` …") belongs to the dropped item `review-commit-gate-places-a-cd-to-a-literal-repo`; no test is written on this branch (D1).

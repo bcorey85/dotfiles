@@ -155,7 +155,14 @@
 **Reasoning**: every subagent of one session shares `$PPID`, so an owner pid alone let one mutation-tester restore another's lock; and "the target stays mutated" was false for `STOP_NO_LOCK` and `STOP_OLD_LAYOUT`. Found by the close-pass code reviewer. Extends AC14, AC18 and AC23; cuts none. Ruled by the orchestrating session, 2026-11-23.
 **Follow-up (gate finding, low, fixed in the same pass)**: a lock with no `run_id` read as `"?"`, so `restore --run-id '?'` passed as ours. `run_id` now reads with an empty fallback and an empty id is never ours; test `test_restore_refuses_a_lock_with_no_run_id_even_for_the_placeholder_id`.
 
+### 20. The guide deliverables are dropped at the rebase onto master (branch end)
+
+**Choice**: `origin/master` deleted the guide skill (`claude/.claude/skills/guide/SKILL.md`, unused since September) and its settings override before this branch rebased onto it. The rebase keeps the skill deleted: the Phase 6 and Phase 8 edits to `SKILL.md`, `tests/scripts/test_guide_skill.py`, its `PROMPT_READING_TESTS` entry in `tests/changed_scope.py` and the guide change note are dropped. The Phase 6 to 8 commits keep only their plan-document edits. The meter scenarios and detectors in `~/agent-evals` (Phase 7, D10) stay: they grade rules in the skill's history and are not toolkit files.
+**Reasoning**: a rebase that restored a skill master deleted would undo master's cut. ACs 26, 27 and 28 are cut, not met, and AC1's delivered scope with them. Ruled by agent-evals-c3, 2026-11-23.
+
 ### Sign-offs on ticket criteria (criteria owner: `session`)
+
+- ACs 26-28 cut: master deleted the guide skill before the rebase; the cut covers every guide deliverable, and AC1's delivered scope goes with it (D20). Ruled by agent-evals-c3, 2026-11-23.
 
 - AC1 "points to the binary for the format": narrowed out of this branch; the tables stay (D8), delivered scope is AC26-AC28, the pointer waits on a guide build that prints the schema, owner agent-evals-c3. Ruled by agent-evals-c3, 2026-11-22.
 - AC3 "the agent calls it in one line": met by three one-line calls, one per step (`check`, `lock`, `restore`; AC23). Ruled by agent-evals-c3, 2026-11-22.

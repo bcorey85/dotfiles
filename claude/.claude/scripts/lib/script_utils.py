@@ -512,6 +512,14 @@ def repo_file_paths(directory):
     return sorted({name for name in listing.split("\0") if name})
 
 
+def repo_file_paths_or_raise(directory):
+    """The paths `repo_file_paths` lists. Raises GitCallError when git fails."""
+    paths = repo_file_paths(directory)
+    if paths is None:
+        raise GitCallError(f"`git ls-files --cached --others --exclude-standard` failed in {directory}")
+    return paths
+
+
 def read_text_lines(path):
     """The file's lines as (line number, text) pairs from 1, or None when it is not UTF-8 text (it holds a NUL or
     bytes that do not decode) or cannot be read. A failed read is returned as None, not raised: the caller treats it
@@ -887,16 +895,42 @@ def names_path(path, text, as_token=False):
     return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
 
 
+CURRENT_FOLDER_PREFIX = re.compile(rf"{PATH_TOKEN_START}\./")
+
+
 def texts_relative_to(finding_texts, root):
-    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    """The finding texts with each `root/` prefix and each leading `./` cut out, so a path under `root` or written
+    `./lib/x.py` reads as its repo-relative path."""
     root_prefix = f"{root}/"
-    return [text.replace(root_prefix, "") for text in finding_texts]
+    return [CURRENT_FOLDER_PREFIX.sub("", text.replace(root_prefix, "")) for text in finding_texts]
 
 
 def texts_name_path(finding_texts, path, root):
     """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
     relative_texts = texts_relative_to(finding_texts, root)
     return any(names_path(path, text, as_token=True) for text in relative_texts)
+
+
+def path_has_tail(path, tail):
+    """True when `path` is `tail` or ends with `/` and `tail`."""
+    return path == tail or path.endswith(f"/{tail}")
+
+
+def texts_name_path_by_suffix(finding_texts, path, root, known_paths):
+    """Whether one of the finding texts holds a proper trailing part of `path` (`x.py` for `lib/x.py`) that has a `/` or
+    a `.` in it, as a whole token, and `path` is the only one of `known_paths` that ends with that part. A part that
+    two known paths end with names neither."""
+    parts = path.split("/")
+    for start in range(1, len(parts)):
+        suffix = "/".join(parts[start:])
+        if "/" not in suffix and "." not in suffix:
+            continue
+        if not texts_name_path(finding_texts, suffix, root):
+            continue
+        owners = [known for known in known_paths if path_has_tail(known, suffix)]
+        if owners == [path]:
+            return True
+    return False
 
 
 def pop_option(arguments, flag):

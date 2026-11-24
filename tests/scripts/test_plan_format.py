@@ -717,6 +717,28 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
 
+    def test_a_pasted_brief_lane_ticket_with_one_source_line_per_item_is_session_owned(self):
+        # The ticket mirrors the real pasted-brief lane ticket shape: one Source line per queue item, each item
+        # pasted verbatim under its own heading.
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="a")
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="b")
+        pasted_item = '---\ntype: "QueueItem"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n'
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text(
+            "# Lane brief: x\n\n"
+            "Source: ~/agent-evals/queue/a.md\n"
+            "Source: ~/agent-evals/queue/b.md\n\n"
+            "## Brief (verbatim)\n\n"
+            "Do items a and b.\n"
+            "git -C ~/agent-evals show origin/bench-base:queue/a.md\n\n"
+            f"## Queue item 1 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n\n"
+            f"## Queue item 2 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n")
+
+        owner = plan_format.criteria_owner(ticket)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/a.md")
+
     def test_a_source_outside_the_queue_folder_never_changes_the_owner(self):
         owner = plan_format.criteria_owner(self.ticket("Source: product-specs/a.md"))
 
@@ -865,6 +887,8 @@ class CriteriaOwnerTest(unittest.TestCase):
 
 
 STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords')
+OWNER_LINES_LINE = ("Standing ruling by the orchestrating session at 2026-11-22: owner lines in the scripts "
+                    "CLAUDE.md need no ask covers: owner-lines")
 CRITERIA_NAMING_TICKET = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, "
                           "reworded)\n")
 REWORD_IMPACT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n"
@@ -896,6 +920,30 @@ class StandingRulingTest(unittest.TestCase):
         self.plan.write_text(f"# Plan\n\n{STANDING_LINE}\n")
 
         self.assertEqual(standing_rulings.standing_rulings(self.plan), [])
+
+    def test_an_owner_lines_line_parses_and_only_the_owner_line_reader_returns_it(self):
+        self.plan.write_text("# Plan\n")
+        (self.folder / "03-decisions.md").write_text(f"# Decisions\n\n{OWNER_LINES_LINE}\n")
+
+        rulings = standing_rulings.standing_rulings(self.plan)
+
+        self.assertEqual(rulings[0]["covers"], "owner-lines")
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling, rulings[0])
+        self.assertIsNone(standing_rulings.reword_ruling(self.plan))
+
+    def test_a_rewords_line_alone_gives_no_owner_line_ruling(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
+
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertIsNone(owner_ruling)
+
+    def test_with_both_lines_each_reader_returns_its_own(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {OWNER_LINES_LINE}\n- {STANDING_LINE}\n")
+
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling["covers"], "owner-lines")
+        self.assertEqual(standing_rulings.reword_ruling(self.plan)["covers"], "rewords")
 
     def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):
         malformed = {

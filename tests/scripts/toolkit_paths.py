@@ -22,6 +22,7 @@ TELEMETRY_DIR = SCRIPTS_DIR / "telemetry"
 LIB_DIR = SCRIPTS_DIR / "lib"
 TOOLS_DIR = SCRIPTS_DIR / "tools"
 GATES_DIR = SCRIPTS_DIR / "gates"
+LAND_LANE_SCRIPT = pathlib.Path(os.environ.get("LAND_LANE_SCRIPT") or TOOLS_DIR / "land_lane.py")
 FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"

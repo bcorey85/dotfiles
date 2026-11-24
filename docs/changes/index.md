@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1160 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md).
+Latest change: 2026-11-24, [land_lane lands a dotfiles lane on the first run](notes/2026-11-24-land-lane-lands-a-dotfiles-lane-on-the-first-run.md).
 
 ## Top gains
 

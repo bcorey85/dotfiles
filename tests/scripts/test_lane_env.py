@@ -17,7 +17,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import lane_entries
 
 LANE_ENV = pathlib.Path(os.environ.get("LANE_ENV_ZSH") or
-                        pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "lane-env.zsh")
+                        toolkit_paths.REPO_ROOT / "scripts" / ".local" / "lib" / "lane-env.zsh")
 NAME = "repo-lane"
 
 
@@ -41,10 +41,12 @@ class LaneEnvTest(unittest.TestCase):
                 os.environ.pop("XDG_STATE_HOME", None)
             lane_entries.add_entry(NAME, str(worktree), str(self.home), "x", "brief", "orchestrator")
 
-    def read_cron(self, herdr_env: str | None = "1", xdg_state=True, cwd=None):
+    def read_cron(self, herdr_env: str | None = "1", xdg_state=True, cwd=None, pwd=None):
         env = {k: v for k, v in os.environ.items()
                if k not in ("CLAUDE_CODE_DISABLE_CRON", "HERDR_ENV", "XDG_STATE_HOME")}
         env["HOME"] = str(self.home)
+        if pwd is not None:
+            env["PWD"] = pwd  # keeps zsh's $PWD logical, through a symlink
         if xdg_state:
             env["XDG_STATE_HOME"] = str(self.state)
         if herdr_env is not None:
@@ -75,6 +77,21 @@ class LaneEnvTest(unittest.TestCase):
         worktree.mkdir(parents=True)
         self.write_lane_file(worktree)
         self.assertEqual(self.read_cron(cwd=worktree), "1")
+
+    def test_worktree_parent_holding_a_non_utf8_byte_disables_cron(self):
+        parent = os.path.join(os.fsencode(self.worktree.parent), b"bad\xffname")
+        worktree = os.path.join(parent, NAME.encode())
+        os.makedirs(worktree)
+        worktree_text = os.fsdecode(worktree)
+        self.write_lane_file(worktree_text)
+        self.assertEqual(self.read_cron(cwd=worktree_text), "1")
+
+    def test_worktree_reached_through_a_symlinked_parent_disables_cron(self):
+        link = self.worktree.parent.parent / "link"
+        link.symlink_to(self.worktree.parent)
+        self.write_lane_file(self.worktree)
+        logical = link / NAME
+        self.assertEqual(self.read_cron(cwd=logical, pwd=str(logical)), "1")
 
     def test_non_lane_directory_leaves_cron_alone(self):
         self.write_lane_file(self.worktree)

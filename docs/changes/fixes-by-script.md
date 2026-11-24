@@ -7,32 +7,32 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-731 fix notes
+733 fix notes
 
-Recent: the 7 days up to 2026-11-23, the newest note.
+Recent: the 7 days up to 2026-11-24, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 171 | 5 |
 | script/review-fix | 73 | 14 |
 | script/review-loop-script | 72 | 14 |
-| script/handback | 56 | 2 |
-| script/review-commit-gate | 46 | 8 |
+| script/handback | 56 | 1 |
+| script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
-| script/coder-gate | 29 | 7 |
-| script/full-check | 28 | 4 |
+| script/coder-gate | 29 | 6 |
+| script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 5 |
-| script/shell-write-gate | 24 | 9 |
-| script/review-loop | 23 | 7 |
-| script/quality-check-cap | 21 | 4 |
+| script/shell-write-gate | 24 | 4 |
+| script/review-loop | 23 | 6 |
+| script/quality-check-cap | 21 | 3 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 19 | 2 |
 | script/pull-keep-index | 18 | 7 |
 | script/verify-prep | 18 | 4 |
-| script/shell-command | 17 | 9 |
+| script/git-discipline-gate | 17 | 6 |
+| script/shell-command | 17 | 6 |
 | skill/review | 17 | 0 |
-| script/git-discipline-gate | 16 | 7 |
 | script/staged-claim-gate | 14 | 2 |
 | script/code-review-start | 13 | 6 |
 | script/verify-log | 13 | 0 |
@@ -43,19 +43,19 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
 | script/criteria-dry-run | 10 | 3 |
-| script/review-asks | 10 | 6 |
+| script/review-asks | 10 | 4 |
 | script/herdr-worktree | 9 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
-| script/review-fix-asks | 8 | 5 |
+| script/review-fix-asks | 8 | 3 |
 | script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
-| script/phase-asks | 7 | 4 |
+| script/phase-asks | 7 | 2 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
-| script/inline-interpreter-hint | 6 | 3 |
+| script/inline-interpreter-hint | 6 | 2 |
 | script/ledger-write | 6 | 2 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
@@ -105,7 +105,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/commit-gate-dirty | 2 | 2 |
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
-| script/fork-write-scope | 2 | 1 |
+| script/fork-write-scope | 2 | 0 |
 | script/git-calls | 2 | 2 |
 | script/herdr-lane-resume | 2 | 2 |
 | script/herdr-worktree-prune | 2 | 1 |

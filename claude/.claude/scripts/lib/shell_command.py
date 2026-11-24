@@ -7,7 +7,7 @@ import shlex
 from typing import NamedTuple
 
 from code_text import SP
-from shell_directory import path_word
+from shell_directory import UNREAD_FOLDER, path_word, path_word_is_absolute
 from shell_quoting import join_line_continuations, quoted_positions, strip_comments, unquoted_matches
 
 # `>|` and `>&|` (clobber redirection) are not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`;
@@ -959,12 +959,13 @@ def git_c_directory(words, directory):
     """The directory a git call in `words` runs in, from `directory`, moved by each `-C <dir>` before the subcommand
     (`~` expanded; a `-c alias.<name>=<value>`, `-c core.editor=<value>`, `-c sequence.editor=<value>`,
     `-c user.name=<value>` or `-c user.email=<value>` moves nothing). None when git's options are ones the gate does
-    not follow: `--git-dir`, `--work-tree`, `--config-env`, any other `-c`, a `-C` with no or an empty value, or an
-    option git is not known to have."""
+    not follow: `--git-dir`, `--work-tree`, `--config-env`, any other `-c`, a `-C` with no or an empty value or a
+    value the shell expands (`$X`, a substitution, a glob, a `~user` home, a brace), or an option git
+    is not known to have."""
     options, _index = git_options(words)
     for option, value in options:
         if option == "-C":
-            if not value:
+            if not value or UNREAD_FOLDER.search(value):
                 return None
             directory = os.path.normpath(os.path.join(directory, path_word(value)))
             continue
@@ -973,6 +974,13 @@ def git_c_directory(words, directory):
         if not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree", "--config-env")):
             return None
     return directory
+
+
+def git_c_is_absolute(words):
+    """True when a `-C` value of the git call in `words` is an absolute path once quotes are dropped and `~`/`~user`
+    is expanded (see `shell_directory.path_word_is_absolute`)."""
+    options, _index = git_options(words)
+    return any(path_word_is_absolute(value) for value in git_option_values(options, "-C"))
 
 
 def word_moves_directory(word, move_letter, wrapper):

@@ -586,6 +586,18 @@ def statement_word_pairs(command):
     return pairs
 
 
+def open_statement_word_pair(prefix):
+    """The WordPair of the statement still open at the end of `prefix`: the words after its last separator, leading
+    words of without_leading_noise dropped. Empty lists when `prefix` ends at a separator. `prefix` must close each
+    quote it opens."""
+    quotes = []
+    pieces = STATEMENT_SPLIT.split(clean(prefix, quotes))
+    words = without_leading_noise(pieces[-1].split())
+    blanked = [QUOTE_MARK.sub('""', word) for word in words]
+    resolved = [resolved_word(word, quotes) for word in words]
+    return WordPair(blanked, resolved)
+
+
 ANSI_C_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|.)", re.DOTALL)
 MAX_CODE_POINT = 0x10FFFF
 ANSI_C_SINGLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",

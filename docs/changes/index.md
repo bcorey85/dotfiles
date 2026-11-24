@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1158 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1161 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [A lane merge skips the suite rerun when the lane's green run covered the same tree](notes/2026-11-23-a-lane-merge-skips-the-suite-rerun-when-the-lane-s.md).
+Latest change: 2026-11-24, [Deny a bare git commit in a shared clone](notes/2026-11-24-deny-a-bare-git-commit-in-a-shared-clone.md).
 
 ## Top gains
 

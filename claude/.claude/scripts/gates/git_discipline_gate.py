@@ -32,6 +32,8 @@
  10. a `docker run`, `docker container run`, `podman run` or `podman container run` step with no `--name`
      (docker_run_names.py), denied with the fixed form `--rm --name <ticket>-<purpose>`; `docker compose run` and
      `docker exec` pass
+ 11. a `git commit` with no `-- <paths>` (or `--pathspec-from-file`), or with -a/--all or -i/--include, in a
+     shared clone (shared_clones.py); --amend passes (rule 2 judges it)
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -49,15 +51,18 @@ sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 import import_guard
 
 import_guard.guard("git-discipline-gate", __name__)
+import commit_pathspec
 import directory_emptying_deletes
 import docker_run_names
+import git_commit_calls
 import hook_input
 import reviewed_tree
 import script_utils
+import shared_clones
 import shell_command
 import shell_statements
 import user_prompts
-from git_calls import REPO_ENVIRONMENT_NAMES, git_calls, is_linked_worktree
+from git_calls import REPO_ENVIRONMENT_NAMES, git_call, git_calls, git_dir_holder, is_linked_worktree
 from git_destructive_calls import config_trigger_note, destructive_reason, is_force_push
 from git_subcommand_options import (
     CONFLICT_SHORTEST,
@@ -66,6 +71,7 @@ from git_subcommand_options import (
     SWITCH_VALUE_LETTERS,
     discards_on_switch,
     is_orphan_option,
+    is_pathspec_from_file,
     restore_stages,
     takes_separate_value,
 )
@@ -258,8 +264,7 @@ def checkout_patches(argument):
         return "p" in flags_before_value(argument, SWITCH_VALUE_LETTERS["checkout"])
     if is_long_prefix(argument, "--patch", "--patc"):
         return True
-    option_name = argument.split("=")[0]
-    return is_long_prefix(option_name, "--pathspec-from-file", "--pathspec-fr")
+    return is_pathspec_from_file(argument)
 
 
 def checkout_writes_index(arguments):
@@ -412,9 +417,64 @@ def run(raw):
         check_destructive(call)
         check_branch(call)
 
+    check_shared_clone_commit(command, calls, payload_cwd)
     check_push_reviewed(command, calls, payload_cwd)
     check_directory_emptying(command, payload_cwd)
     check_docker_run_names(command, payload_cwd)
+
+
+def bare_commit_in_shared_clone(call, directory):
+    """True when `call` is a `git commit` that is bare per `commit_pathspec.is_bare_commit` and lands in a shared
+    clone: its `--git-dir` is judged in place of `directory`."""
+    if call.subcommand != "commit" or not commit_pathspec.is_bare_commit(call.arguments):
+        return False
+    git_dir_folder = git_dir_holder(call.git_dir)
+    if git_dir_folder is not None:
+        # The index is $GIT_DIR/index: --work-tree does not choose it.
+        return shared_clones.is_shared_clone(git_dir_folder)
+    return shared_clones.is_shared_clone(directory)
+
+
+def is_bare_shared_commit(words, directory):
+    """commit_call for git_commit_dirs: True for a bare `git commit` that lands in a shared clone, judging its
+    `--git-dir`, or its `-C` when `git_c_directory` does not follow it, it is absolute or the call is not placed,
+    in place of `directory`."""
+    call = git_call(words, directory)
+    if call is None:
+        return False
+    if (not call.placed or shell_command.git_c_directory(words, directory) is None
+            or shell_command.git_c_is_absolute(words)):
+        # `directory` is not moved by the `-C` options here (or the shell's folder is unknown, and an absolute
+        # `-C` names the same folder from any start), so judge the folder they move to. An unread `-C` value
+        # leaves `call.directory` at the last folder the gate could read.
+        return bare_commit_in_shared_clone(call, call.directory)
+    return bare_commit_in_shared_clone(call, directory)
+
+
+def check_shared_clone_commit(command, calls, payload_cwd):
+    """Rule 11: a `git commit` that takes the whole index in a shared clone sweeps in the staged files of peer
+    sessions. A bare commit whose `--git-dir` or `-C` names a shared clone is denied, as is one inside a code
+    runner (`bash -c '...'`), judged from `calls`. A `GIT_DIR` assignment is judged in the folder the shell stands
+    in; an `env -C`/`sudo -D` wrapper, a call after a `cd` it cannot read and an unread `-C` value are judged in
+    the hook's cwd, or in the folder an absolute `-C` names. A call read from code-runner text is judged in the
+    folder the outer command's `cd` steps, when no `(` comes before a `cd`, move to (the hook's cwd when there
+    are none); a `cd` inside the runner
+    text is not read. A command `git_commit_dirs` cannot read as steps is judged only through runner text, all of
+    it; when it can, only the `git` words inside the runner's quotes are judged there, so a `(cd ..)` or `pushd`
+    step it already read is not judged twice at the hook's cwd. Rule 11 fails open when neither reader finds the
+    commit."""
+    found = git_commit_calls.git_commit_dirs(command, payload_cwd, is_bare_shared_commit)
+    runner_text = shell_command.names_code_runner(shell_statements.shell_code(command))
+    runner_calls = calls
+    if runner_text and found is not None:
+        runner_calls = git_calls(command, payload_cwd, quoted_only=True)
+    in_runner_text = runner_text and any(bare_commit_in_shared_clone(call, call.directory) for call in runner_calls)
+    placed_in_shared = found is not None and (found.commit_dirs or found.unplaced)
+    if not (placed_in_shared or in_runner_text):
+        return
+    raise DenyError("[git-discipline-gate] git commit that takes the whole index (no `-- <paths>`, or -a/--all, "
+                    "-i/--include) in a shared clone is blocked: the index holds files other sessions staged, and "
+                    "such a commit takes them too. Commit only your files with `git commit -m <msg> -- <paths>`.")
 
 
 def check_docker_run_names(command, payload_cwd):

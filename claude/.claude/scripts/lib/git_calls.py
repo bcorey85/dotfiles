@@ -25,7 +25,9 @@ import sys
 from typing import NamedTuple
 
 import shell_command
+import shell_command_words
 import shell_directory
+import shell_quoting
 import shell_statements
 import shell_steps
 
@@ -38,8 +40,9 @@ CD_WORD_PATTERN = re.compile(r"\b" + shell_directory.CD_WORD + r"\b")
 # Words in front of a statement's real command: a `cd` behind one of them is not followed.
 DIRECTORY_MOVE_PREFIXES = ("{", "builtin", "command", "while", "until", "!")
 CD_OPTIONS = ("-L", "-P", "-e", "-@", "--")
-# A path word holding one of these is a quoted string, a variable, a substitution or a glob the gate cannot read.
-UNREAD_PATH_MARKS = ('"', "'", "$", "`", "*", "?")
+# Quote characters the parser left in a path word: a quoted string the gate cannot read. (The characters the shell
+# expands are shell_directory.UNREAD_FOLDER's.)
+UNREAD_PATH_QUOTES = ('"', "'")
 # An assignment that moves the repo (`GIT_DIR=x git ...`, `env GIT_WORK_TREE=x git ...`, `export GIT_DIR=x`).
 REPO_ENVIRONMENT_NAMES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
 # An assignment that moves where a `cd` lands (CDPATH, HOME) or sets git config the gate does not read (a
@@ -102,7 +105,8 @@ class GitCall(NamedTuple):
 
 
 def has_unread_mark(path):
-    return any(mark in path for mark in UNREAD_PATH_MARKS)
+    # shell_directory.UNREAD_FOLDER owns what the shell expands (a `~user` home and a brace included).
+    return shell_directory.UNREAD_FOLDER.search(path) is not None or any(mark in path for mark in UNREAD_PATH_QUOTES)
 
 
 def readable_directory(directory):
@@ -124,6 +128,18 @@ def option_path(options, name, directory):
     if not values:
         return None
     return os.path.join(directory, os.path.expanduser(values[-1]))
+
+
+def git_dir_holder(git_dir):
+    """The folder a `--git-dir` value names; a `--git-dir` ending in `.git` stands for the folder that holds it.
+    None when there is no `--git-dir`."""
+    if git_dir is None:
+        return None
+    folder = os.path.normpath(git_dir)
+    if os.path.basename(folder) == ".git":
+        # A relative `.git` has an empty parent: the folder is the current one.
+        folder = os.path.dirname(folder) or "."
+    return folder
 
 
 def joined_directory(directory, target):
@@ -393,11 +409,68 @@ def command_context(code, follows_cds, context):
                             unfollowed_move=unfollowed_move, environment_sets_config=environment_sets_config)
 
 
-def git_calls(command, directory=".", context=NO_CONTEXT):
+def runner_text_at(code, offset, quoted):
+    """True when the `git` word at `offset` is runner text that git_commit_dirs does not read: a quoted word among
+    the arguments of a code-running statement, or an unquoted word that follows an argument runner."""
+    if offset in quoted:
+        return quoted_text_runs_as_code(code, offset, quoted)
+    return follows_argument_runner(code, offset)
+
+
+def statement_before(code, offset, quoted):
+    """The WordPair of the statement words that come before `offset`. A quoted `offset` is cut back to the quote that
+    holds it, which is closed again, so the separators inside the quote start no statement."""
+    prefix_end = offset
+    if offset in quoted:
+        while prefix_end - 1 in quoted:
+            prefix_end -= 1
+        # The opening quote sits just before the first quoted character.
+        prefix = code[:prefix_end - 1] + '""'
+    else:
+        prefix = code[:prefix_end]
+    return shell_statements.open_statement_word_pair(prefix)
+
+
+def follows_argument_runner(code, offset):
+    """True when the word before `offset` is a program that runs its arguments as a command (`eval`, `su`),
+    which git_commit_dirs does not read, so its unquoted `git` word is judged as runner text."""
+    pair = statement_before(code, offset, set())
+    previous_words = [word for word in pair.blanked if word != "--"]
+    if not previous_words:
+        return False
+    # Only the statement's own command word runs the rest as code: `echo eval git commit` is text.
+    last_index = len(previous_words) - 1
+    for runner in shell_command.ARGUMENT_RUNNER_PROGRAMS:
+        if shell_command_words.command_word_index(previous_words, runner) == last_index:
+            return True
+    return False
+
+
+def quoted_text_runs_as_code(code, offset, quoted):
+    """True when the quoted `git` word at `offset` is code a runner runs. False when it sits in the arguments of a
+    `git commit` call of its own statement: there it is message text."""
+    pair = statement_before(code, offset, quoted)
+    git_index = shell_command_words.command_word_index(pair.blanked, "git")
+    if git_index is None:
+        return True
+    return "commit" not in pair.resolved[git_index + 1:]
+
+
+def git_calls(command, directory=".", context=NO_CONTEXT, quoted_only=False):
     """Every GitCall the command makes in command position, those inside `$(...)` and backticks included. A call
     runs in the directory an earlier `cd` of the command moved to, else in `directory`. In code that names a code
-    runner, each `git` word starts a call, quoted or not. `context` holds what the code around the command
-    already does; the command's own text adds to it."""
+    runner, each `git` word starts a call, quoted or not; with `quoted_only`, only a `git` word inside quotes
+    that is an argument of a code-running statement (not of a `git commit` call, where it is message text), or an
+    unquoted `git` word that follows an argument runner (`eval`, `su`) does (the runner's own text), and
+    the steps of the outer command start none. `context` holds what the code around the command already does;
+    the command's own text adds to it.
+
+    Three known limits, all kept on purpose. Fail-closed: a quoted `git commit` text that is no runner text but
+    sits among the arguments of a code-running statement (`bash -c 'echo git commit'`) is read as a runner call.
+    Fail-open: `pushd <dir> && bash -c 'git commit'` run from a cwd that differs from `<dir>` is judged in the
+    cwd, because the directory the runner text lands in is not followed through `pushd`. Fail-open: a `(` anywhere
+    before a `cd` turns off cd following for runner text (SUBSHELL_CD), so
+    `(cd <shared> && bash -c 'git commit -m x')` from another cwd is judged in the hook cwd and allowed."""
     code = shell_statements.shell_code(command)
     # A `cd` after a `(` may run in a subshell, whose directory does not carry on, so none is followed.
     follows_cds = SUBSHELL_CD.search(code) is None
@@ -410,8 +483,11 @@ def git_calls(command, directory=".", context=NO_CONTEXT):
 
     if shell_command.names_code_runner(code):
         text_context = context._replace(from_code_text=True)
+        quoted = shell_quoting.quoted_positions(code) if quoted_only else set()
+        text_matches = [found for found in GIT_CALL_TEXT.finditer(code)
+                        if not quoted_only or runner_text_at(code, found.start(), quoted)]
         text_calls = [git_call(found.group().split(), directory_at(found.start()), text_context)
-                      for found in GIT_CALL_TEXT.finditer(code)]
+                      for found in text_matches]
         return [call for call in text_calls if call]
 
     spans = shell_statements.code_spans(code)

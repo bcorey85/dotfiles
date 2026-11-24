@@ -44,9 +44,10 @@
 # the prompt is a short "go on", not the original brief. Under tuios step 1 is
 #   1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus
 # and step 2 starts with `herdr-api workspace focus <ws> >/dev/null && `.
-# Without the session id, step 1 stays and step 2 is `claude --resume` run in
-# the worktree. The watcher is given this conversation's session id and keeps
-# waiting while the pane reports it, so step 2 never names the parent.
+# Without the session id, step 1 stays and step 2 is
+# `CLAUDE_CODE_DISABLE_CRON=1 claude --resume` run in the worktree. The watcher is
+# given this conversation's session id and keeps waiting while the pane reports it,
+# so step 2 never names the parent.
 # The watcher's own output goes to that log too.
 #
 # With --fork the run also writes a lane entry before herdr-dev starts: the brief,

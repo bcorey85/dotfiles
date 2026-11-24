@@ -4363,6 +4363,17 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
         self.assertEqual(self.stored_state()["last_asks_launch_line"], launch_line)
 
+    def test_a_corrected_rejection_is_stored_with_its_question_field(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            rows = handback_store.rejected_ask_rows(SESSION, os.path.realpath(self.repo))
+        self.assertEqual([row.get("question") for row in rows], ["Add an index on tenant_id?"])
+
     def test_correct_that_leaves_no_accepted_ask_clears_the_pending_flag_and_prints_done(self):
         home = str(self.temp_root / "home")
         self.printed_fix_run_of_two_accepted_asks(home)

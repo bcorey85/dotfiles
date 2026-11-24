@@ -20,6 +20,14 @@ class StretchHelpersTest(unittest.TestCase):
 
         self.assertEqual(missing, [(2, "a")])
 
+    def test_entries_missing_in_stretches_names_the_repeat_the_edit_removed(self):
+        before = [(2, "a"), (5, "a")]
+        after = [(4, "a")]
+
+        missing = protected_lines.entries_missing_in_stretches(before, after, [(2, 2)])
+
+        self.assertEqual(missing, [(2, "a")])
+
     def test_changed_stretches_name_removed_and_rewritten_lines_of_the_first_text(self):
         stretches = protected_lines.changed_stretches("a\nb\nc\nd\n", "a\nc\nD\n")
 
@@ -56,10 +64,52 @@ class StretchHelpersTest(unittest.TestCase):
         self.assertEqual(protected_lines.changed_line_ranges("a\n", "a\nb\n"), [("insert", 1, 1, 1, 2)])
         self.assertEqual(protected_lines.changed_line_ranges("a\nb\n", "a\n"), [("delete", 1, 2, 1, 1)])
 
+    def test_rewritten_stretches_name_both_sides_of_a_replaced_stretch_and_skip_pure_removals(self):
+        rewrites = protected_lines.rewritten_stretches("a\nb\nc\nd\ne\n", "a\nB\nB2\nc\ne\n")
+
+        self.assertEqual(rewrites, [protected_lines.Rewrite((2, 2), (2, 3))])
+        self.assertEqual(protected_lines.rewritten_stretches("a\nb\n", "a\n"), [])
+
+    def test_consecutive_entry_runs_group_entries_by_consecutive_line_numbers(self):
+        entries = [(1, "a"), (2, "b"), (5, "c")]
+
+        self.assertEqual(protected_lines.consecutive_entry_runs(entries), [[(1, "a"), (2, "b")], [(5, "c")]])
+
     def test_a_removed_stretch_comes_back_only_at_its_protected_lines_when_not_whole(self):
         restored = protected_lines.restore_protected_lines("a\nb\nc\nd\n", "a\nd\n", [2], whole_stretch=False)
 
         self.assertEqual(restored, "a\nb\nd\n")
+
+
+class RewrittenStretchTest(unittest.TestCase):
+    def test_an_unmatched_lost_line_goes_after_the_last_placed_line_not_in_front(self):
+        before = ["alpha beta gamma delta\n", "zzzz qqqq\n"]
+        stretch = ["alpha beta gamma delta!\n", "code()\n"]
+
+        restored = protected_lines.rewritten_stretch(before, [0, 1], stretch)
+
+        self.assertEqual(restored, ["alpha beta gamma delta\n", "zzzz qqqq\n", "code()\n"])
+
+    def test_two_unmatched_lost_lines_after_one_placed_line_keep_their_order(self):
+        before = ["alpha beta gamma delta\n", "zzzz qqqq\n", "wwww rrrr\n"]
+        stretch = ["alpha beta gamma delta!\n", "code()\n"]
+
+        restored = protected_lines.rewritten_stretch(before, [0, 1, 2], stretch)
+
+        self.assertEqual(restored, ["alpha beta gamma delta\n", "zzzz qqqq\n", "wwww rrrr\n", "code()\n"])
+
+    def test_unmatched_lines_in_front_and_after_a_later_placed_line_each_keep_their_slot(self):
+        before = ["zzzz qqqq\n", "alpha beta gamma delta\n", "wwww rrrr\n"]
+        stretch = ["code()\n", "alpha beta gamma delta!\n", "more()\n"]
+
+        restored = protected_lines.rewritten_stretch(before, [0, 1, 2], stretch)
+
+        self.assertEqual(restored, ["zzzz qqqq\n", "code()\n", "alpha beta gamma delta\n", "wwww rrrr\n", "more()\n"])
+
+    def test_an_unmatched_lost_line_with_nothing_placed_goes_in_front(self):
+        restored = protected_lines.rewritten_stretch(["zzzz qqqq\n"], [0], ["code()\n"])
+
+        self.assertEqual(restored, ["zzzz qqqq\n", "code()\n"])
 
 
 class RestoreProtectedLinesTest(unittest.TestCase):

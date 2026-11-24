@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-728 fix notes
+731 fix notes
 
 Recent: the 7 days up to 2026-11-23, the newest note.
 
@@ -24,7 +24,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 5 |
 | script/shell-write-gate | 24 | 9 |
-| script/review-loop | 22 | 6 |
+| script/review-loop | 23 | 7 |
 | script/quality-check-cap | 21 | 4 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 19 | 2 |
@@ -33,8 +33,8 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/shell-command | 17 | 9 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 7 |
+| script/staged-claim-gate | 14 | 2 |
 | script/code-review-start | 13 | 6 |
-| script/staged-claim-gate | 13 | 1 |
 | script/verify-log | 13 | 0 |
 | script/code-wait | 12 | 5 |
 | script/log-review-finding | 12 | 0 |
@@ -57,13 +57,14 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/handback-store | 6 | 0 |
 | script/inline-interpreter-hint | 6 | 3 |
 | script/ledger-write | 6 | 2 |
+| script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
-| script/parallel-tests | 5 | 0 |
+| script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
@@ -75,7 +76,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/plan-check | 4 | 4 |
 | script/review-loop-ruled | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
-| script/run-sh | 4 | 0 |
 | script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
 | skill/eng-spec | 4 | 0 |
@@ -194,6 +194,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |
+| script/suite-receipt | 1 | 1 |
 | script/system-resources | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |

@@ -118,6 +118,31 @@ esac""")
         recorded = self.record_file.read_text()
         self.assertTrue(recorded.strip().endswith("parallel_tests.py"), recorded)
 
+    def run_with_receipt_stub(self, ruff_exit):
+        """Runs run.sh with a python3 stub that answers the tree question with TREE1 and records the receipt call."""
+        write_stub(self.bin_dir / "ruff", f"exit {ruff_exit}")
+        self.record_file = self.bin_dir / "recorded"
+        write_stub(self.bin_dir / "python3", f"""case "$*" in
+  *"suite_receipt.py tree"*) echo TREE1; exit 0 ;;
+  *"suite_receipt.py record"*) echo "$*" >> {self.record_file}; exit 0 ;;
+  *) exit 0 ;;
+esac""")
+        bash_path = shutil.which("bash")
+        return subprocess.run([bash_path, str(SCRIPT)], env={"PATH": str(self.bin_dir)},
+                              capture_output=True, text=True, timeout=30)
+
+    def test_the_run_records_its_receipt_on_the_tree_taken_at_the_start_with_the_run_exit(self):
+        cases = ((0, "--exit 0"), (1, "--exit 1"))
+        for ruff_exit, expected_exit in cases:
+            with self.subTest(ruff_exit=ruff_exit):
+                self.run_with_receipt_stub(ruff_exit)
+
+                recorded = self.record_file.read_text()
+                self.record_file.unlink()
+                self.assertIn("--tree TREE1", recorded)
+                self.assertIn(expected_exit, recorded, "a failed lint makes the receipt a failed run")
+                self.assertIn("--summary ", recorded)
+
 
 if __name__ == "__main__":
     unittest.main()

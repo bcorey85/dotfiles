@@ -608,7 +608,7 @@ esac""")
         self.assertIn("1. herdr-api workspace create --cwd <worktree>", finished.stdout)
         self.assertIn("2. herdr-dev <worktree> <ws> <fork session id>", finished.stdout)
         self.assertIn("herdr-api workspace focus <ws> >/dev/null && ", finished.stdout)
-        self.assertIn("claude --resume", finished.stdout)
+        self.assertIn("CLAUDE_CODE_DISABLE_CRON=1 claude --resume", finished.stdout)
         self.assertNotIn("ws=$(", finished.stdout)
 
 

@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
-from stubs import write_stub
+from stubs import run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_DEV = pathlib.Path(os.environ.get("HERDR_DEV", BIN_DIR / "herdr-dev"))
@@ -88,6 +88,13 @@ class HerdrDevTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.typed_into_claude_pane(), ["claude"])
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_DEV, self.root / "symlink-run", "/nonexistent")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("herdr-dev: no such directory: /nonexistent", finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

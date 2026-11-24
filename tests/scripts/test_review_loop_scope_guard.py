@@ -526,18 +526,21 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertFalse([args for args in calls if "rm" in args])
         self.assertFalse((self.out / review_loop_scope_guard.BACKUP_FOLDER / "coder1" / "out-of-scope").exists())
 
-    def test_a_failed_repo_file_listing_raises_when_a_dirty_path_reaches_the_suffix_rule(self):
-        (self.repo / "tests.py").write_text("t = 2\n")
+    def test_a_failed_repo_file_listing_raises_at_guard_pass(self):
         with mock.patch.object(script_utils, "repo_file_paths", return_value=None), \
                 self.assertRaises(script_utils.GitCallError):
             self.guard(finding_texts=["- `x.py:1` wrong"])
 
-    def test_a_file_named_in_full_needs_no_repo_file_listing(self):
-        (self.repo / "tests.py").write_text("t = 2\n")
-        with mock.patch.object(script_utils, "repo_file_paths", return_value=None) as listing:
-            self.guard(finding_texts=["- `tests.py:1` wrong"])
+    def test_a_file_the_pass_creates_does_not_make_a_path_suffix_ambiguous_at_undo(self):
+        self.commit_new_files(["a/dup.py"])
+        guard = self.guard(finding_texts=["- `dup.py:1` wrong"])
+        (self.repo / "b").mkdir()
+        (self.repo / "b/dup.py").write_text("v = 1\n")
+        (self.repo / "a/dup.py").write_text("v = 2\n")
 
-        listing.assert_not_called()
+        guard.undo()
+
+        self.assertEqual(self.text("a/dup.py"), "v = 2\n")
 
     def test_the_repo_file_listing_is_taken_once_for_two_dirty_paths(self):
         (self.repo / "tests.py").write_text("t = 2\n")

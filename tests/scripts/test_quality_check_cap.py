@@ -924,5 +924,21 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assertEqual((finished.returncode, finished.stdout), (5, ""))
 
 
+class WithoutSystemdRunTest(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        import quality_check_cap
+        self.module = quality_check_cap
+
+    def test_a_quoted_option_value_leaves_the_segment_unchanged(self):
+        segment = 'systemd-run --user --scope -p "Description=unit tests" pytest -x'
+        self.assertEqual(self.module.without_systemd_run(segment), segment)
+
+    def test_unquoted_options_are_dropped(self):
+        segment = "systemd-run --user --scope -p MemoryMax=8G pytest -x"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
+
+
 if __name__ == "__main__":
     unittest.main()

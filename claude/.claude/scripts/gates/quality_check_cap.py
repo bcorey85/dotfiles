@@ -398,9 +398,16 @@ def without_systemd_run(segment):
     if dropped_count == 0 or not program_words:
         return segment
 
-    # The dropped words are the program and its options, written without quotes.
     leading_words = re.compile("^(?:[^" + SP + "]+" + WS + "+){" + str(dropped_count) + "}")
-    return leading_words.sub("", segment, count=1)
+    match = leading_words.match(segment)
+    if not match:
+        return segment
+
+    # A quoted option value holds spaces, so the raw cut lands inside it: keep the segment when the cut text
+    # does not read back as the dropped words.
+    if segment_words(match.group(0)) != words[:dropped_count]:
+        return segment
+    return segment[match.end():]
 
 
 def writes_files(segment):

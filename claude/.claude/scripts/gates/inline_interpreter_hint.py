@@ -17,7 +17,8 @@ permission flow still judges the rewritten command; any other uncapped test comm
 word only among arguments) is denied with the capped form to run. A full-suite test run in the foreground of a main
 session (no agent_id, run_in_background not true) is denied with the way to background it, never rewritten. A plain
 runner step that the inline check blocks is denied, even when the auto-mode pilot lets it pass. Any error there passes
-the call.
+the call. The answers come in this order: the inline deny, the foreground full-suite deny (BACKGROUND_DENY_TEXT), the
+cap rewrite, then the cap deny (DENY_TEXT). So an uncapped foreground full suite in a chain gets the background text.
 """
 import json
 import os

@@ -21,9 +21,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 `lib/script_utils.py`: `texts_relative_to` cuts a leading `./` from a path in a finding's text, and the new
 `texts_name_path_by_suffix` matches a trailing part of a path (`x.py` for `lib/x.py`) when it holds a dot or a slash
 and no other repo file ends with it. `review/review_loop_scope_guard.py`: `PassScope.holds` uses both. The guard
-lists the repo's files with one `git ls-files` call, the first time any path reaches that rule: a path dirty before
-the pass (at the start of the guard) or a clean file the pass changed (during the undo). A failed listing raises
-then.
+lists the repo's files with one `git ls-files` call at the start of the guard, before the pass runs, so the undo reads
+the pre-pass file set. A failed listing at the start of the guard raises.
 `script_utils.path_has_tail` now holds the test for a path ending with a path tail, for the guard, the held-file
 filter and the absent-file filter.
 
@@ -31,7 +30,7 @@ The `./` cut also reaches `review_loop_ruled_out.names_deletion`: a finding that
 counts as asking to delete `lib/x.py`.
 
 A trailing part that two repo files end with names neither: the guard does not guess, and the fix is put back as
-before. A failed file listing raises when a path first reaches the suffix rule, at the guard start or in the undo, and the loop stops with a blocker.
+before. The loop stops with a blocker when the listing fails.
 
 ## Evidence
 

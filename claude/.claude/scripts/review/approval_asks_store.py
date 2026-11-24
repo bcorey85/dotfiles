@@ -4,6 +4,7 @@ pre-pass content is not known), and the wanted-change asks ({text, change, path,
 on an approval-only file). The review loop writes it, a resumed loop
 reads it, and a ruling on a user-only ask, accepted or rejected, removes its path or its wanted-change entry."""
 import json
+import re
 
 import script_utils
 from ask_outcome_words import USER_ONLY_KEY
@@ -64,6 +65,9 @@ def wanted_edit_target(path):
     run as a finding whose location is empty (UNLOCATED) for a path whose folder holds a space, so the run reads
     the path from these words."""
     return f"(edit to `{path}`)"
+
+
+WANTED_TARGET = re.compile(r"\(edit to `[^`]+`\)$")
 
 
 def wanted_entry(text, change, path, line, title):
@@ -131,6 +135,23 @@ def user_only_changes(asks):
     return [item.get("change") for item in asks if item.get(USER_ONLY_KEY)]
 
 
+def is_approval_ask(item):
+    """True when the ask `item` is an approval ask: marked user-only, or its change reverts a coder's edit to an
+    approval-only file or ends with a wanted-change target. A session rules the scripts CLAUDE.md's asks, so those
+    carry no user-only mark and still leave the saved paths when ruled."""
+    if item.get(USER_ONLY_KEY):
+        return True
+    change = item.get("change")
+    if approval_path_of_change(change) is not None:
+        return True
+    return isinstance(change, str) and WANTED_TARGET.search(change) is not None
+
+
+def approval_ask_changes(asks):
+    """The change text of each approval ask in `asks` (see `is_approval_ask`)."""
+    return [item.get("change") for item in asks if is_approval_ask(item)]
+
+
 def held_changes_file(repo):
     """The file of the approval changes that kept (held) packets wait on, in the review-fix folder of `repo`'s git
     dir, or None when git names no git dir for `repo`. It sits with the packet rows."""
@@ -177,10 +198,10 @@ def forget_held_changes(repo, changes):
 
 
 def check_approval_paths_readable(repo, asks):
-    """Raises ApprovalAsksFileError when the saved approval paths or the held changes file is damaged and a user-only
+    """Raises ApprovalAsksFileError when the saved approval paths or the held changes file is damaged and an approval
     ask in `asks` would need it. Call it before a ruling writes anything, so a damaged file stops the ruling with
     nothing written."""
-    if not user_only_changes(asks):
+    if not approval_ask_changes(asks):
         return
     read_approval_paths(repo)
     read_held_changes(repo)
@@ -189,7 +210,7 @@ def check_approval_paths_readable(repo, asks):
 def forget_ruled_approval_paths(repo, asks):
     """Drops from the saved approval paths of `repo` each path whose user-only approval ask is in `asks`, ruled with
     any outcome, so a resumed run never files it again. Leaves the file alone when no saved path is ruled."""
-    ruled_changes = user_only_changes(asks)
+    ruled_changes = approval_ask_changes(asks)
     if not ruled_changes:
         return
     forget_held_changes(repo, ruled_changes)

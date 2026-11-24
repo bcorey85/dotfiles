@@ -7,6 +7,13 @@ import script_utils
 
 SCRIPTS_CLAUDE_MD = "claude/.claude/scripts/CLAUDE.md"
 OWNERS_HEADING = "Owners"
+
+
+def session_rules_approval_path(path):
+    """True when an ask for the approval-only file `path` is ruled by the session, not only the user: the scripts
+    CLAUDE.md, for any edit to it."""
+    return path == SCRIPTS_CLAUDE_MD
+
 # A bullet that names a fact, a colon, and a backticked module path.
 OWNER_LINE = re.compile(r"^- [^:]+: .*`[\w./-]+\.(?:py|ts|sh)`")
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [pre-commit refuses a toolkit commit that strands an agent-evals meter scenario or skill list entry](notes/2026-11-23-pre-commit-refuses-a-toolkit-commit-that-strands.md).
+Latest change: 2026-11-24, [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md).
 
 ## Top gains
 

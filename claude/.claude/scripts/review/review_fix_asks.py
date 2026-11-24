@@ -19,6 +19,7 @@ from approval_asks_store import (
     ApprovalAsksFileError,
     check_approval_paths_readable,
     forget_ruled_approval_paths,
+    is_approval_ask,
     read_held_changes,
     user_only_changes,
     write_held_changes,
@@ -371,7 +372,7 @@ def repo_for_outcomes(relaunch_args, asks, outcomes):
     ruling on a user-only ask, which leaves the saved approval paths), else None: an answer that writes nothing
     there needs no repo."""
     for item, outcome in zip(asks, outcomes, strict=True):
-        if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or item.get(USER_ONLY_KEY):
+        if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or is_approval_ask(item):
             return required_packet_repo(relaunch_args)
     return None
 

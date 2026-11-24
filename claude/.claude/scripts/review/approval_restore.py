@@ -9,8 +9,8 @@ import shlex
 from typing import NamedTuple
 
 import script_utils
-from approval_asks_store import UNKNOWN_BASE, approval_path_of_change, read_approval_paths
-from ask_outcome_words import ACCEPTED, APPLIED, USER_ONLY_KEY
+from approval_asks_store import UNKNOWN_BASE, approval_path_of_change, is_approval_ask, read_approval_paths
+from ask_outcome_words import ACCEPTED, APPLIED
 from review_fix_names import RESTORED_INDEXES_KEY
 from review_fix_state import UsageError
 
@@ -21,10 +21,10 @@ class ApprovalRestoreError(Exception):
 
 def restorable_paths(repo, asks, outcomes):
     """The saved approval paths to restore, as a list of (index of the ask, path, base blob id or None for a file
-    the pass created). Only an `accepted` user-only ask whose saved base is known, and is not None while HEAD
+    the pass created). Only an `accepted` approval ask whose saved base is known, and is not None while HEAD
     tracks the path, is in it. Reads the saved paths and changes nothing."""
     accepted = [index for index, (item, outcome) in enumerate(zip(asks, outcomes, strict=True))
-                if outcome == ACCEPTED and item.get(USER_ONLY_KEY)]
+                if outcome == ACCEPTED and is_approval_ask(item)]
     if not accepted:
         return []
     saved = read_approval_paths(repo)
@@ -81,7 +81,7 @@ def refuse_corrections_of_state(state, indexes, outcomes):
     for index in indexes:
         item = asks[index]
         path = approval_path_of_change(item.get("change"))
-        if path is None or not item.get(USER_ONLY_KEY):
+        if path is None or not is_approval_ask(item):
             continue
         if outcomes[index] == ACCEPTED:
             raise UsageError(

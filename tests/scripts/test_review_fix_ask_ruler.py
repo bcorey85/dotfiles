@@ -16,6 +16,7 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import approval_asks_store
 import code_wait
 import fake_ledger
+import owner_lines
 import review_asks
 import review_fix
 import review_fix_asks
@@ -1084,3 +1085,82 @@ class HeldAskTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScriptsClaudeMdSessionRulingTest(unittest.TestCase):
+    """An ask whose only approval-file change is the scripts CLAUDE.md is ruled by the session; an ask for any other
+    approval file stays user_only."""
+    setUp = fixture.ReviewFixScriptTest.setUp
+    stop_launched_loops = fixture.ReviewFixScriptTest.stop_launched_loops
+    fake_command = fixture.ReviewFixScriptTest.fake_command
+    environment = fixture.ReviewFixScriptTest.environment
+    git = fixture.ReviewFixScriptTest.git
+    run_script = fixture.ReviewFixScriptTest.run_script
+    packet = fixture.ReviewFixScriptTest.packet
+    ledger_writes = fixture.ReviewFixScriptTest.ledger_writes
+    findings_file = fixture.ReviewFixScriptTest.findings_file
+
+    PRE_PASS_TEXT = "rules\nuser line\n"
+    EDITED_TEXT = "rules\nuser line\ncoder line\n"
+
+    def approval_entry(self, path, user_only):
+        change = approval_asks_store.approval_change(path)
+        entry = ask_entry("edit", f"{path}:1", finding_id="a1b2c3d4e5f60061", question="approve?", change=change)
+        if user_only:
+            return {**entry, "user_only": True}
+        return entry
+
+    def edited_file(self, path):
+        """`path` holding the coder's edit, with the blob of its pre-pass text returned."""
+        file = pathlib.Path(self.repo) / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(self.PRE_PASS_TEXT)
+        pre_pass_blob = script_utils.work_tree_blob(self.repo, path, keep_object=True)
+        file.write_text(self.EDITED_TEXT)
+        return pre_pass_blob
+
+    def packet_with_scripts_ask(self):
+        scripts_blob = self.edited_file(owner_lines.SCRIPTS_CLAUDE_MD)
+        approval_asks_store.write_saved_asks(self.repo, {owner_lines.SCRIPTS_CLAUDE_MD: scripts_blob}, [])
+        entry = self.approval_entry(owner_lines.SCRIPTS_CLAUDE_MD, user_only=False)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[entry, SECOND_ASK]))
+
+    def scripts_text(self):
+        return (pathlib.Path(self.repo) / owner_lines.SCRIPTS_CLAUDE_MD).read_text()
+
+    def test_a_session_accepting_the_scripts_claude_md_ask_restores_the_file_and_logs_it(self):
+        self.packet_with_scripts_ask()
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.scripts_text(), self.PRE_PASS_TEXT)
+        self.assertEqual(approval_asks_store.read_approval_paths(self.repo), {})
+        self.assertEqual(len(self.ledger_writes()), 2)
+
+    def test_a_session_rejecting_the_scripts_claude_md_ask_keeps_the_edit_and_logs_it(self):
+        self.packet_with_scripts_ask()
+
+        code, output = self.run_script(["asks-done", "--by", "session", "rejected:the edit is right", "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.scripts_text(), self.EDITED_TEXT)
+        self.assertEqual(approval_asks_store.read_approval_paths(self.repo), {})
+        self.assertEqual(len(self.ledger_writes()), 2)
+
+    def test_a_session_ruling_is_refused_for_the_other_approval_file_beside_the_scripts_claude_md_ask(self):
+        scripts_blob = self.edited_file(owner_lines.SCRIPTS_CLAUDE_MD)
+        root_blob = self.edited_file("CLAUDE.md")
+        approval_asks_store.write_saved_asks(
+            self.repo, {owner_lines.SCRIPTS_CLAUDE_MD: scripts_blob, "CLAUDE.md": root_blob}, [])
+        scripts_entry = self.approval_entry(owner_lines.SCRIPTS_CLAUDE_MD, user_only=False)
+        root_entry = self.approval_entry("CLAUDE.md", user_only=True)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[scripts_entry, root_entry]))
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.assertEqual(self.scripts_text(), self.EDITED_TEXT)

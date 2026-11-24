@@ -238,7 +238,8 @@ class RuledFindings:
         # packet
         self.dropped_asks = []
         self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
-        self.user_only_paths = []  # the repo-relative path each approval ask was filed for
+        # the repo-relative path each approval ask was filed for, the scripts CLAUDE.md's too (the session rules that)
+        self.user_only_paths = []
         # path -> the blob id its edit is measured against
         self.user_only_bases = {}
         self.approval_blobs = {}  # path -> blob id of each approval-only file before the latest coder pass
@@ -478,8 +479,7 @@ class RuledFindings:
             self.drop_asks([ask], REJECTED_ASK_REASON)
             return False
         self.add_ask(CODER_GATE, ask)
-        if ask not in self.user_only_asks:
-            self.user_only_asks.append(ask)
+        self.mark_user_only(ask, path)
         entry = wanted_entry(ask.text, ask_parts(ask.text).change, path, line, title)
         if entry not in self.wanted_entries:
             self.wanted_entries.append(entry)
@@ -650,13 +650,20 @@ class RuledFindings:
         target = wanted_edit_target(path)
         return any(self.is_approval_ruling(finding) and target in finding.text for finding in findings)
 
+    def mark_user_only(self, ask, path):
+        """Marks `ask`, filed for the approval-only file `path`, user-only, unless the session rules asks for that
+        file (see `owner_lines.session_rules_approval_path`)."""
+        if owner_lines.session_rules_approval_path(path):
+            return
+        if ask not in self.user_only_asks:
+            self.user_only_asks.append(ask)
+
     def file_approval_ask(self, path, base):
         """Files the user-only ask for approval-only file `path`, whose edit is measured against `base`, as
         `approval_base` returns it."""
         ask = parse_finding(approval_ask_text(path))
         self.add_ask(CODER_GATE, ask)
-        if ask not in self.user_only_asks:
-            self.user_only_asks.append(ask)
+        self.mark_user_only(ask, path)
         # The filed path itself: parsing it back out of the ask text drops a folder name that holds a space.
         if path not in self.user_only_paths:
             self.user_only_paths.append(path)

@@ -149,6 +149,33 @@ class ApprovalAskUserOnlyTest(unittest.TestCase):
 
         self.assertEqual([entry.get("user_only") for entry in entries], [True])
 
+    def packet_flags(self, changed):
+        host = approval_host()
+        host.ask_for_approval_only_edits(changed, [])
+        outcome = {"status": "converged", "asks": host.asks, "ask_gates": host.ask_gates,
+                   "user_only_asks": host.user_only_asks}
+        entries = review_loop_packet.ask_entries({**review_loop_packet.EMPTY_OUTCOME, **outcome})
+        return [(entry["file_line"], entry.get("user_only")) for entry in entries]
+
+    def test_an_ask_for_only_the_scripts_claude_md_is_not_user_only_and_stays_saved(self):
+        host = approval_host()
+        host.ask_for_approval_only_edits([SCRIPTS_CLAUDE_MD], [])
+
+        self.assertEqual(self.packet_flags([SCRIPTS_CLAUDE_MD]), [(f"{SCRIPTS_CLAUDE_MD}:1", None)])
+        self.assertEqual(host.user_only_paths, [SCRIPTS_CLAUDE_MD])
+
+    def test_an_ask_for_another_approval_file_beside_the_scripts_claude_md_stays_user_only(self):
+        flags = self.packet_flags([SCRIPTS_CLAUDE_MD, "CLAUDE.md"])
+
+        self.assertEqual(flags, [(f"{SCRIPTS_CLAUDE_MD}:1", None), ("CLAUDE.md:1", True)])
+
+    def test_a_wanted_change_ask_for_the_scripts_claude_md_is_not_user_only(self):
+        finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:4` [docs] stale owner — update it")
+        host = approval_host()
+        host.ask_for_wanted_changes([finding], [SCRIPTS_CLAUDE_MD])
+        self.assertEqual(len(host.asks), 1)
+        self.assertEqual(host.user_only_asks, [])
+
     def test_a_reviewer_ask_has_no_flag(self):
         ask = parse_finding("`a/b.py:3` [bug] Should it log? Change: add a log line.")
         entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)
@@ -450,18 +477,28 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertIn("add rule A.", host.asks[0].text)
         self.assertIn("fix typo B.", host.asks[0].text)
 
-    def test_a_ruled_user_only_ask_leaves_the_saved_paths_whatever_the_outcome(self):
+    def test_a_ruled_approval_ask_leaves_the_saved_paths_whatever_the_outcome(self):
         self.edit_claude_md()
         self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
         ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
                "change": approval_asks_store.approval_change("CLAUDE.md")}
-        other = {"question": "q", "file_line": "a.py:1", "change": approval_asks_store.approval_change("CLAUDE.md")}
+        other = {"question": "q", "file_line": "a.py:1", "change": "rename the helper."}
 
         approval_asks_store.forget_ruled_approval_paths(self.repo, [other])
-        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an ask that is not user-only leaves the file alone")
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an ask that is no approval ask leaves the file alone")
 
         approval_asks_store.forget_ruled_approval_paths(self.repo, [ask])
         self.assertEqual(self.saved_paths(), [], "a ruled user-only ask leaves the saved paths")
+
+    def test_a_ruled_approval_ask_without_the_user_only_mark_leaves_the_saved_paths(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        scripts_ask = {"question": "q", "file_line": "CLAUDE.md:1",
+                       "change": approval_asks_store.approval_change("CLAUDE.md")}
+
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [scripts_ask])
+
+        self.assertEqual(self.saved_paths(), [])
 
     def test_a_second_loop_after_an_accepted_user_ruling_files_no_ask_for_the_edit(self):
         self.edit_claude_md()

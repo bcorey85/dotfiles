@@ -141,6 +141,14 @@ class ScriptCallArgumentsTest(unittest.TestCase):
         self.assertEqual(script_call_arguments(with_flag, "phase_start.py"), [["--new-run"]])
         self.assertEqual(script_call_arguments("phase_start.py", "phase_start.py"), [[]])
 
+    def test_a_heredoc_body_with_an_apostrophe_hides_no_later_call(self):
+        command = "cat <<EOF > /tmp/h.txt\nit's the handoff\nEOF\npython3 /x/code_wait.py review"
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
+    def test_a_grep_pattern_shlex_cannot_read_hides_no_call(self):
+        command = r"grep 'a\|b' f && python3 /x/code_wait.py review"
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
     def test_a_command_that_does_not_run_the_script_gives_nothing(self):
         self.assertEqual(script_call_arguments("echo hi", "phase_start.py"), [])
 

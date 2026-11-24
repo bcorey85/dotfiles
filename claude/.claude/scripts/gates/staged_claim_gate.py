@@ -2,7 +2,8 @@
 """Stop and SubagentStop hook: block a final message that says files are staged when the index does not hold them.
 On Stop only, also block a main-session message that ends on a permission question for a reversible step
 (permission_question.py), and a main-session message that says the session will do, or is doing, a step it has not
-started (announced_step.py); send every reason that holds.
+started (announced_step.py); send every reason that holds. On SubagentStop only, also block a /code fork that
+dispatched a coder for a phase and ran no review of it and wrote no stop (fork_review.py).
 
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
@@ -39,6 +40,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import announced_step
+import fork_review
 import permission_question
 import script_utils
 from git_calls import git_calls, joined_directory
@@ -252,6 +254,8 @@ def main():
         announced = guarded("announced_step", announced_step.announced_step, message, hook.get("transcript_path"))
         if announced:
             reasons.append(announced_step.REASON)
+    if hook.get("hook_event_name") == "SubagentStop":
+        reasons.append(guarded("fork_review", fork_review.missing_review_reason, hook))
 
     found_reasons = [reason for reason in reasons if reason]
     if found_reasons:

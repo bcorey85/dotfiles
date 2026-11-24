@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-736 fix notes
+737 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -19,7 +19,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/handback | 56 | 1 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
-| script/coder-gate | 30 | 7 |
+| script/coder-gate | 31 | 8 |
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 5 |
@@ -33,7 +33,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/shell-command | 17 | 6 |
 | skill/review | 17 | 0 |
 | script/git-discipline-gate | 16 | 5 |
-| script/staged-claim-gate | 15 | 3 |
+| script/staged-claim-gate | 16 | 4 |
 | script/code-review-start | 13 | 6 |
 | script/code-wait | 13 | 6 |
 | script/verify-log | 13 | 0 |
@@ -124,6 +124,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
+| script/shell-command-words | 2 | 2 |
 | script/shell-quoting | 2 | 2 |
 | script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
@@ -189,7 +190,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |
-| script/shell-command-words | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |

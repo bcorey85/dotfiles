@@ -22,6 +22,9 @@
                                   run that died before `clear`, or a second concurrent run in the same session) gates
                                   every later coder hand-back of that session with that gate until `clear` or
                                   MAX_GATE_AGE_SECONDS.
+                                  A /code fork (agent type code-fork) is not a coder: the hook denies its hand-back
+                                  while its transcript shows a coder dispatch with no review and no stop.md write
+                                  after it (fork_review.py), and reads no gate file.
   coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
@@ -82,6 +85,7 @@ release_import_guard = import_guard.guard("coder-gate", __name__)
 import check_output
 import check_scope
 import collision_retry
+import fork_review
 import gate_env
 import hook_input
 import script_utils
@@ -869,6 +873,13 @@ def _run_gate_under_lock(gate_file, checked_gate, event, hook_started):
 def run_hook():
     hook_started = time.monotonic()
     event = json.load(sys.stdin)
+    # A /code fork is judged on its own transcript, never on the coder gate file.
+    if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
+        reason = fork_review.missing_review_reason(event)
+        if reason:
+            script_utils.pre_tool_use_deny(reason)
+        return
+
     if event.get("agent_type") != "coder":
         return
 

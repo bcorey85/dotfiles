@@ -13,8 +13,10 @@ from shell_command import (
     command_after_wrappers,
     parse_raw_simple_commands,
     resolved_command_words,
+    step_words,
 )
 from shell_quoting import quoted_positions
+from shell_statements import shell_code
 
 
 def unquoted_word(raw_word):
@@ -61,9 +63,13 @@ def command_word_index(raw_words, name):
 
 def script_call_arguments(command, script_name):
     """One list per simple command of `command` that runs the script `script_name` (a word whose basename is it): the
-    words after that word. An empty list when the script is called with no arguments."""
+    words after that word. An empty list when the script is called with no arguments. The command is read as
+    `shell_code` gives it, so a quote inside a heredoc body hides no later call; text shlex cannot read (`grep 'a\\|b'`)
+    is read through `step_words`."""
+    code = shell_code(command)
+    words_by_command = resolved_command_words(code) or step_words(code)
     calls = []
-    for words in resolved_command_words(command):
+    for words in words_by_command:
         for index, word in enumerate(words):
             if word_names_command(word, script_name):
                 calls.append(words[index + 1:])

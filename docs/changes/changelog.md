@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1164 changes
+1165 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md) [script/coder-gate, script/staged-claim-gate, script/shell-command-words] A /code fork that dispatched a coder for a phase and ended with no review and no stop.md write after the dispatch is sent back once at SubagentStop, or denied at SubagentHandback.
 * [code run script names and script call arguments get one owner](notes/2026-11-24-code-run-script-names-and-script-call-arguments.md) [script/coder-gate, script/code-wait, script/fork-children] The /code review script names and a reader for a script's call arguments move to one owner each in lib, with no behavior change.
 * [announced step passes a progress line after a background launch in the same turn](notes/2026-11-24-announced-step-passes-a-progress-line-after-a.md) [script/announced-step, script/staged-claim-gate] A subjectless progress line passes the announced-step stop check when the current turn launched background work; a crash in one stop check keeps the other checks' reasons.
 * [quality check cap counts a check piped into rg as cut](notes/2026-11-24-quality-check-cap-counts-a-check-piped-into-rg-as.md) [script/quality-check-cap] A check whose output is piped into rg is recorded as cut, so one rerun redirected to a file is allowed.

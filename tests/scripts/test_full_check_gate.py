@@ -565,6 +565,14 @@ class LintRepairTest(unittest.TestCase):
 
         self.assertEqual(host.repairs, [])
 
+    def test_a_fix_pass_that_changed_no_file_lints_nothing(self):
+        (self.repo / "app.py").write_text("value = '" + "x" * 130 + "'\n")
+        host = LintRepairHost(self.repo)
+
+        host.lint_fixed_files([])
+
+        self.assertEqual(host.repairs, [])
+
     def test_the_lint_pass_repair_records_a_skip_when_it_changes_nothing(self):
         host = LintRepairHost(self.repo, changes=False)
 

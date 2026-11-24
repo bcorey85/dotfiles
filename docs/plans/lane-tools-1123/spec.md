@@ -18,7 +18,7 @@ Each lane's diff viewer starts under a systemd memory scope where the machine ha
 - [x] Phase 2: lane-status names oversized viewers (risk: low)
 - [x] Phase 3: Entry-less lane close (risk: high)
 - [x] Phase 4: Post-merge restow (risk: low)
-- [ ] Phase 5: ls probe (risk: low)
+- [x] Phase 5: ls probe (risk: low)
 - [ ] Phase 6: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions

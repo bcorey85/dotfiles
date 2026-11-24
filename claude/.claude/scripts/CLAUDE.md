@@ -26,6 +26,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Whether a process id is alive: `lib/process_group.py` `pid_is_alive`. Never call `os.kill(pid, 0)` elsewhere.
 - Claude session folders and live session rows (sessions, projects, the config dir override): `lib/session_registry.py` (`sessions_dir`, `projects_dir`, `live_session_rows`).
 - Stop file names (`stop.md`, `review-stop.md`): `lib/stop_file_names.py`, which imports nothing. The Write gate loads it on every code-fork Write in a run folder.
+- The code-fork agent's type name (`FORK_AGENT_TYPE`): `lib/agent_names.py`, which imports nothing; `script_utils` re-exports it.
 - Review-fix state folder and file names, the asks-findings file name, and the `asks_launch_pending`, `correct_open` and `asks_decided_by` keys: `lib/review_fix_names.py`, which imports nothing. `review/review_fix_state.py` re-exports them.
 - Text for a changed or no-code ask ruling on a finding (ruler clauses, marker, no-code test): `lib/ruled_change_text.py` (`changed_text`, `ruled_note`, `is_no_code_ruling`), standard library only. The sign-off lines of a decision log: `lib/signoff_lines.py`; a standing ruling's form and reader: `lib/standing_rulings.py`; a coder pass never edits a sign-off line: `review/review_loop_signoffs.py`, which puts changed lines back through `lib/protected_lines.py`.
 - Plan text: `lib/plan_format.py`.

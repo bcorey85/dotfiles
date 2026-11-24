@@ -25,6 +25,7 @@ to 600000 ms, and split a longer job into steps that each fit. The jobs covered 
 a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt.
 The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
 `lib/agent_names.py`; `script_utils` re-exports it. Importing it from `script_utils` cost the gate 10 to 13 ms.
+`claude/.claude/scripts/CLAUDE.md` gains the owner line for `lib/agent_names.py`.
 
 ## Evidence
 

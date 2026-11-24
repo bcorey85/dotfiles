@@ -1,4 +1,4 @@
-"""approval_restore.py: what an accepted user-only approval ask does to the file it names. The ask proposes to revert a
+"""approval_restore.py: what an accepted approval ask does to the file it names. The ask proposes to revert a
 fix coder's edit to an approval-only file (see `approval_asks_store.approval_change`). The saved approval paths hold
 the blob the file had before that pass, so accepting the ask puts the file back to it: uncommitted lines the user
 kept stay, which a reset to HEAD would drop. An ask whose base is unknown (`UNKNOWN_BASE`), or whose saved base is
@@ -49,7 +49,7 @@ class RestoredApproval(NamedTuple):
 
 
 def restore_accepted_approvals(repo, asks, outcomes):
-    """Puts each file of an accepted user-only approval ask back to its saved pre-pass blob (deleting a file the pass
+    """Puts each file of an accepted approval ask back to its saved pre-pass blob (deleting a file the pass
     created) and returns a RestoredApproval (ask index, path) for each one restored. Raises ApprovalRestoreError
     naming the file, its pre-pass blob (or that the pass created it, for a file to delete) and the way out at the
     first restore that fails: the caller logs nothing then, and a rerun restores again."""
@@ -71,7 +71,7 @@ def restore_accepted_approvals(repo, asks, outcomes):
 
 
 def refuse_corrections_of_state(state, indexes, outcomes):
-    """Raises UsageError, with nothing logged, for a corrected user-only approval ask of the saved `state` that
+    """Raises UsageError, with nothing logged, for a corrected approval ask of the saved `state` that
     cannot be undone or redone. Every first ruling drops the ask's saved pre-pass base, so a correction to
     `accepted` has nothing to restore from, and a reset to HEAD would drop the user's uncommitted lines. An ask whose
     file asks-done restored was put back to its pre-pass text, so a correction cannot keep the coder's edit. Only
@@ -81,7 +81,7 @@ def refuse_corrections_of_state(state, indexes, outcomes):
     for index in indexes:
         item = asks[index]
         path = approval_path_of_change(item.get("change"))
-        if path is None or not is_approval_ask(item):
+        if path is None:
             continue
         if outcomes[index] == ACCEPTED:
             raise UsageError(
@@ -122,9 +122,9 @@ def outcomes_without_restored(outcomes, restored_indexes):
 def restore_for_asks_done(target, repo, outcomes):
     """The asks-done step: restores each accepted approval ask of `target`, prints the restored lines, saves the
     restored ask indexes on `target` and returns the outcomes the findings file is built from. Raises UsageError,
-    with nothing logged, when a restore fails. A repo of None means no ask is user-only, so it is never read. A retry
-    after a logging failure restores nothing, as the first call already did and the saved paths are gone, so the new
-    indexes join the saved ones: they are never overwritten."""
+    with nothing logged, when a restore fails. A repo of None means no ask is an approval ask, so it is never read.
+    A retry after a logging failure restores nothing, as the first call already did and the saved paths are gone, so
+    the new indexes join the saved ones: they are never overwritten."""
     try:
         restored = restore_accepted_approvals(repo, target["asks"], outcomes)
     except ApprovalRestoreError as error:

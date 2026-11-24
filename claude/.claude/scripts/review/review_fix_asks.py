@@ -369,7 +369,7 @@ def missing_packet_repo_reason(relaunch_args):
 
 def repo_for_outcomes(relaunch_args, asks, outcomes):
     """`required_packet_repo` when an outcome writes under the repo (a rejection, an accepted plan-impact ask, or a
-    ruling on a user-only ask, which leaves the saved approval paths), else None: an answer that writes nothing
+    ruling on an approval ask, which leaves the saved approval paths), else None: an answer that writes nothing
     there needs no repo."""
     for item, outcome in zip(asks, outcomes, strict=True):
         if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or is_approval_ask(item):
@@ -393,7 +393,7 @@ def record_accepted_plan_impacts(asks, outcomes, repo):
 
 
 def refuse_damaged_approval_paths(repo, asks):
-    """Stops with nothing written when a ruled user-only ask needs the saved approval paths and the file is
+    """Stops with nothing written when a ruled approval ask needs the saved approval paths and the file is
     damaged: a rerun would log every outcome row again."""
     try:
         check_approval_paths_readable(repo, asks)
@@ -403,7 +403,7 @@ def refuse_damaged_approval_paths(repo, asks):
 
 def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
-    correction undoes is withdrawn. A corrected user-only ask leaves the saved approval paths, whatever the new
+    correction undoes is withdrawn. A corrected approval ask leaves the saved approval paths, whatever the new
     outcome."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     forget_ruled_approval_paths(repo, [item])
@@ -414,7 +414,7 @@ def record_corrected_rejection(item, old_outcome, new_outcome, repo):
 
 
 def record_ruled_asks_once(target, asks, outcomes, repo):
-    """Records the packet's rejected asks once, and drops its ruled user-only asks from the saved approval paths: a
+    """Records the packet's rejected asks once, and drops its ruled approval asks from the saved approval paths: a
     retry after a logging failure does neither again."""
     if target.get("asks_rejections_recorded"):
         return
@@ -646,7 +646,7 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=
     logged_asks = []
     corrected_asks = [state["asks"][index] for index in indexes]
     touches_rejection = any(REJECTED in (state["ask_outcomes"][index], outcomes[index]) for index in indexes)
-    needs_repo = touches_rejection or any(item.get(USER_ONLY_KEY) for item in corrected_asks)
+    needs_repo = touches_rejection or any(is_approval_ask(item) for item in corrected_asks)
     repo = required_packet_repo(state.get("relaunch_args") or []) if needs_repo else None
     refuse_damaged_approval_paths(repo, corrected_asks)
     approval_restore.refuse_corrections_of_state(state, indexes, outcomes)

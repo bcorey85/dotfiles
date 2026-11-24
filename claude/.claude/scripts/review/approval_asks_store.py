@@ -2,9 +2,9 @@
 each path mapped to the blob id its edit is measured against (None when the file was absent, `UNKNOWN_BASE` when the
 pre-pass content is not known), and the wanted-change asks ({text, change, path, line, title}: a finding's change
 on an approval-only file). The review loop writes it, a resumed loop
-reads it, and a ruling on a user-only ask, accepted or rejected, removes its path or its wanted-change entry."""
+reads it, and a ruling on an approval ask (see `is_approval_ask`), accepted or rejected, removes its path or its
+wanted-change entry."""
 import json
-import re
 
 import script_utils
 from ask_outcome_words import USER_ONLY_KEY
@@ -16,6 +16,8 @@ UNKNOWN_BASE = "unknown"
 
 CHANGE_PREFIX = "revert the fix coder's edit to `"
 CHANGE_SUFFIX = "`."
+WANTED_TARGET_PREFIX = "(edit to `"
+WANTED_TARGET_SUFFIX = "`)"
 
 
 def approval_change(path):
@@ -64,10 +66,18 @@ def wanted_edit_target(path):
     """The words a wanted-change ask's change ends with to name the file exactly. An accepted ask reaches the next
     run as a finding whose location is empty (UNLOCATED) for a path whose folder holds a space, so the run reads
     the path from these words."""
-    return f"(edit to `{path}`)"
+    return f"{WANTED_TARGET_PREFIX}{path}{WANTED_TARGET_SUFFIX}"
 
 
-WANTED_TARGET = re.compile(r"\(edit to `[^`]+`\)$")
+def wanted_target_path(change):
+    """The path a change ends with, as `wanted_edit_target` wrote it, or None when the change does not end with one."""
+    if not isinstance(change, str):
+        return None
+    start = change.rfind(WANTED_TARGET_PREFIX)
+    if start < 0 or not change.endswith(WANTED_TARGET_SUFFIX):
+        return None
+    path = change[start + len(WANTED_TARGET_PREFIX):-len(WANTED_TARGET_SUFFIX)]
+    return path or None
 
 
 def wanted_entry(text, change, path, line, title):
@@ -144,7 +154,7 @@ def is_approval_ask(item):
     change = item.get("change")
     if approval_path_of_change(change) is not None:
         return True
-    return isinstance(change, str) and WANTED_TARGET.search(change) is not None
+    return wanted_target_path(change) is not None
 
 
 def approval_ask_changes(asks):
@@ -208,8 +218,9 @@ def check_approval_paths_readable(repo, asks):
 
 
 def forget_ruled_approval_paths(repo, asks):
-    """Drops from the saved approval paths of `repo` each path whose user-only approval ask is in `asks`, ruled with
-    any outcome, so a resumed run never files it again. Leaves the file alone when no saved path is ruled."""
+    """Drops from the saved approval paths of `repo` each path whose approval ask (see `is_approval_ask`) is in
+    `asks`, ruled with any outcome, so a resumed run never files it again. Leaves the file alone when no saved path
+    is ruled."""
     ruled_changes = approval_ask_changes(asks)
     if not ruled_changes:
         return

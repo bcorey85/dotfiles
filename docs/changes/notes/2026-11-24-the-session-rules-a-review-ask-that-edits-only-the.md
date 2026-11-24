@@ -20,14 +20,19 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 The review loop no longer marks an ask user-only when its only approval-file edit is in
 `claude/.claude/scripts/CLAUDE.md`, for any edit to that file. `asks-done --by session` records such an ask accepted
-or rejected. An ask on any other approval file (another CLAUDE.md, settings.json) stays user-only and the session is
-still refused. The path test lives in `lib/owner_lines.py` `session_rules_approval_path`; `review_loop_ruled.py`
-`mark_user_only` is the one place that sets the mark.
+or rejected. An ask on any other approval file (another CLAUDE.md, CLAUDE.local.md, AGENTS.md) stays user-only and the session is
+still refused. The path test lives in `review_loop_ruled.py` `session_rules_approval_path`; `review_loop_ruled.py`
+`mark_user_only` is the one place an approval ask is marked user-only.
 
 ## Evidence
 
 Two lanes in one day held a scripts CLAUDE.md ask for the user, and the session could not record its ruling. The user
-set that the orchestrating session rules every ask about that file.
+set that the orchestrating session rules every ask about that file, the whole file and not only owner lines: agent-evals
+commit 42090a64.
+
+Review rulings by agent-evals-73 (session) on 2026-11-24: the two scripts CLAUDE.md ask texts drop the line that
+the user must approve, and saved entries under the old wording are left orphaned; `session_rules_approval_path` moves
+beside `approval_only_paths`; the matching line in the global CLAUDE.md is queued separately.
 
 ## Result
 

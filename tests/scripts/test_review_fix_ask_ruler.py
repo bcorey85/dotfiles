@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1083,10 +1084,6 @@ class HeldAskTest(unittest.TestCase):
         self.assertIn("is not one of", output)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ScriptsClaudeMdSessionRulingTest(unittest.TestCase):
     """An ask whose only approval-file change is the scripts CLAUDE.md is ruled by the session; an ask for any other
     approval file stays user_only."""
@@ -1099,6 +1096,8 @@ class ScriptsClaudeMdSessionRulingTest(unittest.TestCase):
     packet = fixture.ReviewFixScriptTest.packet
     ledger_writes = fixture.ReviewFixScriptTest.ledger_writes
     findings_file = fixture.ReviewFixScriptTest.findings_file
+    state_file = AskRulerTest.state_file
+    edit_state = AskRulerTest.edit_state
 
     PRE_PASS_TEXT = "rules\nuser line\n"
     EDITED_TEXT = "rules\nuser line\ncoder line\n"
@@ -1164,3 +1163,62 @@ class ScriptsClaudeMdSessionRulingTest(unittest.TestCase):
         self.assertIn("ask(s) 2 are user_only", output)
         self.assertEqual(len(self.ledger_writes()), rows_before)
         self.assertEqual(self.scripts_text(), self.EDITED_TEXT)
+
+    def test_a_correction_that_touches_no_rejection_leaves_the_scripts_claude_md_edit_and_logs_the_outcome(self):
+        self.edited_file(owner_lines.SCRIPTS_CLAUDE_MD)
+        approval_asks_store.write_saved_asks(
+            self.repo, {owner_lines.SCRIPTS_CLAUDE_MD: approval_asks_store.UNKNOWN_BASE}, [])
+        entry = self.approval_entry(owner_lines.SCRIPTS_CLAUDE_MD, user_only=False)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[entry, SECOND_ASK]))
+        self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+        rows_before = len(self.ledger_writes())
+        saved_before = approval_asks_store.read_approval_paths(self.repo)
+        correction = f"modified:keep the edit in `{owner_lines.SCRIPTS_CLAUDE_MD}`"
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", correction, "accepted"])
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(saved_before, {}, "the accepted ask left the saved paths")
+        self.assertEqual(self.scripts_text(), self.EDITED_TEXT)
+        self.assertGreater(len(self.ledger_writes()), rows_before)
+
+    def test_a_correction_of_the_scripts_claude_md_ask_reads_the_packets_repo_not_the_cwd(self):
+        """The state sits in the cwd repo while the packet's launch `--repo` names another one, whose saved file is
+        damaged: the correction stops on that file, as it does for a user-only ask."""
+        self.edited_file(owner_lines.SCRIPTS_CLAUDE_MD)
+        approval_asks_store.write_saved_asks(
+            self.repo, {owner_lines.SCRIPTS_CLAUDE_MD: approval_asks_store.UNKNOWN_BASE}, [])
+        entry = self.approval_entry(owner_lines.SCRIPTS_CLAUDE_MD, user_only=False)
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[entry, SECOND_ASK]))
+        self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+        rows_before = len(self.ledger_writes())
+        correction = f"modified:keep the edit in `{owner_lines.SCRIPTS_CLAUDE_MD}`"
+
+        with tempfile.TemporaryDirectory() as packet_repo:
+            subprocess.run(["git", "init", "-q", packet_repo], check=True, capture_output=True)
+            damaged = approval_asks_store.approval_paths_file(packet_repo)
+            damaged.parent.mkdir(parents=True, exist_ok=True)
+            damaged.write_text("{")
+            self.edit_state(relaunch_args=["--repo", packet_repo])
+
+            code, output = self.run_script(["asks-done", "--correct", "--by", "session", correction, "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("approval-asks.json", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_a_correction_after_a_session_accepted_the_scripts_claude_md_ask_is_refused(self):
+        self.packet_with_scripts_ask()
+        self.run_script(["asks-done", "--by", "session", "accepted", "accepted"])
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "rejected:keep it", "accepted"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("already put the file back", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+        self.assertEqual(self.scripts_text(), self.PRE_PASS_TEXT)
+
+
+if __name__ == "__main__":
+    unittest.main()

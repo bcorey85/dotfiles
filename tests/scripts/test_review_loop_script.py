@@ -1602,7 +1602,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(
             packet["class_closure"],
             "the class repair fixed none of the class members the closure check found open"
-            "; filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "; filed as an approval ask unless it repeats one the session rejected, their fix was an approval-only "
             "edit the loop reverted: " + member)
 
     def test_a_class_repair_that_changes_other_files_but_reverts_every_member_claims_no_fix(self):
@@ -1620,7 +1620,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].startswith("the class repair fixed none of the class members"),
                         packet["class_closure"])
-        self.assertIn("filed as a user-only ask unless it repeats one the session rejected, their fix was an "
+        self.assertIn("filed as an approval ask unless it repeats one the session rejected, their fix was an "
                       "approval-only edit the loop reverted: " + member, packet["class_closure"])
         self.assertNotIn("fixed these class members", packet["class_closure"])
 
@@ -1654,7 +1654,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].endswith(
-            "filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "filed as an approval ask unless it repeats one the session rejected, their fix was an approval-only "
             "edit the loop reverted: " + reverted_member),
             packet["class_closure"])
         fixed_lines = [item["file_line"] for item in packet["fixed"]]

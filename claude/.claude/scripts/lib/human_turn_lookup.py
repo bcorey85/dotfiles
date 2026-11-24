@@ -7,11 +7,12 @@ reads as typed text and whose `origin` is exactly `{"kind": "human"}`; its words
 that text. Peer messages (origin kind `peer`), task notifications, tool results and compact summaries are never a
 user turn.
 `verified_human_turn` returns the turn's time, never its words, or raises HumanTurnRefusedError naming the failed
-lookup. Standard library, `session_registry` and `user_prompts` only."""
+lookup. Standard library, `iso_time`, `session_registry` and `user_prompts` only."""
 import json
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import NamedTuple
 
+import iso_time
 import user_prompts
 from session_registry import live_session_rows, projects_dir, sessions_dir
 
@@ -55,8 +56,7 @@ def transcript_of_session(session_id):
 
 def epoch_of_timestamp(timestamp):
     """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`. Raises ValueError for any other."""
-    # Python 3.10's fromisoformat does not read a trailing Z.
-    moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    moment = iso_time.parse_iso_timestamp(timestamp)
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     return moment.timestamp()

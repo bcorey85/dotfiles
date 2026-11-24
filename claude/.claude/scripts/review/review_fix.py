@@ -923,7 +923,8 @@ def redispatch_lines(state, resolved_lines):
     except OSError as error:
         raise UsageError(f"decide adopt: the first run's handoff {first_handoff_file} cannot be read ({error}). The "
                          "ruling is logged. Write that handoff plus the RESOLVED lines to a file and run `launch` "
-                         "with the first run's flags, `--iter` and `--handoff <that file>`") from error
+                         "in the foreground with the first run's flags, `--iter`, `--handoff <that file>` and "
+                         "`--detach`") from error
 
     handoff_file = review_fix_dir() / ADOPT_HANDOFF_NAME
     resolved_text = "\n".join(resolved_lines)

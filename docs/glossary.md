@@ -270,7 +270,7 @@ The one identity of a work tree's content.
 
 ### code-fork
 
-_noun_ · `GATED_AGENT` in `claude/.claude/scripts/gates/fork_write_scope.py`
+_noun_ · `FORK_AGENT_TYPE` in `claude/.claude/scripts/lib/agent_names.py`
 
 The forked agent that runs the `/code`, `/review` and `/fix` steps.
 

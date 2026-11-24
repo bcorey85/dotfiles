@@ -25,7 +25,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
-from agent_names import FORK_AGENT_TYPE
+from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
 from shell_command import resolved_command_words, wrapper_chain
 from shell_statements import clean, statements
 
@@ -53,12 +53,15 @@ SLEEP_REASON = ("A long sleep wastes the call. Sleep 30 seconds or less. To wait
                 "stop waiting and report it in your hand-back.")
 BACKGROUND_REASON = ("Review-loop runs every check in the foreground. A background job's result does not come back "
                      "to this loop, so it waits for nothing. Run the same command without run_in_background, a "
-                     "trailing &, nohup, setsid, detach or disown, and set the Bash timeout up to 600000 ms.")
+                     "trailing &, nohup, setsid, detach or disown. Each foreground call must finish within "
+                     "2 minutes; the harness moves a longer call to the background. Split a longer job into "
+                     "steps that each fit, for example by running tests by name.")
 CODE_FORK_BACKGROUND_REASON = ("A background job ends the fork's turn, which hands back before the phase ends. Run "
                                "the command in the foreground: no run_in_background, trailing &, nohup, setsid, "
-                               "detach or disown, and set the Bash timeout up to 600000 ms. Split a longer job into "
-                               "steps that each fit in that timeout.")
-BACKGROUND_REASONS = {"review-loop": BACKGROUND_REASON, FORK_AGENT_TYPE: CODE_FORK_BACKGROUND_REASON}
+                               "detach or disown. Each foreground call must finish within 2 minutes; the harness "
+                               "moves a longer call to the background. Split a longer job into steps that each fit, "
+                               "for example by running tests by name.")
+BACKGROUND_REASONS = {REVIEW_LOOP_AGENT_TYPE: BACKGROUND_REASON, FORK_AGENT_TYPE: CODE_FORK_BACKGROUND_REASON}
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
 DETACH_WORDS = {"nohup", "setsid", "detach", "disown"}

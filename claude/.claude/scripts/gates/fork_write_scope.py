@@ -9,8 +9,8 @@ reads a heredoc's body as command text. Any other agent, and the main session, p
 The fork also cannot write review-stop.md of the run folder while the fix state holds
 `asks_launch_pending`: the fix run that asks-done printed has not launched yet.
 
-Fail-closed for code-fork: any crash while judging its call exits 2 and names the gate. Any other payload
-exits before anything can fail. hook_input loads only for a code-fork call: its imports triple the hook's time, and
+Fail-closed: a crash in the gate's own imports exits 2 and names the gate, for every Write. Any crash while judging a
+code-fork call exits 2 too. hook_input loads only for a code-fork call: its imports triple the hook's time, and
 every Write in every session runs this hook.
 """
 import json
@@ -21,10 +21,12 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")
 sys.path.insert(0, LIB_DIR)
 import import_guard
+
+GATE_NAME = "fork-write-scope"
+import_guard.guard(GATE_NAME, __name__)
 from agent_names import FORK_AGENT_TYPE
 
 RUN_FOLDER_NAME = "code-phase"
-GATE_NAME = "fork-write-scope"
 DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
              "--path-format=absolute --git-path code-phase` prints. {file_path} is outside it. Send any other edit "
              "to a coder.")

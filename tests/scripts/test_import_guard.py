@@ -99,6 +99,19 @@ class ImportGuardTest(unittest.TestCase):
         self.assertEqual(crashed.stdout, "", "a crashed gate prints no allow decision")
         self.assertIn("[fork-write-scope] crashed while judging the call", crashed.stderr)
 
+    def test_a_crash_in_agent_names_blocks_fork_write_scope_for_every_write(self):
+        relative, fork_payload = FORK_WRITE_SCOPE
+        other_payload = {**fork_payload, "agent_type": "coder"}
+        (self.scripts / "lib/agent_names.py").write_text('x = "unterminated\n')
+
+        for label, payload in (("code-fork", fork_payload), ("coder", other_payload)):
+            with self.subTest(agent_type=label):
+                crashed = self.run_gate(relative, payload)
+
+                self.assertEqual(crashed.returncode, 2, crashed.stderr)
+                self.assertEqual(crashed.stdout, "", "a crashed gate prints no allow decision")
+                self.assertIn("[fork-write-scope] crashed before it could read the call", crashed.stderr)
+
     def test_a_crash_in_hook_input_leaves_spec_budget_gate_open(self):
         # A size budget is not a safety gate: it fails open so Edit stays a route to repair the broken module.
         (self.scripts / "lib/hook_input.py").write_text('x = "unterminated\n')

@@ -512,6 +512,14 @@ def repo_file_paths(directory):
     return sorted({name for name in listing.split("\0") if name})
 
 
+def repo_file_paths_or_raise(directory):
+    """The paths `repo_file_paths` lists. Raises GitCallError when git fails."""
+    paths = repo_file_paths(directory)
+    if paths is None:
+        raise GitCallError(f"`git ls-files --cached --others --exclude-standard` failed in {directory}")
+    return paths
+
+
 def read_text_lines(path):
     """The file's lines as (line number, text) pairs from 1, or None when it is not UTF-8 text (it holds a NUL or
     bytes that do not decode) or cannot be read. A failed read is returned as None, not raised: the caller treats it

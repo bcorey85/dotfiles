@@ -53,11 +53,7 @@ class RepoFileListing:
     def __call__(self):
         if self.files is not None:
             return self.files
-        listed = script_utils.repo_file_paths(self.root)
-        if listed is None:
-            raise script_utils.GitCallError(
-                f"`git ls-files --cached --others --exclude-standard` failed in {self.root}")
-        self.files = frozenset(listed)
+        self.files = frozenset(script_utils.repo_file_paths_or_raise(self.root))
         return self.files
 
 
@@ -246,8 +242,9 @@ class ScopeGuard:
 def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
     """The ScopeGuard of one coder pass. `allowed` are the paths the pass may change, `has_own_guard(path)` says
     whether another guard of the loop rules on a path, and `finding_texts` are the pass's findings, whose text may
-    name more paths. The repo's files are listed on first use, when a dirty path reaches the trailing-part rule; a
-    failed listing raises GitCallError then."""
+    name more paths. The repo's files are listed the first time any path reaches the trailing-part rule: a path dirty
+    before the pass (here) or a clean file the pass changed (in `undo`). A failed listing raises GitCallError; in
+    `undo` it stops the loop as an undo-failure CoderCallError."""
     root = pathlib.Path(repo)
     scope = PassScope(root, frozenset(allowed), has_own_guard, tuple(finding_texts), RepoFileListing(root))
     dirty = [path for path in worktree_snapshot.status_codes(root, strict=True) if not scope.holds(path)]

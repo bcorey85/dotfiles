@@ -532,6 +532,21 @@ class ScopeGuardTest(unittest.TestCase):
                 self.assertRaises(script_utils.GitCallError):
             self.guard(finding_texts=["- `x.py:1` wrong"])
 
+    def test_a_file_named_in_full_needs_no_repo_file_listing(self):
+        (self.repo / "tests.py").write_text("t = 2\n")
+        with mock.patch.object(script_utils, "repo_file_paths", return_value=None) as listing:
+            self.guard(finding_texts=["- `tests.py:1` wrong"])
+
+        listing.assert_not_called()
+
+    def test_the_repo_file_listing_is_taken_once_for_two_dirty_paths(self):
+        (self.repo / "tests.py").write_text("t = 2\n")
+        (self.repo / "lib.py").write_text("l = 2\n")
+        with mock.patch.object(script_utils, "repo_file_paths", return_value=["tests.py", "lib.py"]) as listing:
+            self.guard(finding_texts=["- `x.py:1` wrong"])
+
+        listing.assert_called_once()
+
     def test_a_failed_status_listing_at_the_start_of_a_pass_raises(self):
         real_git_output = script_utils.git_output
 

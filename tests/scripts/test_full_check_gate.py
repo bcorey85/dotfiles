@@ -578,6 +578,7 @@ class LintRepairTest(unittest.TestCase):
         host.lint_fixed_files(["app.py"])
 
         self.assertEqual(host.marked, [([], False)])
+        self.assertEqual(host.stops, [])
 
     def test_the_changed_files_reach_the_linter_sorted(self):
         host = LintRepairHost(self.repo)

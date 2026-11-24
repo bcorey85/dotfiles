@@ -52,8 +52,8 @@ such as `frontend/src/app.ts` when a finding prints `src/app.ts` and no other re
 files end with the printed path, the guard cannot tell which one the finding means, and the fix is put back.
 `script_utils.index_entries` reads the index entries of many paths with one `git ls-files` call, and `index_entry` is a
 call to it, so a pass costs two git calls for its dirty files, not two per file. A pass runs one more
-`git ls-files --cached --others --exclude-standard`, once, only when a dirty path reaches the trailing-part rule, and
-keeps the listing for the other paths. The files put back before a restore step fails are noted anyway. A guard failure after any coder call
+`git ls-files --cached --others --exclude-standard`, once, only when a path first reaches the trailing-part rule (a path dirty before the pass, or a clean file the pass
+changed), and keeps the listing for the other paths. The files put back before a restore step fails are noted anyway. A guard failure after any coder call
 is raised as a `CoderCallError`: after a failed call it keeps the coder's own message, after a finished call it names
 the undo failure, and the blocker says the pass finished but the loop could not undo all of it. So `repair` stops the
 loop with a packet blocker. `guard_pass` also fails closed before the pass: `git status` is strict, `index_entries`

@@ -144,8 +144,7 @@ class FullCheckSteps:
 
     def repair_lint_problems(self, problems, records_skip=True):
         """One lint repair pass over `problems`, the (command text, output) pairs of format_files.lint_problems. With
-        `records_skip`, a repair that changes nothing records its findings as skipped; a mid-loop caller passes False
-        because the exit lint pass lints the file again."""
+        `records_skip`, a repair that changes nothing records its findings as skipped."""
         lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
         _report, _diffs, lint_changed, lint_reverted = self.repair(LINT_FIX_PASS, lint_records)
         self.mark_repaired(lint_records, lint_changed, lint_reverted, records_skip=records_skip)

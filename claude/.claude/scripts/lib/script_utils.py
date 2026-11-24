@@ -17,8 +17,6 @@ import time
 import uuid
 from collections import namedtuple
 
-from agent_names import FORK_AGENT_TYPE  # noqa: F401  (re-export: the owner is agent_names)
-
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")

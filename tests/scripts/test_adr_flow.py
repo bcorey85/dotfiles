@@ -21,7 +21,7 @@ RESOLVE_SCRIPT = pathlib.Path(
 TEMPLATE = pathlib.Path(os.environ.get("ADR_TEMPLATE") or CLAUDE_DIR / "skills" / "_shared" / "adr-template.md")
 # adr_flow reads the ticket-key grammar from plan_format, which imports these.
 LIB_DIR = SCRIPT_UTILS.parent
-PLAN_FORMAT_FILES = ("plan_format.py", "source_text.py", "ask_outcome_words.py", "agent_names.py")
+PLAN_FORMAT_FILES = ("plan_format.py", "source_text.py", "ask_outcome_words.py")
 PLANS = "docs/plans"
 DECISIONS = "docs/decisions"
 

@@ -21,8 +21,8 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")
 sys.path.insert(0, LIB_DIR)
 import import_guard
+from agent_names import FORK_AGENT_TYPE
 
-GATED_AGENT = "code-fork"
 RUN_FOLDER_NAME = "code-phase"
 GATE_NAME = "fork-write-scope"
 DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
@@ -119,7 +119,7 @@ def main():
         return 0
     stdin_text = sys.stdin.buffer.read().decode("utf-8", "replace")
     payload = json.loads(stdin_text)
-    if not isinstance(payload, dict) or payload.get("agent_type") != GATED_AGENT:
+    if not isinstance(payload, dict) or payload.get("agent_type") != FORK_AGENT_TYPE:
         return 0
 
     try:

@@ -557,7 +557,7 @@ STOP_STATUSES = {
 SCOPED_RERUN = ("The review cap was reached with a class still open. Report these findings. Another full review "
                 "would find one more member at a time, so do not offer one: the next run is a scoped review of the "
                 "files the capped run's fixes touched. When the user asks to go on, Write the handoff lines below to a "
-                "file and run the launch line below with `--handoff <that file>` added, in the background. "
+                "file and run the launch line below with `--handoff <that file>` added, in the foreground. "
                 "Do not run /fix. The session stays dirty, so git commit stays blocked.")
 
 
@@ -584,7 +584,7 @@ def scoped_rerun_lines(packet, state):
 
     touched_text = dict.fromkeys(fix_files, "touched by the capped run's fixes")
     file_flags = " ".join(f"--file {shlex.quote(path)}" for path in changed)
-    lines = [f"Launch line: {REVIEW_FIX_COMMAND} launch --repo {shlex.quote(str(repo))} --iter 0 {file_flags}",
+    lines = [f"Launch line: {REVIEW_FIX_COMMAND} launch --repo {shlex.quote(str(repo))} --iter 0 {file_flags} --detach",
              "Handoff lines (write exactly these):", "handoff:", "  files:",
              *handoff_files.file_entry_lines(changed, touched_text, "changed in the working tree against HEAD")]
     lines += ["  tests-run: none", f"  flagged: the open class - {one_line('; '.join(packet['open_classes']))}",
@@ -913,8 +913,8 @@ def redispatch_lines(state, resolved_lines):
     first handoff plus resolved_lines to a file and prints the ready launch line; without them, the session builds
     both by hand."""
     if not state.get("relaunch_args"):
-        return [f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background "
-                f"with the first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
+        return [f"Write the first run's handoff plus the lines below to a file, then run `launch` in the foreground "
+                f"with the first run's flags plus `--iter {state['iter']}`, `--handoff <that file>` and `--detach`:",
                 *resolved_lines]
 
     first_handoff_file = review_launch.relaunch_handoff(state["relaunch_args"])
@@ -930,7 +930,7 @@ def redispatch_lines(state, resolved_lines):
     script_utils.write_text_atomically(handoff_file, f"{first_handoff.rstrip()}\n{resolved_text}\n")
     launch_line = relaunch_line(state, [], handoff_file)
     return [f"The first run's handoff plus the RESOLVED lines are in {handoff_file}. Run this launch line now, in "
-            "the background:", launch_line]
+            "the foreground:", launch_line]
 
 
 def command_defer(argv):

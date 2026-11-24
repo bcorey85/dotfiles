@@ -28,9 +28,9 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import handback_store
 import loop_transcript
 import script_utils
+from agent_names import FORK_AGENT_TYPE
 
 RESEARCHER = "goal-blind-researcher"
-CODE_FORK = "code-fork"
 DENIED_KIND = "open_child_denied"
 
 RESEARCHER_DENY_REASON = (
@@ -95,7 +95,7 @@ def code_fork_deny_reason(hook, transcript):
     return CODE_FORK_DENY_REASON.format(children=", ".join(children))
 
 
-GATED_AGENTS = {RESEARCHER: researcher_deny_reason, CODE_FORK: code_fork_deny_reason}
+GATED_AGENTS = {RESEARCHER: researcher_deny_reason, FORK_AGENT_TYPE: code_fork_deny_reason}
 
 
 def deny_reason_for(hook):

@@ -24,8 +24,12 @@ turn and hands back before the phase ends, and gives the approved path: run in t
 to 600000 ms, and split a longer job into steps that each fit. The jobs covered are unchanged: `run_in_background`,
 a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt.
 The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
-`lib/agent_names.py`; `script_utils` re-exports it. Importing it from `script_utils` cost the gate 10 to 13 ms.
-`claude/.claude/scripts/CLAUDE.md` gains the owner line for `lib/agent_names.py`.
+`lib/agent_names.py`. Importing it from `script_utils` cost the gate 10 to 13 ms.
+`claude/.claude/scripts/CLAUDE.md` gains the owner line for `lib/agent_names.py`. `fork_write_scope`,
+`open_child_gate` and `fork_children` import the name from there and no longer hold their own `"code-fork"`
+constant. The review scripts' printed instructions that said to run a command in the background (the redispatch and
+scoped-rerun launch lines, the reviewer wait line) now say to run it in the foreground, with `--detach` on the
+launch lines.
 
 ## Evidence
 

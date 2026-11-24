@@ -527,7 +527,9 @@ def fix_run_findings(options, repo):
 
 
 def command_launch(argv, loop_script):
-    """Runs the launch. The skill runs it as a background command, so its completion is the wake-up."""
+    """Runs the launch. The /review and /fix skills run it with `--detach`: it returns at once and prints the
+    `code_wait.py review --loop` command that waits for the loop. Without `--detach` it waits for the loop's first
+    reviewer request or its end."""
     options = launch_arguments(argv)
     # The --fix launch of the printed line clears before the session, repo and file checks, so a launch that fails
     # below still lets the fork report the failure.

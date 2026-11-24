@@ -199,6 +199,13 @@
 - **Alternatives rejected:** None raised.
 - **Trade-off accepted:** The locale-guard edit stays unreviewed until Verify.
 
+### R8. Branch review asks: shared keep verdict out, empty pidfile rule in
+
+- **Choice:** Reject the ask to have `herdr-lane-resume` read a keep-or-remove verdict from `herdr-worktree-prune` in this lane; agent-evals-c3-owner queues it as its own item. Adopt the spec.md:151 row rule: a state dir counts only when its `hunk.pid` is not empty.
+- **Reasoning:** Ruled by agent-evals-c3-owner (orchestrating session), 2026-11-24, under the user's standing rule of 2026-11-22 that the orchestrating session rules on a lane's asks.
+- **Alternatives rejected:** Splitting `herdr-worktree-prune` (991 lines) in this lane to add `--check <path> --json`.
+- **Trade-off accepted:** The two keep-rule copies stay until the queued item lands.
+
 ## Direction & Constraints
 
 - Item 4 (ls): the CLAUDECODE guard already works. Every shell snapshot after commit 261942676 (2026-11-22 16:08) lacks the ls alias; every one before holds it. Only the regression probe is new work.

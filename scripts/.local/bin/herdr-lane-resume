@@ -26,7 +26,7 @@
 #               nothing but the origin/<default> ref, for the main checkout, a detached
 #               HEAD, the default branch, a branch not merged into origin/<default> (a
 #               squash or rebase merge reads as unmerged), several linked worktrees of
-#               that name, or a working claude agent.
+#               that name, uncommitted changes in the worktree, or a working claude agent.
 #               Otherwise the same close and prune, minus the entry remove.
 #
 # herdr-dev and herdr-worktree-prune run from this script's own folder.
@@ -164,10 +164,11 @@ close_workspace() {
 }
 
 # Wait for the agents of worktree $1 to leave, 0.5 s apart, up to $2 seconds (a whole number).
+# $3 ends the failure message.
 wait_for_agents_to_leave() {
     local wait_seconds=$((10#$2)) attempt remaining
     for ((attempt = 0; attempt <= wait_seconds * 2; attempt++)); do
-        remaining=$(agents_in "$1" "the workspaces are already closed and the lane entry is kept")
+        remaining=$(agents_in "$1" "$3")
         [ -n "$remaining" ] || return 0
         if [ "$attempt" -lt $((wait_seconds * 2)) ]; then
             sleep 0.5
@@ -261,15 +262,16 @@ working_agent_pane() {
 }
 
 # Close workspaces $2 (ids, one per line), then wait up to $3 seconds for the agents of
-# worktree $1 to leave. $4 ends the failure message.
+# worktree $1 to leave. $4 ends the failure message when a close fails; $5 ends it when the
+# agent check fails after the workspaces closed.
 close_workspaces() {
-    local wt="$1" workspace_ids="$2" close_wait="$3" outcome="$4" workspace_id
+    local wt="$1" workspace_ids="$2" close_wait="$3" outcome="$4" closed_outcome="$5" workspace_id
     for workspace_id in $workspace_ids; do
         close_workspace "$workspace_id" >/dev/null \
             || fail "could not close workspace $workspace_id; $outcome"
     done
     if [ -n "$workspace_ids" ]; then
-        wait_for_agents_to_leave "$wt" "$close_wait"
+        wait_for_agents_to_leave "$wt" "$close_wait" "$closed_outcome"
     fi
 }
 
@@ -296,7 +298,7 @@ entryless_close() {
 
     name=$(basename "$wt")
     workspace_ids=$(workspaces_on "$wt" "$name") || exit 1
-    [ -n "$workspace_ids" ] || fail "no herdr workspace is open on $wt; nothing changed"
+    [ -n "$workspace_ids" ] || fail "no herdr workspace is open on $wt; nothing changed; if an earlier close left the worktree, run herdr-worktree-prune --apply in $main_checkout"
 
     working=$(working_agent_pane "$wt")
     [ -z "$working" ] \
@@ -308,7 +310,7 @@ entryless_close() {
     dirty=$(git -C "$wt" status --porcelain) || fail "could not read git status of $wt; nothing changed"
     [ -z "$dirty" ] || fail "$wt has uncommitted changes; nothing changed"
 
-    close_workspaces "$wt" "$workspace_ids" "$close_wait" "nothing was pruned"
+    close_workspaces "$wt" "$workspace_ids" "$close_wait" "nothing was pruned" "the workspaces are already closed and nothing was pruned"
     prune_main_checkout "$main_checkout"
 }
 
@@ -360,7 +362,7 @@ close_lane() {
         || fail "lane $name has a working agent in pane $working; wait for it to finish, then rerun"
 
     workspace_ids=$(workspaces_on "$wt" "$name")
-    close_workspaces "$wt" "$workspace_ids" "$close_wait" "the lane entry is kept and nothing was pruned"
+    close_workspaces "$wt" "$workspace_ids" "$close_wait" "the lane entry is kept and nothing was pruned" "the workspaces are already closed and the lane entry is kept"
 
     [ -d "$wt" ] || echo "herdr-lane-resume: worktree $wt is already gone; removing the entry" >&2
     python3 "$lanes_cli" remove "$name" >/dev/null

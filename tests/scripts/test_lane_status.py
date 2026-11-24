@@ -516,6 +516,24 @@ class LaneStatusTest(unittest.TestCase):
         self.assertEqual((grown.returncode, grown.stdout), (0, ""), grown.stderr)
         self.assertIn(system_resources.size_text(4096 * 1024), plain.stdout)
 
+    def test_changes_prints_a_viewer_only_when_it_is_over_the_cap(self):
+        pid = self.live_hunk()
+        cap_kilobytes = 1024
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], cap_kilobytes * 1024)
+        rss_file = self.root / "rss"
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps",
+                   f'case "$*" in\n  *rss=*) cat "{rss_file}" ;;\n  *) exec {real_ps} "$@" ;;\nesac')
+        rss_file.write_text(f"{cap_kilobytes}\n")
+
+        at_cap = self.run_status("--changes")
+        rss_file.write_text(f"{cap_kilobytes + 1}\n")
+        over_cap = self.run_status("--changes")
+
+        self.assertEqual((at_cap.returncode, at_cap.stdout), (0, ""), at_cap.stderr)
+        self.assertEqual(over_cap.returncode, 1, over_cap.stderr)
+        self.assertIn(system_resources.size_text((cap_kilobytes + 1) * 1024), over_cap.stdout)
+
     def test_two_viewers_under_one_root_print_one_line_each(self):
         first_pid = self.live_hunk()
         second_pid = self.live_hunk()

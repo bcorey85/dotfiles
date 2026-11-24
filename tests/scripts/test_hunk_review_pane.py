@@ -164,6 +164,18 @@ class HunkReviewPaneCapTest(StubbedLauncherTest):
         self.assertTrue(units[0].endswith("-1"), units[0])
         self.assertTrue(units[1].endswith("-2"), units[1])
 
+    def test_an_oom_restart_recomputes_the_untracked_flag(self):
+        flag_lines = self.root / "flag-lines"
+        flag_lines.write_text("\n")
+        write_stub(self.stub_dir / "hunk-untracked-flag", POP_LINE + f"pop_line {flag_lines} --exclude-untracked")
+        self.hunk_exits.write_text("143\n0\n")
+        self.results.write_text("oom-kill\nsuccess\n")
+        result = self.run_launcher(HUNK_REVIEW_RESTART_WINDOW_SECONDS="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first_run, second_run = self.hunk_log.read_text().splitlines()
+        self.assertNotIn("--exclude-untracked ", first_run + " ")
+        self.assertIn("--exclude-untracked ", second_run + " ")
+
     def test_an_oom_restart_clears_the_dead_viewers_pid_and_handoff(self):
         seen = self.root / "seen"
         first_done = self.root / "first-done"

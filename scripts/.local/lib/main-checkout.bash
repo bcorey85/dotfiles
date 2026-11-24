@@ -32,10 +32,7 @@ main_checkout_of() {
     listing=$(git -C "$wt" worktree list --porcelain) || fail "could not list the worktrees of $wt; nothing changed"
     main_checkout=$(sed -n '1s/^worktree //p' <<<"$listing")
     next_line=$(sed -n 2p <<<"$listing")
-    if [ -z "$main_checkout" ] || [ "$next_line" = "bare" ]; then
-        fail "the main checkout of $wt is bare, missing or not a work tree; nothing changed"
-    fi
-    if ! is_worktree_top "$main_checkout"; then
+    if [ -z "$main_checkout" ] || [ "$next_line" = "bare" ] || ! is_worktree_top "$main_checkout"; then
         fail "the main checkout of $wt is bare, missing or not a work tree; nothing changed"
     fi
     printf '%s\n' "$main_checkout"

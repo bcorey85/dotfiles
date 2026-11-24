@@ -793,6 +793,18 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
         result = self.run_script("--close", str(self.worktree))
 
         self.assert_refused_changing_nothing(result, f"no herdr workspace is open on {self.worktree}")
+        self.assertIn(f"herdr-worktree-prune --apply in {self.main_checkout}", result.stderr)
+
+    def test_entryless_close_with_a_failed_poll_after_the_close_does_not_name_an_entry(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.state_dir / "agent-list-fails-after-close").write_text("")
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("the workspaces are already closed and nothing was pruned", result.stderr)
+        self.assertNotIn("lane entry", result.stderr)
 
     def test_entryless_close_of_a_detached_head_refuses(self):
         self.merge_fork()

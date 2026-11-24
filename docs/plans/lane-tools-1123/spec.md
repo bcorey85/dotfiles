@@ -148,7 +148,7 @@ Freeze the viewer-memory lib and the `--viewers` JSON shape.
  "viewers": [{"pane": "w5M_p2", "root": "/home/brandon/dotfiles-lane-tools-nov23", "pid": 936851}]}
 ```
 
-One row per state dir holding `hunk.pid`; `root` is the `root` file's content or `""`. Rows are raw: liveness and identity are the reader's job. No state root: `{"cap_bytes": N, "viewers": []}`, exit 0. A pidfile that is not all digits: exit 2, stderr `hunk-review-pane: <file>: expected a pid`. A bad cap value: exit 2.
+One row per state dir whose `hunk.pid` is not empty (an empty one is mid-write and skipped); `root` is the `root` file's content or `""`. Rows are raw: liveness and identity are the reader's job. No state root: `{"cap_bytes": N, "viewers": []}`, exit 0. A pidfile that is not all digits: exit 2, stderr `hunk-review-pane: <file>: expected a pid`. A bad cap value: exit 2.
 
 #### 3. Tests
 
@@ -457,3 +457,10 @@ Each ticket item's Done-when test runs at its public boundary: the launcher comm
 - ruling: Phase 2 item 4 (Ticket #1, owner session) adopted as built: lane-status reports viewers through `viewers:`/`viewer:` keys with no `viewer*` guard instead of report["viewers"]; ruled by the orchestrating session (lane-tools-nov23), 2026-11-24.
 - ruling: Phase 3 step 6 (Ticket #1, owner session) adopted as built: the main checkout is the first `git worktree list` entry (refusing bare and non-work-tree ones) through the shared scripts/.local/lib/main-checkout.bash, which herdr-worktree also uses, instead of the parent of `--git-common-dir`; ruled by the orchestrating session (lane-tools-nov23), 2026-11-24.
 - ruling: close-pass ask on CLAUDE.md:48 (`--close <name>` line is stale) is not applied; agent-evals-c3-owner ruled 2026-11-24: no CLAUDE.md edit in this lane, the wording goes to the user with the merge.
+
+- 2026-11-24: Adopt plan change. Ruled by the session, not the user at 2026-11-24 16:25.
+
+  The ruling: agent-evals-c3-owner (orchestrating session, 2026-11-24) adopts the plan change: spec.md:151 reads 'whose hunk.pid is not empty (an empty one is mid-write and skipped)'.
+
+  The disagreement:
+  PLAN-IMPACT: /home/brandon/dotfiles-lane-tools-nov23/docs/plans/lane-tools-1123/spec.md:151 still states the `--viewers` contract as "One row per state dir holding `hunk.pid`". This conflicts with the empty-pidfile skip that the code, viewer-memory.bash and hunk.md now describe. The spec should say "whose `hunk.pid` is not empty (an empty one is mid-write and skipped)".

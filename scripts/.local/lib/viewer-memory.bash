@@ -2,8 +2,8 @@
 # 'hunk-review-pane --viewers', which prints:
 #   {"cap_bytes": 1073741824,
 #    "viewers": [{"pane": "w5M_p2", "root": "/home/brandon/some-checkout", "pid": 936851}]}
-# One row per state dir holding `hunk.pid`; `root` is the `root` file's content or "". Rows are
-# raw: liveness and identity are the reader's job. No state root: {"cap_bytes": N, "viewers": []},
+# One row per state dir whose `hunk.pid` is not empty (an empty one is mid-write and skipped);
+# `root` is the `root` file's content or "". Rows are raw: liveness and identity are the reader's job. No state root: {"cap_bytes": N, "viewers": []},
 # exit 0. A pidfile not all digits: exit 2, `hunk-review-pane: <file>: expected a pid`. Bad cap: exit 2.
 
 viewer_memory_max="${HUNK_REVIEW_MEMORY_MAX:-1G}"

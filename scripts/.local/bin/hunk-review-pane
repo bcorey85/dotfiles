@@ -28,13 +28,14 @@
 # Memory cap: hunk runs in a systemd user scope with MemoryMax=$HUNK_REVIEW_MEMORY_MAX
 # (default 1G, digits then K, M or G) and no swap, in a herdr pane and in a plain terminal
 # alike. With no systemd user session (not Linux, no `systemd-run`/`systemctl`, or no user
-# bus) hunk runs uncapped. A scope
-# that cannot start stops the launcher; hunk never runs uncapped by fallback.
+# bus) hunk runs uncapped. A scope that cannot start stops the launcher; hunk never runs
+# uncapped by fallback.
 # When the kernel kills hunk for passing the cap, the terminal is reset, one line says so, and
 # hunk restarts. A kill within $HUNK_REVIEW_RESTART_WINDOW_SECONDS (default 60) of the start
 # waits for Enter first, and the launcher stops on end of input.
 #
-# --viewers prints the cap and one row per state dir holding hunk.pid, as JSON: see
+# --viewers prints the cap and one row per state dir whose hunk.pid is not empty (an empty one
+# is mid-write and skipped), as JSON: see
 # lib/viewer-memory.bash.
 
 set -u
@@ -61,7 +62,8 @@ if [ "${1:-}" = "--state-dir" ]; then
     exit 0
 fi
 
-# Prints one JSON row per state dir with a hunk.pid, then the cap, as one object.
+# Prints one JSON row per state dir whose hunk.pid is not empty (an empty one is mid-write
+# and skipped), then the cap, as one object.
 print_viewers() {
     local root pid_file pid_text pane_dir root_text rows cap_bytes
     root=$(state_root)
@@ -96,7 +98,7 @@ fi
 viewer_memory_checked || exit 2
 
 # Runs hunk under the memory cap, one fresh scope per start, restarting after an OOM kill.
-# Returns hunk's status. Needs untracked_flag set.
+# Returns hunk's status.
 viewer_start_count=0
 run_viewer() {
     local unit pane_label start_seconds status oom_killed
@@ -105,8 +107,10 @@ run_viewer() {
     while true; do
         viewer_start_count=$((viewer_start_count + 1))
         unit="hunk-review-$pane_label-$$-$viewer_start_count"
+        set_untracked_flag
         set_viewer_cap_prefix "$unit"
         start_seconds=$SECONDS
+        # The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
         ${viewer_cap_prefix[@]+"${viewer_cap_prefix[@]}"} hunk diff --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
         status=$?
         # Uncapped: the status is hunk's own, 137 included.
@@ -138,9 +142,7 @@ set_untracked_flag() {
 }
 
 # Outside a herdr pane there is no key for the state dir: hunk runs capped, with no handoff.
-# The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
 if [ -z "${HERDR_PANE_ID:-}" ]; then
-    set_untracked_flag
     run_viewer "$@"
     exit $?
 fi
@@ -159,7 +161,6 @@ echo "$repo_root" >"$dir/root"
 
 while true; do
     rm -f "$HUNK_REVIEW_HANDOFF" "$HUNK_REVIEW_PIDFILE"
-    set_untracked_flag
     run_viewer "$@"
     hunk_status=$?
     rm -f "$HUNK_REVIEW_PIDFILE"

@@ -22,7 +22,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 before. With none, the script finds the open herdr workspace on a linked worktree of that name or path, checks the branch is
 merged into `origin/<default>`, refuses a working claude agent, closes the workspaces and runs `herdr-worktree-prune --apply`
 in the main checkout. It refuses, changing nothing but the origin/<default> ref, for the main checkout, a detached HEAD, the default branch, an unmerged
-branch, no open workspace on the worktree, several linked worktrees of that name, and a name under tuios.
+branch, uncommitted changes in the worktree, no open workspace on the worktree, several linked worktrees of that name, and a name under tuios.
 The main checkout comes from the shared `scripts/.local/lib/main-checkout.bash` (first `git worktree list` entry, refusing a bare or non-work-tree one); `herdr-worktree` uses it too.
 
 ## Evidence

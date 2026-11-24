@@ -1,9 +1,8 @@
 #!/bin/bash
 # Loop for the herdr dev layout's `review` pane: hunk, with nvim a handoff away.
 #
-# Runs `hunk diff <merge-base with origin/main or origin/master> --watch` on a feature
-# branch (committed and worktree changes), plain `hunk diff --watch` on the default branch,
-# a detached HEAD, or with no origin/main or origin/master.
+# Runs `hunk diff --watch`: the current branch's uncommitted changes only, the same diff
+# as the `prefix d` popup, on any branch.
 # When hunk quits with the target `nvim` or `lazygit` in $HUNK_REVIEW_HANDOFF, runs that tool in the repo root and, when it exits, goes
 # back to hunk. A plain quit of hunk ends the loop; the pane drops back to its shell.
 #
@@ -96,7 +95,7 @@ fi
 viewer_memory_checked || exit 2
 
 # Runs hunk under the memory cap, one fresh scope per start, restarting after an OOM kill.
-# Returns hunk's status. Needs base_ref and untracked_flag set.
+# Returns hunk's status. Needs untracked_flag set.
 viewer_start_count=0
 run_viewer() {
     local unit pane_label start_seconds status oom_killed
@@ -107,7 +106,7 @@ run_viewer() {
         unit="hunk-review-$pane_label-$$-$viewer_start_count"
         set_viewer_cap_prefix "$unit"
         start_seconds=$SECONDS
-        ${viewer_cap_prefix[@]+"${viewer_cap_prefix[@]}"} hunk diff ${base_ref:+"$base_ref"} --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+        ${viewer_cap_prefix[@]+"${viewer_cap_prefix[@]}"} hunk diff --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
         status=$?
         # Uncapped: the status is hunk's own, 137 included.
         [ ${#viewer_cap_prefix[@]} -gt 0 ] || return "$status"
@@ -137,27 +136,9 @@ set_untracked_flag() {
     [ -z "$flag" ] || untracked_flag=("$flag")
 }
 
-# On a feature branch, base_ref is the merge-base with origin's default branch, so the diff
-# holds the branch's commits as well as the worktree and hunk-notes can anchor on committed
-# lines. It is empty, and hunk shows the plain worktree diff, on the default branch, on a
-# detached HEAD, and when origin has neither main nor master.
-base_ref=
-set_base_ref() {
-    base_ref=
-    local branch default_ref
-    branch=$(git symbolic-ref --short -q HEAD) || return 0
-    for default_ref in origin/main origin/master; do
-        git rev-parse --verify --quiet "refs/remotes/$default_ref" >/dev/null || continue
-        [ "$branch" != "${default_ref#origin/}" ] || return 0
-        base_ref=$(git merge-base HEAD "refs/remotes/$default_ref") || base_ref=
-        return 0
-    done
-}
-
 # Outside a herdr pane there is no key for the state dir: plain hunk, no handoff.
 # The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
 if [ -z "${HERDR_PANE_ID:-}" ]; then
-    set_base_ref
     set_untracked_flag
     run_viewer "$@"
     exit $?
@@ -177,8 +158,6 @@ echo "$repo_root" >"$dir/root"
 
 while true; do
     rm -f "$HUNK_REVIEW_HANDOFF" "$HUNK_REVIEW_PIDFILE"
-    # Each pass: a commit or branch switch (lazygit's C) moves the base.
-    set_base_ref
     set_untracked_flag
     run_viewer "$@"
     hunk_status=$?

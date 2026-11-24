@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Links a script that a merge added to ~/.local/bin.
+#
+# Two gates decide whether the hook acts:
+#   1. the merge ran in the main worktree, not in a linked one;
+#   2. ~/.local/bin already links into this checkout, so this is the stowed checkout.
+# When both hold and install/check-script-links reports a gap, the hook restows the
+# scripts package and prints the check's new result.
+#
+# The hook never fails the merge: every path exits 0.
+set -uo pipefail
+
+STOW="${STOW:-stow}"
+
+in_main_worktree() {
+    local git_dir common_dir
+    git_dir="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
+    common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+    [ "$git_dir" = "$common_dir" ]
+}
+
+# True when some script in this checkout is the file ~/.local/bin links to.
+bin_links_into() {
+    local top="$1"
+    local script name
+    for script in "$top"/scripts/.local/bin/*; do
+        [ -f "$script" ] || continue
+        name="$(basename "$script")"
+        if [ "$HOME/.local/bin/$name" -ef "$script" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+restow_scripts() {
+    local top="$1"
+    local check="$top/install/check-script-links"
+    local stow_errors recheck
+
+    [ -x "$check" ] || return 0
+    if "$check" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if ! command -v "$STOW" >/dev/null 2>&1; then
+        echo "post-merge: stow is not installed; links for new scripts are missing (run install/stow)"
+        return 0
+    fi
+
+    if ! stow_errors="$(cd "$top" && "$STOW" -R -t "$HOME" scripts 2>&1 >/dev/null)"; then
+        echo "post-merge: stow -R scripts failed:"
+        echo "$stow_errors"
+        return 0
+    fi
+
+    recheck="$("$check" 2>&1)"
+    echo "$recheck"
+    return 0
+}
+
+main() {
+    local top
+    top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+    in_main_worktree || return 0
+    bin_links_into "$top" || return 0
+    restow_scripts "$top"
+    return 0
+}
+
+main
+exit 0

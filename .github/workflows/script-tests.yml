@@ -36,8 +36,8 @@ jobs:
       - name: Install ruff, which tests/lint.sh requires
         run: pip install ruff==0.17.2
 
-      - name: Install rg and zsh, which the script tests call
-        run: sudo apt-get update && sudo apt-get install -y ripgrep zsh
+      - name: Install rg, zsh and stow, which the script tests call
+        run: sudo apt-get update && sudo apt-get install -y ripgrep zsh stow
 
       - name: Link ~/.claude to the repo config, as install does
         run: ln -s "$GITHUB_WORKSPACE/claude/.claude" "$HOME/.claude"

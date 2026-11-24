@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-741 fix notes
+742 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -63,6 +63,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
+| script/herdr-worktree-watch | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
 | script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |
@@ -72,7 +73,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
 | script/herdr-dev | 4 | 2 |
-| script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/phase-start | 4 | 3 |
 | script/plan-check | 4 | 4 |

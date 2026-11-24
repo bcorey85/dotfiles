@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1169 changes
+1170 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [herdr-worktree-watch waits the full interval when nothing was polled](notes/2026-11-24-herdr-worktree-watch-waits-the-full-interval-when.md) [script/herdr-worktree-watch] The watcher's final sleep no longer comes out one second short when the shell's SECONDS clock ticks between its start and the sleep and no poll ran.
 * [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md) [script/review-loop] A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it.
 * [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md) [script/pull-keep-index] A pull before push no longer refuses when the other live session's only dirty files are built pages the merge driver owns: the pages are set aside, the branch is pulled, and the driver rebuilds them.
 * [lint.sh failing run ends with a line naming each failing step](notes/2026-11-24-lint-sh-failing-run-ends-with-a-line-naming-each.md) [script/lint, script/tests-run] A failing tests/lint.sh run now ends on a line that names each failed step and its error count, and the report-only complexity step no longer prints a bare Found N errors line, so a session no longer reads a failing lint as a pass.

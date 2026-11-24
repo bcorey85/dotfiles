@@ -87,7 +87,9 @@ lane_entry_for_worktree() {
 # The wait is wall time, so the poll calls count against it as well as the sleeps.
 start_seconds=$SECONDS
 session=$(read_session)
+polled=false
 while is_unsettled "$session" && [ $((SECONDS - start_seconds)) -lt "$watch_seconds" ]; do
+    polled=true
     sleep 1
     session=$(read_session)
 done
@@ -107,7 +109,9 @@ if [ -n "$session" ] && [ -n "$lane_entry" ]; then
     fi
 fi
 
-waited=$((SECONDS - start_seconds))
+# SECONDS ticks in whole seconds, so with no poll the elapsed time is not counted: a tick must not shorten the wait.
+waited=0
+[ "$polled" = false ] || waited=$((SECONDS - start_seconds))
 remaining=$((watch_seconds - waited))
 if [ "$remaining" -gt 0 ]; then
     sleep "$remaining"

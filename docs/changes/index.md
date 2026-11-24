@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1169 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1170 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md).
+Latest change: 2026-11-24, [herdr-worktree-watch waits the full interval when nothing was polled](notes/2026-11-24-herdr-worktree-watch-waits-the-full-interval-when.md).
 
 ## Top gains
 

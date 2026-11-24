@@ -24,7 +24,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   `--json` prints the same totals as JSON. A ledger that cannot be read stops with the command that reads it, never
   a zero price.
 - `scripts/lib/iso_time.py`: ISO timestamp parsing and the ledger's UTC millisecond form; `lib/human_turn_lookup.py`
-  now uses it.
+  now uses it. `scripts/CLAUDE.md` names it as the owner of that fact.
 - `skills/hillclimb/SKILL.md`: price each moment with one script call and paste its line on the candidate's report
   line; the report orders candidates by tokens from that line.
 

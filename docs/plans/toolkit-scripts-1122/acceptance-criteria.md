@@ -8,7 +8,8 @@ Item 1 (review-commit-gate-places-a-cd-to-a-literal-repo) is dropped by decision
 ## Item 2 — guide skill (ticket criteria, verbatim)
 
 - **AC1** — The skill keeps one worked card and points to the binary for the format; the dropped rules pass rule-meter or stay; `bash tests/run.sh` passes.
-  - Ruling (agent-evals-c3, 2026-11-22, criteria owner `session`): "points to the binary for the format" is narrowed out of this branch. `guide --format-version` prints a version, not a schema, so the tables stay (D8). AC26-AC28 are the delivered scope. The pointer waits on a guide build that prints the schema; owner agent-evals-c3.
+  - Cut with every guide deliverable at the rebase onto master (D20): master deleted the guide skill.
+  - Narrowed under D8 (03-decisions.md sign-offs): "points to the binary for the format" is narrowed out of this branch. `guide --format-version` prints a version, not a schema, so the tables stay (D8). The pointer waits on a guide build that prints the schema.
 
 ## Item 3 — refactor skill (ticket criteria, verbatim)
 
@@ -17,7 +18,7 @@ Item 1 (review-commit-gate-places-a-cd-to-a-literal-repo) is dropped by decision
 ## Item 4 — mutation-tester (ticket criteria, verbatim)
 
 - **AC3** — A script under claude/.claude/scripts/ does lock, backup and restore with tests under tests/scripts/; the agent calls it in one line; the precondition count is right; the opencode port is patched; `bash tests/run.sh` passes.
-  - Ruling (agent-evals-c3, 2026-11-22, criteria owner `session`): "the agent calls it in one line" is met by three one-line calls, one per step (`check`, `lock`, `restore`; AC23).
+  - Met as ruled in 03-decisions.md sign-offs: "the agent calls it in one line" is met by three one-line calls, one per step (`check`, `lock`, `restore`; AC23).
 
 ## Derived from the plan
 
@@ -31,7 +32,7 @@ Item 1 (review-commit-gate-places-a-cd-to-a-literal-repo) is dropped by decision
 
 ### Calibration lock owner
 
-- **AC9** — The calibration guard behaves exactly as before for every lock state (no lock, live lock, stale lock, legacy-path lock): same output, same exit code.
+- **AC9** — The calibration guard behaves exactly as before for every lock state (no lock, live lock, stale lock, legacy-path lock): same output for plain paths; a path with shell characters comes out as one pasteable shell word; same exit code.
 - **AC10** — The lock path, its fallback, the timestamp form and the liveness rule are defined in one module that both the guard and the new mutation script use.
 
 ### mutation_lock script
@@ -43,7 +44,7 @@ Item 1 (review-commit-gate-places-a-cd-to-a-literal-repo) is dropped by decision
 - **AC15** — `lock` refuses to run when a lock already exists, and when the target is too large to back up it stops and writes no lock.
 - **AC16** — `restore` after an edit puts the target back byte-identical, verifies its hash, removes the lock, exits 0 and ends with a `DONE:` line; with no edit it also exits 0 and says the file was already identical.
 - **AC17** — `restore` with a backup that no longer matches the recorded hash exits 3, keeps the lock, and prints the target path and the backup path.
-- **AC18** — `restore` refuses a lock written by another writer or another owner pid (printing the `cp "<backup>" "<target>" && rm "<lock>"` recovery line), a missing lock, a missing backup, and a lock found only at the legacy path, each with a `STOP:` line, leaving the target and lock untouched.
+- **AC18** — `restore` refuses a lock written by another writer or another owner pid (printing the `cp <backup> <target> && rm <lock>` recovery line, each path printed as one pasteable shell word (double quotes, or single quotes when the path holds a character double quotes would expand or end on)), a missing lock, a missing backup, and a lock found only at the legacy path, each with a `STOP:` line, leaving the target and lock untouched.
 - **AC19** — `restore` on a lock written by the old prose procedure (old backup layout) keeps the lock, exits 1 and prints the manual `cp` and `rm` recovery lines.
 - **AC20** — If the lock cannot be removed after a verified restore, `restore` exits 1 with a `STOP:` line giving the exact `rm` command for the caller.
 - **AC21** — Every verb's output ends with a `NEXT:`, `STOP:` or `DONE:` line.
@@ -66,11 +67,11 @@ Item 1 (review-commit-gate-places-a-cd-to-a-literal-repo) is dropped by decision
 
 ## Manual only
 
-- **AC26** — The guide skill has one worked card ("a judgment call with evidence") and no A/B or rating card, while its commands block, batch keys, card envelope, block and field tables, and rules 1, 2 and 6 are unchanged. Manual only: D9: no test reads the guide skill; the Phase 6 `rg` checks and a read of the file verify it.
-- **AC27** — A guide rule among 3, 4, 5 and 7 is removed only when rule-meter on and off arms, two graded runs per cell at every level, show the off arm complying at least as often as the on arm; any rule the meter cannot grade stays, rule 8 stays, and the remaining rules are numbered 1..N with no gap. Manual only: meter runs are agent-run against `results.jsonl`; no suite test reads the meter.
-- **AC28** — The guide change note records each rule's per-level on and off counts, lists rule 8 and any ungradeable guide rule under `unmeasured` (the mutation-tester change note lists the Step 4 gate sentence under `unmeasured`, D13), and states that cutting the format tables waits on a `guide` build that prints the schema. Manual only: a change note's content is read, not tested; `build_changes.py --check` checks only the index.
-- **AC31** — A change note exists in this worktree's `docs/changes` for each of the three items, and the change index checks clean. Manual only: `build_changes.py --check` is a bookkeeping command, not a suite test.
+- **AC26** — The guide skill has one worked card ("a judgment call with evidence") and no A/B or rating card, while its commands block, batch keys, card envelope, block and field tables, and rules 1, 2 and 6 are unchanged. Manual only: D9: no test reads the guide skill; the Phase 6 `rg` checks and a read of the file verify it. Cut under D20 (03-decisions.md): master deleted the guide skill.
+- **AC27** — A guide rule among 3, 4, 5 and 7 is removed only when rule-meter on and off arms, two graded runs per cell at every level, show the off arm complying at least as often as the on arm; any rule the meter cannot grade stays, rule 8 stays, and the remaining rules are numbered 1..N with no gap. Manual only: meter runs are agent-run against `results.jsonl`; no suite test reads the meter. Cut under D20 (03-decisions.md): master deleted the guide skill.
+- **AC28** — The guide change note records each rule's per-level on and off counts, lists rule 8 and any ungradeable guide rule under `unmeasured` (the mutation-tester change note lists the Step 4 gate sentence under `unmeasured`, D13), and states that cutting the format tables waits on a `guide` build that prints the schema. Manual only: a change note's content is read, not tested; `build_changes.py --check` checks only the index. Cut under D20 (03-decisions.md): master deleted the guide skill.
+- **AC31** — A change note exists in this worktree's `docs/changes` for each of the three items, and the change index checks clean. Manual only: `build_changes.py --check` is a bookkeeping command, not a suite test. Two notes after D20: the guide note is cut with the guide item.
 - **AC33** — A human running `/guide` can still follow the trimmed skill and produce a valid batch from the kept card and tables.
-  No test reads the guide skill and the `guide` binary is not installed here (D9).
+  No test reads the guide skill and the `guide` binary is not installed here (D9). Cut under D20: the skill is deleted on master.
 - **AC34** — The Step 4 gate-block rule of the mutation-tester ("hand the command to the caller, never retry another way") still binds the agent after its trigger was reworded.
   No scenario can make the script's unlink fail on demand, so the meter cannot grade it (D13).

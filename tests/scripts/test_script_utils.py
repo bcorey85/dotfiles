@@ -93,6 +93,19 @@ class WithoutPathsTest(unittest.TestCase):
         self.assertEqual(["a"], script_utils.without_paths(["a"], []))
 
 
+class XdgStateHomeTest(unittest.TestCase):
+    def test_only_an_absolute_value_is_used_else_the_home_state_folder(self):
+        home_state = pathlib.Path("/home/someone/.local/state")
+        cases = {"unset": None, "empty": "", "relative": "relstate", "absolute": "/var/state"}
+        for label, value in cases.items():
+            environ = {"HOME": "/home/someone"}
+            if value is not None:
+                environ["XDG_STATE_HOME"] = value
+            with self.subTest(label), unittest.mock.patch.dict(os.environ, environ, clear=True):
+                expected = pathlib.Path(value) if label == "absolute" else home_state
+                self.assertEqual(expected, script_utils.xdg_state_home(), label)
+
+
 class CanAppendTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()

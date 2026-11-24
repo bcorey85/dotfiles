@@ -22,7 +22,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/coder-gate | 29 | 7 |
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 26 | 5 |
+| script/script-utils | 27 | 6 |
 | script/shell-write-gate | 24 | 9 |
 | script/review-loop | 23 | 7 |
 | script/quality-check-cap | 21 | 4 |
@@ -89,11 +89,14 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/gate-commands | 3 | 2 |
 | script/herdr-dev | 3 | 1 |
 | script/herdr-worktree-watch | 3 | 2 |
+| script/lane-status | 3 | 3 |
+| script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
+| script/shell-quoting | 3 | 3 |
 | script/wait-loop-gate | 3 | 0 |
 | script/worktree-snapshot | 3 | 1 |
 | agent/code-fork | 2 | 0 |
@@ -112,8 +115,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/hunk-review-pane | 2 | 2 |
-| script/lane-status | 2 | 2 |
-| script/lanes | 2 | 2 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
@@ -123,7 +124,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
-| script/shell-quoting | 2 | 2 |
 | script/shell-steps | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/verify-branch | 2 | 0 |

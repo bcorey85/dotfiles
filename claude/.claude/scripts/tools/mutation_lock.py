@@ -57,10 +57,13 @@ STOP_LOCK_NOT_REMOVED = (
     "STOP: the file is restored but the lock could not be removed; hand the rm line above to the caller")
 STOP_RESTORE_MISMATCH = (
     "STOP: the restored file does not match its recorded hash; the lock is kept; report this loudly to the caller")
+STOP_BACKUP_MISMATCH = (
+    "STOP: the backup does not match its recorded hash; the target was not touched (it may still hold the mutation); "
+    "the lock is kept; report this loudly to the caller")
 STOP_RESTORE_FAILED = "STOP: the file could not be restored; the lock is kept; hand the cp line above to the caller"
 MISMATCH_HEADING = "RESTORE HASH MISMATCH"
 NEXT_LOCK_TEMPLATE = ("NEXT: run the unmutated suite (baseline), then mutation_lock.py lock <target> "
-                      "--class ... --line \"...\" --owner-pid \"$PPID\"")
+                      "--class \"...\" --line \"...\" --owner-pid \"$PPID\"")
 NEXT_APPLY = ("NEXT: apply the mutation with Edit (Step 2); restore later with "
               "mutation_lock.py restore --owner-pid \"$PPID\" --run-id {run_id}")
 DONE_RESTORE = "DONE: restore hash-verified ({how}); lock removed"
@@ -105,6 +108,18 @@ def locate_target(target_text):
     return Target(file, worktree, relpath)
 
 
+def refuse_live_lock(view):
+    """Stop with the live notice and STOP_LIVE_LOCK when the lock is live.
+
+    Live means younger than the run timeout, and its owner still runs or it names none. A stale lock returns.
+    """
+    live = calibration_lock.lock_is_live(view.stamp, view.owner_pid, time.time(), view.writer)
+    if not live:
+        return
+    notice = calibration_lock.live_notice(view.kind, view.file, view.worktree, view.owner_pid)
+    raise StopError([notice.rstrip("\n"), STOP_LIVE_LOCK])
+
+
 def refuse_existing_lock():
     """Precondition 4: stop on any lock, live, stale, unreadable or at the legacy path."""
     found = calibration_lock.find_lock()
@@ -113,20 +128,14 @@ def refuse_existing_lock():
 
     text = calibration_lock.read_lock_text(found)
     view = calibration_lock.read_lock_view(text)
-    live = calibration_lock.lock_is_live(view.stamp, view.owner_pid, time.time(), view.writer)
-    if live:
-        notice = calibration_lock.live_notice(view.kind, view.file, view.worktree, view.owner_pid)
-        raise StopError([notice.rstrip("\n"), STOP_LIVE_LOCK])
-
+    refuse_live_lock(view)
     message = calibration_lock.unrestored_message(view, found)
     raise StopError([f"locked file: {view.file}", f"backup: {view.backup}", message.rstrip("\n"), STOP_UNRESTORED])
 
 
 def require_writable_backups():
     """Precondition 5: the nearest existing parent of the backups folder is writable. Creates nothing."""
-    folder = calibration_lock.backups_folder()
-    while not os.path.exists(folder):
-        folder = os.path.dirname(folder)
+    folder = script_utils.nearest_existing_folder(calibration_lock.backups_folder())
     if not os.access(folder, os.W_OK | os.X_OK):
         raise StopError([f"not writable: {folder}", STOP_STATE_UNWRITABLE])
 
@@ -216,6 +225,12 @@ def lock_under_hold(args):
     return lines
 
 
+def recovery_line(view, lock):
+    """The copy-back and remove commands joined into one line the user can paste."""
+    copy_command, remove_command = calibration_lock.recovery_commands(view, lock)
+    return f"{copy_command} && {remove_command}"
+
+
 def manual_lines(view, lock):
     copy_command, remove_command = calibration_lock.recovery_commands(view, lock)
     return [f"  {copy_command}", f"  {remove_command}"]
@@ -261,14 +276,16 @@ def refuse_unrestorable(own, args):
 
     ours = (view.writer == calibration_lock.MUTATION_WRITER and view.owner_pid == str(args.owner_pid)
             and own.run_id != "" and own.run_id == args.run_id)
-    if not ours:
-        copy_command, remove_command = calibration_lock.recovery_commands(view, own.path)
-        raise StopError([f"lock: {own.path}", f"{copy_command} && {remove_command}", STOP_NOT_OURS])
+    if ours:
+        return
+
+    refuse_live_lock(view)
+    raise StopError([f"lock: {own.path}", recovery_line(view, own.path), STOP_NOT_OURS])
 
 
-def mismatch_stop(own, target):
+def mismatch_stop(own, target, stop_line):
     lines = [MISMATCH_HEADING, f"target: {target}", f"backup: {own.view.backup}", f"lock kept: {own.path}",
-             STOP_RESTORE_MISMATCH]
+             stop_line]
     return StopError(lines, EXIT_RESTORE_MISMATCH)
 
 
@@ -280,16 +297,15 @@ def copy_back_verified(own):
     backups = pathlib.Path(calibration_lock.backups_folder())
     try:
         if calibration_lock.pre_hash(view.backup) != own.recorded_hash:
-            raise mismatch_stop(own, target)
+            raise mismatch_stop(own, target, STOP_BACKUP_MISMATCH)
         copied = file_backup.restore_changed(file_backup.Backup(view.worktree, backups, [own.raw_file], []))
         if copied:
             # copy2 gives the target the backup's old mtime; a build tool must see the file as changed.
             os.utime(target)
         if not target.is_file() or calibration_lock.pre_hash(target) != own.recorded_hash:
-            raise mismatch_stop(own, target)
+            raise mismatch_stop(own, target, STOP_RESTORE_MISMATCH)
     except OSError as error:
-        copy_command, remove_command = calibration_lock.recovery_commands(view, own.path)
-        lines = [f"cannot restore {target}: {error}", f"lock kept: {own.path}", f"{copy_command} && {remove_command}"]
+        lines = [f"cannot restore {target}: {error}", f"lock kept: {own.path}", recovery_line(view, own.path)]
         raise StopError([*lines, STOP_RESTORE_FAILED]) from error
     return copied
 

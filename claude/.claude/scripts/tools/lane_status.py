@@ -20,7 +20,7 @@ Lines, one per problem:
 
 --changes prints only the lines that differ from the last --changes run, and `<name>: working` for a lane that was
 reported before and now works. It keeps the last run's lines in
-`${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`.
+`${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`; a relative `XDG_STATE_HOME` is ignored.
 
 Environment: LANE_STATUS_MIN_MEMORY_GB (8), LANE_STATUS_MIN_SCRATCH_GB (1), LANE_STATUS_SCRATCH_CAP_GB (4).
 Exit 0 with nothing printed, 1 when something is printed, 2 on a bad lane file, a bad threshold, or a failed

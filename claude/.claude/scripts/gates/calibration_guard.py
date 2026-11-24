@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """SessionStart hook: report an unrestored calibration or mutation seed.
 
-mutation-tester writes the one lock, owned by lib/calibration_lock.py; this guard reads it at SessionStart
-(path, fallback, fields). The lock is deleted only after the restore is verified, so a lock that survives into
-a new session means the restore never happened, unless the run is still going: the lock also records
-worktree (absolute path) and owner_pid. A lock younger than the run timeout whose owner process still
-exists (or that names no owner) only gets a note with no restore instruction. Otherwise this hook prints
-the absolute paths needed to fix it. A lock with no parseable ts is stale. No lock: no output. Exits 0,
-except with `--live`, which prints nothing and exits 0 only
-when the lock is live (no lock or a stale one: 1).
+mutation-tester (through tools/mutation_lock.py) writes the one lock,
+owned by lib/calibration_lock.py; this guard reads it at SessionStart;
+the lock's path, legacy fallback and fields are documented there. The lock is deleted only after the restore
+is verified, so a lock that survives into a new session means the restore never happened, unless the run is
+still going: the lock also records worktree (absolute path) and owner_pid. A lock younger than the run timeout
+whose owner process still exists (or that names no owner) only gets a note with no restore instruction.
+Otherwise this hook prints the absolute paths needed to fix it. A lock with no parseable ts is stale. No lock:
+no output. Exits 0, except with `--live`, which prints nothing and exits 0 only when the lock is live (no lock
+or a stale one: 1).
 `--session-pid <pid>`, with or without `--live`, also calls a lock stale when its `writer` is "calibrate" and its
 owner_pid is that pid: the caller's session wrote it and, being single-threaded, is no longer inside that /calibrate
 step.

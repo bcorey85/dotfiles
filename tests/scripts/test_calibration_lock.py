@@ -28,6 +28,10 @@ class PathTest(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h", "XDG_STATE_HOME": "/s"}):
             self.assertEqual(calibration_lock.calibration_lock_path(), "/s/claude-calibration/lock.json")
 
+    def test_lock_path_ignores_a_relative_xdg_state_home(self):
+        with unittest.mock.patch.dict(os.environ, {"HOME": "/h", "XDG_STATE_HOME": "rel"}):
+            self.assertEqual(calibration_lock.calibration_lock_path(), "/h/.local/state/claude-calibration/lock.json")
+
     def test_lock_path_falls_back_to_the_home_state_folder(self):
         with unittest.mock.patch.dict(os.environ, {"HOME": "/h"}):
             os.environ.pop("XDG_STATE_HOME", None)
@@ -49,6 +53,58 @@ class LockViewTest(unittest.TestCase):
         absolute = calibration_lock.read_lock_view('{"file": "/other/a.ts", "worktree": "/work"}')
         self.assertEqual(relative.file, "/work/src/a.ts")
         self.assertEqual(absolute.file, "/other/a.ts")
+
+
+class LockFieldTest(unittest.TestCase):
+    def test_field_reads_follow_the_jq_default_and_fallback_rules(self):
+        cases = [
+            ("unreadable lock gives the fallback", None, "?", "FB"),
+            ("present value", '{"file": "a"}', "?", "a"),
+            ("missing key takes the default", "{}", "?", "?"),
+            ("null takes the default", '{"file": null}', "?", "?"),
+            ("false takes the default", '{"file": false}', "?", "?"),
+            ("two documents give two lines", '{"file": "a"}\n{"file": "b"}', "?", "a\nb"),
+            ("a non-object document appends the fallback", '{"file": "a"} 5', "?", "a\nFB"),
+            ("a broken document appends the fallback", '{"file": "a"} {', "?", "a\nFB"),
+        ]
+        for name, text, default, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(calibration_lock.lock_field(text, "file", default, "FB"), expected)
+
+
+class LockIsLiveTest(unittest.TestCase):
+    NOW = calibration_lock.parse_stamp("2026-10-01T10:00:00Z")
+
+    def test_liveness_follows_age_owner_and_writer(self):
+        young = "2026-10-01T09:50:00Z"
+        old = "2026-10-01T07:00:00Z"
+        mine = str(os.getpid())
+        cases = [
+            ("young with no owner", (young, ""), {}, True),
+            ("young with a live owner", (young, mine), {}, True),
+            ("young with a dead owner", (young, "999999999"), {}, False),
+            ("past the timeout", (old, ""), {}, False),
+            ("unparseable stamp", ("not a time", ""), {}, False),
+            ("calibrate lock of the caller's session", (young, mine), {"writer": "calibrate", "session_pid": mine},
+             False),
+            ("calibrate lock with no session pid", (young, mine), {"writer": "calibrate", "session_pid": ""}, True),
+            ("calibrate lock with no owner and no session pid", (young, ""),
+             {"writer": "calibrate", "session_pid": ""}, True),
+            ("calibrate lock of another session", (young, mine), {"writer": "calibrate", "session_pid": "1"}, True),
+            ("mutation-tester lock of the caller's session", (young, mine),
+             {"writer": "mutation-tester", "session_pid": mine}, True),
+        ]
+        for name, positional, keywords, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(calibration_lock.lock_is_live(*positional, self.NOW, **keywords), expected)
+
+
+class RecoveryCommandsTest(unittest.TestCase):
+    def test_paths_with_shell_characters_are_quoted(self):
+        view = calibration_lock.read_lock_view('{"file": "/w/a $(x).ts", "backup_path": "/b/a\\"q", "worktree": "/w"}')
+        copy_command, remove_command = calibration_lock.recovery_commands(view, "/l/it's")
+        self.assertEqual(copy_command, "cp '/b/a\"q' '/w/a $(x).ts'")
+        self.assertEqual(remove_command, 'rm "/l/it\'s"')
 
 
 if __name__ == "__main__":

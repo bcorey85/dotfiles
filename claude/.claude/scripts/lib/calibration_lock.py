@@ -2,8 +2,9 @@
 another way.
 
 mutation-tester writes the one lock file and the SessionStart guard reads it:
-${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json. The old ~/.claude/calibration-lock.json is
-read as a fallback only, never written. Backups live in <state folder>/backups/<file>.
+${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json (a relative XDG_STATE_HOME is ignored).
+The old ~/.claude/calibration-lock.json is read as a fallback only, never written.
+Backups live in <state folder>/backups/<file>.
 
 Fields of the lock (a JSON object):
   ts           string  UTC time of the write, STAMP_FORMAT
@@ -33,6 +34,7 @@ from typing import NamedTuple
 import script_utils
 from hook_input import parse_documents_partial, raw_text, read_file_text
 from process_group import pid_is_alive
+from shell_quoting import shell_word
 
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 # A mutation or calibration run longer than this has been abandoned, whatever its owner process says.
@@ -186,7 +188,7 @@ def live_notice(kind, file, worktree, owner_pid):
 
 def recovery_commands(view, lock):
     """The two shell commands that undo a seed by hand: (copy the backup over the file, remove the lock)."""
-    return f"cp \"{view.backup}\" \"{view.file}\"", f"rm \"{lock}\""
+    return f"cp {shell_word(view.backup)} {shell_word(view.file)}", f"rm {shell_word(lock)}"
 
 
 def unrestored_message(view, lock):
@@ -208,7 +210,6 @@ def unrestored_message(view, lock):
         "Then verify the file is back to what you expect and remove the lock:\n"
         f"  {remove_command}\n"
         "\n"
-        "Do not commit until this is resolved. Do not run /calibrate or dispatch\n"
-        "mutation-tester until this lock is gone — both refuse to seed on top of an\n"
-        "unrestored seed.\n"
+        "Do not commit until this is resolved. Do not dispatch mutation-tester until\n"
+        "this lock is gone — it refuses to seed on top of an unrestored seed.\n"
     )

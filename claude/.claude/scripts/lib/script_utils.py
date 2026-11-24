@@ -1483,9 +1483,9 @@ def can_append(path):
 
 
 def xdg_state_home():
-    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset, empty or relative."""
     state_home = os.environ.get("XDG_STATE_HOME")
-    if not state_home:
+    if not state_home or not os.path.isabs(state_home):
         return pathlib.Path.home() / ".local" / "state"
     return pathlib.Path(state_home)
 

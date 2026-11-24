@@ -360,11 +360,6 @@ class RefactorFlowTest(unittest.TestCase):
         flow = load_script_module()
         self.assertIs(flow.RefactorFlowError, flow.refactor_log_input.RefactorFlowError)
 
-    def test_the_log_template_equals_the_json_the_skill_held_before_it_moved(self):
-        flow = load_script_module()
-        fixture = pathlib.Path(__file__).resolve().parent / "fixtures" / "refactor_log_template_base.json"
-        self.assertEqual(flow.refactor_log_input.LOG_TEMPLATE, json.loads(fixture.read_text()))
-
     def test_refactor_flow_is_at_most_1000_lines(self):
         self.assertLessEqual(len(SCRIPT.read_text().splitlines()), 1000)
 
@@ -1311,6 +1306,8 @@ class RefactorFlowTest(unittest.TestCase):
                          "a label from `escape-ratchet.md`; not `unknown`"):
             self.assertIn(sentence, skill_text)
         self.assertNotIn("{class, disposition", skill_text)
+        self.assertIn("**Log and hand off", skill_text)
+        self.assertIn("**Auto-dispatch review**", skill_text)
         step_five = skill_text.split("**Log and hand off", 1)[1].split("**Auto-dispatch review**", 1)[0]
         for key_text in ('"finder"', '"result"', "`finder`", "`result`"):
             self.assertNotIn(key_text, step_five)

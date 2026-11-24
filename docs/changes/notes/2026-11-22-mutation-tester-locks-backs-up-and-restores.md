@@ -2,11 +2,11 @@
 type: "Change"
 change_type: "changed"
 title: "mutation-tester locks, backs up and restores through mutation_lock.py"
-description: "The calibration lock format has one owner, lib/calibration_lock.py; the calibration guard imports it, and tools/mutation_lock.py gives mutation-tester its lock, backup and restore steps in place of inline jq and shell."
+description: "The calibration lock format has one owner, lib/calibration_lock.py; the calibration guard imports it, and tools/mutation_lock.py gives mutation-tester its lock, backup and restore steps in place of inline jq and shell. A relative XDG_STATE_HOME now falls back to ~/.local/state, which also moves herdr-lanes and lane-status, and recovery paths print as one pasteable shell word through shell_quoting."
 generated: {"by": "claude-code/claude-fable-5-1", "at": "2026-11-22T20:02:28-06:00"}
 seq: 36
 kind: "fix"
-components: ["script/calibration-lock", "script/calibration-guard", "script/mutation-lock", "agent/mutation-tester"]
+components: ["script/calibration-lock", "script/calibration-guard", "script/mutation-lock", "agent/mutation-tester", "script/script-utils", "script/lanes", "script/lane-status", "script/shell-quoting"]
 evidence: ["removal round", "census"]
 watches: []
 test: "tests/scripts/test_mutation_lock.py::MutationLockTest::test_check_stops_on_a_live_lock_and_leaves_it_alone"
@@ -17,7 +17,7 @@ unmeasured: "The single Step 4 'Any other STOP' bullet (report the verdict, stat
 
 ## Change
 
-`claude/.claude/scripts/lib/calibration_lock.py` owns the lock path, the legacy path, the stamp format, the lock view and the liveness read. `gates/calibration_guard.py` imports it with its output and exit codes unchanged. `tools/mutation_lock.py` runs the lock, backup and restore steps that `mutation-tester.md` used to spell out in jq and shell; both the claude and the opencode agent files call its `check`, `lock` and `restore` verbs. The lock path reader is `calibration_lock_path` and the argument parser builder is `mutation_lock_parser`: the toolkit's duplicate-code check refuses a top-level function name defined in two files, and master's `pull_keep_index.py` and `lanes.py` already hold `lock_path` and `build_parser`.
+`claude/.claude/scripts/lib/calibration_lock.py` owns the lock path, the legacy path, the stamp format, the lock view and the liveness read. `gates/calibration_guard.py` imports it with its output and exit codes unchanged, except that recovery paths print as one pasteable shell word and the closing sentence of the unrestored message now reads "Do not dispatch mutation-tester until this lock is gone — it refuses to seed on top of an unrestored seed." (it used to name `/calibrate` too). A restore whose backup no longer matches the lock's hash now ends with its own `STOP_BACKUP_MISMATCH` line, separate from the restored-target mismatch; both print `RESTORE HASH MISMATCH` and exit 3. A relative `XDG_STATE_HOME` is ignored and the state folder falls back to `~/.local/state`; this also moves `herdr-lanes` and `lane-status`. The `check` NEXT line quotes its `--class "..." --line "..."` placeholders. `tools/mutation_lock.py` runs the lock, backup and restore steps that `mutation-tester.md` used to spell out in jq and shell; both the claude and the opencode agent files call its `check`, `lock` and `restore` verbs. The lock path reader is `calibration_lock_path` and the argument parser builder is `mutation_lock_parser`: the toolkit's duplicate-code check refuses a top-level function name defined in two files, and master's `pull_keep_index.py` and `lanes.py` already hold `lock_path` and `build_parser`.
 
 ## Evidence
 

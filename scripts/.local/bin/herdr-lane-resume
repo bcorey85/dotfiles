@@ -4,7 +4,8 @@
 # Usage: herdr-lane-resume <name>
 #        herdr-lane-resume --close <name>
 #   <name>      the lane's name: its worktree folder name, as herdr-worktree --fork
-#               recorded it in ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<name>.json.
+#               recorded it in ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<name>.json;
+#               a relative XDG_STATE_HOME is ignored.
 #               Opens a workspace on the worktree (a tuios session under tuios) and
 #               runs herdr-dev --resume there: the claude pane resumes the lane's
 #               session under its name, with no fork, and is given the lane's

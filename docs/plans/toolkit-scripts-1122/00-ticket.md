@@ -1,6 +1,9 @@
 # toolkit-scripts-1122: four toolkit script and prose-move items
 
-Source: ~/agent-evals/queue/guide-skill-point-to-the-guide-binary-instead-of.md and, in the same lane, ~/agent-evals/queue/refactor-skill-have-refactor-flow-py-print-the-log.md, ~/agent-evals/queue/mutation-tester-move-the-lock-backup-and-restore.md; ~/agent-evals/queue/review-commit-gate-places-a-cd-to-a-literal-repo.md is dropped (D1)
+Source: ~/agent-evals/queue/guide-skill-point-to-the-guide-binary-instead-of.md
+Source: ~/agent-evals/queue/refactor-skill-have-refactor-flow-py-print-the-log.md
+Source: ~/agent-evals/queue/mutation-tester-move-the-lock-backup-and-restore.md
+Source: ~/agent-evals/queue/review-commit-gate-places-a-cd-to-a-literal-repo.md (dropped, D1)
 
 ## Lane brief (verbatim, /tmp/.../scratchpad/brief-toolkit-scripts.md)
 

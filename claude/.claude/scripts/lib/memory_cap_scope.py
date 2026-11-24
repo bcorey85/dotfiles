@@ -25,8 +25,6 @@ MEMORY_MAX = "8G"
 CAPPED_PREFIX = f"systemd-run --user --scope --quiet -p MemoryMax={MEMORY_MAX} -p MemorySwapMax=0"
 SHELLS = {"bash", "sh", "zsh"}
 RUN_SCRIPT = re.compile(r"(^|/)tests/run\.sh$")
-# The repo's own script by a relative name: a path to another tests/run.sh is never rewritten.
-OWN_RUN_SCRIPT = re.compile(r"(\./)?tests/run\.sh$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
 TEST_WORDS = re.compile(r"test|jest|mocha|run\.sh", re.I)
 HELP_FLAGS = {"--help", "-h", "--version", "-V"}
@@ -79,19 +77,12 @@ def step_is_uncapped_test_run(words):
 
     final_words = shell_command.command_after_wrappers(words)
     return (check_scope.step_runs_tests(final_words) or runs_test_script(final_words)
-            or runs_tests_named_by_path(final_words))
+            or check_scope.path_program_runs_tests(final_words))
 
 
-def runs_tests_named_by_path(words):
-    """True when the program word is a path (`./pytest`) whose file name is a test program. The hook never rewrites
-    it, since the file may not be the runner, but a run outside a cap is still denied."""
-    if not words or "/" not in words[0]:
-        return False
-
-    import check_scope  # pylint: disable=import-outside-toplevel
-
-    named_by_file = [os.path.basename(words[0]), *words[1:]]
-    return check_scope.program_runs_tests(named_by_file)
+def is_own_tests_path(word, name):
+    """True when the word names the repo's own tests/<name> by a relative path (`tests/<name>`, `./tests/<name>`)."""
+    return word in (f"tests/{name}", f"./tests/{name}")
 
 
 def uncapped_test_run(command):
@@ -138,11 +129,11 @@ def is_rewritable_test_run(command):
     if not words or HELP_FLAGS.intersection(words):
         return False
     # A shell or program named by a path may not be the real one: only tests/run.sh itself may be a path.
-    if "/" in words[0] and not OWN_RUN_SCRIPT.match(words[0]):
+    if "/" in words[0] and not is_own_tests_path(words[0], "run.sh"):
         return False
     script_word = run_script_word(words)
     names_other_run_script = (
-        script_word is not None and RUN_SCRIPT.search(script_word) and not OWN_RUN_SCRIPT.match(script_word)
+        script_word is not None and RUN_SCRIPT.search(script_word) and not is_own_tests_path(script_word, "run.sh")
     )
     if names_other_run_script:
         return False
@@ -150,8 +141,8 @@ def is_rewritable_test_run(command):
     import check_scope  # pylint: disable=import-outside-toplevel
     import shell_steps  # pylint: disable=import-outside-toplevel
 
-    if check_scope.step_runs_test_runner_script(words) and words[1] not in (
-            f"tests/{check_scope.TEST_RUNNER_SCRIPT}", f"./tests/{check_scope.TEST_RUNNER_SCRIPT}"):
+    runs_runner_script = check_scope.step_runs_test_runner_script(words)
+    if runs_runner_script and not is_own_tests_path(words[1], check_scope.TEST_RUNNER_SCRIPT):
         return False
 
     step_text = steps[0][1]

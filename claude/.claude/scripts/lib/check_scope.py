@@ -715,6 +715,16 @@ def program_runs_tests(words):
     return program in SCRIPT_RUNNERS and test_word_is_subcommand(program, words)
 
 
+def path_program_runs_tests(words):
+    # True when the program word is a path (`./pytest`) whose file name is a test program. The file may not be the
+    # runner, so callers must not rewrite such a step.
+    if not words or "/" not in words[0]:
+        return False
+
+    named_by_file = [os.path.basename(words[0]), *words[1:]]
+    return program_runs_tests(named_by_file)
+
+
 def test_word_is_subcommand(program, words):
     # True when the test word is the runner's own subcommand (`npm test`, `make test-unit`) or the script named by
     # `run`/`run-script` of a package runner (`npm run test`). A later word (`npm exec evil test`) names an argument.

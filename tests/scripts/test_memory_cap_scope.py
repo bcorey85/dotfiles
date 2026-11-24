@@ -12,6 +12,7 @@ import unittest
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import check_scope
 import memory_cap_scope
 
 sys.path.insert(0, str(toolkit_paths.GATES_DIR))
@@ -77,7 +78,7 @@ class MatcherTest(unittest.TestCase):
     def test_a_path_program_that_only_names_a_runner_in_its_arguments_is_not_named_by_path(self):
         for words in (["./deploy.sh", "pytest"], ["tools/lint", "jest"]):
             with self.subTest(words=words):
-                self.assertFalse(memory_cap_scope.runs_tests_named_by_path(words), str(words))
+                self.assertFalse(check_scope.path_program_runs_tests(words), str(words))
 
 
 RUN_WITH_SCOPE = ("import sys, runpy; sys.path.insert(0, sys.argv[1]); import memory_cap_scope; "

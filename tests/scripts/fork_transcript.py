@@ -10,6 +10,9 @@ WAIT_REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 WAIT_AGENT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py agent a1"
 PHASE_START_NEW_RUN_COMMAND = "python3 ~/.claude/scripts/code/phase_start.py --new-run"
 PHASE_START_COMMAND = "python3 ~/.claude/scripts/code/phase_start.py"
+# What the send-back text must tell the fork: what it missed, and where to find the review step.
+REASON_PHRASES = ("ran no review of it and wrote no stop", "step 5 of the /code skill", "code_review_start.py",
+                  "code_wait.py review", "stop.md")
 STOP_FILE_PATH = "/tmp/repo/.git/code-phase/stop.md"
 
 

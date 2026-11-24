@@ -32,10 +32,6 @@ CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
 # that the package must carry too.
 WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh", "scripts/write-edit-safety-gate.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
-# The modules a copied script_utils.py imports.
-SCRIPT_UTILS_IMPORTS = ("tool_call_flags.py", "user_prompts.py")
-# script_utils.py and the modules it imports.
-SCRIPT_UTILS_LIB_MODULES = ("script_utils.py", *SCRIPT_UTILS_IMPORTS)
 # The lib modules a copied coder_gate.py imports.
 CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "shell_directory.py", "shell_quoting.py",
                           "makefile_text.py",
@@ -45,7 +41,7 @@ CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "shell_dire
                           "gate_env.py", "plan_format.py", "source_text.py", "collision_retry.py",
                           "ask_outcome_words.py", "import_guard.py", "shell_command_words.py", "code_run_names.py",
                           "fork_review.py", "loop_transcript.py", "stop_file_names.py", "shell_statements.py",
-                          "shell_expansion.py", *SCRIPT_UTILS_IMPORTS)
+                          "shell_expansion.py")
 
 
 def first_python_that_starts(names):

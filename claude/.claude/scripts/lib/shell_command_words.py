@@ -1,6 +1,6 @@
 """Read the command word of a raw word list: `command_word_index`, `raw_word_names_command`, `word_names_command`,
 `unquoted_word`, `placed_raw_words`, `joined_raw_words`, `gap_before_part`, `rejoined_word`,
-`before_subshell_closer` and `script_call_arguments`.
+`before_subshell_closer`, `script_call_arguments`, `command_call_arguments` and `variable_assignments`.
 
 Owner of the raw, still-quoted words of a placed simple command (`placed_raw_words`): import it, never add a second
 copy."""
@@ -13,10 +13,12 @@ from shell_command import (
     command_after_wrappers,
     parse_raw_simple_commands,
     resolved_command_words,
+    split_simple_commands,
     step_words,
+    without_substitutions,
 )
 from shell_quoting import quoted_positions
-from shell_statements import shell_code
+from shell_statements import ASSIGNMENT, shell_code
 
 
 def unquoted_word(raw_word):
@@ -61,6 +63,15 @@ def command_word_index(raw_words, name):
     return command_index
 
 
+def command_call_arguments(command, command_name):
+    """One list per simple command of `command` whose command word (wrappers peeled) is `command_name` by its
+    basename: the words after it. `grep tee f` and `echo tee f` give nothing for `tee`. Read as
+    `script_call_arguments` reads."""
+    code = shell_code(command)
+    words_by_command = resolved_command_words(code) or step_words(code)
+    return [words[1:] for words in words_by_command if words and word_names_command(words[0], command_name)]
+
+
 def script_call_arguments(command, script_name):
     """One list per simple command of `command` that runs the script `script_name` (a word whose basename is it): the
     words after that word. An empty list when the script is called with no arguments. The command is read as
@@ -75,6 +86,24 @@ def script_call_arguments(command, script_name):
                 calls.append(words[index + 1:])
                 break
     return calls
+
+
+def variable_assignments(command):
+    """{name: value} for each simple command of `command` that is a bare `NAME=value` assignment, a later one
+    replacing an earlier one. A `$(...)` or backtick span in a value reads as `x`. Empty when the command cannot be
+    read: a caller then knows no value, as `resolved_command_words` does."""
+    code = without_substitutions(shell_code(command))
+    try:
+        simple_commands = split_simple_commands(code)
+    except ValueError:
+        return {}
+
+    assigned = {}
+    for words in simple_commands:
+        if len(words) == 1 and ASSIGNMENT.match(words[0]):
+            name, value = words[0].split("=", 1)
+            assigned[name] = value
+    return assigned
 
 
 def gap_before_part(step, cursor, part):

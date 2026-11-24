@@ -17,10 +17,10 @@
 
 ### 1. Item 1: where the check runs
 
-- **Choice:** a new module `gates/fork_review_gate.py`, called from `gates/staged_claim_gate.py` on the SubagentStop event for a `code-fork` whose task starts with `/code`, the way `announced_step` is called on Stop.
+- **Choice:** a new module `lib/fork_review.py`, called from `gates/staged_claim_gate.py` on the SubagentStop event for a `code-fork` whose task starts with `/code`, the way `announced_step` is called on Stop, and from the code-fork branch of `code/coder_gate.py` `run_hook` on PreToolUse SubagentHandback, which denies the hand-back of a fork that coded a phase and ran no review (shipped in Phase 4; recorded in spec.md `## Decisions` item 1).
 - **Reasoning:** staged_claim_gate is already registered on SubagentStop, so no settings.json edit is needed (settings.json is outside the lane's go-ahead). About 92% of code-fork endings are a final text reply, which only SubagentStop sees. The incident fork ended that way. Ruled by the lane session, 2026-11-23.
 - **Alternatives rejected:** a new settings.json hook (needs the user's manual edit; the fix would not ship until then); a main-side check in code_relay.py (fires after the fork is gone, so the review still never runs); review/open_child_gate.py (another lane's folder).
-- **Trade-off accepted:** a fork that ends through a SubagentHandback call is not covered until a SubagentStop event after a hand-back is captured.
+- **Trade-off accepted:** a fork whose transcript cannot be read ends unjudged (fail open). A fork that ends through a SubagentHandback call is covered by the deny in `coder_gate.py`; the SubagentStop field names come from no captured event. Ruled by the lane session, 2026-11-24 (spec.md `## Decisions` item 1).
 
 ### 2. Item 1: freshness signal
 
@@ -38,8 +38,9 @@
 
 ### 4. Item 2: the fix
 
-- **Choice:** the subjectless progress forms (`working on it`, `on it now`, `starting ... now`) pass only when the final turn launched background work after the latest user prompt: a Bash or Agent call with `run_in_background` true (bool or string). First-person future forms ("I'll ...") still block. The transcript read tolerates a torn last line, and the gate's crash no longer drops the staged-claim reason.
+- **Choice:** the subjectless progress forms (`working on it`, `on it now`, `starting ... now`) pass only when the final turn launched background work after the latest user prompt: a Bash call with `run_in_background` true (bool or string) or an Agent call, which counts unless `run_in_background` is explicitly false (the Agent tool runs in the background by default). The flag reads live in stdlib-only `lib/tool_call_flags.py`, and the turn reader `turn_launched_background` lives in `lib/user_prompts.py`. First-person future forms ("I'll ...") still block. The transcript read tolerates a torn last line, and the gate's crash no longer drops the staged-claim reason.
 - **Reasoning:** the incident sentence was "a new agent is working on it", a subjectless form, after a turn that started a background shell and an agent. Exempting all open background work would pass 6 of 8 real, correct blocks. Ruled by the lane session, 2026-11-23.
+- **Phase 2 ruling:** an Agent call counts as a background launch unless `run_in_background` is explicitly false. By the orchestrating /code session, 2026-11-24.
 - **Alternatives rejected:** exempt any open background work in the session (lets true announcements through); drop the subjectless forms (lets "working on it" through on a turn that started nothing).
 - **Trade-off accepted:** the gate reads the transcript when a subjectless form matches; parse runs only after the regex hit.
 

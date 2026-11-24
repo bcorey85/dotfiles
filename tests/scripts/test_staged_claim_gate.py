@@ -413,7 +413,7 @@ class StagedClaimGateTest(unittest.TestCase):
 
         self.assertEqual(decision["decision"], "block")
         self.assertIn("git diff --cached --name-only", decision["reason"])
-        self.assertIn("announced_step skipped", errors)
+        self.assertIn("staged-claim-gate: announced_step skipped: RuntimeError: boom", errors)
 
     def test_a_crash_in_the_staged_claim_check_keeps_the_announced_reason(self):
         gate = self.load_gate()
@@ -424,7 +424,7 @@ class StagedClaimGateTest(unittest.TestCase):
 
         self.assertEqual(decision["decision"], "block")
         self.assertIn(gate.announced_step.REASON, decision["reason"])
-        self.assertIn("staged_claim_reason skipped", errors)
+        self.assertIn("staged-claim-gate: staged_claim_reason skipped: RuntimeError: boom", errors)
 
     def test_a_crash_in_the_permission_check_keeps_the_staged_claim_reason(self):
         gate = self.load_gate()
@@ -434,7 +434,7 @@ class StagedClaimGateTest(unittest.TestCase):
             decision, errors = self.run_main(gate, hook)
 
         self.assertIn("git diff --cached --name-only", decision["reason"])
-        self.assertIn("permission_question skipped", errors)
+        self.assertIn("staged-claim-gate: permission_question skipped: RuntimeError: boom", errors)
 
     def test_a_crash_in_main_exits_zero_and_names_the_gate_on_stderr(self):
         result = subprocess.run([sys.executable, str(SCRIPT)], input="not json", capture_output=True, text=True)

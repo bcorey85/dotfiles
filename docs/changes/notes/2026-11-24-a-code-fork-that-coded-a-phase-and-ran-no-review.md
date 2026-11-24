@@ -26,7 +26,7 @@ A real fork dispatched a coder, waited on it, ran git status and ended with a fi
 
 ## Result
 
-Not measured yet.
+The sweep over /code forks started on or after 2026-10-31T21:31 sends back 96 of 1192 (8.05%); hand-read send-backs are true misses or forks that ended mid coder wait. The close pass moved the background-launch reader (`turn_launched_background`) from script_utils into user_prompts and human_turn_lookup, and tightened the stop.md write read to redirects and `tee` targets; announced_step behavior is unchanged.
 
 ## Watch
 

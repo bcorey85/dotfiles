@@ -15,11 +15,13 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from shell_command import parse_raw_simple_commands
 from shell_command_words import (
     before_subshell_closer,
+    command_call_arguments,
     command_word_index,
     joined_raw_words,
     placed_raw_words,
     raw_word_names_command,
     script_call_arguments,
+    variable_assignments,
 )
 from shell_steps import PlacedCommand
 
@@ -120,9 +122,6 @@ class ScriptCallArgumentsTest(unittest.TestCase):
         self.assertEqual(script_call_arguments("python3 ~/.claude/scripts/code/code_wait.py review", "code_wait.py"),
                          [["review"]])
 
-    def test_the_interpreter_word_is_skipped_and_the_script_is_the_match(self):
-        self.assertEqual(script_call_arguments("python3 /x/code_wait.py review", "code_wait.py"), [["review"]])
-
     def test_a_script_name_in_argument_position_still_matches(self):
         self.assertEqual(script_call_arguments("grep -n x /x/code_wait.py", "code_wait.py"), [[]])
 
@@ -151,6 +150,29 @@ class ScriptCallArgumentsTest(unittest.TestCase):
 
     def test_a_command_that_does_not_run_the_script_gives_nothing(self):
         self.assertEqual(script_call_arguments("echo hi", "phase_start.py"), [])
+
+
+class CommandCallArgumentsTest(unittest.TestCase):
+    def test_only_the_command_word_matches(self):
+        cases = {"echo x | tee -a /f": [["-a", "/f"]], "sudo tee /f": [["/f"]], "grep -n tee /f": [],
+                 "echo tee /f": [], "rg tee /f": []}
+        for command, expected in cases.items():
+            self.assertEqual(command_call_arguments(command, "tee"), expected, command)
+
+
+class VariableAssignmentsTest(unittest.TestCase):
+    def test_a_bare_assignment_gives_its_value_and_a_later_one_replaces_it(self):
+        self.assertEqual(variable_assignments("f=/a/b && g='c d'; f=/e"), {"f": "/e", "g": "c d"})
+
+    def test_a_substitution_in_a_value_reads_as_x(self):
+        command = "F=$(git rev-parse --git-path code-phase)/stop.md && cat > $F"
+        self.assertEqual(variable_assignments(command), {"F": "x/stop.md"})
+
+    def test_an_assignment_in_front_of_a_command_is_no_bare_assignment(self):
+        self.assertEqual(variable_assignments("f=/a make"), {})
+
+    def test_a_command_the_parser_cannot_read_gives_nothing(self):
+        self.assertEqual(variable_assignments("f=/a && echo 'unclosed"), {})
 
 
 class BeforeSubshellCloserTest(unittest.TestCase):

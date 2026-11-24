@@ -22,7 +22,7 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 - [x] Phase 2: announced-step passes a subjectless progress line after a background launch in the same turn (risk: low)
 - [x] Phase 3: /code run names and script call arguments have one owner (risk: low)
 - [x] Phase 4: a /code fork that coded a phase but never reviewed it is sent back at SubagentStop and denied at SubagentHandback (risk: high)
-- [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Plan Deviations
 
@@ -31,7 +31,8 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 - ruling: Ticket #2, Phase 2 ask rejected: a launch whose tool_result is a hook error still counts as a launch. No session hit it (2 such calls in 300 transcripts); size rule. By the lane session, 2026-11-24.
 - ruling: Phase 2 review reached its 5-round cap; the one finding open at the cap (a stale announced_step.py docstring) was fixed, and the branch-end full suite covers the final tree. Committed without a sixth round. By the lane session, 2026-11-24.
 - ruling: Phase 3 review reached its 5-round cap with round 5 clean; the fix passes also moved the wait command into code_wait.py and code_review_start.py through code_run_names. Ask rejected: `PHASE_START_SCRIPT` and the code_run_names docstring stay, since Phase 4 reads them. By the lane session, 2026-11-24.
-- ruling: Phase 4 sweep stop (570 of 1362 sent back). The rate counts only forks that started on or after 2026-10-31T21:31 (commit 7b347d962 removed code_step.py and added code_review_start.py; older forks reviewed through a flow the gate never meets). Hand-reads found four reader gaps, all fixed in Phase 4: (a) `script_call_arguments` reads `shell_statements.shell_code(command)`, so a heredoc body with an unbalanced quote no longer hides the calls after it; (b) when `resolved_command_words` cannot split the command (`'a\|b'` in quotes), `script_call_arguments` reads `step_words` instead; (c) a Bash output redirect whose target basename is `stop.md` (`shell_expansion.redirect_target_words` over `shell_code`) is a stop write; (d) a `phase_start.py` call opens a new segment only when the open segment needs no review or is already reviewed, because forks also call it mid-phase to read the run state and a resumed fork's tick coder comes before its first call. With all four, 95 of 1191 post-cut-off forks (8.0%) are sent back; hand-reads of the rest are true misses ("I did not re-run the review loop") or forks that ended mid coder wait. By the lane session, 2026-11-24.
+- ruling: Phase 4 sweep stop (570 of 1362 sent back). The rate counts only forks that started on or after 2026-10-31T21:31 (commit 7b347d962 removed code_step.py and added code_review_start.py; older forks reviewed through a flow the gate never meets). Hand-reads found four reader gaps, all fixed in Phase 4: (a) `script_call_arguments` reads `shell_statements.shell_code(command)`, so a heredoc body with an unbalanced quote no longer hides the calls after it; (b) when `resolved_command_words` cannot split the command (`'a\|b'` in quotes), `script_call_arguments` reads `step_words` instead; (c) a Bash output redirect whose target basename is `stop.md` (`shell_expansion.redirect_target_words` over `shell_code`) is a stop write; (d) a `phase_start.py` call opens a new segment only when the open segment needs no review or is already reviewed, because forks also call it mid-phase to read the run state and a resumed fork's tick coder comes before its first call. With all four, 95 of 1191 post-cut-off forks (8.0%) are sent back; hand-reads of the rest found three stop-write shapes the reader still missed (a stop-file path assigned to a variable then written through `> $f`; a `$(git rev-parse ...)/stop.md` path in a variable then written through `> $F`; a `tee "$d/stop.md"` write), and the other misses are true ("I did not re-run the review loop") or forks that ended mid coder wait. By the lane session, 2026-11-24.
+- ruling: Phase 5 close pass: `turn_launched_background` moved from script_utils to user_prompts (smell and code review); the stop-write reader now reads variable targets and `tee` operands. By the orchestrating /code session, 2026-11-24.
 - known gap, Phase 4 reader: a fork that codes phase 1 with no review, calls phase_start.py for phase 2, then codes and reviews phase 2 shares one segment, so it passes; the ruling of 2026-11-24 keeps rule (d) because forks call phase_start.py mid-phase. Ruled by the lane session, 2026-11-24.
 
 ## Decisions
@@ -470,10 +471,14 @@ Keep the real record keys. Replace queue-item text and paths outside `/home/bran
 
 Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that changes a ticket AC) put to the user through agent-evals-c3-owner; the fix-diff gate passed; every acceptance criterion mapped to a test or explicitly retired; concentration counts stated; recap and smoke-test checklist delivered. With no open finding, a coder writes one line of evidence under each open item.
 
+Evidence: quality checks green (6323 tests, 0 failed); four reviewers ran, every finding fixed or shown wrong, the two Asks ruled by the session (turn_launched_background move accepted; launch-reader ask rejected under the Phase 2 ruling); the fix-diff gate passed on round 2; AC1-AC16 mapped to tests, AC17 manual; concentration: largest module claude/.claude/scripts/lib 306 added lines, branch 404 added lines; recap delivered.
+
 #### Automated Verification:
 
-- [ ] **Suite**: `bash tests/run.sh`
-- [ ] **Scope box**: `test -n "$(git diff --name-only <base-sha>..<head-sha>)"`, with the two recorded commit ids filled in at close
+- [x] **Suite**: `bash tests/run.sh`
+  - Evidence: full check passed on the final tree: 6323 tests in 209 files, 0 failed (close pass 2026-11-24)
+- [x] **Scope box**: `test -n "$(git diff --name-only 54807befa0b6174b20da85b3472c9b552b8e2e21..671fd38108d882610ac443db6752fc52b2438047)"`, with the two recorded commit ids filled in at close
+  - Evidence: exit code 0
 
 #### Manual Verification:
 

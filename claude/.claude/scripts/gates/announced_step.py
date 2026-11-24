@@ -24,7 +24,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
-import script_utils
+import user_prompts
 from message_text import without_quoted_spans
 
 _ANNOUNCED_ACTION = (r"(?:now\s+)?(?:going\s+to|about\s+to|on\s+it|starting|doing|writing|running|working|fixing|"
@@ -70,7 +70,7 @@ def announced_step(message, transcript_path=None):
         if FIRST_PERSON_ANNOUNCEMENT.search(sentence):
             return sentence.strip()
         if background_launched is None:
-            background_launched = script_utils.turn_launched_background(transcript_path)
+            background_launched = user_prompts.turn_launched_background(transcript_path)
         if background_launched:
             continue
         return sentence.strip()

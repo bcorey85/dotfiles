@@ -2,9 +2,11 @@
 expansions, reminders), a subagent record, a record with an origin other than the human (a peer message, a task
 notification), a compaction summary and a shell or command echo are not the user's words. `starts_turn` is wider: it
 marks every main-session record that begins a turn, typed or not (a shell echo, a task notification, a peer
-message). Not a hook itself."""
-import json
+message). `turn_launched_background` reads whether the current turn launched background work. Not a hook itself."""
 import re
+
+import script_utils
+import tool_call_flags
 
 # Text inside a typed prompt that the user did not write: a paste, and a reminder the harness appends.
 NOT_USER_WORDS = re.compile(r"<(pasted_content|system-reminder)\b.*?</\1[^>]*>", re.S | re.I)
@@ -47,6 +49,29 @@ def starts_turn(record):
     return not any(isinstance(block, dict) and block.get("type") == "tool_result" for block in content)
 
 
+def turn_launched_background(transcript_path):
+    """Whether the current turn of a transcript launched a background Bash or Agent call. A turn start clears it.
+    False for an empty or unreadable path; a torn line is skipped."""
+    if not transcript_path:
+        return False
+
+    launched = False
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
+            for line in transcript:
+                record = script_utils.transcript_record(line)
+                if record is None:
+                    continue
+                if starts_turn(record):
+                    launched = False
+                for name, tool_input in script_utils.record_tool_calls(record):
+                    if tool_call_flags.launches_background(name, tool_input):
+                        launched = True
+    except OSError:
+        return False
+    return launched
+
+
 def user_words(prompt):
     """The prompt without the pasted blocks and appended reminders the user did not write."""
     return NOT_USER_WORDS.sub(" ", prompt)
@@ -59,11 +84,10 @@ def latest_prompt(transcript_path):
     try:
         with open(transcript_path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                try:
-                    record = json.loads(line)
-                except ValueError:
+                record = script_utils.transcript_record(line)
+                if record is None:
                     continue
-                text = prompt_text(record) if isinstance(record, dict) else None
+                text = prompt_text(record)
                 if text is not None and text.strip():
                     latest = text
     except OSError:

@@ -46,6 +46,8 @@ class ForkReviewGateTests(unittest.TestCase):
         decision = json.loads(done.stdout)
         self.assertEqual("block", decision["decision"])
         self.assertIn(fork_review.REASON, decision["reason"])
+        for phrase in ft.REASON_PHRASES:
+            self.assertIn(phrase, decision["reason"])
 
     def assert_passes(self, done):
         self.assertEqual(0, done.returncode, done.stderr)
@@ -121,6 +123,39 @@ class ForkReviewGateTests(unittest.TestCase):
 
         self.assert_passes(self.run_gate())
 
+    def test_stop_md_written_through_a_variable_or_tee_after_the_coder_passes(self):
+        run_folder = "$(git rev-parse --git-path code-phase)"
+        writes = {
+            "variable path then redirect": f"f={ft.STOP_FILE_PATH} && printf 'x' > $f",
+            "substitution path variable then redirect":
+                f"F={run_folder}/stop.md && cat > $F <<'EOF'\nit's stopped\nEOF",
+            "braced quoted variable": f"f={ft.STOP_FILE_PATH}; echo x > \"${{f}}\"",
+            "folder variable then tee":
+                f"d={run_folder} && mkdir -p \"$d\" && tee \"$d/stop.md\" >/dev/null <<'EOF'\nit's stopped\nEOF",
+            "tee with a flag": f"echo x | tee -a {ft.STOP_FILE_PATH}",
+        }
+        for label, command in writes.items():
+            with self.subTest(label=label):
+                self.write_records(ft.skill_record(), ft.coder_record(), ft.bash_record(command), ft.text_record())
+
+                self.assert_passes(self.run_gate())
+
+    def test_a_variable_or_tee_write_to_another_file_is_no_stop(self):
+        writes = {
+            "variable holds another file": "f=/tmp/notes.md && printf 'x' > $f",
+            "variable holds a look-alike": "f=/tmp/review-stop.md && printf 'x' > $f",
+            "variable never assigned": "printf 'x' > $f",
+            "tee to another file": "echo x | tee /tmp/notes.md",
+            "grep for tee": f"grep -n tee {ft.STOP_FILE_PATH}",
+            "rg for tee": f"rg tee {ft.STOP_FILE_PATH}",
+            "echo of tee": f"echo tee {ft.STOP_FILE_PATH}",
+        }
+        for label, command in writes.items():
+            with self.subTest(label=label):
+                self.write_records(ft.skill_record(), ft.coder_record(), ft.bash_record(command), ft.text_record())
+
+                self.assert_sent_back(self.run_gate())
+
     def test_a_redirect_to_another_file_is_no_stop(self):
         self.write_records(ft.skill_record(), ft.coder_record(), ft.bash_record("echo x > /tmp/notes.md"),
                            ft.text_record())
@@ -162,6 +197,16 @@ class ForkReviewGateTests(unittest.TestCase):
                            ft.bash_record(ft.WAIT_REVIEW_COMMAND), ft.coder_record(), ft.text_record())
 
         self.assert_passes(self.run_gate())
+
+    def test_an_explore_agent_dispatch_is_no_coder(self):
+        self.write_records(ft.skill_record(), ft.coder_record("Explore"), ft.text_record())
+
+        self.assert_passes(self.run_gate())
+
+    def test_a_deep_coder_dispatch_with_no_review_is_sent_back(self):
+        self.write_records(ft.skill_record(), ft.coder_record("coder-deep"), ft.text_record())
+
+        self.assert_sent_back(self.run_gate())
 
     def test_fork_with_no_coder_dispatch_passes(self):
         self.write_records(ft.skill_record(), ft.bash_record("git status"), ft.text_record())
@@ -219,6 +264,16 @@ class ForkReviewGateTests(unittest.TestCase):
 
     def test_missing_transcript_passes(self):
         self.assert_passes(self.run_gate())
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file with no permissions")
+    def test_an_unreadable_transcript_passes_with_a_stderr_line(self):
+        self.transcript.write_text(ft.FIXTURE.read_text())
+        self.transcript.chmod(0)
+
+        done = self.run_gate()
+
+        self.assert_passes(done)
+        self.assertIn(f"fork-review: cannot read {self.transcript}", done.stderr)
 
     def test_torn_last_line_is_skipped(self):
         self.transcript.write_text(ft.FIXTURE.read_text() + '{"type": "assistant", "message": {"rol')

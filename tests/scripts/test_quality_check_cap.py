@@ -756,6 +756,7 @@ class QualityCheckCapTest(unittest.TestCase):
                 self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
                 reason = self.assert_denied(self.pre(command))
                 self.assertIn("tail, head, grep or rg", reason)
+                self.assertIn("no tail, head, grep or rg after it", reason)
 
     def test_a_cut_run_still_denies_a_rerun_that_does_not_keep_the_output(self):
         self.post("pytest -q | tail -3")

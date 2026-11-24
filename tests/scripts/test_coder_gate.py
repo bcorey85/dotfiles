@@ -6,6 +6,7 @@ import io
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1794,11 +1795,11 @@ class ForkHandbackTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, env=self.env)
         self.transcript = self.root / "agent-f1.jsonl"
 
-    def fork_hook(self):
+    def fork_hook(self, gate_script=GATE_SCRIPT):
         event = {"hook_event_name": "PreToolUse", "tool_name": "SubagentHandback", "agent_type": "code-fork",
                  "agent_id": "f1", "agent_transcript_path": str(self.transcript), "session_id": "s1",
                  "cwd": str(self.repo), "tool_input": {"message": "done"}}
-        return subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "hook"], cwd=self.repo, env=self.env,
+        return subprocess.run([sys.executable, "-B", str(gate_script), "hook"], cwd=self.repo, env=self.env,
                               input=json.dumps(event), capture_output=True, text=True, check=False)
 
     def test_code_fork_handback_with_no_review_is_denied(self):
@@ -1810,6 +1811,8 @@ class ForkHandbackTests(unittest.TestCase):
         output = json.loads(done.stdout)["hookSpecificOutput"]
         self.assertEqual("deny", output["permissionDecision"])
         self.assertIn(fork_review.REASON, output["permissionDecisionReason"])
+        for phrase in fork_transcript.REASON_PHRASES:
+            self.assertIn(phrase, output["permissionDecisionReason"])
 
     def test_code_fork_handback_after_a_stop_md_write_passes(self):
         self.transcript.write_text(fork_transcript.fixture_text_with(fork_transcript.stop_write_record()))
@@ -1832,6 +1835,22 @@ class ForkHandbackTests(unittest.TestCase):
 
         self.assertEqual(0, done.returncode, done.stderr)
         self.assertEqual("", done.stdout)
+
+    def test_a_crash_in_the_fork_review_blocks_the_handback(self):
+        scripts = self.root / "scripts"
+        shutil.copytree(GATE_SCRIPT.parent.parent / "lib", scripts / "lib",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (scripts / "code").mkdir()
+        copied_gate = scripts / "code" / "coder_gate.py"
+        shutil.copy(GATE_SCRIPT, copied_gate)
+        (scripts / "lib" / "fork_review.py").write_text(
+            "def missing_review_reason(hook):\n    raise RuntimeError('boom')\n")
+        self.transcript.write_text(fork_transcript.FIXTURE.read_text())
+
+        done = self.fork_hook(copied_gate)
+
+        self.assertEqual(2, done.returncode, done.stderr)
+        self.assertIn("boom", done.stderr)
 
 
 if __name__ == "__main__":

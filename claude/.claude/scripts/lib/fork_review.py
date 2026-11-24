@@ -16,17 +16,16 @@ Fields each event supplies: PreToolUse SubagentHandback `agent_type` and `agent_
 (test_open_child_gate.py, test_coder_gate.py). The SubagentStop field names come from no captured event; when the event
 lacks `agent_type` the agent's meta file (`agentType`) names it, and when it lacks `agent_transcript_path` the path is
 read from the session transcript and the agent id."""
-import json
 import os
 import pathlib
 import re
 import sys
-from collections import namedtuple
+from typing import NamedTuple
 
 import loop_transcript
 import script_utils
 from code_run_names import PHASE_START_SCRIPT, REVIEW_START_SCRIPT, WAIT_REVIEW_VERB, WAIT_SCRIPT
-from shell_command_words import script_call_arguments, unquoted_word
+from shell_command_words import command_call_arguments, script_call_arguments, unquoted_word, variable_assignments
 from shell_expansion import redirect_target_words
 from shell_statements import shell_code
 from stop_file_names import STOP_FILE
@@ -34,35 +33,33 @@ from stop_file_names import STOP_FILE
 # The first record of a /code fork is the skill text, which opens with the skill's base directory.
 SKILL_BASE = re.compile(r"\ABase directory for this skill: \S*/skills/code\s*\n")
 
+# A write target that is one variable: `$f` or `${f}`.
+WHOLE_VARIABLE = re.compile(r"\$\{?(?P<name>\w+)\}?")
+
 CODE_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "code"
 
 REASON = ("This /code run dispatched a coder for a phase but ran no review of it and wrote no stop. Run step 5 of the "
-          "/code skill now: write the handoff block to `<run folder>/handoff.txt`, run `python3 "
-          f"{CODE_SCRIPTS_DIR / REVIEW_START_SCRIPT} <lane> - 1 <run folder>/handoff.txt --base <phase base> "
-          "--detach` (the plan path and phase number in place of `- 1` when the run has a plan), then `python3 "
+          f"/code skill now: run `python3 {CODE_SCRIPTS_DIR / REVIEW_START_SCRIPT}` as that step says, then `python3 "
           f"{CODE_SCRIPTS_DIR / WAIT_SCRIPT} {WAIT_REVIEW_VERB}`. If the run must stop before its review, write the "
           "stop to `<run folder>/stop.md` first.")
 
-# One phase of the run. Each field except coder_line holds transcript line numbers, oldest first. coder_line is the
-# line of the first coder dispatch, None when the phase dispatched none.
-# collections.namedtuple, not typing.NamedTuple: the coder gate imports this module on every Bash call.
-Segment = namedtuple("Segment", ["coder_line", "review_start_lines", "review_wait_lines", "stop_lines"])
-ForkReview = namedtuple("ForkReview", ["is_code_run", "segments"])
+
+class Segment(NamedTuple):
+    """One phase of the run. Each field except coder_line holds transcript line numbers, oldest first. coder_line is
+    the line of the first coder dispatch, None when the phase dispatched none."""
+    coder_line: int | None
+    review_start_lines: list
+    review_wait_lines: list
+    stop_lines: list
+
+
+class ForkReview(NamedTuple):
+    is_code_run: bool
+    segments: list
 
 
 def new_segment():
     return Segment(None, [], [], [])
-
-
-def record_of(line):
-    """The JSON object of one transcript line, None for a torn line or any other shape."""
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return None
-    if not isinstance(record, dict):
-        return None
-    return record
 
 
 def string_content(record):
@@ -76,12 +73,25 @@ def string_content(record):
     return content
 
 
+def is_stop_target(target, assigned):
+    """Whether a write target names the stop file: its basename is the stop file, or it is one variable (`$f`,
+    `${f}`) that the command assigned a value with that basename."""
+    if os.path.basename(target) == STOP_FILE:
+        return True
+    variable = WHOLE_VARIABLE.fullmatch(target)
+    if not variable:
+        return False
+    return os.path.basename(assigned.get(variable["name"], "")) == STOP_FILE
+
+
 def writes_stop_file(command):
-    """Whether a Bash output redirect of the command has a target whose basename is the stop file."""
-    for target_word in redirect_target_words(shell_code(command)):
-        if os.path.basename(unquoted_word(target_word)) == STOP_FILE:
-            return True
-    return False
+    """Whether the command writes the stop file: a redirect or a `tee` operand whose basename is the stop file, or one
+    that is a variable the command assigned a stop-file path."""
+    assigned = variable_assignments(command)
+    targets = [unquoted_word(word) for word in redirect_target_words(shell_code(command))]
+    for operands in command_call_arguments(command, "tee"):
+        targets += [operand for operand in operands if not operand.startswith("-")]
+    return any(is_stop_target(target, assigned) for target in targets)
 
 
 def read_bash_call(segments, line_number, command):
@@ -137,7 +147,7 @@ def read_fork_review(transcript_path):
                 read_line(segments, line_number, line)
                 continue
 
-            record = record_of(line)
+            record = script_utils.transcript_record(line)
             if record is None:
                 continue
             seen_first_record = True

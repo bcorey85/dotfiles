@@ -112,6 +112,41 @@ echo '{CREATED_WORKSPACE}'""")
         herdr_args = self.herdr_args.read_text().splitlines()
         self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
 
+    def test_a_run_from_a_worktree_of_a_bare_repo_refuses_and_creates_nothing(self):
+        bare = self.root / "bare.git"
+        git(self.root, "clone", "-q", "--bare", str(self.main_checkout), str(bare))
+        bare_worktree = self.root / "bare-linked"
+        git(bare, "worktree", "add", "-q", str(bare_worktree), "-b", "other")
+
+        finished = self.run_herdr_worktree(bare_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("is bare, missing or not a work tree", finished.stderr)
+        self.assertFalse(self.herdr_args.exists())
+        listing = subprocess.run(["git", "-C", str(bare), "worktree", "list", "--porcelain"],
+                                 check=True, capture_output=True, text=True).stdout
+        self.assertEqual(listing.count("worktree "), 2, listing)
+        branches = subprocess.run(["git", "-C", str(bare), "branch", "--list", "fix/new-thing"],
+                                  check=True, capture_output=True, text=True).stdout
+        self.assertEqual(branches, "")
+
+    def test_a_run_from_a_worktree_of_a_separate_git_dir_repo_refuses_and_creates_nothing(self):
+        separate = self.root / "separate"
+        git(self.root, "init", "-q", "-b", "master", "--separate-git-dir", str(self.root / "separate.git"),
+            str(separate))
+        git(separate, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+        separate_worktree = self.root / "separate-linked"
+        git(separate, "worktree", "add", "-q", str(separate_worktree), "-b", "other")
+
+        finished = self.run_herdr_worktree(separate_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("is bare, missing or not a work tree", finished.stderr)
+        self.assertFalse(self.herdr_args.exists())
+        branches = subprocess.run(["git", "-C", str(separate), "branch", "--list", "fix/new-thing"],
+                                  check=True, capture_output=True, text=True).stdout
+        self.assertEqual(branches, "")
+
     def stub_installers(self, npm_status=0):
         """npm and pnpm log their folder and arguments to installs."""
         installs = self.root / "installs"

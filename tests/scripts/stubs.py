@@ -3,14 +3,16 @@ import pathlib
 import shutil
 import subprocess
 
-TOOLKIT_TOOLS_LIB = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "toolkit-tools.bash"
+SCRIPT_LIB_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib"
+SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash")
 
 
 def copy_toolkit_tools_lib(root):
-    """Copy the library a script sources to <root>/lib, where a copy of the script in <root>/bin finds it."""
+    """Copy the libraries a script sources to <root>/lib, where a copy of the script in <root>/bin finds them."""
     lib_dir = pathlib.Path(root) / "lib"
     lib_dir.mkdir(exist_ok=True)
-    shutil.copy(TOOLKIT_TOOLS_LIB, lib_dir / TOOLKIT_TOOLS_LIB.name)
+    for lib_name in SOURCED_LIBS:
+        shutil.copy(SCRIPT_LIB_DIR / lib_name, lib_dir / lib_name)
 
 
 def write_stub(path, body):

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [lane-status names a diff viewer over its memory cap](notes/2026-11-24-lane-status-names-a-diff-viewer-over-its-memory.md).
+Latest change: 2026-11-24, [herdr-lane-resume --close closes a merged lane that has no lane file entry](notes/2026-11-24-herdr-lane-resume-close-closes-a-merged-lane-that.md).
 
 ## Top gains
 

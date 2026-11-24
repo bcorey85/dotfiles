@@ -1671,6 +1671,30 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_cap_reached_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
         self.assert_stop_packet_asks_are_printed_and_logged(packet_text(CAP_FIELDS, ask=self.STOP_ASKS))
 
+    def test_the_cap_reached_stop_names_by_session_in_a_lane_session_and_by_user_otherwise(self):
+        lanes = self.temp_root / "lane-state" / "herdr-lanes"
+        lanes.mkdir(parents=True)
+        lane = {"name": "one", "worktree": str(self.repo), "main_checkout": str(self.repo), "branch": "b",
+                "brief": "brief", "session_id": SESSION, "reports_to": "boss",
+                "started_at": "2026-11-24T10:00:00+00:00"}
+        text = packet_text(CAP_FIELDS, ask=self.STOP_ASKS)
+        state_env = {"XDG_STATE_HOME": str(self.temp_root / "lane-state")}
+
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", output)
+
+        (lanes / "one.json").write_text(json.dumps(lane))
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by session <outcome-1> <outcome-2>", output)
+
+        (lanes / "one.json").write_text("not json")
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", output)
+        self.assertIn("review_fix: lane files unreadable (", output)
+
     def test_a_critical_blocker_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
         self.assert_stop_packet_asks_are_printed_and_logged(packet_text(BLOCKER_FIELDS, ask=self.STOP_ASKS))
 

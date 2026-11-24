@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1161 changes
+1162 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -21,6 +21,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A capped review's asks are ruled with no coder and applied on resume](notes/2026-11-24-a-capped-review-s-asks-are-ruled-with-no-coder-and.md) [skill/code, script/phase-asks] The code skill's cap-reached step rules the packet's finding asks through `phase_asks.py` and dispatches no coder, then stops; the resume applies each accepted capped ask through `review_fix.py launch --fix`.
 * [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md) [script/lane-status] lane-status reports a lane whose idle agent still has background shells or subagents out as waiting, marks a lane dead on no agent, a missing worktree or a transcript that ends on an API error, and with --changes prints only what changed since its last run.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) [agent/mutation-tester] The mutation tester compiles the mutated file before it reads the test run; a mutant that breaks import or compile is INDETERMINATE, so a false kill no longer hides a test gap. **raises % of unloadable mutants called INDETERMINATE (of 16 runs) by 79% (56 → 100)**
 * [Lane close and phase-change lines name the herdr lane scripts](notes/2026-11-23-lane-close-and-phase-change-lines-name-the-herdr.md) [rule/orchestration] The orchestration Git section now tells the orchestrator to close a merged lane with herdr-lane-resume --close, and says herdr-phase-change takes the worker's ListAgents name and adds the report-to line itself; the dotfiles CLAUDE.md lists the two new lane scripts and where shared script defaults live.

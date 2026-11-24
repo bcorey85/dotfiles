@@ -126,6 +126,13 @@ Report: `review-round1-shard-a.md`. None cuts or narrows an AC.
 - **Choice:** Phase 2's `is_wanted_change_ask` matches the end of the packet's `change` text, which breaks the scripts/CLAUDE.md rule to read another script's output through a JSON field. Phase 4 already edits `review_loop_packet.packet_message` (G5), so Phase 4 adds a wanted-change field to the packet and switches `is_wanted_change_ask` to read it. The text match stays only until Phase 4.
 - Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
 
+### P3-stop. Phase 3 blocker rulings
+- **SKILL.md:99 `cap reached after ...` line:** accept the gap until Phase 4, which creates the line and edits SKILL.md:99. Both land before merge.
+- **SKILL.md:32 ask (fix launch or one coder):** keep the fix launch, as G11 says.
+- **code_wait.py:17-19 stale docstring:** fixed in Phase 4, which lists code_wait.py in its files.
+- **Double read of the lane files:** resolve the ruler once and pass it to both `asks_done_guidance` and `asks_done_line`.
+- Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
+
 ## Direction & Constraints
 
 - `review_round` and `iter` keep their meaning: packet identity, ledger iter join, relaunch `--iter`.

@@ -17,7 +17,7 @@ Seven fixes to the /code review loop and its ask tools, one per phase. A relayed
 
 - [x] Phase 1: Relay a ruling by session id (risk: low)
 - [x] Phase 2: A session rejects a wanted change to a user-only file (risk: high)
-- [ ] Phase 3: A capped packet opens its asks; a lane is told `--by session` (risk: high)
+- [x] Phase 3: A capped packet opens its asks; a lane is told `--by session` (risk: high)
 - [ ] Phase 4: Fix rounds and post-cap passes in the packet and stop (risk: low)
 - [ ] Phase 5: Round and role on reviewer dispatch lines (risk: low)
 - [ ] Phase 6: Put back a fix pass that breaks an accepted ruling (risk: high)

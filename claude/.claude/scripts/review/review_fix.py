@@ -129,7 +129,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
-from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
+from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_blocker_text import blocker_text
@@ -339,41 +339,14 @@ def jumped_line(state):
     return f"The script ran hunk-notes for all asks ({state['jumped']}). Do not run it again."
 
 
-def asks_done_line(asks, state):
-    """The asks-done command for the packet in `state`, relaying the user's answer (`--by user`). It names --packet
-    when another packet still waits, so the command runs as printed."""
-    packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
-    outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
-    line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
-            f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
-            f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
-            f"applied: {review_asks.APPLIED_MEANS} | "
-            f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
-            f"word: make that change instead; an optional ':<one line note>' after {review_asks.PLAIN_OUTCOMES_TEXT} "
-            "is not stored)")
-    user_only = user_only_numbers(asks)
-    if user_only:
-        listed = ", ".join(str(number) for number in user_only)
-        line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
-                 f"{review_asks.HELD_MEANS}")
-    conditional = review_asks.conditional_ask_numbers(asks)
-    if not conditional:
-        return line
-    numbers = ", ".join(str(number) for number in conditional)
-    noun = "ask" if len(conditional) == 1 else "asks"
-    return (f"{line}. Answer {noun} {numbers} with '{review_asks.MODIFIED}:<change with no condition>': "
-            f"{review_asks.PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
-
-
 def present_packet_asks(packet, state):
     asks = save_packet_asks(packet, state)
+    ruler = review_asks.asks_done_ruler()
     lines = [
         jumped_line(state),
-        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
-        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
-        "yourself and run the asks-done below with `--by session` in place of `--by user`; otherwise wait for the "
-        "user and run it as printed.",
-        asks_done_line(asks, state),
+        "Present each ask below with its question and its proposed change. Never auto-fix an ask. "
+        + review_asks.asks_done_guidance(ruler),
+        review_asks.asks_done_line(asks, state, ruler),
         *review_asks.numbered_ask_lines(asks, detail=True),
     ]
     print_action("present-asks", *lines)
@@ -613,8 +586,11 @@ def stop_for_status(packet, options, state):
         entries.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
-        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
-                     *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
+        ruler = review_asks.asks_done_ruler()
+        guidance = review_asks.asks_done_guidance(ruler)
+        done_line = review_asks.asks_done_line(packet["ask"], state, ruler)
+        numbered_lines = review_asks.numbered_ask_lines(packet["ask"], detail=True)
+        ask_lines = [jumped_line(state), guidance, done_line, *numbered_lines]
     print_action("stop", instruction, *entries, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:

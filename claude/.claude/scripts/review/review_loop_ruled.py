@@ -237,7 +237,9 @@ class RuledFindings:
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
         self.dropped_asks = []
-        self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
+        # the approval asks the session may not rule (anything but a rejected on a wanted-change ask); the packet
+        # marks each one `user_only`
+        self.user_only_asks = []
         self.user_only_paths = []  # the repo-relative path each approval ask was filed for
         # path -> the blob id its edit is measured against
         self.user_only_bases = {}

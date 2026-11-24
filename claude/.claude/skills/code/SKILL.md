@@ -29,7 +29,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
 **Run notes.** Text after the plan file or ticket id in the task text (other than `resume` and its feedback) is the run notes. A number right after the plan path picks that phase in place of the first unchecked one. It isn't a run note. Run notes are the text after it. Put the run notes, word for word, under the line `Run notes from the user. They bind this run; the plan stays the spec:` in the prompt of every coder you dispatch for the phase. The review loop's own fix coders do not get it.
 
-**Resume.** When the task text starts with `resume`, an absolute path right after it names the plan, and that plan's git repo is the repo root for the run. The rest is the user's feedback on the last stop; none means go on. With no path and no `<run folder>/stop.md`, go to step 0. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` (`handoff.prev.txt` after a phase start moved it aside) and `<run folder>/review.out` (the last review packet). Apply the feedback to that stop, then go on from the step that stopped.
+**Resume.** When the task text starts with `resume`, an absolute path right after it names the plan, and that plan's git repo is the repo root for the run. The rest is the user's feedback on the last stop; none means go on. With no path and no `<run folder>/stop.md`, go to step 0. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` (`handoff.prev.txt` after a phase start moved it aside) and `<run folder>/review.out` (the last review packet). Apply the feedback to that stop, apply each ask accepted on the capped packet (listed under `Asks decided` in the stop) through `python3 ~/.claude/scripts/review/review_fix.py launch --fix <file holding the accepted asks> …`, then go on from the step that stopped.
 
 **Plan impacts never stop the run.** A coder's `PLAN-IMPACT:` block and a review packet's plan impacts go on one list for the phase end. At the phase end, before the phase-boundary decision:
 
@@ -96,7 +96,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
    Route on the packet's `status`, first match wins:
 
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
-   - `cap-reached` → STOP. Report `findings_remaining`.
+   - `cap-reached` → when code_wait printed finding asks, run `phase_asks.py list` and rule them as for `converged`, dispatching no coder for an accepted ask (list it under `Asks decided`: the resume applies it). Then STOP and report `findings_remaining`.
    - `deferred` → handle as `converged` (plan impacts, render, asks and the `phase_asks.py rule` line), plus `findings_remaining` under `### Deferred to branch exit`; proceed.
    - `converged` → put any plan impacts the packet lists on the phase-end list.
      - Leave an impact with `settled: true` off the list and write no Plan Deviations line for it.

@@ -13,16 +13,20 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+from typing import ClassVar
 
 import fake_ledger
 import isolated_state
+import test_review_loop_script as loop_script
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
 import ask_outcome_words
+import capped_review
 import file_lock
+import handback
 import handback_store
 import phase_asks
 import review_asks
@@ -774,15 +778,33 @@ class OpenPhaseAsksTest(WaitCase):
         self.assertEqual(lines, [])
         self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
 
-    def test_a_cap_reached_packet_with_asks_opens_nothing(self):
-        packet = json.loads(packet_with(ASKS))
+    def reject_the_first_ask_of(self, packet):
+        """Opens `packet`'s asks, has the session reject the first one through `rule`, and returns the asks the
+        review loop reads back as rejected for this session."""
+        self.seed_handback()
+        phase_asks.record_open(SESSION, self.repo_top, packet, {}, "loop-c:2")
+        code, _output, error = self.run_script("rule", "rejected:not needed")
+        self.assertEqual(code, 0, error)
+        return handback_store.rejected_ask_texts(SESSION, handback_store.ruled_rows_repo(self.repo_top))
+
+    def test_a_session_rejection_on_a_converged_packet_is_stored_for_a_fresh_run(self):
+        packet = json.loads(packet_with(ASKS[:1]))
+
+        stored = self.reject_the_first_ask_of(packet)
+
+        self.assertEqual(stored, [f"src/a.py:3 {ASKS[0]['question']}"])
+
+    def test_a_cap_reached_packet_with_asks_opens_them_and_a_session_rejection_is_stored(self):
+        packet = json.loads(packet_with(ASKS[:1]))
         packet["status"] = "cap-reached"
         packet.update({"open_classes": [], "unrun_reviewer": [], "full_check_tree": ""})
 
-        lines = phase_asks.record_open(SESSION, self.repo_top, packet, {}, "loop-c:2")
+        stored = self.reject_the_first_ask_of(packet)
 
-        self.assertEqual(lines, [])
-        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+        self.assertEqual(len(self.store_rows(handback_store.PHASE_ASKS_OPEN)), 1)
+        self.assertEqual(stored, [f"src/a.py:3 {ASKS[0]['question']}"])
+        self.assertNotIn(capped_review.effective_status(packet, self.repo_top), handback.CLEAN_STATUSES,
+                         "ruling a capped packet's asks never reads the run as clean")
 
     def test_a_cap_reached_packet_that_reads_as_deferred_opens_its_asks(self):
         packet = json.loads(packet_with(ASKS))
@@ -1313,6 +1335,61 @@ class CriterionAskTest(WaitCase):
 
         opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
         self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
+
+
+class FreshRunDropsARejectedAskTest(loop_script.ReviewLoopHarness, unittest.TestCase):
+    """A session's rejection of an ask on a review packet is stored, and a fresh review loop run whose reviewer raises
+    the same ask drops it (the packet lists it under `dropped_asks`)."""
+
+    FINAL_READ = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\n- `app.py:3` should the limit be "
+                  "configurable?\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+    CAPPED_SCENARIO: ClassVar[dict] = {
+        "code-reviewer": [{"result": loop_script.FIX_REVIEW}, {"result": loop_script.FIX_REVIEW},
+                          {"result": FINAL_READ}],
+        "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_script.APP_FIXED}},
+                  {"result": "Fixed 2.", "edits": {"app.py": loop_script.APP_AFTER_EDIT}}],
+        "closure": [{"result": loop_script.CLOSED}],
+    }
+    CONVERGED_SCENARIO: ClassVar[dict] = {
+        "code-reviewer": [{"result": ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n"
+                                      "## Nit\nNone\n\nOverall Assessment: APPROVED\n")}],
+    }
+
+    def reject_the_packet_ask_through_phase_asks(self, packet):
+        """Opens the packet's asks as code_wait does and rules the first one `rejected` through phase_asks.py."""
+        self.assertEqual(len(packet["ask"]), 1, packet["ask"])
+        env = {**self.env, "CLAUDE_CODE_SESSION_ID": loop_script.SESSION}
+        repo = os.path.realpath(self.repo)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": env["HANDBACK_STORE_DIR"]}):
+            lines = phase_asks.record_open(loop_script.SESSION, repo, packet, {}, "loop-x:2")
+        self.assertTrue(lines, "the packet's asks were not opened")
+        done = subprocess.run(["python3", "-I", str(SCRIPT), "rule", "rejected:not wanted"], cwd=self.repo, env=env,
+                              text=True, capture_output=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def assert_a_fresh_run_drops_the_rejected_ask(self, scenario):
+        first = self.run_script(scenario)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _row, first_packet = self.stored_packet()
+        self.reset_fake_run()
+        self.reject_the_packet_ask_through_phase_asks(first_packet)
+
+        second = self.run_script(scenario)
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertNotEqual(packet["status"], "critical-blocker")
+        return first_packet, packet
+
+    def test_a_fresh_run_drops_an_ask_the_session_rejected_on_a_converged_packet(self):
+        first_packet, _packet = self.assert_a_fresh_run_drops_the_rejected_ask(self.CONVERGED_SCENARIO)
+        self.assertEqual(first_packet["status"], "converged")
+
+    def test_a_fresh_run_drops_an_ask_the_session_rejected_on_a_cap_reached_packet(self):
+        first_packet, packet = self.assert_a_fresh_run_drops_the_rejected_ask(self.CAPPED_SCENARIO)
+        self.assertEqual((first_packet["status"], packet["status"]), ("cap-reached", "cap-reached"))
 
 
 if __name__ == "__main__":

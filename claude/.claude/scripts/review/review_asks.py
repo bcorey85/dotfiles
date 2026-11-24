@@ -1,6 +1,7 @@
-"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing and hunk-notes anchors of a review packet,
-for /review (review_fix.py).
+"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing, asks-done line and hunk-notes anchors of a
+review packet, for /review (review_fix.py).
 A plan-impact ask is not a finding: it gets no id and logs no outcome row."""
+import os
 import pathlib
 import re
 import shutil
@@ -11,6 +12,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder
 import approval_asks_store
 import handback
 import handback_store
+import lane_entries
 import plan_format
 from ask_outcome_words import (
     ACCEPTED,
@@ -26,7 +28,7 @@ from ask_outcome_words import (
     user_only_reason,
 )
 from review_fix_names import FILED_AT_KEY
-from review_fix_state import UsageError
+from review_fix_state import REVIEW_FIX_COMMAND, UsageError
 from review_loop_findings import CHANGE_IF_LABEL_PATTERN, ask_parts
 from script_utils import (
     ask_text,
@@ -102,6 +104,65 @@ def parse_outcome_words(words, count, allowed, note_required):
         outcomes.append(outcome)
         notes.append(one_line(note, None))
     return outcomes, notes
+
+
+def asks_done_ruler():
+    """The `--by` word of the asks-done line: `session` in a lane session, else `user`. Lane files that cannot be read
+    give `user` and a stderr line."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    try:
+        in_lane = lane_entries.is_lane_session(session_id)
+    except (lane_entries.LaneFileError, OSError) as error:
+        print(f"review_fix: lane files unreadable ({error}); the asks-done line names --by "
+              f"{plan_format.USER_RULING}", file=sys.stderr)
+        return plan_format.USER_RULING
+    if in_lane:
+        return plan_format.SESSION_RULING
+    return plan_format.USER_RULING
+
+
+def asks_done_guidance(ruler):
+    """One sentence on the `--by` word `ruler` (from `asks_done_ruler`) that the asks-done line prints."""
+    if ruler == plan_format.SESSION_RULING:
+        return ("The asks-done below names `--by session`: decide each ask yourself and do not wait for the user. "
+                "When you relay the user's answer instead, swap in `--by user`.")
+    return ("The asks-done below names `--by user`: run it with the user's answers. When you decide the asks "
+            "yourself (the repo's CLAUDE.md hands ask decisions to the session), swap in `--by session`.")
+
+
+def asks_done_line(asks, state, ruler):
+    """The asks-done command for the packet in `state`, with `--by <ruler>` (from `asks_done_ruler`: `session` in a
+    lane session, `user` relaying the user's answer otherwise). It names --packet when another packet still waits, so
+    the command runs as printed."""
+    packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
+    outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
+    if ruler == plan_format.SESSION_RULING:
+        lead_in = "Decide each ask, then run once:"
+    else:
+        lead_in = "After the user answers, run once:"
+    line = (f"{lead_in} {REVIEW_FIX_COMMAND} asks-done "
+            f"--by {ruler} {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
+            f"accepted: {ACCEPT_MEANS} | rejected: {REJECT_MEANS} | "
+            f"applied: {APPLIED_MEANS} | "
+            f"'{MODIFIED}:<the change in one line>', quoted as one shell "
+            f"word: make that change instead; an optional ':<one line note>' after {PLAIN_OUTCOMES_TEXT} "
+            "is not stored)")
+    user_only = user_only_numbers(asks)
+    if user_only:
+        listed = ", ".join(str(number) for number in user_only)
+        if ruler == plan_format.SESSION_RULING:
+            line += (f". A `--by session` call: give `{HELD}` for user_only ask(s) {listed} unless the ask is a "
+                     f"wanted change you reject: {HELD_MEANS}")
+        else:
+            line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
+                     f"{HELD_MEANS}")
+    conditional = conditional_ask_numbers(asks)
+    if not conditional:
+        return line
+    numbers = ", ".join(str(number) for number in conditional)
+    noun = "ask" if len(conditional) == 1 else "asks"
+    return (f"{line}. Answer {noun} {numbers} with '{MODIFIED}:<change with no condition>': "
+            f"{PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
 
 
 def note_anchor_args(asks):

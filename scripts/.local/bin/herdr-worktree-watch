@@ -84,7 +84,6 @@ lane_entry_for_worktree() {
     jq -c --arg wt "$worktree" 'select(.entry.worktree == $wt) | .entry // empty' <<<"$reply"
 }
 
-# The wait is wall time, so the poll calls count against it as well as the sleeps.
 start_seconds=$SECONDS
 session=$(read_session)
 polled=false
@@ -109,7 +108,8 @@ if [ -n "$session" ] && [ -n "$lane_entry" ]; then
     fi
 fi
 
-# SECONDS ticks in whole seconds, so with no poll the elapsed time is not counted: a tick must not shorten the wait.
+# When the poll loop ran, its calls count against the wait; with no poll the whole wait is slept, since a SECONDS
+# tick (whole seconds) must not shorten it.
 waited=0
 [ "$polled" = false ] || waited=$((SECONDS - start_seconds))
 remaining=$((watch_seconds - waited))

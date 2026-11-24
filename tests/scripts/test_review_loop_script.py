@@ -6455,6 +6455,33 @@ class FixRoundWiringTest(unittest.TestCase):
         self.assertEqual(len(lint_repairs), 1)
         self.assertEqual(lint_repairs[0].changed, ["app.py"])
 
+    def test_a_repair_before_a_later_review_round_is_dropped_from_late_repairs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            loop.dispatches = [("code-reviewer", ["app.py"])]
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            seen_at_review = []
+            fix_rounds = []
+
+            def review_round():
+                seen_at_review.append(loop.late_repairs)
+                return [], []
+
+            def fix_round(_fixes, _nits):
+                fix_rounds.append(1)
+                loop.note_late_repair(review_loop_pass_names.LINT_FIX_PASS, result)
+                return len(fix_rounds) < 2
+
+            loop_script = load_script_module()
+            with mock.patch.object(loop, "review_round", side_effect=review_round), \
+                    mock.patch.object(loop, "fix_round", side_effect=fix_round), \
+                    mock.patch.object(loop, "read_late_repairs"), \
+                    mock.patch.object(loop, "apply_pending_cap"):
+                loop_script.walk(loop, "", ())
+
+        self.assertEqual(seen_at_review, [(), ()])
+        self.assertEqual(len(loop.late_repairs), 1)
+
 
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
     """A coder never edits a sign-off line of a decision log; the loop asks the caller instead."""

@@ -940,6 +940,9 @@ def walk(loop, check_command, gate_commands):
     before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.next_round()
+        # A reviewer reads the files of every repair made before this round, so only a repair after the last read is
+        # left for `read_late_repairs`.
+        loop.late_repairs = ()
         round_fix, round_nits = loop.review_round()
         if not loop.fix_round(round_fix, round_nits):
             break

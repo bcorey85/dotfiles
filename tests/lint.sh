@@ -45,7 +45,7 @@ runStep() {
     local stepName="$1"
     shift
     local stepExit=0
-    ruff check --no-cache "$@" 2>&1 | tee "$stepLog" || stepExit="${PIPESTATUS[0]}"
+    ruff check --no-cache "$@" | tee "$stepLog" || stepExit="${PIPESTATUS[0]}"
     if [ "$stepExit" -eq 0 ]; then
         return 0
     fi

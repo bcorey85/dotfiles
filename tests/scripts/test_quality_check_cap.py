@@ -931,9 +931,13 @@ class WithoutSystemdRunTest(unittest.TestCase):
         import quality_check_cap
         self.module = quality_check_cap
 
-    def test_a_quoted_option_value_leaves_the_segment_unchanged(self):
+    def test_a_quoted_option_value_is_dropped_with_the_other_options(self):
         segment = 'systemd-run --user --scope -p "Description=unit tests" pytest -x'
-        self.assertEqual(self.module.without_systemd_run(segment), segment)
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
+
+    def test_a_single_quoted_option_value_shares_the_plain_key(self):
+        segment = "systemd-run --user --scope -p 'MemoryMax=8G' -p MemorySwapMax=0 pytest"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest")
 
     def test_unquoted_options_are_dropped(self):
         segment = "systemd-run --user --scope -p MemoryMax=8G pytest -x"

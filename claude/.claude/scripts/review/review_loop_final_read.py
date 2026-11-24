@@ -14,9 +14,10 @@ LATE_REPAIR_CALLS = (GATE_FIX_PASS, LINT_FIX_PASS, CLASS_FIX_PASS, PROSE_FIX_PAS
 
 
 class FinalRead:
-    # Every gate, lint, class-closure or stale-prose repair pass (call name, CoderResult) that changed code, in run
-    # order, the lint repair after a fix pass mid-loop included. `read_late_repairs` reads them once, on a
-    # converged run. A tuple, replaced on each change, so no instance shares it.
+    # Every gate, lint, class-closure or stale-prose repair pass (call name, CoderResult) that changed code since the
+    # last review round began, in run order, the lint repair after the last fix pass included: `walk` clears it at
+    # the start of each review round, which reads the files an earlier repair changed. `read_late_repairs` reads
+    # them once, on a converged run. A tuple, replaced on each change, so no instance shares it.
     late_repairs = ()
     # True once a read filed a fix; `apply_pending_cap` then stops the run.
     cap_pending = False

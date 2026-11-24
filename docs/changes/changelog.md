@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1170 changes
+1172 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The late repair read drops repairs an earlier review round already read](notes/2026-11-24-the-late-repair-read-drops-repairs-an-earlier.md) [script/review-loop-script] The review loop clears its list of repair passes at the start of each review round, so a converged run reads only the repairs made after the last review round.
+* [A memory-capped run with a quoted option value shares the plain run's key](notes/2026-11-24-a-memory-capped-run-with-a-quoted-option-value.md) [script/quality-check-cap] A systemd-run prefix with a quoted option value is now cut off like an unquoted one, so the capped run and the plain run of the same check share one key.
 * [herdr-worktree-watch waits the full interval when nothing was polled](notes/2026-11-24-herdr-worktree-watch-waits-the-full-interval-when.md) [script/herdr-worktree-watch] The watcher's final sleep no longer comes out one second short when the shell's SECONDS clock ticks between its start and the sleep and no poll ran.
 * [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md) [script/review-loop] A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it.
 * [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md) [script/pull-keep-index] A pull before push no longer refuses when the other live session's only dirty files are built pages the merge driver owns: the pages are set aside, the branch is pulled, and the driver rebuilds them.

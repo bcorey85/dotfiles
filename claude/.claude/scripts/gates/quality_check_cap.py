@@ -64,6 +64,7 @@ from shell_command import (
     split_command_steps,
 )
 from shell_directory import path_word
+from shell_quoting import quoted_positions
 from shell_statements import shell_code
 from shell_steps import runs_only_after_success, step_surely_ran
 
@@ -398,16 +399,12 @@ def without_systemd_run(segment):
     if dropped_count == 0 or not program_words:
         return segment
 
-    leading_words = re.compile("^(?:[^" + SP + "]+" + WS + "+){" + str(dropped_count) + "}")
-    match = leading_words.match(segment)
-    if not match:
+    # The blanks inside quotes or after a backslash do not end a word, so a quoted option value stays one word.
+    quoted = quoted_positions(segment)
+    word_gaps = [gap for gap in re.finditer("[ \t\r\n]+", segment) if gap.start() not in quoted]
+    if len(word_gaps) < dropped_count:
         return segment
-
-    # A quoted option value holds spaces, so the raw cut lands inside it: keep the segment when the cut text
-    # does not read back as the dropped words.
-    if segment_words(match.group(0)) != words[:dropped_count]:
-        return segment
-    return segment[match.end():]
+    return segment[word_gaps[dropped_count - 1].end():]
 
 
 def writes_files(segment):

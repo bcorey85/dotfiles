@@ -208,6 +208,7 @@ def emit_deny(reason):
 
 
 def emit_capped_rewrite(tool_input):
+    """Prints an allow-with-update reply that puts the memory cap in front of the test run."""
     command = tool_input["command"]
     reason = f"Added the memory cap `{memory_cap_scope.CAPPED_PREFIX}` in front of the test run."
     updated_input = {**tool_input, "command": memory_cap_scope.capped_command(command)}

@@ -283,14 +283,15 @@ prune_main_checkout() {
 # Close a merged lane that has no lane file entry: worktree $1 is a linked worktree with an
 # open workspace and no working agent. Same sequence as close_lane minus the entry remove.
 entryless_close() {
-    local wt="$1" close_wait git_dir common_dir main_checkout name working workspace_ids dirty
+    local wt="$1" close_wait main_checkout name working workspace_ids dirty
 
     close_wait=$(checked_close_wait) || exit 1
     [ -d "$wt" ] || fail "no lane file entry and no folder at $wt"
     wt=$(real_path "$wt")
-    git_dir=$(git_folder "$wt" --git-dir) || fail "$wt is not a linked worktree"
-    common_dir=$(git_folder "$wt" --git-common-dir) || fail "$wt is not a linked worktree"
-    [ "$git_dir" != "$common_dir" ] || fail "$wt is not a linked worktree"
+    is_linked_worktree "$wt" || fail "$wt is not a linked worktree"
+    if ! is_worktree_top "$wt"; then
+        fail "$wt is not the top of a linked worktree; nothing changed"
+    fi
     main_checkout=$(main_checkout_of "$wt") || exit 1
 
     name=$(basename "$wt")

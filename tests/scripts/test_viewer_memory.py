@@ -2,11 +2,17 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import toolkit_paths
 from stubs import write_stub
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import memory_cap_scope
 
 DEFAULT_LIB = Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "viewer-memory.bash"
 LIB = Path(os.environ.get("VIEWER_MEMORY_LIB", DEFAULT_LIB))
@@ -144,6 +150,7 @@ class ViewerMemoryTest(unittest.TestCase):
         """Run set_viewer_cap_prefix with PATH holding only the stub folder, so no real binary is found."""
         runtime = self.tmp / "runtime"
         runtime.mkdir(exist_ok=True)
+        (runtime / "bus").unlink(missing_ok=True)
         if with_bus:
             (runtime / "bus").write_text("")
         for old_stub in self.stubs.iterdir():
@@ -169,6 +176,40 @@ class ViewerMemoryTest(unittest.TestCase):
             with self.subTest(label=label):
                 result = self.prefix_with(with_bus=True, **options)
                 self.assertEqual(result.stdout.split(), ["0"], f"{label}: {result.stderr}")
+
+    def test_python_and_bash_cap_checks_agree(self):
+        """The two twins answer alike in every environment, except that bash also needs systemctl."""
+        both = ("systemd-run", "systemctl")
+        cases = {
+            "linux with a user bus": {"with_bus": True},
+            "linux without a bus": {"with_bus": False},
+            "empty runtime dir": {"with_bus": True, "env_extra": {"XDG_RUNTIME_DIR": ""}},
+            "darwin": {"with_bus": True, "uname": "Darwin"},
+            "no systemd-run": {"with_bus": True, "commands": ("systemctl",)},
+            "no systemctl": {"with_bus": True, "commands": ("systemd-run",)},
+        }
+        systemctl_only_case = "no systemctl"
+        for label, options in cases.items():
+            with self.subTest(label=label):
+                bash_result = self.prefix_with(**options)
+                bash_available = bash_result.stdout.split() != ["0"]
+                python_available = self.python_cap_available(
+                    options.get("uname", "Linux"), options.get("commands", both), options.get("env_extra"))
+                if label == systemctl_only_case:
+                    self.assertTrue(python_available, label)
+                    self.assertFalse(bash_available, label)
+                    continue
+                self.assertEqual(python_available, bash_available, f"{label}: {bash_result.stderr}")
+
+    def python_cap_available(self, uname, commands, env_extra):
+        """cap_available() with the platform, PATH commands and runtime dir that prefix_with set up."""
+        runtime_dir = (env_extra or {}).get("XDG_RUNTIME_DIR", str(self.tmp / "runtime"))
+        platform = "linux" if uname == "Linux" else "darwin"
+        with mock.patch.object(memory_cap_scope.sys, "platform", platform), \
+                mock.patch.object(memory_cap_scope.shutil, "which",
+                                  lambda name: f"/stub/{name}" if name in commands else None), \
+                mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": runtime_dir}):
+            return memory_cap_scope.cap_available()
 
     def test_prefix_is_the_systemd_run_scope_with_a_bus(self):
         result = self.prefix_with(with_bus=True, env_extra={"HUNK_REVIEW_MEMORY_MAX": "512M"})

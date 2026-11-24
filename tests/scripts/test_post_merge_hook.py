@@ -10,6 +10,7 @@ import toolkit_paths
 
 REPO_ROOT = toolkit_paths.REPO_ROOT
 HOOK = pathlib.Path(os.environ.get("POST_MERGE_HOOK") or REPO_ROOT / ".githooks" / "post-merge")
+MAIN_CHECKOUT_LIB = REPO_ROOT / "scripts" / ".local" / "lib" / "main-checkout.bash"
 CHECK_SCRIPT = REPO_ROOT / "install" / "check-script-links"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "script-tests.yml"
 
@@ -39,6 +40,8 @@ class PostMergeHookTest(unittest.TestCase):
         self.add_file(self.repo / "install" / "check-script-links", CHECK_SCRIPT.read_text(), 0o755)
         self.add_file(self.repo / ".githooks" / "post-merge", HOOK.read_text(), 0o755)
         self.add_file(self.repo / "scripts" / ".local" / "bin" / "one", "#!/bin/sh\n", 0o755)
+        lib_file = self.repo / "scripts" / ".local" / "lib" / "main-checkout.bash"
+        self.add_file(lib_file, MAIN_CHECKOUT_LIB.read_text(), 0o644)
         self.git(self.repo, "add", ".")
         self.git(self.repo, "commit", "-q", "-m", "base")
 
@@ -94,6 +97,7 @@ class PostMergeHookTest(unittest.TestCase):
         lane = self.home / "lane"
         self.git(self.repo, "worktree", "add", "-q", "-b", "lane-branch", str(lane))
         (self.bin_dir / "one").unlink()
+        (self.home / ".local" / "lib").unlink()  # stow folded it into one link to the main checkout
         run(["stow", "-R", "-t", str(self.home), "scripts"], lane, self.env)
         stub, log = self.stow_stub()
         result = self.merge(lane, "--no-ff", "-m", "merge", stow=stub)

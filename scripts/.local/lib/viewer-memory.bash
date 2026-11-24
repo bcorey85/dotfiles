@@ -63,7 +63,7 @@ viewer_memory_is_zero() {
 }
 
 # Returns 0 when the cap has more digits than viewer_memory_digit_limit allows for its suffix
-# (leading zeros left out), keeping the byte count under 2^63 so bash arithmetic never wraps.
+# (leading zeros left out).
 viewer_memory_overflows() {
     local digits limit
     digits=$(viewer_significant_digits "${viewer_memory_max%?}")
@@ -71,8 +71,8 @@ viewer_memory_overflows() {
     (( ${#digits} > limit ))
 }
 
-# Returns 0 when the restart window has more significant digits than viewer_window_max_digits,
-# keeping the seconds under 2^63 so bash arithmetic never wraps.
+# Returns 0 when the restart window has more significant digits than viewer_window_max_digits
+# (leading zeros left out).
 viewer_window_overflows() {
     local digits
     digits=$(viewer_significant_digits "$viewer_restart_window_seconds")

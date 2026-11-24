@@ -17,7 +17,7 @@
 # nvim-jump writes `handoff`, then SIGTERMs the pid, the same shutdown as `q`.
 # The key is $HERDR_PANE_ID: set in every herdr pane and fixed unless the pane moves to
 # another workspace; after a move nvim-jump cannot find this pane's state until the loop
-# restarts. With it unset, hunk runs plain and nothing hands off.
+# restarts. With it unset, hunk runs (capped) with no state dir and nothing hands off.
 #
 # Env (PATH shims, EDITOR) is the caller's job.
 #
@@ -27,7 +27,8 @@
 #
 # Memory cap: hunk runs in a systemd user scope with MemoryMax=$HUNK_REVIEW_MEMORY_MAX
 # (default 1G, digits then K, M or G) and no swap, in a herdr pane and in a plain terminal
-# alike. With no systemd user session (not Linux, no user bus) hunk runs uncapped. A scope
+# alike. With no systemd user session (not Linux, no `systemd-run`/`systemctl`, or no user
+# bus) hunk runs uncapped. A scope
 # that cannot start stops the launcher; hunk never runs uncapped by fallback.
 # When the kernel kills hunk for passing the cap, the terminal is reset, one line says so, and
 # hunk restarts. A kill within $HUNK_REVIEW_RESTART_WINDOW_SECONDS (default 60) of the start
@@ -118,7 +119,7 @@ run_viewer() {
         # The dead viewer's pid and any handoff must not outlive it: nvim-jump would signal a reused pid.
         [ -z "${HUNK_REVIEW_PIDFILE:-}" ] || rm -f "$HUNK_REVIEW_PIDFILE" "$HUNK_REVIEW_HANDOFF"
         stty sane 2>/dev/null || :
-        printf '\033[?1049l'
+        printf '\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l\033[?25h\033[<u\033[?1049l'
         echo "hunk-review-pane: the viewer passed its $viewer_memory_max memory cap and was killed; restarting" >&2
         if [ $((SECONDS - start_seconds)) -lt "$viewer_restart_window_seconds" ]; then
             echo "hunk-review-pane: killed within $viewer_restart_window_seconds s of its start; press Enter to try again" >&2
@@ -136,7 +137,7 @@ set_untracked_flag() {
     [ -z "$flag" ] || untracked_flag=("$flag")
 }
 
-# Outside a herdr pane there is no key for the state dir: plain hunk, no handoff.
+# Outside a herdr pane there is no key for the state dir: hunk runs capped, with no handoff.
 # The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
 if [ -z "${HERDR_PANE_ID:-}" ]; then
     set_untracked_flag

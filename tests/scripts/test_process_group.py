@@ -124,7 +124,8 @@ class ProcessGroupTest(unittest.TestCase):
 
     def test_program_name_is_the_base_name_of_the_program(self):
         process = self.sleeper()
-        self.assertTrue(process_group.program_name(process.pid).startswith("python"))
+        expected = os.path.basename(sys.executable)[:15]
+        self.assertEqual(process_group.program_name(process.pid), expected)
         process.kill()
         process.wait()
         self.assertEqual(process_group.program_name(process.pid), "")

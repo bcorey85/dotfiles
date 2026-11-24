@@ -21,7 +21,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 `scripts/.local/bin/hunk-review-pane` sources `viewer-memory.bash` and runs every hunk start through `run_viewer`, in
 a herdr pane and from a plain terminal alike. Each start is a fresh `systemd-run --user --scope` unit with
 `MemoryMax=$HUNK_REVIEW_MEMORY_MAX` (default 1G) and no swap. A bad cap exits 2 naming the variable before hunk starts.
-With no user bus or off Linux, hunk runs uncapped; a scope that fails to start stops the launcher. When the scope was
+Off Linux, with no systemd-run/systemctl, or with no user bus, hunk runs uncapped; a scope that fails to start stops the launcher. When the scope was
 OOM-killed (or hunk exits 137 under a cap), the terminal is reset, one line names the cap, and hunk restarts; a kill
 within `HUNK_REVIEW_RESTART_WINDOW_SECONDS` of the start waits for Enter and stops on end of input. `--viewers` prints
 the cap in bytes and one row per state dir with a `hunk.pid`; an empty `hunk.pid` (the extension is mid-write) is skipped. `.claude/rules/hunk.md` gains one sentence.

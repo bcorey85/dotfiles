@@ -872,7 +872,7 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         self.assert_refused_changing_nothing(result, f"no lane file entry and no folder at {self.root}/missing/x")
 
-    def test_an_entry_whose_worktree_differs_from_the_path_falls_to_the_entryless_close(self):
+    def test_a_subfolder_of_a_lane_worktree_is_refused_as_not_the_top(self):
         self.add_lane()
         subdir = self.worktree / "subdir"
         subdir.mkdir()
@@ -880,7 +880,7 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         result = self.run_script("--close", str(subdir))
 
-        self.assert_refused_changing_nothing(result, f"no herdr workspace is open on {subdir}")
+        self.assert_refused_changing_nothing(result, f"{subdir} is not the top of a linked worktree")
         self.assertEqual(self.lane_names(), [NAME])
 
     def test_close_by_path_with_an_entry_uses_the_entry(self):

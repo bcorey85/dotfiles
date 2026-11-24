@@ -219,7 +219,8 @@ class HunkReviewPaneCapTest(StubbedLauncherTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.hunk_runs(), 2)
         self.assertIn("1G memory cap", result.stderr)
-        self.assertIn("\x1b[?1049l", result.stdout)
+        self.assertIn("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[<u\x1b[?1049l",
+                      result.stdout)
         self.assertEqual(self.stty_log.read_text().splitlines(), ["sane"])
 
     def test_oom_kill_inside_the_window_waits_for_enter(self):
@@ -244,10 +245,12 @@ class HunkReviewPaneCapTest(StubbedLauncherTest):
 
     def test_a_scope_that_fails_to_start_starts_no_uncapped_viewer(self):
         write_stub(self.stub_dir / "systemd-run", 'echo "Failed to start transient scope" >&2\nexit 1')
-        result = self.run_launcher()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.hunk_runs(), 0)
-        self.assertIn("Failed to start transient scope", result.stderr)
+        for label, extra_env in (("outside herdr", {}), ("inside herdr", {"HERDR_PANE_ID": "p7"})):
+            with self.subTest(label):
+                result = self.run_launcher(**extra_env)
+                self.assertNotEqual(result.returncode, 0, label)
+                self.assertEqual(self.hunk_runs(), 0, label)
+                self.assertIn("Failed to start transient scope", result.stderr, label)
 
 
 class HunkReviewPaneViewersTest(StubbedLauncherTest):

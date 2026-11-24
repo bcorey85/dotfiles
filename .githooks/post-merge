@@ -12,11 +12,14 @@ set -uo pipefail
 
 STOW="${STOW:-stow}"
 
+hook_top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+# shellcheck source=../scripts/.local/lib/main-checkout.bash
+. "$hook_top/scripts/.local/lib/main-checkout.bash" || exit 0
+
 in_main_worktree() {
-    local git_dir common_dir
-    git_dir="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
-    common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
-    [ "$git_dir" = "$common_dir" ]
+    # A git failure is not "main checkout": is_linked_worktree also returns 1 then, and `!` would flip it to true.
+    git_folder "$PWD" --git-dir >/dev/null || return 1
+    ! is_linked_worktree "$PWD"
 }
 
 # True when some script in this checkout is the file ~/.local/bin links to.
@@ -60,11 +63,9 @@ restow_scripts() {
 }
 
 main() {
-    local top
-    top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
     in_main_worktree || return 0
-    bin_links_into "$top" || return 0
-    restow_scripts "$top"
+    bin_links_into "$hook_top" || return 0
+    restow_scripts "$hook_top"
     return 0
 }
 

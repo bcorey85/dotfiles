@@ -662,8 +662,8 @@ esac""")
         claude_command = finished.stdout.splitlines()[1]
         prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
         self.addCleanup(os.remove, prompt_file)
-        self.assertTrue(claude_command.startswith(f"claude --resume s1 --fork-session --name {self.root.name} -- "),
-                        claude_command)
+        expected_start = f"CLAUDE_CODE_DISABLE_CRON=1 claude --resume s1 --fork-session --name {self.root.name} -- "
+        self.assertTrue(claude_command.startswith(expected_start), claude_command)
 
     def test_a_worktree_folder_with_shell_special_characters_is_typed_as_one_name_argument(self):
         folder_name = "my repo $x's"

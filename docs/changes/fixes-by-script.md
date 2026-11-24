@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-734 fix notes
+735 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -176,6 +176,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/owner-lines | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
+| script/pre-commit | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 0 |

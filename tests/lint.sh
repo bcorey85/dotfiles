@@ -40,8 +40,7 @@ failedSteps=()
 stepLog="$(mktemp)"
 trap 'rm -f "$stepLog"' EXIT
 
-# runStep <step name> <ruff args>...: streams ruff's output; a failing run is recorded as "<step name> (N errors)",
-# "(1 error)", or "(failed, no error count)" when ruff prints no Found line.
+# runStep <step name> <ruff args>...: streams ruff's output and records a failed step for finish.
 runStep() {
     local stepName="$1"
     shift

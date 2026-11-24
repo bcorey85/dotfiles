@@ -8,6 +8,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 
 ## Owners
 
+- Adding or removing one hook entry in a settings file: `tools/settings_hook.py`; an agent sends its line to the main session (a lane, to its orchestrator) and never runs it on the live settings file.
 - Review converged or clean status: `review/handback.py` `CLEAN_STATUSES` and `false_clean_reason`, and `review/capped_review.py` `effective_status` (a capped packet reads as `deferred` only with no blocker, no open class, no unrun scoped reviewer and a passed full check of the final tree). Read it; never re-derive it from packet text, a transcript or a session line.
 - Converged-review credit, the reviewed tree and the push check's read of it (`push_review_state`): `lib/reviewed_tree.py` (`record_reviewed`, `is_reviewed`, `reviewed_fingerprint`, which leaves out the notes paths of `lib/notes_paths.py`); the only writer of the record is `handback.record_clean_review`, fed the dispatch repo from the store. Fingerprint the repo that was reviewed, never the hook's cwd.
 - Tree identity: `lib/reviewed_tree.py` `tree_fingerprint` (`work_tree_fingerprint` for the work tree against its HEAD). Never hash a tree another way. The git tree object id of the work tree, which is not a fingerprint: `lib/worktree_snapshot.py` `work_tree_tree`. A review diff's base with merged-in commits left out: `lib/merge_free_base.py` `merge_free_base`.

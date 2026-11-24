@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import pathlib
 import subprocess
@@ -24,6 +25,13 @@ class QuickTest(unittest.TestCase):
     def test_passes(self):
         self.assertTrue(True)
 """
+BROKEN_TEST = """import unittest
+
+
+class BrokenTest(unittest.TestCase):
+    def test_fails(self):
+        self.fail("broken on purpose")
+"""
 
 
 class FileTimeoutTest(unittest.TestCase):
@@ -43,6 +51,20 @@ class FileTimeoutTest(unittest.TestCase):
         self.assertRegex(finished.stdout, r"test_sleepy\.py .* FAIL")
         self.assertRegex(finished.stdout, r"test_quick\.py .* OK")
         self.assertIn("test_sleepy.py timed out after 10s", finished.stdout)
+
+    def test_the_summary_file_names_the_test_count_and_the_failed_files(self):
+        summary_scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(summary_scratch.cleanup)
+        summary_file = pathlib.Path(summary_scratch.name) / "summary.json"
+        repo_root = make_repo(self, {"test_quick.py": QUICK_TEST, "test_broken.py": BROKEN_TEST})
+        environment = dict(os.environ, REPO_ROOT=repo_root, SUITE_SUMMARY_FILE=str(summary_file),
+                           SUITE_SLOT_DIR=str(pathlib.Path(summary_scratch.name) / "slots"))
+
+        subprocess.run([sys.executable, str(PARALLEL_TESTS)], capture_output=True, text=True, env=environment,
+                       timeout=50)
+
+        summary = json.loads(summary_file.read_text())
+        self.assertEqual({"tests": 2, "files": 2, "failed_files": ["test_broken.py"]}, summary)
 
 
 def make_repo(test_case, test_sources):

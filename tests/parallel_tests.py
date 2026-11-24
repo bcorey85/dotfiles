@@ -8,7 +8,9 @@
 A file listed in SHARDS runs as several processes, each taking every Nth test, so one huge file cannot bound the
 wall-clock. Each process writes how many tests the file holds; the file fails when the tests its processes ran do
 not add up to that number, or when one of several processes ran none. Expected failures and skips follow unittest:
-they do not fail the file."""
+they do not fail the file.
+
+With SUITE_SUMMARY_FILE set, the run also writes its test count, file count and failed files there as JSON."""
 
 import concurrent.futures
 import fcntl
@@ -38,6 +40,8 @@ WORKER_NICENESS = 10
 SHARDS = {"test_review_loop_script.py": 4}
 # Names the file where a test process writes how many tests the file holds and how many it took.
 SHARD_REPORT_VARIABLE = "PARALLEL_TESTS_SHARD_REPORT"
+# tests/run.sh names a file here and turns its counts into the run's suite receipt.
+SUMMARY_FILE_VARIABLE = "SUITE_SUMMARY_FILE"
 # Slowest files by measured time, started before the rest (the rest start by file size, largest first).
 HEAVY_FIRST = ["test_verify_branch_script.py", "test_refactor_flow.py", "test_review_fix_script.py", "test_adr_flow.py"]
 
@@ -282,6 +286,10 @@ def main(file_names=()):
         f"\n{total_tests} tests in {len(per_file)} files, wall-clock {wall:.1f}s, "
         f"sum of per-file seconds {total_seconds:.1f}s, {len(failed_files)} failed"
     )
+    summary_file = os.environ.get(SUMMARY_FILE_VARIABLE)
+    if summary_file:
+        summary = {"tests": total_tests, "files": len(per_file), "failed_files": failed_files}
+        pathlib.Path(summary_file).write_text(json.dumps(summary))
     return 1 if failed_files else 0
 
 

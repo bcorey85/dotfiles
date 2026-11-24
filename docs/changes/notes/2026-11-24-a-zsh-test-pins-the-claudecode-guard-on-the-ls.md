@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/zshrc"]
 evidence: ["judgment"]
 watches: []
-test: "tests/scripts/test_zshrc.py::ZshrcLsAliasTest::test_claude_code_shell_resolves_ls_to_the_command"
+test: "tests/scripts/test_zshrc.py::ZshrcLsAliasTest::test_claude_code_shell_resolves_guarded_names_to_the_command"
 asked: ""
 proof: []
 unmeasured: ""
@@ -19,7 +19,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 `tests/scripts/test_zshrc.py` starts `zsh -i` with a scratch home and a stub `keychain`, loads the stowed `.zshrc`, and
-reads `whence -w ls`. With `CLAUDECODE=1` it must print `ls: command`; without it, `ls: alias`.
+reads `whence -w ls` and `whence -w cat`. With `CLAUDECODE=1` it must print `ls: command`; without it, `ls: alias`.
 
 ## Evidence
 

@@ -750,6 +750,15 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
         self.assertIn("could not close workspace wX; nothing was pruned", result.stderr)
         self.assertEqual(self.recorded_events(), ["herdr workspace close wX"])
 
+    def test_entryless_close_of_a_merged_lane_with_an_uncommitted_file_refuses_before_closing(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.worktree / "scratch").write_text("not committed\n")
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, f"{self.worktree} has uncommitted changes; nothing changed")
+
     def test_entryless_prune_exit_code_is_the_script_exit_code(self):
         self.merge_fork()
         self.workspace_on(self.worktree)

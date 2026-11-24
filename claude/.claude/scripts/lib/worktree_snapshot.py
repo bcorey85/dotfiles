@@ -54,9 +54,13 @@ def status_codes(root, strict=False):
     return status_entries(root, strict)[0]
 
 
-def staged_paths(root):
-    """The paths the index holds changes for: the index status column is neither blank nor untracked."""
-    return [name for name, code in status_codes(root).items() if code[0] not in " ?"]
+def staged_paths(root, strict=False):
+    """The paths the index holds changes for against HEAD: a staged deletion of a file still on disk, and both sides
+    of a staged rename, included. A failed git call reads as nothing staged, or raises GitCallError with `strict`."""
+    output = git_output(root, "diff", "--cached", "--name-only", "--no-renames", "-z")
+    if output is None and strict:
+        raise GitCallError(f"`git diff --cached` failed in {root}")
+    return [name for name in (output or "").split("\0") if name]
 
 
 def file_hash(root, path):

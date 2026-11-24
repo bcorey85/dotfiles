@@ -39,6 +39,8 @@ Real run, against the live agent-evals with a temp index:
 
 The export uses one resolved destination path. The staged path list is read through `script_utils.git_output`, so a non-ASCII path is not quoted.
 
+The step reads its staged paths through `lib/worktree_snapshot.py` `staged_paths`, which gained `strict` and now reads `git diff --cached --no-renames`: the old `git status` read dropped a staged deletion of a file still on disk and the old side of a staged rename.
+
 ## Watch
 
 None.

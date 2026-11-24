@@ -29,6 +29,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - Review-fix state folder and file names, the asks-findings file name, and the `asks_launch_pending`, `correct_open` and `asks_decided_by` keys: `lib/review_fix_names.py`, which imports nothing. `review/review_fix_state.py` re-exports them.
 - Text for a changed or no-code ask ruling on a finding (ruler clauses, marker, no-code test): `lib/ruled_change_text.py` (`changed_text`, `ruled_note`, `is_no_code_ruling`), standard library only. The sign-off lines of a decision log: `lib/signoff_lines.py`; a standing ruling's form and reader: `lib/standing_rulings.py`; a coder pass never edits a sign-off line: `review/review_loop_signoffs.py`, which puts changed lines back through `lib/protected_lines.py`.
 - Plan text: `lib/plan_format.py`.
+- Export a folder of the git index (staged tree, honors GIT_INDEX_FILE) to disk: `lib/index_export.py` `export_index_folder`.
 - TOML files: `lib/toml_file.py` `read_toml`. Never import tomllib elsewhere: the scripts run on Python 3.10.
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`).
 - How alike two strings are: `lib/script_utils.py` `text_similarity`; two sequences of items: `lib/sequence_similarity.py`.

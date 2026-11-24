@@ -68,8 +68,7 @@ class ToolkitDriftTests(unittest.TestCase):
         self.git("init", "-q")
         self.write(CLAUDE_MD, f"intro\n{RULE_LINE}\nend\n")
         self.write(SKILL_PATH, "skill\n")
-        self.git("add", ".")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "base")
+        self.commit("base")
 
     def git(self, *args):
         subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True)
@@ -87,9 +86,9 @@ class ToolkitDriftTests(unittest.TestCase):
         (bin_dir / "test_skill_names.py").write_text(STUB_SKILL_TEST, encoding="utf-8")
         (bin_dir / "toolkit_skills.txt").write_text("alpha\n", encoding="utf-8")
 
-    def commit(self):
+    def commit(self, message="more"):
         self.git("add", ".")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "more")
+        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", message)
 
     def run_step(self, evals=None, extra_env=None):
         env = {**os.environ, "AGENT_EVALS_DIR": str(evals or self.evals), "HOME": str(self.home), **(extra_env or {})}

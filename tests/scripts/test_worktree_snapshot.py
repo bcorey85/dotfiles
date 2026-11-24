@@ -44,6 +44,25 @@ class WorktreeSnapshotTest(unittest.TestCase):
 
         self.assertEqual(worktree_snapshot.UNREADABLE, before["hashes"]["secret.txt"])
 
+    def test_staged_paths_lists_a_staged_deletion_of_a_file_still_on_disk_and_both_sides_of_a_rename(self):
+        git(self.repo, "rm", "-q", "--cached", "app.py")
+        git(self.repo, "mv", "generated.ts", "renamed.ts")
+
+        staged = worktree_snapshot.staged_paths(self.repo, strict=True)
+
+        self.assertEqual(["app.py", "generated.ts", "renamed.ts"], sorted(staged))
+        self.assertTrue((self.repo / "app.py").is_file())
+
+    def test_staged_paths_outside_a_repo_read_as_nothing_staged_by_default_and_raise_when_strict(self):
+        with tempfile.TemporaryDirectory() as outside:
+            outside_root = pathlib.Path(outside)
+            with mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(outside_root.parent)}):
+                default_paths = worktree_snapshot.staged_paths(outside_root)
+                with self.assertRaises(worktree_snapshot.GitCallError):
+                    worktree_snapshot.staged_paths(outside_root, strict=True)
+
+        self.assertEqual([], default_paths)
+
     def test_a_tracked_file_the_command_rewrote_is_named_and_left_as_written(self):
         before = worktree_snapshot.take(self.repo)
         (self.repo / "generated.ts").write_text("generated v2\n")

@@ -27,19 +27,12 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "claude" / ".claude" / "scripts" / "lib"))
 import index_export  # noqa: E402
 import script_utils  # noqa: E402
+import worktree_snapshot  # noqa: E402
 
 TOOLKIT_DIR = "claude/.claude"
 TRIGGER_PATTERN = re.compile(r"^claude/\.claude/((?!scripts/)|(.*/)?CLAUDE\.md$)")
 SKILL_PATTERN = re.compile(r"^claude/\.claude/skills/")
 DEFAULT_RULE_SOURCE = "CLAUDE.md"
-
-
-def staged_paths():
-    """Staged paths, deletions included."""
-    listed = script_utils.git_output(pathlib.Path.cwd(), "diff", "--cached", "--name-only")
-    if listed is None:
-        sys.exit("toolkit_drift: git diff --cached --name-only failed")
-    return listed.splitlines()
 
 
 def live_toolkit_roots():
@@ -139,7 +132,10 @@ def skill_list_problem(skill_test):
 
 
 def main():
-    staged = staged_paths()
+    try:
+        staged = worktree_snapshot.staged_paths(pathlib.Path.cwd(), strict=True)
+    except script_utils.GitCallError as failed:
+        sys.exit(f"toolkit_drift: {failed}")
     if not any(TRIGGER_PATTERN.match(path) for path in staged):
         return 0
 

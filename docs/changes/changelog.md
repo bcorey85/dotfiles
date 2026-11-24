@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1160 changes
+1161 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.
 * [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md) [script/code-review-start, skill/code] A file another session left dirty at phase start, which this phase's coder then rewrote, is now released into the review and named as released; before, review skipped it and the wait printed a tool fault, so the coder's change went unreviewed.
 * [Comment put-back files one ask per block and never repeats a ruled ask](notes/2026-11-23-comment-put-back-files-one-ask-per-block-and-never.md) [script/review-loop] The review loop's comment put-back now files one ask per comment block, does not put back a comment an accepted ask deletes, does not re-ask a comment whose ask was rejected, and files no ask for a comment a fix pass only reworded, so lanes stop hitting the round cap on no-op asks.
 * [Review loop scope guard keeps a fix to a file a finding names by suffix or dot-slash](notes/2026-11-23-review-loop-scope-guard-keeps-a-fix-to-a-file-a.md) [script/review-loop] The review loop's scope guard now keeps a fix to a file that a finding names with a leading dot-slash or by the unique end of its path, so that fix is no longer put back and lost.

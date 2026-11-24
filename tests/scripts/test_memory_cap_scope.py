@@ -148,9 +148,10 @@ class ForegroundFullSuiteTest(unittest.TestCase):
 
     def test_a_full_suite_in_the_background_is_allowed(self):
         for name, command in FULL_SUITES.items():
-            with self.subTest(name):
-                result = run_hook_payload(hook_input(command, True))
-                self.assertEqual((result.returncode, result.stdout), (0, ""))
+            for background in (True, "true"):
+                with self.subTest(name, background=background):
+                    result = run_hook_payload(hook_input(command, background))
+                    self.assertEqual((result.returncode, result.stdout), (0, ""))
 
     def test_a_targeted_run_in_the_foreground_is_allowed(self):
         for name, command in TARGETED_RUNS.items():

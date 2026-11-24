@@ -28,9 +28,9 @@ claim that names no such repo and no existing absolute path and finds the cwd in
 this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from its transcript, holds staged files,
 and every relative path the sentence names that exists in the cwd checkout or in that tree, resolved against that
 tree, is among them: a session that stages that way keeps its cwd. A second stop in a row passes (stop_hook_active),
-so a stuck session cannot spin. Fails open: any error exits 0 with no output.
+so a stuck session cannot spin. Fails open: any error exits 0 with a line on stderr. A crash in one check skips
+only that check; the other checks' reasons still go out.
 """
-import contextlib
 import functools
 import json
 import os
@@ -218,21 +218,40 @@ def staged_claim_reason(hook, message):
             "`git diff --cached --name-only` in that repo and say what the index holds.")
 
 
+def guarded(name, check, *args):
+    """check(*args), or None when it raises. Fails open per check: a crash in one stop check is reported on stderr
+    and the other checks' reasons still go out."""
+    try:
+        return check(*args)
+    except Exception as error:
+        print(f"staged-claim-gate: {name} skipped: {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+
+
+def permission_question_reason(hook, message):
+    """The permission-question reason for a message that ends on an offer the user did not ask for, or None."""
+    if not permission_question.closing_question(message):
+        return None
+    # Read the transcript only for a message that ends on an offer; an unreadable one judges the message alone.
+    answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
+    if answers_question:
+        return None
+    return permission_question.REASON
+
+
 def main():
     hook = json.load(sys.stdin)
     if hook.get("stop_hook_active"):
         return
     message = hook.get("last_assistant_message") or ""
 
-    reasons = [staged_claim_reason(hook, message)]
+    reasons = [guarded("staged_claim_reason", staged_claim_reason, hook, message)]
     is_main_session = hook.get("hook_event_name") == "Stop"
-    if is_main_session and permission_question.closing_question(message):
-        # Read the transcript only for a message that ends on an offer; an unreadable one judges the message alone.
-        answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
-        if not answers_question:
-            reasons.append(permission_question.REASON)
-    if is_main_session and announced_step.announced_step(message):
-        reasons.append(announced_step.REASON)
+    if is_main_session:
+        reasons.append(guarded("permission_question", permission_question_reason, hook, message))
+        announced = guarded("announced_step", announced_step.announced_step, message, hook.get("transcript_path"))
+        if announced:
+            reasons.append(announced_step.REASON)
 
     found_reasons = [reason for reason in reasons if reason]
     if found_reasons:
@@ -241,5 +260,7 @@ def main():
 
 if __name__ == "__main__":
     if not os.environ.get("CLAUDE_SKIP_HOOKS"):
-        with contextlib.suppress(Exception):
+        try:
             main()
+        except Exception as error:
+            print(f"staged-claim-gate: skipped: {type(error).__name__}: {error}", file=sys.stderr)

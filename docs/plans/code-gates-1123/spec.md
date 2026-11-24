@@ -24,6 +24,13 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 - [ ] Phase 4: a /code fork that coded a phase but never reviewed it is sent back at SubagentStop and denied at SubagentHandback (risk: high)
 - [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
+## Plan Deviations
+
+- ruling: Ticket #2, Phase 2: an Agent call counts as a background launch unless `run_in_background` is explicitly false (the Agent tool runs in the background by default; real transcripts: 332 of 338 keyless Agent calls returned an async launch result). Bash still needs `run_in_background` true. By the orchestrating /code session, 2026-11-24.
+- ruling: Ticket #2, Phase 2: `runs_in_background` and `launches_background` live in new stdlib-only `lib/tool_call_flags.py` (not in script_utils), so the PreToolUse gates do not load script_utils; wait_loop_gate.py and inline_interpreter_hint.py now read it, so both accept the string "true" as background. By the orchestrating /code session, 2026-11-24.
+- ruling: Ticket #2, Phase 2 ask rejected: a launch whose tool_result is a hook error still counts as a launch. No session hit it (2 such calls in 300 transcripts); size rule. By the lane session, 2026-11-24.
+- ruling: Phase 2 review reached its 5-round cap; the one finding open at the cap (a stale announced_step.py docstring) was fixed, and the branch-end full suite covers the final tree. Committed without a sixth round. By the lane session, 2026-11-24.
+
 ## Decisions
 
 1. Item 1 check site — one reader, `lib/fork_review.py`, called from `gates/staged_claim_gate.py` on SubagentStop and from the code-fork branch of `code/coder_gate.py hook` on PreToolUse SubagentHandback (already registered; no settings.json edit). Trade-off: a fork whose transcript cannot be read ends unjudged (fail open).

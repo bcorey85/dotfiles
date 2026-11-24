@@ -2,9 +2,11 @@
 session will do, or is doing, a step it has not started.
 
 A sentence announces a step when it holds a first-person future or in-progress form of work: `I'll`, `I will`,
-`I'm going to`, `I am going to`, `I'm about to`, `I'm (now) starting|doing|writing|running|working|fixing|looking|
-checking|building|moving|reading|editing|adding|testing|picking`, `I'm on it`, `Next I'll`, `starting (it|that|this|on
-it|work) now`, `on it now` or `working on it`.
+`I'm` or `I am` then (`now`) `going to|about to|on it|starting|doing|writing|running|working|fixing|looking|checking|
+building|moving|reading|editing|adding|testing|picking`, `Next I'll`, `starting (it|that|this|on it|work) now`,
+`on it now` or `working on it`. The last three are progress forms with no subject; they are no announcement when
+the current turn of the transcript launched background work (a background Bash call (`run_in_background`) or an
+Agent call not set to the foreground, after the last turn start). The first-person forms are one either way.
 
 A sentence is no announcement when it also:
 - names a condition: `if`, `once`, `when`, `after`, `until`, `unless`, `as soon as`;
@@ -17,16 +19,24 @@ A sentence is no announcement when it also:
 A span in backticks or double quotes on one line whose whole text is one announcement is dropped first: a sentence
 cited as an example is no announcement.
 """
+import os
 import re
+import sys
 
+sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import script_utils
 from message_text import without_quoted_spans
 
-ANNOUNCEMENT = re.compile(
-    r"\b(?:I(?:'|\N{RIGHT SINGLE QUOTATION MARK})ll|I\s+will|I(?:'|\N{RIGHT SINGLE QUOTATION MARK})m\s+(?:now\s+)?"
-    r"(?:going\s+to|about\s+to|on\s+it|starting|doing|writing|running|working|fixing|looking|checking|building|"
-    r"moving|reading|editing|adding|testing|picking)|I\s+am\s+(?:now\s+)?(?:going\s+to|about\s+to|starting|working)"
-    r"|starting\s+(?:it|that|this|on\s+it|work)\s+now|on\s+it\s+now|working\s+on\s+it)\b",
+_ANNOUNCED_ACTION = (r"(?:now\s+)?(?:going\s+to|about\s+to|on\s+it|starting|doing|writing|running|working|fixing|"
+                     r"looking|checking|building|moving|reading|editing|adding|testing|picking)")
+FIRST_PERSON_ANNOUNCEMENT = re.compile(
+    r"\b(?:I(?:'|\N{RIGHT SINGLE QUOTATION MARK})ll|I\s+will|I(?:'|\N{RIGHT SINGLE QUOTATION MARK})m\s+"
+    + _ANNOUNCED_ACTION + r"|I\s+am\s+" + _ANNOUNCED_ACTION + r")\b",
     re.IGNORECASE)
+# A progress line with no first-person subject: it passes when the turn launched background work.
+PROGRESS_ANNOUNCEMENT = re.compile(
+    r"\b(?:starting\s+(?:it|that|this|on\s+it|work)\s+now|on\s+it\s+now|working\s+on\s+it)\b", re.IGNORECASE)
+ANNOUNCEMENT = re.compile(FIRST_PERSON_ANNOUNCEMENT.pattern + "|" + PROGRESS_ANNOUNCEMENT.pattern, re.IGNORECASE)
 CONDITION = re.compile(r"\b(?:if|once|when|after|until|unless|as\s+soon\s+as)\b", re.IGNORECASE)
 OTHER_ACTOR = re.compile(r"\b(?:you|your|yours)\b", re.IGNORECASE)
 WORK_RUNS = re.compile(r"\b(?:running|background|waiting|wait\s+(?:for|on)|in\s+progress|notif\w*|queued|"
@@ -41,10 +51,12 @@ REASON = ("Your message says you will do, or are doing, a step, but the turn is 
           "Start that step now with a tool call, or say plainly that it has not started and who acts next.")
 
 
-def announced_step(message):
+def announced_step(message, transcript_path=None):
     """The first sentence of a final message that announces a step with no condition, no other actor and no running
-    work, or None."""
+    work, or None. A progress-only sentence passes when the current turn of the transcript launched background
+    work; a first-person one never does."""
     unquoted_message = without_quoted_spans(ANNOUNCEMENT, message)
+    background_launched = None
     for sentence in SENTENCE_END.split(unquoted_message):
         if not ANNOUNCEMENT.search(sentence):
             continue
@@ -54,6 +66,12 @@ def announced_step(message):
             continue
         request = REQUEST_THEN_STEP.search(sentence)
         if request and not FIRST_PERSON.search(sentence[:request.start()]):
+            continue
+        if FIRST_PERSON_ANNOUNCEMENT.search(sentence):
+            return sentence.strip()
+        if background_launched is None:
+            background_launched = script_utils.turn_launched_background(transcript_path)
+        if background_launched:
             continue
         return sentence.strip()
     return None

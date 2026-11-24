@@ -1,4 +1,6 @@
-"""script_utils.py: helpers for toolkit scripts that read plain text, lines, paths and files and need no module rule.
+"""script_utils.py: helpers for toolkit scripts that read plain text, lines, paths and files.
+`turn_launched_background` is the one helper that applies module rules
+(`user_prompts.starts_turn`, `tool_call_flags.launches_background`).
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
@@ -16,6 +18,9 @@ import sys
 import time
 import uuid
 from collections import namedtuple
+
+import tool_call_flags
+import user_prompts
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -1091,6 +1096,30 @@ def bash_commands(transcript_path):
             commands += [tool_input.get("command") for name, tool_input in calls
                          if name == "Bash" and isinstance(tool_input.get("command"), str)]
     return commands
+
+
+def turn_launched_background(transcript_path):
+    """Whether the current turn of a transcript launched a background Bash or Agent call. A turn start clears it.
+    False for an empty or unreadable path; a torn line is skipped."""
+    if not transcript_path:
+        return False
+
+    launched = False
+    try:
+        with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
+            for line in transcript:
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(record, dict) and user_prompts.starts_turn(record):
+                    launched = False
+                for name, tool_input in tool_use_calls(line):
+                    if tool_call_flags.launches_background(name, tool_input):
+                        launched = True
+    except OSError:
+        return False
+    return launched
 
 
 def agent_transcript_path(hook):

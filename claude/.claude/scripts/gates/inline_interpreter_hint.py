@@ -27,6 +27,7 @@ import shell_command
 import shell_quoting
 import shell_statements
 import shell_steps
+import tool_call_flags
 
 INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
 INLINE = rf"\b(python3?|node|perl|ruby|php)\b[^;|&]*\s({INLINE_FLAGS})\b"
@@ -206,7 +207,7 @@ def runs_in_foreground(payload):
     tests, so it is never denied."""
     if payload.get("agent_id"):
         return False
-    return (payload.get("tool_input") or {}).get("run_in_background") is not True
+    return not tool_call_flags.runs_in_background(payload.get("tool_input") or {})
 
 
 def main():

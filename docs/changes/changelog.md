@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1162 changes
+1163 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [announced step passes a progress line after a background launch in the same turn](notes/2026-11-24-announced-step-passes-a-progress-line-after-a.md) [script/announced-step, script/staged-claim-gate] A subjectless progress line passes the announced-step stop check when the current turn launched background work; a crash in one stop check keeps the other checks' reasons.
 * [quality check cap counts a check piped into rg as cut](notes/2026-11-24-quality-check-cap-counts-a-check-piped-into-rg-as.md) [script/quality-check-cap] A check whose output is piped into rg is recorded as cut, so one rerun redirected to a file is allowed.
 * [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md) [script/pull-keep-index] A put-back that conflicts on one file while nothing was staged now gives every other file back its unstaged state, so the next commit in a shared clone no longer sweeps up other sessions' edits.
 * [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.

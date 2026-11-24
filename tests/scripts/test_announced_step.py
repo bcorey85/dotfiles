@@ -20,17 +20,36 @@ class AnnouncedStepTest(unittest.TestCase):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
-    def run_gate(self, message, event="Stop", stop_hook_active=False):
+    def write_turn(self, *, launches=True, later_turn=False, torn_tail=False, plain_agent_only=False):
+        """A transcript: a turn start, then a background Bash and Agent launch, optionally a later turn start."""
+        def record(content):
+            return {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": content[0], "input": content[1]}]}}
+
+        records = [{"type": "user", "message": {"role": "user", "content": "<bash-input>ls</bash-input>"}}]
+        if plain_agent_only:
+            records.append(record(("Agent", {"prompt": "label"})))
+        elif launches:
+            records.append(record(("Bash", {"command": "make test", "run_in_background": True})))
+            records.append(record(("Agent", {"prompt": "label", "run_in_background": "true"})))
+        if later_turn:
+            records.append({"type": "user", "message": {"role": "user", "content": "<bash-input>pwd</bash-input>"}})
+        transcript = self.tmp / "turn.jsonl"
+        transcript.write_text("".join(json.dumps(entry) + "\n" for entry in records)
+                              + ('{"type": "assi' if torn_tail else ""))
+        return transcript
+
+    def run_gate(self, message, event="Stop", stop_hook_active=False, transcript_path=""):
         payload = {"hook_event_name": event, "cwd": str(self.tmp), "last_assistant_message": message,
-                   "stop_hook_active": stop_hook_active, "transcript_path": ""}
+                   "stop_hook_active": stop_hook_active, "transcript_path": str(transcript_path)}
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
         finished = subprocess.run([sys.executable, str(SCRIPT)], input=json.dumps(payload), capture_output=True,
                                   text=True, cwd=str(self.tmp), env=environment)
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
         return finished.stdout
 
-    def assert_blocks(self, message):
-        output = self.run_gate(message)
+    def assert_blocks(self, message, **options):
+        output = self.run_gate(message, **options)
         self.assertTrue(output, f"expected a block for: {message}")
         decision = json.loads(output)
         self.assertEqual(decision["decision"], "block")
@@ -68,6 +87,40 @@ class AnnouncedStepTest(unittest.TestCase):
 
     def test_second_stop_in_a_row_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", stop_hook_active=True)
+
+    def test_incident_progress_line_after_a_background_launch_passes(self):
+        self.assert_passes("Next queue item: a new agent is working on it.", transcript_path=self.write_turn())
+
+    def test_suite_is_running_after_a_background_launch_passes(self):
+        self.assert_passes("On it now.", transcript_path=self.write_turn())
+
+    def test_progress_line_after_an_agent_call_with_no_background_key_passes(self):
+        transcript = self.write_turn(plain_agent_only=True)
+        self.assert_passes("Next queue item: a new agent is working on it.", transcript_path=transcript)
+
+    def test_on_it_now_in_a_turn_with_no_launch_blocks(self):
+        self.assert_blocks("On it now.", transcript_path=self.write_turn(launches=False))
+
+    def test_progress_line_with_the_launch_in_an_earlier_turn_blocks(self):
+        transcript = self.write_turn(later_turn=True)
+        self.assert_blocks("Next queue item: a new agent is working on it.", transcript_path=transcript)
+
+    def test_progress_line_with_no_transcript_blocks(self):
+        self.assert_blocks("Starting it now.", transcript_path="")
+
+    def test_progress_line_in_a_turn_with_no_launch_blocks(self):
+        self.assert_blocks("Starting it now.", transcript_path=self.write_turn(launches=False))
+
+    def test_first_person_step_after_a_background_launch_still_blocks(self):
+        transcript = self.write_turn()
+        self.assert_blocks("I'll push them with the four closures at the end.", transcript_path=transcript)
+        self.assert_blocks("I'm on it now.", transcript_path=transcript)
+        self.assert_blocks("I am on it now.", transcript_path=transcript)
+        self.assert_blocks("I am writing the check.", transcript_path=transcript)
+
+    def test_torn_last_line_still_reads_the_turn(self):
+        transcript = self.write_turn(torn_tail=True)
+        self.assert_passes("Next queue item: a new agent is working on it.", transcript_path=transcript)
 
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")

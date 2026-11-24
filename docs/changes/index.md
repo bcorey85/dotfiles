@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [quality check cap counts a check piped into rg as cut](notes/2026-11-24-quality-check-cap-counts-a-check-piped-into-rg-as.md).
+Latest change: 2026-11-24, [announced step passes a progress line after a background launch in the same turn](notes/2026-11-24-announced-step-passes-a-progress-line-after-a.md).
 
 ## Top gains
 

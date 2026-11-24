@@ -1,6 +1,8 @@
 """user_prompts.py: the prompts the user typed in a session's main transcript. A tool result, a meta record (command
 expansions, reminders), a subagent record, a record with an origin other than the human (a peer message, a task
-notification), a compaction summary and a shell or command echo are not the user's words. Not a hook itself."""
+notification), a compaction summary and a shell or command echo are not the user's words. `starts_turn` is wider: it
+marks every main-session record that begins a turn, typed or not (a shell echo, a task notification, a peer
+message). Not a hook itself."""
 import json
 import re
 
@@ -26,6 +28,23 @@ def prompt_text(record):
     if not isinstance(content, str) or content.lstrip().startswith(NOT_TYPED_PREFIXES):
         return None
     return content
+
+
+def starts_turn(record):
+    """Whether a transcript record begins a turn of the main session: a user record that is no subagent, meta or
+    compaction record and carries no tool result. A typed prompt, a shell echo, a task notification and a peer message
+    all start one."""
+    if record.get("type") != "user":
+        return False
+    if record.get("isSidechain") or record.get("isMeta") or record.get("isCompactSummary"):
+        return False
+    message = record.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return True
+    if not isinstance(content, list):
+        return False
+    return not any(isinstance(block, dict) and block.get("type") == "tool_result" for block in content)
 
 
 def user_words(prompt):

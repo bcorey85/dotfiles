@@ -103,7 +103,7 @@ def covered_issue(reason, number, issue_count):
 def issue_marker_lines(report, word, issue_count):
     """Issue number -> the first `<word> <n>: ...` line of the report that names it, for numbers that name a listed
     issue. `word` is the marker's words (`SKIPPED`, `ALREADY APPLIED`); a `SKIPPED small <n>` line is no match."""
-    pattern = re.compile(rf"\s*[-*]?\s*(?:\*\*|`)?{re.escape(word)} (\d+):")
+    pattern = re.compile(rf"\s*[-*]?\s*(?:\*\*|`)?{re.escape(word)} (\d+)(?:\*\*|`)?:")
     lines = {}
     for line in report.splitlines():
         match = pattern.match(line)

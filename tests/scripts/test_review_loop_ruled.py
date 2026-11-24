@@ -1840,14 +1840,23 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["fixed"]))
         self.assertEqual(packet["skipped_fp"], [])
 
-    def test_a_bulleted_bold_skipped_marker_is_a_skip(self):
+    def assert_marker_is_a_skip(self, marker):
         plain = "app.py:1 [bug] plain finding"
 
-        packet = self.run_adopted({"result": "ALREADY APPLIED 1: app.py:2\n- **SKIPPED 2:** not a bug"},
+        packet = self.run_adopted({"result": f"ALREADY APPLIED 1: app.py:2\n{marker}"},
                                   findings=(ADOPTED_FINDING, plain))
 
         (skipped,) = packet["skipped_fp"]
         self.assertIn(plain, json.dumps(skipped))
+
+    def test_a_bulleted_bold_skipped_marker_is_a_skip(self):
+        self.assert_marker_is_a_skip("- **SKIPPED 2:** not a bug")
+
+    def test_a_backticked_skipped_marker_closed_before_the_colon_is_a_skip(self):
+        self.assert_marker_is_a_skip("- `SKIPPED 2`: not a bug")
+
+    def test_a_bold_skipped_marker_closed_before_the_colon_is_a_skip(self):
+        self.assert_marker_is_a_skip("**SKIPPED 2**: not a bug")
 
     def test_a_plain_finding_reported_already_applied_is_a_skip_with_the_coders_line_as_the_reason(self):
         plain = "app.py:1 [bug] plain finding"

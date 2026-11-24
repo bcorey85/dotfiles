@@ -102,6 +102,54 @@ class PreCommitHookTests(unittest.TestCase):
         self.stage(TOOLKIT_FILES[0])
         self.assertEqual(self.run_hook().returncode, 1)
 
+    def install_drift_check(self, exit_code):
+        """A stand-in toolkit_drift.py that prints the CLAUDE.md of the tree it was handed."""
+        script = self.evals / "bin" / "toolkit_drift.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            "import pathlib, sys\n"
+            "tree = pathlib.Path(sys.argv[sys.argv.index('--toolkit') + 1])\n"
+            "claude_md = tree / 'CLAUDE.md'\n"
+            "print('drift', claude_md.read_text() if claude_md.is_file() else '')\n"
+            f"sys.exit({exit_code})\n",
+            encoding="utf-8",
+        )
+
+    def test_a_drift_problem_in_a_staged_rule_file_refuses_the_commit(self):
+        self.install_checker(0)
+        self.install_drift_check(1)
+        self.stage("claude/.claude/CLAUDE.md")
+        self.stage(CHANGE_FILE)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("agent-evals", result.stderr)
+
+    def test_the_drift_check_reads_the_staged_text_not_the_work_tree(self):
+        self.install_checker(0)
+        self.install_drift_check(0)
+        self.stage("claude/.claude/CLAUDE.md", "staged text\n")
+        (self.repo / "claude/.claude/CLAUDE.md").write_text("unstaged text\n", encoding="utf-8")
+        self.stage(CHANGE_FILE)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("staged text", result.stdout)
+        self.assertNotIn("unstaged text", result.stdout)
+
+    def test_the_drift_check_skips_scripts_and_hooks(self):
+        self.install_checker(0)
+        self.install_drift_check(1)
+        self.stage("claude/.claude/scripts/lib/util.py")
+        self.stage(CHANGE_FILE)
+        self.assertEqual(self.run_hook().returncode, 0)
+
+    def test_a_missing_drift_check_notes_it_and_allows(self):
+        self.install_checker(0)
+        self.stage("claude/.claude/skills/code/SKILL.md")
+        self.stage(CHANGE_FILE)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("toolkit_drift.py not found", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

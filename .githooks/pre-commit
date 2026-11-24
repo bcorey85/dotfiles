@@ -22,6 +22,24 @@ if [[ -n "$toolkit_paths" && -z "$change_files" ]]; then
     exit 1
 fi
 
+# A staged change to rule text or the skill set can strand an agent-evals rule-meter scenario or skill list entry.
+# Check the staged prose files, not the work tree, so the check sees exactly what the commit holds.
+drift_check="$agent_evals_dir/bin/toolkit_drift.py"
+drift_pattern='^claude/\.claude/(agents|skills|rules)/|^claude/\.claude/[^/]+\.md$'
+if grep -qE "$drift_pattern" <<<"$touched_paths"; then
+    if [[ ! -f "$drift_check" ]]; then
+        echo "pre-commit: note: $drift_check not found; meter scenarios and the skill list were not checked" >&2
+    else
+        staged_tree="$(mktemp -d)"
+        trap 'rm -rf "$staged_tree"' EXIT
+        git ls-files -z -- 'claude/.claude/*.md' | git checkout-index -z --stdin --prefix="$staged_tree/"
+        if ! python3 "$drift_check" --toolkit "$staged_tree/claude/.claude"; then
+            echo "pre-commit: the staged toolkit strands the agent-evals entries above; fix them in ~/agent-evals first" >&2
+            exit 1
+        fi
+    fi
+fi
+
 if [[ ! -f "$build_changes" ]]; then
     echo "pre-commit: warning: $build_changes not found; the change ledger was not checked" >&2
     exit 0

@@ -304,8 +304,11 @@ def staged_tree(repo, commit):
         return None
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
-        apply_arguments = ("apply", "--cached")
-        for arguments, stdin in ((("read-tree", "HEAD"), None), (apply_arguments, staged_changes.stdout)):
+        steps = [(("read-tree", "HEAD"), None)]
+        # `git apply` exits 128 on empty input, and nothing staged means the staged tree is HEAD's.
+        if staged_changes.stdout:
+            steps.append((("apply", "--cached"), staged_changes.stdout))
+        for arguments, stdin in steps:
             if run_in_repo(repo, *arguments, env=env, stdin=stdin).returncode != 0:
                 return None
         written = run_in_repo(repo, "write-tree", env=env)

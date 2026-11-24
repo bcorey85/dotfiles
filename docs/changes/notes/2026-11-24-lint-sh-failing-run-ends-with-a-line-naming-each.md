@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-Each lint step runs through one helper that streams ruff's output and reads its `Found N error(s).` line. A failing
+Each lint step that can fail (`ruff rules`, `complexity gate`) runs through one helper that streams ruff's output and reads its `Found N error(s).` line. A failing
 run's last stdout line is `lint failed: <step> (<N> error[s])`, one entry per failed step (`ruff rules`, `complexity
 gate`), or `(failed, no error count)` when no count can be read. The report-only C901 step runs ruff with `--quiet` and
 prints `complexity report only (N function[s] over the limit): not a failure`. Exit codes are unchanged.

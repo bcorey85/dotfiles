@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1167 changes
+1168 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -31,6 +31,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md) [script/review-loop] A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it.
 * [lint.sh failing run ends with a line naming each failing step](notes/2026-11-24-lint-sh-failing-run-ends-with-a-line-naming-each.md) [script/lint, script/tests-run] A failing tests/lint.sh run now ends on a line that names each failed step and its error count, and the report-only complexity step no longer prints a bare Found N errors line, so a session no longer reads a failing lint as a pass.
+* [Lane sessions start with the cron scheduler off so a fork drops the parent's timers](notes/2026-11-24-lane-sessions-start-with-the-cron-scheduler-off-so.md) [script/herdr-worktree, script/herdr-dev, script/herdr-worktree-watch] herdr-dev starts every forked or resumed lane session with CLAUDE_CODE_DISABLE_CRON=1, so a lane no longer fires the orchestrator's cron jobs, until herdr itself restores the pane after a restart.
 * [pre-commit refuses a toolkit commit that strands an agent-evals meter scenario or skill list entry](notes/2026-11-23-pre-commit-refuses-a-toolkit-commit-that-strands.md) [script/pre-commit] A commit that stages agent, skill, rule or top-level prompt files now runs agent-evals' drift check on the staged text, so a deleted rule fragment or a skill missing from the skill list is caught before the commit lands instead of at the next agent-evals suite run.
 * [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md) [script/pull-keep-index] A put-back that conflicts on one file while nothing was staged now gives every other file back its unstaged state, so the next commit in a shared clone no longer sweeps up other sessions' edits.
 * [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.

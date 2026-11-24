@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-739 fix notes
+740 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -43,8 +43,8 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
 | script/criteria-dry-run | 10 | 3 |
+| script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
-| script/herdr-worktree | 9 | 3 |
 | script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/review-fix-asks | 8 | 3 |
@@ -71,6 +71,8 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
+| script/herdr-dev | 4 | 2 |
+| script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/phase-start | 4 | 3 |
 | script/plan-check | 4 | 4 |
@@ -86,8 +88,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
 | script/gate-commands | 3 | 2 |
-| script/herdr-dev | 3 | 1 |
-| script/herdr-worktree-watch | 3 | 2 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
 | script/review-loop-packet | 3 | 0 |

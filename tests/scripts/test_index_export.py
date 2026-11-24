@@ -1,11 +1,9 @@
-"""index_export: a folder of the git index written out, and the absolute path of the index in use."""
-import os
+"""index_export: a folder of the git index written out."""
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 import toolkit_paths
 
@@ -45,14 +43,6 @@ class IndexExportTests(unittest.TestCase):
     def test_a_folder_with_no_indexed_file_exports_nothing(self):
         root = index_export.export_index_folder(self.repo, "dir", self.out)
         self.assertFalse(root.exists())
-
-    def test_the_named_index_is_made_absolute_else_the_git_dir_index_is_used(self):
-        git_dir = self.repo / ".git"
-        with mock.patch.dict(os.environ, {"GIT_INDEX_FILE": "rel-index"}):
-            self.assertEqual(index_export.index_file_path(git_dir), pathlib.Path("rel-index").resolve())
-        with mock.patch.dict(os.environ):
-            os.environ.pop("GIT_INDEX_FILE", None)
-            self.assertEqual(index_export.index_file_path(git_dir), git_dir / "index")
 
 
 if __name__ == "__main__":

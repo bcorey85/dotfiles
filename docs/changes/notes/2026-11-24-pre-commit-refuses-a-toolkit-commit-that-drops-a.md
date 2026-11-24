@@ -18,11 +18,11 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`.githooks/pre-commit` runs `tests/toolkit_drift.py` when the staged set touches `claude/.claude/agents/`, `claude/.claude/skills/` or a `CLAUDE.md` under `claude/.claude/`. It runs before the `build_changes.py` early exit.
+`.githooks/pre-commit` runs `tests/toolkit_drift.py` when the staged set touches any path under `claude/.claude/` other than `scripts/` (a `CLAUDE.md` under `scripts/` counts). It runs before the `build_changes.py` early exit.
 
 - **Rule texts:** `rule_meter.check_rule_texts` reads the toolkit from the home folder, not from a staged tree. So the step exports the staged `claude/.claude` from the index into a `tempfile.TemporaryDirectory()`, using the new `lib/index_export.py`, which honors `GIT_INDEX_FILE`. It then points each live scenario at that export: one with no `toolkit_root`, or a root that resolves to `~/.claude` or `~/dotfiles/claude/.claude`. It checks only scenarios whose rule source or `rule_file` is a staged path. It runs one scenario at a time, so every removed fragment is named.
 - **Skill list:** agent-evals' `bin/test_skill_names.py` runs unchanged whenever a skill path is staged, with `GIT_DIR` and `GIT_INDEX_FILE` set so that its `git -C ~/dotfiles ls-files` reads the staged index.
-- **When it skips:** with a one-line note when `$AGENT_EVALS_DIR` (default `~/agent-evals`) or either script is missing. It fails closed when `rule_meter` cannot be imported. It edits nothing in agent-evals and writes no bytecode there.
+- **When it skips:** with a one-line note when `$AGENT_EVALS_DIR` (default `~/agent-evals`) or either script is missing, and with a "skill list was not checked" note when the skill test skips itself (for example no `~/dotfiles`). It fails closed when `rule_meter` cannot be imported. It edits nothing in agent-evals and writes no bytecode there.
 
 ## Evidence
 

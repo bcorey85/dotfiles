@@ -15,8 +15,9 @@ RULE_LINE = "Never swallow the metered rule."
 SKILL_PATH = "claude/.claude/skills/alpha/SKILL.md"
 CLAUDE_MD = "claude/.claude/CLAUDE.md"
 
-# The two real semantics the stub keeps: check_rule_texts exits with a message on the first scenario whose rule text
-# is missing from its source under toolkit_root, and load_scenarios reads the json beside the module.
+# The real semantics the stub keeps: check_rule_texts exits with a message on the first scenario whose rule text is
+# missing from its rule_source under toolkit_root; a rule_file scenario only needs that file to exist (the real
+# check_rule_file never searches rule_text); load_scenarios reads the json beside the module.
 STUB_RULE_METER = '''
 import json, pathlib, sys
 HERE = pathlib.Path(__file__).resolve().parent
@@ -25,7 +26,12 @@ def load_scenarios():
 def check_rule_texts(scenarios):
     for rule, scenario in scenarios.items():
         root = pathlib.Path(scenario["toolkit_root"]).expanduser()
-        source = root / (scenario.get("rule_file") or scenario["rule_source"])
+        if scenario.get("rule_file"):
+            source = root / scenario["rule_file"]
+            if not source.is_file():
+                sys.exit(f"rule_meter: {source} not found; the on arm copies it")
+            continue
+        source = root / scenario["rule_source"]
         text = source.read_text() if source.is_file() else ""
         if scenario["rule_text"] not in text:
             sys.exit(f"rule text not found in {source}: {scenario['rule_text']!r}")
@@ -40,6 +46,15 @@ tracked = {path.split("/")[-2] for path in listed}
 known = set((HERE / "toolkit_skills.txt").read_text().split())
 if tracked != known:
     sys.exit(f"skill list differs: missing {sorted(known - tracked)} extra {sorted(tracked - known)}")
+'''
+# The real test skips itself when `git ls-files` of ~/dotfiles fails; unittest still exits 0.
+STUB_SKIPPING_SKILL_TEST = '''
+import unittest
+class Skips(unittest.TestCase):
+    def test_known_names(self):
+        self.skipTest("no toolkit repo at ~/dotfiles")
+if __name__ == "__main__":
+    unittest.main()
 '''
 
 
@@ -127,8 +142,7 @@ class ToolkitDriftTests(unittest.TestCase):
         self.install_stubs(self.scenario_json(agent_rule))
         self.write(agent_path, "intro\nAgent rule.\n")
         self.commit()
-        self.write(agent_path, "intro\n")
-        self.git("add", agent_path)
+        self.git("rm", "-q", agent_path)
         result = self.run_step()
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("scenario AGENT_RULE", result.stderr)
@@ -154,6 +168,29 @@ class ToolkitDriftTests(unittest.TestCase):
         result = self.run_step()
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("scenario NESTED", result.stderr)
+
+    def test_a_top_level_orchestration_md_cut_fails(self):
+        orchestration_path = "claude/.claude/orchestration.md"
+        orchestration_rule = {"AB01": {"rule_text": "Orchestration rule.", "rule_source": "orchestration.md",
+                                       "toolkit_root": "~/.claude"}}
+        self.install_stubs(self.scenario_json(orchestration_rule))
+        self.write(orchestration_path, "Orchestration rule.\n")
+        self.commit()
+        self.write(orchestration_path, "gone\n")
+        self.git("add", orchestration_path)
+        result = self.run_step()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("scenario AB01", result.stderr)
+
+    def test_a_skill_test_that_skips_itself_prints_a_not_checked_note(self):
+        self.install_stubs(self.scenario_json())
+        (self.evals / "bin" / "test_skill_names.py").write_text(STUB_SKIPPING_SKILL_TEST, encoding="utf-8")
+        self.write(SKILL_PATH, "skill edited\n")
+        self.git("add", SKILL_PATH)
+        result = self.run_step()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("skill list was not checked", result.stderr)
+        self.assertIn("no toolkit repo at ~/dotfiles", result.stderr)
 
     def test_a_rule_meter_that_cannot_be_imported_fails_closed(self):
         self.install_stubs(self.scenario_json())

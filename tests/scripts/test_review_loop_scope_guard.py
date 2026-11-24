@@ -393,6 +393,38 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(self.text("docs/rule-anchors.md"), DOC_REWRITTEN)
         self.assertEqual(review_loop_scope_guard.SCOPE_FAULTS, [])
 
+    def commit_new_files(self, names):
+        """Commits one-line files at `names`, so each is a tracked file outside the pass's scope."""
+        for name in names:
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text("v = 1\n")
+        git(self.repo, "add", *names)
+        git(self.repo, "commit", "-qm", "more files")
+
+    def test_a_finding_that_names_a_tracked_file_with_a_dot_slash_or_by_a_path_suffix_keeps_its_edit(self):
+        self.commit_new_files(["lib/x.py"])
+        for finding in ("- `./lib/x.py:1` wrong", "- `x.py:1` wrong"):
+            with self.subTest(finding=finding):
+                guard = self.guard(finding_texts=[finding])
+                (self.repo / "lib/x.py").write_text("v = 2\n")
+
+                guard.undo()
+
+                self.assertEqual(self.text("lib/x.py"), "v = 2\n")
+                self.assertEqual(review_loop_scope_guard.SCOPE_FAULTS, [])
+                git(self.repo, "checkout", "--", "lib/x.py")
+
+    def test_a_path_suffix_that_two_tracked_files_end_with_keeps_neither_edit(self):
+        self.commit_new_files(["a/dup.py", "b/dup.py"])
+        guard = self.guard(finding_texts=["- `dup.py:1` wrong"])
+        (self.repo / "a/dup.py").write_text("v = 2\n")
+        (self.repo / "b/dup.py").write_text("v = 2\n")
+
+        guard.undo()
+
+        self.assertEqual(self.text("a/dup.py"), "v = 1\n")
+        self.assertEqual(self.text("b/dup.py"), "v = 1\n")
+
     def test_a_longer_path_in_a_finding_names_no_shorter_one(self):
         guard = self.guard(finding_texts=["- `pkg/tests.py:1` wrong"])
         (self.repo / "tests.py").write_text("t = 2\n")
@@ -493,6 +525,27 @@ class ScopeGuardTest(unittest.TestCase):
 
         self.assertFalse([args for args in calls if "rm" in args])
         self.assertFalse((self.out / review_loop_scope_guard.BACKUP_FOLDER / "coder1" / "out-of-scope").exists())
+
+    def test_a_failed_repo_file_listing_raises_when_a_dirty_path_reaches_the_suffix_rule(self):
+        (self.repo / "tests.py").write_text("t = 2\n")
+        with mock.patch.object(script_utils, "repo_file_paths", return_value=None), \
+                self.assertRaises(script_utils.GitCallError):
+            self.guard(finding_texts=["- `x.py:1` wrong"])
+
+    def test_a_file_named_in_full_needs_no_repo_file_listing(self):
+        (self.repo / "tests.py").write_text("t = 2\n")
+        with mock.patch.object(script_utils, "repo_file_paths", return_value=None) as listing:
+            self.guard(finding_texts=["- `tests.py:1` wrong"])
+
+        listing.assert_not_called()
+
+    def test_the_repo_file_listing_is_taken_once_for_two_dirty_paths(self):
+        (self.repo / "tests.py").write_text("t = 2\n")
+        (self.repo / "lib.py").write_text("l = 2\n")
+        with mock.patch.object(script_utils, "repo_file_paths", return_value=["tests.py", "lib.py"]) as listing:
+            self.guard(finding_texts=["- `x.py:1` wrong"])
+
+        listing.assert_called_once()
 
     def test_a_failed_status_listing_at_the_start_of_a_pass_raises(self):
         real_git_output = script_utils.git_output

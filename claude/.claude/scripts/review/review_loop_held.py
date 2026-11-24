@@ -6,6 +6,7 @@ writes a held file back: a held file that changed during a coder call is left as
 import pathlib
 
 import review_loop_plan
+import script_utils
 import session_registry
 import worktree_snapshot
 from review_loop_prompt_file import holder_row
@@ -57,7 +58,7 @@ def names_held_file(path, held_path):
     `sub/notes.py` is not on a held root `notes.py`."""
     if not path:
         return False
-    return path == held_path or held_path.endswith("/" + path)
+    return script_utils.path_has_tail(held_path, path)
 
 
 def tail_names_held_file(path, held, owned):

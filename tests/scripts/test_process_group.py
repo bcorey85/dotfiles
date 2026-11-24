@@ -5,11 +5,13 @@ import pathlib
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 import unittest.mock
 
 import toolkit_paths
+from stubs import write_stub
 
 MODULE = pathlib.Path(os.environ.get("PROCESS_GROUP_MODULE") or toolkit_paths.LIB_DIR / "process_group.py")
 sys.path.insert(0, str(MODULE.parent))
@@ -112,6 +114,36 @@ class ProcessGroupTest(unittest.TestCase):
     def test_command_line_raises_when_ps_is_missing(self):
         with unittest.mock.patch.dict(os.environ, {"PATH": ""}), self.assertRaises(process_group.ProcessQueryError):
             process_group.command_line(1)
+
+    def test_resident_bytes_of_a_running_process_is_positive_and_none_when_gone(self):
+        process = self.sleeper()
+        self.assertGreater(process_group.resident_bytes(process.pid), 0)
+        process.kill()
+        process.wait()
+        self.assertIsNone(process_group.resident_bytes(process.pid))
+
+    def test_program_name_is_the_base_name_of_the_program(self):
+        process = self.sleeper()
+        self.assertTrue(process_group.program_name(process.pid).startswith("python"))
+        process.kill()
+        process.wait()
+        self.assertEqual(process_group.program_name(process.pid), "")
+
+    def test_resident_bytes_raises_when_ps_fails(self):
+        with tempfile.TemporaryDirectory() as bin_dir:
+            write_stub(pathlib.Path(bin_dir) / "ps", "echo boom >&2\nexit 2")
+            with (
+                unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}),
+                self.assertRaises(process_group.ProcessQueryError),
+            ):
+                process_group.resident_bytes(1)
+        with tempfile.TemporaryDirectory() as bin_dir:
+            write_stub(pathlib.Path(bin_dir) / "ps", "echo abc")
+            with (
+                unittest.mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}),
+                self.assertRaises(process_group.ProcessQueryError),
+            ):
+                process_group.resident_bytes(1)
 
     def test_command_line_raises_when_ps_fails(self):
         for returncode, stderr in ((1, "boom"), (2, ""), (2, "boom")):

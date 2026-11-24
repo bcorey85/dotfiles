@@ -15,7 +15,7 @@ Each lane's diff viewer starts under a systemd memory scope where the machine ha
 
 - [x] Phase 0: Contracts — viewer-memory lib and the `--viewers` JSON shape, frozen at plan approval (risk: high)
 - [x] Phase 1: Walking skeleton — viewer starts under the cap and restarts after an OOM kill (risk: low)
-- [ ] Phase 2: lane-status names oversized viewers (risk: low)
+- [x] Phase 2: lane-status names oversized viewers (risk: low)
 - [ ] Phase 3: Entry-less lane close (risk: high)
 - [ ] Phase 4: Post-merge restow (risk: low)
 - [ ] Phase 5: ls probe (risk: low)
@@ -451,3 +451,7 @@ Each ticket item's Done-when test runs at its public boundary: the launcher comm
 
 - `./00-ticket.md`, `./02-research.md`, `./03-decisions.md`
 - `docs/toolkit-script-rules.md`
+
+## Plan Deviations
+
+- ruling: Phase 2 item 4 (Ticket #1, owner session) adopted as built: lane-status reports viewers through `viewers:`/`viewer:` keys with no `viewer*` guard instead of report["viewers"]; ruled by the orchestrating session (lane-tools-nov23), 2026-11-24.

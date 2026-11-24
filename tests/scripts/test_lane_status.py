@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,8 +16,13 @@ from stubs import write_stub
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import lane_entries
+import process_group
+import system_resources
 
 LANE_STATUS = pathlib.Path(os.environ.get("LANE_STATUS_SCRIPT", toolkit_paths.TOOLS_DIR / "lane_status.py"))
+VIEWER_CAP = 1024**3
+# Any real process holds more than this.
+TINY_CAP = 1
 ROOMY_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 99999999 1% /"
 TIGHT_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 100 99% /"
 # A Bash call sent to the background, the result that hands back its task id, the notification when it ends, and the
@@ -51,6 +57,29 @@ class LaneStatusTest(unittest.TestCase):
         self.stub_agents([])
         self.stub_df(ROOMY_DF)
         self.stub_du("100")
+        self.stub_viewers(json.dumps({"cap_bytes": VIEWER_CAP, "viewers": []}))
+        self.program_count = 0
+
+    def stub_viewers(self, json_text, exit_code=0):
+        write_stub(self.bin_dir / "hunk-review-pane", f"cat <<'EOF'\n{json_text}\nEOF\nexit {exit_code}")
+
+    def live_hunk(self, program="hunk"):
+        """Starts a real process whose program name is `program` and returns its pid."""
+        self.program_count += 1
+        program_dir = self.root / f"prog{self.program_count}"
+        program_dir.mkdir()
+        copied = program_dir / program
+        shutil.copy(shutil.which("sleep"), copied)
+        process = subprocess.Popen([str(copied), "60"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def viewer_row(self, pane, root, pid):
+        return {"pane": pane, "root": str(root), "pid": pid}
+
+    def stub_viewer_rows(self, rows, cap_bytes):
+        self.stub_viewers(json.dumps({"cap_bytes": cap_bytes, "viewers": rows}))
 
     def stub_agents(self, agents):
         reply = json.dumps({"result": {"agents": agents}})
@@ -131,6 +160,15 @@ class LaneStatusTest(unittest.TestCase):
 
         outputs = [(run.returncode, run.stdout) for run in (first, again, recovered, quiet)]
         self.assertEqual(outputs, [(1, "one: idle\n"), (0, ""), (1, "one: working\n"), (0, "")])
+
+    def test_changes_prints_scratch_working_when_low_scratch_clears(self):
+        self.stub_df(TIGHT_DF)
+        low = self.run_status("--changes")
+        self.stub_df(ROOMY_DF)
+        cleared = self.run_status("--changes")
+
+        self.assertEqual(low.returncode, 1, low.stderr)
+        self.assertEqual((cleared.returncode, cleared.stdout), (1, "scratch: working\n"), cleared.stderr)
 
     def test_working_agent_and_healthy_machine_print_nothing(self):
         self.add_lane()
@@ -298,6 +336,201 @@ class LaneStatusTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 2)
         self.assertIn(f"{lanes / 'broken.json'}: field (file): expected valid JSON", finished.stderr)
 
+    def test_a_viewer_over_the_cap_is_named_with_its_lane(self):
+        self.add_lane()
+        self.stub_agents([self.agent("working")])
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.worktree / "sub", pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        size_label = system_resources.size_text(process_group.resident_bytes(pid))
+        self.assertEqual(finished.stdout,
+                         f"viewer one: {size_label}, over 0 KB cap (pane w1_p2, pid {pid})\n")
+
+    def test_a_viewer_under_the_cap_prints_nothing(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], VIEWER_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_viewer_outside_any_lane_is_named_by_its_root(self):
+        pid = self.live_hunk()
+        folder = self.root / "no-lane"
+        self.stub_viewer_rows([self.viewer_row("w1_p2", folder, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, rf"^viewer {re.escape(str(folder))}: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_a_stale_pid_file_is_not_a_viewer(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, gone.pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_pid_held_by_another_program_is_not_a_viewer(self):
+        pid = self.live_hunk(program="other")
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_failed_viewers_call_prints_cannot_read(self):
+        self.stub_df(TIGHT_DF)
+        self.stub_viewers("", exit_code=3)
+
+        finished = self.run_status()
+
+        lines = finished.stdout.splitlines()
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(len(lines), 2, finished.stdout)
+        self.assertTrue(lines[0].startswith("scratch: "), finished.stdout)
+        self.assertRegex(lines[1], r"^viewers: cannot read \(.*hunk-review-pane.*\)$")
+
+    def test_viewer_json_with_a_bad_shape_prints_cannot_read(self):
+        bad_shapes = [
+            "not json",
+            json.dumps({"viewers": []}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": {}}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": "r", "pid": "7"}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": ["row"]}),
+            json.dumps({"cap_bytes": True, "viewers": []}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": "r", "pid": True}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": 5, "root": "r", "pid": 7}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": None, "pid": 7}]}),
+        ]
+        for text in bad_shapes:
+            with self.subTest(text=text):
+                self.stub_viewers(text)
+
+                finished = self.run_status()
+
+                self.assertEqual(finished.returncode, 1, finished.stderr)
+                self.assertRegex(finished.stdout, r"^viewers: cannot read \(.+\)\n$")
+
+    def test_a_viewer_with_no_root_is_named_by_its_pane(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([{"pane": "w1_p2", "root": "", "pid": pid}], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, rf"^viewer w1_p2: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_a_bad_lane_file_exits_2_when_a_viewer_is_named(self):
+        lane_entries.lanes_dir().mkdir(parents=True)
+        (lane_entries.lanes_dir() / "bad.json").write_text("not json")
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (2, ""), finished.stderr)
+        self.assertIn("bad.json", finished.stderr)
+
+    def test_a_failing_ps_prints_cannot_read(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        write_stub(self.bin_dir / "ps", "echo broken >&2\nexit 2")
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, r"^viewers: cannot read \(.*ps.*\)\n$")
+
+    def test_a_launcher_missing_from_path_prints_cannot_read(self):
+        spec = importlib.util.spec_from_file_location("lane_status_no_launcher", LANE_STATUS)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module.shutil, "which", return_value=None):
+            report = module.viewer_report()
+
+        self.assertEqual(report, {module.VIEWERS_KEY: "viewers: cannot read (hunk-review-pane is not on PATH)"})
+
+    def remove_lane_if_present(self, name):
+        try:
+            lane_entries.remove_entry(name)
+        except lane_entries.LaneNotFoundError:
+            return
+
+    def test_a_lane_named_like_a_report_key_keeps_its_working_line_under_changes(self):
+        for name in ("viewers", "viewer-x", "memory", "scratch"):
+            with self.subTest(name=name):
+                lane_entries.add_entry(name, str(self.worktree), str(self.root), f"branch-{name}", "brief", "")
+                self.addCleanup(self.remove_lane_if_present, name)
+                self.stub_agents([self.agent("idle")])
+                self.run_status("--changes")
+                self.stub_agents([self.agent("working")])
+
+                again = self.run_status("--changes")
+
+                self.assertEqual(again.stdout, f"{name}: working\n", again.stderr)
+                lane_entries.remove_entry(name)
+
+    def test_no_lanes_still_reports_an_oversized_viewer(self):
+        write_stub(self.bin_dir / "herdr-api", "exit 1")
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout,
+                         rf"^viewer {re.escape(str(self.root))}: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_changes_prints_a_viewer_line_once(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        first = self.run_status("--changes")
+        again = self.run_status("--changes")
+
+        self.assertEqual((first.returncode, again.returncode, again.stdout), (1, 0, ""), first.stderr)
+        self.assertIn(f"pid {pid})", first.stdout)
+
+    def test_changes_prints_only_the_viewer_whose_line_changed(self):
+        first_pid = self.live_hunk()
+        second_pid = self.live_hunk()
+        replacement_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, first_pid), self.viewer_row("w1_p2", self.root, second_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+        self.run_status("--changes")
+        rows[1] = self.viewer_row("w1_p2", self.root, replacement_pid)
+        self.stub_viewer_rows(rows, TINY_CAP)
+
+        changed = self.run_status("--changes")
+
+        self.assertEqual(changed.returncode, 1, changed.stderr)
+        self.assertEqual(len(changed.stdout.splitlines()), 1, changed.stdout)
+        self.assertIn(f"pane w1_p2, pid {replacement_pid})", changed.stdout)
+
+    def test_changes_prints_no_working_line_when_a_viewer_drops(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        self.run_status("--changes")
+        self.stub_viewer_rows([], TINY_CAP)
+
+        dropped = self.run_status("--changes")
+
+        self.assertEqual((dropped.returncode, dropped.stdout), (0, ""), dropped.stderr)
+
+    def test_a_small_cap_prints_the_cap_in_kb(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], 1024)
+
+        finished = self.run_status()
+
+        self.assertRegex(finished.stdout, r"over 1 KB cap \(pane")
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "reads /proc/meminfo")
     def test_memory_under_the_threshold_prints_the_memory_line(self):
         finished = self.run_status(LANE_STATUS_MIN_MEMORY_GB="100000")
@@ -312,6 +545,8 @@ class LaneStatusTest(unittest.TestCase):
             f"spec = importlib.util.spec_from_file_location('lane_status', {str(LANE_STATUS)!r})\n"
             "module = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(module)\n"
+            # shutil.which cannot run under a faked win32 platform; this run is about memory only.
+            "module.viewer_report = dict\n"
             "sys.platform = 'win32'\n"
             "sys.exit(module.main(['lane_status.py']))\n")
         env = self.status_env(LANE_STATUS_MIN_MEMORY_GB=memory_threshold)

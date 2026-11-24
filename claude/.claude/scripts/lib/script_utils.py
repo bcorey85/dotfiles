@@ -147,6 +147,11 @@ def json_type_name(value):
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
 
 
+def is_int(value):
+    """Whether a decoded JSON value is an integer; a boolean is not."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def is_string_list(value):
     """Whether a decoded JSON value is a list whose every entry is a string."""
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)

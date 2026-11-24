@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md).
+Latest change: 2026-11-23, [Hillclimb queues only Claude toolkit fixes and lists project repo fixes in its report](notes/2026-11-23-hillclimb-queues-only-claude-toolkit-fixes-never.md).
 
 ## Top gains
 

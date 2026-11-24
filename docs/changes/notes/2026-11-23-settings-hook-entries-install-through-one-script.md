@@ -24,7 +24,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   names what changed.
 - `skills/_shared/lane-brief.md`: a lane sends a settings hook change to its orchestrator as one `settings_hook.py`
   line, never JSON or an installer script.
-- `scripts/CLAUDE.md`: owner line for the script.
+- `scripts/CLAUDE.md`: owner line for the script. The main session hands the user its line; a lane or subagent sends
+  it to its caller.
 
 ## Evidence
 

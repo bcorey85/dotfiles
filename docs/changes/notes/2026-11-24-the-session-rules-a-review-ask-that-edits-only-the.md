@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "The session rules a review ask that edits only the scripts CLAUDE.md"
-description: "A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it"
+description: "A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T12:07:10-06:00"}
 seq: 1
 kind: "fix"
@@ -32,7 +32,8 @@ commit 42090a64.
 
 Review rulings by agent-evals-73 (session) on 2026-11-24: the two scripts CLAUDE.md ask texts drop the line that
 the user must approve, and saved entries under the old wording are left orphaned; `session_rules_approval_path` moves
-beside `approval_only_paths`; the matching line in the global CLAUDE.md is queued separately.
+beside `approval_only_paths`; the matching line in the global CLAUDE.md is queued separately. A session's modified ruling on a scripts CLAUDE.md
+wanted-change ask counts as approval, like a user's.
 
 ## Result
 

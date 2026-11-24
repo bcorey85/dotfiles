@@ -729,18 +729,19 @@ class RuledFindings:
 
     def is_approval_ruling(self, finding):
         """True when the user ruled on `finding`, or a session accepted the approval ask for its path
-        unchanged, or accepted a wanted-change ask for a path whose asks the session rules (see
-        `session_rules_approval_path`). A ruling note is no approval."""
+        unchanged, or ruled a wanted-change ask for a path whose asks the session rules (see
+        `session_rules_approval_path`), with or without a ruling note, as a user's ruling counts. For every other
+        path a ruling note is no approval."""
         if finding.text in self.user_ruled:
             return True
         if finding.text not in self.session_ruled:
             return False
+        path = held_path_in_repo(finding.path, self.repo)
+        if session_rules_approval_path(path) and wanted_edit_target(path) in finding.text:
+            return True
         if ruled_note(finding.text) is not None:
             return False
-        if approval_change(finding.path) in finding.text:
-            return True
-        path = held_path_in_repo(finding.path, self.repo)
-        return session_rules_approval_path(path) and wanted_edit_target(path) in finding.text
+        return approval_change(finding.path) in finding.text
 
     def flag_broken_no_code_rulings(self, findings, changed, nits=()):
         """After a coder pass: records the no-code rulings of `findings` for the next reviewer prompt, and each code

@@ -156,11 +156,11 @@ class ApprovalRulingTest(unittest.TestCase):
         finding = parse_finding(f"`CLAUDE.md:3` [bug] Change: reword the rule. {target}")
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
 
-    def test_a_session_ruling_with_a_note_on_a_scripts_claude_md_wanted_change_ask_still_files_the_ask(self):
+    def test_a_session_ruling_with_a_note_on_a_scripts_claude_md_wanted_change_ask_files_no_ask(self):
         target = approval_asks_store.wanted_edit_target(SCRIPTS_CLAUDE_MD)
         ruled = accepted_approval_ask_text(SCRIPTS_CLAUDE_MD, "keep the edit and reword line 3", "session")
         finding = parse_finding(f"{ruled} {target}")
-        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text], changed=SCRIPTS_CLAUDE_MD), 1)
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text], changed=SCRIPTS_CLAUDE_MD), 0)
 
     def test_a_session_ruling_that_modifies_the_approval_ask_still_files_the_ask(self):
         finding = parse_finding(accepted_approval_ask_text("CLAUDE.md", "keep the edit and reword line 3", "session"))

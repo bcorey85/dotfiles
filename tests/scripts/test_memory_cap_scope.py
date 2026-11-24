@@ -134,8 +134,7 @@ NOT_REWRITABLE = {
     "runner_script_at_foreign_path": "python3 /tmp/evil/parallel_tests.py x",
     "npm_run_script_later_test_word": "npm run-script evil test",
 }
-# interpreter run is denied with the inline-interpreter text instead.
-# Never rewritten, and the hook does not answer DENY_TEXT for them: a usage flag runs no tests, and an inline
+# A usage flag runs no tests, so the hook neither rewrites it nor denies it.
 NOT_REWRITABLE_NOT_DENIED = {
     "help_flag": "pytest --help",
     "short_help_flag": "pytest -h",
@@ -156,6 +155,8 @@ REWRITABLE = {
     "quoted_parentheses": "pytest -k 'a and (b or c)'",
     "python_module_pytest": "python3 -m pytest tests",
     "cargo_test": "cargo test",
+    "make_test_subcommand": "make test-unit",
+    "go_test_subcommand": "go test ./...",
     "run_sh_direct": "./tests/run.sh",
     "run_sh_through_sh": "sh tests/run.sh",
     "run_sh_through_zsh": "zsh tests/run.sh",
@@ -231,7 +232,8 @@ class HookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertNotIn("permissionDecision", decision)
-        self.assertIn("MemoryMax", decision["permissionDecisionReason"])
+        self.assertEqual(decision["permissionDecisionReason"],
+                         f"Added the memory cap `{memory_cap_scope.CAPPED_PREFIX}` in front of the test run.")
         self.assertEqual(decision["updatedInput"],
                          {**tool_input, "command": f"{memory_cap_scope.CAPPED_PREFIX} {command}"})
 

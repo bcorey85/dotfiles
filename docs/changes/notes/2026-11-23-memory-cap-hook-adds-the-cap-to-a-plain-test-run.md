@@ -35,6 +35,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 After landing, run one plain uncapped test step in a session and confirm it starts a systemd scope (`systemctl --user list-units --type=scope` shows a `run-*.scope` while it runs). No scope means Claude Code ignored `updatedInput` and the run went uncapped.
 
+In a session where the server checks each call before hooks run (remote or managed), a "hook changed the Bash call ... The call is denied" message means the rewrite must be turned off for that session type.
+
 ## Back-out
 
 Revert the commit. The hook then denies a plain uncapped test run again, and a path-named runner (`./pytest`) passes with no output, as before.

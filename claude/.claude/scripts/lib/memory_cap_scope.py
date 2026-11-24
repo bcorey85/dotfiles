@@ -4,14 +4,12 @@ A test run that allocates without bound takes the whole machine's memory and the
 run inside `systemd-run --user --scope -p MemoryMax=... -p MemorySwapMax=0` dies alone at the cap. uncapped_test_run
 names such a command: a step that runs tests (check_scope.step_runs_tests), `tests/run.sh`, or a test program named
 by a path (`./pytest`), with no systemd-run wrapper in front of it. A step that asks for usage (`--help`, `-h`,
-`--version`) runs nothing and is not one. A command text that shlex cannot split is not one either. cap_available says
-whether this machine can run the scope: Linux, systemd-run on PATH and a user bus.
+`--version`, `-V`) runs nothing and is not one. A command text that shlex cannot split is not one either.
+cap_available says whether this machine can run the scope: Linux, systemd-run on PATH and a user bus.
 
-is_rewritable_test_run names the one case the hook fixes itself: the whole command is a single plain step whose
-program word is a test runner, and capped_command puts CAPPED_PREFIX in front of it. Every other uncapped test
-command is denied with DENY_TEXT on a machine where cap_available is true; the hook checks a blocked inline
-interpreter run first, then foreground_full_suite. A plain runner step that the inline check blocks is denied, even
-when the auto-mode pilot lets it pass, and never rewritten.
+is_rewritable_test_run names the one case the hook fixes itself: the whole command is a single plain step that runs
+a test runner or the repo's tests/run.sh, and capped_command puts CAPPED_PREFIX in front of it. The hook denies other
+uncapped test runs with DENY_TEXT; gates/inline_interpreter_hint.py says which deny answers first.
 
 foreground_full_suite names a command with a full-suite step (tests/run.sh, `unittest discover`, a bare runner),
 capped or not: a main session's tool call must run it with run_in_background so the conversation stays open. A run

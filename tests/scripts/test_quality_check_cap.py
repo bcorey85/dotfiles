@@ -211,6 +211,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("FOO=1 pytest x")
         self.assert_allowed(self.pre("pytest x"))
 
+    def test_a_memory_capped_run_and_the_plain_run_share_one_key(self):
+        capped_prefix = "systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0"
+        self.post(f"{capped_prefix} pytest tests/x.py")
+        self.assert_denied(self.pre("pytest tests/x.py"))
+        self.edit()
+        self.post("pytest tests/y.py")
+        self.assert_denied(self.pre(f"{capped_prefix} pytest tests/y.py"))
+
     def test_an_env_prefix_inside_a_cd_chain_is_part_of_the_key(self):
         self.post("pytest x")
         self.assert_allowed(self.pre(f"cd {self.work} && FOO=1 pytest x"))

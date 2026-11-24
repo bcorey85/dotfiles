@@ -24,7 +24,8 @@ import shell_command
 MEMORY_MAX = "8G"
 CAPPED_PREFIX = f"systemd-run --user --scope --quiet -p MemoryMax={MEMORY_MAX} -p MemorySwapMax=0"
 SHELLS = {"bash", "sh", "zsh"}
-RUN_SCRIPT = re.compile(r"(^|/)tests/run\.sh$")
+RUN_SCRIPT_NAME = "run.sh"
+RUN_SCRIPT = re.compile(r"(^|/)tests/" + re.escape(RUN_SCRIPT_NAME) + "$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
 TEST_WORDS = re.compile(r"test|jest|mocha|run\.sh", re.I)
 HELP_FLAGS = {"--help", "-h", "--version", "-V"}
@@ -129,11 +130,13 @@ def is_rewritable_test_run(command):
     if not words or HELP_FLAGS.intersection(words):
         return False
     # A shell or program named by a path may not be the real one: only tests/run.sh itself may be a path.
-    if "/" in words[0] and not is_own_tests_path(words[0], "run.sh"):
+    if "/" in words[0] and not is_own_tests_path(words[0], RUN_SCRIPT_NAME):
         return False
     script_word = run_script_word(words)
     names_other_run_script = (
-        script_word is not None and RUN_SCRIPT.search(script_word) and not is_own_tests_path(script_word, "run.sh")
+        script_word is not None
+        and RUN_SCRIPT.search(script_word)
+        and not is_own_tests_path(script_word, RUN_SCRIPT_NAME)
     )
     if names_other_run_script:
         return False

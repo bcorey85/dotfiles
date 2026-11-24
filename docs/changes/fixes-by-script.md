@@ -25,7 +25,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/script-utils | 26 | 5 |
 | script/review-loop | 25 | 9 |
 | script/shell-write-gate | 24 | 9 |
-| script/quality-check-cap | 21 | 4 |
+| script/quality-check-cap | 22 | 5 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 19 | 8 |
 | skill/code | 19 | 2 |

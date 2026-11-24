@@ -46,7 +46,8 @@ class LaneEnvTest(unittest.TestCase):
                if k not in ("CLAUDE_CODE_DISABLE_CRON", "HERDR_ENV", "XDG_STATE_HOME")}
         env["HOME"] = str(self.home)
         if pwd is not None:
-            env["PWD"] = pwd  # keeps zsh's $PWD logical, through a symlink
+            # subprocess cwd= alone gives zsh the physical path; this keeps $PWD logical through a symlink
+            env["PWD"] = pwd
         if xdg_state:
             env["XDG_STATE_HOME"] = str(self.state)
         if herdr_env is not None:
@@ -78,20 +79,18 @@ class LaneEnvTest(unittest.TestCase):
         self.write_lane_file(worktree)
         self.assertEqual(self.read_cron(cwd=worktree), "1")
 
-    def test_worktree_parent_holding_a_non_utf8_byte_disables_cron(self):
-        parent = os.path.join(os.fsencode(self.worktree.parent), b"bad\xffname")
-        worktree = os.path.join(parent, NAME.encode())
-        os.makedirs(worktree)
-        worktree_text = os.fsdecode(worktree)
-        self.write_lane_file(worktree_text)
-        self.assertEqual(self.read_cron(cwd=worktree_text), "1")
-
     def test_worktree_reached_through_a_symlinked_parent_disables_cron(self):
         link = self.worktree.parent.parent / "link"
         link.symlink_to(self.worktree.parent)
         self.write_lane_file(self.worktree)
         logical = link / NAME
         self.assertEqual(self.read_cron(cwd=logical, pwd=str(logical)), "1")
+
+    def test_worktree_itself_reached_through_a_differently_named_symlink_disables_cron(self):
+        link = self.worktree.parent / "alias"
+        link.symlink_to(self.worktree)
+        self.write_lane_file(self.worktree)
+        self.assertEqual(self.read_cron(cwd=link, pwd=str(link)), "1")
 
     def test_non_lane_directory_leaves_cron_alone(self):
         self.write_lane_file(self.worktree)

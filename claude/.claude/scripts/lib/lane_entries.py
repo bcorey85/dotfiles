@@ -76,6 +76,15 @@ def _is_text(value):
     return isinstance(value, str)
 
 
+def _encodes_as_utf8(value):
+    """True for a string that encodes as UTF-8 (argv text may hold a surrogate escape)."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _is_iso_with_offset(value):
     if not isinstance(value, str) or not STARTED_AT_PATTERN.fullmatch(value):
         return False
@@ -115,6 +124,8 @@ def validate_entry(data, file):
         is_valid, expected = FIELD_RULES[field]
         if not is_valid(data[field]):
             raise LaneFileError(file, field, expected)
+        if not _encodes_as_utf8(data[field]):
+            raise LaneFileError(file, field, "UTF-8 text")
 
     if not NAME_PATTERN.fullmatch(data["name"]) or data["name"] != pathlib.Path(file).stem:
         raise LaneFileError(file, "name", "a lane name equal to the file name")
@@ -131,27 +142,21 @@ def _unreadable_file_error(file, error):
     return _unreadable_error(file, "(file)", "file", error)
 
 
-def _holds_surrogate_escape(text):
-    """True when `text` holds a byte that was not UTF-8 (read back as a lone surrogate)."""
-    return any("\udc80" <= char <= "\udcff" for char in text)
-
-
 def read_entry(file):
     """The entry in `file`: the one grammar. Raises LaneFileError for anything unreadable or malformed, and lets
     FileNotFoundError through so a reader can tell a file that vanished from a bad one."""
     try:
-        text = pathlib.Path(file).read_text(encoding="utf-8", errors="surrogateescape")
+        text = pathlib.Path(file).read_text(encoding="utf-8")
     except FileNotFoundError:
         raise
+    except UnicodeDecodeError as error:
+        raise LaneFileError(file, "(file)", "UTF-8 text") from error
     except OSError as error:
         raise _unreadable_file_error(file, error) from error
 
     try:
         data = json.loads(text)
     except ValueError as error:
-        # A stray non-UTF-8 byte is read as a surrogate escape; in a file that is not JSON it means binary data.
-        if _holds_surrogate_escape(text):
-            raise LaneFileError(file, "(file)", "UTF-8 text") from error
         raise LaneFileError(file, "(file)", f"valid JSON ({error})") from error
 
     validate_entry(data, file)
@@ -221,9 +226,9 @@ def _write(lane):
     file = lane_file(lane["name"])
     validate_entry(lane, file)
     text = json.dumps(lane, indent=2, ensure_ascii=False) + "\n"
-    # Encode here: the writer's text mode uses the locale encoding. surrogateescape writes back the raw bytes
-    # of a worktree path that is not UTF-8, which Python holds as surrogate escapes.
-    script_utils.write_text_atomically(file, text.encode("utf-8", "surrogateescape"))
+    # Encode here: the writer's text mode uses the locale encoding. validate_entry refuses a value that is not UTF-8,
+    # because herdr-lane-resume reads lane fields through jq, which cannot carry it.
+    script_utils.write_text_atomically(file, text.encode("utf-8"))
 
 
 def _existing_entry(name):

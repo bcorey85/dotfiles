@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1158 changes
+1160 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Review loop scope guard keeps a fix to a file a finding names by suffix or dot-slash](notes/2026-11-23-review-loop-scope-guard-keeps-a-fix-to-a-file-a.md) [script/review-loop] The review loop's scope guard now keeps a fix to a file that a finding names with a leading dot-slash or by the unique end of its path, so that fix is no longer put back and lost.
 * [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md) [script/plan-check] A lane ticket that names a session-written queue item before a human-written one now reads as user-owned, so a session can no longer rule on the user's criteria; every queue Source line is now checked, not only the first.
 * [Review loop lints the files each fix pass changed before the next review round](notes/2026-11-23-review-loop-lints-the-files-each-fix-pass-changed.md) [script/review-loop] The review loop now runs the repo lint on the files a fix pass changed and sends any failure to its lint repair in the same pass, so a long line or other lint failure a fix wrote no longer waits a round for a reviewer to find it.
+* [review_fix decide keep rules an adopted plan impact the coder never applied](notes/2026-11-23-review-fix-decide-keep-rules-an-adopted-plan.md) [script/review-fix, shared/review-loop] `decide keep` now re-rules a plan impact that was adopted and left unapplied, so the adopted-unapplied stop no longer holds the loop.
 
 ## Week of 2026-11-16
 
@@ -107,6 +108,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A review fix pass keeps an owner-line edit to the scripts CLAUDE.md under a standing ruling](notes/2026-11-22-a-review-fix-pass-keeps-an-owner-line-edit-to-the.md) [script/review-loop-ruled, script/standing-rulings, script/owner-lines] A review fix pass keeps an owner-line edit to the scripts CLAUDE.md when a standing ruling covers owner lines.
 * [A review fix pass holds a file another session first dirtied during an earlier phase](notes/2026-11-22-a-review-fix-pass-holds-a-file-another-session.md) [script/code-phase-start, shared/review-loop] phase_start.py adds a file another session first dirtied during an earlier phase to the kept start record, so the review fix pass holds it like one dirty at the run start.
 * [A later /code review reviews the files the review loop's fix coder wrote instead of holding them](notes/2026-11-22-a-later-code-review-reviews-the-files-the-review.md) [script/review-loop, script/code-review-start] The review loop records the untracked files its claude -p fix coder wrote, and code_review_start reviews them as the run's own instead of holding them for another live session.
 * [The MCP server-name test ignores downloaded caches, plugins and synced skills](notes/2026-11-22-the-mcp-server-name-test-ignores-downloaded-caches.md) [script/test-suite] The MCP server-name test scans only git-tracked toolkit files, so it passes on the live checkout with its caches, plugins and synced skills.

@@ -1,8 +1,12 @@
 """protected_lines.py: put selected lines of a text back after a later edit changed them, and keep every other edit.
 
-It knows nothing about what the lines mean: the caller names the 1-based line numbers of the earlier text to protect."""
+It knows nothing about what the lines mean: the caller names the 1-based line numbers of the earlier text to protect.
+`changed_line_ranges` gives the changed stretches of both texts; `changed_stretches` filters it to the first text's.
+`lines_rewritten_in_place` says whether replaced lines are rewrites of their old lines."""
 import difflib
 import typing
+
+import script_utils
 
 # A changed line counts as the rewrite of a protected line when it is at least this much like it.
 REWRITE_RATIO = 0.6
@@ -20,6 +24,37 @@ def entries_missing(before_entries, after_entries):
             continue
         missing.append((number, text))
     return missing
+
+
+def with_final_newline(text):
+    """`text` ending in a newline. A missing final newline makes the last line differ from the same line with one, which
+    hides a swap of the last two lines from a diff."""
+    return text if text.endswith("\n") else text + "\n"
+
+
+def lines_rewritten_in_place(before_lines, after_lines, rival_lines):
+    """True when each of `before_lines`, in order, is like its own line of `after_lines` at REWRITE_RATIO or better,
+    and no line of `rival_lines` is more like it than its own (an update in place, not a reorder).
+    Each old line takes the most like such new line (the earliest on a tie) after the previous match, so no two
+    share one."""
+    # Not `closest_line`: that one breaks ties on the latest line and returns no score, and this order check needs the
+    # earliest line and its score.
+    next_index = 0
+    for before_line in before_lines:
+        own_index = None
+        own_score = 0.0
+        for index in range(next_index, len(after_lines)):
+            score = script_utils.text_similarity(before_line, after_lines[index])
+            if score >= REWRITE_RATIO and score > own_score:
+                own_index = index
+                own_score = score
+        if own_index is None:
+            return False
+        for rival_line in rival_lines:
+            if script_utils.text_similarity(before_line, rival_line) > own_score:
+                return False
+        next_index = own_index + 1
+    return True
 
 
 def entries_missing_in_stretches(before_entries, after_entries, stretches):
@@ -49,6 +84,13 @@ def line_opcodes(before_text, after_text):
     after_lines = after_text.splitlines(keepends=True)
     matcher = difflib.SequenceMatcher(None, before_lines, after_lines, autojunk=False)
     return before_lines, after_lines, matcher.get_opcodes()
+
+
+def changed_line_ranges(before_text, after_text):
+    """The (tag, before_start, before_end, after_start, after_end) of each stretch that differs between the two texts:
+    0-based line indexes, exclusive ends, tag one of `insert`, `delete` or `replace`. [] for equal texts."""
+    _before_lines, _after_lines, opcodes = line_opcodes(before_text, after_text)
+    return [opcode for opcode in opcodes if opcode[0] != "equal"]
 
 
 def changed_stretches(before_text, after_text):

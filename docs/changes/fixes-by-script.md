@@ -7,14 +7,14 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-731 fix notes
+733 fix notes
 
 Recent: the 7 days up to 2026-11-23, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 171 | 5 |
-| script/review-fix | 72 | 13 |
+| script/review-fix | 73 | 14 |
 | script/review-loop-script | 72 | 14 |
 | script/handback | 56 | 2 |
 | script/review-commit-gate | 46 | 8 |
@@ -74,6 +74,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/log-scan | 4 | 0 |
 | script/phase-start | 4 | 3 |
 | script/plan-check | 4 | 4 |
+| script/review-loop-ruled | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
 | script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
@@ -90,7 +91,6 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
 | script/review-loop-packet | 3 | 0 |
-| script/review-loop-ruled | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
 | script/wait-loop-gate | 3 | 0 |
@@ -173,6 +173,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/memory-cap-scope | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
+| script/owner-lines | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/pytest-config | 1 | 0 |
@@ -192,6 +193,7 @@ Recent: the 7 days up to 2026-11-23, the newest note.
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
+| script/standing-rulings | 1 | 1 |
 | script/suite-receipt | 1 | 1 |
 | script/system-resources | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |

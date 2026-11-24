@@ -5,6 +5,7 @@ import handback
 import path_summary
 import plan_format
 import script_utils
+from coder_report import ALREADY_APPLIED_MARKER, SKIPPED_MARKER
 
 ISSUE_CHARS = 240
 MAX_LISTED_ISSUES = 50
@@ -68,7 +69,7 @@ NO_CODE_REVIEW_RULE = ("These findings were ruled no code change. File a [plan-d
 
 NO_CODE_CODER_RULE = ("Issues ruled no code change: {numbers}. For each, edit no source or test file; make only the "
                       "doc or note edit the ruling names. When a ruling cannot be met without code, leave it "
-                      "unapplied and write `SKIPPED <n>: <reason>` for it.")
+                      f"unapplied and write `{SKIPPED_MARKER} <n>: <reason>` for it.")
 
 
 def user_ruled_issue(text, ruled_at):
@@ -159,14 +160,21 @@ def path_list(paths, list_file, in_scope=()):
 
 
 def coder_prompt(repo, findings, small_items, files, list_dir, gate_env=(), later_phase_files=(), guidance="",
-                 held_files=(), no_code_numbers=(), named_tests=(), ruled_out_files=()):
+                 held_files=(), no_code_numbers=(), named_tests=(), ruled_out_files=(), adopted_numbers=()):
     """The fix coder's brief. `list_dir` is the folder that takes the full issue texts, the full small-item texts
     and each path list the brief folds."""
     body = [f"Repo root: {repo}", "", FENCE, "", "## Issues", ""]
     body += listed_texts(findings, list_dir / "issues.txt", "issue")
-    body += ["", "For each issue you skip, write one line in your report in the form `SKIPPED <n>: <reason>`, "
+    body += ["", "For each issue you skip, write one line in your report "
+                 f"in the form `{SKIPPED_MARKER} <n>: <reason>`, "
                  "where n is the issue's number. When you stop on a PLAN-IMPACT, write that line for each issue "
                  "you left unapplied.", "", SCOPED_TESTS]
+    if adopted_numbers:
+        numbers = ", ".join(map(str, adopted_numbers))
+        asking = "issue " + numbers + " asks" if len(adopted_numbers) == 1 else "issues " + numbers + " ask"
+        body += ["", f"When the tree already holds the change that {asking} for, write "
+                     f"`{ALREADY_APPLIED_MARKER} <n>: <file:line where it is>` "
+                     f"for it instead of `{SKIPPED_MARKER} <n>`."]
     if no_code_numbers:
         body += ["", "## No code change", "", NO_CODE_CODER_RULE.format(numbers=", ".join(map(str, no_code_numbers)))]
     if small_items:

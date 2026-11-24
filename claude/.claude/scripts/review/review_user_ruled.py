@@ -5,10 +5,15 @@ gave comes back as an ask that carries the coder's reason, except a plan impact 
 and the packet stops on it like on any other ask.
 """
 import os
+import pathlib
+import sys
 from typing import NamedTuple
 
+SIBLING_FOLDERS = (".", "../lib", "../code")
+sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in SIBLING_FOLDERS]
 import handback
 import handback_store
+from coder_report import SKIPPED_MARKER
 from finding_record import parse_finding
 from handback_store import NO_RULINGS
 from review_asks import USER_RULED_KEY
@@ -31,7 +36,7 @@ def reasked_findings(findings, questions, ruled_texts):
         if question is None:
             continue
         quoted = one_line(question, None)
-        reasked[number] = f"SKIPPED {number}: the coder re-asked it in OPEN QUESTIONS: {quoted}"
+        reasked[number] = f"{SKIPPED_MARKER} {number}: the coder re-asked it in OPEN QUESTIONS: {quoted}"
     return reasked
 
 

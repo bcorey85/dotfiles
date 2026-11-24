@@ -44,11 +44,13 @@ class PlanImpactSource(NamedTuple):
     """Where `decide` reads the plan impact from: the saved packet `state`, or else the `held` impacts and the
     `packet` of this session's latest hand-back (the packet is None when `state` is the source,
     or when the hand-back's packet cannot be read). `filed_at` is the epoch time the impact was filed: the state's
-    PLAN_IMPACT_FILED_AT_KEY, or the hand-back's stored time (None when it has none)."""
+    PLAN_IMPACT_FILED_AT_KEY, or the hand-back's stored time (None when it has none). `row_per_text` is True for an
+    adopted impact that `decide keep` rules: each held text and finding text gets its own ruled row."""
     state: dict | None
     held: list
     packet: dict | None
     filed_at: float | None
+    row_per_text: bool = False
 
 
 def pop_decide_relay(argv):
@@ -102,17 +104,21 @@ def relayed_owner(owner, relayed):
     return f"{owner}, relayed by session {relayed.request.relayed_by} (user turn at {relayed.turn.timestamp})"
 
 
-def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=(), relayed=None):
+def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=(), relayed=None,
+                       row_impacts=()):
     """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one. The ruled
     row goes under `ruled_repo`, the repo the packet answers: one row per accepted finding the ruling covers
-    (`finding_texts`), else one row with none. A relayed ruling also stores a PLAN_RULING_RELAYED row."""
+    (`finding_texts`), else one row with none. With `row_impacts` (pairs of impact text and finding text or None),
+    those pairs are the rows, in place of the rows for the joined `impact_text`, which the deviation entry keeps.
+    A relayed ruling also stores a PLAN_RULING_RELAYED row."""
     choice = plan_format.DECISION_WORDS[decision]
     owner = relayed_owner(plan_format.ruling_owner(".", by), relayed)
     ruled_at = plan_format.ruled_at_now()
     entry = plan_format.ruling_deviation(None, choice, owner, ruled_at, ruling, impact_text)
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    for finding_text in finding_texts or [None]:
-        handback_store.record_ruled_impact(session_id, impact_text, ruled_repo, finding_text=finding_text,
+    rows = row_impacts or [(impact_text, finding_text) for finding_text in finding_texts or [None]]
+    for row_text, finding_text in rows:
+        handback_store.record_ruled_impact(session_id, row_text, ruled_repo, finding_text=finding_text,
                                            decision=decision, owner=owner, ruled_at=ruled_at)
     if relayed is not None:
         handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.request.relayed_by,

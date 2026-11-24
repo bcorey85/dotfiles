@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1139 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
+1141 changes, 23 with a measured gain, 275 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Deleting the backlog skill, unused since August, drops 286 words](notes/2026-11-22-deleting-the-backlog-skill-unused-since-august.md).
+Latest change: 2026-11-23, [Memory-cap hook adds the cap to a plain test run in place of denying it](notes/2026-11-23-memory-cap-hook-adds-the-cap-to-a-plain-test-run.md).
 
 ## Top gains
 

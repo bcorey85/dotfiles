@@ -2,10 +2,16 @@
 
 A test run that allocates without bound takes the whole machine's memory and the kernel ends every session on it. A
 run inside `systemd-run --user --scope -p MemoryMax=... -p MemorySwapMax=0` dies alone at the cap. uncapped_test_run
-names such a command: a step that runs tests (check_scope.step_runs_tests) or `tests/run.sh`, with no systemd-run
-wrapper in front of it. A step that asks for usage (`--help`, `-h`, `--version`) runs nothing and is not one. A
-command text that shlex cannot split is not one either. cap_available says whether this machine can run the scope:
-Linux, systemd-run on PATH and a user bus.
+names such a command: a step that runs tests (check_scope.step_runs_tests), `tests/run.sh`, or a test program named
+by a path (`./pytest`), with no systemd-run wrapper in front of it. A step that asks for usage (`--help`, `-h`,
+`--version`) runs nothing and is not one. A command text that shlex cannot split is not one either. cap_available says
+whether this machine can run the scope: Linux, systemd-run on PATH and a user bus.
+
+is_rewritable_test_run names the one case the hook fixes itself: the whole command is a single plain step whose
+program word is a test runner, and capped_command puts CAPPED_PREFIX in front of it. Every other uncapped test
+command is denied with DENY_TEXT on a machine where cap_available is true; the hook checks a blocked inline
+interpreter run first, then foreground_full_suite. A plain runner step that the inline check blocks is denied, even
+when the auto-mode pilot lets it pass, and never rewritten.
 
 foreground_full_suite names a command with a full-suite step (tests/run.sh, `unittest discover`, a bare runner),
 capped or not: a main session's tool call must run it with run_in_background so the conversation stays open. A run
@@ -21,6 +27,8 @@ MEMORY_MAX = "8G"
 CAPPED_PREFIX = f"systemd-run --user --scope --quiet -p MemoryMax={MEMORY_MAX} -p MemorySwapMax=0"
 SHELLS = {"bash", "sh", "zsh"}
 RUN_SCRIPT = re.compile(r"(^|/)tests/run\.sh$")
+# The repo's own script by a relative name: a path to another tests/run.sh is never rewritten.
+OWN_RUN_SCRIPT = re.compile(r"(\./)?tests/run\.sh$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
 TEST_WORDS = re.compile(r"test|jest|mocha|run\.sh", re.I)
 HELP_FLAGS = {"--help", "-h", "--version", "-V"}
@@ -47,11 +55,17 @@ def cap_available():
 
 def runs_test_script(words):
     """True when the step runs tests/run.sh, directly or through a shell."""
+    script_word = run_script_word(words)
+    return script_word is not None and bool(RUN_SCRIPT.search(script_word))
+
+
+def run_script_word(words):
+    """The word that would be tests/run.sh: the program word, or the word after a shell. None when there is none."""
     if not words:
-        return False
-    if RUN_SCRIPT.search(words[0]):
-        return True
-    return os.path.basename(words[0]) in SHELLS and len(words) > 1 and bool(RUN_SCRIPT.search(words[1]))
+        return None
+    if os.path.basename(words[0]) in SHELLS:
+        return words[1] if len(words) > 1 else None
+    return words[0]
 
 
 def step_is_uncapped_test_run(words):
@@ -66,7 +80,20 @@ def step_is_uncapped_test_run(words):
     import check_scope  # pylint: disable=import-outside-toplevel
 
     final_words = shell_command.command_after_wrappers(words)
-    return check_scope.step_runs_tests(final_words) or runs_test_script(final_words)
+    return (check_scope.step_runs_tests(final_words) or runs_test_script(final_words)
+            or runs_tests_named_by_path(final_words))
+
+
+def runs_tests_named_by_path(words):
+    """True when the program word is a path (`./pytest`) whose file name is a test program. The hook never rewrites
+    it, since the file may not be the runner, but a run outside a cap is still denied."""
+    if not words or "/" not in words[0]:
+        return False
+
+    import check_scope  # pylint: disable=import-outside-toplevel
+
+    named_by_file = [os.path.basename(words[0]), *words[1:]]
+    return check_scope.program_runs_tests(named_by_file)
 
 
 def uncapped_test_run(command):
@@ -77,6 +104,63 @@ def uncapped_test_run(command):
     except ValueError:
         return False
     return any(step_is_uncapped_test_run(words) for words in steps)
+
+
+def capped_command(command):
+    """The command with the capped prefix in front of it."""
+    return f"{CAPPED_PREFIX} {command}"
+
+
+def is_rewritable_test_run(command):
+    """True when the whole command is one plain simple command whose program word is a test runner, so the capped
+    prefix in front of it changes nothing else: no wrapper word (`sudo`, `exec`, `time`, `env`), operator, newline,
+    subshell, brace group, substitution, redirection, heredoc or leading NAME=value word, and no usage flag. A path
+    is accepted only for the repo's own tests/run.sh (`tests/run.sh` or `./tests/run.sh`, alone or after a shell)
+    and tests/parallel_tests.py (`tests/parallel_tests.py` or `./tests/parallel_tests.py`, after a python program):
+    a program word with any other `/` and a run script or runner script at any other path are False. The caller
+    sends the rewritten command back for the normal permission check, so any doubt is False."""
+    if not TEST_WORDS.search(command):
+        return False
+    if shell_command.substitution_spans(command):
+        return False
+
+    try:
+        steps = shell_command.split_command_steps(command)
+        parsed_commands = shell_command.parse_piped_commands(command)
+    except ValueError:
+        return False
+    # One step: no chain, background `&`, newline or heredoc body. One parsed command: no pipe and no `(`/`)` between
+    # words.
+    if len(steps) != 1 or len(parsed_commands) != 1:
+        return False
+
+    words, redirections, _piped = parsed_commands[0]
+    if redirections or shell_command.without_assignments(words) != words:
+        return False
+    if not words or HELP_FLAGS.intersection(words):
+        return False
+    # A shell or program named by a path may not be the real one: only tests/run.sh itself may be a path.
+    if "/" in words[0] and not OWN_RUN_SCRIPT.match(words[0]):
+        return False
+    script_word = run_script_word(words)
+    names_other_run_script = (
+        script_word is not None and RUN_SCRIPT.search(script_word) and not OWN_RUN_SCRIPT.match(script_word)
+    )
+    if names_other_run_script:
+        return False
+
+    import check_scope  # pylint: disable=import-outside-toplevel
+    import shell_steps  # pylint: disable=import-outside-toplevel
+
+    if check_scope.step_runs_test_runner_script(words) and words[1] not in (
+            f"tests/{check_scope.TEST_RUNNER_SCRIPT}", f"./tests/{check_scope.TEST_RUNNER_SCRIPT}"):
+        return False
+
+    step_text = steps[0][1]
+    if shell_steps.group_closes(step_text)[0] or shell_steps.group_depth_change(step_text) != 0:
+        return False
+
+    return check_scope.program_runs_tests(words) or runs_test_script(words)
 
 
 def program_after_systemd_run(words):

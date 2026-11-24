@@ -7,9 +7,9 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-716 fix notes
+718 fix notes
 
-Recent: the 7 days up to 2026-11-22, the newest note.
+Recent: the 7 days up to 2026-11-23, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
@@ -45,17 +45,17 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/criteria-dry-run | 10 | 3 |
 | script/review-asks | 10 | 6 |
 | script/herdr-worktree | 9 | 3 |
+| script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/review-fix-asks | 8 | 5 |
 | script/review-launch | 8 | 3 |
-| script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
+| script/inline-interpreter-hint | 7 | 4 |
 | script/log-review-metrics | 7 | 0 |
 | script/phase-asks | 7 | 4 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
-| script/inline-interpreter-hint | 6 | 3 |
 | script/ledger-write | 6 | 2 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
@@ -72,6 +72,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/log-scan | 4 | 0 |
 | script/phase-start | 4 | 3 |
+| script/plan-check | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
 | script/run-sh | 4 | 0 |
 | script/session-pane | 4 | 4 |
@@ -88,7 +89,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/herdr-worktree-watch | 3 | 2 |
 | script/log-spec-run | 3 | 0 |
 | script/loop-transcript | 3 | 1 |
-| script/plan-check | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-loop-ruled | 3 | 3 |
 | script/review-scope | 3 | 0 |
@@ -116,6 +116,7 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
+| script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
@@ -169,7 +170,6 @@ Recent: the 7 days up to 2026-11-22, the newest note.
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
-| script/memory-cap-scope | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |

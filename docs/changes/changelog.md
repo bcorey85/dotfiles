@@ -7,9 +7,19 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1139 changes
+1141 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-23
+
+### Changed
+
+* [Memory-cap hook adds the cap to a plain test run in place of denying it](notes/2026-11-23-memory-cap-hook-adds-the-cap-to-a-plain-test-run.md) [script/inline-interpreter-hint, script/check-scope, script/memory-cap-scope] A single plain test command that lacks the memory cap now runs capped on the first call, with the cap added by the hook, in place of a denied call and a resend. A test runner named by a path (`./pytest`, `.venv/bin/pytest`) is now denied until it carries the cap.
+
+### Fixed
+
+* [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md) [script/plan-check] A lane ticket that names a session-written queue item before a human-written one now reads as user-owned, so a session can no longer rule on the user's criteria; every queue Source line is now checked, not only the first.
 
 ## Week of 2026-11-16
 

@@ -145,7 +145,9 @@ class WaitLoopGateTest(unittest.TestCase):
 
     def test_code_fork_shell_background_denied(self):
         finished = run_command("make test &", agent_type="code-fork")
-        self.assertIn("deny", finished.stdout)
+        decision = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertIn("ends the fork's turn", decision["permissionDecisionReason"])
 
     def test_background_commands_pass_for_a_coder_and_the_main_session(self):
         for command in ("make test &", "nohup make test"):

@@ -23,6 +23,8 @@ to deny reason. `review-loop` keeps its reason. `code-fork` gets a reason that s
 turn and hands back before the phase ends, and gives the approved path: run in the foreground with a Bash timeout up
 to 600000 ms, and split a longer job into steps that each fit. The jobs covered are unchanged: `run_in_background`,
 a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt.
+The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
+`lib/agent_names.py`; `script_utils` re-exports it. Importing it from `script_utils` cost the gate 10 to 13 ms.
 
 ## Evidence
 
@@ -36,8 +38,8 @@ Tests: `test_code_fork_background_call_denied_with_the_foreground_form` and `tes
 fail on the old gate and pass now; `test_background_commands_pass_for_a_coder_and_the_main_session` and the existing
 review-loop tests pass on both. Full suite: 6253 tests, 0 failed. Lint clean.
 
-Gate median wall time on a matched call (code-fork, `run_in_background: true`), 40 runs each, same run: before
-35.7 ms, after 35.3 ms, bare Python start 12.1 ms. No added cost.
+Gate median wall time on a matched call (code-fork, `run_in_background: true`), 40 runs each, before and after in
+the same run: 34.0 vs 33.0 ms (bare Python start 10.4 ms), and 36.2 vs 36.5 ms (bare 12.8 ms). No added cost.
 
 ## Watch
 

@@ -17,6 +17,8 @@ import time
 import uuid
 from collections import namedtuple
 
+from agent_names import FORK_AGENT_TYPE  # noqa: F401  (re-export: the owner is agent_names)
+
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
@@ -42,8 +44,6 @@ BACKTICKED = re.compile(r"`([^`]+)`")
 # Subagent types: the agents that change code, and the agents that review it (code-reviewer, perf-reviewer-deep, ...).
 CODERS = re.compile(r"^(backend-|frontend-)?coder(-deep)?$")
 REVIEWERS = re.compile(r"^([a-z]+-)*reviewer(-deep)?$")
-# The agent the /code skill forks into (its `agent:` line). It has no Edit or Write tool.
-FORK_AGENT_TYPE = "code-fork"
 # A markdown file's opening `---` frontmatter block, and one `- name` line of a block list in it.
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---[ \t]*(?:\n|\Z)", re.DOTALL)
 FRONTMATTER_LIST_ITEM = re.compile(r"^\s+-\s+(.+?)\s*$")

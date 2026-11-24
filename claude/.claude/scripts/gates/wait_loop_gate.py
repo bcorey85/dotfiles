@@ -25,6 +25,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+from agent_names import FORK_AGENT_TYPE
 from shell_command import resolved_command_words, wrapper_chain
 from shell_statements import clean, statements
 
@@ -57,7 +58,7 @@ CODE_FORK_BACKGROUND_REASON = ("A background job ends the fork's turn, which han
                                "the command in the foreground: no run_in_background, trailing &, nohup, setsid, "
                                "detach or disown, and set the Bash timeout up to 600000 ms. Split a longer job into "
                                "steps that each fit in that timeout.")
-BACKGROUND_REASONS = {"review-loop": BACKGROUND_REASON, "code-fork": CODE_FORK_BACKGROUND_REASON}
+BACKGROUND_REASONS = {"review-loop": BACKGROUND_REASON, FORK_AGENT_TYPE: CODE_FORK_BACKGROUND_REASON}
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
 DETACH_WORDS = {"nohup", "setsid", "detach", "disown"}

@@ -197,6 +197,7 @@ class RunGateTest(HookRunTest):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "agent_names.py"), str(pathlib.Path(self.tmp.name) / "agent_names.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\n\n\ndef main():\n    raise RuntimeError('boom')\n\n\n"
                           "hook_input.run_gate(main)\n")
@@ -214,6 +215,7 @@ class RunGateTest(HookRunTest):
         driver = pathlib.Path(self.tmp.name) / "quiet-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        shutil.copy(str(SCRIPTS_DIR / "lib" / "agent_names.py"), str(pathlib.Path(self.tmp.name) / "agent_names.py"))
         shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\nhook_input.run_gate(lambda: 3)\n")
         self.assertEqual(subprocess.run([sys.executable, str(driver)]).returncode, 3)

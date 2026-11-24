@@ -1,4 +1,4 @@
-# Font — JuliaMono. The Nerd build lacks Light, so this is the plain build and
+ # Font — JuliaMono. The Nerd build lacks Light, so this is the plain build and
 # ghostty's built-in Nerd symbols draw the icons, a cell and a half wide. Light
 # body; bold is SemiBold because Regular sits too close to Light to read as bold.
 font-family = JuliaMono

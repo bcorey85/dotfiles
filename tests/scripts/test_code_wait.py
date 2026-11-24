@@ -272,6 +272,13 @@ class WaitReviewTest(unittest.TestCase):
         self.assertTrue(output.rstrip().endswith("Tool fault: " + code_wait.held_fault_text(["a.py"])))
         self.assertTrue(output.rstrip().endswith("check them: a.py"))
 
+    def test_the_phase_route_names_a_released_held_file_as_released_not_as_a_fault(self):
+        _code, output = self.wait_code_and_output(
+            self.finished_review('{"held_changed": [], "held_released": ["a.py"]}'))
+
+        self.assertNotIn("Tool fault", output)
+        self.assertTrue(output.rstrip().endswith(code_wait.held_released_text(["a.py"])))
+
     def test_the_phase_route_with_no_scope_file_prints_no_fault_line_and_does_not_exit(self):
         repo = self.finished_review()
 

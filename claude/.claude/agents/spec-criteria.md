@@ -55,7 +55,7 @@ Number the ids flat, `AC1` to `ACn`, each used once across every section: never 
 
 Before you return, run `python3 ~/.claude/scripts/code/plan_check.py check <the spec path>` and fix `acceptance-criteria.md` until every row it still prints starts with the spec's path; return those rows unedited. Never edit `spec.md`. Use Bash for that command only.
 
-**Prose, out of the shipped tree.** Never stubs, never placeholders under `tests/`, never ids/paths into `tests/` or `src` (`_shared/code-vocabulary.md`).
+**Prose, out of the shipped tree.** Never stubs, never placeholders under `tests/`, never ids/paths into `tests/` or `src`; before you write a criterion that names code, read `~/.claude/skills/_shared/code-vocabulary.md` for the banned vocabulary.
 
 ## Return
 

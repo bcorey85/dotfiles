@@ -49,7 +49,7 @@ Write `<task-dir>/acceptance-criteria.md`:
 - **AC7** — <criterion no automated test can cover, and why>
 ```
 
-**Prose, out of the shipped tree.** Never stubs, never placeholders under `tests/`, never ids/paths into `tests/` or `src` (`_shared/code-vocabulary.md`).
+**Prose, out of the shipped tree.** Never stubs, never placeholders under `tests/`, never ids/paths into `tests/` or `src`; before you write a criterion that names code, read `~/.claude/skills/_shared/code-vocabulary.md` for the banned vocabulary.
 
 ## Return
 

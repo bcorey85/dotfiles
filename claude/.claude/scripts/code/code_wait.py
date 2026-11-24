@@ -80,6 +80,7 @@ PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last 
 SCOPE_FILE = "review-scope.json"  # the phase review's scope, written by code_review_start.py --detach
 PREVIOUS_SCOPE_FILE = "review-scope.prev.json"  # where phase_start.py moves the last phase's scope
 HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files changed since the run start
+HELD_RELEASED_FIELD = "held_released"  # the key of SCOPE_FILE that lists held files the run's coder rewrote
 REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
 LOOP_FLAG = "--loop"
 CODE_WAIT_WRITES_NOTE = "(written by `code_wait.py review`, never by the reviewer)"
@@ -236,6 +237,12 @@ def held_fault_text(paths):
             "out, so check them: " + ", ".join(paths))
 
 
+def held_released_text(paths):
+    """The text for held files whose change a coder of the run wrote, so review read them. The scope note and the wait
+    output both use it."""
+    return "released held files a coder of this run rewrote, so review read them: " + ", ".join(paths)
+
+
 def unreadable_line(scope_file, problem):
     """The line for a scope file that could not be read: its path and the problem."""
     return f"code_wait: {scope_file} could not be read for held-file faults ({problem}); check the held files by hand."
@@ -264,6 +271,29 @@ def held_fault_line(repo):
     if not paths:
         return ""
     return "Tool fault: " + held_fault_text(paths)
+
+
+def held_released_line(repo):
+    """The line naming the held files the phase's scope file lists as released, "" when there is none to read. A scope
+    file that cannot be read is reported by held_fault_line, so this never repeats it."""
+    folder = phase_dir_or_none(repo)
+    if folder is None:
+        return ""
+    scope_file = folder / SCOPE_FILE
+    if not scope_file.is_file():
+        return ""
+
+    try:
+        scope = json.loads(scope_file.read_text())
+    except (OSError, ValueError):
+        return ""
+
+    if not isinstance(scope, dict):
+        return ""
+    paths = scope.get(HELD_RELEASED_FIELD)
+    if not isinstance(paths, list) or not paths or not all(isinstance(path, str) for path in paths):
+        return ""
+    return "code_wait: " + held_released_text(paths)
 
 
 def scope_held_changed(scope):
@@ -601,12 +631,16 @@ def follow_run(repo, run, words, launched_folder):
 
 
 def print_held_fault(repo, launched_folder):
-    """Prints the held-file fault line on the phase route; a launched loop's route (`launched_folder`) prints none."""
+    """Prints the held-file fault line and the released-file line on the phase route; a launched loop's route
+    (`launched_folder`) prints neither."""
     if launched_folder is not None:
         return
     fault_line = held_fault_line(repo)
     if fault_line:
         print(fault_line)
+    released_line = held_released_line(repo)
+    if released_line:
+        print(released_line)
 
 
 def print_ended_loop(run):

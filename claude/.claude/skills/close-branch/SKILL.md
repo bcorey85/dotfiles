@@ -46,7 +46,7 @@ Merge the four reports and your own findings into one list, deduplicated by file
 - every criterion the plan-verifier marked partial, missing, or MISSING, and every failed automated check, each as "write or fix the covering test" or "build the missing behavior";
 - every failing full-check line from Step 1.
 
-An `ask` whose change cuts or changes a ticket AC goes to the user, not to the coder: log it with disposition `ask` and actioned `ask`.
+An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user, not to the coder, logged with disposition `ask` and actioned `ask`.
 
 Before the dispatch, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` to record the reviewed tree. The index stays as the user left it. Then dispatch `coder` ONCE with the whole list. The coder runs the tests for the files it changed. With an empty list, skip to Step 5.
 

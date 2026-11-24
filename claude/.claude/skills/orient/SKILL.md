@@ -88,6 +88,6 @@ An ordered editor walkthrough of a feature, flow, symbol, file, dir or ticket (e
 
 ## Boundaries
 
-- **Read-only — never edits** (vault persist and the saved walk write the vault only, never the repo).
+- Never edits a repo file; its only writes are the vault note, the saved walk and the `note` capture line above.
 - This is _not_ `/review` (correctness/bugs).
 - Keep it tight. Refs over prose.

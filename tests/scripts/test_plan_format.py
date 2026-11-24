@@ -45,20 +45,23 @@ def parse(text):
 
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
-        locations = {
-            "a line": "`app.py:13` ",
-            "a bare line": "app.py:13 ",
-            "a range": "`app.py:13-14` ",
-            "an en dash range": "`app.py:13\N{EN DASH}14` ",
-            "a list of ranges": "`backend/src/schema.ts:58-101,139-147` ",
-            "a list of lines": "`app.py:3,9` ",
-            "a tag after a range": "`app.py:3-5` [plan-drift] \N{EM DASH} ",
-            "a tag before a range": "[plan-drift] `app.py:3-5` ",
+        ask = "plan impact: needs a column"
+        lines = {
+            "a line": f"`app.py:13` {ask}",
+            "a bare line": f"app.py:13 {ask}",
+            "a range": f"`app.py:13-14` {ask}",
+            "an en dash range": f"`app.py:13\N{EN DASH}14` {ask}",
+            "a list of ranges": f"`backend/src/schema.ts:58-101,139-147` {ask}",
+            "a list of lines": f"`app.py:3,9` {ask}",
+            "a tag after a range": f"`app.py:3-5` [plan-drift] \N{EM DASH} {ask}",
+            "a tag before a range": f"[plan-drift] `app.py:3-5` {ask}",
+            "a wrapped prefix in backticks": "`PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
+            "a wrapped prefix in bold": "**PLAN-IMPACT:** app.py:3 \N{EM DASH} x",
+            "a wrapped prefix after a class tag": "[docs] `PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
         }
-        for name, location in locations.items():
+        for name, line in lines.items():
             with self.subTest(name):
-                marked = plan_format.PLAN_CHANGE_MARK.match(f"{location}plan impact: needs a column")
-                self.assertIsNotNone(marked)
+                self.assertIsNotNone(plan_format.PLAN_CHANGE_MARK.match(line))
 
     def test_text_that_only_mentions_a_plan_impact_later_is_not_marked(self):
         texts = ("`app.py:13-14` the limit is wrong; see the plan impact", "the plan holds", "app.py:13-x plan impact")
@@ -69,7 +72,8 @@ class PlanChangeMarkTest(unittest.TestCase):
     def test_an_ask_tagged_plan_impact_none_is_not_marked(self):
         texts = ("PLAN-IMPACT: none. The limit check belongs in the helper.", "plan_impact: none",
                  "**PLAN-IMPACT:** none.", "`app.py:13` [bug] PLAN-IMPACT: none of substance; move the guard",
-                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.")
+                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.", "`PLAN-IMPACT:` none",
+                 "**PLAN-IMPACT: none**")
         for text in texts:
             with self.subTest(text):
                 self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
@@ -101,6 +105,70 @@ class ReportBlockTest(unittest.TestCase):
                 self.assertIn("changes", found)
                 self.assertIn("acceptance_criteria", found)
                 self.assertFalse(plan_format.changes_acceptance_criteria(found))
+
+    def test_a_trailing_kind_clause_does_not_make_an_answer_of_none_a_criteria_change(self):
+        lines = (
+            "`PLAN-IMPACT:` app.py:3 — the cap differs — `acceptance_criteria: none` — `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none — kind: reword",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none\nkind: reword",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none kind: reword",
+            "PLAN-IMPACT: app.py:3 — x — `acceptance_criteria: none` `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC3 holds either way)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none. Delegated.",
+        )
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: AC2 — kind: reword"))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none beyond AC1"))
+        self.assertEqual(plan_format.criteria_ids(
+            "PLAN-IMPACT: x — acceptance_criteria: none (AC3 holds either way)", answers_only=True), frozenset())
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: `AC2`, `AC3`"), frozenset({"AC2", "AC3"}))
+
+    def test_an_answer_of_none_followed_by_except_but_or_beyond_is_a_criteria_change(self):
+        answers = (
+            "none, but AC2 wording changes",
+            "none — except AC2 narrows",
+            "none beyond AC2",
+        )
+        wrapped = (
+            "`PLAN-IMPACT:` a.py:3 — x — `acceptance_criteria: none` but AC2 narrows",
+            "PLAN-IMPACT: a.py:3 — x — **acceptance_criteria:** **none** except AC2",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; but AC2 wording changes",
+        )
+        for line in wrapped:
+            with self.subTest(line=line):
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+        for answer in answers:
+            with self.subTest(answer=answer):
+                line = f"PLAN-IMPACT: app.py:3 — x — acceptance_criteria: {answer}"
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+
+    def test_an_answer_of_none_with_a_parenthetical_naming_a_criterion_stays_none(self):
+        line = "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC2 holds either way)"
+
+        self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset())
+
+    def test_below_criteria_summary_drops_the_answer_and_its_kind_clause(self):
+        shapes = (
+            "`PLAN-IMPACT:` a.py:3 — x `acceptance_criteria: none`\n`kind: reword`",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none **kind:** reword",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none.",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; kind: reword",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none, kind: reword",
+        )
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                summary = plan_format.below_criteria_summary(shape)
+                self.assertNotIn("kind", summary)
+                self.assertTrue(summary.endswith("— x"), summary)
 
 
 class SectionShapeTest(unittest.TestCase):
@@ -615,6 +683,23 @@ class CriteriaOwnerTest(unittest.TestCase):
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
         self.assertIsNone(owner["source"])
 
+    def test_a_human_item_named_after_a_session_item_keeps_the_user_as_owner(self):
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="session-item")
+        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n', slug="human-item")
+        ticket = self.ticket("Source: ~/agent-evals/queue/session-item.md\nSource: ~/agent-evals/queue/human-item.md")
+
+        owner = plan_format.criteria_owner(ticket)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_USER)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/human-item.md")
+
+    def test_a_later_queue_source_line_that_names_no_item_is_an_error(self):
+        self.queue_item('generated: {"by": "human:x", "at": "2026-11-01"}\n')
+        ticket = self.ticket("Source: ~/agent-evals/queue/item.md\nSource: ~/agent-evals/queue/missing.md")
+
+        with self.assertRaisesRegex(plan_format.PlanFormatError, r"00-ticket\.md:4: queue file .*missing\.md"):
+            plan_format.criteria_owner(ticket)
+
     def test_an_unquoted_queue_item_type_is_read_as_a_queue_item(self):
         own_item = self.folder / "own.md"
         own_item.write_text('---\ntype: QueueItem\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n\n'
@@ -631,6 +716,28 @@ class CriteriaOwnerTest(unittest.TestCase):
 
         self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_a_pasted_brief_lane_ticket_with_one_source_line_per_item_is_session_owned(self):
+        # The ticket mirrors the real pasted-brief lane ticket shape: one Source line per queue item, each item
+        # pasted verbatim under its own heading.
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="a")
+        self.queue_item('generated: {"by": "claude-code/x", "at": "2026-11-01"}\n', slug="b")
+        pasted_item = '---\ntype: "QueueItem"\ngenerated: {"by": "human:x", "at": "2026-11-01"}\n---\n'
+        ticket = self.folder / "00-ticket.md"
+        ticket.write_text(
+            "# Lane brief: x\n\n"
+            "Source: ~/agent-evals/queue/a.md\n"
+            "Source: ~/agent-evals/queue/b.md\n\n"
+            "## Brief (verbatim)\n\n"
+            "Do items a and b.\n"
+            "git -C ~/agent-evals show origin/bench-base:queue/a.md\n\n"
+            f"## Queue item 1 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n\n"
+            f"## Queue item 2 (verbatim)\n\n{pasted_item}\n## Done when\n\n- {CRITERION_TEXT}\n")
+
+        owner = plan_format.criteria_owner(ticket)
+
+        self.assertEqual(owner["owner"], plan_format.CRITERIA_OWNER_SESSION)
+        self.assertEqual(owner["source"], "~/agent-evals/queue/a.md")
 
     def test_a_source_outside_the_queue_folder_never_changes_the_owner(self):
         owner = plan_format.criteria_owner(self.ticket("Source: product-specs/a.md"))
@@ -780,6 +887,8 @@ class CriteriaOwnerTest(unittest.TestCase):
 
 
 STANDING_LINE = ('Standing ruling by Pat at 2026-11-19: every criterion reword follows one rule covers: rewords')
+OWNER_LINES_LINE = ("Standing ruling by the orchestrating session at 2026-11-22: owner lines in the scripts "
+                    "CLAUDE.md need no ask covers: owner-lines")
 CRITERIA_NAMING_TICKET = ("# Acceptance Criteria\n\n- **AC1** — The cache may reuse a stored value (Ticket #1, "
                           "reworded)\n")
 REWORD_IMPACT = ("PLAN-IMPACT:\n  assumed: AC1 as worded\n  found: the cache may reuse\n"
@@ -811,6 +920,30 @@ class StandingRulingTest(unittest.TestCase):
         self.plan.write_text(f"# Plan\n\n{STANDING_LINE}\n")
 
         self.assertEqual(standing_rulings.standing_rulings(self.plan), [])
+
+    def test_an_owner_lines_line_parses_and_only_the_owner_line_reader_returns_it(self):
+        self.plan.write_text("# Plan\n")
+        (self.folder / "03-decisions.md").write_text(f"# Decisions\n\n{OWNER_LINES_LINE}\n")
+
+        rulings = standing_rulings.standing_rulings(self.plan)
+
+        self.assertEqual(rulings[0]["covers"], "owner-lines")
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling, rulings[0])
+        self.assertIsNone(standing_rulings.reword_ruling(self.plan))
+
+    def test_a_rewords_line_alone_gives_no_owner_line_ruling(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {STANDING_LINE}\n")
+
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertIsNone(owner_ruling)
+
+    def test_with_both_lines_each_reader_returns_its_own(self):
+        self.plan.write_text(f"# Plan\n\n## Plan Deviations\n\n- {OWNER_LINES_LINE}\n- {STANDING_LINE}\n")
+
+        owner_ruling = standing_rulings.first_ruling_covering(self.plan, standing_rulings.COVERS_OWNER_LINES)
+        self.assertEqual(owner_ruling["covers"], "owner-lines")
+        self.assertEqual(standing_rulings.reword_ruling(self.plan)["covers"], "rewords")
 
     def test_a_malformed_line_raises_naming_the_file_the_line_and_the_form(self):
         malformed = {

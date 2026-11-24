@@ -32,6 +32,7 @@ import review_fix_names
 import review_fix_plan_impacts
 import review_loop_main
 import review_loop_prompt_file
+import review_loop_ruled
 import review_user_ruled
 import reviewed_tree
 import reviewer_dispatch
@@ -1209,6 +1210,21 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("The ruling: keep the retry", plan_file.read_text())
         self.assertIn("the queue is at-most-once", plan_file.read_text())
 
+    def test_decide_keep_rules_two_held_impacts_as_the_one_joined_row_when_none_is_adopted(self):
+        second_impact = {**HELD_IMPACT, "text": "the retry cap contradicts AC-3"}
+        self.plant_held_hand_back(HELD_IMPACT, second_impact)
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "keep", "--by", "session", "--ruling", "keep both",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled = handback_store.rulings(SESSION, repo_key).impacts
+        joined = handback.held_plan_impact_text([HELD_IMPACT, second_impact])
+        self.assertEqual(list(ruled), [joined], "a non-adopted keep must write the single joined row")
+
     def test_decide_adopt_with_no_state_logs_the_deviation_and_stops_for_the_callers_own_loop(self):
         self.plant_held_hand_back()
         plan_file = self.session_plan_file()
@@ -1306,6 +1322,107 @@ class ReviewFixScriptTest(unittest.TestCase):
 
         self.assertNotEqual(code, 0)
         self.assertIn("no plan-impact is waiting", output)
+
+    def test_decide_keep_rules_an_adopted_impact_the_hand_back_says_the_coder_never_applied(self):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        ruling = handback_store.AdoptedRuling(impact, None, "the user", "2026-11-19 10:00")
+        marked = review_user_ruled.adopted_issue(impact, ruling)
+        # The round finding is the reviewer's own wording of the impact, not the ruling's text: the blocker names it,
+        # and only the packet's adopted_unapplied ties it to the ruling.
+        reraised = review_user_ruled.adopted_issue("PLAN-IMPACT: the AC2 wording again, in a reviewer's words", ruling)
+        blocker = review_loop_ruled.not_applied_blocker(review_loop_ruled.SKIPPED_WHY, reraised)
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": blocker}],
+                                  adopted_unapplied=[impact])
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner=ruling.owner, ruled_at=ruling.ruled_at)
+            adopted = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(adopted.adopted, (ruling,), "the adopt row is the latest ruling before the keep")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands as written"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("rerun your review loop (`/code resume`)", output)
+        self.assertNotIn("nothing is re-dispatched", output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            kept = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(kept.adopted, ())
+        self.assertEqual(kept.impacts, [impact])
+        left_out = review_user_ruled.leave_out_ruled_impacts([marked], [], kept)
+        loop_adopted = {left_out.kept[number - 1]: item for number, item in left_out.adopted.items()}
+        carried = review_loop_ruled.unapplied_adopted([finding_record.parse_finding(text) for text in left_out.kept],
+                                                      loop_adopted, {1: "SKIPPED 1: no"}, [], "/repo")
+        self.assertEqual(carried, [], "no adopted-not-applied blocker is carried once the keep is the latest ruling")
+
+    def plant_adopted_impact(self, packet_unapplied):
+        impact = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": "blocked"}],
+                                  adopted_unapplied=packet_unapplied)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, impact, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+        return impact
+
+    def test_decide_keep_rules_every_unapplied_adopted_impact_and_a_ruling_that_covers_two_findings(self):
+        first = "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"
+        second = "PLAN-IMPACT: AC3 cut. acceptance_criteria: AC3"
+        self.plant_held_hand_back(status="critical-blocker", plan_impacts=[], blockers=[{"finding": "blocked"}],
+                                  adopted_unapplied=[first, second])
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            for finding_text in ("finding one", "finding two"):
+                handback_store.record_ruled_impact(SESSION, first, repo_key, finding_text=finding_text,
+                                                   decision=plan_format.ADOPT_DECISION, owner="the user",
+                                                   ruled_at="2026-11-19 10:00")
+            handback_store.record_ruled_impact(SESSION, second, repo_key, decision=plan_format.ADOPT_DECISION,
+                                               owner="the user", ruled_at="2026-11-19 10:00")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands as written"])
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            kept = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(kept.adopted, (), "each adopted text has its own keep row")
+        self.assertEqual(sorted(kept.finding_texts), ["finding one", "finding two"],
+                         "each per-finding adopt row is replaced by a keep row with the same finding text")
+        self.assertEqual(sorted(set(kept.impacts)), sorted([first, second]))
+
+    def test_decide_keep_finds_no_adopted_impact_the_packet_does_not_list_as_unapplied(self):
+        self.plant_adopted_impact([])
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+
+    def test_decide_keep_with_an_adopted_row_and_no_packet_in_the_hand_back_processes_no_packet(self):
+        self.store_dir.mkdir(exist_ok=True)
+        dispatch = {"kind": "dispatch", "session_id": SESSION, "ts": time.time(), "repo": str(self.repo.resolve())}
+        (self.store_dir / f"{SESSION}.jsonl").write_text(json.dumps(dispatch) + "\n")
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            handback_store.record_ruled_impact(SESSION, "PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2",
+                                               repo_key, decision=plan_format.ADOPT_DECISION, owner="the user",
+                                               ruled_at="2026-11-19 10:00")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "the plan stands"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+
+    def test_decide_adopt_does_not_take_the_unapplied_adopted_impact_as_its_source(self):
+        impact = self.plant_adopted_impact(["PLAN-IMPACT: AC2 reworded. acceptance_criteria: AC2"])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "again"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("no packet was processed", output)
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            rulings = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual([ruling.text for ruling in rulings.adopted], [impact], "the adopt row is still the ruling")
 
     def test_decide_prefers_the_hand_back_impact_over_a_stale_state_waiting_on_another_one(self):
         self.plant_held_hand_back()
@@ -4245,6 +4362,17 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotEqual(findings_text, findings_before)
         self.assertEqual(self.stored_state()["asks_launch_pending"], launch_line)
         self.assertEqual(self.stored_state()["last_asks_launch_line"], launch_line)
+
+    def test_a_corrected_rejection_is_stored_with_its_question_field(self):
+        home = str(self.temp_root / "home")
+        self.printed_fix_run_of_two_accepted_asks(home)
+
+        code, output = self.run_script(["asks-done", "--by", "user", "--correct", "accepted", "rejected"], HOME=home)
+
+        self.assertEqual(code, 0, output)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            rows = handback_store.rejected_ask_rows(SESSION, os.path.realpath(self.repo))
+        self.assertEqual([row.get("question") for row in rows], ["Add an index on tenant_id?"])
 
     def test_correct_that_leaves_no_accepted_ask_clears_the_pending_flag_and_prints_done(self):
         home = str(self.temp_root / "home")

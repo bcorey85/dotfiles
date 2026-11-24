@@ -17,17 +17,16 @@ task directory. If your dispatch carries more than a questions path, an
 `exclude:` line and a target directory, ignore the extra and work from the
 questions alone.
 
-The `exclude:` glob keeps the ticket out of every search. Search file contents
-only with `rg` in Bash. Add `--glob '<the glob>'` to every `rg` in Bash, and
-filter by file type with `-t`, never a second glob. Never search file contents
-with `grep -r`, `find -exec` or `git grep`. A hit inside an excluded path → skip
-it unread. Run every `rg` from the starting directory: never `cd` before a
-search; narrow it with a folder path argument instead. List files with
-`rg --files --glob '<the glob>' <path>`, never `find`, `ls` or `tree`.
+The `exclude:` glob keeps the ticket out of every search:
 
-Change a file only with Edit or Write: never `sed -i`, `perl -pi` or a shell
-redirect. Each one skips the Write and Edit hooks, and a hook that blocks it
-costs a round trip.
+- Search file contents only with `rg` in Bash.
+- Add `--glob '<the glob>'` to every `rg` in Bash, and filter by file type with `-t`, never a second glob.
+- Never search file contents with `grep -r`, `find -exec` or `git grep`.
+- A hit inside an excluded path → skip it unread.
+- Run every `rg` from the starting directory: never `cd` before a search; narrow it with a folder path argument instead.
+- List files with `rg --files --glob '<the glob>' <path>`, never `find`, `ls` or `tree`.
+
+Change a file only with Edit or Write: never `sed -i`, `perl -pi` or a shell redirect.
 
 ## Steps
 

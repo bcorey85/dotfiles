@@ -207,15 +207,17 @@ def rulings(session_id, repo):
     return Rulings(impacts, finding_texts, pending)
 
 
-def record_rejected_ask(session_id, text, repo):
-    """Records the text of an ask the session answered "rejected" in `repo` (its top level), so a later round of that
-    repo's review loop drops a repeat of it. Does nothing without a session id, and adds no row for a text the session
-    currently holds as rejected there (a rerun after a crash)."""
+def record_rejected_ask(session_id, text, repo, question):
+    """Records the text of an ask the session answered "rejected" in `repo` (its top level), and its `question` as a
+    field of its own, so a later round of that repo's review loop drops a repeat of it. Does nothing without a session
+    id, and adds no row for a text the session currently holds as rejected there (a rerun after a crash), unless
+    the held row has no `question` field and this call has one: that row is written again so a later round can match."""
     if not session_id:
         return None
-    if text in rejected_ask_texts(session_id, repo):
-        return None
-    return record(session_id, ASK_REJECTED, text=text, repo=repo)
+    for held in rejected_ask_rows(session_id, repo):
+        if held["text"] == text and (held.get("question") or not question):
+            return None
+    return record(session_id, ASK_REJECTED, text=text, repo=repo, question=question)
 
 
 def record_relayed_ruling(session_id, repo, ruler, relayed_by, turn_timestamp, finding_ids):
@@ -233,20 +235,26 @@ def record_rejection_withdrawn(session_id, text, repo):
     return record(session_id, ASK_REJECTION_WITHDRAWN, text=text, repo=repo)
 
 
-def rejected_ask_texts(session_id, repo):
-    """The texts of the asks this session rejected in `repo` and has not since withdrawn, in the order they were
-    rejected. [] without a session id."""
+def rejected_ask_rows(session_id, repo):
+    """The ASK_REJECTED rows of the asks this session rejected in `repo` and has not since withdrawn, in the order they
+    were rejected. [] without a session id."""
     if not session_id:
         return []
-    texts = []
+    rows = []
     for row in session_rows(session_id):
         if row.get("repo") != repo:
             continue
         if row.get("kind") == ASK_REJECTED:
-            texts.append(row["text"])
+            rows.append(row)
         elif row.get("kind") == ASK_REJECTION_WITHDRAWN:
-            texts = [text for text in texts if text != row["text"]]
-    return texts
+            rows = [kept for kept in rows if kept["text"] != row["text"]]
+    return rows
+
+
+def rejected_ask_texts(session_id, repo):
+    """The texts of the asks this session rejected in `repo` and has not since withdrawn, in the order they were
+    rejected, each text once. [] without a session id."""
+    return list(dict.fromkeys(row["text"] for row in rejected_ask_rows(session_id, repo)))
 
 
 def plan_ruled_since(session_id, handback_row):

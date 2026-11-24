@@ -1,6 +1,6 @@
 ---
 name: test-intent-reviewer
-description: "Audits whether changed tests pin intent or implementation. Dispatched by /test-audit or directly; name `scope: cull` or `scope: bug-pinning`."
+description: "Audits whether changed tests pin intent or implementation. Dispatched by /test-audit with scope: cull, or by the user with scope: bug-pinning."
 model: opencode-go/mimo-v2.6-pro
 mode: subagent
 permission:
@@ -41,10 +41,10 @@ You will be given the exact list of changed files (test files + the source under
 
 **Your dispatcher names one of two halves. Run that half only.**
 
-- **`scope: bug-pinning`** (explicit user dispatch, one phase's diff) — run Step 3. **Skip Steps 4 and 5 entirely** and omit their sections — both judge cross-phase facts and false-positive on one phase's diff.
+- **`scope: bug-pinning`** (explicit user dispatch, one phase's diff) — run Step 3. **Skip Steps 4 and 5 entirely** and omit their sections.
 - **`scope: cull`** (from `/test-audit`, the assembled branch diff) — run Steps 4 and 5. **Skip Step 3 entirely** and omit its section.
 
-Scope missing from the dispatch → say so and run **both**; a silent half-audit is worse than a redundant one.
+Scope missing from the dispatch → say so and run **both**.
 
 ## Step 3 — Audit each assertion against the oracle
 

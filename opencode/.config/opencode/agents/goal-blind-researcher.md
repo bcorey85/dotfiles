@@ -26,16 +26,15 @@ missing → say which, and stop.
 
 2. **`spec-leak-check`** with the path to `01-questions.md` and nothing else.
 
-3. **Repair loop, bounded at two cycles.** Any material leak → re-dispatch
-   `spec-questions` with the questions path, the leak-check's findings, and the
-   ticket path, to rewrite the flagged questions only. Then re-run
-   `spec-leak-check`.
-
-   Still flagged after two cycles → re-dispatch `spec-questions` once with the
-   questions path and the flagged questions, to replace each one with the
-   leak-check's rewrite word for word. Then go to step 4. A flag with no
-   rewrite → **stop and return** survivors + verdicts. No step 4, no judging
-   whether the leak matters.
+3. **Repair loop, bounded at two cycles.**
+   - Any material leak → re-dispatch `spec-questions` with the questions path,
+     the leak-check's findings, and the ticket path, to rewrite the flagged
+     questions only. Then re-run `spec-leak-check`.
+   - Still flagged after two cycles → re-dispatch `spec-questions` once with the
+     questions path and the flagged questions, to replace each one with the
+     leak-check's rewrite word for word. Then go to step 4.
+   - A flag with no rewrite → **stop and return** survivors + verdicts. No
+     step 4, no judging whether the leak matters.
 
 4. **`spec-research`** with the path to `01-questions.md` — **and nothing else.**
    No ticket path, no slug, no task-directory listing, no word about what is

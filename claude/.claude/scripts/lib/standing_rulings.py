@@ -1,23 +1,27 @@
-"""standing_rulings.py: the one form and the one reader for a standing ruling, a user's order that covers a whole class
-of criterion changes, and the test for a plan impact that only rewords a criterion.
+"""standing_rulings.py: the one form and the one reader for a standing ruling, an order that covers a whole class of
+changes (`covers: rewords`, by the user or the orchestrating session for a criterion whose owner is `session` or
+`plan`; `covers: owner-lines`, by the user or the orchestrating session), and the test for a plan impact that only
+rewords a criterion.
 
 A standing ruling is one line in the plan's `## Plan Deviations` section or in `03-decisions.md` beside the plan:
 
-    Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase> covers: rewords
+    Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase> covers: rewords|owner-lines
 
-`covers` is `rewords` only. A cut or a narrowing is never covered. The paraphrase holds no quote mark: a standing
-ruling never stores the user's words."""
+The reader does not check who wrote it or who owns the criterion. `covers` is `rewords` or `owner-lines`. A cut or a
+narrowing is never covered. The paraphrase holds no quote mark: a standing ruling never stores the user's words."""
 import re
 
 import plan_format
 import script_utils
 
 COVERS_REWORDS = "rewords"
-STANDING_RULING_FORM = "Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase, no quote marks> covers: rewords"
+COVERS_OWNER_LINES = "owner-lines"
+STANDING_RULING_FORM = ("Standing ruling by <who> at <YYYY-MM-DD>: <a short paraphrase, no quote marks> "
+                        "covers: rewords|owner-lines")
 STANDING_RULING_START = re.compile(r"^\s*(?:[-*]\s+)?Standing ruling\b")
 STANDING_RULING_LINE = re.compile(
     r'^\s*(?:[-*]\s+)?Standing ruling by (?P<who>\S.*?) at (?P<at>\d{4}-\d\d-\d\d): (?P<summary>[^"\u201c\u201d]+?) '
-    rf"covers: (?P<covers>{COVERS_REWORDS})\s*\.?\s*$")
+    rf"covers: (?P<covers>{COVERS_REWORDS}|{COVERS_OWNER_LINES})\s*\.?\s*$")
 # The `kind: reword` field of an impact block. It sits on its own line, or after a space or a dash when the lines of a
 # reviewer's ask were joined into one.
 IMPACT_KIND_LINE = re.compile(r"(?<!\w)kind[*`_]*:[ \t*`_]*(\w+)", re.I)
@@ -57,12 +61,17 @@ def standing_rulings(plan_path):
     return rulings
 
 
-def reword_ruling(plan_path):
-    """The first standing ruling of the plan that covers rewords, or None."""
+def first_ruling_covering(plan_path, covers):
+    """The first standing ruling of the plan whose `covers` equals `covers`, or None."""
     for ruling in standing_rulings(plan_path):
-        if ruling["covers"] == COVERS_REWORDS:
+        if ruling["covers"] == covers:
             return ruling
     return None
+
+
+def reword_ruling(plan_path):
+    """The first standing ruling of the plan that covers rewords, or None."""
+    return first_ruling_covering(plan_path, COVERS_REWORDS)
 
 
 def impact_rewords_criterion(impact_text):

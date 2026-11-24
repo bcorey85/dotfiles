@@ -13,7 +13,7 @@ Fetch the Jira ticket for the current branch before coding.
 1. **Resolve plus fetch** per `~/.claude/skills/_shared/jira-ticket.md` (read it) — **required-ticket caller**: no key means ask; no MCP means stop.
 
 2. **Check ticket status**:
-   - 'To Do' means note work starting; 'In Progress' means note only; 'In Review' or 'Done' means warn and confirm.
+   - 'To Do': tell the user work is starting, in one line. 'In Progress': state the status in the presentation and go on. 'In Review' or 'Done': warn, and ask the user to confirm before going on.
 
 3. **Present**: key, summary, status, acceptance criteria plus suggested approach.
 

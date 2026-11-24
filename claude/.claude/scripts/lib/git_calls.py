@@ -410,8 +410,8 @@ def command_context(code, follows_cds, context):
 
 
 def runner_text_at(code, offset, quoted):
-    """True when the `git` word at `offset` is runner text that git_commit_dirs does not read: a quoted word among
-    the arguments of a code-running statement, or an unquoted word that follows an argument runner."""
+    """True when the `git` word at `offset` is runner text that git_commit_dirs does not read: a quoted word outside
+    the arguments of a `git commit` statement, or an unquoted word that follows an argument runner."""
     if offset in quoted:
         return quoted_text_runs_as_code(code, offset, quoted)
     return follows_argument_runner(code, offset)
@@ -459,14 +459,14 @@ def quoted_text_runs_as_code(code, offset, quoted):
 def git_calls(command, directory=".", context=NO_CONTEXT, quoted_only=False):
     """Every GitCall the command makes in command position, those inside `$(...)` and backticks included. A call
     runs in the directory an earlier `cd` of the command moved to, else in `directory`. In code that names a code
-    runner, each `git` word starts a call, quoted or not; with `quoted_only`, only a `git` word inside quotes
-    that is an argument of a code-running statement (not of a `git commit` call, where it is message text), or an
-    unquoted `git` word that follows an argument runner (`eval`, `su`) does (the runner's own text), and
-    the steps of the outer command start none. `context` holds what the code around the command already does;
-    the command's own text adds to it.
+    runner, each `git` word starts a call, quoted or not; with `quoted_only`, only a quoted `git` word outside the
+    arguments of a `git commit` statement (there it is message text), or an unquoted `git` word that follows an
+    argument runner (`eval`, `su`) does (the runner's own text), and the steps of the outer command start none.
+    `context` holds what the code around the command already does; the command's own text adds to it.
 
-    Three known limits, all kept on purpose. Fail-closed: a quoted `git commit` text that is no runner text but
-    sits among the arguments of a code-running statement (`bash -c 'echo git commit'`) is read as a runner call.
+    Three known limits, all kept on purpose. Fail-closed: a quoted `git commit` text that is no runner text, in a
+    command that names a runner, is read as a runner call whenever it is not among a `git commit` statement's
+    arguments: `git tag -m 'git commit' v1 && bash -c true` is denied.
     Fail-open: `pushd <dir> && bash -c 'git commit'` run from a cwd that differs from `<dir>` is judged in the
     cwd, because the directory the runner text lands in is not followed through `pushd`. Fail-open: a `(` anywhere
     before a `cd` turns off cd following for runner text (SUBSHELL_CD), so

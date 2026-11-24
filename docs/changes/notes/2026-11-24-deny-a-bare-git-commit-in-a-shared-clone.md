@@ -22,7 +22,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 `lib/shared_clones.py` says whether a folder is a listed shared clone. `gates/git_discipline_gate.py` rule 11 denies a
 bare commit there, through `-C`, `cd`, `--git-dir`, and runner text (`eval`, `bash -c`). `lib/git_calls.py` reads the
 statement before a runner word through the shell word parser, so `FOO=1 eval`, `command eval`, `time eval`, a brace
-group and an `if` block deny too.
+group and an `if` block deny too. The owner lines in `claude/.claude/scripts/CLAUDE.md` name the two new modules and
+the `--pathspec-from-file` fact in `lib/git_subcommand_options.py` (owner-line ruling by session agent-evals-73,
+2026-11-24).
 
 ## Evidence
 
@@ -32,6 +34,9 @@ A commit made with no pathspec in a shared clone took the files another session 
 
 New tests in `test_commit_pathspec.py`, `test_git_discipline_gate.py` and `test_shell_statements.py` pass; the five
 prefix and block eval rows failed on the earlier code. Ruff is clean on the changed files.
+
+Gate time on `git commit -m x` in `~/agent-evals` (denied): median 85.8 ms over 21 runs, next to 11.2 ms for a bare
+`python3 -c pass` on the same machine.
 
 ## Watch
 

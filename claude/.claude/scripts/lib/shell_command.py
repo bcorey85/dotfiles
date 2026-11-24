@@ -977,7 +977,7 @@ def git_c_directory(words, directory):
 
 
 def git_c_is_absolute(words):
-    """True when a `-C` value of the git call in `words` is an absolute path once quotes are dropped and `~`/`~user`
+    """True when a `-C` value of the git call in `words` is an absolute path once quotes are dropped and `~`
     is expanded (see `shell_directory.path_word_is_absolute`)."""
     options, _index = git_options(words)
     return any(path_word_is_absolute(value) for value in git_option_values(options, "-C"))

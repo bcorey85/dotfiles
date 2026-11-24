@@ -438,7 +438,7 @@ def bare_commit_in_shared_clone(call, directory):
 def is_bare_shared_commit(words, directory):
     """commit_call for git_commit_dirs: True for a bare `git commit` that lands in a shared clone, judging its
     `--git-dir`, or its `-C` when `git_c_directory` does not follow it, it is absolute or the call is not placed,
-    in place of `directory`."""
+    in place of `directory`. A `~user` `-C` is unread and judged in the hook's cwd."""
     call = git_call(words, directory)
     if call is None:
         return False
@@ -455,11 +455,11 @@ def check_shared_clone_commit(command, calls, payload_cwd):
     """Rule 11: a `git commit` that takes the whole index in a shared clone sweeps in the staged files of peer
     sessions. A bare commit whose `--git-dir` or `-C` names a shared clone is denied, as is one inside a code
     runner (`bash -c '...'`), judged from `calls`. A `GIT_DIR` assignment is judged in the folder the shell stands
-    in; an `env -C`/`sudo -D` wrapper, a call after a `cd` it cannot read and an unread `-C` value are judged in
-    the hook's cwd, or in the folder an absolute `-C` names. A call read from code-runner text is judged in the
-    folder the outer command's `cd` steps, when no `(` comes before a `cd`, move to (the hook's cwd when there
-    are none); a `cd` inside the runner
-    text is not read. A command `git_commit_dirs` cannot read as steps is judged only through runner text, all of
+    in; an `env -C`/`sudo -D` wrapper, a call after a `cd` it cannot read and an unread `-C` value (a `~user`
+    one included) are judged in the hook's cwd, or in the folder an absolute `-C` names. A call read from
+    code-runner text is judged in the folder the outer command's `cd` steps, when no `(` comes before a `cd`,
+    move to (the hook's cwd when there are none); a `cd` inside the runner text is not read.
+    A command `git_commit_dirs` cannot read as steps is judged only through runner text, all of
     it; when it can, only the `git` words inside the runner's quotes are judged there, so a `(cd ..)` or `pushd`
     step it already read is not judged twice at the hook's cwd. Rule 11 fails open when neither reader finds the
     commit."""

@@ -8,7 +8,6 @@ from shell_command import (
     without_flag_values,
 )
 
-
 # (option, shortest accepted abbreviation): the options that make `git commit` commit nothing.
 DRY_RUN_OPTIONS = (("--dry-run", "--dr"), ("--short", "--sh"), ("--porcelain", "--por"), ("--long", "--l"))
 

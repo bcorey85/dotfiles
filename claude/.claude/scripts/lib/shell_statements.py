@@ -580,10 +580,15 @@ def statement_word_pairs(command):
     quotes = []
     pairs = []
     for words in statements(command, quotes=quotes):
-        blanked = [QUOTE_MARK.sub('""', word) for word in words]
-        resolved = [resolved_word(word, quotes) for word in words]
-        pairs.append(WordPair(blanked, resolved))
+        pairs.append(word_pair(words, quotes))
     return pairs
+
+
+def word_pair(words, quotes):
+    # The WordPair of one statement's words; `quotes` is the list clean() filled.
+    blanked = [QUOTE_MARK.sub('""', word) for word in words]
+    resolved = [resolved_word(word, quotes) for word in words]
+    return WordPair(blanked, resolved)
 
 
 def open_statement_word_pair(prefix):
@@ -593,9 +598,7 @@ def open_statement_word_pair(prefix):
     quotes = []
     pieces = STATEMENT_SPLIT.split(clean(prefix, quotes))
     words = without_leading_noise(pieces[-1].split())
-    blanked = [QUOTE_MARK.sub('""', word) for word in words]
-    resolved = [resolved_word(word, quotes) for word in words]
-    return WordPair(blanked, resolved)
+    return word_pair(words, quotes)
 
 
 ANSI_C_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|.)", re.DOTALL)

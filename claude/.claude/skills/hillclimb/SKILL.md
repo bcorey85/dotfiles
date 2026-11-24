@@ -1,6 +1,6 @@
 ---
 name: hillclimb
-description: Reads one session and queues the environment fixes that would have made it go better.
+description: Reads one session and queues the Claude toolkit fixes (skills, agents, rules, hooks, gates, scripts, global CLAUDE.md) that would have made it go better. Fixes to the project repo the session worked in are listed in the report, never queued.
 disable-model-invocation: true
 allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__ledger__search, mcp__ledger__session]
 ---
@@ -9,7 +9,9 @@ allowed-tools: [Bash, Read, Glob, Grep, Skill, mcp__ledger__search, mcp__ledger_
 
 Every change to a skill, agent or log is the user's call: queue the candidates you judge worth a fix and log each one you queued or skipped.
 
-Read one session and propose changes to the toolkit or repo that would have made it go better. The output is environment changes only; the session's own code stays as it is.
+Read one session and propose changes to the Claude toolkit that would have made it go better.
+
+The toolkit is `~/dotfiles/claude/.claude/` (skills, agents, rules, hooks, `settings.json`, gates, scripts, the global CLAUDE.md) and `~/agent-evals/`. The queue is for toolkit fixes only. A candidate whose fix lands only in the project repo the session worked in (its code, tests, CI, project CLAUDE.md, project `.claude/skills/`) goes in the report's `Project repo` list. Never run `build_queue.py` for it.
 
 ## Input
 
@@ -36,11 +38,10 @@ Each moment carries its block index or turn and a short quote. Drop any candidat
 
 ## Read the environment
 
-Before you place a fix, read what the repo the session worked in already has:
+Before you place a fix, read what the toolkit already has:
 
-- Its check commands: test runner, lint and type config, CI workflows, pre-commit hooks, `settings.json` hooks. A check that exists but did not run, or runs and is broken, is the finding.
-- No guardrail at all (no pre-commit hook and no CI job that runs its lint, typecheck and tests) is a finding of its own.
-- The steering files the session loaded: global and repo CLAUDE.md, `rules/*.md`, the skills that ran. Count their lines. In any file over 150 lines, list the lines a check or a reviewer rule could hold, and the no-ops.
+- Its checks: `settings.json` hooks, `scripts/gates/`, toolkit tests. A check that exists but did not run, or runs and is broken, is the finding.
+- The toolkit steering files the session loaded: the global CLAUDE.md, `rules/*.md`, the toolkit skills and agents that ran. Count their lines. In any file over 150 lines, list the lines a check or a reviewer rule could hold, and the no-ops.
 
 ## Place each fix
 
@@ -48,23 +49,22 @@ Classify each mistake first. A mechanical one (a fixed pattern, a banned API, a 
 
 | Moment | Fix |
 | --- | --- |
-| Slow lookup | A pointer in a file the agent already reads (repo CLAUDE.md, the skill that ran) |
+| Slow lookup | A pointer in a toolkit file the agent already reads (global CLAUDE.md, a rule, the toolkit skill that ran) |
 | Mechanical mistake (wrong API, path, shape, command form) | A check: gate under `scripts/gates/`, test under `tests/`, lint rule |
 | Judgment-call miss | A rule for the reviewer (`rules/*.md`, the reviewer agent), never the implementer or CLAUDE.md |
 | A check exists but did not run | Wire it (`settings.json` hook, `tests/run.sh`, CI); never build a second one |
 | Expensive tool call | Streamline or replace the tool or script |
 | No-op rule line | A deletion candidate, to test with `~/agent-evals/bin/rule_meter.py` before cutting |
 | Fact out of reach | Widen access (tee a log to a file, a read-only command) |
-| No guardrail in the repo | A pre-commit hook or CI job that runs its check command |
 | Large steering file | Move its lines into a check or a reviewer rule; keep only navigation pointers |
 
 ## Before you report
 
-For each candidate run `python3 ~/agent-evals/bin/build_queue.py prior "<title, no backticks or $>"`. `~/agent-evals` missing: queue nothing and say so in the log.
+For each toolkit candidate run `python3 ~/agent-evals/bin/build_queue.py prior "<title, no backticks or $>"`. `~/agent-evals` missing: queue nothing and say so in the log.
 
 ## Queue
 
-Decide each candidate yourself. Never ask the user which to queue.
+Decide each toolkit candidate yourself. Never ask the user which to queue.
 
 - Queue it when the moment lost work, wrote a wrong record, let a defect through unseen, or happened more than once.
 - Queue it when its `same idea` match is closed and the moment came after that fix: name the match in `--not-dup`.
@@ -86,4 +86,9 @@ On the work machine, write only the toolkit part: no work code, paths, ticket te
 
 ## Report
 
-A log of every candidate, most costly first, at most 7, in two lists: `Queued` and `Skipped`. Each line: title, its row in the table above, the moment (index + quote), then the queue file written, or the reason it was skipped and the queue match. Findings from reading the environment cite the file and line in place of a moment.
+A log of every candidate, most costly first, at most 7, in three lists:
+
+- `Queued` and `Skipped`: toolkit candidates. Each line: title, its row in the table above, the moment (index + quote), then the queue file written, or the reason it was skipped and the queue match.
+- `Project repo`: fixes that land only in the project repo. Each line: title, the moment (index + quote), the file it would change. These are never queued.
+
+Findings from reading the environment cite the file and line in place of a moment.

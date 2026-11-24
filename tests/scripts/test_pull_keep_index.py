@@ -723,6 +723,19 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual(self.git(self.repo, "show", saved + ":f"), "mine\n")
         self.assertEqual(self.status(), [" M f"])
 
+    def test_a_conflicting_re_apply_with_nothing_staged_leaves_the_other_files_unstaged(self):
+        self.add_files("k", "m")
+        self.push_from_other_machine("f", "theirs\n")
+        self.write(self.repo, "f", "mine\n")
+        self.write(self.repo, "k", "unstaged\n")
+        self.write(self.repo, "m", "unstaged\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(sorted(self.status()), [" M k", " M m", "UU f"])
+        self.assertIn("conflict with the pull in: f.", finished.stderr)
+
     def test_a_conflicting_re_apply_keeps_the_staged_and_unstaged_split(self):
         self.add_files("k", "m")
         self.push_from_other_machine("f", "theirs\n")

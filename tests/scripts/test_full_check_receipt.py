@@ -1,5 +1,6 @@
 """Checks for the full-check receipt: the store and its validity rules (lib/full_check_receipt), the rows that
 review/full_check.py writes, and the readers that ask the receipt instead of reading command text."""
+import json
 import os
 import pathlib
 import subprocess
@@ -84,18 +85,60 @@ class ReceiptValidityTest(ReceiptTestCase):
                 self.assertIn("did not verify the tree", problem)
                 self.assertIn(result_line, problem)
 
-    def test_a_commit_after_a_clean_tree_run_voids_the_receipt(self):
+    def commit_all(self, message):
         git = ["git", "-C", self.repo, "-c", "user.name=t", "-c", "user.email=t@t"]
-        subprocess.run([*git, "add", "app.py"], check=True)
-        subprocess.run([*git, "commit", "-q", "-m", "one"], check=True)
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", message], check=True)
+
+    def test_a_commit_that_changes_code_after_the_run_voids_the_receipt(self):
+        self.commit_all("one")
         receipt_repo.plant_receipt(self.repo)
         self.assertIsNone(full_check_receipt.receipt_problem(self.repo))
 
-        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "two"], check=True)
+        self.edit()
+        self.commit_all("two")
 
         self.assertEqual(full_check_receipt.receipt_problem(self.repo),
                          "HEAD moved after the latest full check run")
         self.assertIsNone(full_check_receipt.valid_receipt(self.repo))
+
+    def test_a_commit_or_edit_of_notes_paths_only_after_the_run_keeps_the_receipt(self):
+        self.commit_all("one")
+        receipt_repo.plant_receipt(self.repo)
+
+        docs = pathlib.Path(self.repo, "docs")
+        docs.mkdir()
+        docs.joinpath("plan.md").write_text("# Plan\n")
+        self.assertIsNone(full_check_receipt.receipt_problem(self.repo), "an uncommitted notes edit")
+
+        self.commit_all("plan")
+        self.assertIsNone(full_check_receipt.receipt_problem(self.repo), "a committed notes edit")
+
+        docs.joinpath("plan.md").write_text("# Plan, revised\n")
+        self.commit_all("plan again")
+        self.assertIsNotNone(full_check_receipt.valid_receipt(self.repo), "a second notes commit")
+
+    def test_a_receipt_from_before_the_first_commit_survives_a_commit_of_the_same_tree(self):
+        receipt_repo.plant_receipt(self.repo)
+
+        self.commit_all("one")
+
+        self.assertIsNone(full_check_receipt.receipt_problem(self.repo))
+
+    def test_a_finished_row_without_a_notes_free_tree_still_needs_the_same_head(self):
+        self.commit_all("one")
+        receipt_repo.plant_receipt(self.repo)
+        path = full_check_receipt.receipts_path(self.repo)
+        rows = [{key: value for key, value in row.items() if key not in ("notes_tree", "notes_base")}
+                for row in script_utils.read_jsonl(path)]
+        pathlib.Path(path).write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+        pathlib.Path(self.repo, "docs").mkdir()
+        pathlib.Path(self.repo, "docs", "plan.md").write_text("# Plan\n")
+        self.commit_all("plan")
+
+        self.assertEqual(full_check_receipt.receipt_problem(self.repo),
+                         "HEAD moved after the latest full check run")
 
     def test_a_relative_log_is_stored_as_an_absolute_path(self):
         run_id = full_check_receipt.write_started_row(self.repo, "npm test", "npm test")

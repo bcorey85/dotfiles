@@ -118,7 +118,7 @@ resume_lane() {
         herdr-api workspace focus "$ws" >/dev/null
     fi
 
-    "$bin_dir/herdr-dev" --resume "$wt" "$ws" "$session" "$brief"
+    "$bin_dir/herdr-dev" --headless --resume "$wt" "$ws" "$session" "$brief"
 }
 
 # Close workspace $1 through the multiplexer this shell lives in.

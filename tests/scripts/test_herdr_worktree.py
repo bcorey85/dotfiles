@@ -292,7 +292,16 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_dev_values = herdr_dev_args.read_text().split("\0")
-        self.assertEqual(herdr_dev_values[2:4], ["s1", brief.rstrip("\n")])
+        self.assertEqual(herdr_dev_values[0], "--headless")
+        self.assertEqual(herdr_dev_values[3:5], ["s1", brief.rstrip("\n")])
+
+    def test_a_run_without_fork_opens_the_layout_with_its_hunk_pane(self):
+        herdr_dev_args = self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertNotIn("--headless", herdr_dev_args.read_text().split("\0"))
 
     def lane_entry(self, name):
         """The lane file's entry for `name`, read through the lanes CLI; None when there is none."""
@@ -324,7 +333,7 @@ esac""")
                                            "fix/new-thing")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        sent_brief = herdr_dev_args.read_text().split("\0")[3]
+        sent_brief = herdr_dev_args.read_text().split("\0")[4]
         self.assertEqual(self.lane_entry("repo-new-thing")["brief"], sent_brief)
 
     def test_a_fork_whose_sender_cannot_be_named_writes_the_entry_with_no_reports_to(self):
@@ -606,7 +615,7 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("1. herdr worktree open --cwd", finished.stdout)
         self.assertIn("1. herdr-api workspace create --cwd <worktree>", finished.stdout)
-        self.assertIn("2. herdr-dev <worktree> <ws> <fork session id>", finished.stdout)
+        self.assertIn("2. herdr-dev --headless <worktree> <ws> <fork session id>", finished.stdout)
         self.assertIn("herdr-api workspace focus <ws> >/dev/null && ", finished.stdout)
         self.assertIn("claude --resume", finished.stdout)
         self.assertNotIn("ws=$(", finished.stdout)

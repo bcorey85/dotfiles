@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1162 changes
+1163 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Lanes open with the claude pane alone, no hunk pane](notes/2026-11-24-lanes-open-with-the-claude-pane-alone-no-hunk-pane.md) [script/herdr-dev, script/herdr-worktree, script/herdr-lane-resume, script/herdr-worktree-watch] `herdr-dev --headless` opens tab 1 with only the claude pane. `herdr-worktree --fork`, `herdr-lane-resume` and the watcher's recovery step open lanes this way, so a lane no longer starts a hunk diff viewer that holds memory for hours. A plain `herdr-dev` or `herdr-worktree` keeps the claude | hunk layout.
 * [A lane merge skips the suite rerun when the lane's green run covered the same tree](notes/2026-11-23-a-lane-merge-skips-the-suite-rerun-when-the-lane-s.md) [script/suite-receipt, script/run-sh, script/parallel-tests] Each tests/run.sh run leaves a receipt keyed on the work tree's git tree hash; suite_receipt.py check says skip only when the branch fast-forwards master and its exact tree has a green receipt, so a merge no longer reruns a 5 to 10 minute suite the lane already passed.
 * [Stop gate sends back a turn end that announces a step with nothing started](notes/2026-11-23-stop-gate-sends-back-a-turn-end-that-announces-a.md) [script/staged-claim-gate] The Stop gate now sends a main-session turn back once when its last message says the session will do, or is doing, a step with nothing started, so the session starts the step or says plainly it has not.
 * [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) [shared/lane-brief, rule/orchestration] A forked lane reads how it reports, runs every phase through, records rulings and runs its checks from skills/_shared/lane-brief.md, so the rules survive compaction and no lane stops after a phase to ask for a commit.

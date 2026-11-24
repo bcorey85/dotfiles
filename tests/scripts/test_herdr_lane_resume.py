@@ -163,7 +163,7 @@ class ResumeTest(HerdrLaneResumeTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.recorded_events(), [
             f"herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --label {NAME} --focus",
-            f"herdr-dev --resume {self.worktree} wNew s1 {BRIEF}",
+            f"herdr-dev --headless --resume {self.worktree} wNew s1 {BRIEF}",
         ])
 
     def test_resume_under_tuios_creates_and_focuses_the_workspace(self):
@@ -175,7 +175,7 @@ class ResumeTest(HerdrLaneResumeTest):
         self.assertEqual(self.recorded_events(), [
             f"herdr-api workspace create --cwd {self.worktree} --label {NAME} --focus",
             "herdr-api workspace focus wNew",
-            f"herdr-dev --resume {self.worktree} wNew s1 {BRIEF}",
+            f"herdr-dev --headless --resume {self.worktree} wNew s1 {BRIEF}",
         ])
 
     def test_each_stop_exits_1_with_its_message_and_starts_nothing(self):

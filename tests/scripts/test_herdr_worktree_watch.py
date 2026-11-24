@@ -56,7 +56,7 @@ exit 0""")
         """The numbered steps and the note on <ws> that the log holds for a fork session id of s1."""
         reopen = reopen or f"herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --focus"
         return [f"1. {reopen}",
-                f"2. {focus}herdr-dev {self.worktree} <ws> s1 '{RESUME_PROMPT}'",
+                f"2. {focus}herdr-dev --headless {self.worktree} <ws> s1 '{RESUME_PROMPT}'",
                 WORKSPACE_ID_NOTE]
 
     def assert_recovery_steps(self, log_text, reopen=None, focus=""):

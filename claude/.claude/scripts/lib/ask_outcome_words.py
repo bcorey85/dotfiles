@@ -30,7 +30,7 @@ RELAYED_BY_FLAG = "--relayed-by"
 # The retired option that carried the user's words. A call that still passes it is refused: no ruling stores
 # the user's words.
 RETIRED_QUOTE_FLAG = "--quote"
-RELAY_USAGE = f"{RELAYED_BY_FLAG} <session name>"
+RELAY_USAGE = f"{RELAYED_BY_FLAG} <session name or id>"
 
 
 def rule_command(count, by_user=False):

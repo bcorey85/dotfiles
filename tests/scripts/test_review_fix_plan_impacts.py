@@ -9,8 +9,10 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import human_turn_lookup
 import plan_format
 import review_fix_plan_impacts
+import ruling_relay
 
 
 class SessionAdoptionLinesTest(unittest.TestCase):
@@ -33,6 +35,28 @@ class SessionAdoptionLinesTest(unittest.TestCase):
         self.assertNotIn(-1, positions)
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(joined.count("Adopt plan change."), 2)
+
+
+class RelayedOwnerTest(unittest.TestCase):
+    def test_the_owner_line_names_the_session_name_of_a_relay_by_id(self):
+        turn = human_turn_lookup.HumanTurn("2026-11-15T06:22:12.305Z", 1.0)
+        relayed = ruling_relay.RelayedRuling("relay-session", turn)
+
+        owner = review_fix_plan_impacts.relayed_owner("user", relayed)
+
+        self.assertEqual(owner, "user, relayed by session relay-session (user turn at 2026-11-15T06:22:12.305Z)")
+
+    def test_the_relay_row_of_a_plan_ruling_holds_the_session_name_not_the_id(self):
+        turn = human_turn_lookup.HumanTurn("2026-11-15T06:22:12.305Z", 1.0)
+        relayed = ruling_relay.RelayedRuling("relay-session", turn)
+        handback_store = review_fix_plan_impacts.handback_store
+
+        with mock.patch.object(handback_store, "record_ruled_impact"), \
+                mock.patch.object(handback_store, "record_relayed_plan_ruling") as record:
+            review_fix_plan_impacts.write_ruling_entry("adopt", "user", "ruling", None, "impact text", "/repo",
+                                                       relayed=relayed)
+
+        self.assertEqual(record.call_args.args[3], "relay-session")
 
 
 class SettleStandingRewordsTest(unittest.TestCase):

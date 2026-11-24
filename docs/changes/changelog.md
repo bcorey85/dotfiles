@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1158 changes
+1160 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A relayed ruling takes a session id as well as a name](notes/2026-11-24-a-relayed-ruling-takes-a-session-id-as-well-as-a.md) [script/review-fix, shared/review-loop] `--relayed-by` accepts the session id of a live row as well as a name, so two live sessions that share a name can still relay a ruling, and the ruling rows record the row's name.
+* [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.
 * [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md) [script/code-review-start, skill/code] A file another session left dirty at phase start, which this phase's coder then rewrote, is now released into the review and named as released; before, review skipped it and the wait printed a tool fault, so the coder's change went unreviewed.
 * [Comment put-back files one ask per block and never repeats a ruled ask](notes/2026-11-23-comment-put-back-files-one-ask-per-block-and-never.md) [script/review-loop] The review loop's comment put-back now files one ask per comment block, does not put back a comment an accepted ask deletes, does not re-ask a comment whose ask was rejected, and files no ask for a comment a fix pass only reworded, so lanes stop hitting the round cap on no-op asks.
 * [Criteria owner reads every queue Source line, so a human item named second keeps the user as owner](notes/2026-11-23-criteria-owner-reads-every-queue-source-line-so-a.md) [script/plan-check] A lane ticket that names a session-written queue item before a human-written one now reads as user-owned, so a session can no longer rule on the user's criteria; every queue Source line is now checked, not only the first.

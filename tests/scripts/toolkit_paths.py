@@ -11,6 +11,8 @@ import tempfile
 TREE_CLAUDE_DIR = pathlib.Path(__file__).resolve().parents[2] / "claude" / ".claude"
 CLAUDE_DIR = pathlib.Path(os.environ.get("TOOLKIT_CLAUDE_DIR") or TREE_CLAUDE_DIR)
 REPO_ROOT = TREE_CLAUDE_DIR.parents[1]
+# The TOOLKIT_CLAUDE_DIR override moves only the Claude side; the opencode ports always come from this tree.
+OPENCODE_AGENTS_DIR = REPO_ROOT / "opencode" / ".config" / "opencode" / "agents"
 RIPGREP_CONFIG = REPO_ROOT / "ripgrep" / ".config" / "ripgrep" / "config"
 ZSHENV_DIR = REPO_ROOT / "zsh"
 SCRIPTS_DIR = CLAUDE_DIR / "scripts"
@@ -23,6 +25,7 @@ GATES_DIR = SCRIPTS_DIR / "gates"
 FIX_DIFF_SCRIPT = pathlib.Path(os.environ.get("FIX_DIFF_PATH")
                                or CLAUDE_DIR / "skills" / "close-branch" / "scripts" / "fix_diff.py")
 CODE_SKILL_FILE = CLAUDE_DIR / "skills" / "code" / "SKILL.md"
+CODE_PHASE_END_FILE = CLAUDE_DIR / "skills" / "code" / "phase-end-block.md"
 CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
 # The hooks come from the work repo's CB Security Hooks package and are not tested here, except
 # agent-model-guard.sh: it carries a local fork pass, tested in test_agent_model_guard.py,

@@ -19,7 +19,7 @@ TOTAL_CEILING = 8700
 
 AGENT_FILES = ("spec-questions.md", "spec-leak-check.md", "spec-research.md", "spec-criteria.md",
                "goal-blind-researcher.md")
-SHARED_FILES = ("design-decision-format.md", "plan-format.md", "closing-phases.md")
+SHARED_FILES = ("plan-format.md", "closing-phases.md")
 SHARED_PREFIX = "/skills/_shared/"
 
 

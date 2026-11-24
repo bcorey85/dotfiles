@@ -1,6 +1,6 @@
 ---
 name: backend-architect
-description: "Design and plan backend features — data models, API contracts, database schemas, service architecture. Produces implementation plans for the coder. Looking like pure configuration (adding an env var, enabling a flag) is necessary but not sufficient to skip this agent — the whole skip test is the go-lean gate in the eng-spec skill's scope phase, and every condition in it must hold. Never skipped for endpoints, services, or anything involving data flow."
+description: Designs backend features (data models, API contracts, schemas, services) as plans for the coder. Dispatched by /eng-spec phase 4.
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: blue
@@ -33,11 +33,7 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 ## Reuse Map
 
-<existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so.
-
-Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search found.
-
-Every NEW helper/service/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate.>
+<existing helpers/services/utilities/patterns the coder must use, with file paths — search before listing; an empty map means you searched and found nothing, say so. (rules: architect-core Reuse Map)>
 
 ## Implementation Steps
 

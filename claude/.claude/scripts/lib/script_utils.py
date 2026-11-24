@@ -306,11 +306,6 @@ def run_process(command, cwd, stdin=None, timeout=None, env=None, on_start=None)
     return ProcessResult(process.returncode, stdout, stderr)
 
 
-def escaped_glob(name):
-    """The name as a wildmatch pattern that matches only itself, for `git apply --exclude`."""
-    return re.sub(r"([*?\[\\])", r"\\\1", name)
-
-
 def git_output(cwd, *args, timeout=None):
     """Standard output of `git <args>` run in cwd, without its trailing newlines, or None when git fails, is missing or
     takes longer than `timeout` seconds. A warning on stderr never becomes part of the answer. Paths come back as
@@ -991,9 +986,23 @@ def subagent_transcript_path(session_transcript, agent_id):
     return os.path.join(os.path.splitext(session_transcript)[0], "subagents", subagent_transcript_name(agent_id))
 
 
+SUBAGENT_NAME_PREFIX = "agent-"
+SUBAGENT_META_SUFFIX = ".meta.json"
+
+
 def subagent_transcript_name(agent_id):
     """The file name Claude Code gives the transcript of the subagent `agent_id`."""
-    return f"agent-{agent_id}.jsonl"
+    return f"{SUBAGENT_NAME_PREFIX}{agent_id}.jsonl"
+
+
+def subagent_meta_name(agent_id):
+    """The file name Claude Code gives the meta file of the subagent `agent_id`. Pass "*" for a glob pattern."""
+    return f"{SUBAGENT_NAME_PREFIX}{agent_id}{SUBAGENT_META_SUFFIX}"
+
+
+def subagent_id_from_meta_name(file_name):
+    """The agent id in the meta file name `subagent_meta_name` makes."""
+    return file_name.removeprefix(SUBAGENT_NAME_PREFIX).removesuffix(SUBAGENT_META_SUFFIX)
 
 
 def sibling_transcript_path(agent_transcript, agent_id):
@@ -1025,25 +1034,47 @@ def _last_nonblank_line(lines):
     return last_line
 
 
+def read_json_object(file, report_torn=False):
+    """The JSON object in `file` (a str or a Path), or {} when it is missing, unreadable, torn (a writer part-way
+    through) or holds no object. A torn file is named on stderr only when `report_torn` is set, so a hook that reads
+    state files stays quiet."""
+    file = pathlib.Path(file)
+    try:
+        found = json.loads(file.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+    except ValueError as error:
+        if report_torn:
+            print(f"read_json_object: {file} is not valid JSON, {type(error).__name__}: {error}", file=sys.stderr)
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def last_transcript_record(transcript_path):
+    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
+    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+    try:
+        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
+        print(f"last_transcript_record: could not read {transcript_path}, {type(error).__name__}: {error}",
+              file=sys.stderr)
+        return None
+    try:
+        record = json.loads(_last_nonblank_line(tail_lines))
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def ends_on_api_error(transcript_path):
     """True when the last record of a transcript is an API error message: the agent may never report.
     False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
     record shows the agent went on."""
-    last_line = ""
-    try:
-        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
-        last_line = _last_nonblank_line(tail_lines)
-    except FileNotFoundError:
-        return False
-    except OSError as error:
-        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
-        print(f"ends_on_api_error: could not read {transcript_path}, {type(error).__name__}: {error}", file=sys.stderr)
-        return False
-    try:
-        record = json.loads(last_line)
-    except ValueError:
-        return False
-    return isinstance(record, dict) and record.get("isApiErrorMessage") is True
+    record = last_transcript_record(transcript_path)
+    return record is not None and record.get("isApiErrorMessage") is True
 
 
 def without_paths(files, paths):
@@ -1475,6 +1506,14 @@ def can_append(path):
     if path.exists():
         return os.access(path, os.W_OK)
     return os.access(path.parent, os.W_OK)
+
+
+def xdg_state_home():
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if not state_home:
+        return pathlib.Path.home() / ".local" / "state"
+    return pathlib.Path(state_home)
 
 
 def state_file_path(state_dir, name, suffix):

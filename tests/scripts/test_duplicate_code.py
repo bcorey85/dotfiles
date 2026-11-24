@@ -133,6 +133,28 @@ class DuplicateCodeTest(unittest.TestCase):
         finished = self.run_check(with_npx=True)
         self.assertEqual(finished.returncode, 0, finished.stderr)
 
+    def test_sibling_location_assignment_is_import_preamble(self):
+        module_spec = importlib.util.spec_from_file_location("duplicate_code_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(gate)
+        prologue = (
+            "import pathlib\n"
+            "import sys\n"
+            "\n"
+            "SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent\n"
+            'sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]\n'
+            "\n"
+            "import code_wait\n"
+        )
+        self.write_script("code/with_prologue.py", prologue)
+        with_limit = prologue.replace("SCRIPTS_DIR = pathlib", "LIMIT = 3\nSCRIPTS_DIR = pathlib")
+        self.write_script("code/with_limit.py", with_limit)
+        prologue_site = mock.Mock(path="claude/.claude/scripts/code/with_prologue.py", first_line=1, last_line=7)
+        self.assertTrue(gate.is_import_preamble(self.root, prologue_site))
+
+        limit_site = mock.Mock(path="claude/.claude/scripts/code/with_limit.py", first_line=1, last_line=8)
+        self.assertFalse(gate.is_import_preamble(self.root, limit_site))
+
     def test_an_unparseable_jscpd_report_stops_the_gate(self):
         module_spec = importlib.util.spec_from_file_location("duplicate_code_under_test", SCRIPT)
         gate = importlib.util.module_from_spec(module_spec)

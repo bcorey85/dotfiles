@@ -37,10 +37,22 @@ Eight sections, in order. A fact fitting nowhere belongs in eng-arch or code.
 
 ## Write for skimmability
 
-Apply `~/.claude/skills/_shared/skimmable-writing.md` in full, plus:
+- **Headings = answers, not topics.** A heading names the finding (`Status: Accepted`, `FormData Content-Type footgun`) rather than the slot it sits in (`Status field`, `Implementation note 3`).
 
-- **One Diátaxis mode**: ADRs are **explanation** — no state-of-code reference (eng-arch's job); cross-link.
-- **Headings = answers**, ADR flavor: a heading names the finding (`Status: Accepted`, `FormData Content-Type footgun`) rather than the slot it sits in (`Status field`, `Implementation note 3`).
+  | Topic | Answer |
+  | --- | --- |
+  | Implementation details | Token interceptor |
+  | Error section | 401 handling |
+
+- **BLUF at every level.** Start each section with the claim, not the setup.
+- **Bullets for independent items, paragraphs for reasoning**. Tables for structured comparisons.
+- **Code refs over descriptions.** `file:line` beats "the file that handles X".
+- **Bold the load-bearing word** in a multi-line bullet: at most one per bullet, none at all in a one-line bullet.
+- **One idea per bullet.** No em-dash chains. Split.
+- **Cut filler, keep connectives** — delete throat-clearing words, keep logic words.
+- **No rhetorical tics** — a pattern used 3+ times is a tic, not style. Count and rewrite repeats plain.
+- **Uncertainty survives compression.** Cutting words never promotes a measured-once number, an unverified claim, or an assumption into a fact. Where the evidence is thin the sentence says so, at whatever length that takes.
+- **One Diátaxis mode**: ADRs are **explanation** — no state-of-code reference (eng-arch's job); do not mix modes, cross-link.
 - **Per-section line caps** (`adr_flow.py finish` rejects a draft over them; a section that runs long holds material for another section): TL;DR ≤ 3 sentences. Problem ≤ 8. Decision ≤ 8. Alternatives ≤ 12. Assumptions ≤ 6. Watch out for ≤ 10.
 - **Target 50–80 lines** at creation (Addenda exempt). Past that, you're writing eng-arch material (Mega-ADR).
 

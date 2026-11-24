@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Stop and SubagentStop hook: block a final message that says files are staged when the index does not hold them.
 On Stop only, also block a main-session message that ends on a permission question for a reversible step
-(permission_question.py), and send both reasons when both hold.
+(permission_question.py), and a main-session message that says the session will do, or is doing, a step it has not
+started (announced_step.py); send every reason that holds.
 
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
@@ -37,6 +38,7 @@ import re
 import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import announced_step
 import permission_question
 import script_utils
 from git_calls import git_calls, joined_directory
@@ -229,6 +231,8 @@ def main():
         answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
         if not answers_question:
             reasons.append(permission_question.REASON)
+    if is_main_session and announced_step.announced_step(message):
+        reasons.append(announced_step.REASON)
 
     found_reasons = [reason for reason in reasons if reason]
     if found_reasons:

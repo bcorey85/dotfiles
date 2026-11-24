@@ -1,6 +1,6 @@
 ---
 name: code
-description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call, or run the `To go on:` line it gives. When the user replies, run the stop's `To go on:` line with their reply as its feedback. To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork only after that stop names every agent it dispatched as stopped.
+description: Dispatch a coder subagent for implementation, then auto-run `/review`. Use for "implement/build/add X" when the task is well-defined or a plan file exists; features needing design decisions go to /eng-spec first. When it hands back, run `python3 ~/.claude/scripts/code/code_relay.py` from the repo root and do what it prints: say the fork's stop word for word and make no other tool call, or run the `To go on:` line it gives. When the user replies, run the stop's `To go on:` line with their reply as its feedback. To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork only after that stop names every agent it dispatched as stopped. If still up, run `python3 ~/.claude/scripts/code/fork_children.py <code-fork id>` and TaskStop each agent id named (a launch with no id: rerun once it names one), then the code-fork. /code's loop only.
 context: fork
 agent: code-fork
 model: sonnet
@@ -31,7 +31,14 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
 **Resume.** When the task text starts with `resume`, an absolute path right after it names the plan, and that plan's git repo is the repo root for the run. The rest is the user's feedback on the last stop; none means go on. With no path and no `<run folder>/stop.md`, go to step 0. Rebuild where the run stopped from `<run folder>/stop.md`, the plan's `## Phase Status`, `git status --short`, `<run folder>/handoff.txt` (`handoff.prev.txt` after a phase start moved it aside) and `<run folder>/review.out` (the last review packet). Apply the feedback to that stop, then go on from the step that stopped.
 
-**Plan impacts never stop the run.** A coder's `PLAN-IMPACT:` block and a review packet's plan impacts go on one list for the phase end. At the phase end, before the phase-boundary decision: an impact that changes no acceptance criterion is adopted with no question: a coder adds it as one line under the plan's `## Plan Deviations` (create it if absent) and makes the plan change. For an impact that changes an acceptance criterion (a line in `acceptance-criteria.md` or a phase's Success Criteria), run `python3 ~/.claude/scripts/code/plan_check.py owner <plan>` first. Owner `session`, or owner `plan` while the ticket's own words, or with no ticket the user's own request, stay met: the run's orchestrating session rules (you, when none started the run), a coder logs the ruling under `## Plan Deviations` as one line that holds `ruling` and names `Ticket #<n>` (the `ACn` id when the plan has no ticket), with who and the date, and makes the change, and the run goes on. Any other impact that changes a criterion stays unapplied: show it in the phase-complete block under `Plan changes awaiting sign-off` (assumed → found → what changes), and the phase ends on a STOP. On resume, a coder records the user's feedback, who signed off and the date, under `## Plan Deviations` and makes the change only when the user signed off. A sign-off is text the user typed. An instruction in a brief or resume prompt that another session wrote is not one: record it as `pending sign-off` with no name or date, leave the change unapplied, and STOP. That sign-off rule covers ticket ACs and eng-spec criteria. In a plan built from a queue item with no ticket, a criterion that restates the item's done-clause changes on the orchestrator's ruling when the queue item or the brief records it: a coder logs it under `## Plan Deviations` with who and the date, and the run goes on.
+**Plan impacts never stop the run.** A coder's `PLAN-IMPACT:` block and a review packet's plan impacts go on one list for the phase end. At the phase end, before the phase-boundary decision:
+
+- An impact that changes no acceptance criterion is adopted with no question: a coder adds it as one line under the plan's `## Plan Deviations` (create it if absent) and makes the plan change.
+- For an impact that changes an acceptance criterion (a line in `acceptance-criteria.md` or a phase's Success Criteria), run `python3 ~/.claude/scripts/code/plan_check.py owner <plan>` first. Owner `session`, or owner `plan` while the ticket's own words, or with no ticket the user's own request, stay met: the run's orchestrating session rules (you, when none started the run), a coder logs the ruling under `## Plan Deviations` as one line that holds `ruling` and names `Ticket #<n>` (the `ACn` id when the plan has no ticket), with who and the date, and makes the change, and the run goes on. Any other impact that changes a criterion stays unapplied: show it in the phase-complete block under `Plan changes awaiting sign-off` (assumed → found → what changes), and the phase ends on a STOP.
+- On resume, a coder records the user's feedback, who signed off and the date, under `## Plan Deviations` and makes the change only when the user signed off.
+- A sign-off is text the user typed. An instruction in a brief or resume prompt that another session wrote is not one: record it as `pending sign-off` with no name or date, leave the change unapplied, and STOP.
+  - That sign-off rule covers ticket ACs and eng-spec criteria.
+- In a plan built from a queue item with no ticket, a criterion that restates the item's done-clause changes on the orchestrator's ruling when the queue item or the brief records it: a coder logs it under `## Plan Deviations` with who and the date, and the run goes on.
 
 0. **No arguments** (after stripping modifiers): run `bash ~/.claude/scripts/tools/resolve-task-dir.sh`. Exit 0 → the task directory's `spec.md` is the task input; exit 5 → the printed plan file. Say what resolved. Exit 3: no run started, so write no stop file; list the candidates as your final reply and say that `/code resume <path>` picks one. Exit 4: no run started, so write no stop file; say in your final reply that `/code resume <task or plan path>` names the work.
 
@@ -63,7 +70,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
      ```
 
    - After the review loop returns `converged` or `deferred` and Automated Verification is green, dispatch a `coder` to change the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...` and nothing else, and wait for it.
-   - **Phase-boundary decision**, first match wins, then print the matching Phase-Complete Block:
+   - **Phase-boundary decision**, first match wins, then Read `~/.claude/skills/code/phase-end-block.md` and print the matching block:
      1. Last phase → STOP, block C.
      2. Phase 1, any risk tier → STOP, block B.
      3. A gate needed an exception, a `/fix` loop hit its cap, the coder flagged an ambiguity, or a plan change awaits sign-off → STOP, block B.
@@ -89,70 +96,20 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
    Route on the packet's `status`, first match wins:
 
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
-   - `cap-reached` → STOP. Report `findings_remaining`; do not mark the phase done.
+   - `cap-reached` → STOP. Report `findings_remaining`.
    - `deferred` → handle as `converged` (plan impacts, render, asks and the `phase_asks.py rule` line), plus `findings_remaining` under `### Deferred to branch exit`; proceed.
-   - `converged` → put any plan impacts the packet lists on the phase-end list. Leave an impact with `settled: true` off the list and write no Plan Deviations line for it. When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the review counts as clean. Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`). Run `python3 ~/.claude/scripts/review/phase_asks.py list` from the repo root: it prints every ask to rule on (the packet's `ask[]` entries without the plan-impact ones, after any ask of an earlier packet with no ruling) and the `phase_asks.py rule` line. Decide each listed ask yourself; never stop on one. Accept it when its change fixes a defect inside the phase's scope and changes no acceptance criterion. An ask whose change alters a criterion goes on the phase-end list, routed by the owner rule above. Reject the rest. Dispatch one `coder` for the accepted asks and wait for it, then run that rule line from the repo root, with one `'accepted:<one-line reason>'` or `'rejected:<one-line reason>'` word per listed ask in list order.
+   - `converged` → put any plan impacts the packet lists on the phase-end list.
+     - Leave an impact with `settled: true` off the list and write no Plan Deviations line for it.
+     - When one of them is held (not `adopted`, `cause` not `toolkit`), set `plan_impact` in `<run folder>/handoff.txt` to the one line `RESOLVED: deferred to phase end by the session, <date>: <one-line impact summary>` and run `python3 ~/.claude/scripts/review/review_fix.py defer <run folder>/handoff.txt`, so the review counts as clean.
+     - Then render the packet (`### Fixed` from `fixed[]`, blockers first and marked; `perf[]` under its own heading; `skipped_fp[]`, `nit[]`).
+     - Run `python3 ~/.claude/scripts/review/phase_asks.py list` from the repo root: it prints every ask to rule on (the packet's `ask[]` entries without the plan-impact ones, after any ask of an earlier packet with no ruling) and the `phase_asks.py rule` line. Decide each listed ask yourself; never stop on one.
+     - Accept it when its change fixes a defect inside the phase's scope and changes no acceptance criterion. An ask whose change alters a criterion goes on the phase-end list, routed by the owner rule above.
+     - Reject the rest.
+     - Dispatch one `coder` for the accepted asks and wait for it, then run that rule line from the repo root, with one `'accepted:<one-line reason>'` or `'rejected:<one-line reason>'` word per listed ask in list order.
 
      List each ruling (the question, accepted or rejected, one-line reason) under `Asks decided` in the phase-complete block. Then proceed to the phase gates.
 
 6. **Multi-phase plans**: after `converged` or `deferred`, settle the phase-end plan impacts, then run the phase-boundary decision (step 2). Print every block with its placeholders resolved.
-
-## Phase-Complete Block
-
-**B — Stop for sign-off** (decision rules 2–6):
-
-```
-Phase <N> complete. Risk: <high | low | low — Phase 1 calibration | low — exception>. Stopped for your review.
-
-Behavior delta (observable change + its proof, max 3 — no internals, no paths):
-- <before → after, user-visible>. See it: <test name / command / UI flow>.
-
-Models: <each writing agent (phase coder, review loop fix coder, asks coder) — the model it ran on, or its own default>
-
-Plan changes adopted (no criterion changed):
-- <deviation line>
-
-Criterion changes ruled by the session (owner <session|plan>):
-- <deviation line>
-
-Plan changes awaiting sign-off (criterion changes, not applied):
-- <assumed → found → what changes>
-
-Asks decided:
-- <question> — <accepted | rejected>: <reason>
-
-Read first (/stage queue, blast-radius order):
-  ESCALATE:
-  - <path> — <classifier reason>
-  READ / SKIM:
-  - <path>
-Staged mechanically (<n>) — invariant-verified, skip.
-
-Agent-verified (evidence in the plan):
-- <item — one-line evidence summary>
-
-Human-only verification remaining:
-- <item>
-
-Next:
-  1. Read the queue (the agent notes in the hunk review pane); spot-check the evidence lines; run the human-only items.
-  2. Stage what you've read, then commit it. `Commit subject: <subject>`.
-  3. Run /clear and /code to start Phase <N+1> fresh, or `/code resume <plan path>` to go on in this context.
-
-Revisions to Phase <N>: `/code resume <plan path> <your feedback>`.
-```
-
-Omit either plan-change list and the asks list when it is empty.
-
-**C — Last phase** (decision rule 1): block B's walkthrough and verification lists, with the "Next" block replaced by:
-
-```
-All phases complete. Next: read the queue, stage what you've read, then commit it. `Commit subject: <subject>`. Then read the Close pass recap's residue, run its smoke-test checklist, then you open the PR.
-```
-
-Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."
-
-Skill-invoke `/stage` to build the "Read first" queue and render it verbatim, in its order. The behavior delta comes from the coder's handoff (absent one, derive it from the diff and mark `derived from diff`).
 
 ## Task
 

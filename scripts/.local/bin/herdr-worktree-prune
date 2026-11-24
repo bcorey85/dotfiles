@@ -48,10 +48,12 @@ reason is printed:
   - no herdr workspace or agent is on it (`herdr-api workspace list` and
     `herdr-api agent list`; when one list does not answer, a note names it and
     the other checks still run; a list that failed is not asked again in the
-    run, a list that answered is asked again before each removal).
-Never touched: refs/review-snapshots, git gc, git worktree prune (a worktree
-whose folder is gone is kept, and `git worktree prune` clears its entry),
-git stash drop, git branch -D, any remote branch.
+    run, a list that answered is asked again before each removal);
+  - it is not, and is not inside, an open lane's worktree (`lanes.py list`;
+    when the list cannot be read every tree is kept as `cannot check`).
+Never touched: refs/review-snapshots, refs/pull-keep-index, git gc, git
+worktree prune (a worktree whose folder is gone is kept, and `git worktree
+prune` clears its entry), git stash drop, git branch -D, any remote branch.
 """
 from __future__ import annotations
 
@@ -88,6 +90,7 @@ PROCESS = "process running"
 HERDR = "herdr workspace"
 CANNOT_CHECK = "cannot check"
 VANISHED = "no longer a worktree"
+LANE_OPEN = "open lane"
 
 
 class PruneError(Exception):
@@ -155,6 +158,7 @@ class World:
     processes: list[Process] | None
     herdr: Herdr
     notes: list[str]
+    lanes: LaneRead
 
 
 @dataclasses.dataclass
@@ -453,6 +457,30 @@ def read_herdr(state):
     return Herdr(workspaces, agent_cwds, note)
 
 
+# ---- lanes ----
+
+def lanes_cli_path():
+    return os.environ.get("HERDR_LANES_CLI") or os.path.expanduser("~/.claude/scripts/tools/lanes.py")
+
+
+@dataclasses.dataclass
+class LaneRead:
+    worktrees: list[tuple[str, str]] | None
+    problem: str = ""
+
+
+def read_lanes():
+    """The open lanes as (name, worktree) pairs from `lanes.py list`, or None with the reason."""
+    asked = run([sys.executable, lanes_cli_path(), "list"], timeout=HERDR_TIMEOUT_SECONDS)
+    if asked.returncode != 0:
+        return LaneRead(None, f"lanes list failed: {asked.stderr.strip() or asked.returncode}")
+    try:
+        entries = json.loads(asked.stdout)["lanes"]
+        return LaneRead([(entry["name"], entry["worktree"]) for entry in entries])
+    except (ValueError, KeyError, TypeError) as error:
+        return LaneRead(None, f"lanes list has an unexpected answer: {error!r}")
+
+
 # ---- the world and the checks ----
 
 def take_world(repo, state):
@@ -468,7 +496,10 @@ def take_world(repo, state):
     herdr = read_herdr(state)
     if herdr.note is not None:
         notes.append(herdr.note)
-    return World(worktrees, stashes, processes, herdr, notes)
+    lanes = read_lanes()
+    if lanes.worktrees is None:
+        notes.append(f"note: open lanes were not checked ({lanes.problem})")
+    return World(worktrees, stashes, processes, herdr, notes, lanes)
 
 
 def check_main(repo, world, tree):
@@ -512,6 +543,17 @@ def check_detached(repo, world, tree):
 def check_default(repo, world, tree):
     if tree.branch == repo.default_branch:
         return Keep(DEFAULT_BRANCH, f"checked out on the default branch {repo.default_branch}")
+    return None
+
+
+def check_lane_open(repo, world, tree):
+    # Fail closed: with the lane list unread, an open lane's tree cannot be told from a finished one.
+    if world.lanes.worktrees is None:
+        return Keep(CANNOT_CHECK, f"the lane list could not be read: {world.lanes.problem}")
+    tree_real = real(tree.path)
+    for name, worktree in world.lanes.worktrees:
+        if inside(tree_real, real(worktree)):
+            return Keep(LANE_OPEN, f"lane {name} is open; herdr-lane-resume --close {name} closes it")
     return None
 
 
@@ -606,7 +648,7 @@ def check_herdr(repo, world, tree):
 
 
 CHECKS = (check_main, check_current, check_bare, check_folder, check_locked, check_detached, check_default,
-          check_merged, check_tree_state, check_stash, check_process, check_herdr)
+          check_lane_open, check_merged, check_tree_state, check_stash, check_process, check_herdr)
 
 
 def evaluate(repo, world, tree):

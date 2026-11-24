@@ -283,6 +283,37 @@ class SubagentTranscriptPathTest(unittest.TestCase):
         self.assertEqual("/t/s/subagents/agent-a1.jsonl", script_utils.subagent_transcript_path("/t/s.jsonl", "a1"))
 
 
+class SubagentMetaNameTest(unittest.TestCase):
+    def test_the_meta_name_and_its_inverse_agree(self):
+        self.assertEqual("agent-a1.meta.json", script_utils.subagent_meta_name("a1"))
+        self.assertEqual("a1", script_utils.subagent_id_from_meta_name("agent-a1.meta.json"))
+        self.assertEqual("a1", script_utils.subagent_id_from_meta_name(script_utils.subagent_meta_name("a1")))
+
+
+class LastTranscriptRecordTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.transcript = os.path.join(tmp.name, "agent-a1.jsonl")
+
+    def write(self, text):
+        with open(self.transcript, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_a_missing_file_and_an_empty_file_have_no_record(self):
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+        self.write("")
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+
+    def test_a_torn_last_line_has_no_record(self):
+        self.write('{"a": 1}\n{"b": ')
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+
+    def test_a_last_record_that_is_a_list_has_no_record(self):
+        self.write('{"a": 1}\n[1, 2]\n')
+        self.assertIsNone(script_utils.last_transcript_record(self.transcript))
+
+
 class VisibleTextTest(unittest.TestCase):
     def test_a_line_without_comments_comes_back_whole(self):
         self.assertEqual(("plain text", False), script_utils.visible_text("plain text", False))
@@ -1324,10 +1355,38 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COM
            "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
 
 
-class EscapedGlobTest(unittest.TestCase):
-    def test_each_wildmatch_character_gets_a_backslash_and_other_text_is_unchanged(self):
-        self.assertEqual(script_utils.escaped_glob("p[1]*?\\x.md"), "p\\[1]\\*\\?\\\\x.md")
-        self.assertEqual(script_utils.escaped_glob("plain.md"), "plain.md")
+class ReadJsonObjectTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.meta_path = os.path.join(tmp.name, "agent-a1.meta.json")
+
+    def write_meta(self, text):
+        with open(self.meta_path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_a_missing_file_reads_as_empty(self):
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {})
+
+    def test_a_str_path_and_a_path_read_the_same_object(self):
+        self.write_meta('{"finished": true}')
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {"finished": True})
+        self.assertEqual(script_utils.read_json_object(pathlib.Path(self.meta_path)), {"finished": True})
+
+    def test_a_file_that_is_a_list_reads_as_empty(self):
+        self.write_meta("[1, 2]")
+        self.assertEqual(script_utils.read_json_object(self.meta_path), {})
+
+    def test_a_torn_file_reads_as_empty_and_is_named_on_stderr_only_when_asked(self):
+        self.write_meta('{"finished": tr')
+        with contextlib.redirect_stderr(io.StringIO()) as quiet_stderr:
+            quiet = script_utils.read_json_object(self.meta_path)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            found = script_utils.read_json_object(self.meta_path, report_torn=True)
+        self.assertEqual(quiet, {})
+        self.assertEqual(quiet_stderr.getvalue(), "")
+        self.assertEqual(found, {})
+        self.assertIn(self.meta_path, stderr.getvalue())
 
 
 class WorkTreeBlobRestoreTest(unittest.TestCase):

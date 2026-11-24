@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1119 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
+1158 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-23, [Review loop scope guard keeps a fix to a file a finding names by suffix or dot-slash](notes/2026-11-23-review-loop-scope-guard-keeps-a-fix-to-a-file-a.md).
+Latest change: 2026-11-23, [A lane merge skips the suite rerun when the lane's green run covered the same tree](notes/2026-11-23-a-lane-merge-skips-the-suite-rerun-when-the-lane-s.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 14
+* quality: 15
 
 ## Pages
 

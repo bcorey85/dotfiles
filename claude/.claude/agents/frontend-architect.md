@@ -1,6 +1,6 @@
 ---
 name: frontend-architect
-description: "Design and plan frontend features — component architecture, state management, styling approach. Produces implementation plans for the coder. Looking like pure configuration (adding an import, toggling a flag) is necessary but not sufficient to skip this agent — the whole skip test is the go-lean gate in the eng-spec skill's scope phase, and every condition in it must hold. Never skipped for new components, state changes, or API integration."
+description: Designs frontend features (components, state, styling) as plans for the coder. Dispatched by /eng-spec phase 4.
 model: opus
 tools: Bash, Read, Glob, Grep, LSP
 color: green
@@ -48,11 +48,7 @@ Insert these between `## Overview` and the shared closing trio (Out of Scope / R
 
 ## Reuse Map
 
-<existing components/patterns/styles/hooks/utils to use, with file paths.
-
-Seed it from `02-research.md`'s `## Reuse Inventory` when the research doc has one, THEN add what your own search (point 1 above) found.
-
-Every NEW component/hook/util this plan introduces must appear here with one line on why no listed unit covers it. That justification line is the gate.>
+<existing components/patterns/styles/hooks/utils to use, with file paths. (rules: architect-core Reuse Map)>
 
 ## Implementation Steps
 

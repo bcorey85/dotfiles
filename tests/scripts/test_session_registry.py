@@ -74,6 +74,19 @@ class SessionRegistryTest(unittest.TestCase):
                 json.dumps({"pid": os.getpid(), "sessionId": "no-cwd", "name": "x"}))
             self.assertIsNone(session_registry.other_live_session_in(repo, "own"))
 
+    def test_a_row_is_found_by_name_only_while_its_pid_is_alive(self):
+        self.register("lane-dead", "sid-dead", 10**30, "1.json")
+        self.register("lane-live", "sid-live", os.getpid(), "2.json")
+        self.assertEqual("sid-live", session_registry.row_for_name("lane-live")["sessionId"])
+        self.assertIsNone(session_registry.row_for_name("lane-dead"))
+        self.assertIsNone(session_registry.row_for_name("lane-absent"))
+
+    def test_the_first_live_row_of_a_name_wins_and_a_dead_row_ahead_of_it_is_skipped(self):
+        self.register("twin", "sid-dead", 10**30, "1.json")
+        self.register("twin", "sid-first", os.getpid(), "2.json")
+        self.register("twin", "sid-second", os.getpid(), "3.json")
+        self.assertEqual("sid-first", session_registry.row_for_name("twin")["sessionId"])
+
     def test_a_live_row_with_an_empty_name_gives_no_display_name(self):
         self.register("", "sid-unnamed", os.getpid(), "3.json")
         self.assertIsNone(session_registry.session_display_name("sid-unnamed"))

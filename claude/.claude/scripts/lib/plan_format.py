@@ -61,15 +61,24 @@ MOVED_TARGET = re.compile(rf"(?i:moved to)\s+({TICKET_KEY})(?![A-Za-z0-9])")
 DEVIATIONS_HEADING = "Plan Deviations"
 SESSION_RULING_OWNER = "the session, not the user"
 # A reviewer ask that says the fix would change the approved plan. An ask may open with its file:line and its
-# bracketed tags, in either order. `PLAN-IMPACT: none`, or a bare `no` ended by punctuation or the line, says the
+# bracketed tags, in either order, and the prefix itself may be wrapped in backticks or bold (`PLAN-IMPACT:`,
+# `**PLAN-IMPACT:**`). `PLAN-IMPACT: none`, or a bare `no` ended by punctuation or the line, says the
 # plan holds, so it is no plan change; `PLAN-IMPACT: no index on ...` still is one.
 LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
 PLAN_CHANGE_MARK = re.compile(
-    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*plan[-_ ]?impact"
+    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
     r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
-# A PLAN-IMPACT's `acceptance_criteria:` line: `none`, or the criteria the change would alter.
-AC_CHANGE_LINE = re.compile(r"acceptance[_ ]criteria[*`_]*:[ \t*`_]*([^;\n]*)", re.I)
+# `none` with its closing marks and separators, then except/but/beyond and the rest of the line: the answer
+# says none and then names a change.
+NONE_WITH_EXCEPTION = r"none\b[`*_]*[ \t,.:;\N{EM DASH}\N{EN DASH}-]*(?:except|but|beyond)\b[^\n]*"
+# A bare `none`; the branch before it takes a `none` that an except/but/beyond follows.
+NONE_ANSWER = r"none\b"
+# Any other answer: the criteria the change would alter, stopping before a `kind:` clause, a `;` or the line end.
+OTHER_ANSWER = r"(?:(?!\bkind[*`_]*:)[^;\n])*"
+# A PLAN-IMPACT's `acceptance_criteria:` line.
+AC_CHANGE_LINE = re.compile(
+    rf"acceptance[_ ]criteria[*`_]*:[ \t*`_]*({NONE_WITH_EXCEPTION}|{NONE_ANSWER}|{OTHER_ANSWER})", re.I)
 PLAN_IMPACT_OPENING = re.compile(r"plan[-_ ]?impact(?![*`_]*:[ \t*`_]*yes\b)", re.I)
 
 # The `cause: plan` line of a PLAN-IMPACT block: the marks a line opens with, the field name, then its value.
@@ -83,8 +92,11 @@ NO_CAUSE_LINE = "no-cause-line"
 BELOW_CRITERIA_RULING = ("No acceptance criterion changes, so the code wins: the plan follows the code. Adopted by "
                          "rule; no one was asked.")
 PLAN_IMPACT_HEADER_WORD = re.compile(r"[*`_]*plan[-_ ]?impact[*`_]*[ \t]*:", re.I)
-# The `acceptance_criteria:` clause with the marks and separators before it, so removing it leaves no stray dash.
-AC_CHANGE_CLAUSE = re.compile(r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern, re.I)
+# The `acceptance_criteria:` clause, with the marks and separators before it so removing it leaves no stray dash,
+# and after it the closing marks, a trailing `(...)` parenthetical, a trailing period and a `kind: <word>` clause.
+AC_CHANGE_CLAUSE = re.compile(
+    r"[\s;,—\N{EN DASH}-]*[*`_]*" + AC_CHANGE_LINE.pattern
+    + r"[`*_]*(?:[ \t]*\([^)\n]*\))?[ \t]*\.?(?:[\s;,—\N{EN DASH}-]*[`*_]*kind[*`_]*:[ \t*`_]*\w+[`*_]*)?", re.I)
 DEVIATION_RULING_PREFIX = "  The ruling: "
 STATUS_ITEM_START = re.compile(r"^[-*]\s+\[")
 RISK_MARK = re.compile(r"\(risk:\s*(low|high)\)", re.I)
@@ -1447,12 +1459,13 @@ def home_queue_prefix():
     return str(pathlib.Path.home()) + QUEUE_SOURCE_PREFIX[1:]
 
 
-def queue_source_line(ticket_lines):
-    """(line number, value) of the ticket's first `Source:` line whose value starts with the queue folder (spelled
-    `~/agent-evals/queue/` or with the home folder), with markdown marks stripped from its ends and the home spelling
-    turned into `~`; None when no line does. Marks are stripped only from the ends of the path word, never inside
-    it: a path may hold an underscore."""
+def queue_source_lines(ticket_lines):
+    """(line number, value) of each of the ticket's `Source:` lines whose value starts with the queue folder (spelled
+    `~/agent-evals/queue/` or with the home folder), in ticket order, with markdown marks stripped from its ends and
+    the home spelling turned into `~`; empty when no line does. Marks are stripped only from the ends of the path
+    word, never inside it: a path may hold an underscore."""
     home_prefix = home_queue_prefix()
+    queue_sources = []
     for number, line in enumerate(ticket_lines, 1):
         if not SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip()):
             continue
@@ -1463,8 +1476,8 @@ def queue_source_line(ticket_lines):
         if value.startswith(home_prefix):
             value = QUEUE_SOURCE_PREFIX + value[len(home_prefix):]
         if value.startswith(QUEUE_SOURCE_PREFIX):
-            return number, value
-    return None
+            queue_sources.append((number, value))
+    return queue_sources
 
 
 def queue_item_author(ticket_name, number, source_value):
@@ -1524,11 +1537,29 @@ def owner_record(ticket_path, owner, source):
             "rule": CRITERIA_OWNER_RULES[owner]}
 
 
+def queue_sources_owner(ticket_path, ticket_name, queue_sources):
+    """The owner record for a ticket's queue `Source:` lines. Every line is checked first, so a broken later line
+    raises even when an earlier one names a human item: the user owns the criteria when any named item has a
+    `human:` author."""
+    owners = []
+    for number, source_value in queue_sources:
+        author = queue_item_author(ticket_name, number, source_value)
+        owners.append((author_owner(author), source_value))
+
+    for owner, source_value in owners:
+        if owner == CRITERIA_OWNER_USER:
+            return owner_record(ticket_path, owner, source_value)
+
+    first_owner, first_source = owners[0]
+    return owner_record(ticket_path, first_owner, first_source)
+
+
 def criteria_owner(ticket_path):
     """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket that is itself a queue item
-    (frontmatter `type: "QueueItem"`) takes its own `generated.by` the same way, with `source` None. A ticket whose
-    first queue `Source:` line names a queue item is `session` when the item's `generated.by` is not a `human:`
-    author, else `user`. Without one, a ticket with no criteria heading is `plan`, and any other ticket is `user`.
+    (frontmatter `type: "QueueItem"`) takes its own `generated.by` the same way, with `source` None. A ticket with
+    queue `Source:` lines checks every one: it is `user`, with `source` the first line a `human:` author wrote, when
+    any named item has a `human:` `generated.by`, else `session` with `source` the first line. Without one, a ticket
+    with no criteria heading is `plan`, and any other ticket is `user`.
     A `Source:` line outside the queue folder never changes the owner. Raises PlanFormatError on a queue line the
     item cannot back, a queue item with no readable `generated.by`, and on a ticket the criteria reader cannot parse."""
     ticket_name = str(ticket_path)
@@ -1539,11 +1570,9 @@ def criteria_owner(ticket_path):
         author = queue_text_author(where, "queue item", ticket_text)
         return owner_record(ticket_path, author_owner(author), None)
 
-    queue_source = queue_source_line(ticket_text.splitlines())
-    if queue_source is not None:
-        number, source_value = queue_source
-        author = queue_item_author(ticket_name, number, source_value)
-        return owner_record(ticket_path, author_owner(author), source_value)
+    queue_sources = queue_source_lines(ticket_text.splitlines())
+    if queue_sources:
+        return queue_sources_owner(ticket_path, ticket_name, queue_sources)
 
     try:
         ticket_criteria(ticket_text, ticket_name)

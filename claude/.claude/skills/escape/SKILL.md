@@ -21,7 +21,7 @@ One escape = one defect found downstream of its gate. `/cc`/`/fix`/`/refactor`/`
 
    If the description is too vague to classify, ask ONE clarifying question. A new requirement or changed mind is NOT an escape.
 
-2. **Ratchet** — run the guard decision and pick the miss reason per `~/.claude/skills/_shared/escape-ratchet.md` (including its ADR addendum), and carry both into the log line below.
+2. **Ratchet** — before you log the escape, read `~/.claude/skills/_shared/escape-ratchet.md` (including its ADR addendum), run the guard decision and pick the miss reason, and carry both into the log line below.
 
 3. **Log it**:
 

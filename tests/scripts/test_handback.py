@@ -172,17 +172,44 @@ class RuledImpactStoreTest(HandbackTestBase):
         self.assertEqual(handback_store.rulings("", "/work/a").finding_texts, [])
 
     def test_rejected_asks_come_back_per_repo_in_order_and_need_a_session_id(self):
-        self.assertIsNone(handback_store.record_rejected_ask("", "text", "/work/a"))
-        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a")
-        handback_store.record_rejected_ask(SESSION, "b.py:1 other repo?", "/work/b")
-        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a")
+        self.assertIsNone(handback_store.record_rejected_ask("", "text", "/work/a", "q"))
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "q")
+        handback_store.record_rejected_ask(SESSION, "b.py:1 other repo?", "/work/b", "q")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a", "q")
 
         self.assertEqual(handback_store.rejected_ask_texts(SESSION, "/work/a"), ["a.py:1 first?", "a.py:2 second?"])
         self.assertEqual(handback_store.rejected_ask_texts("", "/work/a"), [])
 
+    def test_a_rejected_ask_row_carries_its_question_as_a_field(self):
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", question="first?")
+
+        rows = handback_store.rejected_ask_rows(SESSION, "/work/a")
+
+        self.assertEqual([row["question"] for row in rows], ["first?"])
+
+    def test_a_row_with_no_question_is_written_again_once_a_call_has_one_and_then_not_again(self):
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "")
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "first?")
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "first?")
+
+        rows = handback_store.rejected_ask_rows(SESSION, "/work/a")
+
+        self.assertEqual([row.get("question") for row in rows], ["", "first?"])
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a", "second?")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a", "")
+        rows = handback_store.rejected_ask_rows(SESSION, "/work/a")
+        self.assertEqual(len(rows), 3)
+
+    def test_a_text_rejected_in_two_rows_is_listed_once(self):
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "")
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "first?")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a", "second?")
+
+        self.assertEqual(handback_store.rejected_ask_texts(SESSION, "/work/a"), ["a.py:1 first?", "a.py:2 second?"])
+
     def test_a_withdrawn_rejection_is_no_longer_a_rejected_ask(self):
-        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a")
-        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a")
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", "/work/a", "q")
+        handback_store.record_rejected_ask(SESSION, "a.py:2 second?", "/work/a", "q")
 
         handback_store.record_rejection_withdrawn(SESSION, "a.py:1 first?", "/work/a")
 
@@ -209,8 +236,8 @@ class RuledImpactStoreTest(HandbackTestBase):
         repo = self.tmp / "repo"
         repo.mkdir()
         subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True, capture_output=True)
-        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", os.path.realpath(repo))
-        handback_store.record_rejected_ask(SESSION, "b.py:1 elsewhere?", "/work/other")
+        handback_store.record_rejected_ask(SESSION, "a.py:1 first?", os.path.realpath(repo), "q")
+        handback_store.record_rejected_ask(SESSION, "b.py:1 elsewhere?", "/work/other", "q")
 
         records = review_loop_ruled.rejected_ask_records(SESSION, str(repo))
 

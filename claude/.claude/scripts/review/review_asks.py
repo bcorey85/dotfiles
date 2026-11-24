@@ -25,8 +25,15 @@ from ask_outcome_words import (
 )
 from review_fix_names import FILED_AT_KEY
 from review_fix_state import UsageError
-from review_loop_findings import CHANGE_IF_LABEL_PATTERN
-from script_utils import ask_text, hanging_indent_lines, names_a_file, one_line, or_list, run_command
+from review_loop_findings import CHANGE_IF_LABEL_PATTERN, ask_parts
+from script_utils import (
+    ask_text,
+    hanging_indent_lines,
+    names_a_file,
+    one_line,
+    or_list,
+    run_command,
+)
 
 MODIFIED = "modified"
 ASK_OUTCOMES = (ACCEPTED, REJECTED, MODIFIED, APPLIED)
@@ -320,11 +327,27 @@ def rejected_ask_text(item):
     """The text a rejected ask is stored under: its file:line and question (the text before the ask's change, the part
     a later review loop compares). Review-fix and phase asks share this shape: handback.normalize_ask fills the
     question; review_loop_packet sets file_line (`path:line` or UNLOCATED)."""
-    question = one_line(item["question"], None)
+    question = rejected_ask_question(item)
     # An ask with no location is stored as its question alone: a live ask's title has no `unlocated` word to match.
     if item["file_line"] == handback.UNLOCATED:
         return question
     return f"{item['file_line']} {question}"
+
+
+def rejected_ask_question(item):
+    """The question of ask `item` on one line: what a rejection stores in its `question` field."""
+    return one_line(item["question"], None)
+
+
+def ask_question(ask):
+    """The question of finding record `ask` on one line, which an ask is compared by. It equals the stored
+    `rejected_ask_question` of the ask's item because the packet builds that question from the same `ask_parts`."""
+    return one_line(ask_parts(ask.text).question, None)
+
+
+def record_rejection(session_id, item, repo):
+    """Records ask `item` as rejected for `session_id` in `repo`, with its text and its question field."""
+    handback_store.record_rejected_ask(session_id, rejected_ask_text(item), repo, rejected_ask_question(item))
 
 
 def record_rejected_asks(session_ids, repo, asks, outcomes):
@@ -334,6 +357,5 @@ def record_rejected_asks(session_ids, repo, asks, outcomes):
     for item, outcome in zip(asks, outcomes, strict=True):
         if outcome != REJECTED:
             continue
-        text = rejected_ask_text(item)
         for session_id in session_ids:
-            handback_store.record_rejected_ask(session_id, text, repo)
+            record_rejection(session_id, item, repo)

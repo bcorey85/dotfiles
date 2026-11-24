@@ -8,9 +8,12 @@ def guidance_text(relative_path):
     return " ".join((toolkit_paths.CLAUDE_DIR / relative_path).read_text().split())
 
 
+def opencode_agent_text(name):
+    return " ".join((toolkit_paths.OPENCODE_AGENTS_DIR / f"{name}.md").read_text().split())
+
+
 def repo_doc_text(relative_path):
-    repo_root = toolkit_paths.TREE_CLAUDE_DIR.parents[1]
-    return " ".join((repo_root / "docs" / relative_path).read_text().split())
+    return " ".join((toolkit_paths.REPO_ROOT / "docs" / relative_path).read_text().split())
 
 
 class GuidanceRulesTest(unittest.TestCase):
@@ -135,6 +138,31 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("agents/test-reviewer.md")
         self.assertIn("Never change a file in the tree, not even to mutate it and restore it", text)
 
+    def test_the_test_reviewer_s_cull_step_points_at_the_test_intent_reviewer_s_cull_paragraph(self):
+        text = guidance_text("agents/test-reviewer.md")
+        step_five = text.split("**Step 5: Cull check", 1)[1].split("## Output Format", 1)[0]
+        self.assertIn("test-intent-reviewer.md", step_five)
+        self.assertNotIn("Deleting pre-existing tests", text)
+
+    def test_test_audit_carries_its_finding_log_lane_and_scope(self):
+        text = guidance_text("skills/test-audit/SKILL.md")
+        self.assertIn("gate=test-intent-reviewer lane=test-audit", text)
+        self.assertIn("lane=test-audit scope=branch-exit", text)
+
+    def test_test_audit_logs_a_run_row_even_when_it_finds_nothing(self):
+        text = guidance_text("skills/test-audit/SKILL.md")
+        self.assertIn("Zero-finding audits still log `kind=run`", text)
+
+    def test_both_spec_criteria_copies_read_code_vocabulary_before_a_criterion_that_names_code(self):
+        copies = {
+            "claude": guidance_text("agents/spec-criteria.md"),
+            "opencode": opencode_agent_text("spec-criteria"),
+        }
+        for name, text in copies.items():
+            with self.subTest(copy=name):
+                self.assertIn("before you write a criterion that names code", text)
+                self.assertIn("code-vocabulary.md", text)
+
     def test_spec_criteria_numbers_ids_flat_and_runs_plan_check_before_it_returns(self):
         text = guidance_text("agents/spec-criteria.md")
         raw_text = (toolkit_paths.CLAUDE_DIR / "agents/spec-criteria.md").read_text()
@@ -186,6 +214,9 @@ class GuidanceRulesTest(unittest.TestCase):
         skill_text = guidance_text("skills/code/SKILL.md")
         self.assertIn("To cancel a running /code fork, SendMessage it `stop` and wait for its stop; TaskStop the fork "
                       "only after that stop names every agent it dispatched as stopped.", skill_text)
+        self.assertIn("If still up, run `python3 ~/.claude/scripts/code/fork_children.py <code-fork id>` and TaskStop "
+                      "each agent id named (a launch with no id: rerun once it names one), then the code-fork.",
+                      skill_text)
         fork_text = guidance_text("agents/code-fork.md")
         self.assertIn("When a message the user or the outside session sent says stop or cancel, TaskStop every agent "
                       "you dispatched that still runs, then end the run with a stop that names each agent id and "
@@ -207,12 +238,42 @@ class GuidanceRulesTest(unittest.TestCase):
         text = guidance_text("skills/code/SKILL.md")
         self.assertIn("6. `(risk: low)` with all machine gates green → STOP, block B.", text)
         self.assertIn("The run never commits and never starts the next phase by itself.", text)
-        self.assertIn("2. Stage what you've read, then commit it. `Commit subject: <subject>`.", text)
+
+        block_text = guidance_text("skills/code/phase-end-block.md")
+        for banned in ("! git commit", "AUTO-ADVANCE", "a commit, a write and a confirmation are all reversible"):
+            self.assertNotIn(banned, text)
+            self.assertNotIn(banned, block_text)
+        self.assertIn("2. Stage what you've read, then commit it. `Commit subject: <subject>`.", block_text)
         self.assertIn("All phases complete. Next: read the queue, stage what you've read, then commit it. "
-                      "`Commit subject: <subject>`.", text)
-        self.assertNotIn("! git commit", text)
-        self.assertNotIn("AUTO-ADVANCE", text)
-        self.assertNotIn("a commit, a write and a confirmation are all reversible", text)
+                      "`Commit subject: <subject>`.", block_text)
+
+    def test_the_plan_impact_criteria_rule_has_one_owner_per_side(self):
+        coder_text = guidance_text("skills/coder-core/SKILL.md")
+        self.assertIn("Write the finding's `acceptance_criteria:` line as PLAN-IMPACT findings below says", coder_text)
+        self.assertIn("Then build to the code: the plan follows it.", coder_text)
+        self.assertNotIn("the code wins", coder_text)
+
+        reviewer_text = guidance_text("agents/code-reviewer.md")
+        preamble = reviewer_text.split("## Review Process", 1)[0]
+        self.assertEqual(preamble.count("reviewer-calibration.md"), 1)
+        self.assertNotIn("`blocker` only when shipping", reviewer_text)
+        self.assertNotIn("**Disposition**", preamble)
+        self.assertIn("Verify the Premise Before Flagging", preamble)
+        ask_section = reviewer_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
+        plan_impact_section = reviewer_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
+        self.assertNotIn("PLAN-IMPACT:", ask_section)
+        self.assertIn("PLAN-IMPACT:", plan_impact_section)
+
+        calibration_text = guidance_text("skills/_shared/reviewer-calibration.md")
+        self.assertIn("acceptance_criteria: none", calibration_text)
+        self.assertIn("`code-reviewer`", calibration_text.split("## Calibration Anchor", 1)[0])
+        self.assertIn("optional `kind: reword|cut|narrow` line", calibration_text)
+
+        opencode_text = opencode_agent_text("code-reviewer")
+        opencode_ask = opencode_text.split("### Ask", 1)[1].split("### Plan impact", 1)[0]
+        opencode_plan_impact = opencode_text.split("### Plan impact", 1)[1].split("### Nit", 1)[0]
+        self.assertNotIn("PLAN-IMPACT:", opencode_ask)
+        self.assertIn("`PLAN-IMPACT:`", opencode_plan_impact)
 
 
 if __name__ == "__main__":

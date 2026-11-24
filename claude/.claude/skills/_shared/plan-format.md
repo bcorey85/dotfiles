@@ -21,14 +21,24 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 - Keep each phase signable in one sitting — past ~8–10 semantic files (churn excluded), split on a natural seam into dependency-ordered slices, unless splitting loses end-to-end verifiability; then append `— atomic: <why>`.
 - Multi-phase plans open with `Phase 0: Contracts` — the coordination surface
   between slices/streams (shared types, schemas, API shapes, migration
-  sketches) as committable content, not prose — then `Phase 1: Walking
-skeleton`, the thinnest end-to-end path (`/code` stops after it for calibration). Phase 0 is `(risk: high)` and FROZEN at approval — mid-plan changes are stop-and-surface Plan Deviations, never silent edits. No parallel fan-out before the skeleton lands. Single-slice plans may fold contracts into Phase 1 (state so). Front-load only the inter-slice surface.
+  sketches) as committable content, not prose.
+- In a multi-phase plan, `Phase 1: Walking skeleton` follows Phase 0: the thinnest end-to-end path (`/code` stops after it for calibration).
+- Phase 0 is `(risk: high)` and FROZEN at approval — mid-plan changes are stop-and-surface Plan Deviations, never silent edits.
+- No parallel fan-out before the skeleton lands.
+- Single-slice plans may fold contracts into Phase 1 (state so). Front-load only the inter-slice surface.
 - A behaviorless phase (migration/infra-only — the one legitimate single-layer case) carries FULL verification in Automated Verification and states `Manual Verification: N/A (infra-only)` — an empty section is an authoring gap.
 - Success Criteria are TESTABLE assertions — each specifies HOW to verify
   with the project's real commands (from project CLAUDE.md / package
   scripts), never generic placeholders.
-- Each Automated Verification item takes one of three shapes. (1) One backticked command that starts with a program on PATH plus at least one argument, or with an executable file in the repo (`./check`, `scripts/check`). Write the command plainly, never wrapped in `sh -c` or `bash -c`: the shell hook blocks the wrapper, and `/code` refuses it. A check that needs a pipeline goes in an executable repo script. (2) `N/A` with the reason. (3) A `**CI-verified**:` or `Human-only:` tag for a check that runs in another place, or an `**Agent-run**:` tag for a check an agent runs locally that the plan check must not run (real-data timing that waits on an orchestrator slot, a run against the live home). `/code` never runs it. An Agent-run item is run by the session or by `/verify-branch`, which records its output; a `done` verifier row for it needs non-empty evidence, and `/code`'s close needs an evidence text for its open box. An `rg`/`grep`/`git grep` item is a ban (exit 1, no match, holds it) unless its text says it checks presence ("present", "exists", "contains", "finds"), where exit 0 passes; ban wording ("no match", "absent", `! rg`) wins. A wrapped search such as `test -n "$(git grep ...)"` is judged by its exit code. A command must end by itself: never `tail -f`, `watch`, `sleep`, an editor or `claude`.
-- A phase whose change leaves a repo check failing until a later phase lands writes one line per check in its section: ``Expected red: `<command>` until Phase <id>``. `<command>` is the repo's CLAUDE.md `Quality check:` command or one of its `&&` steps, copied exactly. `<id>` is a later phase in Phase Status. The review's full check leaves that check out until Phase `<id>` is done. The plan check refuses any other form. Name every file a phase changes in a `**File**:` or `**Files**:` entry of its own section: a file only a later phase's entries name is closed to this phase's coders.
+- Each Automated Verification item takes one of three shapes:
+  - One backticked command that starts with a program on PATH plus at least one argument, or with an executable file in the repo (`./check`, `scripts/check`). Write the command plainly, never wrapped in `sh -c` or `bash -c`: the shell hook blocks the wrapper, and `/code` refuses it. A check that needs a pipeline goes in an executable repo script.
+  - `N/A` with the reason.
+  - A `**CI-verified**:` or `Human-only:` tag for a check that runs in another place, or an `**Agent-run**:` tag for a check an agent runs locally that the plan check must not run (real-data timing that waits on an orchestrator slot, a run against the live home). `/code` never runs it. An Agent-run item is run by the session or by `/verify-branch`, which records its output; a `done` verifier row for it needs non-empty evidence, and `/code`'s close needs an evidence text for its open box.
+- An `rg`/`grep`/`git grep` item is a ban (exit 1, no match, holds it) unless its text says it checks presence ("present", "exists", "contains", "finds"), where exit 0 passes; ban wording ("no match", "absent", `! rg`) wins.
+- A wrapped search such as `test -n "$(git grep ...)"` is judged by its exit code.
+- A command must end by itself: never `tail -f`, `watch`, `sleep`, an editor or `claude`.
+- A phase whose change leaves a repo check failing until a later phase lands writes one line per check in its section: ``Expected red: `<command>` until Phase <id>``. `<command>` is the repo's CLAUDE.md `Quality check:` command or one of its `&&` steps, copied exactly. `<id>` is a later phase in Phase Status. The review's full check leaves that check out until Phase `<id>` is done. The plan check refuses any other form.
+- Name every file a phase changes in a `**File**:` or `**Files**:` entry of its own section: a file only a later phase's entries name is closed to this phase's coders.
 - Manual Verification items are DRIVEABLE scenarios — exact command, request,
   or interaction plus expected result. Items only a human can judge (visual
   polish, UX feel) must say so explicitly so they route to the human-only
@@ -88,10 +98,7 @@ The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with st
 
 - **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
 
-The Close pass reconciles every id against the real suite
-(`_shared/closing-phases.md`), matching behavior, not markers. A covering test
-asserts at the public boundary a user or caller reaches, never an internal
-function. **No mocks inside such a test.**
+A test covers a criterion by its behavior, never by a marker: it asserts at the public boundary a user or caller reaches, never an internal function. **No mocks inside such a test.**
 
 ## Implementation Approach
 

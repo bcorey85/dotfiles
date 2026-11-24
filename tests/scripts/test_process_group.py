@@ -52,6 +52,29 @@ class ProcessGroupTest(unittest.TestCase):
             with self.subTest(pid=pid):
                 self.assertFalse(process_group.pid_is_alive(pid))
 
+    def test_wait_until_group_gone_stays_false_while_a_child_outlives_the_leader(self):
+        parent = subprocess.Popen([sys.executable, "-c", GROUP_PARENT_CODE], stdout=subprocess.PIPE, text=True,
+                                  start_new_session=True)
+        self.addCleanup(parent.wait)
+        self.addCleanup(parent.kill)
+        child_pid = int(parent.stdout.readline())
+        self.addCleanup(self.kill_if_running, child_pid)
+        group = process_group.group_id(parent.pid)
+        parent.kill()
+        parent.wait(timeout=10)
+
+        self.assertFalse(process_group.wait_until_group_gone(group, 0.3), "the child still lives in the group")
+        os.kill(child_pid, signal.SIGKILL)
+        self.assertTrue(process_group.wait_until_group_gone(group, 5))
+
+    def test_group_id_is_none_for_a_gone_process_and_group_is_alive_for_one_it_may_not_signal(self):
+        process = self.sleeper()
+        process.kill()
+        process.wait()
+        self.assertIsNone(process_group.group_id(process.pid))
+        with unittest.mock.patch.object(process_group.os, "killpg", side_effect=PermissionError):
+            self.assertTrue(process_group.group_is_alive(1))
+
     def test_pid_is_alive_for_a_process_this_user_may_not_signal(self):
         with unittest.mock.patch.object(process_group.os, "kill", side_effect=PermissionError):
             self.assertTrue(process_group.pid_is_alive(1))

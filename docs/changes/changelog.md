@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1163 changes
+1164 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md) [script/pull-keep-index] A pull before push no longer refuses when the other live session's only dirty files are built pages the merge driver owns: the pages are set aside, the branch is pulled, and the driver rebuilds them.
 * [Lane sessions start with the cron scheduler off so a fork drops the parent's timers](notes/2026-11-24-lane-sessions-start-with-the-cron-scheduler-off-so.md) [script/herdr-worktree, script/herdr-dev, script/herdr-worktree-watch] herdr-dev starts every forked or resumed lane session with CLAUDE_CODE_DISABLE_CRON=1, so a lane no longer fires the orchestrator's cron jobs, until herdr itself restores the pane after a restart.
 * [pre-commit refuses a toolkit commit that strands an agent-evals meter scenario or skill list entry](notes/2026-11-23-pre-commit-refuses-a-toolkit-commit-that-strands.md) [script/pre-commit] A commit that stages agent, skill, rule or top-level prompt files now runs agent-evals' drift check on the staged text, so a deleted rule fragment or a skill missing from the skill list is caught before the commit lands instead of at the next agent-evals suite run.
 * [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md) [script/pull-keep-index] A put-back that conflicts on one file while nothing was staged now gives every other file back its unstaged state, so the next commit in a shared clone no longer sweeps up other sessions' edits.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1164 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [Lane sessions start with the cron scheduler off so a fork drops the parent's timers](notes/2026-11-24-lane-sessions-start-with-the-cron-scheduler-off-so.md).
+Latest change: 2026-11-24, [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md).
 
 ## Top gains
 

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Refuse a commit that changes the Claude Code toolkit without a change file, and a commit while the change
-# ledger (docs/changes) fails its check. Enable with: git config core.hooksPath .githooks
-# AGENT_EVALS_DIR overrides the agent-evals checkout (default ~/agent-evals).
+# Refuse a commit that changes the Claude Code toolkit without a change file, a commit whose staged toolkit drifted
+# from agent-evals (tests/toolkit_drift.py: rule texts of live rule-meter scenarios and the skill list), and a commit
+# while the change ledger (docs/changes) fails its check. Enable with: git config core.hooksPath .githooks
+# AGENT_EVALS_DIR overrides the agent-evals checkout (default ~/agent-evals) for the drift check and the ledger check.
 set -euo pipefail
 
 agent_evals_dir="${AGENT_EVALS_DIR:-$HOME/agent-evals}"
 build_changes="$agent_evals_dir/bin/build_changes.py"
 toolkit_pattern='^claude/\.claude/(agents|skills|commands|hooks|scripts)/|^claude/\.claude/CLAUDE\.md$'
 change_file_pattern='^docs/changes/notes/20[^/]*\.md$'
+
+toolkit_drift="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/tests/toolkit_drift.py"
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -21,6 +24,9 @@ if [[ -n "$toolkit_paths" && -z "$change_files" ]]; then
     echo "File a change file with: python3 ~/agent-evals/bin/build_changes.py new \"<title>\" --by claude-code/<model id>" >&2
     exit 1
 fi
+
+# Runs before the build_changes early exit below: it skips on its own when agent-evals lacks what it needs.
+python3 "$toolkit_drift"
 
 if [[ ! -f "$build_changes" ]]; then
     echo "pre-commit: warning: $build_changes not found; the change ledger was not checked" >&2

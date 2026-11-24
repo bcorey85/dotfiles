@@ -91,6 +91,21 @@ class PreCommitHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("'--check', '--root', 'docs/changes'", result.stdout)
 
+    def test_the_drift_step_runs_and_its_failure_refuses_the_commit(self):
+        bin_dir = self.evals / "bin"
+        bin_dir.mkdir(parents=True)
+        (bin_dir / "rule_meter.py").write_text(
+            "def load_scenarios():\n    return {'R1': {'rule_text': 'kept'}}\n"
+            "def check_rule_texts(scenarios):\n    raise SystemExit('rule text not found')\n",
+            encoding="utf-8",
+        )
+        (bin_dir / "test_skill_names.py").write_text("", encoding="utf-8")
+        self.stage("claude/.claude/CLAUDE.md", "kept\n")
+        self.stage(CHANGE_FILE)
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("scenario R1", result.stderr)
+
     def test_missing_checker_warns_once_and_allows(self):
         self.stage("README.md")
         result = self.run_hook()

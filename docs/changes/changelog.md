@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1160 changes
+1162 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -21,12 +21,14 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Hillclimb queues only Claude toolkit fixes and lists project repo fixes in its report](notes/2026-11-23-hillclimb-queues-only-claude-toolkit-fixes-never.md) [skill/hillclimb] Hillclimb defines the toolkit as dotfiles claude/.claude and agent-evals. Toolkit candidates are queued as before; a fix that lands only in the project repo the session worked in goes in a Project repo list in the report and is never queued.
 * [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md) [script/lane-status] lane-status reports a lane whose idle agent still has background shells or subagents out as waiting, marks a lane dead on no agent, a missing worktree or a transcript that ends on an API error, and with --changes prints only what changed since its last run.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) [agent/mutation-tester] The mutation tester compiles the mutated file before it reads the test run; a mutant that breaks import or compile is INDETERMINATE, so a false kill no longer hides a test gap. **raises % of unloadable mutants called INDETERMINATE (of 16 runs) by 79% (56 → 100)**
 * [Lane close and phase-change lines name the herdr lane scripts](notes/2026-11-23-lane-close-and-phase-change-lines-name-the-herdr.md) [rule/orchestration] The orchestration Git section now tells the orchestrator to close a merged lane with herdr-lane-resume --close, and says herdr-phase-change takes the worker's ListAgents name and adds the report-to line itself; the dotfiles CLAUDE.md lists the two new lane scripts and where shared script defaults live.
 
 ### Fixed
 
+* [Pre-commit refuses a toolkit commit that drops a metered rule text or breaks the skill list](notes/2026-11-24-pre-commit-refuses-a-toolkit-commit-that-drops-a.md) [script/pre-commit-hook, script/toolkit-drift, script/index-export] The dotfiles pre-commit hook checks the staged claude/.claude against agent-evals' rule-meter scenarios and skill-list test, so a commit that removes a metered rule fragment or a tracked skill fails before it lands.
 * [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md) [script/pull-keep-index] A put-back that conflicts on one file while nothing was staged now gives every other file back its unstaged state, so the next commit in a shared clone no longer sweeps up other sessions' edits.
 * [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.
 * [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md) [script/code-review-start, skill/code] A file another session left dirty at phase start, which this phase's coder then rewrote, is now released into the review and named as released; before, review skipped it and the wait printed a tool fault, so the coder's change went unreviewed.

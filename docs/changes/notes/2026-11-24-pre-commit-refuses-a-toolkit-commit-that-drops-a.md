@@ -37,6 +37,8 @@ Real run, against the live agent-evals with a temp index:
 - Cutting scenario AB's fragment from the staged `skills/coder-core/SKILL.md` failed the check, naming `'A comprehension has one loop.'`.
 - A commit that touches `skills/code/SKILL.md` took 101–119 ms over 5 runs, with a median of 105 ms.
 
+The export uses one resolved destination path. The staged path list is read through `script_utils.git_output`, so a non-ASCII path is not quoted.
+
 ## Watch
 
 None.

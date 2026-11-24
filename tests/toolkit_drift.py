@@ -34,17 +34,12 @@ SKILL_PATTERN = re.compile(r"^claude/\.claude/skills/")
 DEFAULT_RULE_SOURCE = "CLAUDE.md"
 
 
-def run_git(*args):
-    """Runs git in the current folder; a git failure stops the step with git's own message."""
-    result = subprocess.run(["git", *args], capture_output=True, text=True)
-    if result.returncode != 0:
-        sys.exit(f"toolkit_drift: git {' '.join(args)} failed: {result.stderr.strip()}")
-    return result.stdout
-
-
 def staged_paths():
     """Staged paths, deletions included."""
-    return run_git("diff", "--cached", "--name-only").splitlines()
+    listed = script_utils.git_output(pathlib.Path.cwd(), "diff", "--cached", "--name-only")
+    if listed is None:
+        sys.exit("toolkit_drift: git diff --cached --name-only failed")
+    return listed.splitlines()
 
 
 def live_toolkit_roots():

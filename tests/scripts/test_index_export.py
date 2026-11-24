@@ -1,5 +1,6 @@
 """index_export: a folder of the git index written out."""
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,16 @@ class IndexExportTests(unittest.TestCase):
         root = index_export.export_index_folder(self.repo, "dir", self.out)
         self.assertEqual((root / "sub dir" / "a b.txt").read_text(), "spaced\n")
         self.assertEqual((root / "odd\nname.txt").read_text(), "newline\n")
+
+    def test_a_relative_destination_returns_the_path_the_files_landed_in(self):
+        self.stage("dir/a.txt", "staged\n")
+        root = index_export.export_index_folder(self.repo, "dir", pathlib.Path("relative-out"))
+        self.addCleanup(shutil.rmtree, pathlib.Path("relative-out"), True)
+        self.assertEqual((root / "a.txt").read_text(), "staged\n")
+
+    def test_a_git_failure_raises_called_process_error(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            index_export.export_index_folder(self.out, "dir", self.out / "dest")
 
     def test_a_folder_with_no_indexed_file_exports_nothing(self):
         root = index_export.export_index_folder(self.repo, "dir", self.out)

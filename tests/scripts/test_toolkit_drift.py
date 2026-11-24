@@ -215,6 +215,49 @@ class ToolkitDriftTests(unittest.TestCase):
         result = self.run_step()
         self.assertEqual((result.returncode, result.stderr), (0, ""))
 
+    def test_a_scripts_file_other_than_claude_md_does_not_trigger_the_step(self):
+        self.write("claude/.claude/scripts/foo.py", "x = 1\n")
+        self.git("add", "claude/.claude/scripts/foo.py")
+        result = self.run_step()
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+
+    def test_a_missing_skill_test_alone_skips_with_a_note(self):
+        self.install_stubs(self.scenario_json())
+        (self.evals / "bin" / "test_skill_names.py").unlink()
+        self.write(CLAUDE_MD, "gone\n")
+        self.git("add", CLAUDE_MD)
+        result = self.run_step()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("were not checked", result.stderr)
+
+    def test_a_missing_rule_meter_alone_skips_with_a_note(self):
+        self.install_stubs(self.scenario_json())
+        (self.evals / "bin" / "rule_meter.py").unlink()
+        self.write(CLAUDE_MD, "gone\n")
+        self.git("add", CLAUDE_MD)
+        result = self.run_step()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("were not checked", result.stderr)
+
+    def test_a_staged_non_ascii_path_still_triggers_its_scenario(self):
+        accent_path = "claude/.claude/agents/é.md"
+        accent_rule = {"ACCENT": {"rule_text": "Accent rule.", "rule_file": "agents/é.md"}}
+        self.install_stubs(self.scenario_json(accent_rule))
+        self.write(accent_path, "Accent rule.\n")
+        self.commit()
+        self.git("rm", "-q", accent_path)
+        result = self.run_step()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("scenario ACCENT", result.stderr)
+
+    def test_a_non_skill_change_passes_while_the_skill_list_is_broken(self):
+        self.install_stubs(self.scenario_json())
+        (self.evals / "bin" / "toolkit_skills.txt").write_text("alpha\nbeta\n", encoding="utf-8")
+        self.write(CLAUDE_MD, f"intro\nnew line\n{RULE_LINE}\nend\n")
+        self.git("add", CLAUDE_MD)
+        result = self.run_step()
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+
     def test_a_missing_agent_evals_dir_skips_with_a_note(self):
         self.write(CLAUDE_MD, "gone\n")
         self.git("add", CLAUDE_MD)

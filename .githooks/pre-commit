@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Refuse a commit that changes the Claude Code toolkit without a change file, a commit whose staged toolkit drifted
-# from agent-evals (tests/toolkit_drift.py, run when a path under claude/.claude/ other than scripts/ is staged: rule
-# texts of live rule-meter scenarios and the skill list), and a commit
-# while the change ledger (docs/changes) fails its check. Enable with: git config core.hooksPath .githooks
+# from agent-evals (tests/toolkit_drift.py, run when a path under claude/.claude/ other than scripts/ is staged, a
+# CLAUDE.md under scripts/ counting: rule texts of live rule-meter scenarios, and the skill list when a skill path is
+# staged), and a commit while the change ledger (docs/changes) fails its check.
+# Enable with: git config core.hooksPath .githooks
 # AGENT_EVALS_DIR overrides the agent-evals checkout (default ~/agent-evals) for the drift check and the ledger check.
 set -euo pipefail
 

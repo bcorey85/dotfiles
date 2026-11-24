@@ -134,6 +134,25 @@ class WaitLoopGateTest(unittest.TestCase):
                 finished = run_command(command, agent_type="review-loop")
                 self.assertEqual(finished.stdout, "")
 
+    def test_code_fork_background_call_denied_with_the_foreground_form(self):
+        finished = run_command("make test", agent_type="code-fork", in_background=True)
+        decision = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        reason = decision["permissionDecisionReason"]
+        self.assertIn("foreground", reason)
+        self.assertIn("600000", reason)
+        self.assertIn("ends the fork's turn", reason)
+
+    def test_code_fork_shell_background_denied(self):
+        finished = run_command("make test &", agent_type="code-fork")
+        self.assertIn("deny", finished.stdout)
+
+    def test_background_commands_pass_for_a_coder_and_the_main_session(self):
+        for command in ("make test &", "nohup make test"):
+            with self.subTest(command=command):
+                self.assertEqual(run_command(command, agent_type="coder").stdout, "")
+                self.assertEqual(run_command(command, subagent=False).stdout, "")
+
     def test_background_call_passes_for_other_agents_and_main_session(self):
         for finished in (run_command("make test", in_background=True),
                          run_command("make test", subagent=False, in_background=True)):

@@ -7,7 +7,7 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-124 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+125 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 156 further findings are left out of this page.
 
@@ -60,6 +60,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-23 [review_fix decide re-rules an adopted plan impact](../../../agent-evals/findings/2026-11-23-review-fix-decide-re-rules-an-adopted-plan-impact.md) - HOLD: review_fix decide ruled again on a plan impact the loop had already adopted, and kept or settled it wrongly; the lane routes it through decide keep and an already-applied adopt. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-23 [A text scout finds every strong post and paper in 30 days, with 45 percent of its list worth reading](../../../agent-evals/findings/2026-11-23-a-text-scout-finds-every-strong-post-and-paper-in.md) - HOLD: The keyword text scout keeps all 30 hand-picked strong arXiv papers and every first-hand post scoring 6+ in 30 days, in 10 s with no model call; precision stalls at about 45% (9/10 on the text rubric). [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-22 [The stale prose check could not have seen six of seven stale lines a fix pass left on one branch](../../../agent-evals/findings/2026-11-22-the-stale-prose-check-could-not-have-seen-six-of.md) - HOLD: A read of the seven stale docstring, comment and note lines left open at one branch's review stops: six name no changed symbol, so a symbol search cannot list them, and no single cause holds three. [watch: no watch]

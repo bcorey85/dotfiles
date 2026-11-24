@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1164 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1165 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md).
+Latest change: 2026-11-24, [Push gate credits the review verify-branch logs on its own fix commit](notes/2026-11-24-push-gate-credits-the-review-verify-branch-logs-on.md).
 
 ## Top gains
 

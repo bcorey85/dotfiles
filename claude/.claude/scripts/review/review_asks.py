@@ -8,6 +8,7 @@ import sys
 from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import approval_asks_store
 import handback
 import handback_store
 import plan_format
@@ -18,6 +19,7 @@ from ask_outcome_words import (
     HELD,
     REJECTED,
     RELAY_USAGE,
+    SESSION_MAY_REJECT_WANTED,
     USER_ONLY_KEY,
     USER_ONLY_MARK,
     user_only_numbers,
@@ -223,13 +225,27 @@ def accept_reject_lines(change):
     return hanging_indent_lines(f"   Accept = {ACCEPT_MEANS}: ", text)
 
 
-def user_only_refusal(asks, ruler, user_command, holdable=False):
-    """The refusal text when a session (`ruler` is not the user) rules on an ask only the user rules, else None.
-    `user_command` is the call that records the user's ruling. `holdable` names `held`, the word a first asks-done
-    call gives such an ask."""
+def is_wanted_change_ask(item):
+    """Whether `item` is a user-only ask for a wanted change to an approval-only file: not a revert ask, and not a
+    criteria ask."""
+    if item.get(CRITERIA_KEY):
+        return False
+    return approval_asks_store.wanted_path_of_change(item.get("change")) is not None
+
+
+def session_may_reject(item, outcome):
+    """Whether a session's `outcome` on the user-only ask `item` passes: only a `rejected` on a wanted-change ask."""
+    return outcome == REJECTED and is_wanted_change_ask(item)
+
+
+def user_only_refusal(asks, ruler, user_command, outcomes, holdable=False):
+    """The refusal text when a session (`ruler` is not the user) rules on an ask the session may not rule (anything
+    but a `rejected` on a wanted-change ask), else None. `user_command` is the call that records the user's ruling.
+    `outcomes` is one per ask. `holdable` names `held`, the word a first asks-done call gives such an ask."""
     if ruler == plan_format.USER_RULING:
         return None
     numbers = user_only_numbers(asks)
+    numbers = [number for number in numbers if not session_may_reject(asks[number - 1], outcomes[number - 1])]
     if not numbers:
         return None
     reasons = "; ".join(f"ask {number}: {user_only_reason(asks[number - 1])}" for number in numbers)
@@ -238,7 +254,16 @@ def user_only_refusal(asks, ruler, user_command, holdable=False):
     if holdable:
         held_text = (f" A session call gives `{HELD}` for each of them and an outcome for each plain ask: "
                      f"{HELD}: {HELD_MEANS}.")
-    return (f"ask(s) {listed} are user_only: only the user rules them, never the session ({reasons}).{held_text}"
+    wanted_text = ""
+    # An outcome of None marks an ask the user already ruled: a session never changes that ruling.
+    session_may_retry = [number for number in numbers
+                         if is_wanted_change_ask(asks[number - 1]) and outcomes[number - 1] is not None]
+    if session_may_retry:
+        retry_listed = ", ".join(str(number) for number in session_may_retry)
+        wanted_text = f" Note: for ask(s) {retry_listed}, {SESSION_MAY_REJECT_WANTED}."
+    user_verb = "accepts" if session_may_retry == numbers else "rules"
+    return (f"ask(s) {listed} are user_only: only the user {user_verb} them, never the session ({reasons}).{held_text}"
+            f"{wanted_text}"
             f" Hand them to the user, and when the user has ruled, record "
             f"the user's outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to "
             f"another session is recorded with `{RELAY_USAGE}` added to that call")

@@ -14,6 +14,7 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import approval_asks_store
+import ask_outcome_words
 import code_wait
 import fake_ledger
 import review_asks
@@ -396,6 +397,62 @@ class AskRulerTest(unittest.TestCase):
         self.assertIn("record the user's outcome with `--by user`: `asks-done --by user ...`", output)
         self.assertEqual(len(self.ledger_writes()), rows_before)
         self.asks_done("--by", "user", "rejected:keep it")
+
+    def test_a_session_rejection_of_a_wanted_change_is_logged_and_an_accept_or_revert_ask_is_refused(self):
+        wanted_change = f"add it {approval_asks_store.wanted_edit_target('CLAUDE.md')}"
+        wanted = {**FIRST_ASK, "user_only": True, "change": wanted_change}
+        revert = {**SECOND_ASK, "user_only": True, "change": approval_asks_store.approval_change("AGENTS.md")}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[wanted, revert]))
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--by", "session", "rejected:no", "rejected:no"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+        self.assertNotIn("ask(s) 1", output)
+        code, output = self.run_script(["asks-done", "--by", "session", "accepted", "held"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 1 are user_only", output)
+        self.assertIn("only the user accepts them", output)
+        self.assertIn(f"Note: for ask(s) 1, {ask_outcome_words.SESSION_MAY_REJECT_WANTED}.", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+        code, output = self.run_script(["asks-done", "--by", "session", "rejected:no", "held"])
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.logged_outcomes(), ["rejected"])
+        self.assertEqual(len(self.ledger_writes()), rows_before + 1)
+
+    def wanted_change_packet(self, beside=()):
+        """A packet whose last ask is a wanted user-only change, after the plain asks in `beside`."""
+        wanted_change = f"add it {approval_asks_store.wanted_edit_target('CLAUDE.md')}"
+        base = SECOND_ASK if beside else FIRST_ASK
+        wanted = {**base, "user_only": True, "change": wanted_change}
+        self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[*beside, wanted]))
+
+    def test_a_session_correction_of_a_wanted_change_to_accepted_or_modified_is_refused(self):
+        self.wanted_change_packet(beside=[FIRST_ASK])
+        self.asks_done("--by", "session", "accepted", "rejected:first")
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "accepted"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "accepted", "modified:x"])
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 2 are user_only", output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
+
+    def test_a_session_correction_never_replaces_a_user_ruling_on_a_wanted_change(self):
+        self.wanted_change_packet()
+        self.asks_done("--by", "user", "accepted")
+        rows_before = len(self.ledger_writes())
+
+        code, output = self.run_script(["asks-done", "--correct", "--by", "session", "rejected:no"])
+
+        self.assertEqual(code, 2, output)
+        self.assertIn("ask(s) 1 are user_only", output)
+        self.assertNotIn("only the user accepts", output)
+        self.assertNotIn(ask_outcome_words.SESSION_MAY_REJECT_WANTED, output)
+        self.assertEqual(len(self.ledger_writes()), rows_before)
 
     def test_the_printed_asks_mark_a_user_only_ask(self):
         user_only_ask = {**FIRST_ASK, "user_only": True}

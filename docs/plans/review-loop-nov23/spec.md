@@ -16,7 +16,7 @@ Seven fixes to the /code review loop and its ask tools, one per phase. A relayed
 <!-- Hoisted from below so the first screen answers "where are the agents?". The one section that changes after writing (/code ticks it) — source of truth for "which phase is next". Do not move it back down. -->
 
 - [x] Phase 1: Relay a ruling by session id (risk: low)
-- [ ] Phase 2: A session rejects a wanted change to a user-only file (risk: high)
+- [x] Phase 2: A session rejects a wanted change to a user-only file (risk: high)
 - [ ] Phase 3: A capped packet opens its asks; a lane is told `--by session` (risk: high)
 - [ ] Phase 4: Fix rounds and post-cap passes in the packet and stop (risk: low)
 - [ ] Phase 5: Round and role on reviewer dispatch lines (risk: low)
@@ -397,3 +397,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 
 - ./00-ticket.md, ./01-questions.md, ./02-research.md, ./03-decisions.md
 - `docs/toolkit-script-rules.md`, `claude/.claude/scripts/CLAUDE.md`
+
+## Plan Deviations
+
+- 2026-11-24, session (agent-evals-c3-owner): Phase 2 left review_loop_ruled.py:240 comment ("the approval asks only the user rules") stale; Phase 3 reword it to "the approval asks the session may not rule (anything but a rejected on a wanted-change ask)" when it edits review_fix.py asks_done_line. Changes no acceptance criterion.

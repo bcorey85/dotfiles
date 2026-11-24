@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1160 changes
+1161 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A session may reject a user-only ask for a wanted change to an approval-only file](notes/2026-11-24-a-session-may-reject-a-user-only-ask-for-a-wanted.md) [shared/review-loop, script/review-fix] The review fork's resume rule lets a `--by session` asks-done call answer `rejected` on a user-only ask whose change ends with an `(edit to <path>)` note and names no criteria; every other outcome on a user-only ask stays `held`.
 * [A relayed ruling takes a session id as well as a name](notes/2026-11-24-a-relayed-ruling-takes-a-session-id-as-well-as-a.md) [script/review-fix, shared/review-loop] `--relayed-by` accepts the session id of a live row as well as a name, so two live sessions that share a name can still relay a ruling, and the ruling rows record the row's name.
 * [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.
 * [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md) [script/code-review-start, skill/code] A file another session left dirty at phase start, which this phase's coder then rewrote, is now released into the review and named as released; before, review skipped it and the wait printed a tool fault, so the coder's change went unreviewed.

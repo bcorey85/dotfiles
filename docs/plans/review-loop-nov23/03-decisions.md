@@ -115,6 +115,17 @@ Report: `review-round1-shard-a.md`. None cuts or narrows an AC.
 - **G14 rule_instruction flag:** phase_asks computes the flag at both call sites (:175, :212). There is no default argument.
 - Sign-off: agent-evals-c3-owner, 2026-11-24, owner `session`: all as proposed. Conditions: the G10 and G11 prose edits each get rule-meter on/off runs per ~/agent-evals/CLAUDE.md, or an `unmeasured` note in their change file. The code/SKILL.md hunk stays inside the Resume paragraph, and origin/master is merged before the push (fix/code-gates-nov23 also edits code/SKILL.md).
 
+### P2-cap. Phase 2 review cap rulings
+- **Glossary:** docs/glossary.md:207 becomes "An ask that only the user can accept; a session may reject one that asks for a wanted change to an approval-only file." It follows the D5 narrowing.
+- **Weak test:** delete `test_a_session_correction_to_rejected_of_a_session_ruled_wanted_change_is_logged`. It passes with the code removed, and round 4 saw the later code.
+- **Refusal text:** fix review_asks.py:266 so it no longer says only the user rules a wanted-change ask.
+- **G10 change file:** write `unmeasured` only if no rule-meter fixture shows the behavior, and name why. The orchestrator puts it to the user before merge.
+- Sign-off: agent-evals-c3-owner, 2026-11-24, owner `session`, under the user's 2026-11-22 rule that the orchestrator rules on lane caps and asks.
+
+### P2-json. Wanted-change ask read from the packet text
+- **Choice:** Phase 2's `is_wanted_change_ask` matches the end of the packet's `change` text, which breaks the scripts/CLAUDE.md rule to read another script's output through a JSON field. Phase 4 already edits `review_loop_packet.packet_message` (G5), so Phase 4 adds a wanted-change field to the packet and switches `is_wanted_change_ask` to read it. The text match stays only until Phase 4.
+- Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
+
 ## Direction & Constraints
 
 - `review_round` and `iter` keep their meaning: packet identity, ledger iter join, relaunch `--iter`.

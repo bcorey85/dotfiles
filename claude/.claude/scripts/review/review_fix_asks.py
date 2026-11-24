@@ -729,10 +729,11 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
-def refuse_session_on_user_only(asks, decided_by, user_command, holdable=False):
+def refuse_session_on_user_only(asks, decided_by, user_command, outcomes, holdable=False):
     """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`. `user_command` is the
-    call the refusal tells the session to use for the user's ruling; `holdable` makes it name `held` too."""
-    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, holdable)
+    call the refusal tells the session to use for the user's ruling; `outcomes` (one per ask) lets a `rejected` on
+    a wanted-change ask pass; `holdable` makes it name `held` too."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, outcomes, holdable)
     if refusal:
         raise UsageError(refusal)
 
@@ -744,7 +745,7 @@ def command_correct_asks(options):
     left to apply."""
     state = load_fix_state()
     refuse_unless_correctable(state, options.packet_id)
-    ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
+    deciders = ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
@@ -755,7 +756,10 @@ def command_correct_asks(options):
     # their listing numbers.
     corrected_asks = [item if index in indexes else {} for index, item in enumerate(asks)]
     user_command = f"asks-done --correct --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command)
+    # A user's ruling is never replaced by a session: a None outcome keeps that ask refused.
+    session_outcomes = [None if decider == plan_format.USER_RULING else outcome
+                        for decider, outcome in zip(deciders, outcomes, strict=True)]
+    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command, session_outcomes)
     relayed = verified_fix_relay(options, corrected_asks)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by, relayed)
 
@@ -833,7 +837,7 @@ def read_answers(state, options, waiting):
     # asks by their numbers in the stop's order.
     kept_places = [{} if outcome == HELD else item for item, outcome in zip(asks, outcomes, strict=True)]
     user_command = f"asks-done --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(kept_places, options.decided_by, user_command, holdable=True)
+    refuse_session_on_user_only(kept_places, options.decided_by, user_command, outcomes, holdable=True)
     review_asks.refuse_conditional_changes(kept_places, outcomes, "asks-done ...")
     review_asks.refuse_unlocated_changes(kept_places, outcomes, notes, "asks-done ...")
     refuse_changed_retry(state, target, split.plain_outcomes, split.plain_notes, correctable=False)

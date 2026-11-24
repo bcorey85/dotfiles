@@ -849,7 +849,7 @@ class UserOnlyAskTest(ScriptRunCase):
         handback_store.record_phase_asks_open(SESSION, self.repo_top, [open_ask], CONTEXT, "loop-c:3")
         self.rows_before = self.outcome_rows()
 
-    def test_a_session_ruling_is_refused_and_logs_nothing(self):
+    def test_a_session_ruling_on_a_revert_ask_is_refused_and_logs_nothing(self):
         code, _, error = self.run_script("rule", "rejected:keep the edit")
 
         self.assertEqual(code, 2)
@@ -902,7 +902,7 @@ class UserOnlyAskTest(ScriptRunCase):
                                               CONTEXT, "loop-c:4")
         rows_before = self.outcome_rows()
 
-        code, _, error = self.run_script("rule", "accepted:a", "rejected:b")
+        code, _, error = self.run_script("rule", "accepted:a", "rejected:b", "rejected:c")
 
         self.assertEqual(code, 2)
         # ask 2 is the plain ask; the open asks carried from setUp's row hold the other user-only ask
@@ -1015,6 +1015,102 @@ class UserOnlyAskTest(ScriptRunCase):
 
 
 CRITERION_QUESTION = "Should the retry count change what AC2 asks for?"
+
+
+def wanted_ask(path, finding_id, line):
+    """A user-only ask for a wanted change to the approval-only file `path`."""
+    change = f"add the rule to the file {approval_asks_store.wanted_edit_target(path)}"
+    return {**user_only_ask(path, finding_id, line), "change": change}
+
+
+def revert_ask(path, finding_id, line):
+    return {**user_only_ask(path, finding_id, line), "change": approval_asks_store.approval_change(path)}
+
+
+class SessionRejectsWantedChangeTest(ScriptRunCase):
+    """A session may reject a user-only ask for a wanted change to an approval-only file; nothing else passes."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_script("rule", "accepted:a", "rejected:b")
+        self.rows_before = self.outcome_rows()
+
+    def open_one(self, open_ask):
+        handback_store.record_phase_asks_open(SESSION, self.repo_top, [open_ask], CONTEXT, "loop-d:3")
+
+    def test_a_session_rejection_of_a_wanted_change_is_logged_decided_by_the_session(self):
+        for number, path in enumerate(("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")):
+            with self.subTest(path=path):
+                self.open_one(wanted_ask(path, f"7aa295856f1a9f{number:02d}", 1))
+
+                code, _, error = self.run_script("rule", "rejected:not wanted")
+
+                self.assertEqual(code, 0, error)
+                row = self.outcome_rows()[-1]
+                self.assertEqual((row["ask_outcome"], row["ask_decided_by"]), ("rejected", "session"))
+
+    def test_a_session_accept_of_a_wanted_change_is_refused_and_logs_nothing(self):
+        for number, path in enumerate(("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")):
+            with self.subTest(path=path):
+                self.open_one(wanted_ask(path, f"7bb295856f1a9f{number:02d}", 1))
+                rows_before = self.outcome_rows()
+
+                code, _, error = self.run_script("rule", "accepted:wanted")
+
+                self.assertEqual(code, 2)
+                self.assertIn("ask(s) 1 are user_only", error)
+                self.assertEqual(self.outcome_rows(), rows_before)
+
+    def test_a_session_rejection_of_a_revert_ask_is_refused(self):
+        self.open_one(revert_ask("CLAUDE.md", "7cc295856f1a9fff", 1))
+
+        code, _, error = self.run_script("rule", "rejected:keep it")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 1 are user_only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_a_session_rejection_of_a_criteria_ask_is_refused(self):
+        criteria_ask = {**wanted_ask("CLAUDE.md", "7dd295856f1a9fff", 1), ask_outcome_words.CRITERIA_KEY: ["AC1"]}
+        self.open_one(criteria_ask)
+
+        code, _, error = self.run_script("rule", "rejected:no")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 1 are user_only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_a_mixed_batch_is_refused_and_names_only_the_revert_ask(self):
+        handback_store.record_phase_asks_open(
+            SESSION, self.repo_top,
+            [wanted_ask("CLAUDE.md", "7ee295856f1a9fff", 1), revert_ask("AGENTS.md", "7ff295856f1a9fff", 2)],
+            CONTEXT, "loop-d:4")
+
+        code, _, error = self.run_script("rule", "rejected:no", "rejected:no")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 2 are user_only", error)
+        self.assertNotIn("ask(s) 1", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_the_instruction_says_a_session_may_reject_a_wanted_change_only_when_every_user_only_ask_is_one(self):
+        wanted = [wanted_ask("CLAUDE.md", "7aa295856f1a9fff", 1)]
+        mixed = [*wanted, revert_ask("AGENTS.md", "7bb295856f1a9fff", 2)]
+
+        self.assertIn("may reject a wanted change", phase_asks.instruction_for(wanted))
+        self.assertNotIn("may reject a wanted change", phase_asks.instruction_for(mixed))
+
+
+class WantedPathOfChangeTest(unittest.TestCase):
+    def test_the_reader_inverts_wanted_edit_target(self):
+        change = f"do it {approval_asks_store.wanted_edit_target('docs dir/CLAUDE.md')}"
+
+        self.assertEqual(approval_asks_store.wanted_path_of_change(change), "docs dir/CLAUDE.md")
+
+    def test_other_text_reads_as_none(self):
+        for change in (None, "", "make the change", approval_asks_store.approval_change("CLAUDE.md"), "(edit to ``)"):
+            with self.subTest(change=change):
+                self.assertIsNone(approval_asks_store.wanted_path_of_change(change))
 
 
 class CriterionAskTest(WaitCase):

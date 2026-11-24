@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1160 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1161 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [A relayed ruling takes a session id as well as a name](notes/2026-11-24-a-relayed-ruling-takes-a-session-id-as-well-as-a.md).
+Latest change: 2026-11-24, [A session may reject a user-only ask for a wanted change to an approval-only file](notes/2026-11-24-a-session-may-reject-a-user-only-ask-for-a-wanted.md).
 
 ## Top gains
 

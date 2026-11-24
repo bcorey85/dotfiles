@@ -3,12 +3,18 @@
 A fake HOME holds the lane files; the shell's cwd is a fake worktree. The parent environment's
 CLAUDE_CODE_DISABLE_CRON is stripped so only the sourced file can set it.
 """
-import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
+import unittest.mock
+
+import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import lane_entries
 
 LANE_ENV = pathlib.Path(os.environ.get("LANE_ENV_ZSH") or
                         pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "lane-env.zsh")
@@ -25,11 +31,15 @@ class LaneEnvTest(unittest.TestCase):
         self.worktree.mkdir(parents=True)
         self.state = self.home / ".local" / "state"
 
-    def write_lane_file(self, worktree, state_dir=None):
-        lanes_dir = (state_dir or self.state) / "herdr-lanes"
-        lanes_dir.mkdir(parents=True, exist_ok=True)
-        lane = {"name": NAME, "worktree": str(worktree), "branch": "x"}
-        (lanes_dir / f"{NAME}.json").write_text(json.dumps(lane, indent=2))
+    def write_lane_file(self, worktree, xdg_state=True):
+        """Writes the lane file through the owner, so a change to its folder or format fails these tests."""
+        env = {"HOME": str(self.home)}
+        if xdg_state:
+            env["XDG_STATE_HOME"] = str(self.state)
+        with unittest.mock.patch.dict(os.environ, env):
+            if not xdg_state:
+                os.environ.pop("XDG_STATE_HOME", None)
+            lane_entries.add_entry(NAME, str(worktree), str(self.home), "x", "brief", "orchestrator")
 
     def read_cron(self, herdr_env: str | None = "1", xdg_state=True, cwd=None):
         env = {k: v for k, v in os.environ.items()
@@ -48,6 +58,24 @@ class LaneEnvTest(unittest.TestCase):
         self.write_lane_file(self.worktree)
         self.assertEqual(self.read_cron(), "1")
 
+    def test_lane_worktree_under_non_ascii_parent_disables_cron(self):
+        worktree = self.worktree.parent / "wérk" / NAME
+        worktree.mkdir(parents=True)
+        self.write_lane_file(worktree)
+        self.assertEqual(self.read_cron(cwd=worktree), "1")
+
+    def test_worktree_parent_holding_a_double_quote_disables_cron(self):
+        worktree = self.worktree.parent / 'quo"te' / NAME
+        worktree.mkdir(parents=True)
+        self.write_lane_file(worktree)
+        self.assertEqual(self.read_cron(cwd=worktree), "1")
+
+    def test_worktree_parent_holding_a_backslash_disables_cron(self):
+        worktree = self.worktree.parent / "back\\slash" / NAME
+        worktree.mkdir(parents=True)
+        self.write_lane_file(worktree)
+        self.assertEqual(self.read_cron(cwd=worktree), "1")
+
     def test_non_lane_directory_leaves_cron_alone(self):
         self.write_lane_file(self.worktree)
         other = self.worktree.parent / "other"
@@ -62,8 +90,16 @@ class LaneEnvTest(unittest.TestCase):
         self.write_lane_file(self.worktree.parent / "elsewhere" / NAME)
         self.assertEqual(self.read_cron(), "unset")
 
-    def test_state_home_falls_back_to_home_local_state(self):
+    def test_lane_file_naming_a_longer_path_leaves_cron_alone(self):
+        self.write_lane_file(pathlib.Path(str(self.worktree) + "2"))
+        self.assertEqual(self.read_cron(), "unset")
+
+    def test_herdr_env_other_than_1_leaves_cron_alone(self):
         self.write_lane_file(self.worktree)
+        self.assertEqual(self.read_cron(herdr_env="0"), "unset")
+
+    def test_state_home_falls_back_to_home_local_state(self):
+        self.write_lane_file(self.worktree, xdg_state=False)
         self.assertEqual(self.read_cron(xdg_state=False), "1")
 
 

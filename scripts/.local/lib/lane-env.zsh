@@ -11,7 +11,11 @@ _lane_env_apply() {
     local lane_json
     lane_json=$(<$lane_file) || return 0
     # The lane file is pretty-printed, so the worktree sits on a line of its own.
-    [[ $lane_json == *$'\n  "worktree": "'"$PWD"'"'* ]] || return 0
+    # This must match what lane_entries.py `_write` writes (indent 2, ensure_ascii off).
+    # JSON writes a backslash and a double quote escaped, so escape $PWD the same way before the match.
+    local json_pwd=${PWD//\\/\\\\}
+    json_pwd=${json_pwd//\"/\\\"}
+    [[ $lane_json == *$'\n  "worktree": "'"$json_pwd"'"'* ]] || return 0
     export CLAUDE_CODE_DISABLE_CRON=1
 }
 _lane_env_apply

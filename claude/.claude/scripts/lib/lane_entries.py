@@ -1,5 +1,6 @@
 """lane_entries.py: owns the lane files (`<state>/herdr-lanes/<name>.json`, one JSON file per lane) and the lane
-lock, and is the only reader and writer of both.
+lock, and is the only writer of both. `scripts/.local/lib/lane-env.zsh` also reads the `worktree` line of the written
+form at shell start.
 
 A lane is a worktree started for another Claude session. Its file is `<lanes_dir>/<name>.json` and holds the fields in
 `FIELDS`, so a lane can be resumed or closed later. Every write holds the one lock `lane_lock_path()` names. Standard
@@ -210,9 +211,12 @@ def _locked():
 
 
 def _write(lane):
+    """Write one lane file. `scripts/.local/lib/lane-env.zsh` matches the indent-2 `"worktree"` line of this form."""
     file = lane_file(lane["name"])
     validate_entry(lane, file)
-    script_utils.write_text_atomically(file, json.dumps(lane, indent=2) + "\n")
+    text = json.dumps(lane, indent=2, ensure_ascii=False) + "\n"
+    # Encode here: the writer's text mode uses the locale encoding, and the reader requires UTF-8.
+    script_utils.write_text_atomically(file, text.encode("utf-8"))
 
 
 def _existing_entry(name):

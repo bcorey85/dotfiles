@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-New `scripts/.local/lib/lane-env.zsh`, sourced by `zsh/.zshrc`. In a herdr pane (`HERDR_ENV=1`), it reads the lane file named after the folder, `${XDG_STATE_HOME:-~/.local/state}/herdr-lanes/<folder>.json`. When that file's `worktree` line names the current folder, it exports `CLAUDE_CODE_DISABLE_CRON=1`. It starts no process, so every herdr shell start pays one file read at most.
+New `scripts/.local/lib/lane-env.zsh`, sourced by `zsh/.zshrc`. In a herdr pane (`HERDR_ENV=1`), it reads the lane file named after the folder, `${XDG_STATE_HOME:-~/.local/state}/herdr-lanes/<folder>.json`. When that file's `worktree` line names the current folder, it exports `CLAUDE_CODE_DISABLE_CRON=1`. It starts no process, so every herdr shell start pays one file read at most. It escapes a backslash or double quote in the folder path the way JSON does before the match, and `lane_entries.py` now writes lane files as UTF-8 with non-ASCII characters unescaped, so a non-ASCII path matches too.
 
 ## Evidence
 

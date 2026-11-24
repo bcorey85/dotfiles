@@ -63,7 +63,8 @@ class RejectedAskIsRecordedTest(RejectionCase):
         self.assertEqual(len(self.rejected_rows(SESSION)), 2)
 
     def test_a_rerun_after_a_crash_between_the_rejected_row_and_the_ruled_row_adds_no_row(self):
-        handback_store.record_rejected_ask(SESSION, FIRST_TEXT, handback_store.ruled_rows_repo(self.repo))
+        handback_store.record_rejected_ask(
+            SESSION, FIRST_TEXT, handback_store.ruled_rows_repo(self.repo), ASKS[0]["question"])
 
         code, _, _ = self.run_script("rule", "rejected:a", "accepted:b")
 
@@ -72,7 +73,7 @@ class RejectedAskIsRecordedTest(RejectionCase):
 
     def test_a_text_withdrawn_earlier_is_recorded_again(self):
         key = handback_store.ruled_rows_repo(self.repo)
-        handback_store.record_rejected_ask(SESSION, FIRST_TEXT, key)
+        handback_store.record_rejected_ask(SESSION, FIRST_TEXT, key, "q")
         handback_store.record_rejection_withdrawn(SESSION, FIRST_TEXT, key)
 
         self.run_script("rule", "rejected:a", "accepted:b")

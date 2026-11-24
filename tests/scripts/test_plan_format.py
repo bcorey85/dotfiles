@@ -45,20 +45,23 @@ def parse(text):
 
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
-        locations = {
-            "a line": "`app.py:13` ",
-            "a bare line": "app.py:13 ",
-            "a range": "`app.py:13-14` ",
-            "an en dash range": "`app.py:13\N{EN DASH}14` ",
-            "a list of ranges": "`backend/src/schema.ts:58-101,139-147` ",
-            "a list of lines": "`app.py:3,9` ",
-            "a tag after a range": "`app.py:3-5` [plan-drift] \N{EM DASH} ",
-            "a tag before a range": "[plan-drift] `app.py:3-5` ",
+        ask = "plan impact: needs a column"
+        lines = {
+            "a line": f"`app.py:13` {ask}",
+            "a bare line": f"app.py:13 {ask}",
+            "a range": f"`app.py:13-14` {ask}",
+            "an en dash range": f"`app.py:13\N{EN DASH}14` {ask}",
+            "a list of ranges": f"`backend/src/schema.ts:58-101,139-147` {ask}",
+            "a list of lines": f"`app.py:3,9` {ask}",
+            "a tag after a range": f"`app.py:3-5` [plan-drift] \N{EM DASH} {ask}",
+            "a tag before a range": f"[plan-drift] `app.py:3-5` {ask}",
+            "a wrapped prefix in backticks": "`PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
+            "a wrapped prefix in bold": "**PLAN-IMPACT:** app.py:3 \N{EM DASH} x",
+            "a wrapped prefix after a class tag": "[docs] `PLAN-IMPACT:` app.py:3 \N{EM DASH} x",
         }
-        for name, location in locations.items():
+        for name, line in lines.items():
             with self.subTest(name):
-                marked = plan_format.PLAN_CHANGE_MARK.match(f"{location}plan impact: needs a column")
-                self.assertIsNotNone(marked)
+                self.assertIsNotNone(plan_format.PLAN_CHANGE_MARK.match(line))
 
     def test_text_that_only_mentions_a_plan_impact_later_is_not_marked(self):
         texts = ("`app.py:13-14` the limit is wrong; see the plan impact", "the plan holds", "app.py:13-x plan impact")
@@ -69,7 +72,8 @@ class PlanChangeMarkTest(unittest.TestCase):
     def test_an_ask_tagged_plan_impact_none_is_not_marked(self):
         texts = ("PLAN-IMPACT: none. The limit check belongs in the helper.", "plan_impact: none",
                  "**PLAN-IMPACT:** none.", "`app.py:13` [bug] PLAN-IMPACT: none of substance; move the guard",
-                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.")
+                 "PLAN-IMPACT: no", "PLAN-IMPACT: no. Rename the flag.", "`PLAN-IMPACT:` none",
+                 "**PLAN-IMPACT: none**")
         for text in texts:
             with self.subTest(text):
                 self.assertIsNone(plan_format.PLAN_CHANGE_MARK.match(text))
@@ -101,6 +105,70 @@ class ReportBlockTest(unittest.TestCase):
                 self.assertIn("changes", found)
                 self.assertIn("acceptance_criteria", found)
                 self.assertFalse(plan_format.changes_acceptance_criteria(found))
+
+    def test_a_trailing_kind_clause_does_not_make_an_answer_of_none_a_criteria_change(self):
+        lines = (
+            "`PLAN-IMPACT:` app.py:3 — the cap differs — `acceptance_criteria: none` — `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none — kind: reword",
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: none\nkind: reword",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none kind: reword",
+            "PLAN-IMPACT: app.py:3 — x — `acceptance_criteria: none` `kind: reword`",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC3 holds either way)",
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none. Delegated.",
+        )
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — the cap differs — acceptance_criteria: AC2 — kind: reword"))
+        self.assertTrue(plan_format.changes_acceptance_criteria(
+            "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none beyond AC1"))
+        self.assertEqual(plan_format.criteria_ids(
+            "PLAN-IMPACT: x — acceptance_criteria: none (AC3 holds either way)", answers_only=True), frozenset())
+        self.assertEqual(plan_format.criteria_ids("acceptance_criteria: `AC2`, `AC3`"), frozenset({"AC2", "AC3"}))
+
+    def test_an_answer_of_none_followed_by_except_but_or_beyond_is_a_criteria_change(self):
+        answers = (
+            "none, but AC2 wording changes",
+            "none — except AC2 narrows",
+            "none beyond AC2",
+        )
+        wrapped = (
+            "`PLAN-IMPACT:` a.py:3 — x — `acceptance_criteria: none` but AC2 narrows",
+            "PLAN-IMPACT: a.py:3 — x — **acceptance_criteria:** **none** except AC2",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; but AC2 wording changes",
+        )
+        for line in wrapped:
+            with self.subTest(line=line):
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+        for answer in answers:
+            with self.subTest(answer=answer):
+                line = f"PLAN-IMPACT: app.py:3 — x — acceptance_criteria: {answer}"
+                self.assertTrue(plan_format.changes_acceptance_criteria(line))
+                self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset({"AC2"}))
+
+    def test_an_answer_of_none_with_a_parenthetical_naming_a_criterion_stays_none(self):
+        line = "PLAN-IMPACT: app.py:3 — x — acceptance_criteria: none (AC2 holds either way)"
+
+        self.assertFalse(plan_format.changes_acceptance_criteria(line))
+        self.assertEqual(plan_format.criteria_ids(line, answers_only=True), frozenset())
+
+    def test_below_criteria_summary_drops_the_answer_and_its_kind_clause(self):
+        shapes = (
+            "`PLAN-IMPACT:` a.py:3 — x `acceptance_criteria: none`\n`kind: reword`",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none **kind:** reword",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none (ruled in Phase 0)",
+            "PLAN-IMPACT: a.py:3 — x acceptance_criteria: none.",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none; kind: reword",
+            "PLAN-IMPACT: a.py:3 — x — acceptance_criteria: none, kind: reword",
+        )
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                summary = plan_format.below_criteria_summary(shape)
+                self.assertNotIn("kind", summary)
+                self.assertTrue(summary.endswith("— x"), summary)
 
 
 class SectionShapeTest(unittest.TestCase):

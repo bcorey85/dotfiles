@@ -33,6 +33,10 @@ Opus, the phase file as it ships, 8 runs per cell, two decision queues. Replies 
 heading carried its emoji: first queue, neutral 8/8 with the bullet and 0/8 without, competing 8/8 and 0/8; second
 queue, neutral 8/8 and 0/8. See `unmeasured` for the parts of the bullet no run graded.
 
+Final wording (the 6-space indent the file ships with), 2026-11-23, one run per cell at the supportive, neutral and
+competing levels, sonnet and opus lanes: ES01F with the bullet 9/9, without 0/9 (3/3 against 0/3 at every level);
+ES02F, the second queue, with the bullet 9/9, without 0/9 (3/3 against 0/3 at every level). MOVES on both.
+
 ## Watch
 
 None: see `unmeasured`.

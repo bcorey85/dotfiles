@@ -33,7 +33,7 @@ Use `JIRAPROJECT-TICKETNUMBER: description` if the branch has a ticket key, othe
    ~/.claude/scripts/telemetry/log-escape stage_found=pr-human gate_missed=review class=<bug|smell|duplication|test-gap|docs|other> severity=<high|medium|low> guard=<...> miss_reason=<...> desc="<one line>" file=<representative path>
    ```
 
-   `guard` and `miss_reason` from `~/.claude/skills/_shared/escape-ratchet.md`, picked without pausing; name it in step 7 (commit landed — guard is follow-up, not blocker).
+   Before you log the escape, read `~/.claude/skills/_shared/escape-ratchet.md` and pick `guard` and `miss_reason`, without pausing; name it in step 7 (commit landed — guard is follow-up, not blocker).
 
 7. Report commit hash, branch, push result. Never end unconfirmed.
 

@@ -48,7 +48,7 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ## External Contracts
 
-<!-- Mandatory: every touched provider/API/platform contract + its invariant + what breaks if violated, claims tagged `exercised`/`declared-only`. Wide-blast-radius internal invariants too. "None" stated explicitly. -->
+<!-- Mandatory: every touched provider/API/platform contract + its invariant + what breaks if violated, claims tagged `exercised`/`declared-only`. Accepted-by-the-tool claims may NOT rest on declared-only: upgrade the evidence or add a plan step that runs the real tool before rollout, and say which. Wide-blast-radius internal invariants too. "None" stated explicitly. -->
 
 ## Approach
 

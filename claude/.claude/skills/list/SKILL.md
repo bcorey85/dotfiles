@@ -30,7 +30,7 @@ Inside each tier, higher confidence first.
 - Number continuously, flags included, so every item has one number.
 - `Gate` is what it takes to ship: `direct` (a path or typo fix, edit plus change file), `meter` (a new or reworded rule, needs rule-meter runs first), `user` (the user decides).
 - Merge changes that must ship together into one item and name every location in it.
-- Name the file that holds the full text (report, diff) once, under the list.
+- Name the file that holds the full text (report, diff) once, on the line after the list and before the closing line.
 
 ## Closing line
 

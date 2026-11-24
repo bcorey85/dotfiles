@@ -75,6 +75,14 @@ def rejected_ask_records(session_id, repo):
     return [parse_finding(text) for text in texts]
 
 
+def rejected_ask_questions(session_id, repo):
+    """The question of each ask the session rejected in `repo`, read from the `question` field its row carries; a row
+    with no such field is left out. A comment ask's question names its file, so no path is read from the text."""
+    rows_repo = handback_store.ruled_rows_repo(repo)
+    rows = handback_store.rejected_ask_rows(session_id, rows_repo)
+    return [row["question"] for row in rows if row.get("question")]
+
+
 def names_changed_path(finding_path, changed_path, repo):
     """Whether a finding's path (a reviewer's text: repo-relative, a tail of it, or absolute under `repo`) names the
     repo-relative `changed_path`."""
@@ -199,6 +207,7 @@ class RuledFindings:
         self.no_code_rulings = []
         self.no_code_broken = []  # {"ruling", "file"} of each code file a coder changed against such a ruling
         self.rejected_asks = []  # records of the asks the session rejected earlier, which a repeat never stops on
+        self.rejected_questions = []  # the stored question field of each of them
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
         self.dropped_asks = []
@@ -419,11 +428,11 @@ class RuledFindings:
         reads no path with a space in a folder name. Nothing is filed when the list, or the asks saved for a kept held
         packet (`kept_held_wanted`), hold an ask for the same finding on the file already (a later round's pass
         edits the same file again, whatever the line), or when the session rejected the same ask (see
-        `rejected_a_wanted_ask`). Returns whether it was filed."""
+        `rejected_by_title`). Returns whether it was filed."""
         if self.repeats_a_wanted_ask(path, title):
             return False
         ask = dataclasses.replace(ask, path=path, line=line)
-        if self.rejected_a_wanted_ask(ask, title):
+        if self.rejected_by_title(ask):
             self.drop_asks([ask], REJECTED_ASK_REASON)
             return False
         self.add_ask(CODER_GATE, ask)
@@ -441,7 +450,7 @@ class RuledFindings:
         listed = self.wanted_entries + self.kept_held_wanted
         return any(entry["path"] == path and entry["title"] == title for entry in listed)
 
-    def rejected_a_wanted_ask(self, ask, title):
+    def rejected_by_title(self, ask):
         """Whether the session rejected this wanted-change ask: a rejection has the same title, whatever the line the
         finding sits on. The title is built from the question, which names the file, so the stored location is not
         compared (it is UNLOCATED for a path whose folder holds a space). The question is mostly fixed wording, so a

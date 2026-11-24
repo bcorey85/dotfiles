@@ -6625,6 +6625,10 @@ class FakeCommentRun(review_loop_comment_removal.CommentRemovalRuns):
     def __init__(self, repo):
         self.repo = str(repo)
         self.asks = []
+        self.rejected_questions = []
+        self.dropped_asks = []
+
+    drop_asks = review_loop_ruled.RuledFindings.drop_asks
 
     def add_ask(self, gate, finding):
         self.asks.append(finding)
@@ -6665,6 +6669,16 @@ class CommentRemovalUnitTest(unittest.TestCase):
         self.assertEqual(len(self.run_.asks), 1)
         self.assertEqual((self.repo / "a.py").read_text().count("# same"), 2)
 
+    def test_a_deleted_comment_whose_text_repeats_later_is_put_back_at_its_own_place_with_one_ask(self):
+        before = "a = 1\n# sep\nb = 2\nc = 3\n# sep\nd = 4\n"
+
+        put_back = self.pass_over("a.py", before, "a = 1\nb = 2\nc = 3\n# sep\nd = 4\n")
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual((self.repo / "a.py").read_text(), before)
+        self.assertEqual(len(self.run_.asks), 1)
+        self.assertEqual(self.run_.asks[0].line, 2)
+
     def test_a_file_with_no_comment_style_or_deleted_by_the_pass_is_left_alone(self):
         cases = {
             "a json file": ("a.json", '{"a": 1}\n', '{"a": 2}\n'),
@@ -6675,12 +6689,250 @@ class CommentRemovalUnitTest(unittest.TestCase):
                 self.assertEqual(self.pass_over(path, before, after), [])
         self.assertEqual(self.run_.asks, [])
 
-    def test_a_reworded_comment_is_put_back_in_place(self):
+    def test_a_comment_reworded_in_place_is_left_and_files_no_ask(self):
+        after = "x = 1\n# the limit is set by config\ny = 2\n"
+
+        put_back = self.pass_over("a.py", "x = 1\n# the limit is tuned by hand\ny = 2\n", after)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), after)
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_comment_block_shortened_by_a_rewrite_is_put_back_with_one_ask(self):
+        before = "x = 1\n# first line\n# second line\ny = 2\n"
+
+        self.pass_over("a.py", before, "x = 1\n# first line, merged\ny = 2\n")
+
+        self.assertEqual((self.repo / "a.py").read_text(),
+                         "x = 1\n# first line\n# second line\ny = 2\n")
+        self.assertEqual(len(self.run_.asks), 1)
+        change = review_loop_comment_removal.delete_block_change_text("a.py", ["# first line", "# second line"])
+        self.assertIn(f"Change: {change}", self.run_.asks[0].text)
+
+    def test_a_deleted_comment_block_is_put_back_whole_with_one_ask_quoting_every_line(self):
+        before = "x = 1\n# one\n# two\n# three\ny = 2\n"
+
+        put_back = self.pass_over("a.py", before, "x = 1\ny = 2\n")
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual((self.repo / "a.py").read_text(), before)
+        self.assertEqual(len(self.run_.asks), 1)
+        ask_text = self.run_.asks[0].text
+        for line in ("# one", "# two", "# three"):
+            self.assertIn(line, ask_text)
+        self.assertEqual(self.run_.asks[0].path, "a.py")
+
+    def test_two_comment_blocks_apart_file_one_ask_each(self):
+        before = "# a1\n# a2\nx = 1\n# b1\n# b2\ny = 2\n"
+
+        self.pass_over("a.py", before, "x = 1\ny = 2\n")
+
+        self.assertEqual(len(self.run_.asks), 2)
+        first, second = (ask.text for ask in self.run_.asks)
+        self.assertIn("# a1", first)
+        self.assertIn("# a2", first)
+        self.assertNotIn("# b1", first)
+        self.assertIn("# b1", second)
+        self.assertIn("# b2", second)
+
+    def test_a_comment_reworded_into_more_comment_lines_is_left_and_files_no_ask(self):
+        after = "x = 1\n# the limit is set\n# by config\ny = 2\n"
+
+        put_back = self.pass_over("a.py", "x = 1\n# the limit is tuned by hand\ny = 2\n", after)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_comment_swapped_for_an_unrelated_comment_in_one_stretch_counts_as_a_rewording(self):
+        after = "a = 0\nx = 2\n# TODO\ny = 2\n"
+
+        put_back = self.pass_over("a.py", "a = 0\n# retry three times before giving up\nx = 1\ny = 2\n", after)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), after)
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_comment_rewritten_into_code_is_put_back_with_one_ask(self):
         before = "x = 1\n# the limit is tuned by hand\ny = 2\n"
 
-        self.pass_over("a.py", before, "x = 1\n# the limit is set by config\ny = 2\n")
+        self.pass_over("a.py", before, "x = 1\nlimit = 5\ny = 2\n")
+
+        self.assertIn("# the limit is tuned by hand", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_an_accepted_block_ask_also_covers_a_block_that_grew_by_a_neighbour(self):
+        change = review_loop_comment_removal.delete_block_change_text("a.py", ["# one", "# two"])
+        accepted = finding_record.parse_finding(f"a.py:9 [comment] Proposed change: {change}")
+
+        put_back = self.pass_over("a.py", "x = 1\n# one\n# two\n# three\ny = 2\n", "x = 1\ny = 2\n",
+                                  findings=[accepted])
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual((self.repo / "a.py").read_text(), "x = 1\n# three\ny = 2\n")
+
+    def test_an_accepted_block_ask_suppresses_the_put_back_of_every_line_in_it(self):
+        change = review_loop_comment_removal.delete_block_change_text("a.py", ["# one", "# two"])
+        accepted = finding_record.parse_finding(f"a.py:9 [comment] Proposed change: {change}")
+
+        put_back = self.pass_over("a.py", "x = 1\n# one\n# two\ny = 2\n", "x = 1\ny = 2\n", findings=[accepted])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual((self.repo / "a.py").read_text(), "x = 1\ny = 2\n")
+        self.assertEqual(self.run_.asks, [])
+
+    def reject_as_stored(self, ask):
+        """Records `ask` as rejected through the hand-back store and reads it back, as the loop does at its start."""
+        item = {"question": review_loop_findings.ask_parts(ask.text).question, "file_line": f"{ask.path}:{ask.line}"}
+        repo = os.path.realpath(self.repo)
+        store_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(store_dir.cleanup)
+        environment = {"HANDBACK_STORE_DIR": store_dir.name, "CLAUDE_CODE_SESSION_ID": SESSION}
+        with mock.patch.dict(os.environ, environment):
+            rows_repo = handback_store.ruled_rows_repo(repo)
+            review_asks.record_rejected_asks([SESSION], rows_repo, [item], [REJECTED])
+            rejected_questions = review_loop_ruled.rejected_ask_questions(SESSION, repo)
+        self.assertEqual(len(rejected_questions), 1)
+        self.run_.rejected_questions = rejected_questions
+        self.run_.asks = []
+
+    def test_a_rejection_stored_through_the_store_is_read_back_as_its_question(self):
+        self.pass_over("a.py", "x = 1\n# note\ny = 2\n", "x = 1\ny = 2\n")
+        ask = self.run_.asks[0]
+        item = {"question": review_loop_findings.ask_parts(ask.text).question, "file_line": "a.py:2"}
+        repo = os.path.realpath(self.repo)
+        with tempfile.TemporaryDirectory() as store_dir:
+            environment = {"HANDBACK_STORE_DIR": store_dir, "CLAUDE_CODE_SESSION_ID": SESSION}
+            stored = self.rejected_questions_after_two_rejections(item, repo, environment)
+
+        self.assertEqual(stored, [review_asks.ask_question(ask)])
+
+    def rejected_questions_after_two_rejections(self, item, repo, environment):
+        """Stores `item` as rejected and a row with no question field, then reads the questions back."""
+        with mock.patch.dict(os.environ, environment):
+            rows_repo = handback_store.ruled_rows_repo(repo)
+            review_asks.record_rejected_asks([SESSION], rows_repo, [item], [REJECTED])
+            handback_store.record_rejected_ask(SESSION, "a.py:3 no question field", rows_repo, "")
+
+            return review_loop_ruled.rejected_ask_questions(SESSION, repo)
+
+    def test_a_rejected_ask_keeps_the_put_back_and_is_not_filed_again_when_its_line_moved(self):
+        self.pass_over("a.py", "x = 1\n# note\ny = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+        before = "w = 0\nv = 0\nx = 1\n# note\ny = 2\n"
+
+        put_back = self.pass_over("a.py", before, "w = 0\nv = 0\nx = 1\ny = 2\n")
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual((self.repo / "a.py").read_text(), before)
+        self.assertEqual(self.run_.asks, [])
+        self.assertEqual(len(self.run_.dropped_asks), 1)
+
+    def test_a_rejected_ask_in_a_folder_with_a_space_is_not_filed_again_when_its_line_moved(self):
+        (self.repo / "my dir").mkdir()
+        self.pass_over("my dir/a.py", "x = 1\n# note\ny = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+        before = "w = 0\nv = 0\nx = 1\n# note\ny = 2\n"
+
+        self.pass_over("my dir/a.py", before, "w = 0\nv = 0\nx = 1\ny = 2\n")
+
+        self.assertEqual((self.repo / "my dir/a.py").read_text(), before)
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_rejected_multi_line_block_ask_keeps_the_put_back_and_is_not_filed_again(self):
+        block = "# retry the fetch\n# three times\n"
+        self.pass_over("a.py", f"x = 1\n{block}y = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+        before = f"w = 0\nv = 0\nx = 1\n{block}y = 2\n"
+
+        put_back = self.pass_over("a.py", before, "w = 0\nv = 0\nx = 1\ny = 2\n")
+
+        self.assertEqual(len(put_back), 1)
+        self.assertEqual((self.repo / "a.py").read_text(), before)
+        self.assertEqual(self.run_.asks, [])
+        self.assertEqual(len(self.run_.dropped_asks), 1)
+
+    def test_a_block_removed_again_after_its_line_moved_files_no_second_ask(self):
+        self.pass_over("a.py", "x = 1\n# note\ny = 2\n", "x = 1\ny = 2\n")
+        before = "w = 0\nv = 0\nx = 1\n# note\ny = 2\n"
+
+        self.pass_over("a.py", before, "w = 0\nv = 0\nx = 1\ny = 2\n")
 
         self.assertEqual((self.repo / "a.py").read_text(), before)
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_rejected_ask_for_the_same_comment_in_another_file_does_not_drop_its_ask(self):
+        self.pass_over("a.py", "x = 1\n# TODO\ny = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+
+        self.pass_over("b.py", "x = 1\n# TODO\ny = 2\n", "x = 1\ny = 2\n")
+
+        self.assertEqual(len(self.run_.asks), 1)
+        self.assertEqual(self.run_.dropped_asks, [])
+
+    def test_an_accepted_block_ask_covers_a_run_in_the_middle_and_at_the_tail_of_a_block(self):
+        run_change = review_loop_comment_removal.delete_block_change_text("a.py", ["# one", "# two"])
+        accepted = finding_record.parse_finding(f"a.py:9 [comment] Proposed change: {run_change}")
+        cases = {
+            "middle": ("x = 1\n# top\n# one\n# two\n# end\ny = 2\n", "x = 1\n# top\n# end\ny = 2\n"),
+            "head": ("x = 1\n# one\n# two\n# end\ny = 2\n", "x = 1\n# end\ny = 2\n"),
+            "tail": ("x = 1\n# top\n# one\n# two\ny = 2\n", "x = 1\n# top\ny = 2\n"),
+        }
+        for name, (before, expected) in cases.items():
+            with self.subTest(name):
+                self.pass_over("a.py", before, "x = 1\ny = 2\n", findings=[accepted])
+                self.assertEqual((self.repo / "a.py").read_text(), expected, name)
+
+    def test_two_accepted_runs_inside_one_block_are_both_cut_out(self):
+        first = review_loop_comment_removal.delete_block_change_text("a.py", ["# one", "# two"])
+        second = review_loop_comment_removal.delete_block_change_text("a.py", ["# six", "# seven"])
+        accepted_one_line = f"{first} {second}"
+        block = [(2, "# one"), (3, "# two"), (4, "# mid"), (5, "# six"), (6, "# seven"), (7, "# end")]
+
+        kept = review_loop_comment_removal.without_accepted_runs("a.py", block, accepted_one_line)
+
+        self.assertEqual(kept, [(4, "# mid"), (7, "# end")])
+
+    def test_a_rejected_ask_for_one_comment_does_not_drop_the_ask_for_another_in_the_file(self):
+        self.pass_over("a.py", "x = 1\n# retry the fetch three times before giving up\ny = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+        before = "x = 1\n# cache keyed by user id\ny = 2\n"
+
+        self.pass_over("a.py", before, "x = 1\ny = 2\n")
+
+        self.assertEqual(len(self.run_.asks), 1)
+        self.assertEqual(self.run_.dropped_asks, [])
+
+    def test_a_rejected_ask_does_not_drop_the_ask_for_a_block_that_differs_in_case_and_punctuation(self):
+        self.pass_over("a.py", "x = 1\n# Retry the fetch.\ny = 2\n", "x = 1\ny = 2\n")
+        self.reject_as_stored(self.run_.asks[0])
+
+        self.pass_over("a.py", "x = 1\n# retry the fetch\ny = 2\n", "x = 1\ny = 2\n")
+
+        self.assertEqual(len(self.run_.asks), 1)
+        self.assertEqual(self.run_.dropped_asks, [])
+
+    def test_two_removed_blocks_that_differ_only_in_a_location_each_file_an_ask(self):
+        before = "x = 1\n# see a.py:10\ny = 2\n# see b.py:20\nz = 3\n"
+
+        self.pass_over("a.py", before, "x = 1\ny = 2\nz = 3\n")
+
+        self.assertEqual(len(self.run_.asks), 2)
+
+    def test_an_ask_covers_only_the_entries_the_put_back_restored(self):
+        unnamed = [(2, "# a")]
+        current_entries = [(1, "# a")]
+
+        restored = review_loop_comment_removal.restored_entries(unnamed, current_entries, "# a\nx = 1\n", "a.py")
+
+        self.assertEqual(restored, [])
+
+    def test_an_ask_covers_the_subset_of_entries_the_put_back_restored(self):
+        unnamed = [(2, "# a"), (3, "# b")]
+        current_entries = [(1, "# a")]
+
+        restored = review_loop_comment_removal.restored_entries(unnamed, current_entries, "# a\n# b\nx = 1\n", "a.py")
+
+        self.assertEqual(restored, [(3, "# b")])
 
     def test_trailing_comments_docstrings_and_strings_are_not_protected(self):
         cases = {

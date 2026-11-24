@@ -1,7 +1,10 @@
 """review_loop_comment_removal.py: a fix pass never removes a code comment on its own. After each coder pass, a comment
 line that is gone from a file and that no finding names is put back, and an ask carries the removal for the user. A
 finding names a comment when it cites its line, or a line in the same changed stretch or the same run of comment
-lines."""
+lines. A comment line reworded in place is no removal. A restored block files one ask, unless the session rejected
+an ask that quotes the same block of the same file (any line) or an ask for the same quoted block of the same file is
+already filed."""
+import dataclasses
 import pathlib
 import typing
 
@@ -10,12 +13,14 @@ import protected_lines
 import script_utils
 import source_text
 from finding_record import parse_finding
-from review_loop_findings import inert_change_marks
+from review_asks import ask_question
+from review_loop_findings import REJECTED_ASK_REASON, inert_change_marks
 from review_loop_held import held_path_in_repo
 from review_loop_put_back import put_back_lines
 from review_loop_ruled import CODER_GATE
 
-COMMENT_ASK_NOTE = "[comment] a fix pass removed this code comment and no finding names it; the loop put it back"
+COMMENT_ASK_NOTE = ("[comment] a fix pass removed this code comment (the lines quoted after) and no finding names it; "
+                    "the loop put it back")
 
 
 class CommentSnapshot(typing.NamedTuple):
@@ -60,18 +65,73 @@ def delete_change_text(path, text):
     return f"delete the comment line {quoted_comment(text)!r} from {path}"
 
 
-def unnamed_comments(path, removed, spans, named, accepted_text):
-    """The (number, text) entries of `removed` that no finding names: not by line, by span, or by an accepted ask."""
+def comment_block_texts(entries):
+    """The texts of the (number, text) comment `entries` of one block."""
+    return [text for _number, text in entries]
+
+
+def delete_block_change_text(path, texts):
+    """The change an ask carries for the comment block whose lines are `texts`; a one-line block reads as
+    `delete_change_text`."""
+    if len(texts) == 1:
+        return delete_change_text(path, texts[0])
+    block_text = "\n".join(texts)
+    quoted = quoted_comment(block_text)
+    return f"delete the comment block {quoted!r} from {path}"
+
+
+def unnamed_removals(path, removed, spans, named):
+    """The (number, text) entries of `removed` that no finding names: not by line and not by a span that holds one."""
     named_lines = {line for named_path, line in named if named_path == path and line}
+    return [(number, text) for number, text in removed
+            if not protected_lines.in_span_with(number, spans, named_lines)]
+
+
+def without_reworded(removed, entries, current_entries, rewrites):
+    """`removed` without the entries lying in a rewritten stretch that still holds as many comment lines as it did
+    before: a comment line reworded in place is no removal."""
+    reworded_ranges = []
+    for rewrite in rewrites:
+        before_first, before_last = rewrite.before
+        after_first, after_last = rewrite.after
+        comments_before = [number for number, _text in entries if before_first <= number <= before_last]
+        comments_after = [number for number, _text in current_entries if after_first <= number <= after_last]
+        if len(comments_after) >= len(comments_before):
+            reworded_ranges.append(rewrite.before)
+    return [(number, text) for number, text in removed
+            if not any(first <= number <= last for first, last in reworded_ranges)]
+
+
+def without_accepted_blocks(path, unnamed, accepted_text):
+    """`unnamed` without the blocks an accepted ask already deletes, matched by the block's change text wherever the
+    line has moved."""
     accepted_one_line = script_utils.one_line(accepted_text, None)
-    unnamed = []
-    for number, text in removed:
-        if protected_lines.in_span_with(number, spans, named_lines):
-            continue
-        if delete_change_text(path, text) in accepted_one_line:
-            continue
-        unnamed.append((number, text))
-    return unnamed
+    kept = []
+    for block in protected_lines.consecutive_entry_runs(unnamed):
+        kept += without_accepted_runs(path, block, accepted_one_line)
+    return kept
+
+
+def without_accepted_runs(path, block, accepted_one_line):
+    """The entries of `block` left after each contiguous run an accepted ask deletes is cut out, longest run first. A
+    block that grew since the ask still loses the run the ask names."""
+    for length in range(len(block), 0, -1):
+        for start in range(len(block) - length + 1):
+            run = block[start:start + length]
+            if delete_block_change_text(path, comment_block_texts(run)) not in accepted_one_line:
+                continue
+            before_run = without_accepted_runs(path, block[:start], accepted_one_line)
+            after_run = without_accepted_runs(path, block[start + length:], accepted_one_line)
+            return before_run + after_run
+    return block
+
+
+def restored_entries(unnamed, current_entries, restored_text, path):
+    """The `unnamed` entries the put-back actually restored: in the restored text and not in the text before it."""
+    restored_comments = source_text.file_comment_entries(path, restored_text)
+    added = protected_lines.entries_missing(restored_comments, current_entries)
+    not_restored = protected_lines.entries_missing(unnamed, added)
+    return [entry for entry in unnamed if entry not in not_restored]
 
 
 class CommentRemovalRuns:
@@ -86,8 +146,11 @@ class CommentRemovalRuns:
 
     def undo_comment_pass(self, snapshot, findings, skip=()):
         """After a coder pass: puts back each comment line of the snapshot's files that is gone and that no finding
-        names (a line the pass rewrote counts as gone), and files one ask per line. A file the pass deleted is left
-        alone, and so is a path in `skip` (a file another session holds). Other edits to the file stay. Returns a
+        names (a line the pass rewrote counts as gone, unless the rewrite kept as many comment lines as it replaced,
+        which is left as it is), and files one ask for each block of comment lines it restored, unless the session
+        rejected an ask that quotes the same block of the same file (a rejected ask keeps the put-back and files none)
+        or an ask for the same quoted block of the same file is already filed. A file the pass deleted is left alone,
+        and so is a path in `skip` (a file another session holds). Other edits to the file stay. Returns a
         ProtectedPutBack for each file changed."""
         named = named_locations(findings, self.repo)
         accepted_text = " ".join(finding.text for finding in findings)
@@ -99,20 +162,48 @@ class CommentRemovalRuns:
             if current is None:
                 continue
             current_entries = source_text.file_comment_entries(path, current)
-            removed = protected_lines.entries_missing(entries, current_entries)
             spans = protected_lines.changed_stretches(snapshot.texts[path], current)
+            removed = protected_lines.entries_missing_in_stretches(entries, current_entries, spans)
             spans += protected_lines.consecutive_runs(entries)
-            unnamed = unnamed_comments(path, removed, spans, named, accepted_text)
+            unnamed = unnamed_removals(path, removed, spans, named)
+            rewrites = protected_lines.rewritten_stretches(snapshot.texts[path], current)
+            unnamed = without_reworded(unnamed, entries, current_entries, rewrites)
+            unnamed = without_accepted_blocks(path, unnamed, accepted_text)
             if not unnamed:
                 continue
             numbers = [number for number, _text in unnamed]
             # Only a comment line can stand in for a lost comment: a line of code the pass wrote is never replaced.
             comment_texts = {text for _number, text in current_entries}
-            put_back.append(put_back_lines(self.repo, path, snapshot.texts[path], current, numbers,
-                                           whole_stretch=False,
-                                           may_replace=lambda line, texts=comment_texts: line.strip() in texts))
-            for number, text in unnamed:
-                ask_text = (f"{path}:{number} {COMMENT_ASK_NOTE}. Line: {quoted_comment(text)!r}. "
-                            f"Change: {delete_change_text(path, text)}")
-                self.add_ask(CODER_GATE, parse_finding(ask_text))
+            entry = put_back_lines(self.repo, path, snapshot.texts[path], current, numbers,
+                                   whole_stretch=False,
+                                   may_replace=lambda line, texts=comment_texts: line.strip() in texts)
+            put_back.append(entry)
+            restored = restored_entries(unnamed, current_entries, entry.restored_text, path)
+            self.file_block_asks(path, restored)
         return put_back
+
+    def file_block_asks(self, path, restored):
+        """Files one ask for each block of the `restored` comment entries of `path`, whose change deletes the block. A
+        block whose ask the session rejected (same path and question, any line) files none: the rejection means the
+        comment stays. A block whose ask is already filed (same path and question, whatever its line) files none."""
+        for block in protected_lines.consecutive_entry_runs(restored):
+            texts = comment_block_texts(block)
+            quoted = quoted_comment("\n".join(texts))
+            change = delete_block_change_text(path, texts)
+            # The text names no line, so the ask's question is the same wherever the block sits; the location is set
+            # from `path` and the block's first line.
+            ask = parse_finding(f"{COMMENT_ASK_NOTE}. Lines of {path}: {quoted!r}. Change: {change}")
+            ask = dataclasses.replace(ask, path=path, line=block[0][0])
+            question = ask_question(ask)
+            if any(ask_question(filed) == question for filed in self.asks):
+                continue
+            if self.rejected_block(ask):
+                self.drop_asks([ask], REJECTED_ASK_REASON)
+                continue
+            self.add_ask(CODER_GATE, ask)
+
+    def rejected_block(self, ask):
+        """Whether the session rejected an ask for this exact block of this file: a stored `question` field equals
+        the ask's, wherever the block sits (the question names the file). The title is no match: it folds case and
+        punctuation, so it would also drop an ask for a block that differs in those only."""
+        return ask_question(ask) in self.rejected_questions

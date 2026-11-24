@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "Lane sessions start with the cron scheduler off so a fork drops the parent's timers"
-description: "herdr-dev starts every forked or resumed lane session with CLAUDE_CODE_DISABLE_CRON=1, so a lane no longer restores and fires the orchestrator's cron jobs."
+description: "herdr-dev starts every forked or resumed lane session with CLAUDE_CODE_DISABLE_CRON=1, so a lane no longer fires the orchestrator's cron jobs, until herdr itself restores the pane after a restart."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T04:26:18-06:00"}
 seq: 1
 kind: "fix"
@@ -26,11 +26,11 @@ judgment: Claude Code 2.1.331 keeps a session's cron jobs in its transcript as `
 
 ## Result
 
-A forked lane holds no cron job at start. Suite: 6251 tests, 0 failed.
+A forked lane holds no cron job at start. Suite: 6257 tests, 0 failed.
 
 ## Watch
 
-—
+When herdr itself restores a lane pane after a restart, it does not go through `herdr-dev`, so the variable is not set and the lane can restore the parent's cron jobs.
 
 ## Back-out
 

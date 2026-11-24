@@ -3,11 +3,13 @@ import io
 import json
 import pathlib
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -17,6 +19,8 @@ import accepted_failures
 import full_check
 import full_check_gate
 import handback
+import review_loop_coder
+import review_loop_pass_names
 import review_loop_scoped_tests
 
 BUILD_TIME_COMMAND = "pytest && npm test"
@@ -493,6 +497,107 @@ class AcceptedFailuresCliTest(unittest.TestCase):
 
         self.assertEqual(2, code)
         self.assertIn("cannot find the git dir", err)
+
+
+LONG_LINE = "value = '" + "x" * 120 + "'\n"
+RUFF_CONFIG = "line-length = 120\n[lint]\nselect = ['E']\n"
+
+
+class LintRepairHost(full_check_gate.FullCheckSteps):
+    """A LoopRun stand-in: the lint repair pass shortens the long line, as a coder would, unless `changes` is False."""
+
+    def __init__(self, repo, changes=True):
+        self.init_full_check_state()
+        self.repo = str(repo)
+        self.changes = changes
+        self.files_touched = set()
+        self.repairs = []
+        self.marked = []
+        self.stops = []
+
+    def review_scope(self):
+        return ["app.py"]
+
+    def repair(self, call_name, findings, nits=(), restore_named=True):
+        self.repairs.append((call_name, findings))
+        if not self.changes:
+            return review_loop_coder.CoderResult("", [], [])
+        (pathlib.Path(self.repo) / "app.py").write_text("value = 'x'\n")
+        return review_loop_coder.CoderResult("", [], ["app.py"])
+
+    def mark_repaired(self, findings, changed, reverted, records_skip=True):
+        self.marked.append((changed, records_skip))
+
+    def format_reviewed_files(self, check_command):
+        pass
+
+    def stop(self, status, remaining):
+        self.stops.append((status, remaining))
+
+
+@unittest.skipUnless(shutil.which("ruff"), "ruff is not on PATH")
+class LintRepairTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = pathlib.Path(tmp.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        (self.repo / "ruff.toml").write_text(RUFF_CONFIG)
+        (self.repo / "app.py").write_text(LONG_LINE)
+
+    def test_a_fix_pass_that_writes_a_130_character_line_gets_the_lint_failure_back_in_the_same_pass(self):
+        host = LintRepairHost(self.repo)
+        self.assertEqual(len(LONG_LINE.rstrip("\n")), 130)
+
+        host.lint_fixed_files(["app.py"])
+
+        self.assertEqual(len(host.repairs), 1)
+        call_name, findings = host.repairs[0]
+        self.assertEqual(call_name, review_loop_pass_names.LINT_FIX_PASS)
+        self.assertIn("E501", findings[0].text)
+        self.assertEqual(host.marked, [(["app.py"], False)])
+
+    def test_a_clean_fix_pass_runs_no_lint_repair(self):
+        (self.repo / "app.py").write_text("value = 'x'\n")
+        host = LintRepairHost(self.repo)
+
+        host.lint_fixed_files(["app.py"])
+
+        self.assertEqual(host.repairs, [])
+
+    def test_the_lint_pass_repair_records_a_skip_when_it_changes_nothing(self):
+        host = LintRepairHost(self.repo, changes=False)
+
+        host.lint_pass("check")
+
+        self.assertEqual(host.marked, [([], True)])
+
+    def test_the_after_fix_pass_repair_records_no_skip_when_it_changes_nothing(self):
+        host = LintRepairHost(self.repo, changes=False)
+
+        host.lint_fixed_files(["app.py"])
+
+        self.assertEqual(host.marked, [([], False)])
+
+    def test_the_changed_files_reach_the_linter_sorted(self):
+        host = LintRepairHost(self.repo)
+
+        with mock.patch.object(full_check_gate.format_files, "lint_problems", return_value=[]) as linted:
+            host.lint_fixed_files(["b.py", "a.py"])
+
+        linted.assert_called_once_with(str(self.repo), ["a.py", "b.py"])
+
+    def test_the_gate_repair_records_a_skip_when_it_changes_nothing(self):
+        host = LintRepairHost(self.repo, changes=False)
+        host.lint_pass = lambda check_command: True
+        host.run_check = lambda check_command: "FAIL tests/a.py"
+        host.recheck_full_check = lambda *_args: None
+        host.full_check = "failed (exit 1)"
+
+        host.full_check_pass("check")
+
+        self.assertEqual(host.repairs[0][0], review_loop_pass_names.GATE_FIX_PASS)
+        self.assertEqual(host.marked, [([], True)])
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1117 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
+1119 changes, 23 with a measured gain, 272 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-22, [Folding test-review into test-audit cuts one always-loaded skill description and a routing choice](notes/2026-11-22-folding-test-review-into-test-audit-cuts-one.md).
+Latest change: 2026-11-23, [Review loop scope guard keeps a fix to a file a finding names by suffix or dot-slash](notes/2026-11-23-review-loop-scope-guard-keeps-a-fix-to-a-file-a.md).
 
 ## Top gains
 

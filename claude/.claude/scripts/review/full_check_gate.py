@@ -78,7 +78,7 @@ def lint_finding_texts(problems):
 class FullCheckSteps:
     """The full-check state and steps of a LoopRun. The host sets repo, out, gate_env, files_touched, untested_fix,
     expected_red, and provides review_scope(), stop(status, remaining), repair(call_name, findings),
-    mark_repaired(findings, changed, reverted) and format_reviewed_files(check_command)."""
+    mark_repaired(findings, changed, reverted, records_skip=True) and format_reviewed_files(check_command)."""
 
     def init_full_check_state(self):
         self.full_check = ""
@@ -132,9 +132,7 @@ class FullCheckSteps:
         if not problems:
             return True
 
-        lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
-        _report, _diffs, lint_changed, lint_reverted = self.repair(LINT_FIX_PASS, lint_records)
-        self.mark_repaired(lint_records, lint_changed, lint_reverted)
+        self.repair_lint_problems(problems)
         self.format_reviewed_files(check_command)
         problems = format_files.lint_problems(self.repo, self.reviewed_and_touched_files())
         if not problems:
@@ -143,6 +141,22 @@ class FullCheckSteps:
         output = "\n".join(f"`{command}`:\n{text}" for command, text in problems)
         self.stop("critical-blocker", ["lint still failing after one repair:\n" + output])
         return False
+
+    def repair_lint_problems(self, problems, records_skip=True):
+        """One lint repair pass over `problems`, the (command text, output) pairs of format_files.lint_problems. With
+        `records_skip`, a repair that changes nothing records its findings as skipped; a mid-loop caller passes False
+        because the exit lint pass lints the file again."""
+        lint_records = [parse_finding(text) for text in lint_finding_texts(problems)]
+        _report, _diffs, lint_changed, lint_reverted = self.repair(LINT_FIX_PASS, lint_records)
+        self.mark_repaired(lint_records, lint_changed, lint_reverted, records_skip=records_skip)
+
+    def lint_fixed_files(self, changed):
+        """Lints the files `changed` by a fix pass, so a violation gets its repair before the next review round reads
+        the file. A violation the repair leaves is for the lint pass of a converged run; a stopped run lints nothing
+        more. A mid-loop repair that changes nothing records no skip: the exit lint pass lints the file again."""
+        problems = format_files.lint_problems(self.repo, sorted(changed))
+        if problems:
+            self.repair_lint_problems(problems, records_skip=False)
 
     def run_check(self, check_command):
         """Run the full check, keep its result, command and details for the packet. Returns the log's tail.

@@ -28,6 +28,7 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import coder_report
 import finding_record
+import full_check_gate
 import handback
 import handback_store
 import plan_format
@@ -40,6 +41,7 @@ import review_loop_comment_removal
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
+import review_loop_pass_names
 import review_loop_plan
 import review_loop_prompts
 import review_loop_ruled
@@ -6350,6 +6352,108 @@ DECISIONS_TEXT = ("# Decisions\n\n- 2026-11-11: Keep plan as written. Ruled by t
 SIGNOFF_FINDING_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n"
                           f"- `{DECISIONS_PATH}:3` [plan-drift] the ruling here is wrong; it should be reversed\n\n"
                           "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+
+
+class FixRoundWiringTest(unittest.TestCase):
+    def loop(self, tmp):
+        loop_script = load_script_module()
+        return loop_script.LoopRun(tmp, pathlib.Path(tmp), "", (), {"fixed": [], "files_touched": set()})
+
+    def test_a_review_round_fix_pass_lints_the_files_it_changed_before_the_next_round(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted, \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        linted.assert_called_once_with(["app.py"])
+
+    def test_a_fix_first_pass_lints_the_files_it_changed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted:
+                loop.fix_first(["`app.py:1` rename the value"])
+
+        linted.assert_called_once_with(["app.py"])
+
+    def test_a_fix_first_pass_that_stops_on_an_unapplied_finding_runs_no_lint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "stop_on_unapplied", return_value=True), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted:
+                loop.fix_first(["`app.py:1` rename the value"])
+
+        linted.assert_not_called()
+
+    def test_the_lint_repair_runs_after_the_prior_issues_are_built(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            loop.put_back_findings = [finding]
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+
+            calls = []
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                calls.append(call_name)
+                if call_name == review_loop_pass_names.LINT_FIX_PASS:
+                    loop.put_back_findings = []
+                return result
+
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        self.assertIn(review_loop_pass_names.LINT_FIX_PASS, calls)
+        self.assertEqual(["partial"], [entry["status"] for entry in loop.prior_issues])
+
+    def test_the_after_fix_pass_lint_repair_records_no_skip_on_a_real_loop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("", [], [])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "mark_repaired") as marked, \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.lint_fixed_files(["app.py"])
+
+        self.assertEqual(marked.call_args.kwargs, {"records_skip": False})
+
+    def test_a_lint_repair_after_a_fix_round_stays_in_late_repairs_for_the_late_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                loop.check_pass_result(call_name, result)
+                return result
+
+            loop.later_phase_files = set()
+            loop.change = mock.Mock(added={}, removal=mock.Mock(return_value=({}, 0)))
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        lint_repairs = [result for name, result in loop.late_repairs if name == review_loop_pass_names.LINT_FIX_PASS]
+        self.assertEqual(len(lint_repairs), 1)
+        self.assertEqual(lint_repairs[0].changed, ["app.py"])
 
 
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):

@@ -7,9 +7,16 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1117 changes
+1119 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
+
+## Week of 2026-11-23
+
+### Fixed
+
+* [Review loop scope guard keeps a fix to a file a finding names by suffix or dot-slash](notes/2026-11-23-review-loop-scope-guard-keeps-a-fix-to-a-file-a.md) [script/review-loop] The review loop's scope guard now keeps a fix to a file that a finding names with a leading dot-slash or by the unique end of its path, so that fix is no longer put back and lost.
+* [Review loop lints the files each fix pass changed before the next review round](notes/2026-11-23-review-loop-lints-the-files-each-fix-pass-changed.md) [script/review-loop] The review loop now runs the repo lint on the files a fix pass changed and sends any failure to its lint repair in the same pass, so a long line or other lint failure a fix wrote no longer waits a round for a reviewer to find it.
 
 ## Week of 2026-11-16
 

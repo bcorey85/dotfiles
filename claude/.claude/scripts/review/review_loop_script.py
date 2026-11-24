@@ -662,6 +662,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.fixed += applied
         self.drop_open([*applied, *reverted_findings])
         self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
+        self.lint_fixed_files(changed)
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
@@ -760,7 +761,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.fixed += kept
         self.check_fixed += len(kept)
         self.prior_issues = prior_issue_entries(findings, skips, self.put_back_findings, reverted_findings)
-        self.stop_on_unapplied(unapplied)
+        if self.stop_on_unapplied(unapplied):
+            return
+        self.lint_fixed_files(changed)
 
     def mark_repaired(self, findings, changed, reverted, records_skip=True):
         """A repair's findings go to fixed when it changed a file, else to skipped_fp. A finding on one of the

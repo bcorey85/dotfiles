@@ -25,7 +25,9 @@ the index entry of each dirty file outside the scope and puts back every entry t
 a file does not survive. `review_loop_coder.coder_call` runs it after the ruled-out guard, on a finished and on a failed
 call. `review_loop_script.repair` builds the scope: the review scope, the paths of the pass's findings, the files
 earlier passes touched, and the held, ruled-out and later-phase files. A path a finding's text holds as a whole token
-stays, and so does a file the pass created. A file the sign-off snapshot holds (a root plan-folder markdown file with a
+(a leading `./` is cut first) stays, and so does a file whose proper trailing part (`x.py` for `lib/x.py`, with a dot
+or a slash in it) a finding holds as a whole token when no other repo file ends with that part, and so does a file the
+pass created. A file the sign-off snapshot holds (a root plan-folder markdown file with a
 sign-off line, or a scope path that is a decision log with one) is guarded only on its sign-off lines, which the loop
 puts back; its other lines stay as the pass left them. `repair` takes that snapshot before `guard_pass` and exempts
 exactly those files, so a nested `docs/plans/` decision log, a non-markdown file under `docs/plans/` and a plan file
@@ -45,18 +47,19 @@ An index entry the guard replaces is not copied: the note names its blob id, whi
 `git gc` prunes it (two weeks by default). A file the loop could not copy (over the size cap or unreadable) is named in
 a note of its own. When a put-back step fails, the pre-pass backup stays and the note names its folder for dirty files,
 the commit for clean files, or the index entries as they were. A check that runs in a subfolder (`cd frontend && npm
-test`) prints paths relative to that folder, which a finding text then holds without the folder; the guard matches them
-as printed, so such a fix can be put back. The loop does not know which step of a check failed, so it cannot resolve the
-printed paths.
+test`) prints paths relative to that folder, which a finding text then holds without the folder; the guard keeps a file
+such as `frontend/src/app.ts` when a finding prints `src/app.ts` and no other repo file ends with it. When two repo
+files end with the printed path, the guard cannot tell which one the finding means, and the fix is put back.
 `script_utils.index_entries` reads the index entries of many paths with one `git ls-files` call, and `index_entry` is a
-call to it, so a pass costs two git calls for its dirty files, not two per file. The files put back before a restore
-step fails are noted anyway. A guard failure after any coder call is raised as a `CoderCallError`: after a failed call
-it keeps the coder's own message, after a finished call it names the undo failure, and the blocker says the pass
-finished but the loop could not undo all of it. So `repair` stops the
+call to it, so a pass costs two git calls for its dirty files, not two per file. A pass runs one more
+`git ls-files --cached --others --exclude-standard`, once, only when a dirty path reaches the trailing-part rule, and
+keeps the listing for the other paths. The files put back before a restore step fails are noted anyway. A guard failure after any coder call
+is raised as a `CoderCallError`: after a failed call it keeps the coder's own message, after a finished call it names
+the undo failure, and the blocker says the pass finished but the loop could not undo all of it. So `repair` stops the
 loop with a packet blocker. `guard_pass` also fails closed before the pass: `git status` is strict, `index_entries`
-raises, and `head_commit_or_unborn` tells an unreadable HEAD from an unborn one. Then `repair` keeps the findings open
-and stops with a `CoderFailedError` blocker, and no coder call runs. The blocker text for all three cases comes from
-`review_loop_partial_fix.coder_failure_blocker`.
+raises, and `head_commit_or_unborn` tells an unreadable
+HEAD from an unborn one. Then `repair` keeps the findings open and stops with a `CoderFailedError` blocker, and no coder
+call runs. The blocker text for all three cases comes from `review_loop_partial_fix.coder_failure_blocker`.
 
 `review_loop_signoffs.snapshot_signoffs` keys every scope path relative to the repo (`held_path_in_repo`), so an
 absolute decision-log path in the scope gives one snapshot key and one diff for the file, not two

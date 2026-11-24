@@ -357,7 +357,7 @@ def names_absent_file(repo, tree_paths, finding):
         return False
     if finding.bare:
         return False
-    return not any(known == path or known.endswith("/" + path) for known in tree_paths)
+    return not any(script_utils.path_has_tail(known, path) for known in tree_paths)
 
 
 def plan_change_items(items):

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1165 changes
+1166 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -32,6 +32,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [code run script names and script call arguments get one owner](notes/2026-11-24-code-run-script-names-and-script-call-arguments.md) [script/coder-gate, script/code-wait, script/fork-children] The /code review script names and a reader for a script's call arguments move to one owner each in lib, with no behavior change.
 * [announced step passes a progress line after a background launch in the same turn](notes/2026-11-24-announced-step-passes-a-progress-line-after-a.md) [script/announced-step, script/staged-claim-gate] A subjectless progress line passes the announced-step stop check when the current turn launched background work; a crash in one stop check keeps the other checks' reasons.
 * [quality check cap counts a check piped into rg as cut](notes/2026-11-24-quality-check-cap-counts-a-check-piped-into-rg-as.md) [script/quality-check-cap] A check whose output is piped into rg is recorded as cut, so one rerun redirected to a file is allowed.
+* [pre-commit refuses a toolkit commit that strands an agent-evals meter scenario or skill list entry](notes/2026-11-23-pre-commit-refuses-a-toolkit-commit-that-strands.md) [script/pre-commit] A commit that stages agent, skill, rule or top-level prompt files now runs agent-evals' drift check on the staged text, so a deleted rule fragment or a skill missing from the skill list is caught before the commit lands instead of at the next agent-evals suite run.
 * [pull_keep_index keeps unstaged files unstaged when a put-back conflicts with nothing staged](notes/2026-11-23-pull-keep-index-keeps-unstaged-files-unstaged-when.md) [script/pull-keep-index] A put-back that conflicts on one file while nothing was staged now gives every other file back its unstaged state, so the next commit in a shared clone no longer sweeps up other sessions' edits.
 * [Full-check receipt survives a commit of plans or docs alone](notes/2026-11-23-full-check-receipt-survives-a-commit-of-plans-or.md) [script/full-check, shared/review-loop] A commit or edit that touches only notes paths (docs/ Markdown and the committed notes list) now leaves the full-check receipt valid, so the gates stop asking for a second full suite run after a plan update; a change to any other path still voids it.
 * [Held files the run's own coder rewrote are reviewed instead of flagged as a tool fault](notes/2026-11-23-held-files-the-run-s-own-coder-rewrote-are.md) [script/code-review-start, skill/code] A file another session left dirty at phase start, which this phase's coder then rewrote, is now released into the review and named as released; before, review skipped it and the wait printed a tool fault, so the coder's change went unreviewed.

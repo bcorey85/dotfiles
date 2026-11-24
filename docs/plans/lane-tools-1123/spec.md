@@ -14,7 +14,7 @@ Each lane's diff viewer starts under a systemd memory scope where the machine ha
 ## Phase Status
 
 - [x] Phase 0: Contracts — viewer-memory lib and the `--viewers` JSON shape, frozen at plan approval (risk: high)
-- [ ] Phase 1: Walking skeleton — viewer starts under the cap and restarts after an OOM kill (risk: low)
+- [x] Phase 1: Walking skeleton — viewer starts under the cap and restarts after an OOM kill (risk: low)
 - [ ] Phase 2: lane-status names oversized viewers (risk: low)
 - [ ] Phase 3: Entry-less lane close (risk: high)
 - [ ] Phase 4: Post-merge restow (risk: low)

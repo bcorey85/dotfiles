@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1160 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1161 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [the viewer memory-cap library and --viewers contract land (lane-tools-1123 Phase 0)](notes/2026-11-24-the-viewer-memory-cap-library-and-viewers-contract.md).
+Latest change: 2026-11-24, [the lane diff viewer starts under a memory cap and restarts after an OOM kill](notes/2026-11-24-the-lane-diff-viewer-starts-under-a-memory-cap-and.md).
 
 ## Top gains
 

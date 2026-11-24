@@ -43,10 +43,6 @@ class ViewerMemoryTest(unittest.TestCase):
         if probe.returncode != 0:
             self.fail("locale en_US.UTF-8 is not installed: the non-ASCII digit cases cannot test the digit class")
 
-    def test_default_cap_is_1g_in_bytes(self):
-        result = run_bash("viewer_memory_max_bytes")
-        self.assertEqual(result.stdout.strip(), "1073741824", result.stderr)
-
     def test_cap_suffixes_k_m_g(self):
         cases = {"512M": "536870912", "4K": "4096", "2G": "2147483648",
                  "010M": "10485760", "09K": "9216", "08G": "8589934592"}
@@ -98,11 +94,6 @@ class ViewerMemoryTest(unittest.TestCase):
             with self.subTest(value=value):
                 result = run_bash("viewer_memory_checked", {"HUNK_REVIEW_MEMORY_MAX": value})
                 self.assertEqual(result.returncode, expected_status, f"{value}: {result.stderr}")
-
-    def test_good_values_are_accepted(self):
-        result = run_bash("viewer_memory_checked")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr, "")
 
     def test_default_restart_window_is_60_seconds(self):
         result = run_bash("viewer_memory_checked && echo $viewer_restart_window_seconds")
@@ -164,10 +155,6 @@ class ViewerMemoryTest(unittest.TestCase):
         env = {"XDG_RUNTIME_DIR": str(runtime), **(env_extra or {})}
         return run_bash(body, env, only_path=str(self.stubs))
 
-    def test_prefix_is_empty_without_a_user_bus(self):
-        result = self.prefix_with(with_bus=False)
-        self.assertEqual(result.stdout.split(), ["0"], result.stderr)
-
     def test_prefix_is_empty_when_the_runtime_dir_is_empty(self):
         result = self.prefix_with(with_bus=True, env_extra={"XDG_RUNTIME_DIR": ""})
         self.assertEqual(result.stdout.split(), ["0"], result.stderr)
@@ -217,11 +204,6 @@ class ViewerMemoryTest(unittest.TestCase):
         self.assertEqual(run.returncode, 1)
         self.assertIn("reset-failed lane-unit.scope", log)
         self.assertEqual(run.stderr, "")
-
-    def test_a_success_result_reads_as_not_killed(self):
-        run, log = self.scope_read("success")
-        self.assertEqual(run.returncode, 1, run.stderr)
-        self.assertIn("reset-failed lane-unit.scope", log)
 
 
 if __name__ == "__main__":

@@ -157,8 +157,9 @@ def viewer_name(row):
     return row["pane"]
 
 
-def oversized_viewer_line(row, cap):
-    """The line for one viewer row, or None when its process is gone, is another program, or is within the cap."""
+def oversized_viewer(row, cap):
+    """{line, pane, pid} for one viewer row, or None when its process is gone, is another program, or is within the
+    cap. The line carries the live size; `pane` and `pid` say which viewer it is."""
     pid = row["pid"]
     if not process_group.pid_is_alive(pid):
         return None
@@ -169,20 +170,26 @@ def oversized_viewer_line(row, cap):
         return None
     size_label = system_resources.size_text(size)
     cap_label = system_resources.size_text(cap)
-    return f"viewer {viewer_name(row)}: {size_label}, over {cap_label} cap (pane {row['pane']}, pid {pid})"
+    line = f"viewer {viewer_name(row)}: {size_label}, over {cap_label} cap (pane {row['pane']}, pid {pid})"
+    return {"line": line, "pane": row["pane"], "pid": pid}
 
 
 def viewer_report():
-    """{`viewer:<pane>`: line} for each oversized viewer, or {`viewers:`: the cannot-read line}."""
+    """{`viewer:<pane>`: {line, pane, pid}} for each oversized viewer, plus {`viewers:`: the cannot-read line} when
+    the list or any viewer's process could not be read; the other viewers still report."""
     try:
         listing = read_viewers()
-        report = {}
-        for row in listing["viewers"]:
-            line = oversized_viewer_line(row, listing["cap_bytes"])
-            if line is not None:
-                report[f"{VIEWER_KEY_PREFIX}{row['pane']}"] = line
-    except (ViewerReadError, process_group.ProcessQueryError) as error:
+    except ViewerReadError as error:
         return {VIEWERS_KEY: f"viewers: cannot read ({error})"}
+    report = {}
+    for row in listing["viewers"]:
+        try:
+            viewer = oversized_viewer(row, listing["cap_bytes"])
+        except process_group.ProcessQueryError as error:
+            report[VIEWERS_KEY] = f"viewers: cannot read ({error})"
+            continue
+        if viewer is not None:
+            report[f"{VIEWER_KEY_PREFIX}{row['pane']}"] = viewer
     return report
 
 
@@ -285,19 +292,34 @@ def read_seen():
     return seen if isinstance(seen, dict) else {}
 
 
+def line_text(value):
+    """The text a report value prints: a viewer value is {line, pane, pid}, every other value is the line itself."""
+    if isinstance(value, dict):
+        return value["line"]
+    return value
+
+
+def change_identity(value):
+    """What --changes compares: a viewer is its pane and pid, so its growing size does not read as a change."""
+    if isinstance(value, dict):
+        return {"pane": value["pane"], "pid": value["pid"]}
+    return value
+
+
 def changed_lines(current, seen):
-    """The lines of `current` that differ from `seen`, plus `<name>: working` for a lane `seen` held a line for and
-    whose agent now works. A lane absent from `current` (closed) prints nothing."""
+    """The lines of `current` whose `change_identity` differs from `seen`, plus
+    `<name>: working` for a lane `seen` held a line for and whose agent now works. A lane absent from `current`
+    (closed) prints nothing."""
     lines = []
-    for key, line in current.items():
+    for key, value in current.items():
         before = seen.get(key)
-        if line == before:
+        if change_identity(value) == change_identity(before):
             continue
-        if line is None and before is not None:
+        if value is None and before is not None:
             label = key.removesuffix(":")
             lines.append(f"{label}: working")
-        elif line is not None:
-            lines.append(line)
+        elif value is not None:
+            lines.append(line_text(value))
     return lines
 
 
@@ -340,7 +362,7 @@ def main(argv):
         seen_file().parent.mkdir(parents=True, exist_ok=True)
         script_utils.write_text_atomically(seen_file(), json.dumps(report))
     else:
-        lines = [line for line in report.values() if line is not None]
+        lines = [line_text(value) for value in report.values() if value is not None]
 
     for line in lines:
         print(line)

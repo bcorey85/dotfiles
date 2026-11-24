@@ -24,7 +24,7 @@ a herdr pane and from a plain terminal alike. Each start is a fresh `systemd-run
 With no user bus or off Linux, hunk runs uncapped; a scope that fails to start stops the launcher. When the scope was
 OOM-killed (or hunk exits 137 under a cap), the terminal is reset, one line names the cap, and hunk restarts; a kill
 within `HUNK_REVIEW_RESTART_WINDOW_SECONDS` of the start waits for Enter and stops on end of input. `--viewers` prints
-the cap in bytes and one row per state dir with a `hunk.pid`. `.claude/rules/hunk.md` gains one sentence.
+the cap in bytes and one row per state dir with a `hunk.pid`; an empty `hunk.pid` (the extension is mid-write) is skipped. `.claude/rules/hunk.md` gains one sentence.
 
 ## Evidence
 

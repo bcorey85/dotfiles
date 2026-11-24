@@ -82,6 +82,7 @@ class PostMergeHookTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout)
         linked = self.bin_dir / "two"
         self.assertTrue(linked.samefile(self.repo / "scripts" / ".local" / "bin" / "two"))
+        self.assertIn("Every script in scripts/.local/bin is linked", result.stdout)
 
     def test_a_fast_forward_merge_that_adds_a_script_links_it(self):
         result = self.merge(self.repo, "--ff-only")
@@ -116,7 +117,10 @@ class PostMergeHookTest(unittest.TestCase):
         (self.bin_dir / "two").write_text("a real file in the way\n")
         result = self.merge(self.repo, "--no-ff", "-m", "merge")
         self.assertEqual(0, result.returncode, result.stdout)
-        self.assertIn("post-merge: stow -R scripts failed:", result.stdout)
+        lines = result.stdout.splitlines()
+        self.assertIn("post-merge: stow -R scripts failed:", lines)
+        stow_text = "\n".join(lines[lines.index("post-merge: stow -R scripts failed:") + 1:])
+        self.assertIn("two", stow_text)
         self.assertFalse((self.bin_dir / "two").is_symlink())
 
     def test_no_gap_runs_no_stow(self):

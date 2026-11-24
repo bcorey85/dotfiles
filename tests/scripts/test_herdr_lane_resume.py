@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, run_through_stow_symlink, write_stub
+from stubs import copy_sourced_libs, run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "herdr-lane-resume"))
@@ -89,7 +89,7 @@ class HerdrLaneResumeTest(unittest.TestCase):
         self.bin_dir.mkdir()
         self.script = self.bin_dir / "herdr-lane-resume"
         shutil.copy(HERDR_LANE_RESUME, self.script)
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         self.script.chmod(0o755)
         write_stub(self.bin_dir / "herdr", HERDR_BODY)
         write_stub(self.bin_dir / "herdr-api", HERDR_API_BODY)
@@ -547,6 +547,16 @@ class CloseTest(HerdrLaneResumeTest):
         self.assertEqual(self.recorded_events(), [self.prune_event([])])
         self.assertEqual(self.lane_names(), [])
 
+    def test_gone_worktree_is_closed_through_a_dot_dot_path(self):
+        self.add_lane()
+        self.worktree.rmdir()
+
+        result = self.run_script("--close", f"../{NAME}", cwd=self.main_checkout)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("no lane file entry", result.stderr)
+        self.assertEqual(self.lane_names(), [])
+
     def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
         finished = run_through_stow_symlink(HERDR_LANE_RESUME, self.root / "symlink-run")
 
@@ -613,6 +623,8 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
     def assert_refused_changing_nothing(self, result, message):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn(message, result.stderr)
+        message_lines = [line for line in result.stderr.splitlines() if message in line]
+        self.assertTrue(message_lines[0].startswith("herdr-lane-resume: "), message_lines[0])
         self.assertEqual(self.recorded_events(), [])
         self.assertTrue(self.worktree.is_dir())
         self.git(self.main_checkout, "rev-parse", "--verify", "fork")
@@ -845,6 +857,11 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
         result = self.run_script("--close", str(self.root / "missing" / "x"))
 
         self.assert_refused_changing_nothing(result, "no lane file entry and no folder at")
+
+    def test_a_relative_path_that_is_gone_is_named_by_its_absolute_path(self):
+        result = self.run_script("--close", "missing/x", cwd=self.root)
+
+        self.assert_refused_changing_nothing(result, f"no lane file entry and no folder at {self.root}/missing/x")
 
     def test_an_entry_whose_worktree_differs_from_the_path_falls_to_the_entryless_close(self):
         self.add_lane()

@@ -20,8 +20,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 `lane_status.py` reads `hunk-review-pane --viewers`, skips rows whose process is gone, is not `hunk`, or is at or under
 the cap, and prints `viewer <lane, folder or pane>: <size>, over <cap> cap (pane <pane>, pid <pid>)` for the rest. A viewer
-list or a viewer process that could not be read prints one `viewers: cannot read (<reason>)` line and the other lines still print. Each oversized
-viewer is one `viewer:<pane>` report key, so `--changes` prints it once, and it works with no open lanes.
+list or a viewer process that could not be read prints one `viewers: cannot read (<reason>)` line, and the other viewers'
+lines still print. Each oversized viewer is one `viewer:<pane>` report key compared by its pane and pid, so `--changes`
+prints it once while its size grows (a plain run prints the live size), and it works with no open lanes.
 `process_group` gains `resident_bytes` and `program_name`, sharing one `ps` call with `command_line`.
 
 ## Evidence

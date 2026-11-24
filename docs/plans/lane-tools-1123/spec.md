@@ -19,7 +19,7 @@ Each lane's diff viewer starts under a systemd memory scope where the machine ha
 - [x] Phase 3: Entry-less lane close (risk: high)
 - [x] Phase 4: Post-merge restow (risk: low)
 - [x] Phase 5: ls probe (risk: low)
-- [ ] Phase 6: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 6: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions
 
@@ -234,7 +234,7 @@ One row per state dir holding `hunk.pid`; `root` is the `root` file's content or
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: reopen a lane pane on this branch; `cat /proc/<pid from hunk.pid>/cgroup` names a `run-p*.scope`, and `systemctl --user show -p MemoryMax <scope>` prints `MemoryMax=1073741824`.
+- [ ] human-only: reopen a lane pane on this branch; `cat /proc/<pid from hunk.pid>/cgroup` names a `run-p*.scope`, and `systemctl --user show -p MemoryMax <scope>` prints `MemoryMax=1073741824` — needs a reopened live herdr pane and the user's systemd session.
 
 ---
 
@@ -340,7 +340,7 @@ Every refusal exits 1, prints `herdr-lane-resume: <msg>` to stderr, and changes 
 
 #### Manual Verification:
 
-- [ ] **Manual-verified**: `scripts/.local/bin/herdr-lane-resume --close no-such-lane-xyz` exits 1 with `no lane named no-such-lane-xyz` and closes nothing.
+- [x] agent-verified: `scripts/.local/bin/herdr-lane-resume --close no-such-lane-xyz` exits 1 with `no lane named no-such-lane-xyz` and closes nothing — `scripts/.local/bin/herdr-lane-resume --close no-such-lane-xyz; echo exit=$?` → `herdr-lane-resume: no lane named no-such-lane-xyz; known lanes: agent-evals-change-rebuild-outside-findings dotfiles-asks-done-scripts-claude-md ... dotfiles-toolkit-drift-precommit` then `exit=1`
 
 ---
 
@@ -433,11 +433,11 @@ N/A — `/code` runs `/close-branch`.
 
 #### Automated Verification:
 
-- [ ] **Test-verified**: full suite green — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
-- [ ] **Test-verified**: change files valid — `python3 /home/brandon/agent-evals/bin/build_changes.py --check`
-- [ ] **Agent-run**: nothing deleted — `git diff --diff-filter=D --name-only <base-sha>..<head-sha>` prints nothing.
-- [ ] **Agent-run**: propagation sweep — `rg --hidden -n 'herdr-lane-resume --close|lane-status|hunk-review-pane' claude opencode .claude` shows every mention matching the new contracts; any skipped opencode port is stated.
-- [ ] **Agent-run**: every reviewer finding fixed, shown wrong, or put to the orchestrator; the fix-diff gate passed; every acceptance criterion mapped to a test; recap and smoke-test checklist delivered.
+- [x] **Test-verified**: full suite green — `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
+- [x] **Test-verified**: change files valid — `python3 /home/brandon/agent-evals/bin/build_changes.py --check`
+- [x] **Agent-run**: nothing deleted — `git diff --diff-filter=D --name-only <base-sha>..<head-sha>` prints nothing.
+- [x] **Agent-run**: propagation sweep — `rg --hidden -n 'herdr-lane-resume --close|lane-status|hunk-review-pane' claude opencode .claude` shows every mention matching the new contracts; any skipped opencode port is stated.
+- [x] **Agent-run**: every reviewer finding fixed, shown wrong, or put to the orchestrator; the fix-diff gate passed; every acceptance criterion mapped to a test; recap and smoke-test checklist delivered.
 
 #### Manual Verification:
 
@@ -456,3 +456,4 @@ Each ticket item's Done-when test runs at its public boundary: the launcher comm
 
 - ruling: Phase 2 item 4 (Ticket #1, owner session) adopted as built: lane-status reports viewers through `viewers:`/`viewer:` keys with no `viewer*` guard instead of report["viewers"]; ruled by the orchestrating session (lane-tools-nov23), 2026-11-24.
 - ruling: Phase 3 step 6 (Ticket #1, owner session) adopted as built: the main checkout is the first `git worktree list` entry (refusing bare and non-work-tree ones) through the shared scripts/.local/lib/main-checkout.bash, which herdr-worktree also uses, instead of the parent of `--git-common-dir`; ruled by the orchestrating session (lane-tools-nov23), 2026-11-24.
+- ruling: close-pass ask on CLAUDE.md:48 (`--close <name>` line is stale) is not applied; agent-evals-c3-owner ruled 2026-11-24: no CLAUDE.md edit in this lane, the wording goes to the user with the merge.

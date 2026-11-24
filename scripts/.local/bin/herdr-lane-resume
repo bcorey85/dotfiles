@@ -313,6 +313,9 @@ close_target() {
     local arg="$1" wt entry entry_worktree entry_name worktree
 
     if [[ "$arg" == */* ]]; then
+        # A path that is gone cannot resolve: anchor a relative one so it names the same folder from any cwd.
+        # os.path.realpath also folds ".." and symlinks in the part that exists (realpath -m is missing on macOS).
+        [[ "$arg" == /* || -d "$arg" ]] || arg=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$PWD/$arg")
         wt=$(real_path "$arg")
         entry=$(find_entry --containing "$wt") || exit 1
         if [ -n "$entry" ]; then

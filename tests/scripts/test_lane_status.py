@@ -497,6 +497,53 @@ class LaneStatusTest(unittest.TestCase):
         self.assertEqual((first.returncode, again.returncode, again.stdout), (1, 0, ""), first.stderr)
         self.assertIn(f"pid {pid})", first.stdout)
 
+    def test_changes_prints_a_growing_viewer_once(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        rss_file = self.root / "rss"
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps",
+                   f'case "$*" in\n  *rss=*) cat "{rss_file}" ;;\n  *) exec {real_ps} "$@" ;;\nesac')
+        rss_file.write_text("2048\n")
+
+        first = self.run_status("--changes")
+        rss_file.write_text("4096\n")
+        grown = self.run_status("--changes")
+        plain = self.run_status()
+
+        self.assertEqual(first.returncode, 1, first.stderr)
+        self.assertIn(system_resources.size_text(2048 * 1024), first.stdout)
+        self.assertEqual((grown.returncode, grown.stdout), (0, ""), grown.stderr)
+        self.assertIn(system_resources.size_text(4096 * 1024), plain.stdout)
+
+    def test_two_viewers_under_one_root_print_one_line_each(self):
+        first_pid = self.live_hunk()
+        second_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, first_pid), self.viewer_row("w1_p2", self.root, second_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+
+        finished = self.run_status()
+
+        lines = finished.stdout.splitlines()
+        self.assertEqual(len(lines), 2, finished.stdout)
+        self.assertIn(f"pane w1_p1, pid {first_pid})", lines[0])
+        self.assertIn(f"pane w1_p2, pid {second_pid})", lines[1])
+
+    def test_a_ps_failure_on_one_viewer_keeps_the_other_viewers_lines(self):
+        bad_pid = self.live_hunk()
+        good_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, bad_pid), self.viewer_row("w1_p2", self.root, good_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps", f'case "$*" in\n  *"-p {bad_pid}") echo broken >&2; exit 2 ;;\n'
+                   f'  *) exec {real_ps} "$@" ;;\nesac')
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, r"viewers: cannot read \(.*ps.*\)\n")
+        self.assertIn(f"pane w1_p2, pid {good_pid})", finished.stdout)
+
     def test_changes_prints_only_the_viewer_whose_line_changed(self):
         first_pid = self.live_hunk()
         second_pid = self.live_hunk()

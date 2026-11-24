@@ -15,7 +15,7 @@ import time
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, write_stub
+from stubs import copy_sourced_libs, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
@@ -56,7 +56,7 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         shutil.copy(DETACH, self.bin_dir / "detach")
         self.herdr_args = self.root / "herdr-args"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$@" > {self.herdr_args}
@@ -569,7 +569,7 @@ esac""")
         real_bin.mkdir(parents=True)
         real_script = real_bin / "herdr-worktree"
         shutil.copy(HERDR_WORKTREE, real_script)
-        copy_toolkit_tools_lib(checkout / "scripts" / ".local")
+        copy_sourced_libs(checkout / "scripts" / ".local")
         # The library exists only beside the real script, so a source line that skips the links fails.
         shutil.rmtree(self.root / "lib")
         stowed_script = self.bin_dir / "herdr-worktree"

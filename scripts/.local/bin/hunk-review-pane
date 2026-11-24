@@ -70,6 +70,8 @@ print_viewers() {
             [ -f "$pid_file" ] || continue
             pid_text=
             IFS= read -r pid_text <"$pid_file" || :
+            # The extension truncates hunk.pid, then writes it: an empty file is mid-write, not a bad pid.
+            [ -n "$pid_text" ] || continue
             if ! [[ $pid_text =~ ^[0123456789]+$ ]]; then
                 echo "hunk-review-pane: $pid_file: expected a pid" >&2
                 exit 2

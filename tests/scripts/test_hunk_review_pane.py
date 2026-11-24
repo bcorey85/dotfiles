@@ -96,6 +96,8 @@ class StubbedLauncherTest(unittest.TestCase):
         write_stub(self.stub_dir / "uname", "echo Linux")
         hunk_body = POP_LINE + f'echo "$*" >> {self.hunk_log}\nexit "$(pop_line {self.hunk_exits} 0)"'
         write_stub(self.stub_dir / "hunk", hunk_body)
+        self.stty_log = self.root / "stty.log"
+        write_stub(self.stub_dir / "stty", f'echo "$*" >> {self.stty_log}')
         write_stub(self.stub_dir / "hunk-untracked-flag", "exit 0")
         write_stub(self.stub_dir / "herdr-api", "exit 0")
         self.env = {
@@ -192,6 +194,8 @@ class HunkReviewPaneCapTest(StubbedLauncherTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.hunk_runs(), 2)
         self.assertIn("1G memory cap", result.stderr)
+        self.assertIn("\x1b[?1049l", result.stdout)
+        self.assertEqual(self.stty_log.read_text().splitlines(), ["sane"])
 
     def test_oom_kill_inside_the_window_waits_for_enter(self):
         self.hunk_exits.write_text("137\n0\n")
@@ -264,6 +268,19 @@ class HunkReviewPaneViewersTest(StubbedLauncherTest):
         result = self.run_launcher("--viewers")
         self.assertEqual(result.returncode, 2)
         self.assertIn("p1/hunk.pid: expected a pid", result.stderr)
+
+    def test_an_empty_pid_file_is_skipped_as_mid_write(self):
+        self.add_viewer("p1", "")
+        self.add_viewer("p2", "42\n")
+        result = self.run_launcher("--viewers")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([row["pane"] for row in json.loads(result.stdout)["viewers"]], ["p2"])
+
+    def test_a_bad_memory_cap_exits_2_naming_the_variable_and_prints_nothing(self):
+        result = self.run_launcher("--viewers", HUNK_REVIEW_MEMORY_MAX="lots")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("HUNK_REVIEW_MEMORY_MAX", result.stderr)
+        self.assertEqual(result.stdout, "")
 
 
 if __name__ == "__main__":

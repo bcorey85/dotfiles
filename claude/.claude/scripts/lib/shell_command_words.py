@@ -1,6 +1,6 @@
 """Read the command word of a raw word list: `command_word_index`, `raw_word_names_command`, `word_names_command`,
-`unquoted_word`, `placed_raw_words`, `joined_raw_words`, `gap_before_part`, `rejoined_word`
-and `before_subshell_closer`.
+`unquoted_word`, `placed_raw_words`, `joined_raw_words`, `gap_before_part`, `rejoined_word`,
+`before_subshell_closer` and `script_call_arguments`.
 
 Owner of the raw, still-quoted words of a placed simple command (`placed_raw_words`): import it, never add a second
 copy."""
@@ -8,7 +8,12 @@ import os
 import shlex
 import sys
 
-from shell_command import closed_segment_words, command_after_wrappers, parse_raw_simple_commands
+from shell_command import (
+    closed_segment_words,
+    command_after_wrappers,
+    parse_raw_simple_commands,
+    resolved_command_words,
+)
 from shell_quoting import quoted_positions
 
 
@@ -52,6 +57,18 @@ def command_word_index(raw_words, name):
     if not raw_word_names_command(raw_words[command_index], name):
         return None
     return command_index
+
+
+def script_call_arguments(command, script_name):
+    """One list per simple command of `command` that runs the script `script_name` (a word whose basename is it): the
+    words after that word. An empty list when the script is called with no arguments."""
+    calls = []
+    for words in resolved_command_words(command):
+        for index, word in enumerate(words):
+            if word_names_command(word, script_name):
+                calls.append(words[index + 1:])
+                break
+    return calls
 
 
 def gap_before_part(step, cursor, part):

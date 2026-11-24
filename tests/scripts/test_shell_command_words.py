@@ -19,6 +19,7 @@ from shell_command_words import (
     joined_raw_words,
     placed_raw_words,
     raw_word_names_command,
+    script_call_arguments,
 )
 from shell_steps import PlacedCommand
 
@@ -112,6 +113,36 @@ class PlacedRawWordsTest(unittest.TestCase):
         words = ["docker", "run", "-e", "A= x ", "img"]
         placed = PlacedCommand(step, words, words, "/")
         self.assertEqual(placed_raw_words(placed), ["docker", "run", "-e", "'A= x '", "img"])
+
+
+class ScriptCallArgumentsTest(unittest.TestCase):
+    def test_the_words_after_the_script_are_returned(self):
+        self.assertEqual(script_call_arguments("python3 ~/.claude/scripts/code/code_wait.py review", "code_wait.py"),
+                         [["review"]])
+
+    def test_the_interpreter_word_is_skipped_and_the_script_is_the_match(self):
+        self.assertEqual(script_call_arguments("python3 /x/code_wait.py review", "code_wait.py"), [["review"]])
+
+    def test_a_script_name_in_argument_position_still_matches(self):
+        self.assertEqual(script_call_arguments("grep -n x /x/code_wait.py", "code_wait.py"), [[]])
+
+    def test_a_quoted_script_path_is_unquoted_before_matching(self):
+        self.assertEqual(script_call_arguments('python3 "/x/code_wait.py" review', "code_wait.py"), [["review"]])
+
+    def test_a_chain_gives_one_hit_for_each_script(self):
+        command = ("cd r && python3 /x/code_review_start.py code - 1 h --detach "
+                   "&& python3 /x/code_wait.py review")
+        self.assertEqual(script_call_arguments(command, "code_review_start.py"),
+                         [["code", "-", "1", "h", "--detach"]])
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
+    def test_a_call_with_and_without_arguments(self):
+        with_flag = "python3 ~/.claude/scripts/code/phase_start.py --new-run"
+        self.assertEqual(script_call_arguments(with_flag, "phase_start.py"), [["--new-run"]])
+        self.assertEqual(script_call_arguments("phase_start.py", "phase_start.py"), [[]])
+
+    def test_a_command_that_does_not_run_the_script_gives_nothing(self):
+        self.assertEqual(script_call_arguments("echo hi", "phase_start.py"), [])
 
 
 class BeforeSubshellCloserTest(unittest.TestCase):

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-735 fix notes
+736 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -19,7 +19,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/handback | 56 | 1 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
-| script/coder-gate | 29 | 6 |
+| script/coder-gate | 30 | 7 |
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 5 |
@@ -35,8 +35,8 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/git-discipline-gate | 16 | 5 |
 | script/staged-claim-gate | 15 | 3 |
 | script/code-review-start | 13 | 6 |
+| script/code-wait | 13 | 6 |
 | script/verify-log | 13 | 0 |
-| script/code-wait | 12 | 5 |
 | script/log-review-finding | 12 | 0 |
 | script/log-escape | 11 | 3 |
 | script/refactor-flow | 11 | 3 |
@@ -105,6 +105,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/commit-gate-dirty | 2 | 2 |
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
+| script/fork-children | 2 | 2 |
 | script/fork-write-scope | 2 | 0 |
 | script/git-calls | 2 | 2 |
 | script/herdr-lane-resume | 2 | 2 |
@@ -160,7 +161,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/file-lock | 1 | 0 |
 | script/finding-record | 1 | 1 |
 | script/fix-diff | 1 | 1 |
-| script/fork-children | 1 | 1 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-replay | 1 | 0 |
 | script/git-commit-calls | 1 | 1 |

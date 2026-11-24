@@ -86,6 +86,7 @@ import gate_env
 import hook_input
 import script_utils
 import shell_command
+import shell_command_words
 import test_run_output
 from ansi_text import strip_ansi
 from check_output import (
@@ -726,10 +727,7 @@ def scoped_test_failure(failures, log_path):
 def runs_script(command, script_name):
     # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
     # must be the script's own file.
-    for words in shell_command.resolved_command_words(command):
-        if any(pathlib.PurePath(word).name == script_name for word in words):
-            return True
-    return False
+    return bool(shell_command_words.script_call_arguments(command, script_name))
 
 
 def is_stale_prose_check(command):

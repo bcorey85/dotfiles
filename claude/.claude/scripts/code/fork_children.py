@@ -35,10 +35,10 @@ import loop_transcript
 import open_child_gate
 import process_group
 import script_utils
+from code_run_names import REVIEW_START_SCRIPT
 
 KIND_TASKSTOP_DENIED = "taskstop_children_denied"
 HOOK_VERB = "hook"
-REVIEW_START_SCRIPT = "code_review_start.py"
 LOOP_NONE = "none"
 LOOP_STOPPED = "stopped"
 LOOP_GONE = "gone"

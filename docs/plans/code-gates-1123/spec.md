@@ -19,8 +19,8 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 ## Phase Status
 
 - [x] Phase 1: quality-check-cap counts rg as cutting output (risk: low)
-- [ ] Phase 2: announced-step passes a subjectless progress line after a background launch in the same turn (risk: low)
-- [ ] Phase 3: /code run names and script call arguments have one owner (risk: low)
+- [x] Phase 2: announced-step passes a subjectless progress line after a background launch in the same turn (risk: low)
+- [x] Phase 3: /code run names and script call arguments have one owner (risk: low)
 - [ ] Phase 4: a /code fork that coded a phase but never reviewed it is sent back at SubagentStop and denied at SubagentHandback (risk: high)
 - [ ] Phase 5: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -30,6 +30,7 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 - ruling: Ticket #2, Phase 2: `runs_in_background` and `launches_background` live in new stdlib-only `lib/tool_call_flags.py` (not in script_utils), so the PreToolUse gates do not load script_utils; wait_loop_gate.py and inline_interpreter_hint.py now read it, so both accept the string "true" as background. By the orchestrating /code session, 2026-11-24.
 - ruling: Ticket #2, Phase 2 ask rejected: a launch whose tool_result is a hook error still counts as a launch. No session hit it (2 such calls in 300 transcripts); size rule. By the lane session, 2026-11-24.
 - ruling: Phase 2 review reached its 5-round cap; the one finding open at the cap (a stale announced_step.py docstring) was fixed, and the branch-end full suite covers the final tree. Committed without a sixth round. By the lane session, 2026-11-24.
+- ruling: Phase 3 review reached its 5-round cap with round 5 clean; the fix passes also moved the wait command into code_wait.py and code_review_start.py through code_run_names. Ask rejected: `PHASE_START_SCRIPT` and the code_run_names docstring stay, since Phase 4 reads them. By the lane session, 2026-11-24.
 
 ## Decisions
 

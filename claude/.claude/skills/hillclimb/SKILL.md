@@ -92,9 +92,9 @@ On the work machine, write only the toolkit part: no work code, paths, ticket te
 
 ## Report
 
-A log of every candidate, most tokens first by its price line, at most 7, in three lists:
+A log of every candidate, at most 7, in three lists:
 
-- `Queued` and `Skipped`: toolkit candidates. Each line: title, its row in the table above, the moment (index + quote), its price line, then the queue file written, or the reason it was skipped and the queue match.
+- `Queued` and `Skipped`: toolkit candidates, each list ordered by the `tokens` total of the price line, largest first; a line marked `unpriced` goes last. Each line: title, its row in the table above, the moment (index + quote), its price line, then the queue file written, or the reason it was skipped and the queue match. An environment finding has no moment: its price line is `unpriced: no moment`.
 - `Project repo`: fixes that land only in the project repo. Each line: title, the moment (index + quote), the file it would change. These are never queued.
 
 Findings from reading the environment cite the file and line in place of a moment.

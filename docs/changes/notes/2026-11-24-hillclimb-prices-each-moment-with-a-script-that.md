@@ -32,7 +32,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 The prose pricing line priced 27-28% to 42-45% of candidate lines on the two retro fixtures, and only 1 of 18 reports
 priced three quarters of its lines (finding 2026-11-23-hillclimb-pricing-rule-raises-priced-moments-from).
-Tests: `tests/scripts/test_moment_price.py`, `tests/scripts/test_iso_time.py`. `check` parsed 2 of 2 real fixture
+Tests: `tests/scripts/test_moment_price.py`, `tests/scripts/test_iso_time.py`. `check` parsed 2 of 2 bench fixture
 exports (18 and 17 blocks).
 
 ## Result
@@ -45,4 +45,5 @@ None until the meter result lands.
 
 ## Back-out
 
-Revert the commit; the skill falls back to listing moments without a price.
+Revert every commit of the branch together (the script, `lib/iso_time.py` and its owner line); the skill falls back
+to listing moments without a price.

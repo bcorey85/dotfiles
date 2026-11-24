@@ -19,9 +19,25 @@ ORDERS = FIXTURES / "moment_price_retro_session_orders.md"
 SESSION_LINE = "# Session 7f3a2c: a title (repo: some-repo)\n"
 SINCE = "2026-11-22T14:55:42.777Z"
 UNTIL = "2026-11-22T14:58:10.000Z"
-LIVE_ROWS = (f"ts\tmodel\tinput_tokens\tcache_creation_tokens\tcache_read_tokens\toutput_tokens\n"
-             f"{SINCE}\topus\t100\t50\t1000\t20\n"
-             f"{UNTIL}\topus\t10\t0\t2000\t5\n")
+LIVE_HEADER = "ts\tmodel\tinput_tokens\tcache_creation_tokens\tcache_read_tokens\toutput_tokens\tduration_ms\n"
+FIRST_ROW_TS = "2026-11-22T14:55:50.000Z"
+LAST_ROW_TS = "2026-11-22T14:58:00.000Z"
+LIVE_ROWS = (f"{LIVE_HEADER}"
+             f"{FIRST_ROW_TS}\topus\t100\t50\t1000\t20\t4000\n"
+             f"{LAST_ROW_TS}\topus\t10\t0\t2000\t5\t4000\n")
+# A one-block moment: the request row is stamped when the request ended, after the block's own time.
+ONE_BLOCK_SESSION = "74021271-80fa-4df9-9ce4-9e067e2847ee"
+ONE_BLOCK_SINCE = "2026-11-22T14:55:31.043Z"
+ONE_BLOCK_UNTIL = "2026-11-22T14:55:33.322Z"
+ONE_BLOCK_ROWS = f"{LIVE_HEADER}2026-11-22T14:55:33.340Z\topus\t7\t3\t900\t40\t4228\n"
+# Three requests whose blocks sit at 08.841, 11.119 and 11.531, and 15.260; rows are stamped at each request's end.
+THREE_REQUEST_SESSION = "830dde5d-1ee4-4874-8eda-2935f0fd379a"
+THREE_REQUEST_SINCE = "2026-11-08T23:51:08.841Z"
+THREE_REQUEST_UNTIL = "2026-11-08T23:51:15.260Z"
+THREE_REQUEST_ROWS = (f"{LIVE_HEADER}"
+                      "2026-11-08T23:51:09.429Z\topus\t1\t0\t100\t10\t800\n"
+                      "2026-11-08T23:51:11.721Z\topus\t2\t0\t200\t20\t2000\n"
+                      "2026-11-08T23:51:15.606Z\topus\t4\t0\t400\t40\t1500\n")
 
 
 class MomentPriceTest(unittest.TestCase):
@@ -59,19 +75,22 @@ class MomentPriceTest(unittest.TestCase):
     def test_a_range_of_opus_blocks_is_priced(self):
         done = self.run_script("price", RETRO, "1-6")
 
-        expected = "blocks 1-6 · 6 calls · 7 min · opus 16,550 fresh / 149,550 cache read / 1,380 output\n"
+        expected = ("blocks 1-6 · 6 calls · 7 min · 167,480 tokens"
+                    " · opus 16,550 fresh / 149,550 cache read / 1,380 output\n")
         self.assertEqual((0, expected), (done.returncode, done.stdout))
 
     def test_one_block_is_named_by_its_number(self):
         done = self.run_script("price", RETRO, "7")
 
-        expected = "blocks 7-7 · 1 calls · 0 min · sonnet 6,000 fresh / 40,000 cache read / 2,400 output\n"
+        expected = ("blocks 7-7 · 1 calls · 0 min · 48,400 tokens"
+                    " · sonnet 6,000 fresh / 40,000 cache read / 2,400 output\n")
         self.assertEqual(expected, done.stdout)
 
     def test_a_user_block_adds_time_but_no_call_or_tokens(self):
         done = self.run_script("price", RETRO, "0-8")
 
-        expected = ("blocks 0-8 · 8 calls · 13 min · opus 16,550 fresh / 149,550 cache read / 1,380 output"
+        expected = ("blocks 0-8 · 8 calls · 13 min · 264,670 tokens"
+                    " · opus 16,550 fresh / 149,550 cache read / 1,380 output"
                     " · sonnet 6,300 fresh / 88,400 cache read / 2,490 output\n")
         self.assertEqual(expected, done.stdout)
 
@@ -80,7 +99,7 @@ class MomentPriceTest(unittest.TestCase):
 
         done = self.run_script("price", self.export(text), "1-2")
 
-        expected = ("blocks 1-2 · 2 calls · 1 min · opus 100 fresh / 100 cache read / 100 output"
+        expected = ("blocks 1-2 · 2 calls · 1 min · 303 tokens · opus 100 fresh / 100 cache read / 100 output"
                     " · sonnet 1 fresh / 1 cache read / 1 output\n")
         self.assertEqual(expected, done.stdout)
 
@@ -89,7 +108,7 @@ class MomentPriceTest(unittest.TestCase):
 
         done = self.run_script("price", self.export(text), "1-2")
 
-        expected = ("blocks 1-2 · 2 calls · 1 min · alpha 1 fresh / 1 cache read / 1 output"
+        expected = ("blocks 1-2 · 2 calls · 1 min · 6 tokens · alpha 1 fresh / 1 cache read / 1 output"
                     " · zeta 1 fresh / 1 cache read / 1 output\n")
         self.assertEqual(expected, done.stdout)
 
@@ -179,7 +198,8 @@ class MomentPriceTest(unittest.TestCase):
 
         done = self.run_script(*self.live_args())
 
-        expected = f"{SINCE}..{UNTIL} · 2 calls · 2 min · opus 160 fresh / 3,000 cache read / 25 output\n"
+        expected = (f"{SINCE}..{UNTIL} · 2 calls · 2 min · 3,185 tokens"
+                    " · opus 160 fresh / 3,000 cache read / 25 output\n")
         self.assertEqual((0, expected), (done.returncode, done.stdout))
 
     def plant_rows(self, rows):
@@ -195,7 +215,7 @@ class MomentPriceTest(unittest.TestCase):
                                "--until", "2026-11-22T14:58:10Z")
 
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertIn("ts >= '2026-11-22T14:00:00.000Z' and ts <= '2026-11-22T14:58:10.000Z'", query_file.read_text())
+        self.assertIn("ts >= '2026-11-22T14:00:00.000Z' and ts <= '2026-11-22T15:58:10.000Z'", query_file.read_text())
 
     def test_a_since_with_sub_millisecond_digits_rounds_up_and_an_until_rounds_down(self):
         query_file = self.plant_rows(LIVE_ROWS)
@@ -204,7 +224,7 @@ class MomentPriceTest(unittest.TestCase):
                                "--until", "2026-11-22T14:58:10.9995Z")
 
         self.assertEqual(0, done.returncode, done.stderr)
-        self.assertIn("ts >= '2026-11-22T14:55:42.314Z' and ts <= '2026-11-22T14:58:10.999Z'", query_file.read_text())
+        self.assertIn("ts >= '2026-11-22T14:55:42.314Z' and ts <= '2026-11-22T15:58:10.999Z'", query_file.read_text())
 
     def test_a_since_at_whole_seconds_starts_at_the_first_millisecond_of_that_second(self):
         query_file = self.plant_rows(LIVE_ROWS)
@@ -223,16 +243,64 @@ class MomentPriceTest(unittest.TestCase):
                 self.assertIn("expected an ISO timestamp", done.stderr)
 
     def test_live_rows_of_two_models_are_split_and_ordered_by_total_tokens(self):
-        header = LIVE_ROWS.splitlines()[0]
-        rows = (f"{header}\n{SINCE}\tsonnet\t5\t5\t500\t10\n2026-11-22T14:56:00.000Z\topus\t100\t50\t1000\t20\n"
-                f"{UNTIL}\topus\t10\t0\t2000\t5\n")
+        rows = (f"{LIVE_HEADER}{FIRST_ROW_TS}\tsonnet\t5\t5\t500\t10\t4000\n"
+                f"2026-11-22T14:56:00.000Z\topus\t100\t50\t1000\t20\t4000\n"
+                f"{LAST_ROW_TS}\topus\t10\t0\t2000\t5\t4000\n")
         self.plant_rows(rows)
 
         done = self.run_script(*self.live_args())
 
-        expected = (f"{SINCE}..{UNTIL} · 3 calls · 2 min · opus 160 fresh / 3,000 cache read / 25 output"
+        expected = (f"{SINCE}..{UNTIL} · 3 calls · 2 min · 3,705 tokens"
+                    " · opus 160 fresh / 3,000 cache read / 25 output"
                     " · sonnet 10 fresh / 500 cache read / 10 output\n")
         self.assertEqual((0, expected), (done.returncode, done.stdout))
+
+    def test_a_one_block_moment_finds_the_request_row_stamped_after_until(self):
+        self.plant_rows(ONE_BLOCK_ROWS)
+
+        done = self.run_script("price", "--session", ONE_BLOCK_SESSION, "--since", ONE_BLOCK_SINCE,
+                               "--until", ONE_BLOCK_UNTIL)
+
+        expected = (f"{ONE_BLOCK_SINCE}..{ONE_BLOCK_UNTIL} · 1 calls · 0 min · 950 tokens"
+                    " · opus 10 fresh / 900 cache read / 40 output\n")
+        self.assertEqual((0, expected, ""), (done.returncode, done.stdout, done.stderr))
+
+    def test_every_request_that_overlaps_the_window_is_priced(self):
+        self.plant_rows(THREE_REQUEST_ROWS)
+
+        done = self.run_script("price", "--session", THREE_REQUEST_SESSION, "--since", THREE_REQUEST_SINCE,
+                               "--until", THREE_REQUEST_UNTIL, "--json")
+
+        price = json.loads(done.stdout)
+        self.assertEqual((3, 7, 777), (price["calls"], price["models"]["opus"]["fresh"], price["tokens"]))
+
+    def test_a_request_that_started_after_until_is_left_out(self):
+        late_row = "2026-11-08T23:51:20.000Z\topus\t1000\t0\t0\t0\t1000\n"
+        self.plant_rows(THREE_REQUEST_ROWS + late_row)
+
+        done = self.run_script("price", "--session", THREE_REQUEST_SESSION, "--since", THREE_REQUEST_SINCE,
+                               "--until", THREE_REQUEST_UNTIL, "--json")
+
+        price = json.loads(done.stdout)
+        self.assertEqual(3, price["calls"])
+
+    def test_a_window_whose_only_row_started_after_until_is_a_stop(self):
+        self.plant_rows(f"{LIVE_HEADER}2026-11-22T14:58:30.000Z\topus\t1\t0\t0\t0\t1000\n")
+
+        done = self.run_script(*self.live_args())
+
+        self.assertEqual((1, ""), (done.returncode, done.stdout))
+        self.assertIn("no otel_api_request rows", done.stderr)
+
+    def test_the_query_reads_the_duration_and_stops_one_hour_after_until(self):
+        query_file = self.plant_rows(ONE_BLOCK_ROWS)
+
+        self.run_script("price", "--session", ONE_BLOCK_SESSION, "--since", ONE_BLOCK_SINCE,
+                        "--until", ONE_BLOCK_UNTIL)
+
+        query = query_file.read_text()
+        self.assertIn("duration_ms from otel_api_request", query)
+        self.assertIn("ts <= '2026-11-22T15:55:33.322Z'", query)
 
     def test_json_on_the_live_path_carries_the_totals(self):
         self.plant_rows(LIVE_ROWS)
@@ -240,15 +308,17 @@ class MomentPriceTest(unittest.TestCase):
         done = self.run_script(*self.live_args(), "--json")
 
         price = json.loads(done.stdout)
-        self.assertEqual((2, 2, {"opus": {"fresh": 160, "cache_read": 3000, "output": 25}}),
-                         (price["calls"], price["minutes"], price["models"]))
+        self.assertEqual((2, 2, {"opus": {"fresh": 160, "cache_read": 3000, "output": 25}}, 3185),
+                         (price["calls"], price["minutes"], price["models"], price["tokens"]))
 
     def test_a_malformed_ledger_row_is_a_stop_naming_the_row(self):
         header = LIVE_ROWS.splitlines()[0]
         cases = {
-            "wrong column count": f"{header}\n{SINCE}\topus\t1\n",
-            "token not a number": f"{header}\n{SINCE}\topus\tx\t0\t0\t0\n",
-            "bad ts": f"{header}\nyesterday\topus\t1\t0\t0\t0\n",
+            "wrong column count": f"{header}\n{FIRST_ROW_TS}\topus\t1\n",
+            "token not a number": f"{header}\n{FIRST_ROW_TS}\topus\tx\t0\t0\t0\t10\n",
+            "bad ts": f"{header}\nyesterday\topus\t1\t0\t0\t0\t10\n",
+            "blank duration": f"{header}\n{FIRST_ROW_TS}\topus\t1\t0\t0\t0\t\n",
+            "duration not a number": f"{header}\n{FIRST_ROW_TS}\topus\t1\t0\t0\t0\tNULL\n",
         }
         for name, rows in cases.items():
             with self.subTest(name):
@@ -267,6 +337,8 @@ class MomentPriceTest(unittest.TestCase):
 
         self.assertEqual((1, ""), (done.returncode, done.stdout))
         self.assertIn("no otel_api_request rows", done.stderr)
+        self.assertIn("rows may not be collected yet; rerun after `ledger collect`", done.stderr)
+        self.assertIn('check with: ledger query "select', done.stderr)
 
     def test_a_missing_ledger_names_what_was_not_read_and_the_command(self):
         done = self.run_script(*self.live_args())

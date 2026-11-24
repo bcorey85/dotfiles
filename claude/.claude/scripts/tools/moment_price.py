@@ -9,6 +9,7 @@ Both sources parse into one list of Call records, and price_calls is the only fu
 does not parse, a range outside the file, a window with no rows, and a ledger that cannot be read all stop with a
 message and a non-zero exit; none prints a zero price. Exit codes: 0 done, 1 a stop, 2 a bad command line."""
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -26,7 +27,11 @@ BLOCK_FORM = "## Block <N> · <HH:MM> · <who> · <fresh> / <cache read> / <outp
 WHO_WITH_MODEL = re.compile(r".*\((.+)\)")
 SESSION_ID = re.compile(r"[0-9a-f-]+")
 RANGE = re.compile(r"(\d+)(?:-(\d+))?")
-LEDGER_COLUMNS = ["ts", "model", "input_tokens", "cache_creation_tokens", "cache_read_tokens", "output_tokens"]
+LEDGER_COLUMNS = ["ts", "model", "input_tokens", "cache_creation_tokens", "cache_read_tokens", "output_tokens",
+                  "duration_ms"]
+# A request row is stamped when the request ended and the blocks it made carry earlier times, so the query reaches
+# this far past the window end and the script keeps the rows whose request started inside the window.
+REQUEST_SLACK = datetime.timedelta(hours=1)
 SESSION_COLUMN = "session"
 
 
@@ -47,6 +52,12 @@ class Call(NamedTuple):
     cache_read: int
     output: int
     is_call: bool
+
+
+class LiveRow(NamedTuple):
+    """One ledger row: its Call, stamped at the request's end, and the second the request started."""
+    call: Call
+    start_seconds: float
 
 
 class Price(NamedTuple):
@@ -127,13 +138,15 @@ def ledger_sql(session, since, until):
         raise StopError(f"{session!r}: expected a session id of characters 0-9, a-f and -")
     # The ledger stores `ts` as UTC text with milliseconds. The start rounds up so a row before it stays out.
     since_text = iso_time.utc_millisecond_text(parse_timestamp(since), round_up=True)
-    until_text = iso_time.utc_millisecond_text(parse_timestamp(until))
+    query_end = parse_timestamp(until) + REQUEST_SLACK
+    until_text = iso_time.utc_millisecond_text(query_end)
     return (f"select {', '.join(LEDGER_COLUMNS)} from otel_api_request where {SESSION_COLUMN} = '{session}' "
             f"and ts >= '{since_text}' and ts <= '{until_text}' order by ts")
 
 
 def read_live_calls(session, since, until):
-    """The Call list of the ledger's otel_api_request rows in the window. Stops when the ledger cannot be read."""
+    """The Call list of the ledger's otel_api_request requests whose span overlaps the window. Stops when the ledger
+    cannot be read."""
     sql = ledger_sql(session, since, until)
     command = f'ledger query "{sql}"'
     not_read = f"not read: the otel_api_request rows of session {session}"
@@ -147,17 +160,20 @@ def read_live_calls(session, since, until):
 
     lines = [line for line in done.stdout.splitlines() if line.strip()]
     rows = [line.split("\t") for line in lines[1:]]
-    if not rows:
+    live_rows = [live_call(number, row, command) for number, row in enumerate(rows, start=1)]
+    until_seconds = parse_timestamp(until).timestamp()
+    calls = [live.call for live in live_rows if live.start_seconds <= until_seconds]
+    if not calls:
         raise StopError(f"no otel_api_request rows for session {session} between {since} and {until}; "
-                        f"check with: {command}")
-    return [live_call(number, row, command) for number, row in enumerate(rows, start=1)]
+                        f"rows may not be collected yet; rerun after `ledger collect`; check with: {command}")
+    return calls
 
 
 def live_call(number, row, command):
-    """One ledger row as a Call; stops when the row does not have the columns the query asked for."""
+    """One ledger row as a LiveRow; stops when the row does not have the columns the query asked for."""
     if len(row) != len(LEDGER_COLUMNS):
         raise StopError(f"ledger row {number}: {len(row)} columns; expected {','.join(LEDGER_COLUMNS)} from: {command}")
-    stamp, model, plain_input, cache_creation, cache_read, output = row
+    stamp, model, plain_input, cache_creation, cache_read, output, duration_ms = row
     try:
         tokens = [int(value) for value in (plain_input, cache_creation, cache_read, output)]
     except ValueError:
@@ -166,7 +182,12 @@ def live_call(number, row, command):
         seconds = parse_timestamp(stamp).timestamp()
     except StopError:
         raise StopError(f"ledger row {number}: bad ts {stamp!r}; expected an ISO timestamp; from: {command}") from None
-    return Call(number, seconds, model, tokens[0] + tokens[1], tokens[2], tokens[3], True)
+    try:
+        duration_seconds = int(duration_ms) / 1000
+    except ValueError:
+        raise StopError(f"ledger row {number}: duration_ms is not a whole number {row!r}; from: {command}") from None
+    call = Call(number, seconds, model, tokens[0] + tokens[1], tokens[2], tokens[3], True)
+    return LiveRow(call, seconds - duration_seconds)
 
 
 def price_calls(calls, label):
@@ -195,9 +216,14 @@ def model_order(item):
     return (-sum(totals.values()), model)
 
 
+def total_tokens(price):
+    """Every token type of every model in a Price, summed."""
+    return sum(sum(totals.values()) for totals in price.per_model.values())
+
+
 def format_line(price):
     """The output line of a Price."""
-    parts = [price.label, f"{price.calls} calls", f"{price.minutes} min"]
+    parts = [price.label, f"{price.calls} calls", f"{price.minutes} min", f"{total_tokens(price):,} tokens"]
     for model, totals in sorted(price.per_model.items(), key=model_order):
         parts.append(f"{model} {totals['fresh']:,} fresh / {totals['cache_read']:,} cache read / "
                      f"{totals['output']:,} output")
@@ -206,7 +232,7 @@ def format_line(price):
 
 def format_json(price):
     return json.dumps({"label": price.label, "calls": price.calls, "minutes": price.minutes,
-                       "models": price.per_model}, indent=2)
+                       "tokens": total_tokens(price), "models": price.per_model}, indent=2)
 
 
 def block_label(chosen):

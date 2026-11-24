@@ -16,17 +16,22 @@ Every row carries the `run_id` of one run and a `kind`:
             was no command to run; a runner summary that reports failures voids an exit 0),
             tree (the tree fingerprint after the check and its rewrites: the `tree:` line full_check prints), head (the
             commit HEAD named then; the fingerprint does not cover it), log (the check's log file as an absolute path,
-            left out of the fingerprint).
+            left out of the fingerprint), notes_base (the commit or empty tree `notes_tree` is taken against),
+            notes_tree (the same tree's fingerprint against notes_base with the log and the notes paths of
+            lib/notes_paths.py left out; null when it cannot be taken).
 
 A receipt is valid for the current tree when the latest started run has a finished row that is satisfied, none of its
-test steps has scope "targeted" (an overridden run is let through), HEAD still names the commit in its head, and
-its tree fingerprint equals the current tree's, taken with the same log left out.
+test steps has scope "targeted" (an overridden run is let through), and the current tree, fingerprinted against its
+notes_base with the same log and the notes paths left out, equals its notes_tree. That holds whatever HEAD names, so
+a commit or an edit of plans and docs alone keeps the receipt, and any other change voids it. A row with no
+notes_tree is valid only while HEAD still names the commit in its head and its tree equals the current tree's.
 A later started run with no finished row (a killed run) leaves no older receipt valid.
 """
 import datetime
 import pathlib
 import uuid
 
+import notes_paths
 import reviewed_tree
 import script_utils
 
@@ -50,6 +55,31 @@ def current_tree(repo, log=None):
         return reviewed_tree.work_tree_fingerprint(repo, log)
     except (reviewed_tree.TreeFingerprintError, OSError):
         return None
+
+
+def notes_free_tree(repo, base, log=None):
+    """The fingerprint of the work tree that holds `repo` now against `base`, with `log` and the notes paths left out,
+    or None when it cannot be taken. A bad committed notes list leaves only docs/ out, which voids more, never less."""
+    top = script_utils.repo_root(repo)
+    if top is None or not base:
+        return None
+
+    entries, _errors = notes_paths.committed_notes_list(top, timeout=reviewed_tree.GIT_TIMEOUT_SECONDS)
+    try:
+        return reviewed_tree.work_tree_fingerprint(repo, log, base=base, notes_entries=entries)
+    except (reviewed_tree.TreeFingerprintError, OSError):
+        return None
+
+
+def notes_base(repo):
+    """The base `notes_free_tree` is taken against at finish time: HEAD's commit, or the empty tree before the first
+    commit; None when it cannot be read."""
+    top = script_utils.repo_root(repo)
+    if top is None:
+        return None
+
+    found = reviewed_tree.fingerprint_base(top)
+    return found[1] if found else None
 
 
 def current_head(repo):
@@ -89,11 +119,14 @@ def write_step_row(repo, run_id, index, step, runs_tests, scope):
 
 def write_finished_row(repo, run_id, result, exit_code, timed_out, ci, satisfied, tree, log):
     """Write the finished row. `tree` is the fingerprint of the work tree after the check and its rewrites; `head` is
-    the commit HEAD names when the row is written, which the fingerprint does not cover."""
+    the commit HEAD names when the row is written, which the fingerprint does not cover; `notes_tree` is the same tree
+    against `notes_base` with the notes paths left out, which a later commit of notes alone leaves as it is."""
     log_file = str(pathlib.Path(log).resolve()) if log else ""
+    base = notes_base(repo)
+    notes_tree = notes_free_tree(repo, base, log_file) if tree else None
     append(repo, {"kind": FINISHED, "run_id": run_id, "result": result, "exit": exit_code,
                   "timed_out": timed_out, "ci": ci, "satisfied": satisfied, "tree": tree,
-                  "head": current_head(repo), "log": log_file})
+                  "head": current_head(repo), "log": log_file, "notes_base": base, "notes_tree": notes_tree})
 
 
 def latest_run(repo):
@@ -132,11 +165,22 @@ def latest_receipt(repo):
     ran_on = finished.get("tree")
     if not ran_on:
         return "the latest full check run recorded no tree fingerprint", finished
-    if finished.get("head") != current_head(repo):
-        return "HEAD moved after the latest full check run", finished
-    if ran_on != current_tree(repo, finished.get("log")):
-        return "the work tree changed after the latest full check run", finished
-    return None, finished
+    return tree_change_problem(repo, finished), finished
+
+
+def tree_change_problem(repo, finished):
+    """Why the work tree of `repo` is no longer the tree the `finished` run checked, or None when it still is."""
+    log = finished.get("log")
+    notes_tree = finished.get("notes_tree")
+    if notes_tree and notes_free_tree(repo, finished.get("notes_base"), log) == notes_tree:
+        return None
+
+    head_moved = finished.get("head") != current_head(repo)
+    if head_moved:
+        return "HEAD moved after the latest full check run"
+    if notes_tree or finished.get("tree") != current_tree(repo, log):
+        return "the work tree changed after the latest full check run"
+    return None
 
 
 def receipt_problem(repo):

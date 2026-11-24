@@ -25,10 +25,11 @@
 #
 # Layout:
 #   Tab 1 "code"     claude (40%) | hunk-review-pane (60%; hunk diff --watch that
-#                    hands the pane to nvim on E or from nvim-jump; was nvim, kept
-#                    commented below; --headless leaves it out). herdr auto-detects the claude
-#                    process and adopts the pane as a managed agent, so it gets
-#                    tab-bar status and `herdr agent read/prompt/wait` for free.
+#                    hands the pane to nvim on E or from nvim-jump; was nvim,
+#                    kept commented below; --headless leaves it out). herdr
+#                    auto-detects the claude process and adopts the pane as a
+#                    managed agent, so it gets tab-bar status and
+#                    `herdr agent read/prompt/wait` for free.
 #   Tab 2 "console"  three equal shells for git / tests / logs. If the project
 #                    has an mprocs config, pane 1 runs the service stack under
 #                    mprocs instead of a bare shell. Config lookup order:
@@ -117,7 +118,7 @@ build_tuios_console() {
     herdr-api pane resize --direction left --amount 0.1667 --pane "$c1" >/dev/null
 }
 
-# ── Tab 1 "code": claude (40%) | hunk (60%) ─────────────────────────────────
+# ── Tab 1 "code": claude (40%) | hunk (60%); --headless: claude alone ───────
 code_tab=$(herdr-api workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
 agent=$(herdr-api pane list --workspace "$ws" \
     | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)

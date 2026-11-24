@@ -301,7 +301,9 @@ esac""")
         finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertNotIn("--headless", herdr_dev_args.read_text().split("\0"))
+        herdr_dev_values = herdr_dev_args.read_text().split("\0")
+        self.assertNotIn("--headless", herdr_dev_values)
+        self.assertEqual(herdr_dev_values[0], str(self.root / "repo-new-thing"))
 
     def lane_entry(self, name):
         """The lane file's entry for `name`, read through the lanes CLI; None when there is none."""

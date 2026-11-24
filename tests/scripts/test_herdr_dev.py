@@ -42,8 +42,14 @@ class HerdrDevTest(unittest.TestCase):
         self.worktree = self.root / "my-lane"
         self.worktree.mkdir()
 
-    def run_dev(self, *args):
+    def run_dev(self, *args, extra_env=None):
         env = {key: value for key, value in os.environ.items() if key != "TUIOS_SOCKET"}
+        env.update(extra_env or {})
+        if "TUIOS_SOCKET" in env:
+            write_stub(self.bin_dir / "tuios", """case "$1" in
+    ls) echo '[]' ;;
+    split-window) echo '{"window_id":"win2"}' ;;
+esac""")
         env["HOME"] = str(self.root)
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["HERDR_API_CALLS"] = str(self.api_calls)
@@ -106,7 +112,21 @@ class HerdrDevTest(unittest.TestCase):
         self.assertFalse([call for call in calls if call.startswith("pane split p1 ")], calls)
         self.assertFalse([call for call in calls if "hunk-review-pane" in call], calls)
         self.assertNotIn("pane focus --direction right --pane p1", calls)
+        self.assertIn("tab focus t1", calls)
         self.assertEqual(result.stdout.splitlines(), ["p1", "claude --resume s1 --fork-session --name my-lane"])
+
+    def test_headless_under_tuios_does_not_resize_a_missing_editor_pane(self):
+        result = self.run_dev("--headless", str(self.worktree), "w1", "s1", extra_env={"TUIOS_SOCKET": "/tmp/x"})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        resizes = [call for call in self.layout_calls() if call.startswith("pane resize") and "--amount 0.1 " in call]
+        self.assertFalse(resizes, resizes)
+
+    def test_default_under_tuios_narrows_the_claude_pane_to_forty_percent(self):
+        result = self.run_dev(str(self.worktree), "w1", "s1", extra_env={"TUIOS_SOCKET": "/tmp/x"})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("pane resize --direction left --amount 0.1 --pane p2", self.layout_calls())
 
     def test_headless_keeps_the_console_tab(self):
         result = self.run_dev("--headless", str(self.worktree), "w1", "s1")

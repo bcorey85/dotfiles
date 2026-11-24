@@ -206,6 +206,13 @@
 - **Alternatives rejected:** Splitting `herdr-worktree-prune` (991 lines) in this lane to add `--check <path> --json`.
 - **Trade-off accepted:** The two keep-rule copies stay until the queued item lands.
 
+### R9. lane-status reads the caller's viewer cap
+
+- **Choice:** Reject the ask to record each viewer's start cap in its state dir. `oversized_viewer` keeps comparing against `HUNK_REVIEW_MEMORY_MAX` from the `--viewers` caller's environment.
+- **Reasoning:** Ruled by agent-evals-c3-owner (orchestrating session), 2026-11-24, under the user's standing rule of 2026-11-22 that the orchestrating session rules on a lane's asks. The cap is set once per machine.
+- **Alternatives rejected:** A per-row `cap_bytes` read from `$dir/cap`.
+- **Trade-off accepted:** A cap that differs per pane or shell can misreport a viewer.
+
 ## Direction & Constraints
 
 - Item 4 (ls): the CLAUDECODE guard already works. Every shell snapshot after commit 261942676 (2026-11-22 16:08) lacks the ls alias; every one before holds it. Only the regression probe is new work.

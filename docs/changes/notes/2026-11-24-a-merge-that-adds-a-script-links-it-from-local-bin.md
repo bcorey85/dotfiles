@@ -29,7 +29,7 @@ Judgment: the tests run real `git merge` (fast-forward and merge commit) and rea
 
 ## Result
 
-A script added by a merge is linked from `~/.local/bin` without a manual `install/stow`.
+On a checkout with `core.hooksPath` set to `.githooks`, a script added by a merge is linked from `~/.local/bin` without a manual `install/stow`.
 
 ## Watch
 

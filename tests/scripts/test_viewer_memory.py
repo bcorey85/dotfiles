@@ -178,7 +178,7 @@ class ViewerMemoryTest(unittest.TestCase):
                 self.assertEqual(result.stdout.split(), ["0"], f"{label}: {result.stderr}")
 
     def test_python_and_bash_cap_checks_agree(self):
-        """The two twins answer alike in every environment, except that bash also needs systemctl."""
+        """The two twins answer alike in every environment where systemctl is present."""
         both = ("systemd-run", "systemctl")
         cases = {
             "linux with a user bus": {"with_bus": True},
@@ -186,20 +186,22 @@ class ViewerMemoryTest(unittest.TestCase):
             "empty runtime dir": {"with_bus": True, "env_extra": {"XDG_RUNTIME_DIR": ""}},
             "darwin": {"with_bus": True, "uname": "Darwin"},
             "no systemd-run": {"with_bus": True, "commands": ("systemctl",)},
-            "no systemctl": {"with_bus": True, "commands": ("systemd-run",)},
         }
-        systemctl_only_case = "no systemctl"
         for label, options in cases.items():
             with self.subTest(label=label):
                 bash_result = self.prefix_with(**options)
                 bash_available = bash_result.stdout.split() != ["0"]
                 python_available = self.python_cap_available(
                     options.get("uname", "Linux"), options.get("commands", both), options.get("env_extra"))
-                if label == systemctl_only_case:
-                    self.assertTrue(python_available, label)
-                    self.assertFalse(bash_available, label)
-                    continue
                 self.assertEqual(python_available, bash_available, f"{label}: {bash_result.stderr}")
+
+    def test_only_bash_cap_check_needs_systemctl(self):
+        options = {"with_bus": True, "commands": ("systemd-run",)}
+        bash_result = self.prefix_with(**options)
+        bash_available = bash_result.stdout.split() != ["0"]
+        python_available = self.python_cap_available("Linux", options["commands"], None)
+        self.assertTrue(python_available)
+        self.assertFalse(bash_available, bash_result.stderr)
 
     def python_cap_available(self, uname, commands, env_extra):
         """cap_available() with the platform, PATH commands and runtime dir that prefix_with set up."""

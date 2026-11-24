@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Links a script that a merge added to ~/.local/bin.
+# Enable with: git config core.hooksPath .githooks
 #
 # Two gates decide whether the hook acts:
 #   1. the merge ran in the main worktree, not in a linked one;

@@ -378,7 +378,8 @@ class ReviewScope(NamedTuple):
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
     changed since the run start, `held_targeted` the held files this phase's section names, `held_released` the
     files dirty at the run start whose change a coder of the run wrote, which review reads. `given_base` is the
-    --base as given, set only when it is no ancestor of HEAD and its merge base with HEAD replaced it."""
+    --base as given, set only when the review base is not the commit --base names: its merge base with HEAD, or a
+    commit with merged-in changes folded in."""
     holders: list
     handoff: str
     phase_changed: list
@@ -406,10 +407,10 @@ def read_scope(scope_file):
 def diff_base(repo, base_commit, base):
     """The commit the review diffs against: `base_commit`, or its merge base with HEAD when it is no ancestor of HEAD,
     then a synthetic base that leaves out what merge commits of base..HEAD brought in. A base with no merge base, or a
-    merge that does not merge cleanly, stops the run. Returns (BaseResolution, review base)."""
+    merge that does not merge cleanly, stops the run."""
     try:
         resolved = merge_free_base.resolve_base(repo, base_commit, base)
-        return resolved, merge_free_base.merge_free_base(repo, resolved.used)
+        return merge_free_base.merge_free_base(repo, resolved.used)
     except merge_free_base.NoMergeBaseError as error:
         sys.exit(f"code_review_start: {error}")
     except merge_free_base.MergeConflictError as error:
@@ -438,11 +439,11 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     if held_targeted:
         held_note(notes, "code_review_start: this phase's plan names held files, which stay held, so the phase's "
                          f"change to them is not reviewed: {', '.join(held_targeted)}")
-    resolved, review_base = diff_base(repo, base_commit, base)
+    review_base = diff_base(repo, base_commit, base)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
     return ReviewScope(holders, handoff, phase_changed, review_base, notes, held.changed, held_targeted,
-                       held.released, resolved.given_if_moved())
+                       held.released, base if review_base != base_commit else None)
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",

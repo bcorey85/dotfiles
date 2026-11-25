@@ -20,8 +20,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 `lib/merge_free_base.py` gains `resolve_base`, which returns a `BaseResolution`. A base that is not an ancestor of
 HEAD is replaced by `git merge-base HEAD <base>`. A base with no merge base stops the launch with the reason and the
-recovery command. `code_review_start.py` and `review_launch.py` call it before the merged-commit fold. The review
-packet names both bases as `given_base` and `base_used`.
+recovery command. `code_review_start.py` calls it before the merged-commit fold; `review_launch.py` calls it when it
+resolves `--base`. The review packet carries `given_base` only when the review base differs from the commit the given
+base names (moved to the merge base, or folded over merges), and the hand-back prints a line naming both bases.
 
 ## Evidence
 

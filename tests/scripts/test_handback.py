@@ -847,6 +847,14 @@ class RenderTest(HandbackTestBase):
         self.assertIsNone(packet)
         self.assertTrue(error)
 
+    def test_a_given_base_the_review_base_replaced_prints_a_review_base_line_and_an_empty_one_prints_none(self):
+        moved = handback.load(json_packet(given_base="master", base_used="abc123"))
+        self.assertIn("Review base: master", handback.render(moved, "review"))
+        self.assertIn("reviewed since abc123", handback.render(moved, "review"))
+
+        unmoved = handback.load(json_packet(given_base="", base_used="abc123"))
+        self.assertNotIn("Review base:", handback.render(unmoved, "review"))
+
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
         packet = handback.load(json_packet(iter=0, class_closure="n/a"))
         rendered = handback.render(packet, "review")

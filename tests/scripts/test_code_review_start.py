@@ -317,10 +317,13 @@ class CodeReviewStartTest(unittest.TestCase):
         self.git("checkout", "-q", "feature")
         return self.git("rev-parse", "master")
 
-    def dry_run(self, base):
-        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+    def dry_run_result(self, base):
+        return subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
                                "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
                               env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+    def dry_run(self, base):
+        done = self.dry_run_result(base)
         self.assertEqual(done.returncode, 0, done.stderr)
         header, _, handoff = done.stdout.partition("\n\n")
         return header.splitlines(), handoff
@@ -342,7 +345,7 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertIn("- path: phase.py", handoff)
         self.assertNotIn("side.py", handoff)
 
-    def test_an_ancestor_base_with_a_merge_on_the_branch_writes_no_given_base_line(self):
+    def test_an_ancestor_base_with_a_merge_on_the_branch_names_the_typed_base_as_given(self):
         fork_point = self.master_and_feature()
         self.merge_side_branch_into_feature(fork_point)
 
@@ -350,7 +353,7 @@ class CodeReviewStartTest(unittest.TestCase):
 
         base_line = next(line for line in header_lines if line.startswith("base: "))
         self.assertNotEqual(base_line, f"base: {fork_point}")
-        self.assertFalse([line for line in header_lines if line.startswith("given-base")])
+        self.assertIn("given-base: master", header_lines)
         self.assertNotIn("side.py", handoff)
 
     def test_a_base_with_no_merge_base_stops_the_run_with_the_recovery_command(self):
@@ -365,9 +368,7 @@ class CodeReviewStartTest(unittest.TestCase):
         self.git("checkout", "-q", "master")
         (self.repo / "handoff.txt").write_text("handoff\n")
 
-        done = subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base",
-                               "unrelated", "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
-                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+        done = self.dry_run_result("unrelated")
 
         self.assertNotEqual(done.returncode, 0)
         self.assertEqual(done.stdout, "")

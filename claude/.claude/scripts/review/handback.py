@@ -656,6 +656,9 @@ def render(packet, skill, sections=()):
     if packet["held_unfixed"]:
         lines.append("Unfixed, held by another session: " + "; ".join(held_unfixed_text(entry)
                                                                       for entry in packet["held_unfixed"]))
+    if packet["given_base"] and packet["given_base"] != packet["base_used"]:
+        lines.append(f"Review base: {packet['given_base']} is no ancestor of HEAD or has merges on the branch; "
+                     f"reviewed since {packet['base_used']}")
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
     if packet["tool_fault"]:

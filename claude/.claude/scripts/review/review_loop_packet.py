@@ -98,7 +98,8 @@ def packet_message(outcome):
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
     if outcome["base_used"]:
         fields["base_used"] = outcome["base_used"]
-        fields["given_base"] = outcome["given_base"] or outcome["base_used"]
+        if outcome["given_base"]:
+            fields["given_base"] = outcome["given_base"]
     if outcome["scoped_tests"]:
         fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
     if outcome["check_overridden"]:

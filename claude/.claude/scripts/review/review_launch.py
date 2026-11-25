@@ -189,10 +189,9 @@ def resolved_base(repo, base):
     if not commit:
         raise LaunchError(f"--base {base} names no commit in {repo}")
     try:
-        resolved = merge_free_base.resolve_base(repo, commit.strip(), base)
+        return merge_free_base.resolve_base(repo, commit.strip(), base)
     except (merge_free_base.NoMergeBaseError, merge_free_base.MergeBaseGitError) as error:
         raise LaunchError(f"--base {base}: {error}") from error
-    return resolved
 
 
 def is_session_brief(full):

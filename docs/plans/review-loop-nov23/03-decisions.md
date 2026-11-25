@@ -139,6 +139,26 @@ Report: `review-round1-shard-a.md`. None cuts or narrows an AC.
 - **Accepted approval ask on a cap-reached packet:** keep `phase_asks.rule_open_asks` as it is. Only a reviewer raised this case.
 - Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
 
+### P6-stop. Phase 6 blocker rulings
+- **Scope:** Phase 6 adds `review/review_loop_coder.py` to its files, as a Plan Deviations line. `coder_fault_notes()` reads `RULING_CHECK_FAULTS`, so a ruling-check fault fills the packet's `tool_fault` (G12).
+- **Open findings:** all fixed in the same pass: a test for `begin_ruling_check`'s `listing is None` branch, the E501 at `review_loop_ruled_out.py:71`, and the `lib/file_backup.py` docstring naming that `put_back_all` deletes created paths.
+- **Cap after round 4:** one more fix pass over the four open findings: move `keep_unreverted_open` beside `findings_on_reverted_paths` and share it with `failed_pass_blocker`; the G13 byte-for-byte put-back test; the `CLAUDE.md` + `app.py` end-to-end test (`against` and unparseable replies); the stale `RulingCheckHost` docstring and spacing nit.
+- **Judge prompt ask:** reword `review_loop_ruling_check.py:108` to match `issue_text`: a `session_ruled` text carries no outcome mark, so judge it as accepted only when its text says so.
+- **Owner line** for `review_loop_ruling_check.py` in `claude/.claude/scripts/CLAUDE.md`: not added. The user ruled out new Owners lines (ruling relayed by agent-evals-c3-owner, 2026-11-24).
+- Sign-off: lane session, 2026-11-24. No AC is cut.
+
+### P6-cap2. Phase 6 second cap rulings
+- **Coder commit in a pass (option B):** when HEAD keeps a commit the coder made during the pass, the put-back blocker names that commit. The change note says the work tree and index are restored and a coder commit stays, named, in place of "byte for byte". A test makes a coder commit inside a pass and checks the blocker names it.
+- **Stale docstring:** `review_loop_ruled.py:594` says the findings are filed as user-only asks, or dropped as a repeat of a rejected one.
+- **Size:** Phase 6 runs at about 2.4x its estimate (+680/-61 across 19 files against 150 source + 160 test lines). The ruling check, its put-back of index and created paths, and the end-to-end tests the review asked for account for the overrun. Continue at this size.
+- Sign-off: agent-evals-c3-owner, 2026-11-24. No AC is cut.
+
+### P6-cap3. Phase 6 third cap rulings
+- **Criterion (spec.md Phase 6 success criterion):** clarified; AC12 is unchanged. The work-tree files are put back byte-for-byte, with the index; a commit the coder made is a separate fact that stays in HEAD and is named in the blocker. Ruled a clarification, not a narrowing, by agent-evals-c3-owner (session; the ticket is session-written), 2026-11-25.
+- **Ask 1, file list:** a Plan Deviations line lists lib/file_backup.py, lib/script_utils.py, review/review_loop_ruled.py, review/review_loop_ruled_out.py and review/review_loop_partial_fix.py.
+- **Ask 2, coder edit to a recorded ruling:** the code stays as it is. The loop's put-back of that edit is the right behavior.
+- Ruled by: agent-evals-c3-owner (session), 2026-11-24. The review's `decide adopt --by session` call was denied by the auto-mode classifier and was not retried.
+
 ## Direction & Constraints
 
 - `review_round` and `iter` keep their meaning: packet identity, ledger iter join, relaunch `--iter`.

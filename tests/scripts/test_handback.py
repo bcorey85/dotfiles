@@ -836,6 +836,19 @@ class RenderTest(HandbackTestBase):
             self.assertIn("no_code_ruling_broken[0]", raised.exception.problems[0])
             self.assertIn(expected, raised.exception.problems[0])
 
+    def test_the_against_ruling_key_reads_back_and_an_old_packet_reads_it_empty(self):
+        entry = {"ruling": "a/c.py:3 drop the strip", "file": "a/b.py", "kept": "the strip"}
+
+        self.assertEqual(handback.load(json_packet(against_ruling=[entry]))["against_ruling"], [entry])
+        self.assertEqual(handback.load(json_packet())["against_ruling"], [])
+
+    def test_an_against_ruling_entry_without_a_ruling_and_a_file_is_a_packet_error(self):
+        for entry in ("a/b.py", {"ruling": "x", "kept": "k"}, {"file": "a/b.py", "kept": "k"},
+                      {"ruling": "x", "file": "a/b.py"}, {"ruling": "x", "file": "a/b.py", "kept": ""}):
+            with self.subTest(entry=entry), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(against_ruling=[entry]))
+            self.assertIn("against_ruling[0]", raised.exception.problems[0])
+
     def test_stored_packet_reads_a_non_json_message_as_no_packet_and_a_broken_one_as_an_error(self):
         self.assertEqual(handback.stored_packet("plain text"), (None, None))
         packet, error = handback.stored_packet('{"status": "converged", "iter": ')

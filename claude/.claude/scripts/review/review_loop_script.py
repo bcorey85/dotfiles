@@ -138,6 +138,7 @@ from review_loop_ruled import (
     prior_issue_entries,
     withheld_adopted,
 )
+from review_loop_ruling_check import RulingCheck
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 from review_loop_signoffs import SignoffRuns, snapshot_signoffs
 from review_user_ruled import reasked_findings
@@ -329,7 +330,7 @@ def log_row_findings(repo, run, row, fix_ranges):
 # ---------- the loop ----------
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              PostCapPasses, ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
+              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -577,9 +578,11 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         NamedTestRemovedError when the pass removed a test the plan runs by name and one restore pass did not bring
         it back (`restore_named` False skips that check, for the restore pass), and CoderFailedError when the coder
         call fails, and before the call when the scope guard cannot read the repo, or the standing rulings are malformed
-        (PlanFormatError, re-raised), with the findings kept in
-        open_fixes except those on a reverted approval-only path, which are filed as user-only asks (a repeat of a
-        rejected ask is dropped, not filed)."""
+        (PlanFormatError, re-raised), RulingBrokenError when the ruling check finds the pass against an accepted
+        ruling (the pass is put back), and RulingCheckFaultError when the ruling check cannot judge the pass (the
+        pass stays in the tree) or git cannot list the repo files or read their index entries before the pass (the
+        pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
+        which are filed as user-only asks (a repeat of a rejected ask is dropped, not filed)."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -604,6 +607,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             # The pass has not started, so no file changed: keep the findings open, then let the stop name the line.
             self.keep_open(findings)
             raise
+        ruling_backup = self.begin_ruling_check(call_name, allowed, findings, issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
         comments = snapshot_comments(self.repo, files_in_scope)
@@ -612,19 +616,24 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
             self.put_back_findings = []
         try:
-            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
-                                 model=self.coder_model, scope_guard=scope_guard)
-        except CoderCallError as error:
-            blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
-            raise CoderFailedError(blocker) from error
-        self.settle_saved_after_pass(call_name)
-        put_back = self.undo_protected_edits(signoffs, comments, findings)
-        result = self.without_put_back(call_name, result, put_back, findings)
-        self.keep_coder_commit_in_scope()
-        self.flag_broken_no_code_rulings(findings, result.changed, nits)
-        reverted = self.ask_for_approval_only_edits(result.changed, findings)
-        result = without_reverted(result, reverted, stats_before)
-        self.check_pass_result(call_name, result)
+            try:
+                result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
+                                     model=self.coder_model, scope_guard=scope_guard)
+            except CoderCallError as error:
+                blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
+                raise CoderFailedError(blocker) from error
+            self.settle_saved_after_pass(call_name)
+            put_back = self.undo_protected_edits(signoffs, comments, findings)
+            result = self.without_put_back(call_name, result, put_back, findings)
+            self.keep_coder_commit_in_scope()
+            self.flag_broken_no_code_rulings(findings, result.changed, nits)
+            reverted = self.ask_for_approval_only_edits(result.changed, findings)
+            result = without_reverted(result, reverted, stats_before)
+            self.check_pass_result(call_name, result)
+            self.check_rulings_kept(call_name, findings, result, ruling_backup)
+        finally:
+            self.discard_ruling_backup(ruling_backup)
+
         return self.restore_named_tests(call_name, named, result)
 
     def pass_scope(self, files_in_scope):
@@ -902,6 +911,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_impacts": self.plan_impacts,
             "no_code_ruling_broken": self.no_code_broken,
+            "against_ruling": list(self.against_ruling),
             "adopted_unapplied": self.adopted_unapplied,
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,

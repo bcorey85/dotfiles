@@ -86,6 +86,26 @@ class FileBackupTest(unittest.TestCase):
         self.assertEqual((restored, lost), (["small.sql"], ["big.sql"]))
         self.assertFalse((self.root / "big.sql").exists())
 
+    def test_put_back_all_restores_changed_files_and_removes_created_and_absent_paths(self):
+        (self.root / "kept.sql").write_text("old")
+        backup = self.save(["kept.sql", "absent.sql", "made_dir"])
+        self.assertEqual(backup.absent, ["absent.sql", "made_dir"])
+        (self.root / "kept.sql").write_text("new")
+        (self.root / "absent.sql").write_text("x")
+        (self.root / "extra.sql").write_text("y")
+        (self.root / "made_dir").mkdir()
+        (self.root / "gone_dir").mkdir()
+
+        put_back, left = file_backup.put_back_all(backup, ["extra.sql", "gone_dir"])
+
+        self.assertEqual((self.root / "kept.sql").read_text(), "old")
+        self.assertFalse((self.root / "absent.sql").exists())
+        self.assertFalse((self.root / "extra.sql").exists())
+        self.assertEqual(put_back, ["absent.sql", "extra.sql", "kept.sql"])
+        self.assertEqual(left, ["gone_dir", "made_dir"])
+        self.assertTrue((self.root / "gone_dir").is_dir())
+        self.assertTrue((self.root / "made_dir").is_dir())
+
     def test_discard_removes_the_copies(self):
         (self.root / "a.sql").write_text("old")
         backup = self.save(["a.sql"])

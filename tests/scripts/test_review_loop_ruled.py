@@ -1784,7 +1784,7 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn(review_loop_ruled.SKIPPED_WHY, packet["blockers"][0])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder"])
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder", "ruling-check"])
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(packet["ask"], [])
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))

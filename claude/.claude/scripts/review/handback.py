@@ -75,18 +75,18 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden",
-                       "adopted_unapplied", "fix_rounds", "post_cap_passes"]
+                       "adopted_unapplied", "fix_rounds", "post_cap_passes", "against_ruling"]
 # The `check_overridden` value of a run whose full check was the launch's `--test` commands.
 CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
              "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "post_cap_passes"]
+             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "post_cap_passes", "against_ruling"]
 # The list fields whose every JSON entry is a string.
 STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied", "post_cap_passes")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
                    "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
-                   "no_code_ruling_broken": ("ruling", "file")}
+                   "no_code_ruling_broken": ("ruling", "file"), "against_ruling": ("ruling", "file", "kept")}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.

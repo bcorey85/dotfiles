@@ -52,6 +52,7 @@ from review_loop_prompt_file import (
     reviewer_brief,
 )
 from review_loop_ruled import adopted_rulings, rejected_ask_questions, rejected_ask_records
+from review_loop_ruling_check import RulingBrokenError, RulingCheckFaultError
 from review_loop_scoped_tests import test_commands_of
 from review_loop_script import (
     ROUND_BUDGET,
@@ -211,7 +212,8 @@ def run_loop(request):
         loop.resume_approval_asks([parse_finding(text) for text in findings])
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
-    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError) as error:
+    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError, RulingBrokenError,
+            RulingCheckFaultError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

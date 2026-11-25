@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1175 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1176 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md).
+Latest change: 2026-11-24, [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md).
 
 ## Top gains
 

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-747 fix notes
+748 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -215,6 +215,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/warn-skip-hooks | 1 | 0 |
 | script/zshrc | 1 | 1 |
 | shared/review-fork-run | 1 | 1 |
+| shared/review-loop | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
 | skill/architect-core | 1 | 1 |
 | skill/close-branch | 1 | 0 |

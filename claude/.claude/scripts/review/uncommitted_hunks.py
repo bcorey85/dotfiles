@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
 import script_utils
+from capped_review import CAP_REACHED
 from diff_ranges import changed_ranges, range_line
 from review_fix_asks import missing_packet_repo_reason, packet_repo
 
@@ -57,3 +58,11 @@ def stop_lines(state):
     if repo is None:
         return [f"{STOP_PREFIX}not read: {missing_packet_repo_reason(relaunch_args)}"]
     return [f"{STOP_PREFIX}{line}" for line in hunk_lines(repo)]
+
+
+def cap_stop_lines(packet, state):
+    """`stop_lines` for a cap-reached packet, the one stop that leaves the loop's own fixes uncommitted; [] for any
+    other status."""
+    if packet["status"] != CAP_REACHED:
+        return []
+    return stop_lines(state)

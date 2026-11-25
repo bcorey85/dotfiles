@@ -626,6 +626,19 @@ def no_code_ruling_lines(packet):
             for broken in packet["no_code_ruling_broken"]]
 
 
+CALLER_STEP_DUTY = ("Caller steps: apply each Caller step's ruled change to the sign-off line it names, then record "
+                    "who ruled and when in the decision log.")
+
+
+def caller_step_lines(packet):
+    """The duty line and one `Caller step:` line per ruled finding on a sign-off line, which no coder edits; [] when
+    there is none."""
+    steps = packet["caller_steps"]
+    if not steps:
+        return []
+    return [CALLER_STEP_DUTY, *(f"Caller step: {step}" for step in steps)]
+
+
 def held_unfixed_text(entry):
     """One held_unfixed entry as `<item> (<reason>)`: the finding that stays unfixed and the holder that proves why."""
     return f"{one_line(entry['item'], None)} ({entry['reason']})"
@@ -651,7 +664,7 @@ def render(packet, skill, sections=()):
                                                                       for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
-    lines += [f"Caller step: {step}" for step in packet["caller_steps"]]
+    lines += caller_step_lines(packet)
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]

@@ -254,9 +254,8 @@ def packet_arguments(argv):
 # ---------- actions ----------
 
 def is_outstanding(packet):
-    findings_left = any(packet[key]
-                        for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining", "caller_steps"))
-    return findings_left or bool(handback.held_plan_impacts(packet))
+    findings_left = any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
+    return findings_left or bool(packet["caller_steps"]) or bool(handback.held_plan_impacts(packet))
 
 
 def stop_for_parse_failure(error, raw_message):
@@ -606,16 +605,13 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    entries = entry_lines(packet)
+    entries = entry_lines(packet) + uncommitted_hunks.cap_stop_lines(packet, state) + handback.caller_step_lines(packet)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
         entries += rerun_lines
     if rerun_note:
         entries.append(rerun_note)
-    if packet["status"] == CAP_REACHED:
-        entries += uncommitted_hunks.stop_lines(state)
-    entries += [f"Caller step: {step}" for step in packet["caller_steps"]]
     ask_lines = []
     if packet["ask"]:
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
@@ -723,9 +719,6 @@ def model_duties(packet, options):
     duties = []
     if packet["ask"]:
         duties.append("present each ask and judge the user's answer")
-    if packet["caller_steps"]:
-        duties.append("apply each Caller step's ruled change to the sign-off line it names, then record who ruled "
-                      "and when in the decision log")
     if options.skill == "fix":
         duties.append("recommend /eng-spec if a finding needs architectural rethinking")
         if options.source == "conversation" and not options.escapes:

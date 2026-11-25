@@ -20,7 +20,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 `review/review_loop_signoffs.py` `split_signoff_items` holds back a user- or session-ruled finding that hits a sign-off
 line. The coder never sees it, and no `[sign-off]` ask is filed for it. The packet, the rendered hand-back and every stop
-carry it as a `Caller step:` line with the file, the line and the ruled text. It does not count toward the round cap.
+carry it as a `Caller step:` line with the file, the line and the ruled text, after one duty line
+(`handback.caller_step_lines`, the one writer of both). It does not count toward the round cap.
 The loop still never edits a sign-off line. The owner line in `claude/.claude/scripts/CLAUDE.md` says so.
 
 The cap-reached stop also names the uncommitted change, so the dirty tree it leaves is no longer a bare "stays dirty":

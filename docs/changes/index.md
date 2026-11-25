@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1182 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md).
+Latest change: 2026-11-25, [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md).
 
 ## Top gains
 

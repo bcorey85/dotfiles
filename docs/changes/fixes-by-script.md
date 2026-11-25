@@ -7,24 +7,24 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-754 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 171 | 5 |
-| script/review-fix | 73 | 14 |
-| script/review-loop-script | 72 | 14 |
-| script/handback | 56 | 1 |
+| script/code-step | 174 | 8 |
+| script/review-fix | 75 | 16 |
+| script/review-loop-script | 74 | 16 |
+| script/handback | 57 | 2 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 28 | 6 |
+| script/review-loop | 24 | 7 |
 | script/shell-write-gate | 24 | 4 |
-| script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
@@ -45,14 +45,14 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
+| script/review-launch | 9 | 4 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/inline-interpreter-hint | 8 | 4 |
+| script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
-| script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
-| script/phase-asks | 7 | 2 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
@@ -112,6 +112,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
+| script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-wake-limited | 2 | 1 |
 | script/herdr-worktree-prune | 2 | 1 |

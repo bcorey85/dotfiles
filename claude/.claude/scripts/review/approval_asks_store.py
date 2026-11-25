@@ -57,13 +57,31 @@ PATHS_KEY = "paths"
 WANTED_KEY = "wanted"
 WANTED_FIELDS = {"text": str, "change": str, "path": str, "line": int, "title": str}
 WANTED_SHAPE = "{" + ", ".join(WANTED_FIELDS) + "}"
+WANTED_TARGET_PREFIX = "(edit to `"
+WANTED_TARGET_SUFFIX = "`)"
 
 
 def wanted_edit_target(path):
     """The words a wanted-change ask's change ends with to name the file exactly. An accepted ask reaches the next
     run as a finding whose location is empty (UNLOCATED) for a path whose folder holds a space, so the run reads
     the path from these words."""
-    return f"(edit to `{path}`)"
+    return f"{WANTED_TARGET_PREFIX}{path}{WANTED_TARGET_SUFFIX}"
+
+
+def wanted_path_of_change(change):
+    """The path a wanted-change ask's change ends with (see `wanted_edit_target`), or None when it does not end with
+    that form, is not a string, or names an empty path."""
+    if not isinstance(change, str):
+        return None
+    if not change.endswith(WANTED_TARGET_SUFFIX):
+        return None
+    start = change.rfind(WANTED_TARGET_PREFIX)
+    if start < 0:
+        return None
+    path = change[start + len(WANTED_TARGET_PREFIX):-len(WANTED_TARGET_SUFFIX)]
+    if not path:
+        return None
+    return path
 
 
 def wanted_entry(text, change, path, line, title):

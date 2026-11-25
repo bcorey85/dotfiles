@@ -1,11 +1,11 @@
 """scripts/.local/lib/first_output_line.py: the first line of a command's output."""
-import pathlib
 import sys
 import unittest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "scripts" / ".local" / "lib"))
-import first_output_line  # noqa: E402
+from stubs import SCRIPT_LIB_DIR
+
+sys.path.insert(0, str(SCRIPT_LIB_DIR))
+import first_output_line
 
 
 class FirstOutputLineTest(unittest.TestCase):

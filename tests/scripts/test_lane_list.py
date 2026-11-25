@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-LIB_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib"
-sys.path.insert(0, str(LIB_DIR))
-import lane_list  # noqa: E402
+from stubs import SCRIPT_LIB_DIR
+
+sys.path.insert(0, str(SCRIPT_LIB_DIR))
+import lane_list
 
 
 class LaneListTest(unittest.TestCase):

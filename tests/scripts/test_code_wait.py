@@ -551,12 +551,17 @@ class WaitReviewTest(unittest.TestCase):
         self.assertIn(code_wait.held_released_text(["a.py"]), output)
         self.assertEqual(lines[-1], code_wait.PHASE_RESTART_STEP)
 
-    def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False, invalid_packet=False):
+    def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False, invalid_packet=False,
+                              held_released=False):
         """Runs the review wait on a repo whose packet is cap-reached. By default it holds a blocker, so it stays
         cap-reached; `clean` writes a packet with no blocker, no open class and a passed full check of the current
         tree, which reads as deferred. `reports_to` None writes no lane entry; `malformed_lane_file` writes an
-        unparsable lane file instead. Returns the exit code, the output lines and stderr."""
+        unparsable lane file instead; `held_released` writes a scope file that lists a released path. Returns the
+        exit code, the output lines and stderr; the run's phase folder is left in `self.capped_phase_dir`."""
         repo, phase_dir = self.repo_with_pid(999999999)
+        self.capped_phase_dir = phase_dir
+        if held_released:
+            (phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
         fields = {"status": "cap-reached", "iter": 3, "fixed": [], "ask": [],
                   "blockers": ["[critical] data loss"], "class_closure": "n/a - fixed[] empty",
                   "findings_remaining": [{"finding": "[critical] data loss"}]}
@@ -605,11 +610,22 @@ class WaitReviewTest(unittest.TestCase):
         self.assertTrue(lines[-1].startswith("STOP (cap-reached)"), lines[-1])
         self.assertIn("orch-1", lines[-1])
         self.assertIn(code_wait.cap_ruler_line("orch-1"), lines[-1])
-        self.assertIn("/stop.md", lines[-1])
+        self.assertIn("Ruling: session orch-1", lines[-1])
+        self.assertIn("this Ruling line", lines[-1])
+        self.assertNotIn("Cap ruler", lines[-1])
+        self.assertIn(str(self.capped_phase_dir / "stop.md"), lines[-1])
+        self.assertIn("findings_remaining", lines[-1])
         self.assertIn("03-decisions.md", lines[-1])
         self.assertIn("## Plan Deviations", lines[-1])
         self.assertIn("when the run has a plan file", lines[-1])
         self.assertIn("/code resume", lines[-1])
+
+    def test_the_cap_stop_line_is_the_last_line_when_the_scope_file_lists_a_held_released_path(self):
+        code, lines, _errors = self.capped_review_in_lane("orch-1", held_released=True)
+
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.held_released_text(["a.py"]), "\n".join(lines))
+        self.assertTrue(lines[-1].startswith("STOP (cap-reached)"), lines[-1])
 
     def test_a_cap_reached_packet_with_no_lane_entry_prints_no_stop_line(self):
         code, lines, _errors = self.capped_review_in_lane(None)

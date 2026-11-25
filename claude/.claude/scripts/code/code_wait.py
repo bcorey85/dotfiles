@@ -46,6 +46,7 @@ import handback_store
 import lane_entries
 import loop_transcript
 import phase_asks
+import plan_format
 import process_group
 import reviewer_dispatch
 import script_utils
@@ -418,11 +419,13 @@ def phase_stop_line(repo):
     try:
         parsed = handback.parse(packet_file.read_text())
         status = parsed.get("status")
-        # Only a cap-reached packet is validated: a fix-removed-change packet carries just status and blockers.
-        packet = handback.validate(parsed) if status == CAP_REACHED else parsed
     except handback.PacketError:
         return ""
     if status == CAP_REACHED:
+        try:
+            packet = handback.validate(parsed)
+        except handback.PacketError:
+            return ""
         return cap_reached_stop_line(repo, packet)
     if status != handback.FIX_REMOVED_CHANGE:
         return ""
@@ -450,25 +453,27 @@ def lane_reports_to(repo):
 def cap_ruler_line(orchestrator):
     """The line the fork writes into the stop file after the findings, so the lane's relay of the stop file names
     the ruler and what to do with its reply."""
-    return (f"Cap ruler: session {orchestrator}, which started this lane, rules on the review cap, not the user. "
+    return (f"Ruling: session {orchestrator}, the orchestrating session that started this lane, "
+            "rules on this cap-reached review, not the user. "
             "Send it these findings with SendMessage; its reply is this stop's feedback. "
             "When the run has a plan file, a coder records the ruling in the plan's decision log "
-            "(03-decisions.md, or ## Plan Deviations when the plan has none) "
+            f"({plan_format.DECISION_LOG_NAME}, or ## {plan_format.DEVIATIONS_HEADING} when the plan has none) "
             f"as ruled by session {orchestrator} with the date of its reply.")
 
 
 def cap_reached_stop_line(repo, packet):
     """The step line for a loaded packet that stays `cap-reached` in a lane another session started, or "" for
     any other."""
-    repo_top = script_utils.work_tree_top(str(repo))
-    if effective_status(packet, repo_top) != CAP_REACHED:
-        return ""
     orchestrator = lane_reports_to(repo)
     if not orchestrator:
         return ""
+    repo_top = script_utils.work_tree_top(str(repo))
+    if effective_status(packet, repo_top) != CAP_REACHED:
+        return ""
     stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
-    return (f"STOP ({CAP_REACHED}): {orchestrator} started this lane and rules on the review cap, not the user. "
-            f"Write the packet's findings_remaining to {stop_file}, then this Cap ruler line, copied whole: "
+    return (f"STOP ({CAP_REACHED}): {orchestrator} started this lane and rules on this cap-reached review, "
+            "not the user. "
+            f"Write the packet's findings_remaining to {stop_file}, then this Ruling line, copied whole: "
             f"\"{cap_ruler_line(orchestrator)}\" And end the run there. "
             "Then follow the ruling with /code resume (with the plan's absolute path when the run has a plan file).")
 

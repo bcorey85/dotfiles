@@ -153,6 +153,8 @@ class CheckOutputTest(unittest.TestCase):
             "uv": "error: Failed to spawn: `pytest`\n  Caused by: No such file or directory (os error 2)",
             "poetry": "Command not found: pytest",
             "pipenv": "Error: the command pytest could not be found within PATH or Pipfile's [scripts].",
+            "systemd-run": ("Failed to start transient scope unit: Unit run-p123-i456.scope was already loaded or has "
+                            "a fragment file."),
         }
         for case, output in outputs.items():
             with self.subTest(case=case):

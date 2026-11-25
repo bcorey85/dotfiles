@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -20,7 +20,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
-| script/full-check | 30 | 6 |
+| script/full-check | 31 | 7 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 27 | 5 |
 | script/review-loop | 24 | 7 |
@@ -38,11 +38,11 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 4 |
 | script/log-review-finding | 12 | 0 |
+| script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
 | script/log-escape | 11 | 2 |
 | script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
-| script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/review-launch | 9 | 4 |
@@ -95,6 +95,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
+| script/memory-cap-scope | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
@@ -122,7 +123,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
-| script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |

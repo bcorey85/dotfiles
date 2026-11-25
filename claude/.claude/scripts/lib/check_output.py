@@ -30,8 +30,10 @@ MAX_ERROR_LINE_CHARS = 300
 # Exit codes and runner text that mean the check never ran: the shell found no program or could not run it, uv,
 # poetry or pipenv could not start one, or the package manager found no package manifest where it ran.
 COMMAND_NOT_RUN_CODES = {126, 127}
+# The last form is systemd-run failing to start the memory-capped scope the check runs in.
 RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
-                                 r"|the command \S+ could not be found within PATH")
+                                 r"|the command \S+ could not be found within PATH"
+                                 r"|Failed to start transient scope unit: ")
 # A shell name, with an optional path.
 SHELL_PROGRAM = r"(?:\S*/)?(?:ba|z|k|da)?sh"
 # A word with no `/` or `:`, which a shell looks up on PATH; a path (`./scripts/foo.sh`) that was not found is a

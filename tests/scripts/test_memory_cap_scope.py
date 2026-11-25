@@ -259,5 +259,31 @@ class SliceUseTest(unittest.TestCase):
         self.assertIn(probe_slice, result.stdout)
 
 
+
+class CappedUnitNameTest(unittest.TestCase):
+    def test_each_capped_argv_names_a_unit_of_its_own(self):
+        first = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", "true")
+        second = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", "true")
+
+        first_units = [word for word in first if word.startswith("--unit=")]
+        second_units = [word for word in second if word.startswith("--unit=")]
+        self.assertEqual(1, len(first_units))
+        self.assertEqual(1, len(second_units))
+        self.assertNotEqual(first_units, second_units)
+
+
+@unittest.skipUnless(systemd_scope_works(), "systemd-run --user --scope is not available on this machine")
+class NestedCappedRunTest(unittest.TestCase):
+    def test_a_command_that_starts_with_the_capped_prefix_runs_inside_the_capped_shell(self):
+        # Both scopes run as one pid, since `--scope` and `sh -c` exec in place.
+        command = f"{memory_cap_scope.CAPPED_PREFIX} echo nested-ran"
+        args, shell = memory_cap_scope.shell_popen_args(command)
+
+        result = subprocess.run(args, shell=shell, capture_output=True, text=True, timeout=60)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("nested-ran", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

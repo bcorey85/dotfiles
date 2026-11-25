@@ -71,9 +71,14 @@ if [ "$PLATFORM" = "arch" ]; then
     PACKAGES="$PACKAGES hypr quickshell gtk qt"
 fi
 
-# macOS-only packages
+# macOS-only packages; systemd user units everywhere else
 if [ "$PLATFORM" = "mac" ]; then
     PACKAGES="$PACKAGES aerospace"
+else
+    # Other install scripts write units into ~/.config/systemd/user, so create the real
+    # directories first: stow then links only tests.slice instead of folding the directory.
+    mkdir -p ~/.config/systemd/user
+    PACKAGES="$PACKAGES systemd"
 fi
 
 # One package at a time, NOT `stow -R $PACKAGES`: a single conflict makes stow
@@ -98,6 +103,15 @@ if [ -n "$FAILED" ]; then
     exit 1
 fi
 print_success "Symlinks created"
+
+# The user manager reads tests.slice only after a reload; WSL without systemd has no manager to reload.
+if [ "$PLATFORM" != "mac" ] && command -v systemctl &>/dev/null; then
+    if systemctl --user daemon-reload 2>/dev/null; then
+        print_success "systemd user units reloaded"
+    else
+        print_info "systemctl --user daemon-reload failed (no systemd user manager); tests.slice loads once a systemd user manager runs"
+    fi
+fi
 
 # Fail loudly when a script in the scripts package is left unlinked.
 "$DOTFILES_DIR/install/check-script-links" || LINKS_MISSING=1

@@ -1,11 +1,12 @@
 """Whether a Bash command starts a test run outside a memory-capped scope, and the capped form to run instead.
 
 A test run that allocates without bound takes the whole machine's memory and the kernel ends every session on it. A
-run inside `systemd-run --user --scope -p MemoryMax=... -p MemorySwapMax=0` dies alone at the cap. uncapped_test_run
+run inside `systemd-run --user --scope --slice=tests.slice -p MemoryMax=... -p MemorySwapMax=0` dies alone at its own
+cap, and the shared slice (the unit in the stowed systemd package) caps all test runs together. uncapped_test_run
 names such a command: a step that runs tests (check_scope.step_runs_tests) or `tests/run.sh`, with no systemd-run
-wrapper in front of it. A step that asks for usage (`--help`, `-h`, `--version`) runs nothing and is not one. A
-command text that shlex cannot split is not one either. cap_available says whether this machine can run the scope:
-Linux, systemd-run on PATH and a user bus.
+wrapper in front of it, or with a systemd-run wrapper that names no shared slice. A step that asks for usage
+(`--help`, `-h`, `--version`) runs nothing and is not one. A command text that shlex cannot split is not one either.
+cap_available says whether this machine can run the scope: Linux, systemd-run on PATH and a user bus.
 
 foreground_full_suite names a command with a full-suite step (tests/run.sh, `unittest discover`, a bare runner),
 capped or not: a main session's tool call must run it with run_in_background so the conversation stays open. A run
@@ -18,14 +19,17 @@ import sys
 import shell_command
 
 MEMORY_MAX = "8G"
-CAPPED_PREFIX = f"systemd-run --user --scope --quiet -p MemoryMax={MEMORY_MAX} -p MemorySwapMax=0"
+TEST_SLICE = "tests.slice"
+CAPPED_PREFIX = (f"systemd-run --user --scope --quiet --slice={TEST_SLICE} -p MemoryMax={MEMORY_MAX} "
+                 f"-p MemorySwapMax=0")
 SHELLS = {"bash", "sh", "zsh"}
 RUN_SCRIPT = re.compile(r"(^|/)tests/run\.sh$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
 TEST_WORDS = re.compile(r"test|jest|mocha|run\.sh", re.I)
 HELP_FLAGS = {"--help", "-h", "--version", "-V"}
 DENY_TEXT = (f"A test run outside a memory cap can take all the memory on this machine and end every session on it. "
-             f"Put `{CAPPED_PREFIX}` in front of the test program in each test step, for example "
+             f"Put `{CAPPED_PREFIX}` in front of the test program in each test step: the run must go in the "
+             f"shared slice {TEST_SLICE}, which caps all test runs together. For example "
              f"`{CAPPED_PREFIX} python3 -m unittest discover | tail -20` or "
              f"`{CAPPED_PREFIX} bash tests/run.sh`. A run that goes past {MEMORY_MAX} is then killed alone and "
              f"your session survives.")
@@ -34,6 +38,8 @@ BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the convers
                         f"(`{CAPPED_PREFIX} <test command>`), then go on with other work or end the turn until the "
                         f"completion notice arrives. A run of one or a few named test files may stay in the "
                         f"foreground.")
+# systemd appends `.slice` to a slice name that lacks it.
+SHARED_SLICE_NAMES = {TEST_SLICE, TEST_SLICE.removesuffix(".slice")}
 SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E", "--setenv"}
 
 
@@ -61,14 +67,19 @@ def step_is_uncapped_test_run(words):
     if not words or HELP_FLAGS.intersection(words):
         return False
 
-    wrapper_names = shell_command.wrapper_chain(words)
-    if "systemd-run" in wrapper_names:
-        return False
+    final_words = shell_command.command_after_wrappers(words)
+    if not final_words or os.path.basename(final_words[0]) != "systemd-run":
+        return runs_tests_in(final_words)
 
+    if systemd_run_slice(final_words) in SHARED_SLICE_NAMES:
+        return False
+    return runs_tests_in(program_after_systemd_run(final_words))
+
+
+def runs_tests_in(words):
     import check_scope  # pylint: disable=import-outside-toplevel
 
-    final_words = shell_command.command_after_wrappers(words)
-    return check_scope.step_runs_tests(final_words) or runs_test_script(final_words)
+    return check_scope.step_runs_tests(words) or runs_test_script(words)
 
 
 def uncapped_test_run(command):
@@ -81,15 +92,32 @@ def uncapped_test_run(command):
     return any(step_is_uncapped_test_run(words) for words in steps)
 
 
+def systemd_run_options_end(words):
+    """The index of the first word after the options of a `systemd-run` step."""
+    index = 1
+    while index < len(words) and words[index].startswith("-"):
+        index += 2 if words[index] in SYSTEMD_RUN_VALUE_OPTIONS else 1
+    return index
+
+
 def program_after_systemd_run(words):
     """The words of the program a `systemd-run` step runs, or the words unchanged for any other step."""
     if os.path.basename(words[0]) != "systemd-run":
         return words
 
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in SYSTEMD_RUN_VALUE_OPTIONS else 1
-    return words[index:]
+    return words[systemd_run_options_end(words):]
+
+
+def systemd_run_slice(words):
+    """The slice a `systemd-run` step names (`--slice=X` or `--slice X`), or None when it names none."""
+    options = words[1:systemd_run_options_end(words)]
+    slice_name = None
+    for position, option in enumerate(options):
+        if option.startswith("--slice="):
+            slice_name = option[len("--slice="):]
+        elif option == "--slice" and position + 1 < len(options):
+            slice_name = options[position + 1]
+    return slice_name
 
 
 def is_full_unittest_run(words):

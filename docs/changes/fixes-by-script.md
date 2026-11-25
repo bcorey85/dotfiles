@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-747 fix notes
+748 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -46,11 +46,11 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/comment-bloat-gate | 8 | 0 |
+| script/inline-interpreter-hint | 8 | 4 |
 | script/review-fix-asks | 8 | 3 |
 | script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
-| script/inline-interpreter-hint | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
 | script/phase-asks | 7 | 2 |
 | script/reviewer-dispatch | 7 | 2 |
@@ -121,6 +121,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
+| script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
@@ -176,7 +177,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
-| script/memory-cap-scope | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |

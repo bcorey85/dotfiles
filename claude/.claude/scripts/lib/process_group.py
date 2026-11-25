@@ -1,5 +1,5 @@
-"""Questions about a running process and its process group, for any caller: a process's command line and a SIGTERM
-for its group. It reads no toolkit state."""
+"""Questions about a running process and its process group, for any caller: a process's command line, program name
+and resident memory, and a SIGTERM for its group. It reads no toolkit state."""
 import os
 import shlex
 import signal
@@ -65,9 +65,10 @@ def wait_until_group_gone(group, seconds, poll_seconds=0.05):
     return _wait_until_not(group_is_alive, group, seconds, poll_seconds)
 
 
-def command_line(pid):
-    """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
-    ps_command = ["ps", "-ww", "-o", "command=", "-p", str(pid)]
+def _ps_field(pid, field, wide=False):
+    """The stripped `ps` output for `field` of process pid, or "" when no such process runs. Raises
+    ProcessQueryError when `ps` fails."""
+    ps_command = ["ps", *(["-ww"] if wide else []), "-o", f"{field}=", "-p", str(pid)]
     try:
         finished = subprocess.run(ps_command, capture_output=True, text=True, timeout=PS_TIMEOUT_SECONDS,
                                   check=False)
@@ -80,6 +81,28 @@ def command_line(pid):
         raise ProcessQueryError(
             f"{shlex.join(ps_command)} exited {finished.returncode}: {finished.stderr.strip()}")
     return finished.stdout.strip()
+
+
+def command_line(pid):
+    """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
+    return _ps_field(pid, "command", wide=True)
+
+
+def resident_bytes(pid):
+    """The resident memory of process pid in bytes, or None when no such process runs. Raises ProcessQueryError
+    when `ps` fails or prints something other than a number of KB."""
+    kilobytes = _ps_field(pid, "rss")
+    if kilobytes == "":
+        return None
+    if not kilobytes.isdigit():
+        raise ProcessQueryError(f"ps -o rss= -p {pid}: expected a number of KB, got {kilobytes!r}")
+    return int(kilobytes) * 1024
+
+
+def program_name(pid):
+    """The base name of the program process pid runs, or "" when no such process runs. Raises ProcessQueryError
+    when `ps` fails."""
+    return os.path.basename(_ps_field(pid, "comm"))
 
 
 def terminate_group(pid):

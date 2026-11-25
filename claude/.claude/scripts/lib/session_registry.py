@@ -1,8 +1,9 @@
 """session_registry.py: the live Claude Code session registry and the config folders it sits in.
 
-A live session has one `<pid>.json` row in the sessions folder (fields `name`, `sessionId`, `pid`). The sessions and
-projects folders are under `$CLAUDE_CONFIG_DIR` when it is set, else under the home config folder. Standard library
-and `process_group` only."""
+A live session has one `<pid>.json` row in the sessions folder (fields `name`, `sessionId`, `pid`);
+`row_for_name` and `row_for_session_id` find one live row. The sessions and projects folders
+are under `$CLAUDE_CONFIG_DIR` when it is set, else under the home config folder. Standard library and
+`process_group` only."""
 import json
 import os
 import pathlib
@@ -62,6 +63,14 @@ def row_for_name(name):
     """The first live row (file order, as `live_session_rows`) named `name`; None when none is."""
     for row in live_session_rows():
         if row.get("name") == name:
+            return row
+    return None
+
+
+def row_for_session_id(session_id):
+    """The one live row whose `sessionId` equals `session_id`; None when no live row holds it."""
+    for row in live_session_rows():
+        if row.get("sessionId") == session_id:
             return row
     return None
 

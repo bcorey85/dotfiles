@@ -147,6 +147,11 @@ def json_type_name(value):
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
 
 
+def is_int(value):
+    """Whether a decoded JSON value is an integer; a boolean is not."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def is_string_list(value):
     """Whether a decoded JSON value is a list whose every entry is a string."""
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
@@ -425,6 +430,23 @@ def restore_index_entry(repo, path, entry):
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 
 
+def restore_index_entries(repo, entries_before):
+    """Puts the index entry of each path of `entries_before` (a dict of path to IndexEntry, or None for a path that was
+    not in the index) back to what it was, when it differs now. Returns the set of paths whose entry could not be read
+    or restored; a failed index read names every path."""
+    try:
+        entries_now = index_entries(repo, list(entries_before))
+    except GitCallError:
+        return set(entries_before)
+    failed = set()
+    for path, entry in entries_before.items():
+        if entries_now[path] == entry:
+            continue
+        if not restore_index_entry(repo, path, entry):
+            failed.add(path)
+    return failed
+
+
 def blob_at_commit(repo, commit, path):
     """The blob id of `path` in `commit` of `repo`, or None when the commit has no such file or git cannot say."""
     return git_output(repo, "rev-parse", "--verify", "-q", f"{commit}:{path}")
@@ -493,6 +515,25 @@ def head_commit_time(top):
     if not stamp:
         return None
     return float(stamp)
+
+
+def commits_since(repo, commit):
+    """The "<short hash> <subject>" of each commit HEAD gained since `commit`, oldest first. `commit` None means the
+    repo had no commit: every commit of HEAD counts. Returns None when git cannot say, so a caller tells that apart
+    from no commits ([])."""
+    rev_range = f"{commit}..HEAD"
+    if commit is None:
+        try:
+            head = head_commit_or_unborn(repo)
+        except GitCallError:
+            return None
+        if head is None:
+            return []
+        rev_range = "HEAD"
+    listing = git_output(repo, "log", "--reverse", "--format=%h %s", rev_range)
+    if listing is None:
+        return None
+    return listing.splitlines()
 
 
 def untracked_paths(directory):
@@ -1059,16 +1100,35 @@ def without_paths(files, paths):
     return [path for path in files if path not in left_out]
 
 
+def transcript_record(line):
+    """The JSON object of one transcript line, None for a torn line or any other shape."""
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    return record
+
+
 def tool_use_calls(line):
     """The (tool name, input dict) of each tool call one transcript line makes, in order; empty when the line is
     not JSON or makes none."""
     if '"tool_use"' not in line:
         return []
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return []
-    message = record.get("message") if isinstance(record, dict) else None
+    return record_tool_calls(transcript_record(line))
+
+
+def makes_own_calls(record):
+    """Whether a parsed transcript record's tool calls are its own. Only user and assistant records are: an
+    api-request-blob record repeats earlier calls, so counting it counts each call twice."""
+    return record.get("type") in ("user", "assistant")
+
+
+def record_tool_calls(record):
+    """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
+    record is None or makes none."""
+    message = record.get("message") if record else None
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []

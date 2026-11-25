@@ -75,18 +75,18 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden",
-                       "adopted_unapplied"]
+                       "adopted_unapplied", "fix_rounds", "post_cap_passes", "against_ruling"]
 # The `check_overridden` value of a run whose full check was the launch's `--test` commands.
 CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
              "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied"]
+             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "post_cap_passes", "against_ruling"]
 # The list fields whose every JSON entry is a string.
-STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied")
+STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied", "post_cap_passes")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
                    "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
-                   "no_code_ruling_broken": ("ruling", "file")}
+                   "no_code_ruling_broken": ("ruling", "file"), "against_ruling": ("ruling", "file", "kept")}
 # The file_line of a finding that names no file. Its row takes no line.
 UNLOCATED = "unlocated"
 # The field each status requires, and the word for its absence. cap-reached says "missing" when the key is absent.
@@ -112,7 +112,7 @@ class PacketError(Exception):
 
 # ---------- parsing ----------
 
-INTEGER_KEYS = ("iter", "spec_iter", "review_round")
+INTEGER_KEYS = ("iter", "spec_iter", "review_round", "fix_rounds")
 
 
 def json_packet_text(message):
@@ -341,13 +341,17 @@ def read_header(raw):
         problems.append("review_round has no number")
     if review_round is None:
         review_round = iter_round
+    # None for a packet written before the loop sent fix_rounds: an old packet prints no cap line.
+    fix_rounds = first_number(raw.get("fix_rounds"))
+    if raw.get("fix_rounds", "").strip() and fix_rounds is None:
+        problems.append("fix_rounds has no number")
 
     plan_impact = raw.get("plan_impact", "").strip()
     # The review-loop script one-lines the block and sends its cause; a reviewer agent's block keeps its lines and
     # a block with no cause reads as plan.
     cause = raw.get("plan_impact_cause", "").strip().lower() or plan_impact_cause(plan_impact)
     header = {"status": status, "iter": iter_round, "spec_iter": spec_iter, "review_round": review_round,
-              "class_closure": raw.get("class_closure", "").strip(),
+              "fix_rounds": fix_rounds, "class_closure": raw.get("class_closure", "").strip(),
               "full_check": raw.get("full_check", "").strip(),
               "full_check_command": raw.get("full_check_command", "").strip(),
               "full_check_summary": raw.get("full_check_summary", "").strip(),

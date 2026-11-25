@@ -17,23 +17,43 @@
 # nvim-jump writes `handoff`, then SIGTERMs the pid, the same shutdown as `q`.
 # The key is $HERDR_PANE_ID: set in every herdr pane and fixed unless the pane moves to
 # another workspace; after a move nvim-jump cannot find this pane's state until the loop
-# restarts. With it unset, hunk runs plain and nothing hands off.
+# restarts. With it unset, hunk runs (capped) with no state dir and nothing hands off.
 #
 # Env (PATH shims, EDITOR) is the caller's job.
 #
 # Usage: hunk-review-pane [hunk diff args...]
 #        hunk-review-pane --state-dir PANE_ID
+#        hunk-review-pane --viewers
+#
+# Memory cap: hunk runs in a systemd user scope with MemoryMax=$HUNK_REVIEW_MEMORY_MAX
+# (default 1G, digits then K, M or G) and no swap, in a herdr pane and in a plain terminal
+# alike. With no systemd user session (not Linux, no `systemd-run`/`systemctl`, or no user
+# bus) hunk runs uncapped. A scope that cannot start stops the launcher; hunk never runs
+# uncapped by fallback.
+# When the kernel kills hunk for passing the cap, the terminal is reset, one line says so, and
+# hunk restarts. A kill within $HUNK_REVIEW_RESTART_WINDOW_SECONDS (default 60) of the start
+# waits for Enter first, and the launcher stops on end of input.
+#
+# --viewers prints the cap and one row per state dir whose hunk.pid is not empty (an empty one
+# is mid-write and skipped), as JSON: see
+# lib/viewer-memory.bash.
 
 set -u
 
 # $0 is a stow symlink, so the library is found from the script's real path.
 # shellcheck source-path=SCRIPTDIR/../lib source=handoff-command.bash
 . "$(dirname "$(readlink -f "$0")")/../lib/handoff-command.bash"
+# shellcheck source-path=SCRIPTDIR/../lib source=viewer-memory.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/viewer-memory.bash"
 
 # Under $HOME, not a shared /tmp, when there is no runtime dir: another local user could
 # otherwise plant the state files nvim-jump trusts.
+state_root() {
+    echo "${XDG_RUNTIME_DIR:-$HOME/.cache}/hunk-review-pane"
+}
+
 state_dir() {
-    echo "${XDG_RUNTIME_DIR:-$HOME/.cache}/hunk-review-pane/${1//[^A-Za-z0-9_.-]/_}"
+    echo "$(state_root)/${1//[^A-Za-z0-9_.-]/_}"
 }
 
 if [ "${1:-}" = "--state-dir" ]; then
@@ -41,6 +61,76 @@ if [ "${1:-}" = "--state-dir" ]; then
     state_dir "$2"
     exit 0
 fi
+
+# Prints one JSON row per state dir whose hunk.pid is not empty (an empty one is mid-write
+# and skipped), then the cap, as one object.
+print_viewers() {
+    local root pid_file pid_text pane_dir root_text rows cap_bytes
+    root=$(state_root)
+    rows=$(
+        for pid_file in "$root"/*/hunk.pid; do
+            [ -f "$pid_file" ] || continue
+            pid_text=
+            IFS= read -r pid_text <"$pid_file" || :
+            # The extension truncates hunk.pid, then writes it: an empty file is mid-write, not a bad pid.
+            [ -n "$pid_text" ] || continue
+            if ! [[ $pid_text =~ ^[0123456789]+$ ]]; then
+                echo "hunk-review-pane: $pid_file: expected a pid" >&2
+                exit 2
+            fi
+            pane_dir=$(dirname "$pid_file")
+            root_text=
+            [ ! -f "$pane_dir/root" ] || IFS= read -r root_text <"$pane_dir/root" || :
+            jq -nc --arg pane "$(basename "$pane_dir")" --arg root "$root_text" --arg pid "$pid_text" \
+                '{pane: $pane, root: $root, pid: ($pid | tonumber)}'
+        done
+    ) || exit 2
+    cap_bytes=$(viewer_memory_max_bytes)
+    printf '%s\n' "$rows" | jq -s --argjson cap "$cap_bytes" '{cap_bytes: $cap, viewers: .}'
+}
+
+if [ "${1:-}" = "--viewers" ]; then
+    viewer_memory_checked || exit 2
+    print_viewers || exit 2
+    exit 0
+fi
+
+viewer_memory_checked || exit 2
+
+# Runs hunk under the memory cap, one fresh scope per start, restarting after an OOM kill.
+# Returns hunk's status.
+viewer_start_count=0
+run_viewer() {
+    local unit pane_label start_seconds status oom_killed
+    pane_label=${HERDR_PANE_ID:-term}
+    pane_label=${pane_label//[^A-Za-z0-9_.-]/_}
+    while true; do
+        viewer_start_count=$((viewer_start_count + 1))
+        unit="hunk-review-$pane_label-$$-$viewer_start_count"
+        set_untracked_flag
+        set_viewer_cap_prefix "$unit"
+        start_seconds=$SECONDS
+        # The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
+        ${viewer_cap_prefix[@]+"${viewer_cap_prefix[@]}"} hunk diff --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+        status=$?
+        # Uncapped: the status is hunk's own, 137 included.
+        [ ${#viewer_cap_prefix[@]} -gt 0 ] || return "$status"
+        # Always asked, so the failed scope is reset whatever the status.
+        oom_killed=false
+        if viewer_scope_was_oom_killed "$unit"; then oom_killed=true; fi
+        if [ "$status" -eq 137 ]; then oom_killed=true; fi
+        [ "$oom_killed" = true ] || return "$status"
+        # The dead viewer's pid and any handoff must not outlive it: nvim-jump would signal a reused pid.
+        [ -z "${HUNK_REVIEW_PIDFILE:-}" ] || rm -f "$HUNK_REVIEW_PIDFILE" "$HUNK_REVIEW_HANDOFF"
+        stty sane 2>/dev/null || :
+        printf '\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l\033[?25h\033[<u\033[?1049l'
+        echo "hunk-review-pane: the viewer passed its $viewer_memory_max memory cap and was killed; restarting" >&2
+        if [ $((SECONDS - start_seconds)) -lt "$viewer_restart_window_seconds" ]; then
+            echo "hunk-review-pane: killed within $viewer_restart_window_seconds s of its start; press Enter to try again" >&2
+            read -r || return "$status"
+        fi
+    done
+}
 
 # Past the untracked-file limit, leave them out. Recomputed each pass: lazygit can add files.
 untracked_flag=()
@@ -51,11 +141,10 @@ set_untracked_flag() {
     [ -z "$flag" ] || untracked_flag=("$flag")
 }
 
-# Outside a herdr pane there is no key for the state dir: plain hunk, no handoff.
-# The ${a[@]+...} form: macOS /bin/bash 3.2 treats an empty array as unbound under set -u.
+# Outside a herdr pane there is no key for the state dir: hunk runs capped, with no handoff.
 if [ -z "${HERDR_PANE_ID:-}" ]; then
-    set_untracked_flag
-    exec hunk diff --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+    run_viewer "$@"
+    exit $?
 fi
 
 # nvim-jump finds this pane by its label; a pane started by hand has none. A failed rename never stops the review.
@@ -72,8 +161,7 @@ echo "$repo_root" >"$dir/root"
 
 while true; do
     rm -f "$HUNK_REVIEW_HANDOFF" "$HUNK_REVIEW_PIDFILE"
-    set_untracked_flag
-    hunk diff --watch ${untracked_flag[@]+"${untracked_flag[@]}"} "$@"
+    run_viewer "$@"
     hunk_status=$?
     rm -f "$HUNK_REVIEW_PIDFILE"
 

@@ -17,6 +17,7 @@ of the command (lib/expected_red.py), and each left-out line prints as `expected
 after the result line. When they leave out the whole command, nothing runs and the result is
 `not run (expected red until Phase <id>[, <id>...])`.
 
+The check runs inside the shared capped slice when the machine has a systemd user manager.
 Runs the command in one shell in the repo, output to the log, and
 prints `full check: <result>` first: `passed`, `unverified (exit 0, no test result shown)` when the command exited 0 but
 printed no test runner's own summary line or ran no test, `failed (exit N)` with the failing step's lines after it
@@ -87,6 +88,7 @@ import expected_red
 import full_check_receipt
 import gate_env
 import local_check
+import memory_cap_scope
 import reviewed_tree
 import script_utils
 from ansi_text import strip_ansi
@@ -386,9 +388,11 @@ def existed_at_base(repo, base, path):
 
 def run_check_command(repo, check_command, log, timeout, env, on_start):
     """The exit code of the command run through the shell in the repo, output to the log; None when it ran past the
-    limit and was killed with its process group."""
+    limit and was killed with its process group. On a machine with a systemd user manager the command runs inside the
+    shared capped slice; `systemd-run --scope` execs it in place, so the pid and the process group stay the check's."""
+    command, use_shell = memory_cap_scope.shell_popen_args(check_command)
     with pathlib.Path(log).open("w") as handle:
-        process = subprocess.Popen(check_command, shell=True, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
+        process = subprocess.Popen(command, shell=use_shell, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=env, start_new_session=True)
         if on_start:
             on_start(process.pid)

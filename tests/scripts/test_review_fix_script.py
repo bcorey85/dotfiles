@@ -401,6 +401,22 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("still racy", output)
         self.assertIn("stays blocked", output)
 
+    def test_the_cap_stop_names_the_fix_rounds_and_the_post_cap_passes_first(self):
+        capped = json.dumps({**CAP_FIELDS, "fix_rounds": 2, "post_cap_passes": ["final read", "scoped re-review"]})
+
+        code, output = self.packet(capped)
+
+        self.assertEqual(code, 0, output)
+        summary = "cap reached after 2 fix round(s); post-cap passes: final read, scoped re-review"
+        self.assertIn(summary, output)
+        self.assertLess(output.index(summary), output.index("still racy"))
+
+    def test_a_cap_stop_of_a_packet_without_the_keys_prints_no_summary_line(self):
+        code, output = self.packet(CAP)
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("cap reached after", output)
+
     def capped_packet(self, tree="current", dispatched=True, **fields):
         """A cap-reached packet with no blocker whose passed full check covered `tree`, with the dispatch of this
         repo stored for the session (none stored when `dispatched` is False)."""
@@ -888,6 +904,25 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("Toolkit fault, not a plan change", output)
         self.assertIn("the gate base is old", output)
         self.assertNotIn("ask-user-plan-impact", output)
+
+    def test_decide_adopt_keeps_the_packets_cap_counts_in_the_redispatch_flags(self):
+        self.impacts_packet([HELD_IMPACT], fix_rounds=2, post_cap_passes=["final read"])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("--fix-rounds 2", output)
+        self.assertIn("--post-cap-passes 'final read'", output)
+        self.assertIn("in place of any `--fix-rounds`/`--post-cap-passes`", output)
+
+    def test_decide_adopt_of_a_packet_with_no_cap_counts_adds_no_cap_flag(self):
+        self.impacts_packet([HELD_IMPACT])
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "yes, drop the retry"])
+
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("--fix-rounds", output)
+        self.assertNotIn("--post-cap-passes", output)
 
     def test_adopting_a_held_plan_impact_redispatches_once_with_the_plan_impact_resolved(self):
         self.impacts_packet([HELD_IMPACT])
@@ -1671,6 +1706,30 @@ class ReviewFixScriptTest(unittest.TestCase):
     def test_a_cap_reached_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
         self.assert_stop_packet_asks_are_printed_and_logged(packet_text(CAP_FIELDS, ask=self.STOP_ASKS))
 
+    def test_the_cap_reached_stop_names_by_session_in_a_lane_session_and_by_user_otherwise(self):
+        lanes = self.temp_root / "lane-state" / "herdr-lanes"
+        lanes.mkdir(parents=True)
+        lane = {"name": "one", "worktree": str(self.repo), "main_checkout": str(self.repo), "branch": "b",
+                "brief": "brief", "session_id": SESSION, "reports_to": "boss",
+                "started_at": "2026-11-24T10:00:00+00:00"}
+        text = packet_text(CAP_FIELDS, ask=self.STOP_ASKS)
+        state_env = {"XDG_STATE_HOME": str(self.temp_root / "lane-state")}
+
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", output)
+
+        (lanes / "one.json").write_text(json.dumps(lane))
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by session <outcome-1> <outcome-2>", output)
+
+        (lanes / "one.json").write_text("not json")
+        code, output = self.packet(text, **state_env)
+        self.assertEqual(code, 0, output)
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", output)
+        self.assertIn("review_fix: lane files unreadable (", output)
+
     def test_a_critical_blocker_packet_with_asks_prints_them_and_asks_done_logs_their_outcomes(self):
         self.assert_stop_packet_asks_are_printed_and_logged(packet_text(BLOCKER_FIELDS, ask=self.STOP_ASKS))
 
@@ -2196,10 +2255,11 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_hand_back_with_no_reviewer_run_re_dispatches_with_the_round_count_kept(self):
-        self.unreviewed_loop("a1", packet_text(CONVERGED_FIELDS, iter=2))
+        self.unreviewed_loop("a1", packet_text(CONVERGED_FIELDS, iter=2, fix_rounds=2))
         code, output = self.packet("")
         self.assertEqual(code, 2, output)
         self.assertIn("Run `launch` once more with the same flags plus `--iter 2`", output)
+        self.assertIn("`--fix-rounds 2` in place of any `--fix-rounds`/`--post-cap-passes`", output)
         self.assertNotIn("review-gate-mark", output)
 
     def test_a_second_unreviewed_hand_back_in_a_row_says_stop_and_no_re_dispatch(self):
@@ -2929,6 +2989,26 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("ACTION: render-and-finish", output)
 
+    def test_launch_with_cap_counts_writes_them_as_header_lines_the_loop_reads_back(self):
+        code, output = self.launch("--iter", "2", "--fix-rounds", "2", "--post-cap-passes", "final read, class closure")
+        self.assertEqual(code, 0, output)
+        loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
+        log_path = next(loop_root.glob("review-script-*/script.log"))
+        header, _handoff = review_loop_prompt_file.read_prompt(log_path.parent / "prompt.txt")
+        self.assertEqual(review_loop_prompt_file.header_whole_number(header, "fix_rounds"), 2)
+        self.assertEqual(review_loop_prompt_file.header_list(header, "post_cap_passes"),
+                         ["final read", "class closure"])
+
+    def test_launch_with_an_unknown_post_cap_kind_stops(self):
+        code, output = self.launch("--post-cap-passes", "final read,class closure")
+        self.assertNotEqual(code, 0)
+        self.assertIn("expected kinds from final read, class closure", output)
+
+    def test_launch_with_a_negative_fix_rounds_stops(self):
+        code, output = self.launch("--fix-rounds", "-1")
+        self.assertNotEqual(code, 0)
+        self.assertIn("--fix-rounds -1 is negative", output)
+
     def test_launch_with_a_repo_flag_reviews_that_repo_and_keeps_state_in_it(self):
         second = self.temp_root / "second"
         second.mkdir()
@@ -3517,11 +3597,12 @@ class ReviewFixScriptTest(unittest.TestCase):
         loop_root = script_utils.git_path(self.repo, "review-script") / "loop-script"
         return sorted(loop_root.glob("review-script-*"))
 
-    def launched_review_with_asks(self, home):
-        """Launches a review that hands back WITH_ASK and runs its packet. Returns the packet arguments."""
+    def launched_review_with_asks(self, home, message=WITH_ASK):
+        """Launches a review that hands back `message` (WITH_ASK by default) and runs its packet. Returns the packet
+        arguments."""
         handoff = self.temp_root / "handoff.md"
         handoff.write_text("Review the greeting change.\n")
-        code, output = self.launch("--file", "README.md", "--handoff", str(handoff), message=WITH_ASK, HOME=home)
+        code, output = self.launch("--file", "README.md", "--handoff", str(handoff), message=message, HOME=home)
         self.assertEqual(code, 0, output)
         packet_command = output.splitlines()[-1].split("`")[1]
         packet_args = shlex.split(packet_command)[2:]
@@ -4000,6 +4081,26 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("--detach", launch_words)
         self.assertTrue(findings_file.read_text().startswith("- src/retry.ts:10 "))
 
+    def test_the_launch_line_for_an_accepted_ask_of_a_launched_review_carries_the_packets_cap_counts(self):
+        home = str(self.temp_root / "home")
+        message = packet_text(WITH_ASK_FIELDS, fix_rounds=2, post_cap_passes=["final read"])
+        self.launched_review_with_asks(home, message=message)
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"], HOME=home)
+        self.assertEqual(code, 0, output)
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        launch_words = shlex.split(launch_lines[0])
+        self.assertEqual(launch_words[launch_words.index("--fix-rounds") + 1], "2")
+        self.assertEqual(launch_words[launch_words.index("--post-cap-passes") + 1], "final read")
+
+    def test_the_launch_line_with_no_launch_record_carries_the_packets_cap_counts(self):
+        self.packet(packet_text(WITH_ASK_FIELDS, iter=3, fix_rounds=2, post_cap_passes=["final read"]))
+        code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
+        self.assertEqual(code, 0, output)
+        launch_lines = [line for line in output.splitlines() if line.startswith(LAUNCH_COMMAND)]
+        launch_words = shlex.split(launch_lines[0])
+        self.assertEqual(launch_words[launch_words.index("--fix-rounds") + 1], "2")
+        self.assertEqual(launch_words[launch_words.index("--post-cap-passes") + 1], "final read")
+
     def test_a_repeat_asks_done_with_no_launch_record_prints_the_same_launch_line(self):
         self.packet(WITH_ASK)
         code, output = self.run_script(["asks-done", "--by", "user", "accepted", "rejected"])
@@ -4269,7 +4370,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         lines = output.splitlines()
         self.assertIn("ACTION: dispatch-reviewer", lines)
-        request = next(line for line in lines if line.startswith("- agent code-reviewer; prompt "))
+        request_start = "- round 1: review1-code-reviewer; agent code-reviewer; prompt "
+        request = next(line for line in lines if line.startswith(request_start))
         prompt_head, prompt_tail = reviewer_dispatch.AGENT_PROMPT.split("{prompt_file}")
         prompt_file = pathlib.Path(request.split(f'; prompt "{prompt_head}')[1].split(prompt_tail)[0])
         report_file = pathlib.Path(

@@ -30,8 +30,8 @@ unscoped it is. A check step with `--help`, `-h`, `--version` or `-V` as a whole
 never recorded. A check in the body of a `for` loop (`for i in 1 2 3; do pytest x; done`) is never denied, so a flake
 check can repeat with no edit between; it is still recorded, so a plain rerun after it is denied. A `while` or `until`
 body, an `if`, a bare `true;` and a `for` over fewer than two values get no such exemption. A run whose output was
-piped into `tail`, `head` or `grep` and not kept in a file (`>`, `&>`, `| tee <file>`) is recorded as cut: one rerun
-with stdout sent to a file is then allowed, and the deny names that form without rebuilding the command. Escape: a
+piped into `tail`, `head`, `grep` or `rg` and not kept in a file (`>`, `&>`, `| tee <file>`) is recorded as cut: one
+rerun with stdout sent to a file is then allowed, and the deny names that form without rebuilding the command. Escape: a
 trailing `#skip-quality-cap`. Fails closed only on the PreToolUse Bash path; state errors fail open. State lives in
 ~/.claude/state/quality-check/<session>/.
 """
@@ -89,11 +89,11 @@ BRACE_RANGE = re.compile(r"^\{(\d+)\.\.(\d+)\}$")
 CD_SEGMENT = re.compile("^cd" + WS + "+([^" + SP + "]+)$")
 WRAPPER = re.compile("^(time|env|npx|bunx|pnpm exec|yarn dlx)" + WS + "+")
 ASSIGNMENT = re.compile(r"^[^\W\d]\w*=[^" + SP + "]*" + WS + "+")
-OUTPUT_FILTER_START = re.compile("^(tail|head|grep)(" + WS + "|$)")
+OUTPUT_FILTER_START = re.compile("^(tail|head|grep|rg)(" + WS + "|$)")
 TEE_TO_FILE = re.compile("^tee(" + WS + "+-a)?" + WS + "+[^-" + SP + "]")
 # `>`, `>>`, `1>`, `&>` or `&>>` onto a file: stdout lands in it. `2>` and a descriptor copy (`>&2`) do not count.
 STDOUT_TO_FILE = re.compile("(^|" + WS + ")[1&]?>>?" + WS + "*(?!/dev/null(" + WS + "|$))[^&|;<>" + SP + "]")
-# The second line of a run record whose output went through tail, head or grep and was not kept in a file.
+# The second line of a run record whose output went through tail, head, grep or rg and was not kept in a file.
 CUT_MARK = "cut"
 DENY_TAIL = (" If it still fails after that batch fix, stop and ask the user. To repeat a check on purpose, run it in "
              "one loop over two or more values, `for i in 1 2 3; do <check>; done`. If you believe this deny is "
@@ -102,9 +102,10 @@ DENY_TEXT = ("' already ran this session and nothing has been edited since. Re-r
              "produce a different result. Read that run's whole output, fix every failure in one batch, then run "
              "it once more with its output redirected to /tmp/check.log and read the WHOLE log." + DENY_TAIL)
 CUT_DENY_TEXT = ("' already ran this session and nothing has been edited since, and that run's output went through "
-                 "tail, head or grep. Run it once more with no tail, head or grep after it and its output sent to a "
-                 "file, `<check> > /tmp/check.log 2>&1`, with any file list written out rather than built by a `$( )` "
-                 "substitution. Read the WHOLE log, fix every failure in one batch, then run it once more." + DENY_TAIL)
+                 "tail, head, grep or rg. Run it once more with no tail, head, grep or rg after it and its output "
+                 "sent to a file, `<check> > /tmp/check.log 2>&1`, with any file list written out rather than built "
+                 "by a `$( )` substitution. Read the WHOLE log, fix every failure in one batch, then run it once "
+                 "more." + DENY_TAIL)
 CHAIN_DENY_TEXT = (" This call was denied as a whole because of that fragment alone: none of its other steps ran. "
                    "Send the other steps again without it, as their own call.")
 
@@ -243,7 +244,7 @@ def saves_output(steps, index, segment):
 
 
 def cuts_output(steps, index):
-    """True when the check step's output goes into tail, head or grep."""
+    """True when the check step's output goes into tail, head, grep or rg."""
     reader = piped_step(steps, index)
     return reader is not None and OUTPUT_FILTER_START.match(reader) is not None
 

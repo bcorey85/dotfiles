@@ -7,7 +7,7 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-7 open benches, by rank. Each line is the question the bench asks.
+8 open benches, by rank. Each line is the question the bench asks.
 
 1 further benches are left out of this page.
 
@@ -18,3 +18,4 @@ description: "The benches that are open now and the question each asks."
 * Bench a UI prototype step in eng-spec against a hidden design preference (queued): Tests whether reacting to running UI variants, instead of answering plan questions, gets the build closer to what the user wanted.
 * Escalate the fix coder to Opus after a Sonnet fix fails re-review (queued): Cheap-first, escalate-on-failure (Copilot Fusion's cascade) could cut the third review round, which still needs changes 86% of the time.
 * Give the code reviewer each touched file's earlier escapes and reverts (queued): The code reviewer catches repeat defects it now misses by reading the file's earlier escapes and reverts, as Linear's review agent does.
+* Bench intent-first descriptions for six skills that miss paraphrased asks (queued): Six skills start firing on a paraphrased ask instead of only on their quoted trigger words, so the user gets the skill without typing its slash command

@@ -37,7 +37,7 @@ gatedFiles=("${codeFlowFiles[@]}" "${reviewFlowFiles[@]}")
 lintStatus=0
 
 if [ "$#" -eq 0 ]; then
-    ruff check --no-cache claude/.claude/scripts claude/.claude/skills tests/scripts tests/duplicate_code.py || lintStatus=1
+    ruff check --no-cache claude/.claude/scripts claude/.claude/skills scripts/.local/lib tests/scripts tests/duplicate_code.py || lintStatus=1
     ruff check --no-cache --select C901 --output-format concise claude/.claude/scripts || echo "complexity report only: not a failure" >&2
     ruff check --no-cache --select C901 "${gatedFiles[@]}" || lintStatus=1
     exit "$lintStatus"

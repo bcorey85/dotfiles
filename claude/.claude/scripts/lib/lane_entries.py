@@ -46,7 +46,7 @@ class LaneNotFoundError(Exception):
 
 
 def lanes_dir():
-    """`${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes`."""
+    """`${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes`; a relative `XDG_STATE_HOME` is ignored."""
     return script_utils.xdg_state_home() / "herdr-lanes"
 
 

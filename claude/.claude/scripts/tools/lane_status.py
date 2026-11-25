@@ -23,7 +23,8 @@ Lines, one per problem:
 
 --changes prints only the lines that changed since the last --changes run (a viewer line counts as changed only
 when its pane or pid does, not its size), and `<name>: working` for a lane that was reported before and now
-works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`.
+works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`; a relative
+`XDG_STATE_HOME` is ignored.
 
 Environment: LANE_STATUS_MIN_MEMORY_GB (8), LANE_STATUS_MIN_SCRATCH_GB (1), LANE_STATUS_SCRATCH_CAP_GB (4). The
 viewer cap is read from `hunk-review-pane --viewers`, which takes it from HUNK_REVIEW_MEMORY_MAX (1G).

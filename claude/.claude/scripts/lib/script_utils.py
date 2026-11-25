@@ -2,6 +2,7 @@
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
+import argparse
 import datetime
 import difflib
 import json
@@ -153,6 +154,17 @@ def json_type_name(value):
 def is_int(value):
     """Whether a decoded JSON value is an integer; a boolean is not."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def positive_int(text):
+    """An argparse type: the integer in text, which must be above zero."""
+    try:
+        number = int(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from error
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return number
 
 
 def is_string_list(value):
@@ -1582,9 +1594,9 @@ def can_append(path):
 
 
 def xdg_state_home():
-    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset, empty or relative."""
     state_home = os.environ.get("XDG_STATE_HOME")
-    if not state_home:
+    if not state_home or not os.path.isabs(state_home):
         return pathlib.Path.home() / ".local" / "state"
     return pathlib.Path(state_home)
 

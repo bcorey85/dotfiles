@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -35,6 +36,14 @@ class IsIntTest(unittest.TestCase):
         for value, expected in cases:
             with self.subTest(value=value):
                 self.assertIs(script_utils.is_int(value), expected)
+
+
+class PositiveIntTest(unittest.TestCase):
+    def test_only_an_integer_above_zero_is_accepted(self):
+        self.assertEqual(script_utils.positive_int("42"), 42)
+        for text in ("0", "-3", "abc", "1.5", ""):
+            with self.subTest(text=text), self.assertRaises(argparse.ArgumentTypeError):
+                script_utils.positive_int(text)
 
 
 class PathIsUnderTest(unittest.TestCase):
@@ -99,6 +108,19 @@ class WithoutPathsTest(unittest.TestCase):
         self.assertEqual({"b": 2}, script_utils.without_paths({"a": 1, "b": 2}, ["a"]))
         self.assertEqual(["b", "c"], script_utils.without_paths(["a", "b", "c"], ("a",)))
         self.assertEqual(["a"], script_utils.without_paths(["a"], []))
+
+
+class XdgStateHomeTest(unittest.TestCase):
+    def test_only_an_absolute_value_is_used_else_the_home_state_folder(self):
+        home_state = pathlib.Path("/home/someone/.local/state")
+        cases = {"unset": None, "empty": "", "relative": "relstate", "absolute": "/var/state"}
+        for label, value in cases.items():
+            environ = {"HOME": "/home/someone"}
+            if value is not None:
+                environ["XDG_STATE_HOME"] = value
+            with self.subTest(label), unittest.mock.patch.dict(os.environ, environ, clear=True):
+                expected = pathlib.Path(value) if label == "absolute" else home_state
+                self.assertEqual(expected, script_utils.xdg_state_home(), label)
 
 
 class CanAppendTest(unittest.TestCase):

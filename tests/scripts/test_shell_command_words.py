@@ -15,10 +15,13 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from shell_command import parse_raw_simple_commands
 from shell_command_words import (
     before_subshell_closer,
+    command_call_arguments,
     command_word_index,
     joined_raw_words,
     placed_raw_words,
     raw_word_names_command,
+    script_call_arguments,
+    variable_assignments,
 )
 from shell_steps import PlacedCommand
 
@@ -112,6 +115,69 @@ class PlacedRawWordsTest(unittest.TestCase):
         words = ["docker", "run", "-e", "A= x ", "img"]
         placed = PlacedCommand(step, words, words, "/")
         self.assertEqual(placed_raw_words(placed), ["docker", "run", "-e", "'A= x '", "img"])
+
+
+class ScriptCallArgumentsTest(unittest.TestCase):
+    def test_the_words_after_the_script_are_returned(self):
+        self.assertEqual(script_call_arguments("python3 ~/.claude/scripts/code/code_wait.py review", "code_wait.py"),
+                         [["review"]])
+
+    def test_a_script_name_in_argument_position_still_matches(self):
+        self.assertEqual(script_call_arguments("grep -n x /x/code_wait.py", "code_wait.py"), [[]])
+
+    def test_a_quoted_script_path_is_unquoted_before_matching(self):
+        self.assertEqual(script_call_arguments('python3 "/x/code_wait.py" review', "code_wait.py"), [["review"]])
+
+    def test_a_chain_gives_one_hit_for_each_script(self):
+        command = ("cd r && python3 /x/code_review_start.py code - 1 h --detach "
+                   "&& python3 /x/code_wait.py review")
+        self.assertEqual(script_call_arguments(command, "code_review_start.py"),
+                         [["code", "-", "1", "h", "--detach"]])
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
+    def test_a_call_with_and_without_arguments(self):
+        with_flag = "python3 ~/.claude/scripts/code/phase_start.py --new-run"
+        self.assertEqual(script_call_arguments(with_flag, "phase_start.py"), [["--new-run"]])
+        self.assertEqual(script_call_arguments("phase_start.py", "phase_start.py"), [[]])
+
+    def test_a_heredoc_body_with_an_apostrophe_hides_no_later_call(self):
+        command = "cat <<EOF > /tmp/h.txt\nit's the handoff\nEOF\npython3 /x/code_wait.py review"
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
+    def test_a_grep_pattern_shlex_cannot_read_hides_no_call(self):
+        command = r"grep 'a\|b' f && python3 /x/code_wait.py review"
+        self.assertEqual(script_call_arguments(command, "code_wait.py"), [["review"]])
+
+    def test_a_command_that_does_not_run_the_script_gives_nothing(self):
+        self.assertEqual(script_call_arguments("echo hi", "phase_start.py"), [])
+
+
+class CommandCallArgumentsTest(unittest.TestCase):
+    def test_only_the_command_word_matches(self):
+        cases = {"echo x | tee -a /f": [["-a", "/f"]], "sudo tee /f": [["/f"]], "grep -n tee /f": [],
+                 "echo tee /f": [], "rg tee /f": []}
+        for command, expected in cases.items():
+            self.assertEqual(command_call_arguments(command, "tee"), expected, command)
+
+
+class VariableAssignmentsTest(unittest.TestCase):
+    def test_a_bare_assignment_gives_its_value_and_a_later_one_replaces_it(self):
+        self.assertEqual(variable_assignments("f=/a/b && g='c d'; f=/e"), {"f": "/e", "g": "c d"})
+
+    def test_a_substitution_in_a_value_reads_as_x(self):
+        command = "F=$(git rev-parse --git-path code-phase)/stop.md && cat > $F"
+        self.assertEqual(variable_assignments(command), {"F": "x/stop.md"})
+
+    def test_an_assignment_in_front_of_a_command_is_no_bare_assignment(self):
+        self.assertEqual(variable_assignments("f=/a make"), {})
+
+    def test_an_assignment_is_read_when_a_later_step_cannot_be_parsed(self):
+        for command in ('F=/r/stop.md; printf \'%s\\n\' "x" > "$F"', 'F=/r/stop.md && echo "a" > "$F"'):
+            with self.subTest(command=command):
+                self.assertEqual(variable_assignments(command), {"F": "/r/stop.md"})
+
+    def test_a_step_the_parser_cannot_read_is_skipped(self):
+        self.assertEqual(variable_assignments("f=/a && echo 'unclosed"), {"f": "/a"})
 
 
 class BeforeSubshellCloserTest(unittest.TestCase):

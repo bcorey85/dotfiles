@@ -152,10 +152,10 @@ focus_step=""
         echo "1. $reopen"
         if [ -n "$session" ]; then
             # <ws> stays a placeholder: the user reads the id off step 1's reply.
-            echo "2. ${focus_step}herdr-dev $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
+            echo "2. ${focus_step}herdr-dev --headless $(printf %q "$worktree") <ws> $(printf %q "$session") '$RESUME_PROMPT'"
             echo "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
         else
-            echo "2. the fork's session id could not be read; run claude --resume in $(printf %q "$worktree")"
+            echo "2. the fork's session id could not be read; run $lane_claude --resume in $(printf %q "$worktree")"
         fi
     fi
 }>>"$log"

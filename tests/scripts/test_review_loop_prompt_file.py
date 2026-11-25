@@ -57,6 +57,26 @@ class RuledOutHeaderTest(unittest.TestCase):
         self.assertEqual(review_loop_prompt_file.header_list({"lane": "code"}, "ruled-out files"), [])
 
 
+class HeaderPostCapPassesTest(unittest.TestCase):
+    def test_a_header_with_no_line_has_no_passes(self):
+        self.assertEqual(review_loop_prompt_file.header_post_cap_passes({"lane": "code"}), [])
+
+    def test_known_kinds_are_read_in_order(self):
+        header = {"post_cap_passes": "final read, class closure"}
+        self.assertEqual(review_loop_prompt_file.header_post_cap_passes(header), ["final read", "class closure"])
+
+    def test_a_kind_outside_the_known_kinds_stops_the_run(self):
+        header = {"post_cap_passes": "final read, tea break"}
+        with self.assertRaises(review_loop_prompt_file.PromptFileError) as caught:
+            review_loop_prompt_file.header_post_cap_passes(header)
+        self.assertIn("tea break", str(caught.exception))
+
+    def test_an_empty_kind_stops_the_run(self):
+        for value in ("final read, , class closure", "final read, ", ", "):
+            with self.subTest(value=value), self.assertRaises(review_loop_prompt_file.PromptFileError):
+                review_loop_prompt_file.header_post_cap_passes({"post_cap_passes": value})
+
+
 class CoderModelHeaderTest(unittest.TestCase):
     def test_the_coder_model_line_is_read_under_its_key(self):
         directory = tempfile.TemporaryDirectory()

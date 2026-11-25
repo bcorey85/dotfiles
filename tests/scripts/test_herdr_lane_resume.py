@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, run_through_stow_symlink, write_stub
+from stubs import copy_sourced_libs, run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "herdr-lane-resume"))
@@ -89,7 +89,7 @@ class HerdrLaneResumeTest(unittest.TestCase):
         self.bin_dir.mkdir()
         self.script = self.bin_dir / "herdr-lane-resume"
         shutil.copy(HERDR_LANE_RESUME, self.script)
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         self.script.chmod(0o755)
         write_stub(self.bin_dir / "herdr", HERDR_BODY)
         write_stub(self.bin_dir / "herdr-api", HERDR_API_BODY)
@@ -153,6 +153,9 @@ class HerdrLaneResumeTest(unittest.TestCase):
             return []
         return self.events.read_text().splitlines()
 
+    def prune_event(self, lane_names):
+        return f"prune {self.main_checkout} --apply lanes={json.dumps({'lanes': lane_names})}"
+
 
 class ResumeTest(HerdrLaneResumeTest):
     def test_resume_opens_the_workspace_and_runs_herdr_dev_resume(self):
@@ -163,7 +166,7 @@ class ResumeTest(HerdrLaneResumeTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.recorded_events(), [
             f"herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --label {NAME} --focus",
-            f"herdr-dev --resume {self.worktree} wNew s1 {BRIEF}",
+            f"herdr-dev --headless --resume {self.worktree} wNew s1 {BRIEF}",
         ])
 
     def test_resume_under_tuios_creates_and_focuses_the_workspace(self):
@@ -175,7 +178,7 @@ class ResumeTest(HerdrLaneResumeTest):
         self.assertEqual(self.recorded_events(), [
             f"herdr-api workspace create --cwd {self.worktree} --label {NAME} --focus",
             "herdr-api workspace focus wNew",
-            f"herdr-dev --resume {self.worktree} wNew s1 {BRIEF}",
+            f"herdr-dev --headless --resume {self.worktree} wNew s1 {BRIEF}",
         ])
 
     def test_each_stop_exits_1_with_its_message_and_starts_nothing(self):
@@ -315,9 +318,6 @@ class ResumeTest(HerdrLaneResumeTest):
 
 
 class CloseTest(HerdrLaneResumeTest):
-    def prune_event(self, lane_names):
-        return f"prune {self.main_checkout} --apply lanes={json.dumps({'lanes': lane_names})}"
-
     def arrange_open_lane(self, status="idle"):
         self.add_lane()
         self.set_agents([agent("p1", self.worktree, status)])
@@ -547,12 +547,364 @@ class CloseTest(HerdrLaneResumeTest):
         self.assertEqual(self.recorded_events(), [self.prune_event([])])
         self.assertEqual(self.lane_names(), [])
 
+    def test_gone_worktree_is_closed_through_a_dot_dot_path(self):
+        self.add_lane()
+        self.worktree.rmdir()
+
+        result = self.run_script("--close", f"../{NAME}", cwd=self.main_checkout)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("no lane file entry", result.stderr)
+        self.assertEqual(self.lane_names(), [])
+
     def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
         finished = run_through_stow_symlink(HERDR_LANE_RESUME, self.root / "symlink-run")
 
         self.assertEqual(finished.returncode, 1)
         self.assertTrue(finished.stderr.startswith("Reopen a dead lane from its lane file"), finished.stderr)
         self.assertNotIn("toolkit-tools.bash", finished.stderr)
+
+
+GIT_ENV = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_AUTHOR_NAME": "Test",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "Test",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
+
+class EntrylessCloseTest(HerdrLaneResumeTest):
+    """A real bare origin, a main checkout on master and a linked worktree on `fork`, one commit ahead."""
+
+    def setUp(self):
+        super().setUp()
+        shutil.rmtree(self.main_checkout)
+        shutil.rmtree(self.worktree)
+        self.fake_workspaces = []
+
+        origin = self.root / "origin.git"
+        self.git(self.root, "init", "--bare", "-b", "master", str(origin))
+        self.git(self.root, "init", "-b", "master", str(self.main_checkout))
+        (self.main_checkout / "README").write_text("start\n")
+        self.git(self.main_checkout, "add", "README")
+        self.git(self.main_checkout, "commit", "-m", "start")
+        self.git(self.main_checkout, "remote", "add", "origin", str(origin))
+        self.git(self.main_checkout, "push", "-u", "origin", "master")
+        self.git(self.main_checkout, "remote", "set-head", "origin", "master")
+
+        self.git(self.main_checkout, "worktree", "add", str(self.worktree), "-b", "fork")
+        (self.worktree / "feature").write_text("work\n")
+        self.git(self.worktree, "add", "feature")
+        self.git(self.worktree, "commit", "-m", "feature")
+
+    def env(self, tuios=False):
+        env = super().env(tuios)
+        env.update(GIT_ENV)
+        return env
+
+    def git(self, folder, *args):
+        return subprocess.run(["git", "-C", str(folder), *args], env=self.env(),
+                              capture_output=True, text=True, check=True)
+
+    def merge_fork(self):
+        self.git(self.main_checkout, "merge", "--ff-only", "fork")
+        self.git(self.main_checkout, "push", "origin", "master")
+
+    def workspace_on(self, path, workspace_id="wX", linked=True):
+        self.fake_workspaces.append({
+            "workspace_id": workspace_id,
+            "label": pathlib.Path(path).name,
+            "worktree": {"checkout_path": str(path), "is_linked_worktree": linked},
+        })
+        self.set_workspaces(self.fake_workspaces)
+
+    def assert_refused_changing_nothing(self, result, message):
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(message, result.stderr)
+        message_lines = [line for line in result.stderr.splitlines() if message in line]
+        self.assertTrue(message_lines[0].startswith("herdr-lane-resume: "), message_lines[0])
+        self.assertEqual(self.recorded_events(), [])
+        self.assertTrue(self.worktree.is_dir())
+        self.git(self.main_checkout, "rev-parse", "--verify", "fork")
+        registered = self.git(self.main_checkout, "worktree", "list", "--porcelain").stdout
+        self.assertIn(f"worktree {self.worktree}", registered)
+
+    def test_entryless_close_by_name_closes_the_merged_workspace_and_prunes(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+
+    def test_entryless_close_by_path_closes_the_merged_workspace_and_prunes(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+
+    def test_entryless_close_of_an_unmerged_branch_refuses_before_closing(self):
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, "branch fork is not merged into origin/master")
+
+    def test_entryless_close_refuses_a_working_agent(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        self.set_agents([agent("p1", self.worktree, "working")])
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, "has a working agent in pane p1")
+
+    def test_entryless_close_refuses_the_main_checkout(self):
+        self.merge_fork()
+        self.workspace_on(self.main_checkout, linked=False)
+        cases = [
+            ("by name", self.main_checkout.name, "is the main checkout"),
+            ("by path", str(self.main_checkout), "is not a linked worktree"),
+        ]
+        for label, target, message in cases:
+            with self.subTest(label):
+                result = self.run_script("--close", target)
+
+                self.assert_refused_changing_nothing(result, message)
+
+    def test_entryless_close_refuses_a_worktree_of_a_separate_git_dir_repo(self):
+        separate = self.root / "separate"
+        self.git(self.root, "init", "-b", "master", "--separate-git-dir", str(self.root / "separate.git"),
+                 str(separate))
+        (separate / "README").write_text("start\n")
+        self.git(separate, "add", "README")
+        self.git(separate, "commit", "-m", "start")
+        separate_worktree = self.root / "separate-linked"
+        self.git(separate, "worktree", "add", str(separate_worktree), "-b", "other")
+        self.workspace_on(separate_worktree)
+
+        result = self.run_script("--close", str(separate_worktree))
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("is bare, missing or not a work tree", result.stderr)
+        self.assertEqual(self.recorded_events(), [])
+        self.assertTrue(separate_worktree.is_dir())
+
+    def test_entryless_close_with_two_matching_workspaces_lists_both(self):
+        self.merge_fork()
+        other = self.root / "elsewhere" / NAME
+        self.workspace_on(self.worktree, "wA")
+        self.workspace_on(other, "wB")
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, str(self.worktree))
+        self.assertIn(str(other), result.stderr)
+
+    def test_entryless_close_by_name_under_tuios_refuses(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", NAME, tuios=True)
+
+        self.assert_refused_changing_nothing(result, "under tuios a name cannot be matched")
+        self.assertIn("known lanes: none", result.stderr)
+
+    def test_entryless_close_by_name_under_tuios_lists_the_known_lanes(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        self.lanes("add", "--name", "other-lane", "--worktree", str(self.root / "other-lane"),
+                   "--main-checkout", str(self.main_checkout), "--branch", "other", stdin=BRIEF)
+
+        result = self.run_script("--close", NAME, tuios=True)
+
+        self.assert_refused_changing_nothing(result, "under tuios a name cannot be matched")
+        self.assertIn("known lanes:", result.stderr)
+        self.assertIn("other-lane", result.stderr)
+
+    def test_entryless_close_of_a_worktree_of_a_bare_repo_refuses(self):
+        bare = self.root / "repo.git"
+        self.git(self.root, "clone", "--bare", str(self.root / "origin.git"), str(bare))
+        bare_worktree = self.root / "bare-fork"
+        self.git(bare, "worktree", "add", str(bare_worktree), "-b", "fork2")
+        self.workspace_on(bare_worktree)
+
+        result = self.run_script("--close", str(bare_worktree))
+
+        self.assert_refused_changing_nothing(result, "is bare, missing or not a work tree")
+
+    def test_entryless_failed_workspace_close_prunes_nothing(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.state_dir / "close-fails").write_text("")
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("could not close workspace wX; nothing was pruned", result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX"])
+
+    def test_entryless_close_of_a_merged_lane_with_an_uncommitted_file_refuses_before_closing(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.worktree / "scratch").write_text("not committed\n")
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, f"{self.worktree} has uncommitted changes; nothing changed")
+
+    def test_entryless_prune_exit_code_is_the_script_exit_code(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.state_dir / "prune-fails").write_text("")
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+
+    def test_entryless_close_ignores_an_idle_claude_and_a_working_other_agent(self):
+        self.merge_fork()
+        cases = [
+            ("idle claude", agent("p1", self.worktree, "idle")),
+            ("working other agent", agent("p1", self.worktree, "working", kind="other")),
+        ]
+        for label, listed_agent in cases:
+            with self.subTest(label):
+                self.workspace_on(self.worktree)
+                self.set_agents([listed_agent])
+
+                result = self.run_script("--close", NAME)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+                self.events.unlink()
+                self.fake_workspaces.clear()
+
+    def test_entryless_close_by_path_with_no_workspace_refuses(self):
+        self.merge_fork()
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assert_refused_changing_nothing(result, f"no herdr workspace is open on {self.worktree}")
+        self.assertIn(f"herdr-worktree-prune --apply in {self.main_checkout}", result.stderr)
+
+    def test_entryless_close_with_a_failed_poll_after_the_close_does_not_name_an_entry(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.state_dir / "agent-list-fails-after-close").write_text("")
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("the workspaces are already closed and nothing was pruned", result.stderr)
+        self.assertNotIn("lane entry", result.stderr)
+
+    def test_entryless_close_of_a_detached_head_refuses(self):
+        self.merge_fork()
+        self.git(self.worktree, "checkout", "--detach")
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assert_refused_changing_nothing(result, "detached HEAD")
+
+    def test_two_workspaces_on_one_linked_worktree_count_as_one_match_by_name(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree, "wA")
+        self.workspace_on(self.worktree, "wB")
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(),
+                         ["herdr workspace close wA", "herdr workspace close wB", self.prune_event([])])
+
+    def test_one_linked_match_and_one_plain_match_close_only_the_linked_workspace(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree, "wA")
+        self.workspace_on(self.root / "elsewhere" / NAME, "wB", linked=False)
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wA", self.prune_event([])])
+
+    def test_a_stale_origin_ref_is_fetched_before_the_merge_check(self):
+        # Pushing to the URL, not the remote name, leaves the main checkout's origin/master stale.
+        self.git(self.worktree, "push", str(self.root / "origin.git"), "fork:master")
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+
+    def test_branch_is_merged_refusals_change_nothing(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        # Main checkout leaves master so the worktree can switch onto the default branch.
+        self.git(self.main_checkout, "checkout", "-b", "other")
+        self.git(self.worktree, "checkout", "master")
+        on_default = self.run_script("--close", str(self.worktree))
+        self.assert_refused_changing_nothing(on_default, "is on the default branch master")
+
+        self.git(self.worktree, "checkout", "fork")
+        self.git(self.main_checkout, "remote", "set-url", "origin", str(self.root / "gone.git"))
+        fetch_fails = self.run_script("--close", str(self.worktree))
+        self.assert_refused_changing_nothing(fetch_fails, "could not fetch origin/master")
+
+        self.git(self.main_checkout, "remote", "set-head", "origin", "--delete")
+        no_head = self.run_script("--close", str(self.worktree))
+        self.assert_refused_changing_nothing(no_head, "has no refs/remotes/origin/HEAD")
+
+    def test_a_merge_check_that_cannot_run_refuses_and_changes_nothing(self):
+        self.workspace_on(self.worktree)
+        # A merge-base that exits 128 is neither "merged" (0) nor "not merged" (1).
+        real_git = shutil.which("git")
+        write_stub(self.bin_dir / "git", f'[ "$3" = merge-base ] && exit 128\nexec {real_git} "$@"')
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assert_refused_changing_nothing(result, "could not check whether branch fork is merged")
+
+    def test_a_path_that_is_not_a_folder_refuses(self):
+        result = self.run_script("--close", str(self.root / "missing" / "x"))
+
+        self.assert_refused_changing_nothing(result, "no lane file entry and no folder at")
+
+    def test_a_relative_path_that_is_gone_is_named_by_its_absolute_path(self):
+        result = self.run_script("--close", "missing/x", cwd=self.root)
+
+        self.assert_refused_changing_nothing(result, f"no lane file entry and no folder at {self.root}/missing/x")
+
+    def test_a_subfolder_of_a_lane_worktree_is_refused_as_not_the_top(self):
+        self.add_lane()
+        subdir = self.worktree / "subdir"
+        subdir.mkdir()
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", str(subdir))
+
+        self.assert_refused_changing_nothing(result, f"{subdir} is not the top of a linked worktree")
+        self.assertEqual(self.lane_names(), [NAME])
+
+    def test_close_by_path_with_an_entry_uses_the_entry(self):
+        # `fork` stays unmerged: the entry-less path would refuse, so a close proves the entry path.
+        self.add_lane()
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", str(self.worktree))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+        self.assertEqual(self.lane_names(), [])
 
 
 if __name__ == "__main__":

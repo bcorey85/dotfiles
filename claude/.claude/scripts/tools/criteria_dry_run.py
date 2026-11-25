@@ -23,6 +23,7 @@ import sys
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
 import gate_env
+import memory_cap_scope
 import plan_format
 import plan_verification
 import script_utils
@@ -184,7 +185,9 @@ def dry_run(plan_path, repo_dir, skipped, timeout):
             print(f"CHECK {label} SKIPPED {command}")
             continue
 
-        code, output = script_utils.run_command(command, repo_dir, timeout=timeout, env=check_environment)
+        # Inside the shared capped slice where the machine has one; run_command takes a list as argv, a string as shell.
+        popen_command, _ = memory_cap_scope.shell_popen_args(command)
+        code, output = script_utils.run_command(popen_command, repo_dir, timeout=timeout, env=check_environment)
         judged = item_verdict(command, line, code, output)
         verdict = judged.outcome
         print(f"CHECK {label} {verdict} rc={code} {command}")

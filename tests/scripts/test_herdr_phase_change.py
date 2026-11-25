@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, run_through_stow_symlink, write_stub
+from stubs import copy_sourced_libs, run_through_stow_symlink, write_stub
 
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
 SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
@@ -87,7 +87,7 @@ class HerdrPhaseChangeTest(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_PHASE_CHANGE, self.bin_dir / "herdr-phase-change")
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         write_stub(self.bin_dir / "herdr-api", STUB_HERDR_API)
 
         self.state_dir = self.root / "state"

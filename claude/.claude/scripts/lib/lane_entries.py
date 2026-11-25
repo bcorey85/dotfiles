@@ -193,6 +193,14 @@ def all_entries():
     return sorted(entries, key=lambda lane: lane["name"])
 
 
+def is_lane_session(session_id):
+    """True when a lane entry holds `session_id`; an empty id (a lane not yet filled) is no session. Raises what
+    `all_entries` raises."""
+    if not session_id:
+        return False
+    return any(lane["session_id"] == session_id for lane in all_entries())
+
+
 def entry(name):
     """The entry named `name`, or None when it has no file."""
     file = lane_file(name)

@@ -15,7 +15,7 @@ import time
 import unittest
 
 import toolkit_paths
-from stubs import copy_toolkit_tools_lib, write_stub
+from stubs import copy_sourced_libs, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_WORKTREE = BIN_DIR / "herdr-worktree"
@@ -61,7 +61,7 @@ class HerdrWorktreeTest(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         shutil.copy(HERDR_WORKTREE, self.bin_dir / "herdr-worktree")
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         shutil.copy(DETACH, self.bin_dir / "detach")
         self.herdr_args = self.root / "herdr-args"
         write_stub(self.bin_dir / "herdr", f"""printf "%s\\n" "$@" > {self.herdr_args}
@@ -117,6 +117,41 @@ echo '{CREATED_WORKSPACE}'""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_args = self.herdr_args.read_text().splitlines()
         self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
+
+    def test_a_run_from_a_worktree_of_a_bare_repo_refuses_and_creates_nothing(self):
+        bare = self.root / "bare.git"
+        git(self.root, "clone", "-q", "--bare", str(self.main_checkout), str(bare))
+        bare_worktree = self.root / "bare-linked"
+        git(bare, "worktree", "add", "-q", str(bare_worktree), "-b", "other")
+
+        finished = self.run_herdr_worktree(bare_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("is bare, missing or not a work tree", finished.stderr)
+        self.assertFalse(self.herdr_args.exists())
+        listing = subprocess.run(["git", "-C", str(bare), "worktree", "list", "--porcelain"],
+                                 check=True, capture_output=True, text=True).stdout
+        self.assertEqual(listing.count("worktree "), 2, listing)
+        branches = subprocess.run(["git", "-C", str(bare), "branch", "--list", "fix/new-thing"],
+                                  check=True, capture_output=True, text=True).stdout
+        self.assertEqual(branches, "")
+
+    def test_a_run_from_a_worktree_of_a_separate_git_dir_repo_refuses_and_creates_nothing(self):
+        separate = self.root / "separate"
+        git(self.root, "init", "-q", "-b", "master", "--separate-git-dir", str(self.root / "separate.git"),
+            str(separate))
+        git(separate, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+        separate_worktree = self.root / "separate-linked"
+        git(separate, "worktree", "add", "-q", str(separate_worktree), "-b", "other")
+
+        finished = self.run_herdr_worktree(separate_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("is bare, missing or not a work tree", finished.stderr)
+        self.assertFalse(self.herdr_args.exists())
+        branches = subprocess.run(["git", "-C", str(separate), "branch", "--list", "fix/new-thing"],
+                                  check=True, capture_output=True, text=True).stdout
+        self.assertEqual(branches, "")
 
     def stub_installers(self, npm_status=0):
         """npm and pnpm log their folder and arguments to installs."""
@@ -298,7 +333,18 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         herdr_dev_values = herdr_dev_args.read_text().split("\0")
-        self.assertEqual(herdr_dev_values[2:4], ["s1", brief.rstrip("\n")])
+        self.assertEqual(herdr_dev_values[0], "--headless")
+        self.assertEqual(herdr_dev_values[3:5], ["s1", brief.rstrip("\n")])
+
+    def test_a_run_without_fork_opens_the_layout_with_its_hunk_pane(self):
+        herdr_dev_args = self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        herdr_dev_values = herdr_dev_args.read_text().split("\0")
+        self.assertNotIn("--headless", herdr_dev_values)
+        self.assertEqual(herdr_dev_values[0], str(self.root / "repo-new-thing"))
 
     def lane_entry(self, name):
         """The lane file's entry for `name`, read through the lanes CLI; None when there is none."""
@@ -344,7 +390,7 @@ esac""")
                                            "fix/new-thing")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        sent_brief = herdr_dev_args.read_text().split("\0")[3]
+        sent_brief = herdr_dev_args.read_text().split("\0")[4]
         self.assertEqual(self.lane_entry("repo-new-thing")["brief"], sent_brief)
 
     def test_a_fork_whose_sender_cannot_be_named_writes_the_entry_with_no_reports_to(self):
@@ -554,7 +600,7 @@ esac""")
         real_bin.mkdir(parents=True)
         real_script = real_bin / "herdr-worktree"
         shutil.copy(HERDR_WORKTREE, real_script)
-        copy_toolkit_tools_lib(checkout / "scripts" / ".local")
+        copy_sourced_libs(checkout / "scripts" / ".local")
         # The library exists only beside the real script, so a source line that skips the links fails.
         shutil.rmtree(self.root / "lib")
         stowed_script = self.bin_dir / "herdr-worktree"
@@ -685,9 +731,9 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("1. herdr worktree open --cwd", finished.stdout)
         self.assertIn("1. herdr-api workspace create --cwd <worktree>", finished.stdout)
-        self.assertIn("2. herdr-dev <worktree> <ws> <fork session id>", finished.stdout)
+        self.assertIn("2. herdr-dev --headless <worktree> <ws> <fork session id>", finished.stdout)
         self.assertIn("herdr-api workspace focus <ws> >/dev/null && ", finished.stdout)
-        self.assertIn("claude --resume", finished.stdout)
+        self.assertIn("CLAUDE_CODE_DISABLE_CRON=1 claude --resume", finished.stdout)
         self.assertNotIn("ws=$(", finished.stdout)
 
 
@@ -745,8 +791,8 @@ esac""")
         self.assertIsNotNone(prompt_match, claude_command)
         prompt_file = prompt_match.group(1)
         self.addCleanup(os.remove, prompt_file)
-        self.assertTrue(claude_command.startswith(f"claude --resume s1 --fork-session --name {self.root.name} -- "),
-                        claude_command)
+        expected_start = f"CLAUDE_CODE_DISABLE_CRON=1 claude --resume s1 --fork-session --name {self.root.name} -- "
+        self.assertTrue(claude_command.startswith(expected_start), claude_command)
 
     def test_a_worktree_folder_with_shell_special_characters_is_typed_as_one_name_argument(self):
         folder_name = "my repo $x's"

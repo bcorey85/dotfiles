@@ -1221,6 +1221,53 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
         self.assertEqual(self.kept_refs(), [])
 
+    def share_the_checkout_with_a_dirty_built_page(self, *dirty_sources):
+        """Mark `QUEUE.md` a built page, give it and each of `dirty_sources` an unstaged edit, register another
+        session, and diverge the branch from a remote that also changed the page."""
+        self.mark_built_pages("QUEUE.md")
+        self.add_files("QUEUE.md", *dirty_sources)
+        self.write(self.repo, "QUEUE.md", "1\npeer-build\n")
+        for name in dirty_sources:
+            self.write(self.repo, name, "1\nlocal-edit\n")
+        self.register_other(self.repo)
+        self.commit_local("k", "1\n")
+        self.push_files_from_other_machine({"QUEUE.md": "remote-build\n", "h": "2\n"})
+
+    def test_a_peer_dirty_built_page_alone_is_pulled_and_rebuilt(self):
+        self.share_the_checkout_with_a_dirty_built_page()
+        remote_tip = self.git(self.remote, "rev-parse", "master").strip()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.git(self.repo, "merge-base", "--is-ancestor", remote_tip, "HEAD")
+        self.assertEqual((self.repo / "k").read_text(), "1\n")
+        self.assertEqual((self.repo / "QUEUE.md").read_text(), "rebuilt\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_peer_dirty_source_file_beside_a_built_page_is_still_refused(self):
+        self.share_the_checkout_with_a_dirty_built_page("bin/x")
+        head = self.head()
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("Dirty files: QUEUE.md bin/x", finished.stderr)
+        self.assertEqual(self.head(), head)
+        self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
+        self.assertEqual((self.repo / "QUEUE.md").read_text(), "1\npeer-build\n")
+        self.assertEqual(self.kept_refs(), [])
+
+    def test_a_peer_dirty_built_page_with_no_driver_configured_is_still_refused(self):
+        self.share_the_checkout_with_a_dirty_built_page()
+        self.git(self.repo, "config", "--unset", "merge.built-page.driver")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("Dirty files: QUEUE.md", finished.stderr)
+        self.assertEqual((self.repo / "QUEUE.md").read_text(), "1\npeer-build\n")
+
     def test_a_missing_session_id_reads_the_callers_own_row_as_another_session(self):
         self.add_files("bin/x")
         self.write(self.repo, "bin/x", "1\nlocal-edit\n")

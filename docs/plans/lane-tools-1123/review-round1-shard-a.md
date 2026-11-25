@@ -1,0 +1,24 @@
+# Plan review round 1, shard A (Phases 0-2)
+
+DUCK     Phase 0: adds `scripts/.local/lib/viewer-memory.bash` (cap value and its grammar, restart window, availability check, systemd-run prefix array), adds a twin comment to `memory_cap_scope.py`, and freezes the `--viewers` JSON shape. Its tests source the lib in bash.
+DUCK     Phase 1: `hunk-review-pane` sources the lib and runs both start paths through `run_viewer` under the scope. It restarts on exit 137 while capped and adds a `--viewers` JSON lister. The tests use stub systemd-run, uname and hunk.
+DUCK     Phase 2: `process_group` gains `resident_bytes` and `program_name`. lane_status gains one `viewers` report key, built from `hunk-review-pane --viewers` and filtered by liveness, program name and RSS against the cap.
+
+BLOCKER  Phase 1 §1 step 5 / Constraints "An OOM kill inside a systemd-run --scope exits 137"  The restart never fires for the real viewer. The status the shell sees after an OOM kill is 143, not 137.
+         Evidence: The `hunk` on PATH is `~/.local/share/mise/installs/node/24.20.0/lib/node_modules/hunkdiff/bin/hunk.cjs`. It runs the native binary through `childProcess.spawnSync` and calls `process.exit(typeof result.status === "number" ? result.status : 1)`. The live tree matches: every pid in a `hunk.pid` file has a `node .../bin/hunk diff ... --watch` parent, and that parent's parent is `/bin/bash ~/.local/bin/hunk-review-pane`. I ran a node spawnSync wrapper around a child that allocates past the cap: `systemd-run --user --scope --quiet -p MemoryMax=100M -p MemorySwapMax=0 node w.cjs` gave `exit=143`. The same child run directly gave `direct exit=137`. `systemctl --user show -p DefaultOOMPolicy` gives `stop`, so systemd stops the scope and SIGTERMs the node wrapper. The plan cites `lib/memory_cap_scope.py` as the exercised source for 137, but `grep -n "137\|oom" lib/memory_cap_scope.py` finds nothing.
+         Reading: A coder who matches `$? -eq 137` ships a viewer that is capped but never restarts. AC12 and AC13 fail in production. The Phase 1 tests (`test_oom_kill_after_the_window_restarts_the_viewer` and the others) cannot catch this: the stub hunk exits 137 itself and the stub systemd-run `exec`s it, so they pass whatever the real chain returns. The OOM signal has to be read from something the real launcher chain produces: the scope's OOM result, 143 under the cap, or the native binary run directly. That is the authors' choice, and a test needs a stub that returns what the real chain returns.
+         Evidence-class: exercised (scratch node spawnSync test under systemd-run printed exit=143 vs direct exit=137; hunk.cjs `run()`; `systemctl --user show -p DefaultOOMPolicy` gives `stop`)
+
+GAP      Phase 2 §2 step 4 (one `viewers` key, lines joined) vs AC19  `--changes` reprints every viewer line when any one viewer changes, and prints `viewers: working` when the last one drops under the cap.
+         Evidence: `report["viewers"] = "\n".join(viewer_lines()) or None`. In `tools/lane_status.py:200-213`, `changed_lines` compares whole values per key and, when a value goes from a line to None, adds `f"{key}: working"`.
+         Reading: With two oversized viewers, a 0.1 GB change in one reprints the other's unchanged line. AC19 says "A viewer line is reported once ... while its size stays the same." When the last viewer is killed or drops under the cap, `--changes` prints the literal `viewers: working`, which is nonsense. The planned `test_changes_prints_a_viewer_line_once` uses one viewer, so it passes either way. A coder has to guess between one key per viewer (for example `viewer:<pane>`) and filtering the `working` line for non-lane keys.
+
+NIT      Phase 2 Agent-run check  With `HUNK_REVIEW_MEMORY_MAX=1K`, the planned `<C:g> GB` format prints a cap like `9.53674e-07 GB`. The check still passes but the line is unreadable. A K or M unit for small caps, or a different check value, would fix it.
+
+NIT      Phase 1 Agent-run check  "`--viewers | jq .cap_bytes` prints `1073741824` and lists the live state dirs": `jq .cap_bytes` prints only the cap, so the "lists the live state dirs" half is never looked at by that command.
+
+NIT      Phase 1 §1 step 5  `stty sane` in the tests runs with a non-tty stdin and writes an `Inappropriate ioctl` error to stderr. That can upset an output assertion. Leave stderr unredirected only if the tests ignore it.
+
+Claims settled: hunk-review-pane:30-32 sourcing, :77 exec path, :97 loop call, state_dir and --state-dir, memory_cap_scope.cap_available, process_group.command_line/ProcessQueryError/pid_is_alive, script_utils.run_or_raise, lane_entries.entry_containing, current_report early exit, the named test files and helpers, stale dirs w53_p6/w5A_p2, live hunk.pid comm=hunk, jq in install/deps, `shift 7`.
+
+VERDICT: NEEDS CHANGES (1 blocker, 1 gap)

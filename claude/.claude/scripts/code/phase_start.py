@@ -20,7 +20,14 @@ HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept, with the same additions as a same-HEAD start (later
 dirty files, handed-off files as own), and its head is printed as the phase base. With no record, or a head that is
-not an ancestor, it prints HEAD as without the flag and says so on stderr.
+not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
+<run folder>/resume.json (resume_review_gate.record_resume), which the code-fork's stop.md Write reads; a start
+without `--resume` removes it.
+`--new-run` first checks the lane file of the worktree it runs in (lib/lane_entries.py): when the lane's `reports_to`
+session is not a live registry name, it exits non-zero before writing anything and lists the live names. No lane
+file, an empty `reports_to`, a name that fits a live auto-named session (`nameSource` derived, `<cwd folder>-<2 hex>`;
+the registry stores another suffix than ListAgents shows) or an unreadable lane file passes (the last with a
+stderr note).
 Before anything is moved, `--resume` exits non-zero when this repo's run folder holds no stop.md and no stop.prev.md
 newer than the session's last relayed stop (lib/code_stop_record.py), and that stop is in another run folder: it
 names both and the stop's recorded `To go on:` line (`/code resume <repo top>` for a finished stop).
@@ -31,6 +38,7 @@ goes to loop-dir.prev, so a wait never returns an earlier phase's packet before 
 import json
 import os
 import pathlib
+import re
 import sys
 import time
 
@@ -41,6 +49,8 @@ import code_stop_record
 import code_wait
 import fix_coder_written
 import handoff_files
+import lane_entries
+import resume_review_gate
 import script_utils
 import session_registry
 import stop_file_names
@@ -229,6 +239,55 @@ def write_record(repo, record):
     script_utils.write_text_atomically(folder / START_FILE, json.dumps(record, indent=2) + "\n")
 
 
+def record_resume_or_exit(run_folder, repo):
+    """Writes resume.json after the start record. A git fault there removes any stale resume.json (it would hold an
+    older head and tree) and exits non-zero naming what was written, with no base printed."""
+    try:
+        resume_review_gate.record_resume(run_folder, repo)
+    except script_utils.GitCallError as error:
+        resume_review_gate.clear_resume(run_folder)
+        sys.exit(f"phase_start: the start record was written, but {run_folder / resume_review_gate.RESUME_FILE} was "
+                 f"not written, and any older one was removed ({error}). Fix the git fault and re-run "
+                 f"`phase_start.py --resume`; the resume has no review check until then.")
+
+
+def derived_name_match(reports_to):
+    """The live registry row whose derived name may be the ListAgents name `reports_to`: a row with nameSource
+    `derived` whose cwd folder name plus a dash and two hex characters is `reports_to` (the registry stores another
+    suffix than ListAgents shows). None when no row fits."""
+    for row in session_registry.live_session_rows():
+        cwd = row.get("cwd")
+        if row.get("nameSource") != "derived" or not isinstance(cwd, str) or not cwd:
+            continue
+        if re.fullmatch(re.escape(pathlib.Path(cwd).name) + "-[0-9a-f]{2}", reports_to):
+            return row
+    return None
+
+
+def report_to_refusal(repo):
+    """The stop text when this repo is a lane worktree whose lane file names a report-to session that no live
+    registry row carries, listing the live names; None when it is live, the lane names none, the repo is no lane, or
+    the lane file cannot be read (a note goes to stderr: the check never blocks on what it cannot read)."""
+    try:
+        lane = lane_entries.entry_containing(repo)
+    except (lane_entries.LaneFileError, OSError) as error:
+        print(f"phase_start: report-to session not checked: {error}", file=sys.stderr)
+        return None
+    if lane is None or not lane["reports_to"]:
+        return None
+    live_names = sorted({row["name"] for row in session_registry.live_session_rows() if row.get("name")})
+    if lane["reports_to"] in live_names:
+        return None
+    if derived_name_match(lane["reports_to"]) is not None:
+        print(f"phase_start: report-to session {lane['reports_to']} matches a live auto-named session, so it is "
+              "taken as live", file=sys.stderr)
+        return None
+    listed = ", ".join(live_names) or "none"
+    return (f"phase_start: the lane reports to session {lane['reports_to']}, which is not live. Live sessions: "
+            f"{listed}. Ask the session that started this run for the name, then send every question and the "
+            f"result to it.")
+
+
 def main():
     flags = ("--new-run", "--resume")
     unknown = [arg for arg in sys.argv[1:] if arg not in flags]
@@ -241,6 +300,11 @@ def main():
     if repo is None:
         sys.exit(f"phase_start: {pathlib.Path.cwd()} is not inside a git work tree")
 
+    if "--new-run" in sys.argv[1:]:
+        refusal = report_to_refusal(repo)
+        if refusal is not None:
+            sys.exit(refusal)
+
     run_folder = code_wait.phase_dir(repo)
     if "--resume" in sys.argv[1:]:
         refusal = other_run_refusal(run_folder)
@@ -249,8 +313,10 @@ def main():
     handed_off = handed_off_paths(run_folder)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
-    move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)
+    move_aside(run_folder, stop_file_names.LOOP_DIR_FILE, stop_file_names.PREVIOUS_LOOP_DIR_FILE)
     move_aside(run_folder, code_wait.SCOPE_FILE, code_wait.PREVIOUS_SCOPE_FILE)
+    if "--resume" not in sys.argv[1:]:
+        resume_review_gate.clear_resume(run_folder)
 
     own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not own_session_id:
@@ -269,6 +335,7 @@ def main():
         base = resume_base(repo, kept)
         if base is not None:
             write_record(repo, with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off))
+            record_resume_or_exit(run_folder, repo)
             print(base)
             return 0
     same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
@@ -281,6 +348,8 @@ def main():
         fix_coder_written.clear(repo)
 
     write_record(repo, record)
+    if "--resume" in sys.argv[1:]:
+        record_resume_or_exit(run_folder, repo)
     print(record["head"])
     return 0
 

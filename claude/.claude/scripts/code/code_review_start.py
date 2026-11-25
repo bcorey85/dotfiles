@@ -59,9 +59,9 @@ import plan_format
 import reviewer_dispatch
 import script_utils
 import session_registry
+import stop_file_names
 from code_wait import (
     HANDOFF_FILE,
-    LOOP_DIR_FILE,
     PID_FILE,
     REVIEW_OUTPUT,
     SCOPE_FILE,
@@ -82,7 +82,7 @@ from review_loop_prompt_file import (
 )
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
-WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+WAIT_COMMAND = code_wait.REVIEW_COMMAND
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_PHASES_FILE = "handoff-phases.json"
@@ -521,7 +521,7 @@ def detach(repo, argv, scope):
                  f"{loop_dir(repo)}). Wait for it with `{WAIT_COMMAND}`, or run this phase in its own worktree.")
     review_output = folder / REVIEW_OUTPUT
     # A folder left by an earlier phase's loop would show its unanswered requests as this loop's.
-    (folder / LOOP_DIR_FILE).unlink(missing_ok=True)
+    (folder / stop_file_names.LOOP_DIR_FILE).unlink(missing_ok=True)
     scope_file = folder / SCOPE_FILE
     script_utils.write_text_atomically(scope_file, json.dumps(scope._asdict()) + "\n")
     child_args = [arg for arg in argv[1:] if arg != "--detach"]
@@ -651,7 +651,7 @@ def main(argv):
     # record names the loop folder before loop-dir does, so a waiter never sees a folder the record lacks.
     # Absolute, because the wait that reads it runs from the repo top, not from the folder this start ran in.
     code_wait.write_phase_run(repo, lane, phase, prompt_file.parent, plan=recorded_plan_path(repo, plan))
-    script_utils.write_text_atomically(folder / LOOP_DIR_FILE, f"{prompt_file.parent}\n")
+    script_utils.write_text_atomically(folder / stop_file_names.LOOP_DIR_FILE, f"{prompt_file.parent}\n")
     with log_path.open("w") as log:
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 

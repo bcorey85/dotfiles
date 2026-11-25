@@ -3,12 +3,13 @@ import pathlib
 import shutil
 import subprocess
 
-TOOLKIT_TOOLS_LIB = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "toolkit-tools.bash"
+SCRIPT_LIB_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib"
+SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash")
 
 
-def copy_toolkit_tools_lib(root):
-    """Copy the library a script sources to <root>/lib, where a copy of the script in <root>/bin finds it."""
-    copy_script_lib_modules(root, TOOLKIT_TOOLS_LIB.name)
+def copy_sourced_libs(root):
+    """Copy the libraries a script sources to <root>/lib, where a copy of the script in <root>/bin finds them."""
+    copy_script_lib_modules(root, *SOURCED_LIBS)
 
 
 def copy_script_lib_modules(root, *module_names):
@@ -16,7 +17,7 @@ def copy_script_lib_modules(root, *module_names):
     lib_dir = pathlib.Path(root) / "lib"
     lib_dir.mkdir(exist_ok=True)
     for module_name in module_names:
-        shutil.copy(TOOLKIT_TOOLS_LIB.parent / module_name, lib_dir / module_name)
+        shutil.copy(SCRIPT_LIB_DIR / module_name, lib_dir / module_name)
 
 
 def write_stub(path, body):
@@ -34,7 +35,7 @@ def run_through_stow_symlink(script, scratch, *args):
     real_bin.mkdir(parents=True)
     real_script = real_bin / script.name
     shutil.copy(script, real_script)
-    copy_toolkit_tools_lib(real_bin.parent)
+    copy_sourced_libs(real_bin.parent)
     linked_bin = scratch / "linked" / "bin"
     linked_bin.mkdir(parents=True)
     (linked_bin / script.name).symlink_to(real_script)

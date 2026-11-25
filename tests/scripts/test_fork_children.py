@@ -474,6 +474,35 @@ class StopLoopBranchTest(unittest.TestCase):
     def review_start_commands(self, ends_on_review_start=False):
         return self.module.ForkCommands(True, "2026-11-22T00:00:00.000Z", False, ends_on_review_start)
 
+    def test_a_final_blob_repeating_the_review_start_does_not_end_the_scan_on_it(self):
+        first = stamped(bash_record(REVIEW_START), 0)
+        blob = {"type": "api-request-blob", "message": first["message"], "timestamp": "2099-01-01T00:00:00.000Z"}
+        records = [first, stamped(assistant_record(), 1), blob]
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = os.path.join(folder, "fork.jsonl")
+            with open(transcript, "w", encoding="utf-8") as handle:
+                handle.write("".join(json.dumps(record) + "\n" for record in records))
+            commands = self.module.scan_fork_commands(transcript)
+
+        self.assertTrue(commands.ran_review_start)
+        self.assertFalse(commands.ends_on_review_start)
+        self.assertEqual(commands.first_start_timestamp, first["timestamp"])
+
+    def test_a_command_that_only_names_the_review_start_script_is_not_a_start(self):
+        naming_commands = [
+            "cat <<EOF\npython3 code_review_start.py code plan.md 1 handoff.txt\nEOF",
+            "echo 'python3 code_review_start.py code plan.md 1 handoff.txt'",
+        ]
+        for command in naming_commands:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as folder:
+                transcript = os.path.join(folder, "fork.jsonl")
+                with open(transcript, "w", encoding="utf-8") as handle:
+                    handle.write(json.dumps(stamped(bash_record(command), 0)) + "\n")
+                commands = self.module.scan_fork_commands(transcript)
+
+                self.assertFalse(commands.ran_review_start, command)
+                self.assertIsNone(commands.first_start_timestamp, command)
+
     def test_a_failed_process_query_reads_as_query_failed(self):
         def failing_query(pid):
             raise self.module.process_group.ProcessQueryError("ps timed out")

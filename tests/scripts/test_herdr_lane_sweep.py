@@ -12,7 +12,7 @@ import tempfile
 import unittest
 
 import toolkit_paths
-from stubs import copy_script_lib_modules, copy_toolkit_tools_lib, write_stub
+from stubs import copy_script_lib_modules, copy_sourced_libs, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_LANE_SWEEP = pathlib.Path(os.environ.get("HERDR_LANE_SWEEP", BIN_DIR / "herdr-lane-sweep"))
@@ -53,7 +53,7 @@ class HerdrLaneSweepTest(unittest.TestCase):
         self.script = self.bin_dir / "herdr-lane-sweep"
         shutil.copy(HERDR_LANE_SWEEP, self.script)
         self.script.chmod(0o755)
-        copy_toolkit_tools_lib(self.root)
+        copy_sourced_libs(self.root)
         copy_script_lib_modules(self.root, "lane_list.py", "first_output_line.py", "quiet_git.py")
         write_stub(self.bin_dir / "herdr-lane-resume", CLOSE_STUB)
 

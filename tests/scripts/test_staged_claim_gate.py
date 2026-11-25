@@ -1,5 +1,8 @@
 """Checks for staged_claim_gate.py, the Stop and SubagentStop hook that blocks a final message saying files are
 staged when the index does not hold them."""
+import contextlib
+import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -399,6 +403,69 @@ class StagedClaimGateTest(unittest.TestCase):
         git(self.repo, "add", "a.txt")
         reason = self.assert_blocked("c.txt is staged.", cwd=sub)
         self.assertIn("sub/c.txt", reason)
+
+    def test_a_crash_in_one_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged. Next I'll look at the nits."}
+        with mock.patch.object(gate.announced_step, "announced_step", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: announced_step skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_staged_claim_check_keeps_the_announced_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "Next I'll look at the nits."}
+        with mock.patch.object(gate, "staged_claim_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn(gate.announced_step.REASON, decision["reason"])
+        self.assertIn("staged-claim-gate: staged_claim_reason skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_permission_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate, "permission_question_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: permission_question skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_fork_review_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "SubagentStop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate.fork_review, "missing_review_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: fork_review skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_main_exits_zero_and_names_the_gate_on_stderr(self):
+        result = subprocess.run([sys.executable, str(SCRIPT)], input="not json", capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("staged-claim-gate: skipped:", result.stderr)
+
+    def load_gate(self):
+        sys.path.insert(0, str(toolkit_paths.GATES_DIR))
+        self.addCleanup(sys.path.remove, str(toolkit_paths.GATES_DIR))
+        spec = importlib.util.spec_from_file_location("staged_claim_gate_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        return gate
+
+    def run_main(self, gate, hook):
+        output, errors = io.StringIO(), io.StringIO()
+        with (mock.patch.object(sys, "stdin", io.StringIO(json.dumps(hook))),
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
+            gate.main()
+        return json.loads(output.getvalue()), errors.getvalue()
 
     def test_a_second_stop_and_a_claim_outside_any_repo_pass(self):
         self.assert_passes("The files are staged.", stop_hook_active=True)

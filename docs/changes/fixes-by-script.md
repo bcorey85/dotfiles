@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -100,6 +100,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/rg-path-gate | 3 | 1 |
 | script/shell-command-words | 3 | 3 |
 | script/worktree-snapshot | 3 | 0 |
+| skill/stage | 3 | 2 |
 | agent/code-fork | 2 | 0 |
 | agent/code-reviewer | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
@@ -135,7 +136,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-branch | 2 | 0 |
 | script/waiting-review-launch | 2 | 1 |
 | skill/branch-recap | 2 | 0 |
-| skill/stage | 2 | 1 |
 | skill/test-audit | 2 | 2 |
 | agent/general-purpose | 1 | 1 |
 | agent/mutation-tester | 1 | 0 |

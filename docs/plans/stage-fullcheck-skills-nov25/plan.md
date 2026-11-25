@@ -20,7 +20,7 @@ Fix five queued toolkit defects. Each script phase starts with a test that fails
 
 ## Phase Status
 
-- [ ] Phase 1: stage --run counts an already-staged deletion as staged (risk: low)
+- [x] Phase 1: stage --run counts an already-staged deletion as staged (risk: low)
 - [ ] Phase 2: doc paths do not widen the full check to every part (risk: low)
 - [ ] Phase 3: lane-status --git prints each lane's branch state (risk: low)
 - [ ] Phase 4: a fork skill takes its findings from its args (risk: low)

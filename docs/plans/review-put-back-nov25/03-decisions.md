@@ -1,6 +1,6 @@
 # Design Decisions — review-put-back-nov25
 
-The criteria owner is `session` (plan_check owner: the ticket is copied from session-written queue items). The lane session made each choice below under the orchestrator's go-ahead for steps inside this branch (agent-evals-c3-owner, 2026-11-25).
+The criteria owner is `user` (plan_check owner: one source queue item was written by the user), so no decision below cuts, narrows or rewords a criterion. The lane session made each choice below under the orchestrator's go-ahead for steps inside this branch (agent-evals-c3-owner, 2026-11-25).
 
 - D1. Path characters (item 3): add `$` and `+` to `script_utils.PATH_CHARS`, the one owner of path text, so every path regex built on it reads TanStack `$param` and SvelteKit `+page` files. `[` and `]` stay out: markdown link text (`[file.py](...)`) would be read as part of a path. Lane session, 2026-11-25.
 - D2. Comment match by content (item 2): a removed comment counts as named when a finding of the pass names its file and quotes the comment's text (whitespace-normalized, comment marker stripped), wherever its line moved. Line and span matching stay. Lane session, 2026-11-25.

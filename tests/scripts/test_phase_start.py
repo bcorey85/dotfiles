@@ -148,6 +148,22 @@ class PhaseStartTest(unittest.TestCase):
         self.write_live_session("real-orchestrator")
         self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
 
+    def test_a_new_run_reporting_to_a_derived_name_session_goes_on_with_a_note(self):
+        self.write_lane("agent-evals-c3")
+        row = {"name": "agent-evals-18", "nameSource": "derived", "sessionId": "s-derived", "pid": os.getpid(),
+               "cwd": "/home/someone/agent-evals"}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
+        result = self.phase_start_with("--new-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("agent-evals-c3", result.stderr)
+
+    def test_a_derived_name_row_of_another_folder_does_not_excuse_a_missing_report_to_session(self):
+        self.write_lane("agent-evals-c3")
+        row = {"name": "other-18", "nameSource": "derived", "sessionId": "s-derived", "pid": os.getpid(),
+               "cwd": "/home/someone/other"}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
+        self.assertNotEqual(self.phase_start_with("--new-run").returncode, 0)
+
     def test_a_new_run_with_no_lane_file_or_no_report_to_goes_on(self):
         self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
         self.write_lane("")

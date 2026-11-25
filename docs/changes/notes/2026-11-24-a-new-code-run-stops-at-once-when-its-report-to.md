@@ -18,15 +18,15 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`phase_start.py --new-run` looks up the lane file of the worktree it runs in. When the lane's `reports_to` session is not a live name in the session registry, it exits non-zero before writing anything and lists the live names, so a fork whose brief names a missing report-to session stops in its first minute and not at hand-back. No lane file, an empty `reports_to` or an unreadable lane file passes (the last with a stderr note). Only `--new-run` checks.
+`phase_start.py --new-run` looks up the lane file of the worktree it runs in. When the lane's `reports_to` session is not a live name in the session registry, it exits non-zero before writing anything and lists the live names, so a fork whose brief names a missing report-to session stops in its first minute and not at hand-back. A registry row with `nameSource` derived stores a different name than ListAgents shows, so a name that fits a live derived row (`<cwd folder>-<2 hex>`) passes with a stderr note. No lane file, an empty `reports_to` or an unreadable lane file passes (the last with a stderr note). Only `--new-run` checks.
 
 ## Evidence
 
-Three tests: a missing name stops, lists both names and leaves no start record; a live name goes on; no lane file or an empty `reports_to` goes on. The first failed before the change (exit 0).
+Five tests (two cover the derived-name case: a match goes on with a note, a row of another folder still refuses): a missing name stops, lists both names and leaves no start record; a live name goes on; no lane file or an empty `reports_to` goes on. The first failed before the change (exit 0).
 
 ## Result
 
-The phase_start tests pass (47), lint passes.
+The phase_start tests pass (49), lint passes.
 
 ## Watch
 

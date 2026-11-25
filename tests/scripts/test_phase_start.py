@@ -439,6 +439,29 @@ class PhaseStartTest(unittest.TestCase):
         self.assertNotIn("held files:", done.stdout)
         self.assertNotIn("held-by:", done.stdout)
 
+    def test_resume_records_the_head_and_tree_and_a_plain_start_removes_the_record(self):
+        self.phase_start()
+        resume_file = self.repo / ".git/code-phase/resume.json"
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        record = json.loads(resume_file.read_text())
+        self.assertEqual(record["head"], git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(record["repo"], str(self.repo))
+        self.assertTrue(record["tree"])
+        self.assertFalse(record["denied"])
+
+        self.phase_start()
+
+        self.assertFalse(resume_file.exists())
+
+    def test_resume_with_no_start_record_still_records_the_resume(self):
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((self.repo / ".git/code-phase/resume.json").is_file())
+
     def unrelated_commit(self):
         """A commit on an orphan branch: neither an ancestor nor a descendant of the recorded head."""
         git(self.repo, "checkout", "-q", "--orphan", "other")

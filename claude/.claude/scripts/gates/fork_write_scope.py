@@ -6,6 +6,9 @@ handoff and stop files in the run folder, `git rev-parse --git-path code-phase`:
 parent is a git directory (it holds a HEAD file). A shell heredoc cannot carry that text, because the safety gate
 reads a heredoc's body as command text. Any other agent, and the main session, passes untouched.
 
+Its stop.md Write is denied once when the run is a /code resume whose source changed with no review loop started
+(code/resume_review_gate.py).
+
 The fork also cannot write review-stop.md of the run folder while the fix state holds
 `asks_launch_pending`: the fix run that asks-done printed has not launched yet.
 
@@ -89,6 +92,19 @@ def pending_launch_reason(file_path):
                                key=review_fix_names.PENDING_LAUNCH_KEY, state_file=state_file)
 
 
+def resume_review_reason(file_path):
+    """The deny text when file_path is stop.md of the run folder and a /code resume changed source with no review loop
+    started, else None. Fail-open with no resume record (the run is not a resume); a crash in the check propagates to
+    main, which fails closed and names the gate."""
+    stop_file_names = load_stop_and_state_owners()[0]
+    resolved = pathlib.Path(file_path).expanduser().resolve()
+    if resolved.name != stop_file_names.STOP_FILE or resolved.parent.name != RUN_FOLDER_NAME:
+        return None
+    sys.path.insert(0, os.path.join(os.path.dirname(LIB_DIR), "code"))
+    import resume_review_gate
+    return resume_review_gate.resume_deny_reason(resolved)
+
+
 def review_fix_route_reason(file_path):
     """The deny text when file_path sits under `<git dir>/review-fix/`, which names the route for findings the fix run
     should also apply, else None. The gate stays fail-closed: the Write is still denied."""
@@ -103,10 +119,14 @@ def review_fix_route_reason(file_path):
 
 def write_deny_reason(payload, hook_input):
     """The deny text for a code-fork Write outside a run folder, or for review-stop.md
-    in the run folder while a fix launch is pending, else None."""
+    in the run folder while a fix launch is pending, or for stop.md of a /code resume
+    whose source changed with no review loop started, else None."""
     tool_input = hook_input.tool_input_of(payload) or {}
     file_path = hook_input.edited_file_path(tool_input)
     if file_path and in_run_folder(file_path):
+        resume_reason = resume_review_reason(file_path)
+        if resume_reason:
+            return resume_reason
         return pending_launch_reason(file_path)
     route_reason = review_fix_route_reason(file_path) if file_path else None
     if route_reason:

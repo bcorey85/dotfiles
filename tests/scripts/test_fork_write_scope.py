@@ -196,6 +196,132 @@ class CrashInScopeCheckTest(unittest.TestCase):
         self.assertIn("fork-write-scope: could not read the hook input", result.stderr)
 
 
+STOP_EVENT = pathlib.Path(__file__).parent / "fixtures" / "hook_event_code_fork_write_stop.json"
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+class ResumeReviewTest(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self.repo = pathlib.Path(temp_dir.name).resolve() / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "-q")
+        (self.repo / "app.py").write_text("x = 1\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-q", "-m", "base")
+        self.run_folder = self.repo / ".git" / "code-phase"
+        self.run_folder.mkdir()
+        sys.path.insert(0, str(toolkit_paths.CODE_DIR))
+        self.addCleanup(sys.path.remove, str(toolkit_paths.CODE_DIR))
+        import resume_review_gate
+        resume_review_gate.record_resume(self.run_folder, self.repo)
+
+    def write_stop(self, agent_type="code-fork"):
+        text = STOP_EVENT.read_text().replace("{RUN_FOLDER}", str(self.run_folder))
+        payload = json.loads(text)
+        if agent_type is None:
+            del payload["agent_type"]
+        else:
+            payload["agent_type"] = agent_type
+        env = {key: value for key, value in os.environ.items() if key != "CLAUDE_SKIP_HOOKS"}
+        return subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload), text=True,
+                              capture_output=True, env=env, check=False)
+
+    def edit_source(self):
+        (self.repo / "app.py").write_text("x = 2\n")
+
+    def test_a_source_edit_with_no_review_loop_is_denied_naming_the_file(self):
+        self.edit_source()
+
+        result = self.write_stop()
+
+        self.assertEqual(decision(result), "deny", result.stderr)
+        self.assertIn("app.py", result.stdout)
+        self.assertIn("fork-write-scope", result.stdout)
+        self.assertIn("1 path(s)", result.stdout)
+        self.assertIn(git(self.repo, "rev-parse", "HEAD"), result.stdout)
+
+    def test_a_deleted_source_file_is_denied_naming_the_file(self):
+        (self.repo / "app.py").unlink()
+
+        result = self.write_stop()
+
+        self.assertEqual(decision(result), "deny", result.stderr)
+        self.assertIn("app.py", result.stdout)
+
+    def test_a_committed_source_edit_is_denied_naming_the_file(self):
+        self.edit_source()
+        git(self.repo, "commit", "-aqm", "edit")
+
+        result = self.write_stop()
+
+        self.assertEqual(decision(result), "deny", result.stderr)
+        self.assertIn("app.py", result.stdout)
+
+    def test_a_started_review_loop_allows_the_stop(self):
+        self.edit_source()
+        (self.run_folder / "loop-dir").write_text("/tmp/loop\n")
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+    def test_no_edit_or_notes_only_allows_the_stop(self):
+        self.assertEqual(decision(self.write_stop()), "allow")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "note.md").write_text("notes\n")
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+    def test_a_new_untracked_source_file_is_denied_naming_it_and_not_the_notes_file(self):
+        (self.repo / "new.py").write_text("y = 1\n")
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs" / "note.md").write_text("notes\n")
+
+        result = self.write_stop()
+
+        self.assertEqual(decision(result), "deny", result.stderr)
+        self.assertIn("new.py", result.stdout)
+        self.assertNotIn("note.md", result.stdout)
+
+    def test_a_second_stop_write_after_a_deny_is_allowed(self):
+        self.edit_source()
+        self.assertEqual(decision(self.write_stop()), "deny")
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+    def test_no_resume_record_allows_the_stop(self):
+        self.edit_source()
+        (self.run_folder / "resume.json").unlink()
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+    def test_a_non_code_fork_agent_is_allowed(self):
+        self.edit_source()
+
+        for agent_type in ("coder", None):
+            with self.subTest(agent_type=agent_type):
+                self.assertEqual(decision(self.write_stop(agent_type)), "allow")
+
+    def test_a_corrupt_resume_record_exits_2_naming_the_gate(self):
+        for text in ("not json", "[]", '{"repo": "x"}'):
+            with self.subTest(text=text):
+                (self.run_folder / "resume.json").write_text(text)
+
+                result = self.write_stop()
+
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("fork-write-scope", result.stderr)
+
+    def test_a_commit_between_the_resume_and_the_stop_with_no_other_change_allows_the_stop(self):
+        git(self.repo, "commit", "-q", "--allow-empty", "-m", "empty")
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+
 class ForkHasWriteTest(unittest.TestCase):
     def test_code_fork_may_use_write(self):
         frontmatter = FORK_AGENT.read_text().split("---")[1]

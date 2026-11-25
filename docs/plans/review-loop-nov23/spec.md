@@ -21,7 +21,7 @@ Seven fixes to the /code review loop and its ask tools, one per phase. A relayed
 - [x] Phase 4: Fix rounds and post-cap passes in the packet and stop (risk: low)
 - [x] Phase 5: Round and role on reviewer dispatch lines (risk: low)
 - [x] Phase 6: Put back a fix pass that breaks an accepted ruling (risk: high)
-- [ ] Phase 7: A /code resume diff must get a review (risk: high)
+- [x] Phase 7: A /code resume diff must get a review (risk: high)
 - [ ] Phase 8: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 Seven independent slices with no shared surface: each phase owns its own contract, so Phase 0 is omitted on purpose, and Phase 1 is the walking skeleton.

@@ -25,9 +25,9 @@ passes a set share of the branch. Scripts live in `claude/.claude/scripts/`; tes
   holds. Every other file is in code. Lockfiles and generated files (`source_paths.is_uncounted_path`) and binary
   files count nowhere.
 - Shares are rounded to whole percents. With no added lines, every share is 0%.
-- When the total is at least `BRANCH_TRIGGER_LINES` and the docs or the tests part is over `SPLIT_SHARE_LIMIT`
-  (a new constant, 40%), the line ends with
-  `OVERSIZED: <part> <p>% (limit 40%): check each new <part> file against a plan step, criterion or finding, and cut the rest.`
+- When the total is at least `BRANCH_TRIGGER_LINES` and the docs or the tests lines in files the branch adds are
+  over `SPLIT_SHARE_LIMIT` (a new constant, 40%) of the total, the line ends with
+  `OVERSIZED: new <part> files <p>% (limit 40%): check each new <part> file against a plan step, criterion or finding, and cut the rest.`
   It names each part that passes, docs first. Otherwise the line ends with `No part over 40%.`
 - The script's docstring describes the second line.
 
@@ -42,4 +42,7 @@ passes a set share of the branch. Scripts live in `claude/.claude/scripts/`; tes
 ## Plan Deviations
 
 - The queue item's "flags any part over a set share" flags the docs and tests parts only: the code part is the work
-  the ticket asks for. Ruled by the diff-growth lane (criteria owner `session`), 2026-11-25.
+  the ticket asks for. Ruled by agent-evals-74 (criteria owner `session`), 2026-11-25.
+- AC2 changed: the docs and tests shares that decide `OVERSIZED:` count only the lines of files the branch adds
+  (`--diff-filter=A`), over the branch's whole added-line total; the printed split still counts every file. A test
+  file that only grew is not a file to cut. Ruled by agent-evals-74 (criteria owner `session`), 2026-11-25.

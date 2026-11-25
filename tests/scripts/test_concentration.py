@@ -111,23 +111,42 @@ class ConcentrationGateTest(unittest.TestCase):
         self.assertEqual(
             self.split_line(),
             "Diff split: docs 150 (43%), tests 150 (43%), code 50 (14%) of 350 added lines. "
-            "OVERSIZED: docs 43% (limit 40%): check each new docs file against a plan step, criterion or finding, "
-            "and cut the rest. "
-            "OVERSIZED: tests 43% (limit 40%): check each new tests file against a plan step, criterion or finding, "
-            "and cut the rest.")
+            "OVERSIZED: new docs files 43% (limit 40%): check each new docs file against a plan step, criterion or "
+            "finding, and cut the rest. "
+            "OVERSIZED: new tests files 43% (limit 40%): check each new tests file against a plan step, criterion or "
+            "finding, and cut the rest.")
+
+    def test_lines_added_to_an_existing_test_file_never_make_tests_oversized(self):
+        self.write("tests/test_a.py", lines(1))
+        self.git("add", "-A")
+        self.git(*GIT_IDENTITY, "commit", "-q", "-m", "existing test file")
+        self.base = self.git("rev-parse", "HEAD").stdout.strip()
+        self.commit_files({"tests/test_a.py": 201, "src/a/one.py": 100})
+
+        self.assertEqual(self.split_line(), "Diff split: docs 0 (0%), tests 200 (67%), code 100 (33%) of 300 added "
+                         "lines. No part over 40%.")
+
+    def test_only_the_new_file_lines_count_toward_oversized(self):
+        self.write("tests/test_old.py", lines(1))
+        self.git("add", "-A")
+        self.git(*GIT_IDENTITY, "commit", "-q", "-m", "existing test file")
+        self.base = self.git("rev-parse", "HEAD").stdout.strip()
+        self.commit_files({"tests/test_old.py": 101, "tests/test_new.py": 130, "src/a/one.py": 70})
+
+        self.assertIn("OVERSIZED: new tests files 43% (limit 40%)", self.split_line())
 
     def test_only_the_part_over_the_limit_is_named(self):
         self.commit_files({"tests/test_a.py": 150, "src/a/one.py": 150})
 
         line = self.split_line()
 
-        self.assertIn("OVERSIZED: tests 50%", line)
-        self.assertNotIn("OVERSIZED: docs", line)
+        self.assertIn("OVERSIZED: new tests files 50%", line)
+        self.assertNotIn("OVERSIZED: new docs", line)
 
     def test_a_total_at_the_trigger_can_be_oversized(self):
         self.commit_files({"docs/a.md": 123, "src/a/one.py": 177})
 
-        self.assertIn("OVERSIZED: docs 41%", self.split_line())
+        self.assertIn("OVERSIZED: new docs files 41%", self.split_line())
 
     def test_a_total_just_under_the_trigger_is_not_oversized(self):
         self.commit_files({"docs/a.md": 123, "src/a/one.py": 176})

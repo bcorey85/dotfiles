@@ -7,7 +7,8 @@
 #   branch        prompted for when omitted (the prefix+ctrl+w popup).
 #   --fork        carry the Claude conversation running in this pane into the
 #                 new workspace's claude pane, as a forked session. Needs a
-#                 brief: --prompt-file or --prompt.
+#                 brief: --prompt-file or --prompt. The forked lane opens
+#                 without the hunk pane (herdr-dev --headless).
 #   --prompt-file the file holding the brief the forked session starts working
 #                 on at once. Only with --fork.
 #   --prompt      the brief as text, in place of --prompt-file.

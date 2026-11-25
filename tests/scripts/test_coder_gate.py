@@ -6,6 +6,7 @@ import io
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,8 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GI
                 "GIT_COMMITTER_EMAIL": "t@example.com"}
 sys.path.insert(0, str(GATE_SCRIPT.parent.parent / "lib"))
 import check_scope  # noqa: E402
+import fork_review  # noqa: E402
+import fork_transcript  # noqa: E402
 import script_utils  # noqa: E402
 import toolkit_paths  # noqa: E402
 
@@ -660,6 +663,27 @@ class RunCommandsTests(unittest.TestCase):
     def run_gate_commands(self, *commands, env=None, collect_summaries=False):
         gate = {"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}}
         return self.gate.run_commands(gate, collect_summaries=collect_summaries)
+
+    def started_command(self, cap_available):
+        started = []
+
+        def fake_run_process(command, _repo_root, env=None, timeout=None):
+            started.append(command)
+            return (0, "", "")
+
+        with mock.patch.object(self.gate.memory_cap_scope, "cap_available", return_value=cap_available), \
+                mock.patch.object(self.gate.script_utils, "run_process", side_effect=fake_run_process):
+            self.run_gate_commands("echo hi")
+        return started[0]
+
+    def test_a_capped_machine_runs_each_command_as_the_capped_argv(self):
+        argv = self.started_command(True)
+
+        self.assertIn("--slice=tests.slice", argv)
+        self.assertEqual(["/bin/sh", "-c", "echo hi"], argv[-3:])
+
+    def test_a_machine_without_a_scope_runs_the_plain_shell_command(self):
+        self.assertEqual("echo hi", self.started_command(False))
 
     COLLISION_TEXT = 'django.db.utils.OperationalError: database "test_app" is being accessed by other users'
 
@@ -1774,6 +1798,80 @@ class PackageFolderFlagTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(check_scope.runs_whole_check(command, str(self.repo)))
                 self.assertEqual("targeted", check_scope.command_check_scope(command, str(self.repo)))
+
+
+class ForkHandbackTests(unittest.TestCase):
+    """The hand-back hook judges a /code fork on its own transcript: a coder dispatch with no review and no stop.md
+    write after it is denied."""
+
+    def setUp(self):
+        temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_directory.cleanup)
+        self.root = pathlib.Path(temp_directory.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.env = {**os.environ, **GIT_IDENTITY, "HOME": str(self.home), "CLAUDE_TOOLKIT_TELEMETRY": "0"}
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True, env=self.env)
+        self.transcript = self.root / "agent-f1.jsonl"
+
+    def fork_hook(self, gate_script=GATE_SCRIPT):
+        event = {"hook_event_name": "PreToolUse", "tool_name": "SubagentHandback", "agent_type": "code-fork",
+                 "agent_id": "f1", "agent_transcript_path": str(self.transcript), "session_id": "s1",
+                 "cwd": str(self.repo), "tool_input": {"message": "done"}}
+        return subprocess.run([sys.executable, "-B", str(gate_script), "hook"], cwd=self.repo, env=self.env,
+                              input=json.dumps(event), capture_output=True, text=True, check=False)
+
+    def test_code_fork_handback_with_no_review_is_denied(self):
+        self.transcript.write_text(fork_transcript.FIXTURE.read_text())
+
+        done = self.fork_hook()
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        output = json.loads(done.stdout)["hookSpecificOutput"]
+        self.assertEqual("deny", output["permissionDecision"])
+        self.assertIn(fork_review.REASON, output["permissionDecisionReason"])
+        for phrase in fork_transcript.REASON_PHRASES:
+            self.assertIn(phrase, output["permissionDecisionReason"])
+
+    def test_code_fork_handback_after_a_stop_md_write_passes(self):
+        self.transcript.write_text(fork_transcript.fixture_text_with(fork_transcript.stop_write_record()))
+
+        done = self.fork_hook()
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual("", done.stdout)
+
+    def test_code_fork_handback_never_reads_the_coder_gate_file(self):
+        reviewed_text = fork_transcript.fixture_text_with(
+            fork_transcript.bash_record(fork_transcript.REVIEW_START_COMMAND),
+            fork_transcript.bash_record(fork_transcript.WAIT_REVIEW_COMMAND))
+        self.transcript.write_text(reviewed_text)
+        gate_set = subprocess.run([sys.executable, "-B", str(GATE_SCRIPT), "set", "exit 3"], cwd=self.repo,
+                                  env=self.env, capture_output=True, text=True, check=False)
+        self.assertEqual(0, gate_set.returncode, gate_set.stderr)
+
+        done = self.fork_hook()
+
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual("", done.stdout)
+
+    def test_a_crash_in_the_fork_review_blocks_the_handback(self):
+        scripts = self.root / "scripts"
+        shutil.copytree(GATE_SCRIPT.parent.parent / "lib", scripts / "lib",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (scripts / "code").mkdir()
+        copied_gate = scripts / "code" / "coder_gate.py"
+        shutil.copy(GATE_SCRIPT, copied_gate)
+        (scripts / "lib" / "fork_review.py").write_text(
+            "def missing_review_reason(hook):\n    raise RuntimeError('boom')\n")
+        self.transcript.write_text(fork_transcript.FIXTURE.read_text())
+
+        done = self.fork_hook(copied_gate)
+
+        self.assertEqual(2, done.returncode, done.stderr)
+        self.assertIn("boom", done.stderr)
 
 
 if __name__ == "__main__":

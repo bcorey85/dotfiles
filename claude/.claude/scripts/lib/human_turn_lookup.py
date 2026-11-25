@@ -6,13 +6,14 @@ fields `name`, `sessionId`); its transcript is the one `<sessionId>.jsonl` in a 
 row that `user_prompts.prompt_text` reads as typed text and whose `origin` is exactly `{"kind": "human"}`; its words
 are `user_prompts.user_words` of that text. Peer messages (origin kind `peer`), task notifications, tool results and
 compact summaries are never a user turn.
-`verified_human_turn` returns the relaying session and the turn's time, never its words, or
-raises HumanTurnRefusedError naming the failed lookup. Standard library, `session_registry` and `user_prompts` only."""
-import json
+`verified_human_turn` returns the relaying session and the turn's time, never its words, or raises
+HumanTurnRefusedError naming the failed lookup. Standard library, `script_utils`, `session_registry` and
+`user_prompts` only."""
 from datetime import datetime, timezone
 from typing import NamedTuple
 
 import user_prompts
+from script_utils import transcript_record
 from session_registry import live_session_rows, projects_dir, row_for_session_id, sessions_dir
 
 HUMAN_ORIGIN = {"kind": "human"}
@@ -107,11 +108,8 @@ def human_turn_of_line(line):
     """(HumanTurn, text) of a transcript line that is a real user turn with a readable timestamp, else None."""
     if HUMAN_ORIGIN["kind"] not in line:
         return None
-    try:
-        row = json.loads(line)
-    except ValueError:
-        return None
-    if not isinstance(row, dict):
+    row = transcript_record(line)
+    if row is None:
         return None
     text = human_text(row)
     if text is None:

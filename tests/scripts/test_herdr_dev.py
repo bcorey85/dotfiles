@@ -9,10 +9,12 @@ import subprocess
 import tempfile
 import unittest
 
-from stubs import write_stub
+from stubs import run_through_stow_symlink, write_stub
 
 BIN_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin"
 HERDR_DEV = pathlib.Path(os.environ.get("HERDR_DEV", BIN_DIR / "herdr-dev"))
+# A lane starts with the cron scheduler off so it never fires the parent session's jobs.
+NO_CRON = "CLAUDE_CODE_DISABLE_CRON=1"
 
 # herdr-dev runs under set -e, so every verb it calls answers {} with exit 0 unless it reads the reply.
 HERDR_API_BODY = """case "$1 $2" in
@@ -58,15 +60,15 @@ class HerdrDevTest(unittest.TestCase):
         result = self.run_dev("--resume", str(self.worktree), "w1", "s1")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.typed_into_claude_pane(), ["claude --resume s1 --name my-lane"])
-        self.assertEqual(result.stdout.splitlines(), ["p1", "claude --resume s1 --name my-lane"])
+        self.assertEqual(self.typed_into_claude_pane(), [f"{NO_CRON} claude --resume s1 --name my-lane"])
+        self.assertEqual(result.stdout.splitlines(), ["p1", f"{NO_CRON} claude --resume s1 --name my-lane"])
 
     def test_resume_with_a_brief_types_it_after_the_double_dash(self):
         result = self.run_dev("--resume", str(self.worktree), "w1", "s1", "go on")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         typed = self.typed_into_claude_pane()[0]
-        self.assertTrue(typed.startswith("claude --resume s1 --name my-lane -- "), typed)
+        self.assertTrue(typed.startswith(f"{NO_CRON} claude --resume s1 --name my-lane -- "), typed)
         self.assertNotIn("--fork-session", typed)
         prompt_file = re.search(r"cat '([^']+)'", typed)
         if prompt_file is None:
@@ -79,7 +81,20 @@ class HerdrDevTest(unittest.TestCase):
         result = self.run_dev(str(self.worktree), "w1", "s1")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.typed_into_claude_pane(), ["claude --resume s1 --fork-session --name my-lane"])
+        self.assertEqual(self.typed_into_claude_pane(), [f"{NO_CRON} claude --resume s1 --fork-session --name my-lane"])
+
+    def test_a_start_with_no_session_types_plain_claude(self):
+        result = self.run_dev(str(self.worktree), "w1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.typed_into_claude_pane(), ["claude"])
+
+    def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
+        finished = run_through_stow_symlink(HERDR_DEV, self.root / "symlink-run", "/nonexistent")
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertIn("herdr-dev: no such directory: /nonexistent", finished.stderr)
+        self.assertNotIn("toolkit-tools.bash", finished.stderr)
 
 
 if __name__ == "__main__":

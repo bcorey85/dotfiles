@@ -1,12 +1,12 @@
 ---
 name: branch-recap
-description: The final closing phase — assemble a gated branch into one pre-PR handoff sheet. Reads only the branch's own process residue (the phase walkthroughs, the verify and test-audit receipts, git status) — never re-reads the codebase, never gates. Triages closing-phase residue and deferred findings, emits a recap receipt. Use for "recap", "branch recap", "wrap up the branch", "/branch-recap". Hands back a read queue — the staging and the commit stay the user's.
+description: Assemble a gated branch into one pre-PR handoff sheet. Reads only the branch's own process residue (the phase walkthroughs, the verify and test-audit receipts, git status) — never re-reads the codebase, never gates. Triages closing-phase residue and deferred findings, emits a recap receipt. Use for "recap", "branch recap", "/branch-recap". Hands back a read queue — the staging and the commit stay the user's.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
 # Branch recap
 
-The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
+The exit-side counterpart to `/eng-spec`.
 
 **No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/test-audit` test gate, `/verify-branch` completeness.
 

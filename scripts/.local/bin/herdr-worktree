@@ -44,9 +44,10 @@
 # the prompt is a short "go on", not the original brief. Under tuios step 1 is
 #   1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus
 # and step 2 starts with `herdr-api workspace focus <ws> >/dev/null && `.
-# Without the session id, step 1 stays and step 2 is `claude --resume` run in
-# the worktree. The watcher is given this conversation's session id and keeps
-# waiting while the pane reports it, so step 2 never names the parent.
+# Without the session id, step 1 stays and step 2 is
+# `CLAUDE_CODE_DISABLE_CRON=1 claude --resume` run in the worktree. The watcher is
+# given this conversation's session id and keeps waiting while the pane reports it,
+# so step 2 never names the parent.
 # The watcher's own output goes to that log too.
 #
 # With --fork the run also writes a lane entry before herdr-dev starts: the brief,
@@ -67,6 +68,13 @@ bin_dir="$(cd "$(dirname "$0")" && pwd)"
 script_dir="$(dirname "$(readlink -f "$0")")"
 # shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
 . "$script_dir/../lib/toolkit-tools.bash"
+# shellcheck source-path=SCRIPTDIR/../lib source=main-checkout.bash
+. "$script_dir/../lib/main-checkout.bash"
+
+fail() {
+    echo "herdr-worktree: $*" >&2
+    exit 1
+}
 
 usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 
@@ -154,7 +162,7 @@ fi
 
 checkout=$(git rev-parse --show-toplevel 2>/dev/null) \
     || { echo "herdr-worktree: not inside a git repo" >&2; exit 1; }
-main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+main_checkout=$(main_checkout_of "$checkout")
 
 if [ -z "$base" ]; then
     base=HEAD

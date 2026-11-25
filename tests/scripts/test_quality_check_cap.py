@@ -724,7 +724,7 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("for i in 1 2\ndo\n  cargo test\ndone"))
         self.assert_allowed(self.pre("for i in 1 2; do cargo test 2>&1 | tail -3; done"))
 
-    # a run whose output was cut by tail, head or grep
+    # a run whose output was cut by tail, head, grep or rg
 
     def test_a_check_piped_to_tail_is_allowed_once_more_redirected_to_a_file(self):
         ruff = "ruff check a.py b.py c.py"
@@ -744,6 +744,19 @@ class QualityCheckCapTest(unittest.TestCase):
                 command = f"pytest tests/t{index}.py"
                 self.post(f"{command} {cut}")
                 self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+
+    def test_rg_cuts_the_output_too(self):
+        cuts = (("pytest tests/r0.py", "| rg '^(Ran|OK|FAILED)'"),
+                ("pytest tests/r1.py", "2>&1 | rg -A 3 FAILED"),
+                ("pytest tests/r2.py", "| rg"),
+                ("python3 -m unittest discover -s tests", "2>&1 | rg '^(Ran|OK|FAILED)'"))
+        for command, cut in cuts:
+            with self.subTest(command=command, cut=cut):
+                self.post(f"{command} {cut}")
+                self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+                reason = self.assert_denied(self.pre(command))
+                self.assertIn("tail, head, grep or rg", reason)
+                self.assertIn("no tail, head, grep or rg after it", reason)
 
     def test_a_cut_run_still_denies_a_rerun_that_does_not_keep_the_output(self):
         self.post("pytest -q | tail -3")

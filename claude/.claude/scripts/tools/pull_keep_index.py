@@ -49,8 +49,11 @@ as another session) plus tracked changes is the shared route: nothing is set asi
 would leave the tree during the pull. The upstream tip is fetched and, when HEAD already holds it, nothing is pulled;
 when it has commits HEAD lacks and HEAD has none of its own, the branch is fast-forwarded in place; when HEAD has
 commits of its own the run exits 1 naming the dirty files, and when the fast-forward would overwrite a dirty file it
-exits 1 naming that file. Every run, `--put-back` included, holds `<git common dir>/pull-keep-index.lock`; it waits
-PULL_KEEP_INDEX_LOCK_SECONDS (a positive integer, default 300) and then exits 1."""
+exits 1 naming that file. When every tracked change is a built page and the built-page driver is configured, the run
+takes the solo route even beside another session: a built page is build output, so setting it aside, pulling and
+putting it back through the driver rebuilds it in place of a refusal. Every run, `--put-back` included, holds
+`<git common dir>/pull-keep-index.lock`; it waits PULL_KEEP_INDEX_LOCK_SECONDS (a positive integer, default 300) and
+then exits 1."""
 import datetime
 import os
 import pathlib
@@ -304,8 +307,11 @@ def staged_tree(repo, commit):
         return None
     with tempfile.TemporaryDirectory() as scratch:
         env = {**os.environ, "GIT_INDEX_FILE": os.path.join(scratch, "index")}
-        apply_arguments = ("apply", "--cached")
-        for arguments, stdin in ((("read-tree", "HEAD"), None), (apply_arguments, staged_changes.stdout)):
+        steps = [(("read-tree", "HEAD"), None)]
+        # `git apply` exits 128 on empty input, and nothing staged means the staged tree is HEAD's.
+        if staged_changes.stdout:
+            steps.append((("apply", "--cached"), staged_changes.stdout))
+        for arguments, stdin in steps:
             if run_in_repo(repo, *arguments, env=env, stdin=stdin).returncode != 0:
                 return None
         written = run_in_repo(repo, "write-tree", env=env)
@@ -710,6 +716,16 @@ def shared_pull(repo, target, other, dirty, upstream_tip):
         set_upstream(repo, *target)
 
 
+def only_rebuildable_pages(repo, dirty):
+    """True when every dirty path is a built page and the built-page driver is configured. Another session's edit to
+    such a page is a build output, not work: setting it aside, pulling and putting it back through the driver
+    rebuilds it, so the shared checkout can take the solo route and pull even when the branch diverged."""
+    pages = built_page_paths(repo, dirty)
+    if set(pages) != set(dirty):
+        return False
+    return built_page_driver_command(repo) is not None
+
+
 def lock_seconds():
     """How long to wait for the lock: PULL_KEEP_INDEX_LOCK_SECONDS, read once, a positive integer; exit 1 otherwise."""
     raw = os.environ.get(LOCK_SECONDS_VARIABLE)
@@ -783,7 +799,7 @@ def run_pull(repo):
 
     dirty = listed_paths(repo, "HEAD")
     other = session_registry.other_live_session_in(repo, os.environ.get("CLAUDE_CODE_SESSION_ID"))
-    if dirty and other is not None:
+    if dirty and other is not None and not only_rebuildable_pages(repo, dirty):
         shared_pull(repo, target, other, dirty, checked.tip)
         return
 

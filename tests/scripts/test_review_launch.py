@@ -9,6 +9,7 @@ import itertools
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import sys
@@ -101,14 +102,16 @@ class ReviewLaunchTest(unittest.TestCase):
                 except ProcessLookupError:
                     continue
 
+    def launch_environment(self):
+        return {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
+                "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
+                "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+
     def run_launch(self, *flags, repo=None, env_overrides=None, detach=True):
         repo = repo or self.repo
         detach_flags = ["--detach"] if detach else []
         (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
-        environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
-                       "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
-                       "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1",
-                       **(env_overrides or {})}
+        environment = {**self.launch_environment(), **(env_overrides or {})}
         return subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", *detach_flags, *flags], cwd=repo,
                               text=True, capture_output=True, env=environment, check=False)
 
@@ -188,6 +191,147 @@ class ReviewLaunchTest(unittest.TestCase):
         relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
         self.assertEqual([relaunch[index + 1] for index, word in enumerate(relaunch) if word == "--ruled-out"],
                          ["a.py", "sub/b.py"])
+
+    def prompt_text(self):
+        return (self.loop_dirs(self.repo)[-1] / "prompt.txt").read_text()
+
+    def write_plan(self):
+        plan_file = self.repo / "docs" / "plans" / "p" / "plan.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Plan\n")
+        return plan_file
+
+    def assert_plan_carried(self, plan):
+        self.assertRegex(self.prompt_text(), rf"(?m)^plan: {re.escape(plan)}$")
+        self.assertRegex(self.prompt_text(), rf"(?m)^repo: {re.escape(str(self.repo.resolve()))}$")
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertEqual(relaunch[relaunch.index("--plan") + 1], plan)
+        packet = reviewer_dispatch.packet_command(loop_dir)
+        self.assertTrue(packet.endswith(f"--plan {self.repo.resolve()}/{plan}"), packet)
+
+    def test_the_plan_of_the_code_phase_record_reaches_the_prompt_header(self):
+        self.write_plan()
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        self.launch()
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_plan_flag_wins_over_the_plan_of_the_code_phase_record(self):
+        self.write_plan()
+        other = self.repo / "docs" / "plans" / "q" / "plan.md"
+        other.parent.mkdir(parents=True)
+        other.write_text("# Plan\n")
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        self.launch("--plan", "docs/plans/q/plan.md")
+
+        self.assert_plan_carried("docs/plans/q/plan.md")
+
+    def test_a_relative_plan_flag_is_read_against_the_repo_root(self):
+        self.write_plan()
+
+        self.launch("--plan", "docs/plans/p/plan.md")
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_tree_whose_only_changes_are_plan_documents_stops_as_an_empty_scope(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        environment = self.launch_environment()
+
+        with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo), "--plan", str(plan_file)],
+                                         str(self.loop_stub))
+
+        self.assertIn("is under the plan folder docs/plans/p/", str(raised.exception))
+        self.assertNotIn("--ruled-out", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_file_flag_on_a_plan_document_is_reviewed_though_a_plan_is_given(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+
+        self.launch("--plan", str(plan_file), "--file", "docs/plans/p/plan.md")
+
+        self.assertEqual(len(self.loop_dirs(self.repo)), 1)
+        self.assertRegex(self.prompt_text(), r"(?m)^files: .*docs/plans/p/plan\.md")
+
+    def test_a_launch_with_no_plan_has_no_plan_in_the_relaunch_args(self):
+        self.launch()
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertNotIn("--plan", relaunch)
+
+    def test_a_plan_flag_reaches_the_header_and_the_relaunch_args_as_a_repo_relative_path(self):
+        plan_file = self.write_plan()
+
+        self.launch("--plan", str(plan_file))
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_recorded_plan_that_is_not_a_file_in_the_repo_adds_no_plan_line(self):
+        (self.repo / "docs" / "plans" / "dir").mkdir(parents=True)
+        (self.temp_root / "plan.md").write_text("# Plan\n")
+        outside = str(self.temp_root / "plan.md")
+        for recorded in ("docs/plans/gone/plan.md", outside, "docs/plans/dir"):
+            with self.subTest(recorded=recorded):
+                record = {"lane": "code", "phase": "1", "plan": recorded}
+                (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+                self.launch()
+
+                self.assertRegex(self.prompt_text(), r"(?m)^mode: ")
+                self.assertNotRegex(self.prompt_text(), r"(?m)^plan: ")
+
+    def test_a_corrupt_phase_record_stops_the_launch_with_a_delete_and_rerun_message(self):
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text("not json")
+
+        done = self.run_launch()
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("delete it and run the command again", done.stdout + done.stderr)
+
+    def test_a_phase_record_that_is_not_a_json_object_stops_the_launch_with_a_delete_and_rerun_message(self):
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text("[1, 2]")
+
+        done = self.run_launch()
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("delete it and run the command again", done.stdout + done.stderr)
+
+    def test_a_recorded_plan_whose_folder_has_only_changed_plan_documents_stops_as_an_empty_scope(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        with mock.patch.dict(os.environ, self.launch_environment()), \
+                self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo)], str(self.loop_stub))
+
+        self.assertIn("is under the plan folder docs/plans/p/", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_plan_flag_that_is_no_file_in_the_repo_stops_the_launch(self):
+        outside = self.temp_root / "plan.md"
+        outside.write_text("# Plan\n")
+        for given in ("docs/plans/gone/plan.md", str(outside)):
+            with self.subTest(given=given):
+                done = self.run_launch("--plan", given)
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn(f"--plan {given} is not a file inside the repo", done.stdout + done.stderr)
 
     def test_a_launch_with_no_ruled_out_file_writes_no_ruled_out_line(self):
         self.launch()
@@ -278,9 +422,7 @@ class ReviewLaunchTest(unittest.TestCase):
         self.assertIn("--ruled-out sub is a folder; --ruled-out takes one file per flag", str(raised.exception))
 
     def test_a_tree_whose_only_changes_are_ruled_out_files_stops_as_an_empty_scope(self):
-        environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
-                       "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
-                       "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+        environment = self.launch_environment()
         (self.repo / "README.md").write_text("hi, edited\n")
 
         with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
@@ -288,6 +430,22 @@ class ReviewLaunchTest(unittest.TestCase):
                                          str(self.loop_stub))
 
         self.assertIn("every changed file against HEAD was given to --ruled-out", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_plan_documents_mixed_with_ruled_out_files_stop_naming_both_exclusions(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        (self.repo / "README.md").write_text("hi, edited\n")
+        environment = self.launch_environment()
+        arguments = ["--detach", "--repo", str(self.repo), "--plan", str(plan_file), "--ruled-out", "README.md"]
+
+        with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(arguments, str(self.loop_stub))
+
+        self.assertIn("every changed file against HEAD outside the plan folder docs/plans/p/ "
+                      "was given to --ruled-out", str(raised.exception))
         self.assertEqual(self.loop_dirs(self.repo), [])
 
     def test_also_fix_without_fix_stops_the_launch(self):

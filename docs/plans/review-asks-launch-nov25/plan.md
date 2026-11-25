@@ -17,7 +17,7 @@ an approval-only file), which only the user rules under the global acceptance-cr
 ## Phase Status
 
 - [x] Phase 1: full_check makes the log's missing folder (risk: low)
-- [ ] Phase 2: a /review launch carries the plan and its decision log (risk: medium)
+- [x] Phase 2: a /review launch carries the plan and its decision log (risk: medium)
 - [ ] Phase 3: the inline-interpreter deny names the session's scratchpad file first (risk: low)
 
 ## Phase 1: full_check makes the log's missing folder

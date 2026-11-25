@@ -42,6 +42,8 @@ REVIEWERS_HEADLESS = "headless"
 REVIEWERS_MAIN = "main"
 PROMPT_FILE = "prompt.txt"
 BASE_KEY = "base"
+PLAN_KEY = "plan"
+REPO_KEY = "repo"
 FILES_KEY = "files"
 HELD_FILES_KEY = "held files"
 RULED_OUT_FILES_KEY = "ruled-out files"
@@ -230,17 +232,24 @@ def reviewer_brief(header, handoff, repo):
     """The brief every reviewer of the run gets. The plan's folder is left out of the diff command and of the
     untracked files: the plan documents are not the change under review. The brief names the plan lines of the
     phase when `repo` holds the plan, the header has a `phase:` and the plan has a matching section."""
-    plan = header.get("plan", "")
-    lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
+    plan = header.get(PLAN_KEY, "")
+    lines = [f"{key}: {header[key]}" for key in (PLAN_KEY, "phase") if header.get(key)]
     plan_folder = plan_format.plan_folder(plan)
     read_line = plan_read_line(repo, plan, header.get("phase"))
     if read_line:
         lines.append(read_line)
     if plan_folder:
         plan_part = "the plan section named here" if read_line else f"`{plan}`"
-        openable = f"{plan_part}, `{plan_format.CRITERIA_FILE_NAME}` and `{plan_format.TICKET_FILE_NAME}`"
+        has_decisions = (pathlib.Path(repo) / plan_folder / plan_format.DECISION_LOG_NAME).is_file()
+        names = [plan_part, f"`{plan_format.CRITERIA_FILE_NAME}`", f"`{plan_format.TICKET_FILE_NAME}`"]
+        if has_decisions:
+            names.append(f"`{plan_format.DECISION_LOG_NAME}`")
+        openable = ", ".join(names[:-1]) + " and " + names[-1]
         lines.append(f"The files under {plan_folder} are plan documents, not the change: do not review them, and "
                      f"open none of them but {openable}.")
+        if has_decisions:
+            lines.append(f"A question that a ruling recorded in `{plan_format.DECISION_LOG_NAME}` or in the plan "
+                         "answers is not an ask: do not file it.")
     if header.get(BASE_KEY):
         base = header[BASE_KEY]
         diff_command = f"git diff {base}"

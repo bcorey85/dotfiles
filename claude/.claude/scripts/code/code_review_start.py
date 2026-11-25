@@ -75,6 +75,8 @@ from review_loop_prompt_file import (
     HELD_BY_KEY,
     HELD_FILES_KEY,
     LIST_SEPARATOR,
+    PLAN_KEY,
+    REPO_KEY,
     REVIEWERS_MAIN,
     holder_row,
     loop_script_command,
@@ -445,12 +447,12 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
     base too, so a phase the user committed before a resume is still reviewed. A `coder_model` adds the line that
     runs the fix coder on it."""
-    header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
+    header = ["mode: review-first", "caller: code", f"lane: {lane}", f"{REPO_KEY}: {repo}"]
     if review_base is not None:
         header.append(f"{BASE_KEY}: {review_base}")
 
     if plan != NO_PLAN:
-        header += [f"plan: {plan}", f"phase: {phase}"]
+        header += [f"{PLAN_KEY}: {plan}", f"phase: {phase}"]
         plan_lines = (repo / plan).read_text().splitlines()
         later_paths = expected_red.later_phase_paths(plan_lines, phase)
         later_files = script_utils.without_paths(later_paths, phase_changed)

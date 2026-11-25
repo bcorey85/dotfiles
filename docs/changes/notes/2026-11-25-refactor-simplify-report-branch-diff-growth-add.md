@@ -12,13 +12,13 @@ watches: []
 test: ""
 asked: "2026-11-25: have refactor simplify report whether the branch diff grew and accept a --diff bound"
 proof: []
-unmeasured: ""
+unmeasured: "SKILL.md steps 7a and 7f lines: no rule-meter detector fits them; listed under Questions in agent-evals questions-for-dev.md"
 impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ---
 
 ## Change
 
-`simplify-prep` saves the branch diff (work tree plus untracked files against the merge base) as a sidecar beside the log input. `log --mode simplify` measures it again and prints both. When added lines rose it ends in a `STOP:` naming the files that grew; with a handoff, the STOP also carries the `/review` step. `simplify-prep --diff BASE` lists each file of the target that has an added line, with those lines, and bounds the complexity-reviewer to them; it stops when no file of the target has one. The simplify code moved to `simplify_flow.py` and shared helpers to `flow_common.py`.
+`simplify-prep` saves the branch diff (work tree plus untracked files against the merge base) as a sidecar beside the log input. `log --mode simplify` measures it again and prints both. When added lines rose it ends in a `STOP:` naming the files that grew; the STOP also carries the step `log` would otherwise print (the `/review` step with a handoff). `simplify-prep --diff BASE` lists each file of the slice that has an added line, with those lines, and bounds the complexity-reviewer to them; it stops when no file of the target has one. The simplify code moved to `simplify_flow.py` and shared helpers to `flow_common.py`.
 
 ## Evidence
 

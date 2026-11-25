@@ -72,8 +72,7 @@ def read_span_base(requested):
         except NoSharedHistoryError as error:
             raise NoSharedHistoryError(
                 f"STOP: {requested} and HEAD share no history; ask the user for another --diff ref.") from error
-    else:
-        ref, source = pick_base(None)
+    ref, source = pick_base(None)
     return SpanBase(ref, source, work_tree_merge_base(ref))
 
 
@@ -158,7 +157,8 @@ def compare_branch_diff(input_path, root):
 def added_line_numbers(merge_base, root):
     """{root-relative path: added line ranges text such as `3-5, 9`} of the work tree against the merge base; an
     untracked text file maps to WHOLE_FILE."""
-    diff_text = diff_output(merge_base, "-U0")
+    # Explicit prefixes override --no-prefix, so a path under a folder named `b/` keeps its first segment.
+    diff_text = diff_output(merge_base, "-U0", "--src-prefix=a/", "--dst-prefix=b/")
     try:
         ranges_by_path = diff_ranges.added_ranges(diff_text)
     except ValueError as error:
@@ -167,15 +167,11 @@ def added_line_numbers(merge_base, root):
     added = {}
     for path, ranges in ranges_by_path.items():
         if ranges:
-            added[path] = ranges_text(ranges)
+            added[path] = diff_ranges.ranges_text(ranges)
     for entry in untracked_files(root):
-        added[entry.path] = WHOLE_FILE
+        if not entry.kind:
+            added[entry.path] = WHOLE_FILE
     return added
-
-
-def ranges_text(ranges):
-    """[(first, last)] as `3-5, 9`."""
-    return ", ".join(str(first) if first == last else f"{first}-{last}" for first, last in ranges)
 
 
 def scope_to_added(found, added, prefix):
@@ -208,7 +204,8 @@ def simplify_prep(opts):
         span_base = read_span_base(opts.diff)
     except (NoBaseError, NoSharedHistoryError) as err:
         if opts.diff:
-            raise
+            print(err)
+            return 0
         base_note = "no base found" if isinstance(err, NoBaseError) else "the base shares no history with HEAD"
 
     added = None

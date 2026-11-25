@@ -1,5 +1,6 @@
-"""The new-side line ranges that a unified diff changes, and a test of whether a line falls inside them. It takes plain
-diff text with any amount of context and any file prefix (`b/path`, or a bare path), and knows no repo or table."""
+"""The new-side line ranges that a unified diff changes, a test of whether a line falls inside them, and their
+text form. It takes plain diff text with any amount of context and any file prefix (`b/path`, or a bare path), and
+knows no repo or table."""
 
 import re
 
@@ -7,6 +8,11 @@ HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 NEW_FILE_HEADER = re.compile(r"^\+\+\+ (?:b/)?(.+?)(?:\t.*)?$")
 # Lines either side of a changed run that still count as inside it.
 RANGE_SLACK = 3
+
+
+def ranges_text(ranges):
+    """[(first, last)] as `3-5, 9`."""
+    return ", ".join(str(first) if first == last else f"{first}-{last}" for first, last in ranges)
 
 
 def hunk_runs(body, first_new_line, added_only=False):

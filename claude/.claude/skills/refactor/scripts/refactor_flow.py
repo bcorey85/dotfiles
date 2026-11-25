@@ -11,8 +11,8 @@ Every verb prints its report and ends with one `NEXT:` line naming what the
 model still does, or a `STOP:` line with the reason. Each prep verb deletes all but the newest 49
 regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`), and their
 `.simplify-stat` sidecars, in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it
-names a fresh path. `simplify-prep` also writes that sidecar (the branch-diff record) beside the fresh input.
-Otherwise read-only except `log`, which appends rows through the existing writers
+names a fresh path. `simplify-prep` also writes that sidecar (the branch-diff record) beside the fresh
+input when it finds a base. Otherwise read-only except `log`, which appends rows through the existing writers
 (log-escape, log-review-finding); this script never writes a second copy of those rows.
 `log` is idempotent per input file: it keeps a hash of every row a writer accepted, grouped by the
 resolved --input path, under ~/.claude/state/refactor-flow/ and skips a row already written for that
@@ -576,10 +576,6 @@ REVIEW_DISPATCH_STEP = ("tell the user you are auto-dispatching /review, then Sk
                         "handoff block above (plus any modifier).")
 
 
-def review_dispatch_next():
-    return next_line(REVIEW_DISPATCH_STEP)
-
-
 def read_refactor_log(path):
     try:
         refactor_log = json.loads(Path(path).read_text())
@@ -762,21 +758,20 @@ def check_targets_match(mode, validated_log):
 
 def log_next(validated_log, mode):
     if validated_log["handoff"]:
-        return review_dispatch_next()
+        return REVIEW_DISPATCH_STEP
     if mode == "audit":
-        return next_line("done; report the work list to the user. No coders, no /review.")
-    return next_line("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
-                     "added, else done.")
+        return "done; report the work list to the user. No coders, no /review."
+    return ("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
+            "added, else done.")
 
 
 def final_line(comparison, validated_log, mode):
-    """The last line `log` prints. The grown-diff STOP keeps the /review step when a handoff was given, so the
-    stop does not drop it."""
+    """The last line `log` prints. The grown-diff STOP carries the step `log_next` would print, after the user's
+    ruling."""
+    step = log_next(validated_log, mode)
     if not (comparison and comparison.stop):
-        return log_next(validated_log, mode)
-    if not validated_log["handoff"]:
-        return comparison.stop
-    return f"{comparison.stop} After they rule: {REVIEW_DISPATCH_STEP}"
+        return next_line(step)
+    return f"{comparison.stop} After they rule: {step}"
 
 
 def pending_rows(root, input_path, writes):
@@ -849,7 +844,7 @@ def handoff_verb(opts):
 
     print(render_handoff(root, handoff, modifier))
     print()
-    print(review_dispatch_next())
+    print(next_line(REVIEW_DISPATCH_STEP))
     return 0
 
 

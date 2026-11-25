@@ -1435,9 +1435,72 @@ class RefactorFlowTest(unittest.TestCase):
         self.write("mod/a.py", "a = 1\n")
         self.unrelated_commit()
         done = self.flow("simplify-prep", "mod", "--diff", "lone")
-        self.assertEqual(done.returncode, 1, done.stdout)
-        self.assertIn("lone and HEAD share no history", done.stderr)
-        self.assertNotIn("--base", done.stderr)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("STOP: lone and HEAD share no history", done.stdout)
+        self.assertNotIn("--base", done.stdout)
+
+    def test_simplify_prep_diff_skips_untracked_binary_files_and_symlinks(self):
+        self.write("mod/a.py", "a = 1\n")
+        self.commit_all("base")
+        self.branch_with({"mod/b.py": "b = 1\n"})
+        self.write_bytes("mod/bin.py", b"\x00\x01\x02")
+        (self.repo / "mod" / "link.py").symlink_to("b.py")
+        done = self.flow("simplify-prep", "mod", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- mod/b.py (added lines: 1)", done.stdout)
+        self.assertNotIn("mod/bin.py", done.stdout)
+        self.assertNotIn("mod/link.py", done.stdout)
+
+    def test_simplify_log_leaves_an_untracked_binary_out_of_the_at_log_count(self):
+        self.branch_with({"mod/a.py": "a = 1\n"})
+        _prep, log_input = self.simplify_prep_input("mod")
+        self.write_bytes("mod/bin.py", b"\x00\x01\x02")
+        done = self.simplify_log(log_input, ["mod/a.py"])
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- at log:  1 file(s) changed, 1 insertion(s)(+)", done.stdout)
+        self.assertTrue(self.last_line(done).startswith("NEXT:"), done.stdout)
+
+    def test_simplify_prep_diff_lists_an_uncommitted_edit_of_a_tracked_file(self):
+        self.write("mod/a.py", "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\ng = 7\nh = 8\n")
+        self.commit_all("base")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("mod/a.py", "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\nG = 7\nh = 8\n")
+        done = self.flow("simplify-prep", "mod", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- mod/a.py (added lines: 7)", done.stdout)
+
+    def test_simplify_prep_diff_lists_the_files_of_two_targets(self):
+        self.write("other/o.py", "o = 1\n")
+        self.commit_all("base")
+        self.branch_with({"mod/a.py": "a = 1\n", "other/o.py": "o = 1\no2 = 2\n"})
+        done = self.flow("simplify-prep", "mod", "other", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- mod/a.py (added lines: 1)", done.stdout)
+        self.assertIn("- other/o.py (added lines: 2)", done.stdout)
+
+    def test_simplify_prep_diff_stops_naming_the_target_with_no_added_lines_among_two(self):
+        # Pins current behavior: one quiet target stops the whole prep.
+        self.write("other/o.py", "o = 1\n")
+        self.commit_all("base")
+        self.branch_with({"mod/a.py": "a = 1\n"})
+        done = self.flow("simplify-prep", "mod", "other", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("STOP: `other` holds no file with a line added since `main`", done.stdout)
+
+    def test_simplify_prep_diff_keeps_a_file_under_a_folder_named_b(self):
+        self.write("b/z.py", "z = 1\n")
+        self.commit_all("base")
+        self.branch_with({"b/m.py": "m = 1\n"})
+        done = self.flow("simplify-prep", "b", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- b/m.py (added lines: 1)", done.stdout)
+
+    def test_final_line_keeps_the_next_step_after_a_grown_diff_stop_without_a_handoff(self):
+        module = load_script_module()
+        comparison = module.simplify_flow.BranchComparison([], "STOP: grew.")
+        line = module.final_line(comparison, {"handoff": None}, "simplify")
+        self.assertIn("STOP: grew. After they rule:", line)
+        self.assertIn("no handoff given", line)
 
     def test_simplify_prep_without_a_base_still_prints_the_prompt_and_records_no_diff(self):
         self.write("mod/a.py", "a = 1\n")

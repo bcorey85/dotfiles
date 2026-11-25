@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1175 changes
+1176 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A new /code run stops at once when its report-to session is not live](notes/2026-11-24-a-new-code-run-stops-at-once-when-its-report-to.md) [script/phase-start] phase_start --new-run reads the lane file and stops with the live session names when the lane's report-to session is not live.
 * [Hillclimb queues only Claude toolkit fixes and lists project repo fixes in its report](notes/2026-11-23-hillclimb-queues-only-claude-toolkit-fixes-never.md) [skill/hillclimb] Hillclimb defines the toolkit as dotfiles claude/.claude and agent-evals. Toolkit candidates are queued as before; a fix that lands only in the project repo the session worked in goes in a Project repo list in the report and is never queued.
 * [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md) [script/lane-status] lane-status reports a lane whose idle agent still has background shells or subagents out as waiting, marks a lane dead on no agent, a missing worktree or a transcript that ends on an API error, and with --changes prints only what changed since its last run.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) [agent/mutation-tester] The mutation tester compiles the mutated file before it reads the test run; a mutant that breaks import or compile is INDETERMINATE, so a false kill no longer hides a test gap. **raises % of unloadable mutants called INDETERMINATE (of 16 runs) by 79% (56 → 100)**

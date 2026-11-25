@@ -50,10 +50,23 @@ class PhaseStartTest(unittest.TestCase):
         return self.phase_start_with()
 
     def phase_start_with(self, *flags, session_id="test-session"):
-        environment = {**ENV, "HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
-                       "CLAUDE_CODE_SESSION_ID": session_id}
+        environment = {**ENV, "XDG_STATE_HOME": str(self.home / "state"), "HOME": str(self.home),
+                       "CLAUDE_CONFIG_DIR": str(self.config_dir), "CLAUDE_CODE_SESSION_ID": session_id}
         return subprocess.run([sys.executable, str(PHASE_START), *flags], cwd=self.repo, capture_output=True,
                               text=True, check=False, env=environment)
+
+    def write_lane(self, reports_to):
+        """A lane file whose worktree is the repo, reporting to `reports_to`, under a temp XDG state folder."""
+        lanes = self.home / "state" / "herdr-lanes"
+        lanes.mkdir(parents=True, exist_ok=True)
+        entry = {"name": "lane", "worktree": str(self.repo), "main_checkout": str(self.repo), "branch": "b",
+                 "brief": "x", "session_id": "", "reports_to": reports_to,
+                 "started_at": "2026-11-24T00:00:00+00:00"}
+        (lanes / "lane.json").write_text(json.dumps(entry))
+
+    def write_live_session(self, name):
+        row = {"name": name, "sessionId": "s-" + name, "pid": os.getpid()}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
 
     def start_json(self):
         return json.loads((self.repo / ".git/code-phase/start.json").read_text())
@@ -120,6 +133,25 @@ class PhaseStartTest(unittest.TestCase):
         review = self.review_prompt(done.stdout.strip())
         header = review.stdout.partition("\n\n")[0]
         self.assertIn("held files: theirs.py", header.splitlines())
+
+    def test_a_new_run_whose_report_to_session_is_not_live_stops_and_lists_the_live_names(self):
+        self.write_lane("ghost-orchestrator")
+        self.write_live_session("real-orchestrator")
+        result = self.phase_start_with("--new-run")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ghost-orchestrator", result.stderr)
+        self.assertIn("real-orchestrator", result.stderr)
+        self.assertFalse((self.repo / ".git/code-phase/start.json").exists())
+
+    def test_a_new_run_whose_report_to_session_is_live_goes_on(self):
+        self.write_lane("real-orchestrator")
+        self.write_live_session("real-orchestrator")
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
+
+    def test_a_new_run_with_no_lane_file_or_no_report_to_goes_on(self):
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
+        self.write_lane("")
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
 
     def test_new_run_replaces_the_record(self):
         (self.repo / "theirs.py").write_text("# another session's edit\n")

@@ -20,8 +20,11 @@ import shell_command
 
 MEMORY_MAX = "8G"
 TEST_SLICE = "tests.slice"
-CAPPED_PREFIX = (f"systemd-run --user --scope --quiet --slice={TEST_SLICE} -p MemoryMax={MEMORY_MAX} "
-                 f"-p MemorySwapMax=0")
+CAPPED_PREFIX_WORDS = ("systemd-run", "--user", "--scope", "--quiet", f"--slice={TEST_SLICE}", "-p",
+                       f"MemoryMax={MEMORY_MAX}", "-p", "MemorySwapMax=0")
+CAPPED_PREFIX = " ".join(CAPPED_PREFIX_WORDS)
+# The shell a capped command runs in: the one subprocess's shell=True uses.
+CAPPED_SHELL = "/bin/sh"
 SHELLS = {"bash", "sh", "zsh"}
 RUN_SCRIPT = re.compile(r"(^|/)tests/run\.sh$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
@@ -45,12 +48,25 @@ SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E"
 
 # Twin: scripts/.local/lib/viewer-memory.bash memory_cap_available. Change one, change both.
 # One deliberate difference: the bash side also needs systemctl (for its OOM read); do not copy that here.
+def systemd_run_path():
+    """The absolute path of systemd-run found on this process's PATH, or None."""
+    return shutil.which("systemd-run")
+
+
 def cap_available():
     """True on a machine that can run a systemd user scope."""
-    if not sys.platform.startswith("linux") or shutil.which("systemd-run") is None:
+    if not sys.platform.startswith("linux") or systemd_run_path() is None:
         return False
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     return bool(runtime_dir) and os.path.exists(os.path.join(runtime_dir, "bus"))
+
+
+def capped_shell_argv(command):
+    """The argv that runs a shell command text inside the capped scope, in the shared slice.
+
+    The first word is systemd-run's absolute path, so a PATH in the env a caller passes to Popen cannot hide it."""
+    program = systemd_run_path() or CAPPED_PREFIX_WORDS[0]
+    return [program, *CAPPED_PREFIX_WORDS[1:], CAPPED_SHELL, "-c", command]
 
 
 def runs_test_script(words):

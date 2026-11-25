@@ -20,7 +20,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 31 | 8 |
-| script/full-check | 29 | 5 |
+| script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 27 | 6 |
 | script/shell-write-gate | 24 | 4 |

@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`review/review_loop_ruling_check.py` copies every file a fix pass may write, except held files that have a holder row, then judges the pass diff against the run's accepted rulings with one `ruling-check` call. On an `against` verdict it restores the work tree and index (a commit the coder made stays in HEAD and the blocker names it), deletes the files the pass created, keeps the findings open and stops the run `critical-blocker`, naming the file and the ruling. The packet gains `against_ruling` and `handback.py` reads it. A judge reply that does not parse stops the run as a tool fault and leaves the pass in place.
+`review/review_loop_ruling_check.py` copies every file a fix pass may write, except held files that have a holder row, then judges the pass diff against the run's accepted rulings with one `ruling-check` call. On an `against` verdict it restores the work tree and index (HEAD is not rewound: a commit the coder made stays in HEAD and the blocker names it), deletes the files the pass created, keeps the findings open and stops the run `critical-blocker`, naming the file and the ruling. The packet gains `against_ruling` and `handback.py` reads it. A judge reply that does not parse stops the run as a tool fault and leaves the pass in place.
 
 ## Evidence
 

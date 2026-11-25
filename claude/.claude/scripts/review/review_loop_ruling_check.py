@@ -1,7 +1,8 @@
 """review_loop_ruling_check.py: the judgment of a fix pass against the rulings the run holds, as a mixin for `LoopRun`.
 A ruling is free prose, so no grammar reads it: one `ruling-check` model call reads the pass diff against the ruling
-texts. A pass the judge finds against a ruling has its work tree and index put back and the run stops; a commit the
-coder made during the pass stays in HEAD and the blocker names it. The host class holds repo,
+texts. A pass the judge finds against a ruling has its work tree and index put back (byte for byte for the files
+the backup holds) and the run stops. The put-back restores the work tree and index only: HEAD is not rewound, so a
+commit the coder made during the pass stays in HEAD and the blocker names it. The host class holds repo,
 out, files_touched, user_ruled, session_ruled, adopted, no_code_broken and user_only_paths, and has keep_open,
 issue_text, coder_held_files, ruled_texts, keep_unreverted_open and drop_approval_asks."""
 import functools
@@ -64,7 +65,8 @@ def verdict_problem(parsed, ruling_count):
 
 def broken_blocker(call_name, verdict, commits, not_put_back):
     """The blocker line for one `against` verdict of the pass `call_name`. `commits` lists the commits the coder made
-    during the pass, which are not put back; None means the loop could not read them. `not_put_back` is the set of
+    during the pass; they stay in HEAD, because the put-back restores the work tree and index only and never rewinds
+    HEAD. None means the loop could not read them. `not_put_back` is the set of
     paths the loop could not put back."""
     ending = "The pass was put back."
     if not_put_back:
@@ -167,7 +169,8 @@ class RulingCheck:
     def check_rulings_kept(self, call_name, findings, result, backup):
         """Judges a pass against the run's rulings. Returns at once with no backup or no changed file. A pass the
         judge finds against a ruling is put back and raises RulingBrokenError; one the judge cannot be reached for or
-        read raises RulingCheckFaultError and stays in the tree."""
+        read raises RulingCheckFaultError and stays in the tree. The put-back restores the work tree and index only;
+        a coder commit made during the pass stays in HEAD."""
         if backup is None:
             return
         if not result.changed:

@@ -29,6 +29,14 @@ class ItemsMissingByKeyTest(unittest.TestCase):
         self.assertEqual({"b 2"}, missing)
 
 
+class IsIntTest(unittest.TestCase):
+    def test_only_a_real_integer_is_an_int(self):
+        cases = [(3, True), (True, False), (3.0, False), ("3", False), (None, False)]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertIs(script_utils.is_int(value), expected)
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))

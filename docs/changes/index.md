@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1172 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1183 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [The late repair read drops repairs an earlier review round already read](notes/2026-11-24-the-late-repair-read-drops-repairs-an-earlier.md).
+Latest change: 2026-11-24, [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md).
 
 ## Top gains
 

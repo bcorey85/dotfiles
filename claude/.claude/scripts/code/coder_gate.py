@@ -22,6 +22,9 @@
                                   run that died before `clear`, or a second concurrent run in the same session) gates
                                   every later coder hand-back of that session with that gate until `clear` or
                                   MAX_GATE_AGE_SECONDS.
+                                  A /code fork (agent type code-fork) is not a coder: the hook denies its hand-back
+                                  while its transcript shows a coder dispatch with no review and no stop.md write
+                                  after it (fork_review.py), and reads no gate file.
   coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
@@ -82,10 +85,12 @@ release_import_guard = import_guard.guard("coder-gate", __name__)
 import check_output
 import check_scope
 import collision_retry
+import fork_review
 import gate_env
 import hook_input
 import script_utils
 import shell_command
+import shell_command_words
 import test_run_output
 from ansi_text import strip_ansi
 from check_output import (
@@ -723,18 +728,10 @@ def scoped_test_failure(failures, log_path):
     return f"{result}; full output: {log_path}", tails
 
 
-def runs_script(command, script_name):
-    # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
-    # must be the script's own file.
-    for words in shell_command.resolved_command_words(command):
-        if any(pathlib.PurePath(word).name == script_name for word in words):
-            return True
-    return False
-
-
 def is_stale_prose_check(command):
     # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix.
-    return runs_script(command, STALE_PROSE_SCRIPT)
+    # A word of the command must be the script's own file.
+    return bool(shell_command_words.script_call_arguments(command, STALE_PROSE_SCRIPT))
 
 
 def failure_text(failures):
@@ -871,6 +868,14 @@ def _run_gate_under_lock(gate_file, checked_gate, event, hook_started):
 def run_hook():
     hook_started = time.monotonic()
     event = json.load(sys.stdin)
+    # A /code fork is judged on its own transcript, never on the coder gate file.
+    # Fail closed: a crash here exits 2 through run_gate and denies the hand-back.
+    if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
+        reason = fork_review.missing_review_reason(event)
+        if reason:
+            script_utils.pre_tool_use_deny(reason)
+        return
+
     if event.get("agent_type") != "coder":
         return
 

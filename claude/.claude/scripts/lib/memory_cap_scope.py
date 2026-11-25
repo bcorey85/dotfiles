@@ -42,6 +42,8 @@ BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the convers
 SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E", "--setenv"}
 
 
+# Twin: scripts/.local/lib/viewer-memory.bash memory_cap_available. Change one, change both.
+# One deliberate difference: the bash side also needs systemctl (for its OOM read); do not copy that here.
 def cap_available():
     """True on a machine that can run a systemd user scope."""
     if not sys.platform.startswith("linux") or shutil.which("systemd-run") is None:

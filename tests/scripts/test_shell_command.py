@@ -59,6 +59,7 @@ from shell_command import (
     without_flag_values,
     without_redirection_words,
     without_substitution_bodies,
+    without_substitutions,
     words_by_blank,
     words_without_redirections,
 )
@@ -485,6 +486,14 @@ class WithoutSubstitutionBodiesTest(unittest.TestCase):
         cases = {'tee a "$(ls *)"': 'tee a "$(x)"', "tee `ls *` b": "tee `x` b", "tee a*": "tee a*"}
         for text, expected in cases.items():
             self.assertEqual(without_substitution_bodies(text), expected, text)
+
+
+class WithoutSubstitutionsTest(unittest.TestCase):
+    def test_each_outermost_span_is_replaced_whole(self):
+        cases = {"F=$(git x)/stop.md && cat": "F=x/stop.md && cat", "a `ls *` b": "a x b",
+                 "$(a $(b)) c": "x c", "tee a*": "tee a*", "echo '$(ls)'": "echo '$(ls)'"}
+        for text, expected in cases.items():
+            self.assertEqual(without_substitutions(text), expected, text)
 
 
 class RawWordsWithoutRedirectionsTest(unittest.TestCase):

@@ -6735,9 +6735,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         cap_line = next(line for line in printed.splitlines() if line.startswith("cap reached"))
         self.assertNotRegex(cap_line, r"\b([3-9]|\d{2,})\b")
         self.assertGreater(packet["iter"], 2)
-        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['iter']}\b")
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['iter']}\b")
         self.assertGreater(packet["review_round"], 2)
-        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['review_round']}\b")
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['review_round']}\b")
 
     def review_fix_packet_output(self):
         """What `review_fix.py packet` prints for the packet the run stored."""
@@ -7177,7 +7177,7 @@ SIGNOFF_FINDING_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n
 
 
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
-    """A coder never edits a sign-off line of a decision log; the loop asks the caller instead."""
+    """A coder never edits a sign-off line of a decision log; the loop asks the caller, or hands a ruled change back."""
 
     def setUp(self):
         super().setUp()
@@ -7204,6 +7204,93 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py:2", issues)
         self.assertNotIn(DECISIONS_PATH, issues)
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+
+    RULED_FINDING = f"{DECISIONS_PATH}:3 [plan-drift] Proposed change: reword the ruling"
+    REWORDED = DECISIONS_TEXT.replace("Keep plan as written.", "Keep the plan, reworded.")
+
+    def run_fix_first(self, header_tail):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps([self.RULED_FINDING]))
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": {DECISIONS_PATH: self.REWORDED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 3,
+            "closure": [{"result": CLOSED}],
+        }
+        header = f"mode: fix-first\nfindings: {findings_file}\n" + header_tail
+        completed = self.run_script(scenario, header_extra=header)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def coder_calls(self):
+        return [call for call in self.fake_calls() if call["key"] == "coder"]
+
+    USER_SIGNED_TEXT = DECISIONS_TEXT.replace("Ruled by the session, not the user at 2026-11-11 03:17.",
+                                              "Ruled by Brandon Corey at 2026-11-11 03:17.")
+
+    def test_a_finding_on_an_unreadable_file_reads_as_a_user_sign_off_line(self):
+        finding = finding_record.parse_finding(self.RULED_FINDING)
+        self.assertEqual(finding.line, 3)
+        (self.repo / DECISIONS_PATH).unlink()
+
+        self.assertTrue(review_loop_signoffs.finding_on_user_signoff(str(self.repo), finding))
+
+    def assert_handed_back_to_the_caller(self, ruling, ruler_mark):
+        packet = self.run_fix_first(ruling)
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(packet["handback_edits"], [
+            f"{DECISIONS_PATH}:3 {review_loop_signoffs.HANDBACK_EDIT_NOTE}. Ruled finding: {ruler_mark} "
+            f"{self.RULED_FINDING}"])
+
+    def test_a_session_ruled_finding_on_a_session_owned_sign_off_line_is_handed_back_with_the_session(self):
+        self.assert_handed_back_to_the_caller("session-ruled: 1\n", f"[ruled by session {SESSION}]")
+
+    def test_a_user_ruled_finding_on_a_sign_off_line_is_handed_back_with_the_user_and_time(self):
+        self.assert_handed_back_to_the_caller("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n",
+                                              "[accepted by the user, ruled 2026-11-13 11:32:00Z]")
+
+    def test_a_session_ruled_finding_on_a_user_sign_off_line_is_filed_as_an_ask_and_no_hand_back_edit(self):
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertIn(review_loop_signoffs.SESSION_ON_USER_LINE_NOTE, json.dumps(packet["ask"]))
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), self.USER_SIGNED_TEXT)
+
+    def test_a_user_ruled_finding_on_a_user_sign_off_line_is_handed_back(self):
+        self.assertNotEqual(self.USER_SIGNED_TEXT, DECISIONS_TEXT)
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["handback_edits"]), 1)
+        edit = packet["handback_edits"][0]
+        self.assertIn("[accepted by the user, ruled 2026-11-13 11:32:00Z]", edit)
+        self.assertIn(review_loop_signoffs.HANDBACK_EDIT_NOTE, edit)
+        self.assertNotIn("[ruled by session", edit)
+
+    def test_a_ruled_finding_handed_back_stays_open_for_no_round_and_the_run_converges(self):
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_the_same_finding_with_no_ruling_is_filed_as_an_ask_and_no_handback_edit(self):
+        packet = self.run_fix_first("")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
 
     def test_lost_lines_counts_repeated_identical_sign_off_lines(self):
         before = [(3, "Ruled by the session."), (5, "Ruled by the session.")]

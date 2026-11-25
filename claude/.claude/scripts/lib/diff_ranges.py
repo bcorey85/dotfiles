@@ -1,4 +1,5 @@
-"""The new-side line ranges that a unified diff changes, and a test of whether a line falls inside them. It takes plain
+"""The new-side line ranges that a unified diff changes, a test of whether a line falls inside them, and the
+`path:first-last` text of one range. It takes plain
 diff text with any amount of context and any file prefix (`b/path`, or a bare path), and knows no repo or table."""
 
 import re
@@ -42,6 +43,13 @@ def _closed_run(run_start, next_new_line, added_only):
     if added_only and not adds_a_line:
         return []
     return [(run_start, max(run_start, next_new_line - 1))]
+
+
+def range_line(path, first, last):
+    """`path:N` for a one-line run, `path:first-last` otherwise."""
+    if first == last:
+        return f"{path}:{first}"
+    return f"{path}:{first}-{last}"
 
 
 def added_ranges(diff_text):

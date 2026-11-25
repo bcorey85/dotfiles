@@ -34,6 +34,7 @@ import os
 import pathlib
 import sys
 
+import git_raw_diff
 import notes_paths
 import script_utils
 
@@ -53,8 +54,7 @@ PUSH_NO_RECORD = "no-record"
 PUSH_REVIEWED = "reviewed"
 PUSH_CHANGED = "changed"
 # Added submodules (160000) are not hashed as files; they stay in the patch. Symlinks (120000) are hashed by link text.
-PATCH_MODES = {b"160000"}
-SYMLINK_MODE = b"120000"
+SYMLINK_MODE = "120000"
 # The fingerprint of a work tree with no change against its base: nothing was hashed.
 NO_CHANGE_FINGERPRINT = "sha256:" + hashlib.sha256().hexdigest()
 
@@ -184,19 +184,16 @@ def added_paths(raw):
     """(files, links, in_patch, blobs) from `git diff --raw -z --no-abbrev --diff-filter=A` output: the added paths to
     hash as whole files, the added symlinks, which are hashed by their link text, the added submodules, which stay in
     the patch, and each added path's new object id (all zeros for a working-tree file)."""
-    raw_fields = [field for field in raw.split(b"\0") if field]
     files = []
     links = []
     in_patch = []
     blobs = {}
-    # With -z and no renames, each entry is a ":<old mode> <new mode> ..." field and then one path field.
-    for meta, name in zip(raw_fields[0::2], raw_fields[1::2], strict=True):
-        meta_fields = meta.split()
-        new_mode = meta_fields[1]
-        blobs[name] = meta_fields[3].decode()
-        if new_mode in PATCH_MODES:
+    for entry in git_raw_diff.raw_entries(raw):
+        name = entry.path
+        blobs[name] = entry.new_sha
+        if entry.new_mode == git_raw_diff.SUBMODULE_MODE:
             in_patch.append(name)
-        elif new_mode == SYMLINK_MODE:
+        elif entry.new_mode == SYMLINK_MODE:
             links.append(name)
         else:
             files.append(name)

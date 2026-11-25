@@ -26,6 +26,7 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import code_wait
 import handback_store
 import process_group
+import resume_review_gate
 import review_fix_names
 import review_launch
 import reviewer_dispatch
@@ -137,6 +138,25 @@ class ReviewLaunchTest(unittest.TestCase):
         loop_dir = self.loop_dirs(self.repo)[-1]
         self.assertEqual((loop_dir / "handoff.txt").read_text(), HANDOFF)
         self.assertTrue((loop_dir / "findings.json").is_file())
+
+    def test_a_launch_in_a_resume_run_lets_the_stop_write_pass_the_resume_gate(self):
+        resume_review_gate.record_resume(self.run_folder, self.repo)
+        stop_path = self.run_folder / stop_file_names.STOP_FILE
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        recorded = (self.run_folder / stop_file_names.LOOP_DIR_FILE).read_text().strip()
+        self.assertEqual(recorded, str(loop_dir))
+        self.assertIsNone(resume_review_gate.resume_deny_reason(stop_path))
+
+    def test_a_launch_with_no_resume_record_writes_no_loop_dir_file(self):
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        self.assertFalse((self.run_folder / stop_file_names.LOOP_DIR_FILE).exists())
 
     def test_also_fix_findings_follow_the_fix_findings_and_the_run_folder_file_is_consumed(self):
         fix_file = self.run_folder / "asks.md"
@@ -631,7 +651,8 @@ class ReviewLaunchTest(unittest.TestCase):
 class UserRuledHeaderTest(unittest.TestCase):
     def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[1], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[1],
+                                     session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -640,7 +661,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_session_ruled_numbers_are_written_as_a_header_pair_with_no_ruling_time(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[2, 3])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[2, 3])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -649,7 +671,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_a_launch_with_no_fix_flag_but_findings_to_apply_writes_the_fix_first_mode(self):
         options = argparse.Namespace(fix=None, skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[])
 
         with_findings = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.json")))
         without_findings = dict(review_launch.header_pairs(options, "", [], None))
@@ -659,7 +682,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 

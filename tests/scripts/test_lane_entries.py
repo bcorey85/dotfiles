@@ -31,6 +31,14 @@ class LaneEntriesTest(unittest.TestCase):
         worktree = worktree or self.make_worktree(name)
         return lane_entries.add_entry(name, worktree, str(self.root / "main"), f"branch-{name}", brief, "boss")
 
+    def test_is_lane_session_matches_an_entry_session_id_only(self):
+        self.add("one")
+        lane_entries.set_session("one", "sess-1")
+
+        self.assertTrue(lane_entries.is_lane_session("sess-1"))
+        self.assertFalse(lane_entries.is_lane_session("sess-2"))
+        self.assertFalse(lane_entries.is_lane_session(""), "an unfilled lane has an empty id, which is no session")
+
     def write_raw(self, name, text):
         lane_entries.lanes_dir().mkdir(parents=True, exist_ok=True)
         file = lane_entries.lanes_dir() / f"{name}.json"

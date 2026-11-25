@@ -42,15 +42,18 @@ from review_loop_prompt_file import (
     USER_RULED_HEADER_KEY,
     YES,
     header_adopted,
+    header_fix_rounds,
     header_held_by,
     header_iter,
     header_list,
+    header_post_cap_passes,
     header_ruled,
     read_findings,
     read_prompt,
     reviewer_brief,
 )
 from review_loop_ruled import adopted_rulings, rejected_ask_questions, rejected_ask_records
+from review_loop_ruling_check import RulingBrokenError, RulingCheckFaultError
 from review_loop_scoped_tests import test_commands_of
 from review_loop_script import (
     ROUND_BUDGET,
@@ -158,6 +161,8 @@ def build_loop(request):
         repo, loop.held_files, loop.held_holders, loop.only_files, request.session))
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     request.progress["iter"] = loop.iter_count
+    loop.fix_rounds = min(header_fix_rounds(header), ROUND_BUDGET)
+    loop.post_cap_passes = tuple(header_post_cap_passes(header))
     return loop, check_command
 
 
@@ -209,7 +214,8 @@ def run_loop(request):
         loop.resume_approval_asks([parse_finding(text) for text in findings])
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
-    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError) as error:
+    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError, RulingBrokenError,
+            RulingCheckFaultError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

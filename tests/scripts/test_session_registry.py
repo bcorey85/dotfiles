@@ -87,6 +87,14 @@ class SessionRegistryTest(unittest.TestCase):
         self.register("twin", "sid-second", os.getpid(), "3.json")
         self.assertEqual("sid-first", session_registry.row_for_name("twin")["sessionId"])
 
+    def test_a_row_is_found_by_session_id_only_while_its_pid_is_alive(self):
+        self.register("twin", "sid-dead", 10**30, "1.json")
+        self.register("twin", "sid-first", os.getpid(), "2.json")
+        self.register("twin", "sid-second", os.getpid(), "3.json")
+        self.assertEqual("sid-second", session_registry.row_for_session_id("sid-second")["sessionId"])
+        self.assertIsNone(session_registry.row_for_session_id("sid-dead"))
+        self.assertIsNone(session_registry.row_for_session_id("sid-absent"))
+
     def test_a_live_row_with_an_empty_name_gives_no_display_name(self):
         self.register("", "sid-unnamed", os.getpid(), "3.json")
         self.assertIsNone(session_registry.session_display_name("sid-unnamed"))

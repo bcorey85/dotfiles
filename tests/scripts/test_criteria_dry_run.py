@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import pathlib
 import stat
@@ -5,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from toolkit_paths import TOOLS_DIR
 
@@ -160,6 +163,33 @@ class EnvironmentFailureTest(unittest.TestCase):
         self.assertIn("FLAG environment failure: mise ERROR Tool not installed for shim: uv", finished.stdout)
         self.assertNotIn(" RED ", finished.stdout)
         self.assertEqual(finished.returncode, 1)
+
+
+class CappedRunTest(unittest.TestCase):
+    """dry_run starts each criterion's command inside the shared capped slice when the machine can run one."""
+
+    def started_command(self, cap_available):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = pathlib.Path(temp)
+            plan = repo / "plan.md"
+            plan.write_text("# Plan\n\n## Phase 1: Tool\n\n#### Automated Verification:\n\n"
+                            "- [ ] `echo hi` exits 0\n")
+            with mock.patch.object(criteria_dry_run.memory_cap_scope, "cap_available", return_value=cap_available), \
+                    mock.patch.object(criteria_dry_run.script_utils, "run_command",
+                                      return_value=(0, "")) as run_command, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                criteria_dry_run.dry_run(plan, repo, set(), 5)
+        return run_command.call_args.args[0]
+
+    def test_a_capped_machine_runs_the_command_as_the_capped_argv(self):
+        argv = self.started_command(True)
+
+        self.assertIn("--slice=tests.slice", argv)
+        self.assertEqual("-c", argv[-2])
+        self.assertIn("echo hi", argv[-1])
+
+    def test_a_machine_without_a_scope_runs_the_plain_shell_command(self):
+        self.assertEqual("echo hi", self.started_command(False))
 
 
 class DryRunMissingToolTest(unittest.TestCase):

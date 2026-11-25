@@ -25,6 +25,9 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
   reviewer-model: <model>   the model every reviewer runs on
   coder-model: <model>      the model the fix coder runs on; with no line the coder runs on its agent's own model
   iter: <n>                 review rounds an earlier run of the same review already used
+  fix_rounds: <n>           fix rounds an earlier run of the same review already reported
+  post_cap_passes: <kind>, <kind>
+                            the post-cap pass kinds an earlier run of the same review already reported
 """
 import json
 import pathlib
@@ -34,6 +37,7 @@ sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / "../lib")]
 import plan_format
 import script_utils
 from handback_store import AdoptedRuling
+from review_loop_post_cap import post_cap_kinds
 
 # Who runs the reviewers (--reviewers): `claude -p` calls of the loop script, or the main session as its subagents.
 REVIEWERS_HEADLESS = "headless"
@@ -56,6 +60,8 @@ NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
 CODER_MODEL_KEY = "coder-model"
 ITER_KEY = "iter"
+FIX_ROUNDS_KEY = "fix_rounds"
+POST_CAP_PASSES_KEY = "post_cap_passes"
 LIST_SEPARATOR = ", "
 YES = "yes"
 
@@ -97,6 +103,14 @@ def read_prompt(path):
 def header_list(header, key):
     """The comma-separated values of one header line, [] when it is absent."""
     return [value for value in header.get(key, "").split(LIST_SEPARATOR) if value]
+
+
+def header_post_cap_passes(header):
+    """The post-cap pass kinds of the header, [] when it has none. An empty or unknown kind stops the run."""
+    try:
+        return post_cap_kinds(header.get(POST_CAP_PASSES_KEY, ""), LIST_SEPARATOR)
+    except ValueError as error:
+        raise PromptFileError(f"the prompt file's {POST_CAP_PASSES_KEY} line {error}") from error
 
 
 def header_json_rows(header, key, expected):
@@ -146,12 +160,22 @@ def header_adopted(header, findings):
     return adopted
 
 
+def header_whole_number(header, key):
+    """The whole number on one header line: 0 when the header has no such line."""
+    value = header.get(key, "0")
+    if not (value.isascii() and value.isdecimal()):
+        raise PromptFileError(f"the prompt file's {key} line holds {value!r}; expected a whole number")
+    return int(value)
+
+
 def header_iter(header):
     """The rounds an earlier run already used: 0 when the header has no iter line."""
-    value = header.get(ITER_KEY, "0")
-    if not (value.isascii() and value.isdecimal()):
-        raise PromptFileError(f"the prompt file's iter line holds {value!r}; expected a whole number")
-    return int(value)
+    return header_whole_number(header, ITER_KEY)
+
+
+def header_fix_rounds(header):
+    """The fix rounds an earlier run already reported: 0 when the header has no fix_rounds line."""
+    return header_whole_number(header, FIX_ROUNDS_KEY)
 
 
 def write_findings(path, findings):

@@ -6,7 +6,7 @@ allowed-tools: [Bash, Read, Glob, Grep, Agent, Skill]
 
 # Test audit — the cross-phase test gate
 
-The third closing phase — the one test question no phase answers locally: do the branch's tests, taken whole, pin intent without spam or loose oracles? Bug-pinning is not run here. Cull + weak only.
+The one test question no phase answers locally: do the branch's tests, taken whole, pin intent without spam or loose oracles? Bug-pinning is not run here. Cull + weak only.
 
 If `$ARGUMENTS` starts with `review`, run **Review mode** below and skip the rest. Otherwise run the audit.
 

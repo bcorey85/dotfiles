@@ -1,6 +1,7 @@
 """Option facts for git subcommands: false config values, the protected branch names,
-and how `checkout`, `switch` and `restore` options take their values. The git discipline gate and
-git_destructive_calls.py import them from here. git's own options before the subcommand live in
+how `checkout`, `switch` and `restore` options take their values, and `--pathspec-from-file` (shared by
+checkout, restore and commit). The git discipline gate, git_destructive_calls.py and commit_pathspec.py
+import them from here. git's own options before the subcommand live in
 shell_command.git_options."""
 from shell_command import flags_before_value, is_long_prefix, is_short_cluster
 
@@ -14,6 +15,11 @@ CONFLICT_SHORTEST = "--c"
 RESTORE_VALUE_LETTERS = "sU"
 # `checkout -b|-B` and `switch -c|-C` take the new branch name, so the letters after them are not flags.
 SWITCH_VALUE_LETTERS = {"checkout": "bB", "switch": "cC"}
+
+
+def is_pathspec_from_file(argument):
+    """True when the argument, with or without a `=value`, is `--pathspec-from-file` or an accepted abbreviation."""
+    return is_long_prefix(argument.split("=")[0], "--pathspec-from-file", "--pathspec-fr")
 
 
 def restore_stages(argument):
@@ -55,4 +61,4 @@ def takes_separate_value(argument):
         return True
     if is_long_prefix(argument, "--inter-hunk-context", "--in"):
         return True
-    return is_long_prefix(argument, "--pathspec-from-file", "--pathspec-fr")
+    return "=" not in argument and is_pathspec_from_file(argument)

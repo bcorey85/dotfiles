@@ -31,22 +31,27 @@ import hook_input
 import merge_free_base
 import plan_format
 import process_group
+import resume_review_gate
 import review_fix_state
 import review_user_ruled
 import reviewer_dispatch
 import script_utils
+import stop_file_names
 from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_loop_plan import review_files
+from review_loop_post_cap import post_cap_kinds
 from review_loop_prompt_file import (
     ADOPTED_HEADER_KEY,
     BASE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
     FINDINGS_KEY,
+    FIX_ROUNDS_KEY,
     GIVEN_BASE_KEY,
     ITER_KEY,
     LIST_SEPARATOR,
     NO_REVIEW_KEY,
+    POST_CAP_PASSES_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_MAIN,
     RULED_OUT_FILES_KEY,
@@ -115,6 +120,11 @@ def launch_parser():
     models.add_argument("--fast", action="store_true", help=f"run the reviewers and the fix coder on {FAST_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
     parser.add_argument("--iter", type=int, default=0, help="review rounds an earlier run of this review used")
+    parser.add_argument("--fix-rounds", type=int, default=0,
+                        help="fix rounds an earlier run of this review reported; the run counts on from there")
+    parser.add_argument("--post-cap-passes", default="", metavar="KINDS",
+                        help="the post-cap passes an earlier run of this review reported, joined with "
+                             f"`{LIST_SEPARATOR}`")
     parser.add_argument("--lane", help="lane of the run (default none for review, code for fix)")
     parser.add_argument("--detach", action="store_true",
                         help="return once the loop has started and print the code_wait.py command that waits on it")
@@ -133,6 +143,13 @@ def launch_arguments(argv):
         raise LaunchError("--session-ruled needs --fix: only a fix run applies findings a session ruled on")
     if options.iter < 0:
         raise LaunchError(f"--iter {options.iter} is negative; expected the rounds an earlier run used")
+    if options.fix_rounds < 0:
+        raise LaunchError(f"--fix-rounds {options.fix_rounds} is negative; expected the fix rounds an earlier run "
+                          "reported")
+    try:
+        post_cap_kinds(options.post_cap_passes, LIST_SEPARATOR)
+    except ValueError as error:
+        raise LaunchError(f"--post-cap-passes {options.post_cap_passes!r} {error}") from error
     if any(not command.strip() for command in options.tests):
         raise LaunchError("--test needs a command; got an empty one")
     options.tests = list(dict.fromkeys(options.tests))
@@ -269,7 +286,24 @@ def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None
         pairs.append((CODER_MODEL_KEY, FAST_MODEL))
     if options.iter:
         pairs.append((ITER_KEY, str(options.iter)))
+    if options.fix_rounds:
+        pairs.append((FIX_ROUNDS_KEY, str(options.fix_rounds)))
+    if options.post_cap_passes:
+        pairs.append((POST_CAP_PASSES_KEY, options.post_cap_passes))
     return pairs
+
+
+def cap_count_args(target):
+    """The `--fix-rounds` and `--post-cap-passes` flags that carry a packet's cap counts to a later run of the
+    review. A count the packet lacks (an older packet) or holds as zero or empty adds no flag."""
+    args = []
+    fix_rounds = target.get("fix_rounds")
+    if fix_rounds:
+        args += ["--fix-rounds", str(fix_rounds)]
+    post_cap_passes = target.get("post_cap_passes")
+    if post_cap_passes:
+        args += ["--post-cap-passes", LIST_SEPARATOR.join(post_cap_passes)]
+    return args
 
 
 def handoff_text(options, paths, findings):
@@ -296,8 +330,8 @@ def packet_args(options, launch_file):
 
 def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
     """The flags a later fix run of this review carries: the same repo, range, files, ruled-out files, reviewer
-    model, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--user-ruled`, `--session-ruled` and
-    `--detach` are the caller's to add."""
+    model, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--fix-rounds`, `--post-cap-passes`,
+    `--user-ruled`, `--session-ruled` and `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
@@ -403,6 +437,17 @@ def consume_run_folder_inputs(repo, options):
             stale.unlink(missing_ok=True)
         except OSError as error:
             print(f"review_launch: could not delete {stale}: {error}", file=sys.stderr)
+
+
+def record_resume_loop(repo, loop_dir):
+    """Writes the run folder's loop-dir file with `loop_dir` when the folder holds a resume record, so the resume
+    gate sees that a review loop ran on the resumed run."""
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
+        return
+    if not (folder / resume_review_gate.RESUME_FILE).is_file():
+        return
+    script_utils.write_text_atomically(folder / stop_file_names.LOOP_DIR_FILE, f"{loop_dir}\n")
 
 
 def loop_repo(launch_file):
@@ -601,6 +646,7 @@ def command_launch(argv, loop_script):
                      reviewer_dispatch.LAUNCH_DETACH_KEY: options.detach}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     consume_run_folder_inputs(repo, options)
+    record_resume_loop(repo, loop_dir)
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()
 

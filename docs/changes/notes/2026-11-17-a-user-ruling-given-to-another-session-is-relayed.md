@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/review-fix-asks", "script/phase-asks", "script/review-asks"]
 evidence: ["review-loop-refuses-a-relayed-user-ruling-on-a"]
 watches: []
-test: "tests/scripts/test_ruling_relay.py::AsksDoneRelayTest::test_a_quote_no_turn_holds_is_refused"
+test: "tests/scripts/test_ruling_relay.py::AsksDoneRelayTest::test_a_relaying_session_with_only_a_peer_message_is_refused"
 asked: ""
 proof: []
 unmeasured: "No intake number counts relayed user rulings."

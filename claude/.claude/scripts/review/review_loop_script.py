@@ -503,7 +503,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
     def sendable(self, items, check_signoffs=True):
         """A Sendable (kept, held, ruled, signoff). A held one with a holder row goes to held_unfixed with the holder
         as its reason: no coder gets it. One on a ruled-out file goes to skipped_fp with that reason. With
-        `check_signoffs`, one that hits a recorded ruling goes to the asks."""
+        `check_signoffs`, one that hits a recorded ruling goes to the asks, or to the caller steps when it was
+        user- or session-ruled."""
         split = review_loop_ruled_out.skip_ruled_out(items, self.ruled_out, self.skipped_fp, self.repo)
         self.given_skipped += split.recorded
         kept, held_items = review_loop_held.skip_held_items(
@@ -899,6 +900,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "plan_impacts": self.plan_impacts,
             "no_code_ruling_broken": self.no_code_broken,
             "adopted_unapplied": self.adopted_unapplied,
+            "caller_steps": self.caller_steps,
             "open_fixes": merge_findings(self.open_fixes),
             "asks": self.asks,
             "ask_gates": self.ask_gates,

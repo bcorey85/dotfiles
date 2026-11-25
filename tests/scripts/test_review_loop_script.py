@@ -6353,7 +6353,7 @@ SIGNOFF_FINDING_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n
 
 
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
-    """A coder never edits a sign-off line of a decision log; the loop asks the caller instead."""
+    """A coder never edits a sign-off line of a decision log; the loop asks the caller, or hands a ruled change back."""
 
     def setUp(self):
         super().setUp()
@@ -6380,6 +6380,57 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py:2", issues)
         self.assertNotIn(DECISIONS_PATH, issues)
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+
+    RULED_FINDING = f"{DECISIONS_PATH}:3 [plan-drift] Proposed change: reword the ruling"
+    REWORDED = DECISIONS_TEXT.replace("Keep plan as written.", "Keep the plan, reworded.")
+
+    def run_fix_first(self, header_tail):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps([self.RULED_FINDING]))
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": {DECISIONS_PATH: self.REWORDED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 3,
+            "closure": [{"result": CLOSED}],
+        }
+        header = f"mode: fix-first\nfindings: {findings_file}\n" + header_tail
+        completed = self.run_script(scenario, header_extra=header)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def coder_calls(self):
+        return [call for call in self.fake_calls() if call["key"] == "coder"]
+
+    def assert_handed_back_to_the_caller(self, ruling):
+        packet = self.run_fix_first(ruling)
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(packet["caller_steps"], [
+            f"{DECISIONS_PATH}:3 {review_loop_signoffs.CALLER_STEP_NOTE}: {self.RULED_FINDING}"])
+
+    def test_a_session_ruled_finding_on_a_sign_off_line_is_handed_back_to_the_caller(self):
+        self.assert_handed_back_to_the_caller("session-ruled: 1\n")
+
+    def test_a_user_ruled_finding_on_a_sign_off_line_is_handed_back_to_the_caller(self):
+        self.assert_handed_back_to_the_caller("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+    def test_a_ruled_finding_handed_back_stays_open_for_no_round_and_the_run_converges(self):
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_the_same_finding_with_no_ruling_is_filed_as_an_ask_and_no_caller_step(self):
+        packet = self.run_fix_first("")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertEqual(packet["caller_steps"], [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
 
     def test_lost_lines_counts_repeated_identical_sign_off_lines(self):
         before = [(3, "Ruled by the session."), (5, "Ruled by the session.")]

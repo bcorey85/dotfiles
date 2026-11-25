@@ -75,14 +75,14 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden",
-                       "adopted_unapplied"]
+                       "adopted_unapplied", "caller_steps"]
 # The `check_overridden` value of a run whose full check was the launch's `--test` commands.
 CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
              "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied"]
+             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "caller_steps"]
 # The list fields whose every JSON entry is a string.
-STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied")
+STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied", "caller_steps")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
                    "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
@@ -651,6 +651,7 @@ def render(packet, skill, sections=()):
                                                                       for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
+    lines += [f"Caller step: {step}" for step in packet["caller_steps"]]
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]

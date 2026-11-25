@@ -785,6 +785,10 @@ class RenderTest(HandbackTestBase):
         text = packet_text(CONVERGED_FIELDS, findings_remaining=remaining)
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
+    def test_a_caller_step_renders_as_a_caller_step_line(self):
+        packet = handback.load(json_packet(caller_steps=["a/log.md:3 apply the ruled change"]))
+        self.assertIn("Caller step: a/log.md:3 apply the ruled change", handback.render(packet, "review"))
+
     def test_a_code_change_against_a_no_code_ruling_renders_its_ruling_and_file(self):
         broken = {"ruling": "`a/c.py:3` Make no code change.", "file": "a/b.py"}
         packet = handback.load(json_packet(no_code_ruling_broken=[broken]))

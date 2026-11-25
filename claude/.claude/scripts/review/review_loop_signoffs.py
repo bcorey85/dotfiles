@@ -1,5 +1,6 @@
-"""review_loop_signoffs.py: sign-off lines of a decision log are never edited by a coder. A finding on one, or one that
-objects to a recorded ruling, goes to the packet's asks instead of a coder. After each coder pass, a file whose
+"""review_loop_signoffs.py: sign-off lines of a decision log are never edited by a coder. A finding on one, or one
+that objects to a recorded ruling, goes to the packet's asks instead of a coder; a user- or session-ruled one goes to
+the packet's caller steps, which name the file, the line and the ruled text. After each coder pass, a file whose
 sign-off lines changed or vanished is put back and an ask names the entry and the reviewer's objection."""
 import pathlib
 import typing
@@ -15,6 +16,7 @@ from review_loop_put_back import put_back_lines
 from review_loop_ruled import CODER_GATE
 
 SIGNOFF_ASK_NOTE = "[sign-off] a recorded ruling that no coder edits; the caller routes it"
+CALLER_STEP_NOTE = "[sign-off] a ruled change to a recorded ruling that no coder edits; the caller applies it. Ruled"
 PUT_BACK_NOTE = "[sign-off] a coder pass changed or removed this recorded ruling; the loop put the file back"
 
 
@@ -72,6 +74,14 @@ def signoff_ask(repo, finding):
     return parse_finding(f"{label} {SIGNOFF_ASK_NOTE}. Reviewer's objection: {finding.text}")
 
 
+def caller_step(repo, finding):
+    """The step handed to the caller for a ruled finding on a sign-off line: the file, the line and the ruled text. The
+    loop never edits the line, so the caller applies the ruled change."""
+    path = held_path_in_repo(finding.path, repo)
+    label = signoff_entry_line(repo, path, finding.line)
+    return f"{label} {CALLER_STEP_NOTE}: {finding.text}"
+
+
 class SignoffSnapshot(typing.NamedTuple):
     """The text and sign-off line texts of each file that held a sign-off line before a coder pass."""
 
@@ -116,17 +126,26 @@ class SignoffRuns:
     """The LoopRun methods that keep sign-off lines out of a coder's hands."""
 
     def split_signoff_items(self, items):
-        """Returns (kept, signoff): the items a coder may get, and those that hit a sign-off line, whose asks are filed
-        here so no later filter drops them."""
+        """Returns (kept, signoff): the items a coder may get, and those that hit a sign-off line, whose asks or caller
+        steps are filed here so no later filter drops them."""
         kept, signoff = [], []
         for item in items:
             # An adopted change is the user's own ruling: no ask re-asks it.
             if item.text in self.adopted or not finding_hits_signoff(self.repo, item):
                 kept.append(item)
                 continue
-            self.add_ask(CODER_GATE, signoff_ask(self.repo, item))
             signoff.append(item)
+            # A ruled finding is no new question: the caller applies it, so it files no ask and no coder gets it.
+            if item.text in self.ruled_texts:
+                self.add_caller_step(caller_step(self.repo, item))
+                continue
+            self.add_ask(CODER_GATE, signoff_ask(self.repo, item))
         return kept, signoff
+
+    def add_caller_step(self, step):
+        """Files `step` for the packet's caller steps once: a later round that sees the same finding adds no copy."""
+        if step not in self.caller_steps:
+            self.caller_steps.append(step)
 
     def without_put_back(self, call_name, result, put_back, findings):
         """The result with each put-back file's diff recomputed from its text before the pass to its restored text: a

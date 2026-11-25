@@ -24,7 +24,7 @@ Queue items: `pre-commit-drift-check-refuses-every-toolkit` (Phase 1),
 
 - [x] Phase 1: the pre-commit drift check refuses only drift the commit adds (risk: low)
 - [x] Phase 2: split herdr-worktree-prune by concern so it has room for a verb (risk: medium)
-- [ ] Phase 3: lane close reads prune's keep verdict for the tree (risk: medium)
+- [x] Phase 3: lane close reads prune's keep verdict for the tree (risk: medium)
 - [ ] Phase 4: review_launch waits on the stopped loop's whole group through process_group (risk: low)
 - [ ] Phase 5: memory_cap_scope reads systemd-run options through shell_command's option walk (risk: low)
 

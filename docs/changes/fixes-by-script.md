@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-762 fix notes
+763 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -73,6 +73,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
 | script/herdr-dev | 4 | 2 |
+| script/herdr-lane-resume | 4 | 4 |
 | script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/loop-transcript | 4 | 1 |
@@ -91,7 +92,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/criteria-verdict | 3 | 1 |
 | script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
-| script/herdr-lane-resume | 3 | 3 |
+| script/herdr-worktree-prune | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
@@ -114,7 +115,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/fork-write-scope | 2 | 0 |
 | script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
-| script/herdr-worktree-prune | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/lanes | 2 | 2 |

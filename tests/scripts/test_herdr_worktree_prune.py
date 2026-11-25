@@ -1233,6 +1233,69 @@ class FailureTest(PruneTestCase):
         self.assertNotIn("Update the local main", applied.stdout)
 
 
+class CheckVerbTest(PruneTestCase):
+    def check(self, tree):
+        finished = self.lab.prune("--check", str(tree))
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return json.loads(finished.stdout)
+
+    def test_the_verdict_matches_list_mode_for_merged_dirty_unmerged_and_squash_merged_trees(self):
+        clean = self.lab.merged_lane("lane-clean")
+        dirty = self.lab.merged_lane("lane-dirty")
+        (dirty / "scratch.txt").write_text("not committed\n")
+        unmerged = self.lab.lane("lane-unmerged")
+        squashed = self.lab.lane("lane-squash")
+        self.lab.git(self.lab.main, "merge", "-q", "--squash", "feature/lane-squash")
+        self.lab.git(self.lab.main, "commit", "-q", "-m", "squash")
+        self.lab.git(self.lab.main, "push", "-q", "origin", "main")
+        listed = self.lab.prune()
+        expected = {clean: ("remove", None, None), dirty: ("keep", "uncommitted changes", "uncommitted changes"),
+                    unmerged: ("keep", "not merged", "commits not on origin/main"),
+                    squashed: ("keep", "not merged", "commits not on origin/main")}
+
+        for tree, (verdict, code, reason_part) in expected.items():
+            with self.subTest(tree.name):
+                answer = self.check(tree)
+
+                self.assertEqual((answer["verdict"], answer["code"]), (verdict, code))
+                self.assertEqual(answer["path"], str(tree))
+                self.assertEqual(answer["branch"], f"feature/{tree.name}")
+                line = line_of(listed, tree)
+                self.assertTrue(line.startswith(verdict), line)
+                if verdict == "keep":
+                    self.assertIn(reason_part, answer["reason"])
+                    self.assertTrue(line.endswith(answer["reason"]), line)
+                else:
+                    self.assertIsNone(answer["reason"])
+
+    def test_a_workspace_agent_or_open_lane_on_a_merged_clean_tree_does_not_keep_it(self):
+        tree = self.lab.merged_lane("lane-a")
+        self.lab.set_workspaces([{"label": "lane-a", "worktree": {"checkout_path": str(tree)}}])
+        self.lab.set_agents([{"cwd": str(tree)}])
+        self.lab.open_lane("lane-a", tree)
+        self.hold_cwd(tree)
+
+        answer = self.check(tree)
+
+        self.assertEqual(answer["verdict"], "remove")
+        self.assertTrue(line_of(self.lab.prune(), tree).startswith("keep"))
+
+    def test_a_path_that_is_not_a_worktree_exits_1_with_the_message(self):
+        finished = self.lab.prune("--check", str(self.root / "nowhere"))
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("is not a worktree of this repository", finished.stderr)
+
+    def test_check_without_exactly_one_path_prints_usage_and_exits_2(self):
+        for arguments in (("--check",), ("--check", "a", "b")):
+            with self.subTest(arguments):
+                finished = self.lab.prune(*arguments)
+
+                self.assertEqual(finished.returncode, 2)
+                self.assertIn("usage: herdr-worktree-prune", finished.stderr)
+
+
 class UsageTest(PruneTestCase):
     def test_help_prints_the_usage_block_and_says_list_mode_fetches(self):
         finished = self.lab.prune("--help")

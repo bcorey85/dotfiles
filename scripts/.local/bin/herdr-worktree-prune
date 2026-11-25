@@ -2,6 +2,7 @@
 """Remove finished linked git worktrees, and optionally merged local branches.
 
 Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
+       herdr-worktree-prune --check <path>
 
   (no option)  list only: one line per worktree it would remove (path, branch,
                size), one line per kept worktree with the reason, then totals.
@@ -20,15 +21,28 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                in a worktree whose folder exists (such a worktree shows as
                detached).
 
+  --check <path>
+               judge the one worktree at <path> by the conditions of its own
+               state (everything below except the current worktree, open lane,
+               process and herdr conditions, which a lane close clears itself).
+               Prints one JSON object on stdout and exits 0:
+               {"path", "branch", "verdict": "remove"|"keep", "code", "reason"}
+               (code and reason are null on remove). It runs the same start-up
+               fetch, and reads only the worktree list and the stashes. A path
+               that is not a worktree entry of the repo, and any start-up
+               failure, exit 1 with the message on stderr; a check that cannot
+               run is a keep with code `cannot check`. A call with no path or
+               extra arguments exits 2 with the usage.
+
 A branch is deleted with `git update-ref -d refs/heads/<name> <tip>` on the tip
 just checked as an ancestor of the compare ref, never forced: git refuses when
 the tip moved in between. Then its `branch.<name>` config section is removed.
 A branch whose tip is ahead of its own upstream is still deleted when the
 compare ref holds it; its list line says so.
 
-Run it from the main checkout or any linked worktree of a repo. Both modes
-first run `git fetch --quiet origin <default branch>` (list mode too: it
-updates only the remote-tracking ref origin/<default branch>) and compare with
+Run it from the main checkout or any linked worktree of a repo. Every mode
+first runs `git fetch --quiet origin <default branch>` (list mode too: it
+updates only the remote-tracking ref origin/<default branch>) and compares with
 that ref. They stop, remove nothing and exit 1 when there is no git repo, no
 origin remote, no refs/remotes/origin/HEAD (`git remote set-head origin
 --auto`) or origin cannot be fetched.
@@ -77,7 +91,7 @@ PROC_ROOT = "/proc"
 FETCH_TIMEOUT_SECONDS = 120
 HERDR_TIMEOUT_SECONDS = 20
 LSOF_TIMEOUT_SECONDS = 60
-USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]"
+USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help] | --check <path>"
 SUBMODULE_MODE = "160000"
 REMOTE_HEAD_PREFIX = "refs/remotes/origin/"
 
@@ -532,9 +546,14 @@ CHECKS = (check_main, check_current, check_bare, check_folder, check_locked, che
           check_lane_open, check_merged, check_tree_state, check_stash, check_process, check_herdr)
 
 
-def evaluate(repo, world, tree):
+# Who or what is on a tree right now. A lane close clears these itself by closing the workspace.
+OCCUPANCY_CHECKS = (check_current, check_lane_open, check_process, check_herdr)
+TREE_STATE_CHECKS = tuple(check for check in CHECKS if check not in OCCUPANCY_CHECKS)
+
+
+def evaluate(repo, world, tree, checks=CHECKS):
     """The one place that decides: the Keep for the first failing condition, or None when the tree may go."""
-    for check in CHECKS:
+    for check in checks:
         keep = check(repo, world, tree)
         if keep is not None:
             return keep
@@ -669,13 +688,43 @@ def prune_worktrees(repo, apply):
     return 1 if tally.failed else 0
 
 
+# ---- check mode ----
+
+def take_tree_world(repo):
+    """The world for the tree-state checks: the worktree list and the stashes, nothing else is read."""
+    unread = "not read in check mode"
+    return World(list_worktrees(repo.main_path), read_stashes(repo.main_path), None, Herdr(None, None), [],
+                 LaneRead(None, unread))
+
+
+def check_path(repo, path):
+    """Print the JSON verdict of the worktree at `path`, judged on its own state."""
+    world = take_tree_world(repo)
+    path_real = real(path)
+    for tree in world.worktrees:
+        if real(tree.path) != path_real:
+            continue
+        keep = evaluate(repo, world, tree, TREE_STATE_CHECKS)
+        verdict = {"path": tree.path, "branch": tree.branch, "verdict": "remove", "code": None, "reason": None}
+        if keep is not None:
+            verdict.update({"verdict": "keep", "code": keep.code, "reason": keep.text})
+        print(json.dumps(verdict))
+        return 0
+    raise PruneError(f"{path} is not a worktree of this repository")
+
+
 # ---- command line ----
 
 def main(argv):
     if "-h" in argv or "--help" in argv:
         print(__doc__.strip())
         return 0
-    unknown = [arg for arg in argv if arg not in ("--apply", "--branches")]
+    checking = argv[:1] == ["--check"]
+    if checking and len(argv) != 2:
+        print("herdr-worktree-prune: --check takes one path", file=sys.stderr)
+        print(USAGE_LINE, file=sys.stderr)
+        return 2
+    unknown = [] if checking else [arg for arg in argv if arg not in ("--apply", "--branches")]
     if unknown:
         print(f"herdr-worktree-prune: unknown argument: {unknown[0]}", file=sys.stderr)
         print(USAGE_LINE, file=sys.stderr)
@@ -684,6 +733,8 @@ def main(argv):
     sys.stderr.reconfigure(errors="backslashreplace")
     try:
         repo = start_up()
+        if checking:
+            return check_path(repo, argv[1])
         if "--branches" in argv:
             return prune_branches(repo, "--apply" in argv)
         return prune_worktrees(repo, "--apply" in argv)

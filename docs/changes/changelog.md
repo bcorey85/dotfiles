@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1191 changes
+1192 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Lane close refuses exactly when prune's verdict for the tree is keep](notes/2026-11-25-lane-close-refuses-exactly-when-prune-s-verdict.md) [script/herdr-lane-resume, script/herdr-worktree-prune] herdr-lane-resume's entry-less close asks herdr-worktree-prune --check for the tree's verdict and refuses on keep with prune's reason, so a stash, submodule, nested repo or lock now stops a close.
 * [The pre-commit drift check refuses only drift the commit adds](notes/2026-11-25-the-pre-commit-drift-check-refuses-only-drift-the.md) [script/pre-commit] The pre-commit hook runs the toolkit drift check on HEAD too and refuses a commit only for problem lines the staged tree adds; drift already at HEAD passes with a note.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.

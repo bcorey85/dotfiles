@@ -16,7 +16,7 @@ an approval-only file), which only the user rules under the global acceptance-cr
 
 ## Phase Status
 
-- [ ] Phase 1: full_check makes the log's missing folder (risk: low)
+- [x] Phase 1: full_check makes the log's missing folder (risk: low)
 - [ ] Phase 2: a /review launch carries the plan and its decision log (risk: medium)
 - [ ] Phase 3: the inline-interpreter deny names the session's scratchpad file first (risk: low)
 
@@ -30,7 +30,7 @@ Bug: `full_check.py <repo> --log <dir>/x.log` with `<dir>` missing raised FileNo
 
 #### Automated Verification
 
-- [ ] **Missing log folder**: a --log under a missing folder runs the check and writes the log - `python3 tests/parallel_tests.py test_full_check.py`
+- [x] **Missing log folder**: a --log under a missing folder runs the check and writes the log - `python3 tests/parallel_tests.py test_full_check.py`
 
 ## Phase 2: a /review launch carries the plan and its decision log
 

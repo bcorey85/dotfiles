@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -504,6 +505,57 @@ class HerdrLaneSweepTest(unittest.TestCase):
         finished = self.sweep()
 
         self.assertEqual(finished.stdout.splitlines(), ["kept lane-a: first problem; second problem"])
+
+    def test_a_git_that_cannot_start_keeps_the_lane_with_a_did_not_run_reason(self):
+        worktree = self.add_lane("lane-a")
+        self.commit_in(worktree)
+        self.merge_and_push("lane-a")
+        empty_path = self.root / "empty-path"
+        empty_path.mkdir()
+        # The lane list needs bash; git is the only tool left off PATH.
+        (empty_path / "bash").symlink_to(shutil.which("bash") or "/bin/bash")
+        env = self.env()
+        env["PATH"] = str(empty_path)
+
+        finished = subprocess.run([sys.executable, str(self.script)], capture_output=True, text=True,
+                                  env=env)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^kept lane-a: git \S+ did not run")
+        self.assertNotIn("sweep deadline", finished.stdout)
+
+    def test_a_git_that_hangs_with_time_left_keeps_the_lane_with_a_did_not_run_reason(self):
+        worktree = self.add_lane("lane-a")
+        self.commit_in(worktree)
+        self.merge_and_push("lane-a")
+        short_timeout_script = self.bin_dir / "herdr-lane-sweep-short"
+        script_text = HERDR_LANE_SWEEP.read_text()
+        self.assertIn("COMMAND_TIMEOUT_SECONDS = 120\n", script_text)
+        short_timeout_script.write_text(script_text.replace("COMMAND_TIMEOUT_SECONDS = 120\n",
+                                                            "COMMAND_TIMEOUT_SECONDS = 1\n"))
+        short_timeout_script.chmod(0o755)
+        write_stub(self.bin_dir / "git", "exec sleep 30")
+        env = self.env()
+        env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+
+        finished = subprocess.run([str(short_timeout_script)], capture_output=True, text=True, env=env, timeout=20)
+
+        self.assertRegex(finished.stdout, r"^kept lane-a: git \S+ did not run")
+        self.assertNotIn("sweep deadline", finished.stdout)
+
+    def test_a_close_command_that_cannot_start_keeps_that_lane_and_the_next_lane_is_swept(self):
+        for name in ("lane-a", "lane-b"):
+            worktree = self.add_lane(name)
+            self.commit_in(worktree)
+            self.merge_and_push(name)
+        (self.bin_dir / "herdr-lane-resume").chmod(0o644)
+
+        finished = self.sweep()
+
+        lines = finished.stdout.splitlines()
+        self.assertEqual(len(lines), 2, finished.stdout)
+        self.assertRegex(lines[0], r"^kept lane-a: herdr-lane-resume did not run: ")
+        self.assertRegex(lines[1], r"^kept lane-b: herdr-lane-resume did not run: ")
 
     def test_an_unreadable_lane_list_exits_1(self):
         env = self.env()

@@ -22,6 +22,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   - A lane is finished when its branch has a commit past the recorded `base_commit`, and its tip is in origin's default branch or in origin's copy of the main checkout's current branch.
   - It keeps a lane with a dirty tree, unmerged commits, no recorded base, no commit since its base, the caller's current folder inside it, a working claude pane, or one not decided by the 60 s deadline.
   - It prints `closed <name>` or `kept <name>: <reason>` per lane.
+- A lane merged only into the main checkout's current branch keeps its worktree folder and branch until its tip is on origin's default branch; `herdr-worktree-prune --apply` then removes it.
 - `herdr-worktree` runs the sweep after its checks, before any workspace is made. A failed sweep only warns. `--fork` records `base_commit` through the new `lanes.py add --base-commit`, an optional field in `lane_entries.py`.
 - `herdr-wake-limited` runs the sweep at most once per 10 minutes, logs to a file beside its stamp, waits up to 300 s and then kills the sweep's process group. A sweep failure never changes its output or exit code.
 - Shared helpers in `scripts/.local/lib`: `lane_list.py`, `quiet_git.py` and `first_output_line.py`. `herdr-worktree-prune` now uses the first two.

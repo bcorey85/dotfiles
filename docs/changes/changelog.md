@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1191 changes
+1192 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) [agent/code-reviewer, skill/close-branch] The code reviewer marks a new doc file or test module that no plan step, criterion or finding asks for as a fix to delete it, and a doc that repeats a sibling doc or the code; close-branch carries the Diff split line and treats an OVERSIZED part as a finding.
 * [The close pass splits the branch's added lines into docs, tests and code](notes/2026-11-25-the-close-pass-splits-the-branch-s-added-lines.md) [script/concentration, skill/close-branch] The concentration gate also prints the branch's added lines split into docs, tests and code, and flags a docs or tests part over 40% of a branch of 300 or more lines.
 * [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.
 * [a merge that adds a script links it from ~/.local/bin](notes/2026-11-24-a-merge-that-adds-a-script-links-it-from-local-bin.md) [script/post-merge] A post-merge hook restows the scripts package when a merge in the stowed main checkout leaves a script unlinked.
@@ -1387,6 +1388,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) - No intake metric counts the unasked docs or test modules a review cuts.
 * [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) - The run-through line ran on one TypeScript fixture; a second fixture is still owed. The reporting, ruling, toolkit-edit, memory-cap and final-report sections restate rules from orchestration.md, the global CLAUDE.md and the agent-evals CLAUDE.md, so they were not metered. No intake number reads lane stalls, since lanes run on this machine only.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) - No intake number reads mutation-tester verdicts, so no edit watch can read this change at work. Stacks with no run: every stack except Django (pytest) and TypeScript (vitest).
 * [Four rules the coder and reviewer already follow are deleted, 198 fewer words per load](notes/2026-11-22-four-rules-the-coder-and-reviewer-already-follow.md) - No intake number reads these four rules; the removal is read by the rule-meter trials. Not run: a Django or Vue coder fixture for the search-before-writing, red-test and nesting rules, and a Sonnet reviewer run for the nesting line.

@@ -24,7 +24,7 @@ python3 ~/.claude/scripts/code/concentration.py <base>
 python3 ~/.claude/scripts/review/full_check.py "$(git rev-parse --show-toplevel)" --log <scratchpad>/close-full-check.log --base <base>
 ```
 
-`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts for the recap; no module is simplified here. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
+`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts and the `Diff split:` line for the recap; no module is simplified here. Each `OVERSIZED:` part is a finding for Step 3. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
 
 ## Step 2: four reviewers in parallel
 
@@ -93,7 +93,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Change map                    (from git diff --stat)
 ### Close pass                    (findings by reviewer: fixed / shown wrong / ask; gate result and rounds)
 ### Criteria changes              (each sign-off line rg printed: the criterion, what changed, who signed, when)
-### Concentration                 (largest module and branch counts)
+### Concentration                 (largest module and branch counts, and the Diff split line)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
 ### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run)

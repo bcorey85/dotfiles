@@ -132,7 +132,7 @@ class ConcentrationGateTest(unittest.TestCase):
     def test_a_total_just_under_the_trigger_is_not_oversized(self):
         self.commit_files({"docs/a.md": 123, "src/a/one.py": 176})
 
-        self.assertNotIn("OVERSIZED", self.split_line())
+        self.assertTrue(self.split_line().endswith("No part over 40%."))
 
     def test_a_share_exactly_at_the_limit_is_not_oversized(self):
         self.commit_files({"docs/a.md": 120, "src/a/one.py": 180})

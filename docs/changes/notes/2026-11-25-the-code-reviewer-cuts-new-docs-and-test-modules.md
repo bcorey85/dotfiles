@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`agents/code-reviewer.md` Step 3 gains item 7, Unasked files: when the prompt names a plan or acceptance criteria, a new doc file or test module that no plan step, criterion or prior finding asks for is a `fix` to delete it, and a new doc that repeats a sibling doc or the code is a `fix` to delete it that names what it repeats. The opencode port carries the same rule under Do Flag. `skills/close-branch/SKILL.md` Step 1 keeps the `Diff split:` line for the recap and makes each `OVERSIZED:` part a Step 3 finding.
+`agents/code-reviewer.md` Step 3 gains item 7, Unasked files: when the prompt names a plan or acceptance criteria, a new doc file or test module that no plan step, criterion or prior finding asks for is a `fix` to delete it, and a new doc that repeats a sibling doc or the code is a `fix` to delete it that names what it repeats. The opencode port carries the same rule under Do Flag. `skills/close-branch/SKILL.md` Step 1 keeps the `Diff split:` line for the recap and makes each `OVERSIZED:` part a Step 3 finding for the fix coder, with the plan and criteria paths. Step 2 gives `code-reviewer` the plan and `acceptance-criteria.md` paths, so the unasked-files rule fires at the close pass.
 
 ## Evidence
 

@@ -30,7 +30,7 @@ python3 ~/.claude/scripts/review/full_check.py "$(git rev-parse --show-toplevel)
 
 Send all four `Agent` calls in ONE message. Omit `model` on each. Each reports and does not edit.
 
-1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes.
+1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes, then the plan path and the `acceptance-criteria.md` path beside it.
 2. `smell-reviewer` — the finder prompt `branch-prep` printed, verbatim. Every finding carries `file:line`, and duplication names the sibling's `file:line`. A cast or `?? default` papering a fixable wide type is a finding.
 3. `test-intent-reviewer` — `scope: cull`, the branch diff (`git diff <base>` plus the untracked files verify-prep listed), the spec path, and the `acceptance-criteria.md` path beside the plan.
 4. `plan-verifier` — the payload verify-prep printed, exactly. Nothing else in the prompt.
@@ -45,6 +45,7 @@ Merge the four reports and your own findings into one list, deduplicated by file
 - every test-intent cull and WEAK finding. A `REQUIRES-MUTATION` cull is not acted on: list it under open items in the recap, marked `not run`;
 - every criterion the plan-verifier marked partial, missing, or MISSING, and every failed automated check, each as "write or fix the covering test" or "build the missing behavior";
 - every failing full-check line from Step 1.
+- each `OVERSIZED:` part from Step 1, as "check each new <part> file against a plan step, criterion or finding, and cut the rest", with the plan and criteria paths.
 
 An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user, not to the coder, logged with disposition `ask` and actioned `ask`.
 

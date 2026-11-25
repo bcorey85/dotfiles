@@ -78,10 +78,9 @@ def split_line(split):
     counts = ", ".join(f"{part} {split[part]} ({shares[part]}%)" for part in SPLIT_PARTS)
     line = f"Diff split: {counts} of {total} added lines."
 
-    if total < BRANCH_TRIGGER_LINES:
-        return f"{line} No part over {SPLIT_SHARE_LIMIT}%."
-
-    oversized = [part for part in OVERSIZED_PARTS if shares[part] > SPLIT_SHARE_LIMIT]
+    oversized = []
+    if total >= BRANCH_TRIGGER_LINES:
+        oversized = [part for part in OVERSIZED_PARTS if shares[part] > SPLIT_SHARE_LIMIT]
     if not oversized:
         return f"{line} No part over {SPLIT_SHARE_LIMIT}%."
 

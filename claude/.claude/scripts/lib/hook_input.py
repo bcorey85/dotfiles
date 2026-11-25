@@ -320,6 +320,20 @@ def is_in_session_scratchpad(path, session):
     return False
 
 
+def existing_session_scratchpad(transcript_path, session_id):
+    """The session's scratchpad folder, `<claude code temp root>/<slug>/<session>/scratchpad`, when the hook payload's
+    transcript_path and session_id name one that exists; else None. The slug is the name of the transcript's folder."""
+    if not transcript_path or not session_id:
+        return None
+    slug = os.path.basename(os.path.dirname(transcript_path))
+    if not slug:
+        return None
+    scratchpad = os.path.join(claude_code_temp_root(), slug, session_id, "scratchpad")
+    if not os.path.isdir(scratchpad):
+        return None
+    return scratchpad
+
+
 def is_under_temp_dir(path):
     real = os.path.realpath(path)
     return any(script_utils.path_is_under(real, root) for root in temp_roots())

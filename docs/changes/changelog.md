@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1192 changes
+1193 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -29,6 +29,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [inline-interpreter deny names the session scratchpad first](notes/2026-11-25-inline-interpreter-deny-names-the-session.md) [script/inline-interpreter-hint, script/hook-input] The inline-interpreter deny text opens with the route to a script file and names the session's scratchpad folder when it exists; otherwise it keeps the general words.
 * [a /review launch carries the plan and its decision log](notes/2026-11-25-a-review-launch-carries-the-plan-and-its-decision.md) [script/review-launch, script/review-loop-script, skill/review] review_launch.py takes --plan (default: the code-phase record's plan when that file is in the repo) and writes it into the prompt header; the reviewer brief opens the plan's 03-decisions.md and says a question a recorded ruling answers is not an ask.
 * [full_check makes the log's missing folder](notes/2026-11-25-full-check-makes-the-log-s-missing-folder.md) [script/full-check] full_check.py creates the --log path's missing parent folders before it opens the log, so a log in a missing folder no longer ends the run with a FileNotFoundError traceback.
 * [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md) [script/review-loop, script/code-step, script/gate] The branch close pass fixes the review findings: an unreadable resume record is denied with its recovery, a put-back pass drops every approval ask it filed, and the asks block has one builder.

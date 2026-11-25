@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-763 fix notes
+764 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -46,8 +46,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/review-launch | 10 | 5 |
+| script/inline-interpreter-hint | 9 | 5 |
 | script/comment-bloat-gate | 8 | 0 |
-| script/inline-interpreter-hint | 8 | 4 |
 | script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
 | script/check-scope | 7 | 2 |
@@ -92,6 +92,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
 | script/herdr-lane-resume | 3 | 3 |
+| script/hook-input | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
@@ -115,7 +116,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-worktree-prune | 2 | 1 |
-| script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/lanes | 2 | 2 |
 | script/ledger-deferred | 2 | 0 |

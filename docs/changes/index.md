@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1192 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [a /review launch carries the plan and its decision log](notes/2026-11-25-a-review-launch-carries-the-plan-and-its-decision.md).
+Latest change: 2026-11-25, [inline-interpreter deny names the session scratchpad first](notes/2026-11-25-inline-interpreter-deny-names-the-session.md).
 
 ## Top gains
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1179 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1181 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md).
+Latest change: 2026-11-25, [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md).
 
 ## Top gains
 

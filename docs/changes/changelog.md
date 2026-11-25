@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1179 changes
+1181 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -21,6 +21,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [lane-status names a diff viewer over its memory cap](notes/2026-11-24-lane-status-names-a-diff-viewer-over-its-memory.md) [script/lane-status] lane-status prints one viewer line per live hunk viewer over its cap, naming the lane, and one cannot-read line when the viewer list fails.
 * [the lane diff viewer starts under a memory cap and restarts after an OOM kill](notes/2026-11-24-the-lane-diff-viewer-starts-under-a-memory-cap-and.md) [script/hunk-review-pane] hunk-review-pane now runs hunk in a systemd user scope capped at 1G on both start paths, restarts it after an OOM kill, and lists viewers with --viewers.
 * [the viewer memory-cap library and --viewers contract land (lane-tools-1123 Phase 0)](notes/2026-11-24-the-viewer-memory-cap-library-and-viewers-contract.md) [script/viewer-memory] A sourced bash library now owns the hunk viewer's memory cap, its value grammar, the availability check and the systemd scope prefix, so the viewer start and lane-status can share one definition.
+* [Deny a bare git commit in a shared clone](notes/2026-11-24-deny-a-bare-git-commit-in-a-shared-clone.md) [script/git-discipline-gate] The git discipline gate denies a git commit with no pathspec in a listed shared clone, so a session cannot commit the files its peers staged.
 * [A lane merge skips the suite rerun when the lane's green run covered the same tree](notes/2026-11-23-a-lane-merge-skips-the-suite-rerun-when-the-lane-s.md) [script/suite-receipt, script/run-sh, script/parallel-tests] Each tests/run.sh run leaves a receipt keyed on the work tree's git tree hash; suite_receipt.py check says skip only when the branch fast-forwards master and its exact tree has a green receipt, so a merge no longer reruns a 5 to 10 minute suite the lane already passed.
 * [Stop gate sends back a turn end that announces a step with nothing started](notes/2026-11-23-stop-gate-sends-back-a-turn-end-that-announces-a.md) [script/staged-claim-gate] The Stop gate now sends a main-session turn back once when its last message says the session will do, or is doing, a step with nothing started, so the session starts the step or says plainly it has not.
 * [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) [shared/lane-brief, rule/orchestration] A forked lane reads how it reports, runs every phase through, records rulings and runs its checks from skills/_shared/lane-brief.md, so the rules survive compaction and no lane stops after a phase to ask for a commit.
@@ -35,6 +36,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.
 * [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.
 * [Every capped test run shares one 12 GB tests slice](notes/2026-11-24-every-capped-test-run-shares-one-12-gb-tests-slice.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/full-check, script/coder-gate, script/criteria-dry-run, skill/lane-brief] The capped test form runs in one shared user slice, tests.slice, capped at 12 GB with no swap, so concurrent suites from many lanes cannot sum past free memory and freeze the machine.

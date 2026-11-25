@@ -12,13 +12,14 @@ The one owner of those rules; the git discipline gate applies them in a main che
 Flags are read from the call's arguments after git's own options are dropped, so `git -C d reset -q --hard` and
 `git --no-pager push -f origin x` read as `reset` and `push`."""
 from git_calls import CONFIG_FROM_ENVIRONMENT
-from git_commit_calls import COMMIT_VALUE_LETTERS, COMMIT_VALUE_OPTIONS
+from git_commit_calls import commit_flag_letters, commit_takes_next_word
 from git_subcommand_options import (
     GIT_FALSE_VALUES,
     PROTECTED_BRANCHES,
     SWITCH_VALUE_LETTERS,
     discards_on_switch,
     is_orphan_option,
+    is_pathspec_from_file,
     restore_restores_worktree,
     restore_stages,
     takes_separate_value,
@@ -132,7 +133,7 @@ def checkout_names_paths(options, value_letters):
             return "=" not in argument
         return takes_separate_value(argument)
 
-    if any(is_long_prefix(option.split("=")[0], "--pathspec-from-file", "--pathspec-fr") for option in options):
+    if any(is_pathspec_from_file(option) for option in options):
         return True
     words = without_flag_values(options, takes_value=takes_next_word)
     return len([word for word in words if not word.startswith("-")]) > 1
@@ -172,12 +173,6 @@ def discards_whole_tree(call):
     return restores_worktree or not stages
 
 
-def commit_takes_next_word(argument):
-    if argument in COMMIT_VALUE_OPTIONS:
-        return True
-    return value_letter_ends_cluster(argument, COMMIT_VALUE_LETTERS)
-
-
 HOOK_COMMANDS = ("commit", "push", "merge")
 
 
@@ -205,7 +200,7 @@ def skips_hooks(call):
         if is_long_prefix(option, "--no-verify", "--no-v"):
             return True
         is_commit_no_verify = call.subcommand == "commit" and is_short_cluster(option) and "n" in option
-        if is_commit_no_verify and "n" in flags_before_value(option, COMMIT_VALUE_LETTERS):
+        if is_commit_no_verify and "n" in commit_flag_letters(option):
             return True
     return False
 

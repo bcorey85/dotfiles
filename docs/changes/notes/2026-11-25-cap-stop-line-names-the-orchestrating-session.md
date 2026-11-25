@@ -21,9 +21,10 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 `claude/.claude/scripts/code/code_wait.py` `phase_stop_line` gains a cap-reached route. When the phase packet's
 effective status (`capped_review.effective_status`) stays `cap-reached` and the lane entry holding the repo
 (`lane_entries.entry_containing`) has a non-empty `reports_to`, it prints a STOP line that names that session as the
-cap's ruler: write findings_remaining to the run's stop.md, send them to that session with SendMessage, record its
-reply under `## Plan Deviations` as ruled by session with the date of its reply, then `/code resume`. code_wait exits
-1. With no lane entry, an empty `reports_to`, or a refused lane file (a stderr note naming code_wait), the output is
+cap's ruler: write findings_remaining and a `Cap ruler: session <name>` line (`cap_ruler_line`) to the run's stop.md,
+end the run, then `/code resume`. The ruler line tells the lane session to send the findings to that session with
+SendMessage, take its reply as the stop's feedback, and record it under `## Plan Deviations` as ruled by session with
+the date of its reply. code_wait exits 1. With no lane entry, an empty `reports_to`, or a refused lane file (a stderr note naming code_wait), the output is
 unchanged and the skill's user-facing cap route applies. `tests/scripts/test_code_wait.py` covers the five cases.
 
 ## Evidence

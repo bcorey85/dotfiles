@@ -1,0 +1,8 @@
+# Design Decisions — review-put-back-nov25
+
+The criteria owner is `session` (plan_check owner: the ticket is copied from session-written queue items). The lane session made each choice below under the orchestrator's go-ahead for steps inside this branch (agent-evals-c3-owner, 2026-11-25).
+
+- D1. Path characters (item 3): add `$` and `+` to `script_utils.PATH_CHARS`, the one owner of path text, so every path regex built on it reads TanStack `$param` and SvelteKit `+page` files. `[` and `]` stay out: markdown link text (`[file.py](...)`) would be read as part of a path. Lane session, 2026-11-25.
+- D2. Comment match by content (item 2): a removed comment counts as named when a finding of the pass names its file and quotes the comment's text (whitespace-normalized, comment marker stripped), wherever its line moved. Line and span matching stay. Lane session, 2026-11-25.
+- D3. User ruling plan side (item 5): `route_plan_items` holds a plan impact for a ruling, never adopts it by rule, when the impact names the decision log (`03-decisions.md`, or the plan's `## Plan Deviations`) and that log holds a sign-off line ruled by the user (the owner is `lib/signoff_lines.py`) that the impact's text quotes or points at by line. Lane session, 2026-11-25.
+- D4. review_loop_script.py is at 989 lines: phases 4 and 5 add no verb, route or state field to it; new logic goes in a mixin module of its own, or the coder first moves an existing concern out. Lane session, 2026-11-25.

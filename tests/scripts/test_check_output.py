@@ -143,6 +143,14 @@ class CheckOutputTest(unittest.TestCase):
         self.assertEqual(["FAIL  a.test.ts > totals", "AssertionError: expected 1 to be 2",
                           " ❯ a.test.ts:5:3"], check_output.failing_test_errors(output))
 
+    def test_a_failed_unittest_run_that_quotes_a_scope_start_failure_is_not_a_setup_fault(self):
+        output = ("FAIL: test_nested (test_memory_cap_scope.NestedCappedRunTest.test_nested)\n"
+                  "AssertionError: 0 != 1 : Failed to start transient scope unit: Unit run-p1-i2.scope was already "
+                  "loaded or has a fragment file.\n"
+                  "Failed to start transient scope unit: Unit run-p1-i2.scope was already loaded.\n"
+                  "Ran 19 tests in 2.1s\n\nFAILED (failures=1)\n")
+        self.assertFalse(check_output.is_setup_fault(1, output, self.repo, include_missing_modules=False))
+
     def test_failing_test_errors_cut_each_line_at_the_character_limit(self):
         output = "FAILED a - boom\n" + "y" * 1000
         quoted = check_output.failing_test_errors(output)

@@ -212,13 +212,18 @@ def cannot_start_line(code, output):
 
     for line in plain.splitlines():
         stripped = line.strip()
-        # Match the runner text at the line start, after the tool's own `error: ` prefix, so a traceback line such as
-        # `AssertionError: Command not found: uv` does not read as a failure to start.
-        runner_text = re.sub(r"^error: ", "", stripped, flags=re.IGNORECASE)
-        if RUNNER_CANNOT_START.match(runner_text) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
+        if is_runner_cannot_start_line(stripped) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
             return stripped
 
     return None
+
+
+def is_runner_cannot_start_line(stripped):
+    """True when a stripped output line is a runner's cannot-start line. The runner text must open the line, after the
+    tool's own `error: ` prefix, so a traceback line such as `AssertionError: Command not found: uv` does not read as
+    one."""
+    runner_text = re.sub(r"^error: ", "", stripped, flags=re.IGNORECASE)
+    return bool(RUNNER_CANNOT_START.match(runner_text))
 
 
 def missing_tool(code, output):
@@ -471,7 +476,10 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if TESTS_FAILED.search(plain):
         return False
 
-    if RUNNER_CANNOT_START.search(plain) or NO_PACKAGE_MANIFEST.search(plain):
+    # A test's own output may quote a cannot-start line: a run whose summary counts failures is not one.
+    runner_cannot_start = (not SUMMARY_FAILURE.search(plain)
+                           and any(is_runner_cannot_start_line(line.strip()) for line in plain.splitlines()))
+    if runner_cannot_start or NO_PACKAGE_MANIFEST.search(plain):
         return True
 
     if PACKAGE_MANAGER_MISMATCH.search(plain):

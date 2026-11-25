@@ -20,7 +20,8 @@ from collections import namedtuple
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
-PATH_CHARS = r"\w@.\-"
+PATH_NAME_CHARS = r"\w@\-$+"
+PATH_CHARS = rf"{PATH_NAME_CHARS}."
 PATH_TEXT = rf"[{PATH_CHARS}/]+\.\w+"
 
 
@@ -916,8 +917,9 @@ def write_command_outputs(output_file, command_outputs):
 
 # What stands before and after a repo-relative path that a finding or note holds as a whole token: no longer path
 # around it (`pkg/app.py`, `app.py/x`, `app.pyc`), but a sentence's closing dot may follow (`edit app.py.`).
-PATH_TOKEN_START = r"(?<![\w./-])"
-PATH_TOKEN_END = r"(?![\w/-]|\.\w)"
+# Path characters include `$`, `+` and `@` on both sides.
+PATH_TOKEN_START = rf"(?<![{PATH_CHARS}/])"
+PATH_TOKEN_END = rf"(?![{PATH_NAME_CHARS}/]|\.\w)"
 
 
 def names_path(path, text, as_token=False):
@@ -925,7 +927,7 @@ def names_path(path, text, as_token=False):
     With `as_token`, the boundaries are PATH_TOKEN_START and PATH_TOKEN_END, for a repo-relative path in prose."""
     if as_token:
         return re.search(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}", text) is not None
-    return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
+    return re.search(rf"(?<![{PATH_CHARS}]){re.escape(path)}(?![{PATH_CHARS}])", text) is not None
 
 
 def texts_relative_to(finding_texts, root):

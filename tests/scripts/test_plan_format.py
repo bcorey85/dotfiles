@@ -43,6 +43,23 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class PlanFormatPathCharsTest(unittest.TestCase):
+    def test_plan_regexes_read_dollar_and_plus_paths(self):
+        found = plan_format.PATH_IN_BACKTICKS.findall("edit `src/routes/$id.tsx:12` and `src/routes/+page.svelte:3`")
+        self.assertEqual(found, ["src/routes/$id.tsx", "src/routes/+page.svelte"])
+        for line in ("src/routes/$id.ts:12 [bug] PLAN-IMPACT: x", "`src/routes/+page.svelte:3` PLAN-IMPACT: x"):
+            with self.subTest(line=line):
+                mark = plan_format.PLAN_CHANGE_MARK.match(line)
+                self.assertIsNotNone(mark)
+                self.assertTrue(line[:mark.end()].upper().endswith("PLAN-IMPACT"))
+
+    def test_a_file_entry_on_a_dollar_path_names_that_path(self):
+        plan_lines = ["- **File**: `src/routes/$id.tsx`", "- **Files**: `src/routes/+page.svelte:3`"]
+        section = {"start": 0, "end": len(plan_lines)}
+        paths = plan_format.file_entry_paths(plan_lines, section)
+        self.assertEqual(paths, {"src/routes/$id.tsx", "src/routes/+page.svelte"})
+
+
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
         ask = "plan impact: needs a column"

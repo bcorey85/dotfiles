@@ -3,6 +3,8 @@
 The prompt file is header lines (`key: value`), a blank line, then the handoff block. The header keys are lane
 (required), mode, caller, repo, plan, phase, later-phase files, guidance, structure-pass, and:
   base: <commit>            review every change since the commit, commits included
+  given-base: <ref>         the base as given, when the base line holds its merge base with HEAD or a commit
+                            built on it (merges lie between) instead
   files: <path>, <path>     review only these files
   held files: <path>, ...   files another session holds (dirty at the run's start, not the run's own): never
                             reviewed, never edited
@@ -38,6 +40,7 @@ REVIEWERS_HEADLESS = "headless"
 REVIEWERS_MAIN = "main"
 PROMPT_FILE = "prompt.txt"
 BASE_KEY = "base"
+GIVEN_BASE_KEY = "given-base"
 FILES_KEY = "files"
 HELD_FILES_KEY = "held files"
 RULED_OUT_FILES_KEY = "ruled-out files"

@@ -395,6 +395,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.reviewer_model = ""  # the model every reviewer runs on; "" leaves each agent's own
         self.coder_model = ""  # the model the fix coder runs on; "" leaves the agent's own
         self.review_base = ""  # the commit the review diffs against; "" is HEAD
+        self.given_base = ""  # the --base as given when the review base replaced it; "" when it did not
         self.only_files = []  # the files the caller scoped the review to; [] is every changed file
         self.gate_commands = []  # the caller's scoped test commands, which name the tests no fix pass may remove
         # files held from this run, which no reviewer reads; coder_held_files are the ones no coder pass may edit
@@ -892,6 +893,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "status": self.status,
             "iter": self.iter_count,
             "review_round": self.last_review_round,
+            "base_used": self.review_base,
+            "given_base": self.given_base,
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
             "held_unfixed": self.held_unfixed,

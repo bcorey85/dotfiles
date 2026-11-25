@@ -89,6 +89,9 @@ def packet_message(outcome):
         summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
         if summary is not None:
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
+    if outcome["base_used"]:
+        fields["base_used"] = outcome["base_used"]
+        fields["given_base"] = outcome["given_base"] or outcome["base_used"]
     if outcome["scoped_tests"]:
         fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
     if outcome["check_overridden"]:
@@ -103,6 +106,7 @@ def packet_message(outcome):
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "held_unfixed": [], "blockers": [],
+    "base_used": "", "given_base": "",
     "open_fixes": [], "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {},
     "ask_rows": [],
     "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",

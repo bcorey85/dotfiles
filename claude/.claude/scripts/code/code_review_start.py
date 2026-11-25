@@ -72,6 +72,7 @@ from code_wait import (
 from review_loop_prompt_file import (
     BASE_KEY,
     CODER_MODEL_KEY,
+    GIVEN_BASE_KEY,
     HELD_BY_KEY,
     HELD_FILES_KEY,
     LIST_SEPARATOR,
@@ -376,7 +377,8 @@ class ReviewScope(NamedTuple):
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
     changed since the run start, `held_targeted` the held files this phase's section names, `held_released` the
-    files dirty at the run start whose change a coder of the run wrote, which review reads."""
+    files dirty at the run start whose change a coder of the run wrote, which review reads. `given_base` is the
+    --base as given, set only when it is no ancestor of HEAD and its merge base with HEAD replaced it."""
     holders: list
     handoff: str
     phase_changed: list
@@ -385,6 +387,7 @@ class ReviewScope(NamedTuple):
     held_changed: tuple = ()
     held_targeted: tuple = ()
     held_released: tuple = ()
+    given_base: str | None = None
 
 
 SCOPE_FILE_FLAG = "--scope-file"
@@ -400,11 +403,15 @@ def read_scope(scope_file):
                  f"the JSON object of {', '.join(ReviewScope._fields)}. Run this step again without {SCOPE_FILE_FLAG}.")
 
 
-def diff_base(repo, base_commit):
-    """The commit the review diffs against: `base_commit`, or a synthetic base that leaves out what merge commits of
-    base..HEAD brought in. A merge that does not merge cleanly stops the run, naming the merge."""
+def diff_base(repo, base_commit, base):
+    """The commit the review diffs against: `base_commit`, or its merge base with HEAD when it is no ancestor of HEAD,
+    then a synthetic base that leaves out what merge commits of base..HEAD brought in. A base with no merge base, or a
+    merge that does not merge cleanly, stops the run. Returns (BaseResolution, review base)."""
     try:
-        return merge_free_base.merge_free_base(repo, base_commit)
+        resolved = merge_free_base.resolve_base(repo, base_commit, base)
+        return resolved, merge_free_base.merge_free_base(repo, resolved.used)
+    except merge_free_base.NoMergeBaseError as error:
+        sys.exit(f"code_review_start: {error}")
     except merge_free_base.MergeConflictError as error:
         sys.exit(f"code_review_start: {error}. Resolve or revert merge {error.merge}, or pass a --base after it, "
                  "then run this step again.")
@@ -431,15 +438,15 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     if held_targeted:
         held_note(notes, "code_review_start: this phase's plan names held files, which stay held, so the phase's "
                          f"change to them is not reviewed: {', '.join(held_targeted)}")
-    review_base = diff_base(repo, base_commit)
+    resolved, review_base = diff_base(repo, base_commit, base)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
     return ReviewScope(holders, handoff, phase_changed, review_base, notes, held.changed, held_targeted,
-                       held.released)
+                       held.released, resolved.given_if_moved())
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",
-                  held_changed=(), held_targeted=()):
+                  held_changed=(), held_targeted=(), given_base=None):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
     lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it; the
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
@@ -448,6 +455,8 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
     if review_base is not None:
         header.append(f"{BASE_KEY}: {review_base}")
+    if given_base:
+        header.append(f"{GIVEN_BASE_KEY}: {given_base}")
 
     if plan != NO_PLAN:
         header += [f"plan: {plan}", f"phase: {phase}"]
@@ -611,7 +620,7 @@ def main(argv):
     scope = run_scope(argv, repo, base, coder_handoff, plan, phase)
     handoff = scope.handoff
     prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base,
-                           coder_model_option(argv), scope.held_changed, scope.held_targeted)
+                           coder_model_option(argv), scope.held_changed, scope.held_targeted, scope.given_base)
     if "--dry-run" in argv:
         print(prompt)
         for note in scope.notes:

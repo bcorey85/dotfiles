@@ -1575,6 +1575,16 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
                 self.assertIsNotNone(problem, name)
                 self.assertIn(expected, problem, name)
 
+    def test_verdict_problem_refuses_a_reply_that_repeats_one_rulings_verdict(self):
+        kept = {"ruling": "first", "verdict": "kept"}
+        parsed = {"verdicts": [kept, dict(kept)]}
+
+        problem = review_loop_ruling_check.verdict_problem(parsed, 2)
+
+        self.assertIn("one verdict for each of the 2 rulings", problem)
+        two_rulings = {"verdicts": [kept, {"ruling": "second", "verdict": "kept"}]}
+        self.assertIsNone(review_loop_ruling_check.verdict_problem(two_rulings, 2))
+
     def assert_reverted_and_reported(self, packet, path):
         """The reverted edit no finding names is reported once as dropped, and files no ask."""
         self.assertEqual(packet["ask"], [])

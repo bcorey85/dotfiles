@@ -26,6 +26,7 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import code_wait
 import handback_store
 import process_group
+import resume_review_gate
 import review_fix_names
 import review_launch
 import reviewer_dispatch
@@ -137,6 +138,25 @@ class ReviewLaunchTest(unittest.TestCase):
         loop_dir = self.loop_dirs(self.repo)[-1]
         self.assertEqual((loop_dir / "handoff.txt").read_text(), HANDOFF)
         self.assertTrue((loop_dir / "findings.json").is_file())
+
+    def test_a_launch_in_a_resume_run_lets_the_stop_write_pass_the_resume_gate(self):
+        resume_review_gate.record_resume(self.run_folder, self.repo)
+        stop_path = self.run_folder / stop_file_names.STOP_FILE
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        recorded = (self.run_folder / stop_file_names.LOOP_DIR_FILE).read_text().strip()
+        self.assertEqual(recorded, str(loop_dir))
+        self.assertIsNone(resume_review_gate.resume_deny_reason(stop_path))
+
+    def test_a_launch_with_no_resume_record_writes_no_loop_dir_file(self):
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        self.assertFalse((self.run_folder / stop_file_names.LOOP_DIR_FILE).exists())
 
     def test_also_fix_findings_follow_the_fix_findings_and_the_run_folder_file_is_consumed(self):
         fix_file = self.run_folder / "asks.md"

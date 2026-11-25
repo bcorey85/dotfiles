@@ -60,6 +60,10 @@ def verdict_problem(parsed, ruling_count):
             value = verdict.get(key)
             if not isinstance(value, str) or not value.strip():
                 return f"an {VERDICT_AGAINST!r} verdict needs a non-empty text for {key!r}"
+    judged = {verdict["ruling"] for verdict in verdicts if isinstance(verdict.get("ruling"), str)}
+    if len(judged) < ruling_count:
+        return (f"'verdicts' must hold one verdict for each of the {ruling_count} rulings, "
+                f"it names {len(judged)} different rulings")
     return None
 
 
@@ -209,8 +213,8 @@ class RulingCheck:
         return script_utils.restore_index_entries(self.repo, wanted_entries)
 
     def drop_pass_records_of(self, put_back):
-        """Removes what the pass recorded: its no-code broken entries for the paths it restored, and every approval
-        ask it filed. A put-back pass is not kept, so no ask it filed stands, whether or not its path was restored."""
+        """Removes what the pass recorded: its no-code broken entries for the paths it restored, and the approval asks
+        it filed for those restored paths. The wanted-change asks it filed stand."""
         kept_broken = list(self.no_code_broken[:self.ruling_no_code_mark])
         added_broken = self.no_code_broken[self.ruling_no_code_mark:]
         self.no_code_broken = kept_broken + [entry for entry in added_broken if entry["file"] not in put_back]

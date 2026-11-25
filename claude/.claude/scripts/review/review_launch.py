@@ -30,10 +30,12 @@ import handback_store
 import hook_input
 import plan_format
 import process_group
+import resume_review_gate
 import review_fix_state
 import review_user_ruled
 import reviewer_dispatch
 import script_utils
+import stop_file_names
 from review_fix_names import RUN_FOLDER_FINDINGS_NAME
 from review_loop_plan import review_files
 from review_loop_post_cap import post_cap_kinds
@@ -427,6 +429,17 @@ def consume_run_folder_inputs(repo, options):
             print(f"review_launch: could not delete {stale}: {error}", file=sys.stderr)
 
 
+def record_resume_loop(repo, loop_dir):
+    """Writes the run folder's loop-dir file with `loop_dir` when the folder holds a resume record, so the resume
+    gate sees that a review loop ran on the resumed run."""
+    folder = code_wait.phase_dir_or_none(repo)
+    if folder is None:
+        return
+    if not (folder / resume_review_gate.RESUME_FILE).is_file():
+        return
+    script_utils.write_text_atomically(folder / stop_file_names.LOOP_DIR_FILE, f"{loop_dir}\n")
+
+
 def loop_repo(launch_file):
     """The repo a loop's launch record names: the --repo that `relaunch_args` always puts in its relaunch flags."""
     args = read_relaunch_args(launch_file)
@@ -620,6 +633,7 @@ def command_launch(argv, loop_script):
                      reviewer_dispatch.LAUNCH_DETACH_KEY: options.detach}
     script_utils.write_text_atomically(launch_file, json.dumps(launch_record) + "\n")
     consume_run_folder_inputs(repo, options)
+    record_resume_loop(repo, loop_dir)
     print(f"The review loop runs as a script; its log is {log_path}")
     sys.stdout.flush()
 

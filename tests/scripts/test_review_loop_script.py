@@ -1834,6 +1834,36 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(f"Review every change since {base}", reviews[0]["prompt"])
         self.assertIn("app.py", reviews[0]["prompt"])
 
+    def test_the_packet_names_the_base_as_given_and_the_base_used(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\ngiven-base: master\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["given_base"], packet["base_used"]), ("master", base))
+
+    def test_the_packet_of_a_run_with_no_given_base_line_carries_no_given_base(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["given_base"], "")
+        self.assertEqual(packet["base_used"], base)
+
+    def test_the_packet_of_a_run_with_no_base_line_carries_neither_base(self):
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertFalse(packet.get("base_used"))
+        self.assertFalse(packet.get("given_base"))
+
     def test_a_fix_the_coder_commits_on_a_clean_tree_counts_as_fixed_and_is_reviewed(self):
         base = git(self.repo, "rev-parse", "HEAD")
         self.commit_files({"app.py": APP_AFTER_EDIT})

@@ -75,7 +75,8 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden",
-                       "adopted_unapplied", "fix_rounds", "post_cap_passes", "against_ruling", "handback_edits"]
+                       "adopted_unapplied", "fix_rounds", "post_cap_passes", "against_ruling", "handback_edits",
+                       "base_used", "given_base"]
 # The `check_overridden` value of a run whose full check was the launch's `--test` commands.
 CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
@@ -360,6 +361,8 @@ def read_header(raw):
               "load_bearing_clean": raw.get("load_bearing_clean", "").strip(),
               "tool_fault": raw.get("tool_fault", "").strip(),
               "scoped_tests": raw.get("scoped_tests", "").strip(),
+              "base_used": raw.get("base_used", "").strip(),
+              "given_base": raw.get("given_base", "").strip(),
               "check_overridden": raw.get("check_overridden", "").strip() == CHECK_OVERRIDDEN,
               "unrun_reviewer": raw.get("unrun_reviewer", "").strip(),
               "plan_impact": plan_impact, "plan_impact_cause": cause}
@@ -679,6 +682,9 @@ def render(packet, skill, sections=()):
     if packet["held_unfixed"]:
         lines.append("Unfixed, held by another session: " + "; ".join(held_unfixed_text(entry)
                                                                       for entry in packet["held_unfixed"]))
+    if packet["given_base"]:
+        lines.append(f"Review base: {packet['given_base']} is no ancestor of HEAD or has merges on the branch; "
+                     f"reviewed since {packet['base_used']}")
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
     lines += handback_edit_pending_lines(packet)

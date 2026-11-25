@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1196 changes
+1197 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -46,6 +46,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [Review loop hands a ruled sign-off finding back to the caller](notes/2026-11-25-review-loop-hands-a-ruled-sign-off-finding-back-to.md) [script/review-loop-script, script/review-loop-ruled, script/review-fix, script/handback, script/review-loop-signoffs, script/review-loop-prompts, script/review-loop-packet, script/uncommitted-hunks, script/diff-ranges, script/signoff-lines, script/uncommitted-change, script/git-raw-diff, script/reviewed-tree] A user-ruled finding, or a session-ruled one on a session-owned line, no longer reaches the coder or comes back as a [sign-off] ask; a session-ruled one on a user's sign-off line stays an ask. The loop hands it back as a hand-back edit naming file, line and ruled text, outside the round cap. The cap-reached stop also names the uncommitted change of the repo.
+* [Review loop diffs against the merge base when the given base has moved ahead](notes/2026-11-25-review-loop-diffs-against-the-merge-base-when-the.md) [script/review-loop, script/code-review-start] A review launched with a base ref whose tip has moved past the branch now diffs against the merge base, so reviewers see only the branch's own changes instead of master's new commits as reverts.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Cap stop line names the orchestrating session](notes/2026-11-25-cap-stop-line-names-the-orchestrating-session.md) [script/code-wait] When a /code phase review stays cap-reached in a lane another session started, code_wait now prints a STOP line that names that session as the one that rules on the cap, in place of the user.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.

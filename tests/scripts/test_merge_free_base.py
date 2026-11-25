@@ -153,5 +153,66 @@ class MergeFreeBaseTest(unittest.TestCase):
         self.assertIn("fatal: bad object", str(raised.exception))
 
 
+class ResolveBaseTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name).resolve()
+        git(self.repo, "init", "-q", "-b", "master")
+        commit_file(self.repo, "base.py", "base\n")
+        self.fork_point = git(self.repo, "rev-parse", "HEAD")
+
+    def branch_off_with_master_ahead(self):
+        git(self.repo, "checkout", "-q", "-b", "feature")
+        commit_file(self.repo, "feature.py", "the branch's own change\n")
+        git(self.repo, "checkout", "-q", "master")
+        commit_file(self.repo, "master_only.py", "master moved\n")
+        git(self.repo, "checkout", "-q", "feature")
+
+    def test_a_base_ahead_of_the_merge_base_resolves_to_the_merge_base(self):
+        self.branch_off_with_master_ahead()
+
+        resolved = merge_free_base.resolve_base(self.repo, "master")
+
+        self.assertEqual(resolved.given, "master")
+        self.assertEqual(resolved.used, self.fork_point)
+
+    def test_an_ancestor_base_is_used_as_given(self):
+        commit_file(self.repo, "later.py", "later\n")
+
+        resolved = merge_free_base.resolve_base(self.repo, self.fork_point)
+
+        self.assertEqual((resolved.given, resolved.used), (self.fork_point, self.fork_point))
+        self.assertIsNone(resolved.given_if_moved())
+
+    def test_the_given_name_is_kept_and_reported_only_when_the_base_moved(self):
+        self.branch_off_with_master_ahead()
+        moved = merge_free_base.resolve_base(self.repo, "master", "master")
+        git(self.repo, "checkout", "-q", "master")
+        git(self.repo, "checkout", "-q", "-b", "later")
+        commit_file(self.repo, "later.py", "later\n")
+        ancestor = merge_free_base.resolve_base(self.repo, self.fork_point, "the-fork")
+
+        self.assertEqual(moved.given_if_moved(), "master")
+        self.assertEqual(ancestor.given, "the-fork")
+        self.assertIsNone(ancestor.given_if_moved())
+
+    def test_a_base_with_no_merge_base_raises_with_the_reason_and_the_recovery_command(self):
+        git(self.repo, "checkout", "-q", "--orphan", "unrelated")
+        commit_file(self.repo, "other.py", "an unrelated history\n")
+        git(self.repo, "checkout", "-q", "master")
+
+        with self.assertRaises(merge_free_base.NoMergeBaseError) as raised:
+            merge_free_base.resolve_base(self.repo, "unrelated")
+
+        message = str(raised.exception)
+        self.assertIn("no merge base", message)
+        self.assertIn("git merge-base HEAD unrelated", message)
+
+    def test_a_base_git_cannot_resolve_raises_the_git_error(self):
+        with self.assertRaises(merge_free_base.MergeBaseGitError):
+            merge_free_base.resolve_base(self.repo, "no-such-ref")
+
+
 if __name__ == "__main__":
     unittest.main()

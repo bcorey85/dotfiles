@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1190 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Review loop reads finding paths that hold dollar and plus signs](notes/2026-11-25-review-loop-reads-finding-paths-that-hold-dollar.md).
+Latest change: 2026-11-25, [Comment put-back matches a finding by quoted text](notes/2026-11-25-comment-put-back-matches-a-finding-by-quoted-text.md).
 
 ## Top gains
 

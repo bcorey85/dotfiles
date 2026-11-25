@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-762 fix notes
+763 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -126,10 +126,12 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
+| script/review-loop-comment-removal | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/shell-quoting | 2 | 2 |
 | script/shell-steps | 2 | 2 |
+| script/source-text | 2 | 1 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/user-prompts | 2 | 2 |
 | script/verify-branch | 2 | 0 |
@@ -191,7 +193,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/reply-json | 1 | 0 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 0 |
-| script/review-loop-comment-removal | 1 | 1 |
 | script/review-loop-docs-kind | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
 | script/review-loop-partial-fix | 1 | 1 |
@@ -200,7 +201,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/shape-clones | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
-| script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |
 | script/suite-receipt | 1 | 1 |

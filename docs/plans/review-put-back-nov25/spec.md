@@ -11,7 +11,7 @@ Five fixes to the review loop, one per phase. Finding paths may hold `$` and `+`
 ## Phase Status
 
 - [x] Phase 1: Paths that hold `$` (risk: low)
-- [ ] Phase 2: Match a removed comment by content (risk: medium)
+- [x] Phase 2: Match a removed comment by content (risk: medium)
 - [ ] Phase 3: Hold a plan impact that cites a user ruling (risk: medium)
 - [ ] Phase 4: Every round finding reaches a coder or an ask; a used round is refused (risk: high)
 - [ ] Phase 5: Scope put-back keeps earlier fixes and needed files (risk: high)
@@ -144,3 +144,7 @@ An earlier round's fix survives a later pass; a needed file is kept; any other s
 
 - No change to the gates or skills outside `claude/.claude/scripts/review/` and `claude/.claude/scripts/lib/`, except where a skill line names a changed message.
 - No `[` `]` in path characters (D1).
+
+## Plan Deviations
+
+Phase 2: review ask on repeated identical comments ignoring line numbers was rejected by the session on 2026-11-25 (design choice beyond the phase); left for the user.

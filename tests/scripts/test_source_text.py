@@ -337,6 +337,25 @@ class CommentEntriesTest(unittest.TestCase):
 
         self.assertEqual(source_text.file_comment_entries("a.py", text), [(4, "# keep me")])
 
+    def test_comment_body_drops_the_marker_and_collapses_whitespace(self):
+        cases = {
+            "# a   b": "a b",
+            "   ## a\tb  ": "a b",
+            "// note here": "note here",
+            "#": "",
+            "/* note */": "note",
+            " * note": "note",
+            " */": "",
+            "plain text": "plain text",
+            "/** doc */": "doc",
+            "note */": "note",
+            "": "",
+            "\t": "",
+        }
+        for line, expected in cases.items():
+            with self.subTest(line=line):
+                self.assertEqual(source_text.comment_body(line), expected)
+
     def test_a_suffix_with_no_comment_style_has_no_entries(self):
         self.assertEqual(source_text.file_comment_entries("a.json", "# x\n"), [])
 

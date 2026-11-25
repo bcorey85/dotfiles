@@ -32,7 +32,7 @@ non-conversation record now reads dead too. `herdr_agents.herdr_reply` now gives
 session-pane report a hung herdr-api as a failed call. `scripts/.local/bin/herdr-wake-limited` sends one
 `herdr-api agent prompt` to an idle or done Claude pane whose last user or assistant record is such an error once its
 resume time passed, keeps the error record uuids it resumed in `herdr-wake-limited.resumed` so no error is resumed
-twice, skips panes it handled on screen or whose screen read failed, and sends no resume prompt under tuios. `install/herdr-wake-limited` names the new step in its header.
+twice, skips panes it handled on screen, whose screen read failed or whose input line holds typed text, and sends no resume prompt under tuios. `install/herdr-wake-limited` names the new step in its header.
 
 ## Evidence
 

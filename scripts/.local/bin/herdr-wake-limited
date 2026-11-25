@@ -34,8 +34,8 @@ A pane whose session transcript ends on a usage-limit or server (overload,
 lost connection) API error gets one `herdr-api agent prompt` once the error
 has cleared: a usage limit a minute after its reset time, a server error five
 minutes after it was written; an error whose resume time passed more than a
-day ago gets no prompt. It also gets one line on stdout (`resumed <pane>
-<cwd>`) and one log line. The error records already answered are kept by uuid
+day ago gets no prompt, and neither does a pane whose input line holds typed
+text. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line. The error records already answered are kept by uuid
 in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (a JSON list,
 written atomically); a uuid is dropped once no claude pane, in any state, ends on it, so a
 pane is prompted once per error. A login, billing or bad-request error gets no
@@ -69,6 +69,11 @@ RESUME_PROMPT = ("Your last turn stopped on an API error that has now cleared. "
 # A whole line: plain words, then the hint. Quotes, prompts or other text around
 # the phrase mean a pane is discussing it, not showing it.
 LOGIN_LINE = re.compile(r"^(?:[●⎿]\s*)?[A-Za-z][A-Za-z ]* · Please run /login$")
+
+# Claude's input line: `> text`, `❯ text`, or either inside the box's side borders (`│ > text │`).
+INPUT_LINE = re.compile(r"^(?:│\s*)?[>❯](?:\s+(?P<typed>.*?))?\s*(?:│)?$")
+# The hint Claude shows in an empty input line.
+INPUT_PLACEHOLDER_START = 'Try "'
 
 
 def herdr_api(*args):
@@ -112,6 +117,20 @@ def login_expired_line(text):
         if LOGIN_LINE.match(line):
             return line
     return None
+
+
+def holds_typed_input(text):
+    """True when Claude's input line, the last prompt-marker line among the bottom lines, holds typed text. An empty
+    line and the placeholder hint (`Try "..."`) are not typed text; the box's side borders are ignored."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    marker_lines = [line for line in lines[-BOTTOM_LINES:] if INPUT_LINE.match(line)]
+    if not marker_lines:
+        return False
+    typed_group = INPUT_LINE.match(marker_lines[-1]).group("typed")
+    typed = (typed_group or "").strip()
+    if not typed:
+        return False
+    return not typed.startswith(INPUT_PLACEHOLDER_START)
 
 
 def state_dir():
@@ -206,6 +225,9 @@ def handle_pane(agent, noticed, under_tuios, screen_handled):
     if holds_limit_reset_prompt(screen):
         screen_handled.add(pane_id)
         wake_pane(agent)
+    elif holds_typed_input(screen):
+        # The user is mid-reply: a resume prompt would join the draft.
+        screen_handled.add(pane_id)
     return False
 
 

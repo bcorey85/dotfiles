@@ -841,6 +841,27 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.run_wake()
         self.assertEqual(len(self.prompts()), 1)
 
+    def test_a_pane_with_a_half_typed_reply_gets_no_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        boxed = "● API Error\n╭──────────────╮\n│ > half a rep │\n╰──────────────╯\n  ? for shortcuts"
+        bare = "● API Error\n────────\n\N{HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT} half a reply\n────────"
+        for screen in (boxed, bare):
+            self.set_panes(self.stopped_pane(text=screen))
+            self.run_wake()
+            self.assertEqual(self.prompts(), [], screen)
+
+    def test_an_empty_or_placeholder_input_line_still_gets_the_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        empty = "● API Error\n╭──────────────╮\n│ >            │\n╰──────────────╯"
+        marker = "\N{HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT}"
+        placeholder = f'● API Error\n────────\n{marker} Try "fix lint errors"\n────────'
+        for screen in (empty, placeholder):
+            self.resumed_file().unlink(missing_ok=True)
+            (self.state_dir / "prompts").unlink(missing_ok=True)
+            self.set_panes(self.stopped_pane(text=screen))
+            self.run_wake()
+            self.assertEqual(len(self.prompts()), 1, screen)
+
     def test_an_error_whose_resume_time_passed_over_a_day_ago_gets_no_prompt(self):
         week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
         cases = {

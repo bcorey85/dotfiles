@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1189 changes
+1192 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -42,6 +42,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Permission-question gate counts tracker writes as outward](notes/2026-11-25-permission-question-gate-counts-tracker-writes-as.md) [script/permission-question-gate, script/staged-claim-gate] An ask to add, link, edit, comment on, label, assign or transition a tracker item counts as an outward step, so the Stop gate no longer forces a write to a shared tracker.
+* [Announced-step gate skips drafted text in fences and quotes](notes/2026-11-25-announced-step-gate-skips-drafted-text-in-fences.md) [script/staged-claim-gate] The announced-step check drops fenced blocks and blockquote lines first, so a reply drafted for the user to send no longer reads as the session's own promise.
+* [Announced-step gate passes a report promise after a background launch](notes/2026-11-25-announced-step-gate-passes-a-report-promise-after.md) [script/staged-claim-gate] The Stop hook's announced-step check lets a first-person promise to report on background work (bring back, report, rank, summarize) end the turn when that turn launched the work.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.
 * [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.

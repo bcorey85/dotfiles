@@ -697,6 +697,27 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_about_a_tracker_write_passes_but_a_local_file_edit_is_sent_back(self):
+        for message in ("The two tickets depend on each other. Shall I add a Jira link from A to B?",
+                        "The ticket has no tag yet. Want me to label the ticket?",
+                        "Want me to comment on the PR?",
+                        "Want me to assign the issue to Sam?",
+                        "Want me to transition the Jira ticket?",
+                        "Want me to comment on Linear?",
+                        "Want me to add a label in GitLab?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("Want me to add linear regression?",
+                        "Want me to comment on GitHub cli?",
+                        "Want me to edit GitLab pages?",
+                        "Want me to add the github.py hook?",
+                        "Want me to edit tickets.py?",
+                        "Want me to add a GitHub actions workflow?",
+                        "Want me to label the variables?",
+                        "Want me to address the reference?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
     def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
         for message in ("Want me to move the helper in github.py?",
                         "Want me to fix the typo in gitlab-ci.yml?",

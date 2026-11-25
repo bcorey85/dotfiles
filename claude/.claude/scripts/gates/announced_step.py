@@ -6,7 +6,12 @@ A sentence announces a step when it holds a first-person future or in-progress f
 building|moving|reading|editing|adding|testing|picking`, `Next I'll`, `starting (it|that|this|on it|work) now`,
 `on it now` or `working on it`. The last three are progress forms with no subject; they are no announcement when
 the current turn of the transcript launched background work (a background Bash call (`run_in_background`) or an
-Agent call not set to the foreground, after the last turn start). The first-person forms are one either way.
+Agent call not set to the foreground, after the last turn start). A first-person sentence passes on the same
+condition when it also holds one of the report words (`bring back`, `report`, `rank`, `summarize`, `collect`,
+`compile`, `relay`, `combine`, with suffixes), anywhere in the sentence; every other first-person sentence is an
+announcement either way.
+
+Fenced blocks and blockquote lines are drafts for the user and are dropped first (`message_text.without_draft_blocks`).
 
 A sentence is no announcement when it also:
 - names a condition: `if`, `once`, `when`, `after`, `until`, `unless`, `as soon as`;
@@ -25,7 +30,7 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import user_prompts
-from message_text import without_quoted_spans
+from message_text import without_draft_blocks, without_quoted_spans
 
 _ANNOUNCED_ACTION = (r"(?:now\s+)?(?:going\s+to|about\s+to|on\s+it|starting|doing|writing|running|working|fixing|"
                      r"looking|checking|building|moving|reading|editing|adding|testing|picking)")
@@ -37,6 +42,11 @@ FIRST_PERSON_ANNOUNCEMENT = re.compile(
 PROGRESS_ANNOUNCEMENT = re.compile(
     r"\b(?:starting\s+(?:it|that|this|on\s+it|work)\s+now|on\s+it\s+now|working\s+on\s+it)\b", re.IGNORECASE)
 ANNOUNCEMENT = re.compile(FIRST_PERSON_ANNOUNCEMENT.pattern + "|" + PROGRESS_ANNOUNCEMENT.pattern, re.IGNORECASE)
+# Report words. A first-person sentence that holds one anywhere (verb or noun) passes when the turn launched
+# background work.
+REPORT_STEP = re.compile(
+    r"\b(?:bring(?:ing)?\s+back|report(?:s|ed|ing)?|rank(?:s|ed|ing)?|summari[sz](?:e[sd]?|ing)|"
+    r"collect(?:s|ed|ing)?|compil(?:e[sd]?|ing)|relay(?:s|ed|ing)?|combin(?:e[sd]?|ing))\b", re.IGNORECASE)
 CONDITION = re.compile(r"\b(?:if|once|when|after|until|unless|as\s+soon\s+as)\b", re.IGNORECASE)
 OTHER_ACTOR = re.compile(r"\b(?:you|your|yours)\b", re.IGNORECASE)
 WORK_RUNS = re.compile(r"\b(?:running|background|waiting|wait\s+(?:for|on)|in\s+progress|notif\w*|queued|"
@@ -53,9 +63,9 @@ REASON = ("Your message says you will do, or are doing, a step, but the turn is 
 
 def announced_step(message, transcript_path=None):
     """The first sentence of a final message that announces a step with no condition, no other actor and no running
-    work, or None. A progress-only sentence passes when the current turn of the transcript launched background
-    work; a first-person one never does."""
-    unquoted_message = without_quoted_spans(ANNOUNCEMENT, message)
+    work, or None. A progress-only sentence, or a first-person one that holds a report word (`REPORT_STEP`), passes
+    when the current turn of the transcript launched background work."""
+    unquoted_message = without_quoted_spans(ANNOUNCEMENT, without_draft_blocks(message))
     background_launched = None
     for sentence in SENTENCE_END.split(unquoted_message):
         if not ANNOUNCEMENT.search(sentence):
@@ -67,7 +77,7 @@ def announced_step(message, transcript_path=None):
         request = REQUEST_THEN_STEP.search(sentence)
         if request and not FIRST_PERSON.search(sentence[:request.start()]):
             continue
-        if FIRST_PERSON_ANNOUNCEMENT.search(sentence):
+        if FIRST_PERSON_ANNOUNCEMENT.search(sentence) and not REPORT_STEP.search(sentence):
             return sentence.strip()
         if background_launched is None:
             background_launched = user_prompts.turn_launched_background(transcript_path)

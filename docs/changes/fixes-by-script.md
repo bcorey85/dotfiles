@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+764 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -28,12 +28,12 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
+| script/staged-claim-gate | 19 | 7 |
 | skill/code | 19 | 1 |
 | script/git-discipline-gate | 18 | 7 |
 | script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
-| script/staged-claim-gate | 16 | 4 |
 | script/code-review-start | 14 | 6 |
 | script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 4 |
@@ -182,6 +182,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |
+| script/permission-question-gate | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |

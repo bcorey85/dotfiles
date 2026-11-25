@@ -1,8 +1,26 @@
 """Plain-text helpers for gates that read a final message."""
 import re
 
+from script_utils import fenced_line_indexes
+
 # A span in double quotes (straight or curly) or backticks on one line.
 QUOTED_SPAN = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
+
+
+BLOCKQUOTE_LINE = re.compile(r"^\s*>")
+
+
+def without_draft_blocks(text):
+    """The text with fenced blocks (fence grammar: `script_utils.fenced_line_indexes`) and blockquote lines
+    removed."""
+    lines = text.split("\n")
+    fenced = fenced_line_indexes(lines)
+    kept_lines = []
+    for index, line in enumerate(lines):
+        if index in fenced or BLOCKQUOTE_LINE.match(line):
+            continue
+        kept_lines.append(line)
+    return "\n".join(kept_lines)
 
 
 def without_quoted_spans(pattern, text):

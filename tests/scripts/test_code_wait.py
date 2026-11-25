@@ -524,7 +524,34 @@ class WaitReviewTest(unittest.TestCase):
         self.assertIn(str(phase_dir / "stop.md"), last_line)
         self.assertIn("/code resume", last_line)
 
-    def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False):
+    def test_the_stop_line_is_the_last_line_when_the_scope_file_lists_a_held_released_path(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        packet = json.dumps({"status": "fix-removed-change", "blockers": ["the fix passes removed 24 of 41"]})
+        (phase_dir / "review.out").write_text(packet + "\n")
+        (phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
+
+        code, output = self.wait_code_and_output(repo)
+
+        lines = output.strip().splitlines()
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.held_released_text(["a.py"]), output)
+        self.assertTrue(lines[-1].startswith("STOP (fix-removed-change)"), lines[-1])
+
+    def test_the_restart_step_is_the_last_line_when_a_dead_loop_left_no_packet_and_a_path_was_released(self):
+        repo, phase_dir = self.repo_with_pid(999999999)
+        (phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
+
+        code, output = self.wait_code_and_output(repo)
+
+        lines = output.strip().splitlines()
+        self.assertEqual(code, 1)
+        self.assertIn(code_wait.held_released_text(["a.py"]), output)
+        self.assertEqual(lines[-1], code_wait.PHASE_RESTART_STEP)
+
+    def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False, invalid_packet=False):
         """Runs the review wait on a repo whose packet is cap-reached. By default it holds a blocker, so it stays
         cap-reached; `clean` writes a packet with no blocker, no open class and a passed full check of the current
         tree, which reads as deferred. `reports_to` None writes no lane entry; `malformed_lane_file` writes an
@@ -537,9 +564,15 @@ class WaitReviewTest(unittest.TestCase):
             # The fingerprint needs a commit to compare the work tree against.
             subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "commit",
                             "-q", "--allow-empty", "-m", "base"], check=True)
-            fields.update({"blockers": [], "findings_remaining": [], "open_classes": [], "unrun_reviewer": [],
-                           "full_check": "passed", "full_check_tree": reviewed_tree.fingerprint(repo)[1]})
+            fields.update({"blockers": [], "findings_remaining": [{"finding": "[minor] naming"}],
+                           "open_classes": [], "unrun_reviewer": "", "full_check": "passed",
+                           "full_check_tree": reviewed_tree.fingerprint(repo)[1]})
+        if invalid_packet:
+            del fields["findings_remaining"]
         packet = json.dumps(fields)
+        if not invalid_packet:
+            # A packet that fails to parse prints no stop line, which would hide the deferred check under test.
+            code_wait.handback.validate(code_wait.handback.parse(packet))
         (phase_dir / "review.out").write_text(packet + "\n")
         loop_folder = temp_dir(self)
         (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
@@ -572,10 +605,8 @@ class WaitReviewTest(unittest.TestCase):
         self.assertTrue(lines[-1].startswith("STOP (cap-reached)"), lines[-1])
         self.assertIn("orch-1", lines[-1])
         self.assertIn(code_wait.cap_ruler_line("orch-1"), lines[-1])
-        self.assertIn("Cap ruler: session orch-1", lines[-1])
-        self.assertNotIn("send them to orch-1", lines[-1])
-        self.assertNotIn("with SendMessage and end the run", lines[-1])
         self.assertIn("/stop.md", lines[-1])
+        self.assertIn("03-decisions.md", lines[-1])
         self.assertIn("## Plan Deviations", lines[-1])
         self.assertIn("when the run has a plan file", lines[-1])
         self.assertIn("/code resume", lines[-1])
@@ -588,6 +619,12 @@ class WaitReviewTest(unittest.TestCase):
 
     def test_a_cap_reached_packet_in_a_lane_with_no_orchestrator_prints_no_stop_line(self):
         code, lines, _errors = self.capped_review_in_lane("")
+
+        self.assertEqual(code, 0)
+        self.assert_no_stop_line(lines)
+
+    def test_an_invalid_cap_reached_packet_in_a_lane_prints_no_stop_line(self):
+        code, lines, _errors = self.capped_review_in_lane("orch-1", invalid_packet=True)
 
         self.assertEqual(code, 0)
         self.assert_no_stop_line(lines)
@@ -614,7 +651,7 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
-                         f"No review of this phase has started. Log of the last start: {phase_dir / 'review.out'}. "
+                         f"No review of this phase has started. Log of the last start: {phase_dir / 'review.out'}.\n"
                          f"{code_wait.PHASE_RESTART_STEP}")
 
     def test_a_detached_child_that_died_before_writing_its_loop_dir_names_review_out(self):
@@ -640,7 +677,7 @@ class WaitReviewTest(unittest.TestCase):
         packet_file = loop_folder / code_wait.reviewer_dispatch.PACKET_FILE
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
-                         f"The review loop ended and left no packet in {packet_file}. {code_wait.LAUNCHED_RESTART}")
+                         f"The review loop ended and left no packet in {packet_file}.\n{code_wait.LAUNCHED_RESTART}")
 
     def test_a_finished_review_with_a_named_loop_folder_and_no_packet_names_that_folder(self):
         repo, phase_dir = self.repo_with_pid(999999999)
@@ -656,7 +693,8 @@ class WaitReviewTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(output.getvalue().strip(),
                          f"The review loop ended and left no packet in {packet_file}. "
-                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_STOPPED} {code_wait.PHASE_RESTART_STEP}")
+                         f"Log: {phase_dir / 'review.out'}. {code_wait.PHASE_STOPPED}\n"
+                         f"{code_wait.PHASE_RESTART_STEP}")
 
     def test_a_loop_folder_named_after_the_run_was_built_is_the_one_the_message_names(self):
         repo, phase_dir = self.repo_with_pid(999999999)
@@ -888,6 +926,17 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
         self.assertNotIn("ACTION: dispatch-reviewer", output)
+
+    def test_a_loop_process_gone_with_a_held_path_released_ends_on_the_restart_step(self):
+        (self.phase_dir / "pid").write_text("999999999")
+        (self.phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
+
+        code, output, _ = self.run_main("review")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(output.strip().splitlines()[-1], code_wait.PHASE_RESTART_STEP)
+        self.assertIn(code_wait.reviewer_dispatch.LOOP_GONE, output)
+        self.assertIn(code_wait.held_released_text(["a.py"]), output)
 
     def test_a_launched_loop_gone_with_an_open_request_names_its_launch_line(self):
         (self.loop_dir / code_wait.reviewer_dispatch.PID_FILE).write_text("999999999\n")

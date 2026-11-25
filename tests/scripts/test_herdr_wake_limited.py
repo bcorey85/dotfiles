@@ -33,7 +33,8 @@ case "$1 $2" in
 import json, sys
 panes = json.load(open(sys.argv[1]))
 agents = [{"agent": pane.get("kind", "claude"), "pane_id": pid, "cwd": pane["cwd"],
-           "agent_status": pane.get("status", "idle")}
+           "agent_status": pane.get("status", "idle"),
+           **({"agent_session": {"value": pane["session"]}} if pane.get("session") else {})}
           for pid, pane in panes.items()]
 print(json.dumps({"result": {"agents": agents}}))
 PY
@@ -58,6 +59,11 @@ PY
             exit 1
         fi
         echo "$3 $4" >> "$state/keys"
+        echo '{"result":{}}'
+        ;;
+    "agent prompt")
+        [ -f "$state/no-prompt" ] && exit 1
+        printf '%s %s\n' "$3" "$4" >> "$state/prompts"
         echo '{"result":{}}'
         ;;
     "notification show")
@@ -86,7 +92,8 @@ class HerdrWakeLimitedTest(unittest.TestCase):
 
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
-        shutil.copy(HERDR_WAKE_LIMITED, self.bin_dir / "herdr-wake-limited")
+        # A link, not a copy: the script finds the toolkit lib from its real path.
+        (self.bin_dir / "herdr-wake-limited").symlink_to(HERDR_WAKE_LIMITED)
         write_stub(self.bin_dir / "herdr-api", STUB_HERDR_API)
 
         self.state_dir = self.root / "state"
@@ -107,6 +114,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
         env["STATE_DIR"] = str(self.state_dir)
         env.pop("XDG_STATE_HOME", None)
+        env.pop("CLAUDE_CONFIG_DIR", None)
         if state_home is DEFAULT_STATE_HOME:
             state_home = self.root / "xdg-state"
         if state_home is not None:
@@ -475,6 +483,152 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(len(self.notifications()), 1)
         self.assertIn(str(blocker / "herdr-wake-limited.noticed"), finished.stderr)
+
+    # Resume prompts for panes whose transcript ends on an API error.
+
+    def prompts(self):
+        prompts_file = self.state_dir / "prompts"
+        if not prompts_file.exists():
+            return []
+        return prompts_file.read_text().splitlines()
+
+    def write_transcript(self, session, last_record):
+        transcript = self.root / ".claude" / "projects" / "-work-a" / f"{session}.jsonl"
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        first = {"type": "user", "uuid": "u-1", "message": {"role": "user", "content": "go"}}
+        transcript.write_text(json.dumps(first) + "\n" + json.dumps(last_record) + "\n")
+
+    def api_error(self, uuid, error, **fields):
+        return {"type": "assistant", "uuid": uuid, "isApiErrorMessage": True, "error": error,
+                "timestamp": "2026-01-01T00:00:00.000Z",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "API Error"}]},
+                **fields}
+
+    def stopped_pane(self, session="s-1", text="> "):
+        return {"wS:p1": {"cwd": "/work/a", "text": text, "session": session}}
+
+    def test_a_pane_past_its_usage_limit_reset_gets_one_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit", apiErrorStatus=429,
+                                                    quotaLimits={"resetsAt": 1700000000}))
+        self.set_panes(self.stopped_pane())
+
+        first = self.run_wake()
+        second = self.run_wake()
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertTrue(self.prompts()[0].startswith("wS:p1 "))
+        self.assertIn("resumed wS:p1 /work/a", first.stdout)
+        self.assertEqual(self.sent_keys(), [])
+
+    def test_a_message_id_holding_401_is_not_read_as_a_login_error(self):
+        record = self.api_error("e-1", "rate_limit", quotaLimits={"resetsAt": 1700000000})
+        record["message"]["id"] = "c1e05401-b4da-4ce3-9374-5d62d7baec0d"
+        self.write_transcript("s-1", record)
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_a_reset_in_rate_limit_info_is_read(self):
+        self.write_transcript("s-1", self.api_error(
+            "e-1", "rate_limit", apiErrorParams={"rate_limit_info": {"resetsAt": 1700000000}}))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_an_overloaded_pane_gets_a_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error", apiErrorStatus=529))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_a_usage_limit_that_has_not_reset_gets_nothing(self):
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit",
+                                                    quotaLimits={"resetsAt": 4000000000}))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_pane_whose_turn_ended_normally_gets_nothing(self):
+        self.write_transcript("s-1", {"type": "assistant", "uuid": "a-1",
+                                      "message": {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}})
+        self.set_panes(self.stopped_pane())
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_login_or_billing_error_gets_no_resume_prompt(self):
+        for error in ("authentication_failed", "billing_error"):
+            with self.subTest(error=error):
+                self.write_transcript("s-1", self.api_error(f"e-{error}", error))
+                self.set_panes(self.stopped_pane())
+
+                self.run_wake()
+
+                self.assertEqual(self.prompts(), [])
+
+    def test_a_working_pane_gets_no_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        panes = self.stopped_pane()
+        panes["wS:p1"]["status"] = "working"
+        self.set_panes(panes)
+
+        self.run_wake()
+
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_pane_at_the_reset_prompt_gets_enter_and_no_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit",
+                                                    quotaLimits={"resetsAt": 1700000000}))
+        self.set_panes(self.stopped_pane(text=RESET_PROMPT))
+
+        self.run_wake()
+
+        self.assertEqual(self.sent_keys(), ["wS:p1 enter"])
+        self.assertEqual(self.prompts(), [])
+
+    def test_under_tuios_no_resume_prompt_goes_out(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake(tuios=True)
+
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_failed_prompt_is_named_and_retried_next_run(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        (self.state_dir / "no-prompt").touch()
+
+        failed = self.run_wake()
+        (self.state_dir / "no-prompt").unlink()
+        self.run_wake()
+
+        self.assertIn("wS:p1", failed.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_a_new_error_after_a_resume_gets_its_own_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+
+        self.write_transcript("s-1", self.api_error("e-2", "server_error"))
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 2)
+        resumed = json.loads((self.root / "xdg-state" / "herdr-wake-limited.resumed").read_text())
+        self.assertEqual(resumed, ["e-2"])
 
     def test_help_prints_usage_and_sends_nothing(self):
         self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})

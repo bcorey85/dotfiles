@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-747 fix notes
+748 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -73,6 +73,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/herdr-dev | 4 | 2 |
 | script/herdr-worktree-watch | 4 | 3 |
+| script/lane-status | 4 | 4 |
 | script/log-scan | 4 | 0 |
 | script/loop-transcript | 4 | 2 |
 | script/phase-start | 4 | 3 |
@@ -93,7 +94,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/gate-commands | 3 | 2 |
 | script/herdr-lane-resume | 3 | 3 |
 | script/hunk-review-pane | 3 | 3 |
-| script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
@@ -113,6 +113,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
 | script/git-calls | 2 | 2 |
+| script/herdr-wake-limited | 2 | 1 |
 | script/herdr-worktree-prune | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
@@ -169,7 +170,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/gate-replay | 1 | 0 |
 | script/git-commit-calls | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |
-| script/herdr-wake-limited | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/human-turn-lookup | 1 | 1 |
 | script/install-stow | 1 | 0 |

@@ -13,8 +13,9 @@ This reads the visible screen of every claude agent that `herdr-api agent list`
 names as idle or done. A pane whose last six non-empty lines hold both phrases gets one Enter, one line on
 stdout (pane id and cwd) and one line in
 ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.log (ISO time, pane id,
-cwd); when the log cannot be written, only a stderr line names the pane. Any other pane gets nothing, except a pane on an expired login (below). When herdr does not answer it exits 0 and
-prints nothing, so a timer can run it every few minutes.
+cwd); when the log cannot be written, only a stderr line names the pane. Any other
+pane gets nothing, except a pane on an expired login or an API error (below).
+When herdr does not answer it exits 0 and prints nothing, so a timer can run it every few minutes.
 
 A pane that stopped on an expired login (`Login expired · Please run /login`,
 `Not logged in · Please run /login`; a whole line among the bottom ten
@@ -27,6 +28,18 @@ shows the line or is no longer an idle or done claude agent, so a later expiry
 announces again. Under tuios (TUIOS_SOCKET
 set) there is no notification command, so nothing is announced and the
 noticed file is neither read nor written.
+
+A pane whose session transcript ends on a usage-limit or server (overload,
+lost connection) API error gets one `herdr-api agent prompt` once the error
+has cleared: a usage limit a minute after its reset time, a server error five
+minutes after it was written. It also gets one line on stdout (`resumed <pane>
+<cwd>`) and one log line. The error records already answered are kept by uuid
+in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (a JSON list,
+written atomically); a uuid is dropped once no listed pane ends on it, so a
+pane is prompted once per error. A login, billing or bad-request error gets no
+prompt. The transcript reader is the toolkit's `lib/api_error_stop.py`, found
+from this script's real path. Under tuios nothing is resumed and the resumed
+file is neither read nor written.
 """
 import datetime
 import json
@@ -35,11 +48,18 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
+
+# The stowed link resolves into the dotfiles checkout, whose toolkit lib reads transcripts.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "claude" / ".claude" / "scripts" / "lib"))
+import api_error_stop
 
 PHRASES = ("your usage limit has reset", "press enter to continue")
 VISIBLE_LINES = "15"
 BOTTOM_LINES = 6
 LOGIN_BOTTOM_LINES = 10
+RESUME_PROMPT = ("Your last turn stopped on an API error that has now cleared. "
+                 "Go on with the task from where it stopped.")
 # A whole line: plain words, then the hint. Quotes, prompts or other text around
 # the phrase mean a pane is discussing it, not showing it.
 LOGIN_LINE = re.compile(r"^(?:[●⎿]\s*)?[A-Za-z][A-Za-z ]* · Please run /login$")
@@ -95,15 +115,16 @@ def state_dir():
     return pathlib.Path(state_home)
 
 
-def read_noticed(noticed_file):
-    """Pane ids already announced. A missing or unreadable file reads as none, so a pane is announced again, never missed."""
+def read_id_list(noticed_file):
+    """Ids kept by an earlier run. A missing or unreadable file reads as none, so a pane is acted on again, never
+    missed."""
     try:
         return set(json.loads(noticed_file.read_text()))
     except (OSError, ValueError, TypeError):
         return set()
 
 
-def write_noticed(noticed_file, pane_ids):
+def write_id_list(noticed_file, pane_ids):
     temp_file = noticed_file.with_name(f"{noticed_file.name}.{os.getpid()}.tmp")
     try:
         noticed_file.parent.mkdir(parents=True, exist_ok=True)
@@ -167,8 +188,9 @@ def wake_pane(agent):
     print(f"woke {pane_id} {cwd}")
 
 
-def handle_pane(agent, noticed, under_tuios):
-    """Act on one pane; True when its id stays in the noticed set."""
+def handle_pane(agent, noticed, under_tuios, screen_handled):
+    """Act on one pane's screen; True when its id stays in the noticed set. A pane at the login or reset prompt
+    goes into screen_handled, so the API-error pass leaves it alone."""
     pane_id = agent["pane_id"]
     screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES)
     if screen is None:
@@ -176,10 +198,37 @@ def handle_pane(agent, noticed, under_tuios):
         return pane_id in noticed
     login_line = login_expired_line(screen)
     if login_line:
+        screen_handled.add(pane_id)
         return not under_tuios and handle_login_expired(agent, login_line, noticed)
     if holds_limit_reset_prompt(screen):
+        screen_handled.add(pane_id)
         wake_pane(agent)
     return False
+
+
+def resume_stopped_pane(agent, resumed, now):
+    """Prompt a pane whose transcript ends on a cleared API error. Returns the error record's uuid while the pane
+    still ends on it (the caller keeps it in the resumed set), else None."""
+    transcript = api_error_stop.agent_transcript(agent)
+    if transcript is None:
+        return None
+    record = api_error_stop.last_api_error(transcript)
+    if record is None or not isinstance(record.get("uuid"), str):
+        return None
+    error_id = record["uuid"]
+    if error_id in resumed:
+        return error_id
+    resume_at = api_error_stop.resume_epoch(record)
+    if resume_at is None or now < resume_at:
+        return None
+    pane_id = agent["pane_id"]
+    if herdr_api("agent", "prompt", pane_id, RESUME_PROMPT) is None:
+        print(f"herdr-wake-limited: could not prompt {pane_id}", file=sys.stderr)
+        return None
+    cwd = agent.get("cwd", "")
+    log_event(pane_id, cwd, "resumed")
+    print(f"resumed {pane_id} {cwd}")
+    return error_id
 
 
 def main():
@@ -197,11 +246,27 @@ def main():
     # tuios run must not read or rewrite it.
     under_tuios = bool(os.environ.get("TUIOS_SOCKET"))
     noticed_file = state_dir() / "herdr-wake-limited.noticed"
-    noticed = set() if under_tuios else read_noticed(noticed_file)
+    noticed = set() if under_tuios else read_id_list(noticed_file)
+    screen_handled = set()
     still_stuck = {agent["pane_id"] for agent in agents
-                   if handle_pane(agent, noticed, under_tuios)}
-    if not under_tuios and still_stuck != noticed:
-        write_noticed(noticed_file, still_stuck)
+                   if handle_pane(agent, noticed, under_tuios, screen_handled)}
+    if under_tuios:
+        return 0
+    if still_stuck != noticed:
+        write_id_list(noticed_file, still_stuck)
+
+    resumed_file = state_dir() / "herdr-wake-limited.resumed"
+    resumed = read_id_list(resumed_file)
+    now = time.time()
+    still_resumed = set()
+    for agent in agents:
+        if agent["pane_id"] in screen_handled:
+            continue
+        error_id = resume_stopped_pane(agent, resumed, now)
+        if error_id is not None:
+            still_resumed.add(error_id)
+    if still_resumed != resumed:
+        write_id_list(resumed_file, still_resumed)
     return 0
 
 

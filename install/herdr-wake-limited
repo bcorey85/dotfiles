@@ -16,7 +16,9 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 # reset / Press enter to continue", which Claude shows when the computer slept
 # past the limit reset and which nothing else clears. It also sends a herdr
 # notification once per pane stuck on a "Please run /login" login-expired line
-# (no keys sent; herdr panes only, not tuios).
+# (no keys sent; herdr panes only, not tuios), and one resume prompt to a pane
+# whose transcript ends on a usage-limit or overload API error once the reset
+# time has passed.
 #   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.herdr-wake-limited.plist)
 #          with StartInterval 120.
 #   Linux: systemd user timer, OnBootSec + OnUnitActiveSec=2min; fires every

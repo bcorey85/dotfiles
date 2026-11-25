@@ -90,6 +90,8 @@ class GuidanceRulesTest(unittest.TestCase):
                       "from Step 1 again; on a red check, STOP and report the failing lines to the user; on green, "
                       "go to Step 5.", text)
         self.assertIn("dispatch `coder` ONCE with the failing items and the medium and low findings", text)
+        self.assertIn("On that rerun, the gate prompt's findings list is the items that coder got: the failing "
+                      "items and the medium and low findings.", text)
         self.assertIn("A second fail → STOP: report the failing items and that gate's medium and low findings to "
                       "the user.", text)
         self.assertIn("(asks, REQUIRES-MUTATION culls not run)", text)

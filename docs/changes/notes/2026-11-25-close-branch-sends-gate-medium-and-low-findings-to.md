@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-close-branch Step 4: a medium or low finding from the fix-diff gate never goes to open items. On a gate pass with such findings, one `coder` dispatch takes them, then the Step 1 check runs again: red STOPs with its failing lines, green goes to Step 5. On a gate fail, they go to the coder with the failing items. A second gate fail reports them to the user with the failing items. The recap's Open items line no longer lists gate medium and low findings.
+close-branch Step 4: a medium or low finding from the fix-diff gate never goes to open items. On a gate pass with such findings, one `coder` dispatch takes them, then the Step 1 check runs again: red STOPs with its failing lines, green goes to Step 5. On a gate fail, they go to the coder with the failing items, and the rerun gate's findings list is the items that coder got. A second gate fail reports them to the user with the failing items. The recap's Open items line no longer lists gate medium and low findings.
 
 ## Evidence
 

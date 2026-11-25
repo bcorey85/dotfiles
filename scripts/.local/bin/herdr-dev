@@ -149,7 +149,7 @@ if [ -n "$claude_session" ]; then
 fi
 start_in_fresh_pane "$agent" "$claude_cmd"
 
-# The right pane is a live hunk diff. To go back to nvim, swap the
+# Without --headless, the right pane is a live hunk diff. To go back to nvim, swap the
 # hunk line below for the two commented nvim lines.
 editor=""
 if [ -z "$headless" ]; then

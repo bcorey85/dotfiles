@@ -35,10 +35,16 @@ lost connection) API error gets one `herdr-api agent prompt` once the error
 has cleared: a usage limit a minute after its reset time, a server error five
 minutes after it was written; an error whose resume time passed more than a
 day ago gets no prompt, and neither does a pane whose input line holds typed
-text or whose screen shows no input line. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line. The error records already answered are kept by uuid
-in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (a JSON list,
-written atomically); a uuid is dropped once no claude pane, in any state, ends on it, so a
-pane is prompted once per error; a run in which a transcript cannot be read keeps every kept uuid. A login, billing or bad-request error gets no
+text or whose screen shows no input line. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line.
+The answers are kept per Claude session id, as `{session_id: {"uuid": <last answered error>, "count": <resumes in
+a row>}}`, in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (JSON, written atomically), so a pane is
+prompted once per error record. A session that has been resumed
+MAX_CONSECUTIVE_RESUMES times in a row (each resume answered by a new API error, as in a long outage) gets no more
+prompts: one line on stdout (`gave up <pane> <cwd>`) and one log line, once, not on every run. A session's entry is
+dropped once its transcript's last conversation record is not an API error or no claude pane, in any state,
+runs it, which resets the count. A run in which a transcript cannot be read keeps every kept entry. A file in the old
+format (a JSON list of error uuids) is read as one resume of each pane ending on such a uuid. A login, billing or
+bad-request error gets no
 prompt. The transcript is found and read through the toolkit's
 `lib/herdr_agents.py`, `lib/api_error_stop.py` and `lib/script_utils.py`, found from this script's
 real path. Under tuios nothing is resumed and the resumed
@@ -145,13 +151,41 @@ def read_id_list(id_file):
         return set()
 
 
-def write_id_list(id_file, ids):
+def is_resumed_entry(entry):
+    """True for a well-formed `{"uuid": str, "count": int}` entry of the resumed file."""
+    if not isinstance(entry, dict):
+        return False
+    count = entry.get("count")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return False
+    return isinstance(entry.get("uuid"), str)
+
+
+def read_resumed_state(resumed_file):
+    """The resumed file as (entries by session id, legacy uuids). A missing, unreadable or corrupt file reads as
+    nothing, so a pane is acted on again, never missed. A file in the old format, a JSON list of answered error
+    uuids, has no session ids: its uuids come back as legacy uuids, which count as one resume of the pane that
+    ends on them."""
     try:
-        id_file.parent.mkdir(parents=True, exist_ok=True)
-        id_json = json.dumps(sorted(ids))
-        script_utils.write_text_atomically(id_file, id_json)
+        raw_state = resumed_file.read_text()
+        loaded = json.loads(raw_state)
+    except (OSError, ValueError):
+        return {}, set()
+    if isinstance(loaded, list):
+        return {}, {uuid for uuid in loaded if isinstance(uuid, str)}
+    if not isinstance(loaded, dict):
+        return {}, set()
+    entries = {session_id: entry for session_id, entry in loaded.items() if is_resumed_entry(entry)}
+    return entries, set()
+
+
+def write_json_state(state_file, payload):
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_json = json.dumps(payload)
+        script_utils.write_text_atomically(state_file, state_json)
     except OSError as error:
-        print(f"herdr-wake-limited: could not write {id_file}: {error}", file=sys.stderr)
+        print(f"herdr-wake-limited: could not write {state_file}: {error}", file=sys.stderr)
 
 
 def announce_login_expired(pane_id, cwd, line):
@@ -228,11 +262,15 @@ def handle_pane(agent, noticed, under_tuios, screen_handled):
     return False
 
 
-def resume_stopped_pane(agent, resumed, now, may_prompt):
-    """Prompt a pane whose transcript ends on a cleared API error. Returns the error record's uuid while the pane
-    still ends on it (the caller keeps it in the resumed set), TRANSCRIPT_UNREADABLE when the transcript read failed
-    (the caller keeps the whole resumed set, since a failed read says nothing about the pane), else None. With
-    may_prompt False nothing is sent, but an already answered uuid is still returned."""
+def resume_stopped_pane(agent, resumed, legacy_uuids, now, may_prompt):
+    """Prompt a pane whose transcript ends on a cleared API error, at most MAX_CONSECUTIVE_RESUMES times in a row.
+    Returns the session's entry to keep in the resumed file, `{"uuid": <last answered error>, "count": <resumes in a
+    row>}`; None when the entry is dropped, which resets the count: the pane has no session or transcript, or its last
+    conversation record is not an API error. Returns TRANSCRIPT_UNREADABLE when the transcript read failed (the
+    caller keeps the whole resumed file, since a failed read says nothing about the pane). While the pane waits to be
+    prompted, the entry it already has is returned unchanged, so a count survives the wait for the next error's
+    resume time. With may_prompt False nothing is sent."""
+    session_id = herdr_agents.herdr_agent_session_id(agent)
     transcript = herdr_agents.herdr_agent_transcript(agent)
     if transcript is None:
         return None
@@ -242,21 +280,30 @@ def resume_stopped_pane(agent, resumed, now, may_prompt):
     if record is None or not isinstance(record.get("uuid"), str):
         return None
     error_id = record["uuid"]
-    if error_id in resumed:
-        return error_id
+    entry = resumed.get(session_id)
+    if entry is not None and entry["uuid"] == error_id:
+        return entry
+    if entry is None and error_id in legacy_uuids:
+        return {"uuid": error_id, "count": 1}
     if not may_prompt:
-        return None
+        return entry
     resume_at = api_error_stop.resume_epoch(record, now)
     if resume_at is None or now < resume_at:
-        return None
+        return entry
     pane_id = agent["pane_id"]
+    cwd = agent.get("cwd", "")
+    count = 0 if entry is None else entry["count"]
+    if count >= api_error_stop.MAX_CONSECUTIVE_RESUMES:
+        # Recorded as answered, so the next tick stays silent: one line per run of errors, not one per tick.
+        log_event(pane_id, cwd, "gave-up")
+        print(f"gave up {pane_id} {cwd}")
+        return {"uuid": error_id, "count": count}
     if herdr_api("agent", "prompt", pane_id, RESUME_PROMPT) is None:
         print(f"herdr-wake-limited: could not prompt {pane_id}", file=sys.stderr)
-        return None
-    cwd = agent.get("cwd", "")
+        return entry
     log_event(pane_id, cwd, "resumed")
     print(f"resumed {pane_id} {cwd}")
-    return error_id
+    return {"uuid": error_id, "count": count + 1}
 
 
 def main():
@@ -286,23 +333,27 @@ def main():
     if under_tuios:
         return 0
     if still_stuck != noticed:
-        write_id_list(noticed_file, still_stuck)
+        write_json_state(noticed_file, sorted(still_stuck))
 
     resumed_file = script_utils.xdg_state_home() / "herdr-wake-limited.resumed"
-    resumed = read_id_list(resumed_file)
+    resumed, legacy_uuids = read_resumed_state(resumed_file)
     now = time.time()
-    still_resumed = set()
+    still_resumed = {}
+    keep_all_entries = False
     for agent in all_agents:
-        # A pane that is working again after its prompt is not listed idle or done, but its uuid stays kept
-        # while its transcript still ends on it.
+        # A pane that is working again after its prompt is not listed idle or done, but its entry stays kept
+        # while its transcript still ends on the error.
         may_prompt = is_waiting(agent) and agent["pane_id"] not in screen_handled
-        error_id = resume_stopped_pane(agent, resumed, now, may_prompt)
-        if error_id == script_utils.TRANSCRIPT_UNREADABLE:
-            still_resumed |= resumed
-        elif error_id is not None:
-            still_resumed.add(error_id)
-    if still_resumed != resumed:
-        write_id_list(resumed_file, still_resumed)
+        entry = resume_stopped_pane(agent, resumed, legacy_uuids, now, may_prompt)
+        if entry == script_utils.TRANSCRIPT_UNREADABLE:
+            keep_all_entries = True
+        elif entry is not None:
+            still_resumed[herdr_agents.herdr_agent_session_id(agent)] = entry
+    if keep_all_entries:
+        for session_id, entry in resumed.items():
+            still_resumed.setdefault(session_id, entry)
+    if still_resumed != resumed or legacy_uuids:
+        write_json_state(resumed_file, still_resumed)
     return 0
 
 

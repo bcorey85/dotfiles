@@ -10,7 +10,8 @@ Also covers login-expired notices and the noticed-state file:
 - a line led by the corner glyph is matched and named in the notice;
 - resume prompts: one per error record to a pane whose transcript ends on a cleared usage-limit or server
   error (records written after the error are skipped), none for a login error or a pane at a screen prompt,
-  and the resumed-uuid file kept, pruned and left alone under tuios.
+  and the resumed file (last answered uuid and resume count per session) kept, pruned and left alone under
+  tuios; at most three resumes in a row per session, then one `gave up` line.
 """
 import datetime
 import importlib.machinery
@@ -522,7 +523,12 @@ class HerdrWakeLimitedTest(unittest.TestCase):
     def resumed_uuids(self):
         if not self.resumed_file().exists():
             return []
-        return json.loads(self.resumed_file().read_text())
+        state = json.loads(self.resumed_file().read_text())
+        return [entry["uuid"] for entry in state.values()]
+
+    def resumed_counts(self):
+        state = json.loads(self.resumed_file().read_text())
+        return {session_id: entry["count"] for session_id, entry in state.items()}
 
     def api_error(self, uuid, error, **fields):
         return {"type": "assistant", "uuid": uuid, "isApiErrorMessage": True, "error": error,
@@ -681,7 +687,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(unreadable.returncode, 0, unreadable.stderr)
         self.assertIn("could not read", unreadable.stderr)
         self.assertEqual(len(self.prompts()), 1)
-        resumed = json.loads(self.resumed_file().read_text())
+        resumed = self.resumed_uuids()
         self.assertEqual(resumed, ["e-1"])
 
     def test_a_working_pane_keeps_its_answered_uuid_so_it_is_not_prompted_again_when_idle(self):
@@ -698,7 +704,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.run_wake()
 
         self.assertEqual(len(self.prompts()), 1)
-        resumed = json.loads(self.resumed_file().read_text())
+        resumed = self.resumed_uuids()
         self.assertEqual(resumed, ["e-1"])
 
     def test_a_new_error_after_a_resume_gets_its_own_prompt(self):
@@ -710,8 +716,59 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.run_wake()
 
         self.assertEqual(len(self.prompts()), 2)
-        resumed = json.loads((self.root / "xdg-state" / "herdr-wake-limited.resumed").read_text())
+        resumed = self.resumed_uuids()
         self.assertEqual(resumed, ["e-2"])
+
+    def test_a_pane_whose_every_resume_hits_a_new_server_error_gets_at_most_3_prompts(self):
+        self.set_panes(self.stopped_pane())
+        runs = []
+        error_number = 1
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        for _ in range(8):
+            prompts_before = len(self.prompts())
+            runs.append(self.run_wake())
+            if len(self.prompts()) > prompts_before:
+                # The resumed turn hits the outage again and writes a new error record.
+                error_number += 1
+                self.write_transcript("s-1", self.api_error(f"e-{error_number}", "server_error"))
+
+        gave_up = [run.stdout for run in runs if "gave up wS:p1 /work/a" in run.stdout]
+        self.assertEqual(len(self.prompts()), 3)
+        self.assertEqual(len(gave_up), 1)
+        self.assertEqual(self.resumed_counts(), {"s-1": 3})
+
+    def test_the_count_resets_after_a_turn_that_ends_normally(self):
+        self.set_panes(self.stopped_pane())
+        for number in (1, 2):
+            self.write_transcript("s-1", self.api_error(f"e-{number}", "server_error"))
+            self.run_wake()
+        work = {"type": "assistant", "uuid": "a-1",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}}
+        self.write_transcript("s-1", work)
+        self.run_wake()
+        self.assertEqual(json.loads(self.resumed_file().read_text()), {})
+
+        for number in (3, 4, 5, 6):
+            self.write_transcript("s-1", self.api_error(f"e-{number}", "server_error"))
+            self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 5)
+        self.assertEqual(self.resumed_counts(), {"s-1": 3})
+
+    def test_a_resumed_file_in_the_old_uuid_list_format_is_read_as_one_resume(self):
+        self.resumed_file().parent.mkdir(parents=True, exist_ok=True)
+        self.resumed_file().write_text('["e-1"]')
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+
+        first = self.run_wake()
+        self.write_transcript("s-1", self.api_error("e-2", "server_error"))
+        second = self.run_wake()
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(self.resumed_counts(), {"s-1": 2})
 
     def test_records_written_after_the_error_do_not_hide_it(self):
         # The tail Claude Code writes after a usage-limit error: a turn duration, a last prompt, a cost state.
@@ -783,7 +840,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.run_wake()
 
         self.assertEqual(len(self.prompts()), 1)
-        self.assertEqual(json.loads(self.resumed_file().read_text()), ["e-1"])
+        self.assertEqual(self.resumed_uuids(), ["e-1"])
 
     def test_a_login_expired_pane_with_a_server_error_is_noticed_and_not_prompted(self):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))
@@ -816,7 +873,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"), trailing=[work])
 
         self.run_wake()
-        self.assertEqual(json.loads(self.resumed_file().read_text()), [])
+        self.assertEqual(self.resumed_uuids(), [])
 
     def test_a_corrupt_resumed_file_is_rewritten_after_one_prompt(self):
         self.resumed_file().parent.mkdir(parents=True, exist_ok=True)
@@ -848,11 +905,11 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))
         self.set_panes(self.stopped_pane())
         self.run_wake()
-        self.assertEqual(json.loads(self.resumed_file().read_text()), ["e-1"])
+        self.assertEqual(self.resumed_uuids(), ["e-1"])
 
         self.set_panes({})
         self.run_wake()
-        self.assertEqual(json.loads(self.resumed_file().read_text()), [])
+        self.assertEqual(self.resumed_uuids(), [])
 
     def test_a_pane_whose_screen_read_fails_gets_no_resume_prompt_that_run(self):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))

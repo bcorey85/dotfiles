@@ -1,5 +1,6 @@
 """lib/herdr_agents.py: the herdr agent list as plain dicts, which agents run inside a folder, and the transcript of
 an agent's session."""
+import io
 import os
 import pathlib
 import sys
@@ -105,6 +106,23 @@ class HerdrAgentsTest(unittest.TestCase):
 
         self.assertEqual(transcript, found)
         self.assertEqual([None] * 4, missing)
+
+    def test_herdr_agent_transcript_refuses_a_session_that_matches_several_files(self):
+        for project_name in ("-work-a", "-work-b"):
+            project = self.root / "config" / "projects" / project_name
+            project.mkdir(parents=True)
+            (project / "s-1.jsonl").write_text("{}\n")
+        named = {"agent_session": {"value": "s-1"}}
+
+        config_env = {"CLAUDE_CONFIG_DIR": str(self.root / "config")}
+        with (unittest.mock.patch.dict(os.environ, config_env),
+              unittest.mock.patch("sys.stderr", new_callable=io.StringIO) as stderr):
+            found = herdr_agents.herdr_agent_transcript(named)
+
+        self.assertIsNone(found)
+        self.assertIn("s-1", stderr.getvalue())
+        self.assertIn("2", stderr.getvalue())
+        self.assertEqual(1, len(stderr.getvalue().splitlines()))
 
 
 if __name__ == "__main__":

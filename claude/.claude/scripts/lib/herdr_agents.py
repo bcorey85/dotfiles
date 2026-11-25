@@ -5,6 +5,7 @@ Standard library, script_utils and session_registry only."""
 import json
 import os
 import subprocess
+import sys
 
 import script_utils
 import session_registry
@@ -54,15 +55,28 @@ def claude_agents():
     return [agent for agent in listed_agents() if agent.get("agent") == "claude"]
 
 
-def herdr_agent_transcript(agent):
-    """The transcript path of a herdr agent's session, or None when herdr names no session or no transcript matches."""
+def herdr_agent_session_id(agent):
+    """The Claude session id herdr names for an agent, or None when it names none."""
     agent_session = agent.get("agent_session")
     session_id = agent_session.get("value") if isinstance(agent_session, dict) else None
     if not isinstance(session_id, str) or not session_id:
         return None
+    return session_id
+
+
+def herdr_agent_transcript(agent):
+    """The transcript path of a herdr agent's session, or None when herdr names no session, no transcript matches, or
+    several do (the stderr line names the session id and the count)."""
+    session_id = herdr_agent_session_id(agent)
+    if session_id is None:
+        return None
 
     found = session_registry.session_transcripts(session_id)
     if not found:
+        return None
+    if len(found) > 1:
+        print(f"herdr_agents: session {session_id} matches {len(found)} transcripts; reading none",
+              file=sys.stderr)
         return None
     return found[0]
 

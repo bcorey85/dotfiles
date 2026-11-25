@@ -31,8 +31,10 @@ transcript lookup, error read and `LOGIN_WORDS` and uses these three, so a lane 
 non-conversation record now reads dead too. `herdr_agents.herdr_reply` now gives up after 20 s, so lane-status and
 session-pane report a hung herdr-api as a failed call. `scripts/.local/bin/herdr-wake-limited` sends one
 `herdr-api agent prompt` to an idle or done Claude pane whose last user or assistant record is such an error once its
-resume time passed, keeps the error record uuids it resumed in `herdr-wake-limited.resumed` so no error is resumed
-twice, skips panes it handled on screen, whose screen read failed or whose input line holds typed text, or that show no input line, and sends no resume prompt under tuios. `install/herdr-wake-limited` names the new step in its header.
+resume time passed, keeps, per Claude session id, the last error record uuid it resumed and a count of resumes in a row in
+`herdr-wake-limited.resumed`, so no error is resumed twice and a session gets at most
+`api_error_stop.MAX_CONSECUTIVE_RESUMES` (3) prompts in a row (then one `gave up <pane> <cwd>` line; a turn that ends
+normally resets the count; a file in the old uuid-list format is still read), skips panes it handled on screen, whose screen read failed or whose input line holds typed text, or that show no input line, and sends no resume prompt under tuios. `install/herdr-wake-limited` names the new step in its header.
 
 ## Evidence
 

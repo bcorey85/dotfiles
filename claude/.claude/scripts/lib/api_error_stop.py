@@ -20,6 +20,9 @@ RESET_MARGIN_SECONDS = 60
 SERVER_ERROR_WAIT_SECONDS = 300
 # Seconds past the resume time after which a stopped session is left alone: its error is old news.
 MAX_RESUME_AGE_SECONDS = 24 * 60 * 60
+# Resume prompts one session gets in a row, each answered by a new API error with no normal turn between. A long
+# outage writes a fresh error record after every resume; past this count the session is left for the user.
+MAX_CONSECUTIVE_RESUMES = 3
 
 
 def error_reason(record):

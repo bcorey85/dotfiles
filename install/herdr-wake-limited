@@ -19,7 +19,8 @@ print_info() { echo -e "${YELLOW}→${NC} $1"; }
 # (no keys sent; herdr panes only, not tuios), and one resume prompt to a pane
 # whose transcript ends on a usage-limit or overload API error once the error
 # has cleared (a usage limit a minute after its reset time, an overload five
-# minutes after it; none once that time passed more than a day ago).
+# minutes after it; none once that time passed more than a day ago; at most
+# three in a row to one session, so a long outage does not loop).
 #   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.herdr-wake-limited.plist)
 #          with StartInterval 120.
 #   Linux: systemd user timer, OnBootSec + OnUnitActiveSec=2min; fires every

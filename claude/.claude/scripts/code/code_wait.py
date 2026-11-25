@@ -376,14 +376,15 @@ class ReviewRun:
     """The review loop a `review` wait follows: the command that waits on it again, the folder that holds its
     reviewer requests (None before the loop names it), whether it still runs, what to print once it ended ("" when
     it left nothing), the message for an ended loop that left nothing, and how to start it again when its process
-    ended before the loop finished."""
+    ended before the loop finished. `stop_line` returns (step line, loaded packet): the packet, in
+    `read_phase_packet`'s form, is set only when the step line is the cap STOP."""
     command: str
     loop_folder: Callable[[], str | None]
     running: Callable[[], bool]
     final_output: Callable[[], str]
     no_output: Callable[[], str]
     restart: str
-    stop_line: Callable[[], str] = lambda: ""
+    stop_line: Callable[[], tuple[str, tuple | None]] = lambda: ("", None)
 
 
 def phase_review_output(repo):
@@ -419,30 +420,34 @@ def phase_review(repo):
 
 
 def phase_stop_line(repo):
-    """The step line for a phase packet the skill's routes do not cover (fix-removed-change), or for a cap-reached
-    packet in a lane another session started, whose ruler is that session. "" for any other packet (one that does
-    not parse included: the skill reads it from the printed output)."""
+    """(step line, loaded packet) for a phase packet the skill's routes do not cover (fix-removed-change), or for a
+    cap-reached packet in a lane another session started, whose ruler is that session. The loaded packet, as
+    (loop folder, packet), is set only on the cap STOP. ("", None) for any other packet (one that does not parse
+    included: the skill reads it from the printed output)."""
     folder = loop_dir(repo)
     if folder is None:
-        return ""
+        return "", None
     packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
     try:
         parsed = handback.parse(packet_file.read_text())
         status = parsed.get("status")
     except handback.PacketError:
-        return ""
+        return "", None
     if status == CAP_REACHED:
         try:
             packet = handback.validate(parsed)
         except handback.PacketError:
-            return ""
-        return cap_reached_stop_line(repo, packet)
+            return "", None
+        cap_line = cap_reached_stop_line(repo, packet)
+        if not cap_line:
+            return "", None
+        return cap_line, (folder, packet)
     if status != handback.FIX_REMOVED_CHANGE:
-        return ""
+        return "", None
     stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
     return (f"STOP ({status}): the fix passes removed half or more of this phase's change. Write the packet's "
             f"`blockers` to {stop_file} and end the run there. The user checks `git diff`; `/code resume` "
-            "(with the plan's absolute path when the run has a plan file) then runs this phase's review again.")
+            "(with the plan's absolute path when the run has a plan file) then runs this phase's review again."), None
 
 
 def lane_reports_to(repo):
@@ -737,42 +742,38 @@ def print_ended_loop_and_held(repo, run, launched_folder):
     lines and the step line; when the asks cannot be opened, their failure step prints last in place of the STOP
     line and the exit code is 1. The step line prints last: the /code skill does the step the fork's last line
     names."""
-    code, step_line = print_ended_loop(run)
+    code, step_line, cap_packet = print_ended_loop(run)
     print_held_fault(repo, launched_folder)
-    if step_line and step_line != run.restart:
-        # The cap STOP line ends the wait, so `follow_run` never reaches `print_phase_notices` for it. The restart
-        # step is no cap stop, so it gets no cap summary.
-        loaded = read_phase_packet(repo)
-        is_cap_reached = loaded is not None and loaded[1]["status"] == CAP_REACHED
-        if is_cap_reached and not print_cap_summary_and_asks(repo, run, loaded):
-            return 1
+    # The cap STOP line ends the wait, so `follow_run` never reaches `print_phase_notices` for it.
+    if cap_packet is not None and not print_cap_summary_and_asks(repo, run, cap_packet):
+        return 1
     if step_line:
         print(step_line)
     return code
 
 
 def print_ended_loop(run):
-    """Prints what the ended loop left and returns (exit code, step line). The caller prints the step line, so
-    it can follow the held-file lines."""
+    """Prints what the ended loop left and returns (exit code, step line, loaded packet of a cap STOP or None).
+    The caller prints the step line, so it can follow the held-file lines."""
     # The loop's own output comes first: a loop that ended may have written a packet, a crash packet included, which
     # says more than a missing process does.
     final_output = run.final_output()
     if final_output.strip():
         print(final_output)
-        stop_line = run.stop_line()
+        stop_line, cap_packet = run.stop_line()
         if not stop_line:
-            return 0, ""
-        return 1, stop_line
+            return 0, "", None
+        return 1, stop_line, cap_packet
 
     open_requests = open_reviewer_requests(run)
     if open_requests:
         folder = run.loop_folder()
         request_lines = reviewer_dispatch.open_request_lines(open_requests)
         print("\n".join([reviewer_dispatch.LOOP_GONE, *request_lines, f"Loop folder: {folder}"]))
-        return 1, run.restart
+        return 1, run.restart, None
 
     print(run.no_output())
-    return 1, run.restart
+    return 1, run.restart, None
 
 
 def review_words(words):

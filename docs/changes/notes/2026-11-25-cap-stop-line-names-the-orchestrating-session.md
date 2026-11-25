@@ -31,7 +31,9 @@ applies.
 
 On that route the `cap reached after N fix round(s)` summary line and the finding-asks notice (the `phase-asks-open`
 row and the `phase_asks.py rule` line) still print, before the STOP line, which stays last. The STOP line tells the
-fork to write the printed finding asks to stop.md with `findings_remaining`. When the asks cannot be opened, their
+fork to write the printed finding asks to stop.md with `findings_remaining`. `phase_stop_line` returns the step
+line with the loaded packet, set only on the cap STOP, and `print_ended_loop_and_held` prints the summary and asks
+from that packet, so the decision and the packet read happen once. When the asks cannot be opened, their
 failure step prints last in place of the STOP line and the exit code is 1.
 
 The step line (STOP or restart) now always prints last, on its own line, after the `Tool fault:` and held-released

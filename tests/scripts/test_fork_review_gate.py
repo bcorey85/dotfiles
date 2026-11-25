@@ -87,6 +87,19 @@ class ForkReviewGateTests(unittest.TestCase):
 
         self.assert_passes(self.run_gate())
 
+    def test_stop_md_written_by_each_write_tool_after_the_coder_passes(self):
+        calls = {
+            "Edit": {"file_path": ft.STOP_FILE_PATH, "old_string": "a", "new_string": "b"},
+            "MultiEdit": {"file_path": ft.STOP_FILE_PATH, "edits": []},
+            "NotebookEdit": {"notebook_path": ft.STOP_FILE_PATH, "new_source": "x"},
+        }
+        for name, tool_input in calls.items():
+            with self.subTest(tool=name):
+                self.write_records(ft.skill_record(), ft.coder_record(), ft.tool_record(name, tool_input),
+                                   ft.text_record())
+
+                self.assert_passes(self.run_gate())
+
     def test_stale_stop_md_before_the_coder_is_sent_back(self):
         self.write_records(ft.skill_record(), ft.stop_write_record(), ft.coder_record(), ft.text_record())
 
@@ -105,6 +118,16 @@ class ForkReviewGateTests(unittest.TestCase):
         self.write_records(ft.skill_record(), ft.bash_record(ft.PHASE_START_NEW_RUN_COMMAND), ft.coder_record(),
                            ft.bash_record(ft.REVIEW_START_COMMAND), ft.bash_record(ft.WAIT_REVIEW_COMMAND),
                            ft.bash_record(ft.PHASE_START_COMMAND), ft.coder_record(), ft.text_record())
+
+        self.assert_sent_back(self.run_gate())
+
+    def test_api_request_blob_repeating_review_calls_is_no_review(self):
+        review_start = ft.bash_record(ft.REVIEW_START_COMMAND)
+        review_wait = ft.bash_record(ft.WAIT_REVIEW_COMMAND)
+        blob_copies = [{**record, "type": "api-request-blob"} for record in (review_start, review_wait)]
+        self.write_records(ft.skill_record(), ft.bash_record(ft.PHASE_START_NEW_RUN_COMMAND), ft.coder_record(),
+                           review_start, review_wait, ft.bash_record(ft.PHASE_START_COMMAND), ft.coder_record(),
+                           *blob_copies, ft.text_record())
 
         self.assert_sent_back(self.run_gate())
 
@@ -189,6 +212,13 @@ class ForkReviewGateTests(unittest.TestCase):
         self.write_records(ft.skill_record(), ft.coder_record(), ft.bash_record(ft.PHASE_START_COMMAND),
                            ft.coder_record(), ft.bash_record(ft.REVIEW_START_COMMAND),
                            ft.bash_record(ft.WAIT_REVIEW_COMMAND), ft.text_record())
+
+        self.assert_passes(self.run_gate())
+
+    def test_two_coders_before_the_review_start_and_wait_pass(self):
+        self.write_records(ft.skill_record(), ft.coder_record(), ft.coder_record(),
+                           ft.bash_record(ft.REVIEW_START_COMMAND), ft.bash_record(ft.WAIT_REVIEW_COMMAND),
+                           ft.text_record())
 
         self.assert_passes(self.run_gate())
 

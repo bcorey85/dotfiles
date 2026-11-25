@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-New `lib/code_run_names.py` owns the phase start, review start and wait script names and the wait review verb. New `lib/shell_command_words.py` `script_call_arguments` returns the words after a script's own word. coder_gate, code_wait, code_review_start and fork_children read them.
+New `lib/code_run_names.py` owns the phase start, review start and wait script names and the wait agent and review verbs. New `lib/shell_command_words.py` `script_call_arguments` returns the words after a script's own word. coder_gate, code_wait, code_review_start and fork_children read them.
 
 ## Evidence
 

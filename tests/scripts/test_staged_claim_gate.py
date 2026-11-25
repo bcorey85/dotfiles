@@ -436,6 +436,17 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assertIn("git diff --cached --name-only", decision["reason"])
         self.assertIn("staged-claim-gate: permission_question skipped: RuntimeError: boom", errors)
 
+    def test_a_crash_in_the_fork_review_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "SubagentStop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate.fork_review, "missing_review_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: fork_review skipped: RuntimeError: boom", errors)
+
     def test_a_crash_in_main_exits_zero_and_names_the_gate_on_stderr(self):
         result = subprocess.run([sys.executable, str(SCRIPT)], input="not json", capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)

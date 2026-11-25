@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The announcement pattern splits into first-person forms and subjectless progress forms. A progress-only sentence passes when the transcript's current turn holds a background Bash call (`run_in_background`) or an Agent call not set to the foreground. Each stop check in the staged-claim gate runs under its own guard, so a crash in one prints a line on stderr and the other reasons still go out.
+The announcement pattern splits into first-person forms and subjectless progress forms. A progress-only sentence passes when the transcript's current turn holds a background Bash call (`run_in_background`) or an Agent call not set to the foreground. The `I am …` form widened from four verbs (`going to|about to|starting|working`) to the full `I'm` list, so "I am checking…", "I am on it" and "I am writing…" now block. Each stop check in the staged-claim gate runs under its own guard, so a crash in one prints a line on stderr and the other reasons still go out.
 
 ## Evidence
 

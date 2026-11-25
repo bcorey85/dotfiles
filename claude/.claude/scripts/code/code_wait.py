@@ -678,7 +678,7 @@ def review_words(words):
 
 
 def run(argv):
-    if len(argv) == 3 and argv[1] == "agent":
+    if len(argv) == 3 and argv[1] == code_run_names.WAIT_AGENT_VERB:
         return wait_agent(checked_agent_id(argv[2]))
     if len(argv) >= 2 and argv[1] == code_run_names.WAIT_REVIEW_VERB:
         launched_folder, pair_words = review_words(argv[2:])

@@ -4,6 +4,7 @@ notification), a compaction summary and a shell or command echo are not the user
 marks every main-session record that begins a turn, typed or not (a shell echo, a task notification, a peer
 message). `turn_launched_background` reads whether the current turn launched background work. Not a hook itself."""
 import re
+import sys
 
 import script_utils
 import tool_call_flags
@@ -64,10 +65,14 @@ def turn_launched_background(transcript_path):
                     continue
                 if starts_turn(record):
                     launched = False
+                if not script_utils.makes_own_calls(record):
+                    continue
                 for name, tool_input in script_utils.record_tool_calls(record):
                     if tool_call_flags.launches_background(name, tool_input):
                         launched = True
-    except OSError:
+    except OSError as error:
+        # An unreadable transcript counts as no background launch, so a progress line still blocks.
+        print(f"user_prompts: cannot read {transcript_path}: {type(error).__name__}: {error}", file=sys.stderr)
         return False
     return launched
 

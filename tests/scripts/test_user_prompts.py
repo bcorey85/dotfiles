@@ -74,11 +74,13 @@ class TurnLaunchedBackgroundTest(unittest.TestCase):
                                                    launch_record("Bash", command="make", run_in_background=value))
                 self.assertEqual(user_prompts.turn_launched_background(transcript), expected)
 
-    def test_an_agent_launch_counts_and_a_foreground_call_does_not(self):
-        launched = self.write_transcript(user_record("go"), launch_record("Agent", run_in_background="true"))
-        self.assertTrue(user_prompts.turn_launched_background(launched))
-        foreground = self.write_transcript(user_record("go"), launch_record("Bash", command="make"))
-        self.assertFalse(user_prompts.turn_launched_background(foreground))
+    def test_a_blob_repeat_of_an_earlier_launch_does_not_count_in_a_later_turn(self):
+        blob = {"type": "api-request-blob", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": "make", "run_in_background": True}}]}}
+        transcript = self.write_transcript(
+            user_record("go"), launch_record("Bash", command="make", run_in_background=True),
+            user_record("next"), blob)
+        self.assertFalse(user_prompts.turn_launched_background(transcript))
 
     def test_a_tool_result_after_the_launch_keeps_it(self):
         transcript = self.write_transcript(user_record("go"),

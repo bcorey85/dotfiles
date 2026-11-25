@@ -109,11 +109,11 @@ class AnnouncedStepTest(unittest.TestCase):
 
     def test_first_person_step_after_a_background_launch_still_blocks(self):
         transcript = self.write_turn()
-        self.assert_blocks("I'll push them with the four closures at the end.", transcript_path=transcript)
-        self.assert_blocks("I'm on it now.", transcript_path=transcript)
-        self.assert_blocks("I'm working on it.", transcript_path=transcript)
-        self.assert_blocks("I am on it now.", transcript_path=transcript)
-        self.assert_blocks("I am writing the check.", transcript_path=transcript)
+        messages = ("I'll push them with the four closures at the end.", "I'm on it now.", "I'm working on it.",
+                    "I am on it now.", "I am writing the check.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_blocks(message, transcript_path=transcript)
 
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")

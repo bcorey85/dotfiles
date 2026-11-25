@@ -1078,6 +1078,12 @@ def tool_use_calls(line):
     return record_tool_calls(transcript_record(line))
 
 
+def makes_own_calls(record):
+    """Whether a parsed transcript record's tool calls are its own. Only user and assistant records are: an
+    api-request-blob record repeats earlier calls, so counting it counts each call twice."""
+    return record.get("type") in ("user", "assistant")
+
+
 def record_tool_calls(record):
     """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
     record is None or makes none."""

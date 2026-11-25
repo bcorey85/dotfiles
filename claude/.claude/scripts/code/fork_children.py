@@ -36,6 +36,7 @@ import open_child_gate
 import process_group
 import script_utils
 from code_run_names import REVIEW_START_SCRIPT
+from shell_command_words import script_call_arguments
 
 KIND_TASKSTOP_DENIED = "taskstop_children_denied"
 HOOK_VERB = "hook"
@@ -101,7 +102,7 @@ class ForkCommands(NamedTuple):
     ran_review_start: bool
     first_start_timestamp: object  # the `timestamp` of the record of the first review start; None when it has none
     ran_review_fix: bool
-    ends_on_review_start: bool  # the last record is a Bash call that runs the review start script
+    ends_on_review_start: bool  # the last user or assistant record runs the review start script
 
 
 def scan_fork_commands(fork_transcript):
@@ -114,17 +115,18 @@ def scan_fork_commands(fork_transcript):
     try:
         with open(fork_transcript, encoding="utf-8", errors="replace") as transcript:
             for line in transcript:
-                if not line.strip():
+                record = script_utils.transcript_record(line)
+                if record is None or not script_utils.makes_own_calls(record):
                     continue
-                calls = script_utils.tool_use_calls(line)
+                calls = script_utils.record_tool_calls(record)
                 commands = [tool_input.get("command") for name, tool_input in calls if name == "Bash"]
                 commands = [command for command in commands if isinstance(command, str)]
-                starts_review = any(REVIEW_START_SCRIPT in command for command in commands)
+                starts_review = any(script_call_arguments(command, REVIEW_START_SCRIPT) for command in commands)
                 ran_review_fix = ran_review_fix or any(REVIEW_FIX_LAUNCH in command for command in commands)
                 ends_on_review_start = starts_review
                 if starts_review and not ran_review_start:
                     ran_review_start = True
-                    first_start_timestamp = json.loads(line).get("timestamp")
+                    first_start_timestamp = record.get("timestamp")
     except OSError as error:
         print(f"fork_children: could not read {fork_transcript}: {type(error).__name__}: {error}", file=sys.stderr)
         return None
@@ -133,8 +135,8 @@ def scan_fork_commands(fork_transcript):
 
 def fork_run_window(fork_transcript, commands):
     """(epoch of the code-fork's first review start, epoch of its last record) from its ForkCommands, or None when a
-    time is missing or unreadable (named on stderr). The end is None, an open window, when the last record is the Bash
-    call that runs the review start script: the loop's pid file is written after that record, and the code-fork's next
+    time is missing or unreadable (named on stderr). The end is None, an open window, when the last user or assistant
+    record runs the review start script: the loop's pid file is written after that record, and the code-fork's next
     record is not written yet."""
     try:
         first_start = human_turn_lookup.epoch_of_timestamp(commands.first_start_timestamp)
@@ -150,7 +152,7 @@ def fork_run_window(fork_transcript, commands):
 
 def started_inside_fork_run(repo, fork_transcript, commands):
     """Whether the loop's pid file was written between the code-fork's first review start and its last record, or at
-    any time after the first review start when the last record is that review-start Bash call."""
+    any time after the first review start when the last user or assistant record is that review-start call."""
     window = fork_run_window(fork_transcript, commands)
     if window is None:
         return False

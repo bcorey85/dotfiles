@@ -728,15 +728,10 @@ def scoped_test_failure(failures, log_path):
     return f"{result}; full output: {log_path}", tails
 
 
-def runs_script(command, script_name):
-    # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
-    # must be the script's own file.
-    return bool(shell_command_words.script_call_arguments(command, script_name))
-
-
 def is_stale_prose_check(command):
     # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix.
-    return runs_script(command, STALE_PROSE_SCRIPT)
+    # A word of the command must be the script's own file.
+    return bool(shell_command_words.script_call_arguments(command, STALE_PROSE_SCRIPT))
 
 
 def failure_text(failures):
@@ -874,6 +869,7 @@ def run_hook():
     hook_started = time.monotonic()
     event = json.load(sys.stdin)
     # A /code fork is judged on its own transcript, never on the coder gate file.
+    # Fail closed: a crash here exits 2 through run_gate and denies the hand-back.
     if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
         reason = fork_review.missing_review_reason(event)
         if reason:

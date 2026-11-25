@@ -24,7 +24,7 @@ from typing import NamedTuple
 
 import loop_transcript
 import script_utils
-from code_run_names import PHASE_START_SCRIPT, REVIEW_START_SCRIPT, WAIT_REVIEW_VERB, WAIT_SCRIPT
+from code_run_names import PHASE_START_SCRIPT, REVIEW_START_SCRIPT, WAIT_AGENT_VERB, WAIT_REVIEW_VERB, WAIT_SCRIPT
 from shell_command_words import command_call_arguments, script_call_arguments, unquoted_word, variable_assignments
 from shell_expansion import redirect_target_words
 from shell_statements import shell_code
@@ -38,10 +38,13 @@ WHOLE_VARIABLE = re.compile(r"\$\{?(?P<name>\w+)\}?")
 
 CODE_SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "code"
 
-REASON = ("This /code run dispatched a coder for a phase but ran no review of it and wrote no stop. Run step 5 of the "
-          f"/code skill now: run `python3 {CODE_SCRIPTS_DIR / REVIEW_START_SCRIPT}` as that step says, then `python3 "
-          f"{CODE_SCRIPTS_DIR / WAIT_SCRIPT} {WAIT_REVIEW_VERB}`. If the run must stop before its review, write the "
-          "stop to `<run folder>/stop.md` first.")
+REASON = ("This /code run dispatched a coder for a phase but ran no review of it and wrote no stop. If a coder of this "
+          "phase is still running, wait for it with "
+          f"`python3 {CODE_SCRIPTS_DIR / WAIT_SCRIPT} {WAIT_AGENT_VERB} <id>` first; then "
+          "run step 5 of the /code skill now: run "
+          f"`python3 {CODE_SCRIPTS_DIR / REVIEW_START_SCRIPT}` as that step says, then "
+          f"`python3 {CODE_SCRIPTS_DIR / WAIT_SCRIPT} {WAIT_REVIEW_VERB}`. If the run must stop before its review, "
+          "write the stop to `<run folder>/stop.md` first.")
 
 
 class Segment(NamedTuple):
@@ -88,7 +91,8 @@ def writes_stop_file(command):
     """Whether the command writes the stop file: a redirect or a `tee` operand whose basename is the stop file, or one
     that is a variable the command assigned a stop-file path."""
     assigned = variable_assignments(command)
-    targets = [unquoted_word(word) for word in redirect_target_words(shell_code(command))]
+    code = shell_code(command)
+    targets = [unquoted_word(word) for word in redirect_target_words(code)]
     for operands in command_call_arguments(command, "tee"):
         targets += [operand for operand in operands if not operand.startswith("-")]
     return any(is_stop_target(target, assigned) for target in targets)
@@ -125,15 +129,19 @@ def read_agent_call(segments, line_number, tool_input):
 
 
 def read_line(segments, line_number, line):
-    for name, tool_input in script_utils.tool_use_calls(line):
+    record = script_utils.transcript_record(line)
+    if record is None or not script_utils.makes_own_calls(record):
+        return
+
+    for name, tool_input in script_utils.record_tool_calls(record):
         if name == "Bash":
             read_bash_call(segments, line_number, tool_input.get("command"))
         elif name == "Agent":
             read_agent_call(segments, line_number, tool_input)
-
-    for written_path in loop_transcript.call_paths(line):
-        if os.path.basename(written_path) == STOP_FILE:
-            segments[-1].stop_lines.append(line_number)
+        elif name in loop_transcript.WRITE_TOOL_NAMES:
+            for written_path in loop_transcript.input_paths(tool_input):
+                if os.path.basename(written_path) == STOP_FILE:
+                    segments[-1].stop_lines.append(line_number)
 
 
 def read_fork_review(transcript_path):

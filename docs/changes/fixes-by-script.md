@@ -22,7 +22,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/coder-gate | 31 | 8 |
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 26 | 5 |
+| script/script-utils | 27 | 6 |
 | script/shell-write-gate | 24 | 4 |
 | script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
@@ -85,6 +85,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
+| script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
 | script/herdr-dev | 3 | 1 |
 | script/herdr-worktree-watch | 3 | 2 |
@@ -100,12 +101,12 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
+| script/announced-step | 2 | 2 |
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
-| script/fork-children | 2 | 2 |
 | script/fork-write-scope | 2 | 0 |
 | script/git-calls | 2 | 2 |
 | script/herdr-lane-resume | 2 | 2 |
@@ -143,7 +144,6 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | rule/toolkit-script-rules | 1 | 0 |
 | script/accepted-failures | 1 | 1 |
 | script/agent-foreground | 1 | 0 |
-| script/announced-step | 1 | 1 |
 | script/ansi-text | 1 | 0 |
 | script/approval-asks-store | 1 | 1 |
 | script/approval-restore | 1 | 1 |

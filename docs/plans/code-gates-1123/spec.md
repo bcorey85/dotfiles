@@ -35,12 +35,37 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 - ruling: Phase 5 close pass: `turn_launched_background` moved from script_utils to user_prompts (smell and code review); the stop-write reader now reads variable targets and `tee` operands. By the orchestrating /code session, 2026-11-24.
 - known gap, Phase 4 reader: a fork that codes phase 1 with no review, calls phase_start.py for phase 2, then codes and reviews phase 2 shares one segment, so it passes; the ruling of 2026-11-24 keeps rule (d) because forks call phase_start.py mid-phase. Ruled by the lane session, 2026-11-24.
 
+- 2026-11-24: Adopt plan change. Ruled by the session, not the user at 2026-11-24 16:55.
+
+  The ruling: Adopt: spec text records that runs_script was deleted and its call inlined into is_stale_prose_check; no acceptance criterion changes (2026-11-24).
+
+  The disagreement:
+  PLAN-IMPACT: docs/plans/code-gates-1123/spec.md:88 and :290 still say `code/coder_gate.py` `runs_script` "becomes its caller" / becomes `return bool(shell_command_words.script_call_arguments(command, script_name))`. Round 1 deleted `runs_script` and inlined the call into `is_stale_prose_check`. The plan text should record that change.
+
+- 2026-11-24: Adopt plan change. Ruled by the session, not the user at 2026-11-24 17:22.
+
+  The ruling: Adopt: update spec.md Decision 4, owners and imports to match the code; AC1 wording kept as is, the transcript read plus stop.md write is the recorded reason and AC6 rules out run-folder evidence (lane session, 2026-11-24)
+
+  The disagreement:
+  PLAN-IMPACT: `docs/plans/code-gates-1123/spec.md` still describes the code before the Phase 2 and Phase 5 rulings (its own lines :29, :30 and :35): `:50` (Decision 4) says progress forms pass only when the turn launched "a Bash or Agent call with `run_in_background` true". The code (`tool_call_flags.launches_background`) and `03-decisions.md:41` count an Agent call unless `run_in_background` is explicitly false. `:90` puts `runs_in_background` and `turn_launched_background` in `lib/script_utils.py`. They live in `lib/tool_call_flags.py` and `lib/user_prompts.py`. `:176-185` targets `script_utils.py` and builds `turn_launched_background` from `tool_use_calls(line)`. The code uses `transcript_record`, `makes_own_calls`, `record_tool_calls` and `launches_background` in `user_prompts.py`. `:198` says `script_utils.turn_launched_background`. The code calls `user_prompts.turn_launched_background`. `:343` lists fork_review's imports without `shell_expansion` and `shell_statements`. This is the same kind of fix as the adopted runs_script ruling: update these spec lines to match the code.
+  
+  PLAN-IMPACT: /home/brandon/dotfiles-code-gates-nov23/docs/plans/code-gates-1123/acceptance-criteria.md:9 — AC1 says the check fails a hand-back "when the run folder holds no review packet for the phase". The code reads only the fork's transcript and never the run folder (Decision 2; 03-decisions.md:28, ruled by the lane session). AC1 does not fit AC6. `plan_check.py owner` reports owner `user`, so only the user's recorded sign-off can reword AC1 to match the transcript-based check.
+
+- 2026-11-24: Keep plan as written. Ruled by the session, not the user at 2026-11-24 17:50.
+
+  The ruling: Lane session ruled 2026-11-24: AC1 stays as is; plan_check owner is session.
+
+  The disagreement:
+  PLAN-IMPACT: yes (block not found in the report; read the report)
+  
+  PLAN-IMPACT: /home/brandon/dotfiles-code-gates-nov23/docs/plans/code-gates-1123/acceptance-criteria.md:9 — AC1 still says the check fails a hand-back "when the run folder holds no review packet for the phase". The code reads only the fork's transcript. The recorded resolution, "AC1 wording kept as is", was ruled by the lane session. `plan_check.py owner` reports owner `user`, and under the global AC rule only the user's recorded sign-off can override an AC the user wrote. So the session's ruling does not settle it. As written, AC1 is not met by the code. Either the user signs off on rewording AC1 to the transcript-based check (recorded in 03-decisions.md), or the code must meet AC1 as written, which conflicts with AC6. This needs the user.
+
 ## Decisions
 
 1. Item 1 check site — one reader, `lib/fork_review.py`, called from `gates/staged_claim_gate.py` on SubagentStop and from the code-fork branch of `code/coder_gate.py hook` on PreToolUse SubagentHandback (already registered; no settings.json edit). Trade-off: a fork whose transcript cannot be read ends unjudged (fail open).
 2. Item 1 freshness — the fork's own transcript decides; the run folder is never read.
 3. Item 1 anchor and recorded reason — the transcript is split into segments at each `phase_start.py` call; a segment with a coder dispatch needs, after its first coder dispatch, review start then wait review, or a `stop.md` write. A tick coder after the review needs no second review.
-4. Item 2 fix — subjectless progress forms pass only when the turn launched a Bash or Agent call with `run_in_background` true (bool or string); first-person forms still block; each stop check gets its own crash guard.
+4. Item 2 fix — subjectless progress forms pass only when the turn launched a Bash call with `run_in_background` true (bool or string) or an Agent call not explicitly set to `run_in_background` false (the Agent tool runs in the background by default); first-person forms still block; each stop check gets its own crash guard.
 5. Item 3 — left the plan (agent-evals-c3-owner, 2026-11-23: the auto-mode gate pilot is a live experiment).
 6. Item 4 readers — add `rg` only. Trade-off: sed and awk still read as seen in full.
 7. Item 2 turn boundary — the latest record that opens a turn (typed prompt, `!` echo, task notification, peer message).
@@ -80,23 +105,27 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
 
 - **Item 4:** a one-token regex change plus the deny text, in `gates/quality_check_cap.py`.
 - **Item 2:**
-  - Turn and background readers go in their owners: `lib/user_prompts.py` (`starts_turn`) and `lib/script_utils.py` (`runs_in_background`, `turn_launched_background`).
+  - Turn and background readers go in their owners: `lib/user_prompts.py` (`starts_turn`, `turn_launched_background`) and `lib/tool_call_flags.py` (`runs_in_background`, `launches_background`).
   - `gates/announced_step.py` splits its regex into first-person and progress forms. It reads the transcript only when a progress form survives the existing filters.
   - `gates/staged_claim_gate.py` runs each check through `guarded`, which reports a crash on stderr and keeps the other reasons.
 - **Item 1:**
   - The new no-import name module `lib/code_run_names.py` is the owner of the /code script and verb names.
-  - A new `lib/shell_command_words.py` `script_call_arguments` returns the words after a script's own word. `code/coder_gate.py` `runs_script` becomes its caller.
+  - A new `lib/shell_command_words.py` `script_call_arguments` returns the words after a script's own word. `code/coder_gate.py` `runs_script` is deleted; `is_stale_prose_check` calls it directly.
   - The new `lib/fork_review.py` reads the fork transcript once, in phase segments. `staged_claim_gate.py` calls it on SubagentStop, and the code-fork branch of `coder_gate.py hook` calls it on PreToolUse SubagentHandback.
 
 ## Dependencies
 
 - No packages.
 - Internal modules:
-  - `lib/script_utils.py`: `tool_use_calls`, `agent_transcript_path`, `FORK_AGENT_TYPE`, `bash_commands` as the scan shape.
-  - `lib/loop_transcript.py`: `call_paths`, `agent_meta`.
+  - `lib/script_utils.py`: `transcript_record`, `makes_own_calls`, `record_tool_calls`, `agent_transcript_path`, `FORK_AGENT_TYPE`, `CODERS`.
+  - `lib/loop_transcript.py`: `WRITE_TOOL_NAMES`, `input_paths`, `agent_meta`.
+  - `lib/shell_command_words.py`: `script_call_arguments`, `command_call_arguments`, `word_names_command`, `unquoted_word`, `variable_assignments`.
+  - `lib/shell_expansion.py`: `redirect_target_words`.
+  - `lib/shell_statements.py`: `shell_code`.
+  - `lib/code_run_names.py`: the /code script and verb names.
+  - `lib/tool_call_flags.py`: `launches_background`.
   - `lib/stop_file_names.py`: `STOP_FILE`.
-  - `lib/shell_command.py`: `resolved_command_words`.
-  - `lib/shell_command_words.py`: `word_names_command`.
+  - `lib/shell_command.py`: `resolved_command_words`, `step_words`, `split_simple_commands`, `without_substitutions`.
   - `lib/user_prompts.py`.
 
 ## Implementation Plan
@@ -166,15 +195,18 @@ That covers typed prompts, `<bash-input>` / `<bash-stdout>` echoes, task notific
 
 #### 2. Background launch readers
 
-**File**: `claude/.claude/scripts/lib/script_utils.py`, beside `tool_use_calls` and `bash_commands`.
+(Superseded by the Phase 2 plan deviation rulings: the readers live in `lib/tool_call_flags.py` and `lib/user_prompts.py`, and an Agent call counts unless `run_in_background` is explicitly false.)
+
+**Files**: `claude/.claude/scripts/lib/tool_call_flags.py` (`runs_in_background`, `launches_background`) and `claude/.claude/scripts/lib/user_prompts.py` (`turn_launched_background`).
 
 **Changes**:
 - `runs_in_background(tool_input)`: reads `tool_input.get("run_in_background")`. True when the value is `True`, or a string whose `.strip().lower()` is `"true"`.
-- `turn_launched_background(transcript_path)`:
+- `launches_background(name, tool_input)`: a `Bash` call counts when `runs_in_background` is True. An `Agent` call counts unless `run_in_background` is explicitly false.
+- `user_prompts.turn_launched_background(transcript_path)`:
   - Make one pass over the file, opened with `errors="replace"`.
-  - Read each line with `json.loads` inside a try that skips a ValueError.
+  - Read each line through `script_utils.transcript_record`, which skips a bad line.
   - A `starts_turn` record resets the flag to False.
-  - A `Bash` or `Agent` call from `tool_use_calls(line)` whose input passes `runs_in_background` sets the flag to True.
+  - A call from `makes_own_calls` / `record_tool_calls` whose name and input pass `launches_background` sets the flag to True.
   - Return the flag. Return False on OSError or an empty path.
 
 #### 3. Announced step
@@ -188,7 +220,7 @@ That covers typed prompts, `<bash-input>` / `<bash-stdout>` echoes, task notific
 - Keep `ANNOUNCEMENT` as their union for `without_quoted_spans`.
 - The signature becomes `announced_step(message, transcript_path=None)`. After the existing filters, for each sentence:
   - A `FIRST_PERSON_ANNOUNCEMENT` match returns the sentence.
-  - For a progress-only match, compute `script_utils.turn_launched_background(transcript_path)` lazily, at most once per call. When it is True, go to the next sentence. Otherwise return the sentence.
+  - For a progress-only match, compute `user_prompts.turn_launched_background(transcript_path)` lazily, at most once per call. When it is True, go to the next sentence. Otherwise return the sentence.
 - "I'm on it now" and "I'm working on it" still block.
 - Add the `sys.path` and import lines as staged_claim_gate sets them.
 - Update the docstring.
@@ -246,8 +278,7 @@ That covers typed prompts, `<bash-input>` / `<bash-stdout>` echoes, task notific
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_announced_step.py` (RED before the fix: the incident case fails)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_user_prompts.py` (RED now: no file)
 - [ ] **Test-verified**: `python3 tests/parallel_tests.py test_staged_claim_gate.py` (RED now: no crash-guard case)
-- [ ] **Test-verified**: `python3 tests/parallel_tests.py test_script_utils.py`
-- [ ] **Lint-verified**: `bash tests/lint.sh claude/.claude/scripts/gates/announced_step.py claude/.claude/scripts/gates/staged_claim_gate.py claude/.claude/scripts/lib/user_prompts.py claude/.claude/scripts/lib/script_utils.py tests/scripts/test_announced_step.py tests/scripts/test_user_prompts.py tests/scripts/test_staged_claim_gate.py`
+- [ ] **Lint-verified**: `bash tests/lint.sh claude/.claude/scripts/gates/announced_step.py claude/.claude/scripts/gates/staged_claim_gate.py claude/.claude/scripts/lib/user_prompts.py tests/scripts/test_announced_step.py tests/scripts/test_user_prompts.py tests/scripts/test_staged_claim_gate.py`
 - [ ] **Agent-run**: the sweep reports "N of M still block" over every past block found by the REASON text, and every block that now passes is labelled incident shape or gate gap (no gate gap)
 
 #### Manual Verification:
@@ -271,23 +302,24 @@ Size estimate: about 60 changed lines.
 - `REVIEW_START_SCRIPT = "code_review_start.py"`
 - `WAIT_SCRIPT = "code_wait.py"`
 - `WAIT_REVIEW_VERB = "review"`
+- `WAIT_AGENT_VERB = "agent"`
 
-Its docstring says the fork review reader runs at SubagentStop and in the hand-back hook, so it reads these names here and must not load review/.
+Its docstring says it holds the script names of /code's phase and review steps and the wait verbs of code_wait.py (one agent, the review step), imports nothing, and owns these names.
 
 #### 2. Script call arguments
 
 **File**: `claude/.claude/scripts/lib/shell_command_words.py`
 
 **Changes**: add `script_call_arguments(command, script_name)`.
-- For each word list in `shell_command.resolved_command_words(command)`, find the first word `w` where `word_names_command(w, script_name)` holds, and record the words after it.
+- For each word list in `shell_command.resolved_command_words(command)` (superseded by the Phase 4 ruling, :34 (a)/(b)), find the first word `w` where `word_names_command(w, script_name)` holds, and record the words after it.
 - Return one list per simple command that runs the script.
 - Add the name to the module docstring.
 
 #### 3. Callers take the names
 
 - `claude/.claude/scripts/code/fork_children.py:41`: `from code_run_names import REVIEW_START_SCRIPT`. The name stays importable from fork_children.
-- `claude/.claude/scripts/code/code_wait.py:681`: compare against `code_run_names.WAIT_REVIEW_VERB`.
-- `claude/.claude/scripts/code/coder_gate.py`: `runs_script` (:726) becomes `return bool(shell_command_words.script_call_arguments(command, script_name))`. The `"coder"` literals stay as they are.
+- `claude/.claude/scripts/code/code_wait.py:681`: compare against `code_run_names.WAIT_REVIEW_VERB`; the `agent` verb compares against `code_run_names.WAIT_AGENT_VERB`.
+- `claude/.claude/scripts/code/coder_gate.py`: `runs_script` is deleted; `is_stale_prose_check` becomes `return bool(shell_command_words.script_call_arguments(command, STALE_PROSE_SCRIPT))`. The `"coder"` literals stay as they are.
 - `tests/scripts/toolkit_paths.py`: add `"shell_command_words.py"` and `"code_run_names.py"` to `CODER_GATE_LIB_MODULES`, unless they are already there.
 
 #### 4. Tests
@@ -333,20 +365,20 @@ Size estimate: about 330 changed lines plus one fixture.
 
 #### 1. The reader
 
-**New file**: `claude/.claude/scripts/lib/fork_review.py`. It lives in lib because coder_gate.py adds only `lib` and `telemetry` to sys.path. It imports lib modules only: script_utils, loop_transcript, shell_command_words, code_run_names, stop_file_names.
+**New file**: `claude/.claude/scripts/lib/fork_review.py`. It lives in lib because coder_gate.py adds only `lib` and `telemetry` to sys.path. It imports lib modules only: script_utils, loop_transcript, shell_command_words, shell_expansion, shell_statements, code_run_names, stop_file_names.
 
 - `SKILL_BASE = re.compile(r"\ABase directory for this skill: \S*/skills/code\s*\n")`.
 - `Segment` NamedTuple: `coder_line`, `review_start_lines`, `review_wait_lines`, `stop_lines`. `ForkReview` NamedTuple: `is_code_run`, `segments` (a list of Segment).
 - `read_fork_review(transcript_path)`:
-  - Make one pass, opened with `errors="replace"`. Read each line with `json.loads` in a try, so a torn line is skipped.
+  - Make one pass, opened with `errors="replace"`. Read each line through `script_utils.transcript_record` (a torn line is skipped), and only records that pass `script_utils.makes_own_calls`.
   - `is_code_run` is True when the first record's string content matches `SKILL_BASE`.
   - A `Bash` call where `script_call_arguments(command, PHASE_START_SCRIPT)` is non-empty opens a new segment only when the open segment needs no review or is already reviewed (`segment_reviewed`). The records before the first such call form segment 0.
   - `script_call_arguments` reads `shell_statements.shell_code(command)`; when `resolved_command_words` returns nothing it reads `step_words` instead.
   - In the current segment:
     - The first `Agent` call whose `subagent_type` is in `script_utils.CODERS` sets `coder_line`.
     - For `Bash` calls, `script_call_arguments` finds `REVIEW_START_SCRIPT` (any arguments) and `WAIT_SCRIPT` with first argument `WAIT_REVIEW_VERB`.
-    - Paths from `loop_transcript.call_paths(line)` whose basename is `STOP_FILE` go to `stop_lines`.
-    - A `Bash` output redirect (`shell_expansion.redirect_target_words` over `shell_code`, target unquoted) whose target basename is `STOP_FILE` also goes to `stop_lines`.
+    - Paths from `loop_transcript.input_paths(tool_input)` of a `WRITE_TOOL_NAMES` call whose basename is `STOP_FILE` go to `stop_lines`.
+    - A `Bash` output redirect (`shell_expansion.redirect_target_words` over `shell_code`, target unquoted) whose target basename is `STOP_FILE` also goes to `stop_lines`. So does a `tee` operand (`command_call_arguments(command, "tee")`, options left out) and a whole-variable target (`$f` or `${f}`) that the command assigned a stop-file path.
 - `segment_reviewed(segment)` is True when any of these holds:
   - `coder_line is None`;
   - a stop line comes after `coder_line`;
@@ -361,7 +393,7 @@ Size estimate: about 330 changed lines plus one fixture.
   - the fork reviewed.
 
   It does not check the event name. Each caller checks it.
-- `REASON`: "This /code run dispatched a coder for a phase but ran no review of it and wrote no stop. Run step 5 of the /code skill now: write the handoff block to `<run folder>/handoff.txt`, run `python3 ~/.claude/scripts/code/code_review_start.py <lane> - 1 <run folder>/handoff.txt --base <phase base> --detach` (the plan path and phase number in place of `- 1` when the run has a plan), then `python3 ~/.claude/scripts/code/code_wait.py review`. If the run must stop before its review, write the stop to `<run folder>/stop.md` first."
+- `REASON`: "This /code run dispatched a coder for a phase but ran no review of it and wrote no stop. If a coder of this phase is still running, wait for it with `python3 <code scripts dir>/code_wait.py agent <id>` first; then run step 5 of the /code skill now: run `python3 <code scripts dir>/code_review_start.py` as that step says, then `python3 <code scripts dir>/code_wait.py review`. If the run must stop before its review, write the stop to `<run folder>/stop.md` first."
 - The docstring says:
   - the reader fails open;
   - it never reads the run folder;

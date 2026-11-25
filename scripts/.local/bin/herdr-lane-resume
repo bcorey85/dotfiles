@@ -7,11 +7,12 @@
 #               recorded it in ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<name>.json;
 #               a relative XDG_STATE_HOME is ignored.
 #               Opens a workspace on the worktree (a tuios session under tuios) and
-#               runs herdr-dev --resume there: the claude pane resumes the lane's
-#               session under its name, with no fork, and is given the lane's
-#               latest brief. Stops, changing nothing, when the worktree is gone,
-#               the entry holds no session id, an agent of any kind already runs in
-#               the worktree or a workspace is already open on it.
+#               runs herdr-dev --headless --resume there: the claude pane, alone in
+#               its tab with no hunk pane, resumes the lane's session under its
+#               name, with no fork, and is given the lane's latest brief. Stops,
+#               changing nothing, when the worktree is gone, the entry holds no
+#               session id, an agent of any kind already runs in the worktree or a
+#               workspace is already open on it.
 #   --close     for a finished lane: refuse while a claude agent in the worktree
 #               is working; close the lane's workspace and wait up to
 #               HERDR_LANE_CLOSE_WAIT seconds (default 10) for its agents, of any
@@ -152,7 +153,7 @@ resume_lane() {
         herdr-api workspace focus "$ws" >/dev/null
     fi
 
-    "$bin_dir/herdr-dev" --resume "$wt" "$ws" "$session" "$brief"
+    "$bin_dir/herdr-dev" --headless --resume "$wt" "$ws" "$session" "$brief"
 }
 
 # Close workspace $1 through the multiplexer this shell lives in.

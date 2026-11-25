@@ -442,6 +442,23 @@ def restore_index_entry(repo, path, entry):
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 
 
+def restore_index_entries(repo, entries_before):
+    """Puts the index entry of each path of `entries_before` (a dict of path to IndexEntry, or None for a path that was
+    not in the index) back to what it was, when it differs now. Returns the set of paths whose entry could not be read
+    or restored; a failed index read names every path."""
+    try:
+        entries_now = index_entries(repo, list(entries_before))
+    except GitCallError:
+        return set(entries_before)
+    failed = set()
+    for path, entry in entries_before.items():
+        if entries_now[path] == entry:
+            continue
+        if not restore_index_entry(repo, path, entry):
+            failed.add(path)
+    return failed
+
+
 def blob_at_commit(repo, commit, path):
     """The blob id of `path` in `commit` of `repo`, or None when the commit has no such file or git cannot say."""
     return git_output(repo, "rev-parse", "--verify", "-q", f"{commit}:{path}")
@@ -510,6 +527,25 @@ def head_commit_time(top):
     if not stamp:
         return None
     return float(stamp)
+
+
+def commits_since(repo, commit):
+    """The "<short hash> <subject>" of each commit HEAD gained since `commit`, oldest first. `commit` None means the
+    repo had no commit: every commit of HEAD counts. Returns None when git cannot say, so a caller tells that apart
+    from no commits ([])."""
+    rev_range = f"{commit}..HEAD"
+    if commit is None:
+        try:
+            head = head_commit_or_unborn(repo)
+        except GitCallError:
+            return None
+        if head is None:
+            return []
+        rev_range = "HEAD"
+    listing = git_output(repo, "log", "--reverse", "--format=%h %s", rev_range)
+    if listing is None:
+        return None
+    return listing.splitlines()
 
 
 def untracked_paths(directory):

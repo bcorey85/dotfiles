@@ -39,7 +39,7 @@
 # The steps below apply when the entry is missing or its session id is empty. With the
 # fork's session id they are two:
 #   1. herdr worktree open --cwd <main checkout> --path <worktree> --focus
-#   2. herdr-dev <worktree> <ws> <fork session id> '<resume prompt>'
+#   2. herdr-dev --headless <worktree> <ws> <fork session id> '<resume prompt>'
 # <ws> is the workspace id that step 1 prints (.result.workspace.workspace_id);
 # the prompt is a short "go on", not the original brief. Under tuios step 1 is
 #   1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus
@@ -285,8 +285,11 @@ if [ -n "$fork" ]; then
     fi
 fi
 
-# herdr-dev prints the claude pane's id, then the command it typed there.
-layout=$("$bin_dir/herdr-dev" "$worktree" "$ws" "$claude_session" "$prompt")
+# herdr-dev prints the claude pane's id, then the command it typed there. A
+# forked lane opens with the claude pane alone; a plain worktree keeps hunk.
+dev_flags=()
+[ -z "$fork" ] || dev_flags=(--headless)
+layout=$("$bin_dir/herdr-dev" ${dev_flags[@]+"${dev_flags[@]}"} "$worktree" "$ws" "$claude_session" "$prompt")
 claude_pane=$(sed -n 1p <<<"$layout")
 claude_cmd=$(sed -n 2p <<<"$layout")
 

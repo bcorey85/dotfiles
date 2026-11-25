@@ -20,7 +20,9 @@ HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept, with the same additions as a same-HEAD start (later
 dirty files, handed-off files as own), and its head is printed as the phase base. With no record, or a head that is
-not an ancestor, it prints HEAD as without the flag and says so on stderr.
+not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
+<run folder>/resume.json (resume_review_gate.record_resume), which the code-fork's stop.md Write reads; a start
+without `--resume` removes it.
 `--new-run` first checks the lane file of the worktree it runs in (lib/lane_entries.py): when the lane's `reports_to`
 session is not a live registry name, it exits non-zero before writing anything and lists the live names. No lane
 file, an empty `reports_to`, a name that fits a live auto-named session (`nameSource` derived, `<cwd folder>-<2 hex>`;
@@ -48,6 +50,7 @@ import code_wait
 import fix_coder_written
 import handoff_files
 import lane_entries
+import resume_review_gate
 import script_utils
 import session_registry
 import stop_file_names
@@ -236,6 +239,18 @@ def write_record(repo, record):
     script_utils.write_text_atomically(folder / START_FILE, json.dumps(record, indent=2) + "\n")
 
 
+def record_resume_or_exit(run_folder, repo):
+    """Writes resume.json after the start record. A git fault there removes any stale resume.json (it would hold an
+    older head and tree) and exits non-zero naming what was written, with no base printed."""
+    try:
+        resume_review_gate.record_resume(run_folder, repo)
+    except script_utils.GitCallError as error:
+        resume_review_gate.clear_resume(run_folder)
+        sys.exit(f"phase_start: the start record was written, but {run_folder / resume_review_gate.RESUME_FILE} was "
+                 f"not written, and any older one was removed ({error}). Fix the git fault and re-run "
+                 f"`phase_start.py --resume`; the resume has no review check until then.")
+
+
 def derived_name_match(reports_to):
     """The live registry row whose derived name may be the ListAgents name `reports_to`: a row with nameSource
     `derived` whose cwd folder name plus a dash and two hex characters is `reports_to` (the registry stores another
@@ -298,8 +313,10 @@ def main():
     handed_off = handed_off_paths(run_folder)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
-    move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)
+    move_aside(run_folder, stop_file_names.LOOP_DIR_FILE, stop_file_names.PREVIOUS_LOOP_DIR_FILE)
     move_aside(run_folder, code_wait.SCOPE_FILE, code_wait.PREVIOUS_SCOPE_FILE)
+    if "--resume" not in sys.argv[1:]:
+        resume_review_gate.clear_resume(run_folder)
 
     own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     if not own_session_id:
@@ -318,6 +335,7 @@ def main():
         base = resume_base(repo, kept)
         if base is not None:
             write_record(repo, with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off))
+            record_resume_or_exit(run_folder, repo)
             print(base)
             return 0
     same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
@@ -330,6 +348,8 @@ def main():
         fix_coder_written.clear(repo)
 
     write_record(repo, record)
+    if "--resume" in sys.argv[1:]:
+        record_resume_or_exit(run_folder, repo)
     print(record["head"])
     return 0
 

@@ -237,7 +237,9 @@ class RuledFindings:
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
         self.dropped_asks = []
-        self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
+        # the approval asks the session may not rule (anything but a rejected on a wanted-change ask); the packet
+        # marks each one `user_only`
+        self.user_only_asks = []
         self.user_only_paths = []  # the repo-relative path each approval ask was filed for
         # path -> the blob id its edit is measured against
         self.user_only_bases = {}
@@ -588,6 +590,15 @@ class RuledFindings:
         reverted_paths = set(reverted)
         return [finding for finding in findings if held_path_in_repo(finding.path, self.repo) in reverted_paths]
 
+    def keep_unreverted_open(self, findings, reverted):
+        """Keeps `findings` open except those on a reverted approval-only path: those are filed as user-only asks, or
+        dropped as a repeat of a rejected one.
+        Returns the findings on a reverted path. The host has keep_open and drop_open."""
+        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
+        self.drop_open(reverted_findings)
+        self.keep_open([item for item in findings if item not in reverted_findings])
+        return reverted_findings
+
     def committed_during_pass(self, path):
         """Whether the latest coder pass committed a change to `path`: HEAD holds another blob for it than the commit
         HEAD named before the pass did."""
@@ -661,6 +672,20 @@ class RuledFindings:
         if path not in self.user_only_paths:
             self.user_only_paths.append(path)
         self.user_only_bases.setdefault(path, base)
+
+    def drop_approval_asks(self, paths):
+        """Takes back the approval asks filed for `paths`, whose edits a put-back removed, and saves the rest."""
+        for path in paths:
+            filed = parse_finding(approval_ask_text(path))
+            if filed in self.user_only_asks:
+                self.user_only_asks.remove(filed)
+            if filed in self.asks:
+                self.asks.remove(filed)
+            self.ask_gates.pop(filed, None)
+            self.user_only_paths.remove(path)
+            self.user_only_bases.pop(path, None)
+        if paths:
+            self.save_approval_paths()
 
     def save_approval_paths(self):
         """Saves the paths of the user-only approval asks and the wanted-change asks on the list, so a run that dies

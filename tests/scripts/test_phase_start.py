@@ -1,6 +1,8 @@
 """Tests for phase_start.py, the record of the tree a /code phase starts from, and the held files code_review_start.py
 reads from it. Set PHASE_START_SCRIPT to run against another copy."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -486,6 +489,55 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertNotIn("held files:", done.stdout)
         self.assertNotIn("held-by:", done.stdout)
+
+    def test_resume_records_the_head_and_tree_and_a_plain_start_removes_the_record(self):
+        self.phase_start()
+        resume_file = self.repo / ".git/code-phase/resume.json"
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        record = json.loads(resume_file.read_text())
+        self.assertEqual(record["head"], git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(record["repo"], str(self.repo))
+        self.assertTrue(record["tree"])
+        self.assertFalse(record["denied"])
+
+        self.phase_start()
+
+        self.assertFalse(resume_file.exists())
+
+    def test_resume_with_no_start_record_still_records_the_resume(self):
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((self.repo / ".git/code-phase/resume.json").is_file())
+
+    def test_a_git_fault_while_recording_the_resume_exits_naming_what_was_written_and_the_rerun(self):
+        module = self.load_phase_start_module()
+        fault = module.script_utils.GitCallError("could not fingerprint the tree")
+        environment = {"HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
+                       "CLAUDE_CODE_SESSION_ID": "test-session"}
+        printed = io.StringIO()
+        stale_resume = self.repo / ".git/code-phase/resume.json"
+        stale_resume.parent.mkdir(exist_ok=True)
+        stale_resume.write_text('{"stale": true}')
+
+        with (mock.patch.dict(os.environ, environment), mock.patch.object(sys, "argv", ["phase_start.py", "--resume"]),
+              mock.patch.object(module.resume_review_gate, "record_resume", side_effect=fault),
+              mock.patch.object(pathlib.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(printed),
+              self.assertRaises(SystemExit) as raised):
+            module.main()
+
+        message = str(raised.exception.code)
+        self.assertIn("start record was written", message)
+        self.assertIn("resume.json", message)
+        self.assertIn("could not fingerprint the tree", message)
+        self.assertIn("older one was removed", message)
+        self.assertIn("re-run `phase_start.py --resume`", message)
+        self.assertEqual(printed.getvalue(), "")
+        self.assertTrue((self.repo / ".git/code-phase/start.json").is_file())
+        self.assertFalse((self.repo / ".git/code-phase/resume.json").exists())
 
     def unrelated_commit(self):
         """A commit on an orphan branch: neither an ancestor nor a descendant of the recorded head."""

@@ -14,3 +14,11 @@
   rather than adding a JSON mode to `toolkit_drift.py`, because that script lives in agent-evals, outside this lane.
 - 2026-11-25, this session: prune gains `--check` after a split by concern (git base, branch mode) rather than a cut,
   because it sits at 991 of the 1000-line cap and the keep rules must stay with prune, their one owner.
+- 2026-11-25, this session (branch-wide review): `shell_command.command_options` loses its `start` parameter, which
+  only a test used (Phase 5 step 1 named `start=1`); `git_option_values` is renamed `option_values`, since it now
+  reads any command's pairs (Phase 5 step 1 said rename nothing). Both narrow the plan's wording; the AC stays met.
+- 2026-11-25, this session (branch-wide review): prune no longer re-imports `checked_out_branches`,
+  `delete_one_branch` and `parse_worktrees` for the tests; the prune tests import them from their owner modules
+  (Phase 2 step 3 kept them reachable on prune). No behavior change.
+- 2026-11-25, this session (branch-wide review ask): the pre-commit hook copies every staged line as added when the
+  HEAD problem file is empty, rather than relying on `grep -f` of an empty file, so a BSD grep cannot fail open.

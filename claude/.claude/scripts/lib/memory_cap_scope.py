@@ -147,7 +147,7 @@ def program_after_systemd_run(words):
 def systemd_run_slice(words):
     """The slice a `systemd-run` step names (`--slice=X` or `--slice X`), or None when it names none."""
     options, _index = shell_command.command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)
-    slice_names = list(shell_command.git_option_values(options, "--slice"))
+    slice_names = list(shell_command.option_values(options, "--slice"))
     if not slice_names:
         return None
     return slice_names[-1]

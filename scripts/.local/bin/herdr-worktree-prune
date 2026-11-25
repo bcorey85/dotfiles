@@ -81,10 +81,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
 
 from worktree_branches import (
-    ahead_text, checked_out_branches, delete_branch, delete_one_branch, prune_branches,
+    ahead_text, delete_branch, prune_branches,
 )
 from worktree_git import (
-    PruneError, Repo, Tally, Worktree, git, inside, list_worktrees, parse_worktrees, real, run, show,
+    PruneError, Repo, Tally, Worktree, git, inside, list_worktrees, real, run, show,
 )
 
 PROC_ROOT = "/proc"

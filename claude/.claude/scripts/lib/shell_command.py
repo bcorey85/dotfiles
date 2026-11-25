@@ -538,9 +538,9 @@ def git_c_settings(options):
     return settings
 
 
-def git_option_values(options, name):
-    """The value of each `name` option in a command_options pair list (git's or any other command's), in order, from
-    `--name value` or `--name=value`."""
+def option_values(options, name):
+    """The value of each `name` option in a command_options pair list, in order, from `--name value` or
+    `--name=value`. The pairs may come from any command's options, git's or another's."""
     for option, value in options:
         if option == name and value is not None:
             yield value
@@ -548,11 +548,11 @@ def git_option_values(options, name):
             yield option.partition("=")[2]
 
 
-def command_options(words, value_options, start=1):
-    """The (option, value) pairs of a command's own options in its words from `start` on, and the index of the first
-    word after them; a flag's value is None. An option in `value_options` takes the next word as its value."""
+def command_options(words, value_options):
+    """The (option, value) pairs of a command's own options in its words after the command name, and the index of the
+    first word after them; a flag's value is None. An option in `value_options` takes the next word as its value."""
     options = []
-    index = start
+    index = 1
     while index < len(words) and words[index].startswith("-"):
         option = words[index]
         takes_value = option in value_options and index + 1 < len(words)
@@ -1001,7 +1001,7 @@ def git_c_is_absolute(words):
     """True when a `-C` value of the git call in `words` is an absolute path once quotes are dropped and `~`
     is expanded (see `shell_directory.path_word_is_absolute`)."""
     options, _index = git_options(words)
-    return any(path_word_is_absolute(value) for value in git_option_values(options, "-C"))
+    return any(path_word_is_absolute(value) for value in option_values(options, "-C"))
 
 
 def word_moves_directory(word, move_letter, wrapper):

@@ -57,7 +57,12 @@ if grep -qE "$drift_pattern" <<<"$touched_paths"; then
             fi
 
             # A staged line that is not a problem line (a crash) never matches a HEAD problem, so it counts as added.
-            grep -vxF -f "$drift_work/head.problems" "$drift_work/staged.err" >"$drift_work/added.err" || true
+            # An empty pattern file is skipped: some BSD greps treat it as matching every line or nothing.
+            if [[ ! -s "$drift_work/head.problems" ]]; then
+                cp "$drift_work/staged.err" "$drift_work/added.err"
+            else
+                grep -vxF -f "$drift_work/head.problems" "$drift_work/staged.err" >"$drift_work/added.err" || true
+            fi
             # Arithmetic expansion drops the leading spaces that macOS wc -l prints.
             staged_line_count=$(($(wc -l <"$drift_work/staged.err")))
             added_line_count=$(($(wc -l <"$drift_work/added.err")))

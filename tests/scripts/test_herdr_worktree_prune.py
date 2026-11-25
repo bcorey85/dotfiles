@@ -125,6 +125,14 @@ def load_script_module():
     return module
 
 
+def load_lib_module(name):
+    """A shared module from the lib folder beside the script under test."""
+    lib_folder = str(HERDR_WORKTREE_PRUNE.resolve().parent.parent / "lib")
+    if lib_folder not in sys.path:
+        sys.path.insert(0, lib_folder)
+    return importlib.import_module(name)
+
+
 class Lab:
     """A main checkout, its bare origin, and helpers that make lane worktrees."""
 
@@ -988,7 +996,7 @@ class InProgressBranchTest(PruneTestCase):
         self.lab.git(tree, "bisect", "start", "HEAD", self.lab.root_commit())
         module = load_script_module()
 
-        taken = module.checked_out_branches(module.list_worktrees(str(self.lab.main)))
+        taken = load_lib_module("worktree_branches").checked_out_branches(module.list_worktrees(str(self.lab.main)))
 
         self.assertIn("rebase or bisect", taken["feature/lane-a"])
         self.assertIn(str(tree), taken["feature/lane-a"])
@@ -1001,7 +1009,7 @@ class InProgressBranchTest(PruneTestCase):
         git_dir = self.lab.git(tree, "rev-parse", "--absolute-git-dir").stdout.strip()
         pathlib.Path(git_dir, "BISECT_START").write_text(self.lab.tip("feature/lane-a") + "\n")
 
-        taken = module.checked_out_branches(module.list_worktrees(str(self.lab.main)))
+        taken = load_lib_module("worktree_branches").checked_out_branches(module.list_worktrees(str(self.lab.main)))
 
         self.assertNotIn("feature/lane-a", taken)
 
@@ -1104,8 +1112,8 @@ class BranchDeletionTest(PruneTestCase):
         tally = module.Tally()
 
         with contextlib.redirect_stdout(io.StringIO()):
-            module.delete_one_branch(repo, "main", tally)
-            module.delete_one_branch(repo, "feature/lane-a", tally)
+            load_lib_module("worktree_branches").delete_one_branch(repo, "main", tally)
+            load_lib_module("worktree_branches").delete_one_branch(repo, "feature/lane-a", tally)
 
         self.assertEqual((tally.kept, tally.removed, tally.failed), (2, 0, 0))
         self.assertEqual(self.lab.branches(), {"main", "scratch", "feature/lane-a"})
@@ -1341,7 +1349,7 @@ class ParserTest(unittest.TestCase):
                    "worktree /x/line\nbreak\0HEAD 2\0detached\0locked why not\0\0"
                    "worktree /x/gone\0HEAD 3\0branch refs/heads/g\0prunable gitdir file\0\0")
 
-        found = self.module.parse_worktrees(listing)
+        found = load_lib_module("worktree_git").parse_worktrees(listing)
 
         self.assertEqual([tree.path for tree in found], ["/x/a b", "/x/line\nbreak", "/x/gone"])
         self.assertEqual(found[0].branch, "f/a")
@@ -1351,7 +1359,7 @@ class ParserTest(unittest.TestCase):
 
     def test_an_unknown_porcelain_field_stops_loudly(self):
         with self.assertRaises(self.module.PruneError):
-            self.module.parse_worktrees("worktree /x\0HEAD 1\0surprise yes\0\0")
+            load_lib_module("worktree_git").parse_worktrees("worktree /x\0HEAD 1\0surprise yes\0\0")
 
     def test_sizes_above_a_tebibyte_print_in_tib(self):
         cases = {512: "512 B", 2048: "2.0 KiB", 3 * 1024 ** 3: "3.0 GiB", 1500 * 1024 ** 3: "1.5 TiB",

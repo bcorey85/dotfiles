@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`lib/shell_command.py` gains `command_options(words, value_options, start=1)`, which returns the (option, value) pairs of a command's options and the index after them. `git_options(words)` is now `command_options(words, GIT_VALUE_OPTIONS)`, and `git_option_values` reads any such pair list. `memory_cap_scope.systemd_run_slice` returns the last `--slice` value from that pair list, and `systemd_run_options_end` returns the index it gives. The option loop in `systemd_run_slice` is gone.
+`lib/shell_command.py` gains `command_options(words, value_options)`, which returns the (option, value) pairs of a command's options and the index after them. `git_options(words)` is now `command_options(words, GIT_VALUE_OPTIONS)`, and `option_values` reads any such pair list. `memory_cap_scope.systemd_run_slice` returns the last `--slice` value from that pair list, and `systemd_run_options_end` returns the index it gives. The option loop in `systemd_run_slice` is gone.
 
 ## Evidence
 

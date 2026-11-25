@@ -26,7 +26,7 @@ Prune tests: the `--check` verdict and reason match list mode for merged dirty, 
 
 ## Result
 
-Before, close kept its own copy of part of prune's rules and the copies differed: close removed a tree prune would keep for a stash, submodule, nested repo or lock.
+Before, close kept its own copy of part of prune's rules and the copies differed: for a stash, submodule, nested repo or lock, close shut the lane's workspace and then prune kept the tree, leaving a worktree with no workspace.
 
 ## Watch
 

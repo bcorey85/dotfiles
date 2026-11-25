@@ -35,7 +35,6 @@ from shell_command import (
     flags_before_value,
     git_c_directory,
     git_c_settings,
-    git_option_values,
     git_options,
     interpreter_family,
     is_git_word,
@@ -44,6 +43,7 @@ from shell_command import (
     is_redirect_word,
     is_short_cluster,
     names_code_runner,
+    option_values,
     options_before_separator,
     parse_raw_simple_commands,
     parse_simple_commands,
@@ -190,17 +190,12 @@ class CommandOptionsTest(unittest.TestCase):
         self.assertEqual(options, [("--user", None), ("--slice", "x"), ("--slice=y", None), ("-p", "X=$(cmd)")],
                          "each option pairs with its value; --slice=y keeps its value inside the word")
         self.assertEqual(words[index:], ["python3", "-m", "unittest"], "the program starts after the options")
-        self.assertEqual(list(git_option_values(options, "--slice")), ["x", "y"])
+        self.assertEqual(list(option_values(options, "--slice")), ["x", "y"])
 
     def test_a_value_option_with_no_word_after_it_has_no_value(self):
         options, index = command_options(["systemd-run", "--slice"], self.VALUE_OPTIONS)
         self.assertEqual(options, [("--slice", None)])
         self.assertEqual(index, 2)
-
-    def test_start_skips_leading_words(self):
-        options, index = command_options(["env", "x", "-p", "v", "prog"], self.VALUE_OPTIONS, start=2)
-        self.assertEqual(options, [("-p", "v")])
-        self.assertEqual(index, 4)
 
 
 class IsGitWordTest(unittest.TestCase):

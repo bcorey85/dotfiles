@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1190 changes
+1191 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [refactor simplify: report branch diff growth, add --diff bound](notes/2026-11-25-refactor-simplify-report-branch-diff-growth-add.md) [skill/refactor, script/refactor-flow] simplify-prep records the branch diff before the pass and log --mode simplify ends in a STOP naming the files that grew; --diff BASE bounds the complexity-reviewer to the lines the branch added.
 * [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.
 * [a merge that adds a script links it from ~/.local/bin](notes/2026-11-24-a-merge-that-adds-a-script-links-it-from-local-bin.md) [script/post-merge] A post-merge hook restows the scripts package when a merge in the stowed main checkout leaves a script unlinked.
 * [herdr-lane-resume --close closes a merged lane that has no lane file entry](notes/2026-11-24-herdr-lane-resume-close-closes-a-merged-lane-that.md) [script/herdr-lane-resume] herdr-lane-resume --close takes a lane name or a worktree path and closes a merged lane with no lane file entry, refusing an unmerged, detached, main-checkout, ambiguous or working lane.

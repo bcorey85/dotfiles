@@ -45,6 +45,12 @@ def load_script_module():
     return module
 
 
+def prune_log_inputs(folder):
+    load_script_module()  # puts the scripts folder on sys.path
+    import flow_common
+    flow_common.prune_log_inputs(folder)
+
+
 class RefactorFlowTest(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
@@ -569,18 +575,31 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual({"logo.png"}, module.binary_paths(numstat_text))
 
     def test_prune_skips_a_file_deleted_between_the_glob_and_the_stat(self):
-        module = load_script_module()
         for index in range(60):
             (self.log_input_dir / f"refactor-flow-{index:012x}.json").write_text("{}")
         vanished = self.log_input_dir / "refactor-flow-ffffffffffff.json"
         listed = [*self.log_input_dir.glob("refactor-flow-*.json"), vanished]
         with mock.patch.object(pathlib.Path, "glob", return_value=listed):
-            module.prune_log_inputs(self.log_input_dir)
+            prune_log_inputs(self.log_input_dir)
         kept = list(self.log_input_dir.glob("refactor-flow-*.json"))
         self.assertEqual(len(kept), 49)
 
+    def test_prune_deletes_the_branch_diff_record_of_a_pruned_log_input(self):
+        for index in range(60):
+            (self.log_input_dir / f"refactor-flow-{index:012x}.json").write_text("{}")
+            (self.log_input_dir / f"refactor-flow-{index:012x}.json.simplify-stat").write_text("{}")
+        prune_log_inputs(self.log_input_dir)
+        records = list(self.log_input_dir.glob("*.simplify-stat"))
+        self.assertEqual(len(records), 49)
+
+    def test_prune_deletes_a_branch_diff_record_whose_log_input_was_never_written(self):
+        for index in range(60):
+            (self.log_input_dir / f"refactor-flow-{index:012x}.json.simplify-stat").write_text("{}")
+        prune_log_inputs(self.log_input_dir)
+        records = list(self.log_input_dir.glob("*.simplify-stat"))
+        self.assertEqual(len(records), 49)
+
     def test_prune_neither_counts_nor_deletes_a_directory_or_symlink_with_a_matching_name(self):
-        module = load_script_module()
         directory = self.log_input_dir / "refactor-flow-aaaaaaaaaaaa.json"
         directory.mkdir()
         target = self.temp_root / "precious.json"
@@ -589,7 +608,7 @@ class RefactorFlowTest(unittest.TestCase):
         link.symlink_to(target)
         for index in range(60):
             (self.log_input_dir / f"refactor-flow-{index:012x}.json").write_text("{}")
-        module.prune_log_inputs(self.log_input_dir)
+        prune_log_inputs(self.log_input_dir)
         self.assertTrue(directory.is_dir())
         self.assertTrue(link.is_symlink())
         self.assertTrue(target.exists())
@@ -1285,6 +1304,176 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertIn("oracle and magnitude floor", done.stdout)
         self.assertIn("do NOT read the files", done.stdout)
 
+    # ------------------------------------------------ simplify: branch diff and --diff bound
+    def simplify_prep_input(self, *prep_args):
+        """Run simplify-prep and return (its result, the log input path it named)."""
+        done = self.flow("simplify-prep", *prep_args)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        named = re.search(r"write the log input to (\S+)", done.stdout)
+        self.assertIsNotNone(named, done.stdout)
+        return done, named.group(1)
+
+    def simplify_log(self, log_input, files, handoff=None):
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": [], "target": files}
+        if handoff:
+            payload["handoff"] = handoff
+        pathlib.Path(log_input).write_text(json.dumps(payload))
+        return self.flow("log", "--mode", "simplify", "--input", log_input)
+
+    def test_simplify_log_stops_naming_the_files_that_grew_when_the_fix_adds_lines(self):
+        self.branch_with({"mod/a.py": "x = 1\n", "mod/b.py": "y = 1\n"})
+        prep, log_input = self.simplify_prep_input("mod")
+        self.assertIn("Branch diff at prep", prep.stdout)
+        self.write("mod/a.py", "x = 1\nx2 = 2\nx3 = 3\n")
+        self.write("mod/c.py", "z = 1\n")
+        done = self.simplify_log(log_input, ["mod/a.py", "mod/b.py"])
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- at prep: 2 file(s) changed, 2 insertion(s)(+), 0 deletion(s)(-)", done.stdout)
+        self.assertIn("- at log:  3 file(s) changed, 5 insertion(s)(+), 0 deletion(s)(-)", done.stdout)
+        last = self.last_line(done)
+        self.assertTrue(last.startswith("STOP:"), done.stdout)
+        self.assertIn("2 to 5", last)
+        self.assertIn("mod/a.py (+2)", last)
+        self.assertIn("mod/c.py (+1)", last)
+        self.assertNotIn("mod/b.py", last)
+        self.assertEqual(len(self.finding_rows()), 1, "the rows are still written")
+
+    def test_simplify_log_stop_on_grown_diff_still_carries_the_review_step_when_a_handoff_is_given(self):
+        self.branch_with({"mod/a.py": "x = 1\n"})
+        _prep, log_input = self.simplify_prep_input("mod")
+        self.write("mod/a.py", "x = 1\nx2 = 2\nx3 = 3\n")
+        done = self.simplify_log(log_input, ["mod/a.py"], handoff=self.handoff_input())
+        self.assertEqual(done.returncode, 0, done.stderr)
+        last = self.last_line(done)
+        self.assertTrue(last.startswith("STOP:"), done.stdout)
+        self.assertIn("/review", last)
+
+    def test_simplify_log_passes_when_the_fix_deletes_lines(self):
+        self.branch_with({"mod/a.py": "x = 1\nx2 = 2\nx3 = 3\n", "mod/b.py": "y = 1\n"})
+        _prep, log_input = self.simplify_prep_input("mod")
+        self.write("mod/a.py", "x = 1\n")
+        done = self.simplify_log(log_input, ["mod/a.py", "mod/b.py"])
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- at prep: 2 file(s) changed, 4 insertion(s)(+)", done.stdout)
+        self.assertIn("- at log:  2 file(s) changed, 2 insertion(s)(+)", done.stdout)
+        self.assertTrue(self.last_line(done).startswith("NEXT:"), done.stdout)
+
+    def test_simplify_log_passes_when_the_fix_swaps_one_added_line_for_another(self):
+        self.branch_with({"mod/a.py": "x = 1\nx2 = 2\n"})
+        _prep, log_input = self.simplify_prep_input("mod")
+        self.write("mod/a.py", "x = 1\nx3 = 3\n")
+        done = self.simplify_log(log_input, ["mod/a.py"])
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- at prep: 1 file(s) changed, 2 insertion(s)(+)", done.stdout)
+        self.assertIn("- at log:  1 file(s) changed, 2 insertion(s)(+)", done.stdout)
+        self.assertTrue(self.last_line(done).startswith("NEXT:"), done.stdout)
+
+    def test_simplify_log_without_a_prep_record_says_it_did_not_compare(self):
+        self.write("mod/a.py", "x = 1\n")
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": [], "target": ["mod"]}
+        done = self.log("simplify", payload)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("no prep-time record for this input", done.stdout)
+        self.assertTrue(self.last_line(done).startswith("NEXT:"), done.stdout)
+
+    def test_simplify_log_refuses_a_branch_diff_record_it_cannot_read(self):
+        self.write("mod/a.py", "x = 1\n")
+        payload = {"finder": "complexity-reviewer", "lane": "code", "findings": [], "target": ["mod"]}
+        log_input = self.log_input(payload)
+        pathlib.Path(log_input + ".simplify-stat").write_text("{not json")
+        done = self.flow("log", "--mode", "simplify", "--input", log_input)
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("simplify-stat", done.stderr)
+        self.assertEqual(self.finding_rows(), [], "nothing is written")
+
+    def test_simplify_prep_diff_bounds_the_prompt_to_added_lines(self):
+        self.write("mod/a.py", "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\n")
+        self.write("mod/z.py", "z = 1\nz2 = 2\nz3 = 3\n")
+        self.commit_all("base")
+        self.git("checkout", "-q", "-b", "feature")
+        self.write("mod/a.py", "a = 1\nB = 2\nc = 3\nd = 4\nE = 5\nf = 6\n")
+        self.write("mod/z.py", "z = 1\nz3 = 3\n")
+        self.commit_all("edit")
+        done = self.flow("simplify-prep", "mod", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("diff-scoped", done.stdout)
+        self.assertNotIn("Pre-existing shape IS the target", done.stdout)
+        self.assertIn("- mod/a.py (added lines: 2, 5-6)", done.stdout)
+        self.assertNotIn("mod/z.py", done.stdout)
+        self.assertIn("added lines since `main`", done.stdout)
+
+    def test_simplify_prep_diff_lists_only_files_with_added_lines_and_whole_untracked_files(self):
+        self.write("mod/a.py", "a = 1\n")
+        self.commit_all("untouched by the branch")
+        self.branch_with({"mod/b.py": "b = 1\nb2 = 2\nb3 = 3\n", "mod/c.py": "c = 1\n"})
+        self.write("mod/d.py", "d = 1\n")
+        done = self.flow("simplify-prep", "mod", "--diff", "main")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("- mod/b.py (added lines: 1-3)", done.stdout)
+        self.assertIn("- mod/c.py (added lines: 1)", done.stdout)
+        self.assertIn("- mod/d.py (added lines: untracked, whole file)", done.stdout)
+        self.assertNotIn("- mod/a.py", done.stdout)
+
+    def test_simplify_prep_diff_stops_when_no_file_of_the_target_changed(self):
+        self.branch_with({"mod/a.py": "a = 1\n"})
+        self.write("quiet/q.py", "q = 1\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        done = self.flow("simplify-prep", "quiet", "--diff", "HEAD")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("STOP: `quiet` holds no file with a line added since `HEAD`", done.stdout)
+        self.assertNotIn("dispatch prompt", done.stdout)
+
+    def unrelated_commit(self):
+        """Commit on an orphan branch, then return to main: `lone` shares no history with HEAD."""
+        self.git("checkout", "-q", "--orphan", "lone")
+        self.write("lone.py", "x = 1\n")
+        self.commit_all("lone")
+        self.git("checkout", "-q", "main")
+
+    def test_simplify_prep_diff_names_its_own_flag_when_the_ref_shares_no_history(self):
+        self.write("mod/a.py", "a = 1\n")
+        self.unrelated_commit()
+        done = self.flow("simplify-prep", "mod", "--diff", "lone")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("lone and HEAD share no history", done.stderr)
+        self.assertNotIn("--base", done.stderr)
+
+    def test_simplify_prep_without_a_base_still_prints_the_prompt_and_records_no_diff(self):
+        self.write("mod/a.py", "a = 1\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Branch diff: not recorded", done.stdout)
+        self.assertIn("no base found", done.stdout)
+        self.assertEqual(list(self.log_input_dir.glob("*.simplify-stat")), [])
+        self.assertIn("dispatch prompt", done.stdout)
+
+    def test_simplify_prep_creates_a_missing_log_input_folder(self):
+        self.branch_with({"mod/a.py": "a = 1\n"})
+        inputs = self.temp_root / "new" / "inputs"
+        done = self.flow("simplify-prep", "mod", extra_env={"REFACTOR_LOG_INPUT_DIR": str(inputs)})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(list(inputs.glob("*.simplify-stat"))), 1, done.stdout)
+
+    def test_simplify_prep_diff_from_a_subfolder_matches_files_outside_the_cwd(self):
+        self.branch_with({"mod/a.py": "a = 1\n", "sub/s.py": "s = 1\n"})
+        done = self.flow("simplify-prep", "../mod", "--diff", "main", cwd=self.repo / "sub")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("added lines: 1", done.stdout)
+        self.assertNotIn("holds no file with a line added", done.stdout)
+
+    def test_simplify_prep_diff_refuses_a_ref_that_is_not_a_commit(self):
+        self.write("mod/a.py", "a = 1\n")
+        done = self.flow("simplify-prep", "mod", "--diff", "no-such-ref")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("--diff no-such-ref is not a commit", done.stderr)
+
+    def test_simplify_prep_without_diff_keeps_the_whole_module_bound(self):
+        self.branch_with({"mod/a.py": "a = 1\n"})
+        done = self.flow("simplify-prep", "mod")
+        self.assertIn("Pre-existing shape IS the target", done.stdout)
+        self.assertNotIn("added lines:", done.stdout)
+
     def test_simplify_prep_slices_along_module_folders_and_drops_test_index_and_style_files(self):
         for module, count in (("a", 12), ("b", 12), ("c", 6)):
             for index in range(count):
@@ -1357,8 +1546,8 @@ class RefactorFlowTest(unittest.TestCase):
 
     def test_simplify_plan_rejects_a_listed_file_outside_its_target(self):
         module = load_script_module()
-        with self.assertRaises(module.simplify_slices.SliceError) as caught:
-            module.simplify_slices.plan_slices([("mod", ["other/a.py"])], 25)
+        with self.assertRaises(module.simplify_flow.simplify_slices.SliceError) as caught:
+            module.simplify_flow.simplify_slices.plan_slices([("mod", ["other/a.py"])], 25)
         self.assertIn("other/a.py", str(caught.exception))
         self.assertIn("mod", str(caught.exception))
 
@@ -1366,7 +1555,7 @@ class RefactorFlowTest(unittest.TestCase):
         module = load_script_module()
         opts = mock.Mock(slice=1)
         with self.assertRaises(module.RefactorFlowError) as caught:
-            module._simplify_report(opts, [("mod", ["other/a.py"])])
+            module.simplify_flow.simplify_report(opts, [("mod", ["other/a.py"])], str(self.repo), None, "", {})
         self.assertIn("simplify-prep:", str(caught.exception))
         self.assertIn("other/a.py", str(caught.exception))
 

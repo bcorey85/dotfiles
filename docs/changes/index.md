@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1180 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1182 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Cap stop line names the orchestrating session](notes/2026-11-25-cap-stop-line-names-the-orchestrating-session.md).
+Latest change: 2026-11-25, [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md).
 
 ## Top gains
 

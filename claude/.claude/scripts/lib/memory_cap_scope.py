@@ -25,8 +25,8 @@ CAPPED_PREFIX_WORDS = ("systemd-run", "--user", "--scope", "--quiet", f"--slice=
                        f"MemoryMax={MEMORY_MAX}", "-p", "MemorySwapMax=0")
 CAPPED_PREFIX = " ".join(CAPPED_PREFIX_WORDS)
 # The front of the scope unit name a capped command runs in. systemd-run's own name is built from the pid it runs as,
-# and `--scope` and `sh -c` both exec in place: a command that starts with its own capped prefix would get the same
-# name and fail with "Unit ... was already loaded".
+# and `--scope` and `sh -c` both exec in place: a command that is a single capped-prefix command (no pipe or list, so
+# `sh -c` execs it) would get the same name and fail with "Unit ... was already loaded".
 CAPPED_UNIT_PREFIX = "capped"
 # The shell a capped command runs in: the one subprocess's shell=True uses.
 CAPPED_SHELL = "/bin/sh"

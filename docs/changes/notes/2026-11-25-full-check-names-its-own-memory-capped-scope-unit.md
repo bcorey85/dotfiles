@@ -26,7 +26,7 @@ systemd-run names a scope `run-p<pid>-i<pidfd inode>.scope`. `--scope` and `sh -
 
 ## Result
 
-The named test runs the capped prefix inside `shell_popen_args` on this machine and fails without the change. `test_check_output.py` covers the setup-fault read, and `CappedUnitNameTest` covers a fresh unit name on each call.
+The named test runs the capped prefix inside `shell_popen_args` on this machine and fails without the change. `test_check_output.py` covers the setup-fault read, and `CappedUnitNameTest` covers a fresh unit name on each call, placed before the shell so the command text stays the last word.
 
 ## Watch
 

@@ -259,17 +259,23 @@ class SliceUseTest(unittest.TestCase):
         self.assertIn(probe_slice, result.stdout)
 
 
-
 class CappedUnitNameTest(unittest.TestCase):
     def test_each_capped_argv_names_a_unit_of_its_own(self):
-        first = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", "true")
-        second = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", "true")
+        command = f"{memory_cap_scope.CAPPED_PREFIX} true"
+        first = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", command)
+        second = memory_cap_scope.capped_shell_argv("/usr/bin/systemd-run", command)
 
         first_units = [word for word in first if word.startswith("--unit=")]
         second_units = [word for word in second if word.startswith("--unit=")]
         self.assertEqual(1, len(first_units))
         self.assertEqual(1, len(second_units))
         self.assertNotEqual(first_units, second_units)
+
+        # The unit option is a systemd-run option: it sits before the shell, and the command text stays the last word.
+        shell_position = first.index(memory_cap_scope.CAPPED_SHELL)
+        self.assertLess(first.index(first_units[0]), shell_position)
+        self.assertEqual([memory_cap_scope.CAPPED_SHELL, "-c", command], first[shell_position:])
+        self.assertTrue(first_units[0].startswith(f"--unit={memory_cap_scope.CAPPED_UNIT_PREFIX}-"))
 
 
 @unittest.skipUnless(systemd_scope_works(), "systemd-run --user --scope is not available on this machine")

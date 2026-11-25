@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-746 fix notes
+747 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -35,8 +35,8 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/git-discipline-gate | 16 | 5 |
 | script/staged-claim-gate | 16 | 4 |
 | script/code-review-start | 14 | 7 |
+| script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 6 |
-| script/verify-log | 13 | 0 |
 | script/log-review-finding | 12 | 0 |
 | script/log-escape | 11 | 3 |
 | script/refactor-flow | 11 | 3 |

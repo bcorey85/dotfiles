@@ -2054,6 +2054,21 @@ class ReviewLogTest(VerifyBranchBase):
         self.assertEqual(self.log_review().returncode, 0)
         self.assertEqual(len(self.jsonl(self.findings)), 2)
 
+    def test_the_push_gate_credits_the_review_logged_on_the_tree_its_own_fix_commit_leaves(self):
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertTrue(reviewed_tree.record_reviewed("earlier-review", self.repo))
+            self.write("src/a.py", "print(2)\n")
+            self.commit_all("verify fix")
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_CHANGED)
+
+            done = self.log_review("[]")
+
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_REVIEWED)
+            self.write("src/a.py", "print(3)\n")
+            self.commit_all("unreviewed edit")
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_CHANGED)
+
     def test_runs_from_a_subdirectory(self):
         done = self.log_review(cwd=self.repo / "src")
         self.assertEqual(done.returncode, 0, done.stderr)

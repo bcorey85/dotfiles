@@ -34,4 +34,4 @@ A missing slice unit does not fail a run: systemd makes the slice on demand with
 
 ## Back-out
 
-Revert the commit and remove `~/.config/systemd/user/tests.slice`.
+Revert the branch's commits and remove `~/.config/systemd/user/tests.slice`.

@@ -252,6 +252,8 @@ class KillTest(unittest.TestCase):
 class SliceUseTest(unittest.TestCase):
     def test_a_missing_slice_unit_still_runs_the_capped_prefix_in_that_slice(self):
         probe_slice = f"probe{uuid.uuid4().hex}.slice"
+        self.addCleanup(subprocess.run, ["systemctl", "--user", "stop", probe_slice], capture_output=True,
+                        timeout=30)
         prefix = memory_cap_scope.CAPPED_PREFIX.replace(f"--slice={memory_cap_scope.TEST_SLICE}",
                                                          f"--slice={probe_slice}")
         self.assertIn(probe_slice, prefix)

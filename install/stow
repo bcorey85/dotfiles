@@ -72,9 +72,15 @@ if [ "$PLATFORM" = "arch" ]; then
 fi
 
 # macOS-only packages; systemd user units everywhere else
+if [ "$PLATFORM" = "mac" ] || [ "$(uname -s)" = "Darwin" ]; then
+    IS_MAC=1
+else
+    IS_MAC=0
+fi
 if [ "$PLATFORM" = "mac" ]; then
     PACKAGES="$PACKAGES aerospace"
-else
+fi
+if [ "$IS_MAC" = 0 ]; then
     # Other install scripts write units into ~/.config/systemd/user, so create the real
     # directories first: stow then links only tests.slice instead of folding the directory.
     mkdir -p ~/.config/systemd/user
@@ -105,7 +111,7 @@ fi
 print_success "Symlinks created"
 
 # The user manager reads tests.slice only after a reload; WSL without systemd has no manager to reload.
-if [ "$PLATFORM" != "mac" ] && command -v systemctl &>/dev/null; then
+if [ "$IS_MAC" = 0 ] && command -v systemctl &>/dev/null; then
     if systemctl --user daemon-reload 2>/dev/null; then
         print_success "systemd user units reloaded"
     else

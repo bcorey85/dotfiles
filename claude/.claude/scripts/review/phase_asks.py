@@ -5,8 +5,9 @@
     python3 phase_asks.py rule [--by user [{relay_usage}]]
         <accepted|rejected>:<one-line reason> ...
 
-An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md, or an ask that names a
-criterion of a plan whose criteria the user owns) is refused (exit 2, nothing logged)
+An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md, except the scripts
+CLAUDE.md, which the session rules, or an ask that names a criterion of a plan whose criteria the user owns)
+is refused (exit 2, nothing logged)
 unless the call carries `--by user`, which the session uses only to record the user's own ruling. The one
 exception: a session `rejected` on a user-only ask for a wanted change to such a file passes. A user
 ruling the user gave to another live session is recorded with
@@ -25,7 +26,7 @@ session, except a user-only ask's row under `--by user`, which is decided by the
 drops a repeat of it. A later review of the repo leaves the asks open: only a newer phase packet with finding asks
 replaces them.
 The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
-An accepted user-only approval ask puts its file back to the blob it held before the fix pass (a file the pass created
+An accepted approval ask puts its file back to the blob it held before the fix pass (a file the pass created
 is deleted; an ask with an unknown base, or a saved absent base for a file HEAD tracks, restores nothing) and
 prints one line per restored file.
 Run from the repo root. Exit 0 when done, 2 when the call is refused (nothing is logged then), 1 when the store is

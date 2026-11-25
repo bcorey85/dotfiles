@@ -58,6 +58,23 @@ class Host(review_loop_ruled.RuledFindings):
         self.init_ruled_state()
 
 
+class WantedTargetPathTest(unittest.TestCase):
+    def test_the_path_a_change_ends_with_is_read_back_and_anything_else_is_none(self):
+        target = approval_asks_store.wanted_edit_target
+        cases = [
+            (f"add the line. {target('a/CLAUDE.md')}", "a/CLAUDE.md", "a path ends the change"),
+            (f"add the line. {target('my dir/CLAUDE.md')}", "my dir/CLAUDE.md", "a folder with a space"),
+            (f"{target('old/CLAUDE.md')} then {target('new/CLAUDE.md')}", "new/CLAUDE.md", "the last target wins"),
+            ("add the line.", None, "no target"),
+            (f"{target('CLAUDE.md')} and more", None, "text after the target"),
+            (target(""), None, "an empty path"),
+            (None, None, "not a string"),
+        ]
+        for change, expected, message in cases:
+            with self.subTest(message):
+                self.assertEqual(approval_asks_store.wanted_path_of_change(change), expected)
+
+
 class ApprovalOnlyPathsTest(unittest.TestCase):
     def test_only_a_file_named_claude_md_needs_approval_whatever_its_folder(self):
         changed = ["a/b.py", "CLAUDE.md", "x/y/CLAUDE.md", "NOT_CLAUDE.md", "docs/CLAUDE.md.bak", "claude.md"]
@@ -129,6 +146,22 @@ class ApprovalRulingTest(unittest.TestCase):
         finding = parse_finding(accepted_approval_ask_text("CLAUDE.md"))
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 0)
 
+    def test_a_session_ruling_on_a_scripts_claude_md_wanted_change_ask_files_no_ask(self):
+        target = approval_asks_store.wanted_edit_target(SCRIPTS_CLAUDE_MD)
+        finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:3` [bug] Change: add the owner line. {target}")
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text], changed=SCRIPTS_CLAUDE_MD), 0)
+
+    def test_a_session_ruling_on_a_wanted_change_ask_for_another_approval_file_still_files_the_ask(self):
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+        finding = parse_finding(f"`CLAUDE.md:3` [bug] Change: reword the rule. {target}")
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
+
+    def test_a_session_ruling_with_a_note_on_a_scripts_claude_md_wanted_change_ask_files_no_ask(self):
+        target = approval_asks_store.wanted_edit_target(SCRIPTS_CLAUDE_MD)
+        ruled = accepted_approval_ask_text(SCRIPTS_CLAUDE_MD, "keep the edit and reword line 3", "session")
+        finding = parse_finding(f"{ruled} {target}")
+        self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text], changed=SCRIPTS_CLAUDE_MD), 0)
+
     def test_a_session_ruling_that_modifies_the_approval_ask_still_files_the_ask(self):
         finding = parse_finding(accepted_approval_ask_text("CLAUDE.md", "keep the edit and reword line 3", "session"))
         self.assertEqual(self.ask_filed(finding, session_ruled=[finding.text]), 1)
@@ -149,27 +182,48 @@ class ApprovalAskUserOnlyTest(unittest.TestCase):
 
         self.assertEqual([entry.get("user_only") for entry in entries], [True])
 
-    def test_only_a_wanted_change_ask_entry_carries_the_wanted_change_field(self):
-        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
-        wanted = parse_finding(f"`CLAUDE.md:3` [docs] A coder wants to edit it. Change: add the rule {target}")
-        revert_change = approval_asks_store.approval_change("CLAUDE.md")
-        revert = parse_finding(f"`CLAUDE.md:3` [docs] A coder edited it. Change: {revert_change}")
+    def filed_host(self, changed):
+        host = approval_host()
+        host.ask_for_approval_only_edits(changed, [])
+        return host
 
-        wanted_entry = review_loop_packet.ask_entry(wanted, "coder", None, user_only=True)
-        revert_entry = review_loop_packet.ask_entry(revert, "coder", None, user_only=True)
-        plain_entry = review_loop_packet.ask_entry(wanted, "code-reviewer", None)
+    def flags_of(self, host):
+        outcome = {"status": "converged", "asks": host.asks, "ask_gates": host.ask_gates,
+                   "user_only_asks": host.user_only_asks}
+        entries = review_loop_packet.ask_entries({**review_loop_packet.EMPTY_OUTCOME, **outcome})
+        return [(entry["file_line"], entry.get("user_only")) for entry in entries]
 
-        self.assertTrue(wanted_entry["wanted_change"])
-        self.assertNotIn("wanted_change", revert_entry)
-        self.assertNotIn("wanted_change", plain_entry)
+    def test_an_ask_for_only_the_scripts_claude_md_is_not_user_only_and_stays_saved(self):
+        host = self.filed_host([SCRIPTS_CLAUDE_MD])
 
-    def test_the_reader_trusts_the_field_and_not_the_change_text(self):
-        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+        self.assertEqual(self.flags_of(host), [(f"{SCRIPTS_CLAUDE_MD}:1", None)])
+        self.assertEqual(host.approval_ask_paths, [SCRIPTS_CLAUDE_MD])
 
-        self.assertTrue(review_asks.is_wanted_change_ask({"user_only": True, "wanted_change": True, "change": "x"}))
-        self.assertFalse(review_asks.is_wanted_change_ask({"user_only": True, "change": f"add it {target}"}))
-        self.assertFalse(review_asks.is_wanted_change_ask(
-            {"user_only": True, "wanted_change": True, "criteria": ["AC1"], "change": "x"}))
+    def test_the_scripts_claude_md_ask_is_saved_with_its_base_for_a_resumed_run(self):
+        host = self.filed_host([SCRIPTS_CLAUDE_MD])
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            (repo / "CLAUDE.md").write_text("rules\n")
+            init_repo(repo)
+            host.repo = str(repo)
+            host.save_approval_paths()
+            saved = approval_asks_store.read_approval_paths(str(repo))
+
+        self.assertEqual(saved, {SCRIPTS_CLAUDE_MD: host.approval_ask_bases[SCRIPTS_CLAUDE_MD]})
+
+    def test_an_ask_for_another_approval_file_beside_the_scripts_claude_md_stays_user_only(self):
+        flags = self.flags_of(self.filed_host([SCRIPTS_CLAUDE_MD, "CLAUDE.md"]))
+
+        self.assertEqual(flags, [(f"{SCRIPTS_CLAUDE_MD}:1", None), ("CLAUDE.md:1", True)])
+
+    def test_a_wanted_change_ask_for_the_scripts_claude_md_is_not_user_only(self):
+        finding = parse_finding(f"`{SCRIPTS_CLAUDE_MD}:4` [docs] stale owner — update it")
+        host = approval_host()
+        host.ask_for_wanted_changes([finding], [SCRIPTS_CLAUDE_MD])
+        self.assertEqual(len(host.asks), 1)
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual(len(host.wanted_entries), 1)
+        self.assertEqual(self.flags_of(host), [(f"{SCRIPTS_CLAUDE_MD}:4", None)])
 
     def test_a_reviewer_ask_has_no_flag(self):
         ask = parse_finding("`a/b.py:3` [bug] Should it log? Change: add a log line.")
@@ -443,6 +497,18 @@ class ApprovalAskResumeTest(unittest.TestCase):
         later.resume_approval_asks([])
         self.assertEqual(later.asks, [])
 
+    def test_a_ruled_unmarked_wanted_change_ask_leaves_the_saved_wanted_entry(self):
+        target = approval_asks_store.wanted_edit_target(SCRIPTS_CLAUDE_MD)
+        change = f"update the owner line {target}"
+        entry = approval_asks_store.wanted_entry(
+            f"`{SCRIPTS_CLAUDE_MD}:4` [docs] stale owner Change: {change}", change, SCRIPTS_CLAUDE_MD, 4, "")
+        approval_asks_store.write_saved_asks(self.repo, {}, [entry])
+        ruled = {"question": "q", "file_line": f"{SCRIPTS_CLAUDE_MD}:4", "change": change}
+
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [ruled])
+
+        self.assertEqual(approval_asks_store.read_saved_asks(self.repo), ({}, []))
+
     def test_the_saved_file_reads_an_older_flat_object_and_round_trips_paths_and_wanted_asks(self):
         saved = approval_asks_store.approval_paths_file(self.repo)
         saved.parent.mkdir(parents=True, exist_ok=True)
@@ -472,18 +538,28 @@ class ApprovalAskResumeTest(unittest.TestCase):
         self.assertIn("add rule A.", host.asks[0].text)
         self.assertIn("fix typo B.", host.asks[0].text)
 
-    def test_a_ruled_user_only_ask_leaves_the_saved_paths_whatever_the_outcome(self):
+    def test_a_ruled_approval_ask_leaves_the_saved_paths_whatever_the_outcome(self):
         self.edit_claude_md()
         self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
         ask = {"question": "q", "file_line": "CLAUDE.md:1", "user_only": True,
                "change": approval_asks_store.approval_change("CLAUDE.md")}
-        other = {"question": "q", "file_line": "a.py:1", "change": approval_asks_store.approval_change("CLAUDE.md")}
+        other = {"question": "q", "file_line": "a.py:1", "change": "rename the helper."}
 
         approval_asks_store.forget_ruled_approval_paths(self.repo, [other])
-        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an ask that is not user-only leaves the file alone")
+        self.assertEqual(self.saved_paths(), ["CLAUDE.md"], "an ask that is no approval ask leaves the file alone")
 
         approval_asks_store.forget_ruled_approval_paths(self.repo, [ask])
         self.assertEqual(self.saved_paths(), [], "a ruled user-only ask leaves the saved paths")
+
+    def test_a_ruled_approval_ask_without_the_user_only_mark_leaves_the_saved_paths(self):
+        self.edit_claude_md()
+        self.host().ask_for_approval_only_edits(["CLAUDE.md"], [])
+        unmarked_ask = {"question": "q", "file_line": "CLAUDE.md:1",
+                        "change": approval_asks_store.approval_change("CLAUDE.md")}
+
+        approval_asks_store.forget_ruled_approval_paths(self.repo, [unmarked_ask])
+
+        self.assertEqual(self.saved_paths(), [])
 
     def test_a_second_loop_after_an_accepted_user_ruling_files_no_ask_for_the_edit(self):
         self.edit_claude_md()

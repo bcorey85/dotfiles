@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1197 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1206 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md).
+Latest change: 2026-11-25, [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md).
 
 ## Top gains
 

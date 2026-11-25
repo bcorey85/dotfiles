@@ -1,6 +1,6 @@
 """review_loop_final_read.py: the reviewer reads of the last code changes no round read, as a mixin for `LoopRun`: the
-fix pass the round budget ended on, and the repair passes (gate, lint, class closure, stale prose) that ran after
-the last read. The host class holds out, dispatches, iter_count, last_pass, last_fix, last_review_round, open_fixes,
+fix pass the round budget ended on, and the repair passes (gate, lint, class closure, stale prose) that changed
+code. The host class holds out, dispatches, iter_count, last_pass, last_fix, last_review_round, open_fixes,
 scoped_tests, nits and round_two_fix_diff_path, and has next_round, run_reviewers, review_scope, stop, keep_open,
 tree_paths, take_review and post_cap_round."""
 import script_utils
@@ -15,8 +15,10 @@ LATE_REPAIR_CALLS = (GATE_FIX_PASS, LINT_FIX_PASS, CLASS_FIX_PASS, PROSE_FIX_PAS
 
 
 class FinalRead:
-    # The repair passes (call name, CoderResult) after the last reviewer read, in run order. A tuple, replaced on
-    # each change, so no instance shares it.
+    # Every gate, lint, class-closure or stale-prose repair pass (call name, CoderResult) that changed code since the
+    # last review round began, in run order, the lint repair after the last fix pass included: `walk` clears it at
+    # the start of each review round, which reads the files an earlier repair changed. `read_late_repairs` reads
+    # them once, on a converged run. A tuple, replaced on each change, so no instance shares it.
     late_repairs = ()
     # True once a read filed a fix; `apply_pending_cap` then stops the run.
     cap_pending = False
@@ -38,9 +40,9 @@ class FinalRead:
         self.read_diffs(FINAL_DIFF_NAME, self.last_fix.diffs, self.last_fix.changed, FINAL_READ)
 
     def read_late_repairs(self):
-        """One code-reviewer read of the diffs of the repair passes that ran after the last read. A run that stopped
-        reads nothing. When none of the changed files is in the review scope, no reviewer reads the passes, so the
-        packet names them in scoped_tests and the last fix stays unreviewed."""
+        """One code-reviewer read of the diffs of the repair passes that changed code, once, at the end of a converged
+        run. A run that stopped reads nothing. When none of the changed files is in the review scope, no reviewer
+        reads the passes, so the packet names them in scoped_tests and the last fix stays unreviewed."""
         if self.status != "converged" or not self.late_repairs:
             return
 

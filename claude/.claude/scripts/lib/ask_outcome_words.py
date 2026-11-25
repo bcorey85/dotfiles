@@ -3,8 +3,9 @@ callers from importing `phase_asks`."""
 import pathlib
 
 ACCEPTED = "accepted"
-# The ask entry key that marks an ask only the user accepts: a coder's edit to an approval-only file, or an ask that
-# names a user-owned criterion (it then also carries CRITERIA_KEY). A session may reject a wanted-change ask.
+# The ask entry key that marks an ask only the user accepts: a coder's edit to an approval-only file (except the
+# scripts CLAUDE.md, which the session rules), or an ask that names a user-owned criterion (it then also carries
+# CRITERIA_KEY). A session may reject a wanted-change ask.
 USER_ONLY_KEY = "user_only"
 # The ask entry key the loop sets on a wanted-change ask (a coder's edit to an approval-only file that the ask
 # proposes to keep). A reader never works this out from the change text.

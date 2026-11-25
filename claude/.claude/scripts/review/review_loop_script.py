@@ -586,7 +586,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         ruling (the pass is put back), and RulingCheckFaultError when the ruling check cannot judge the pass (the
         pass stays in the tree) or git cannot list the repo files or read their index entries before the pass (the
         pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
-        which are filed as user-only asks (a repeat of a rejected ask is dropped, not filed)."""
+        which are filed as approval asks (user-only unless `session_rules_approval_path`; a repeat of a rejected
+        ask is dropped, not filed)."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -684,10 +685,13 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.fixed += unseen(self.fixed, applied)
         self.drop_open([*applied, *reverted_findings])
         self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
+        repairs_before_lint = len(self.late_repairs)
+        self.lint_fixed_files(changed)
+        lint_repairs = [lint_result for _name, lint_result in self.late_repairs[repairs_before_lint:]]
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
-            self.plan_second_round(round_fix, result, skipped_findings)
+            self.plan_second_round(round_fix, result, skipped_findings, lint_repairs)
         # A toolkit .md file is code, so only a docs-class fix that changes only .md files skips the re-review.
         docs_only = (bool(applied) and all(item.finding_class == handback.DOCS_CLASS for item in applied)
                      and all(path.endswith(".md") for path in changed))
@@ -697,8 +701,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         """Sorts the round's findings the coder did not fix. Returns (skipped findings, findings still open); the
         skipped list leaves out the reverted findings. With a plan impact held, the coder's skips stay open;
         otherwise they join skipped_fp. A finding in `reverted_findings` (filed on an approval-only path that the
-        loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) is filed as a user-only ask (or dropped, as a repeat of
-        a rejected one) and is never recorded as fixed, skipped_fp or open, whatever the coder reported."""
+        loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) is filed as an approval ask, user-only unless
+        `session_rules_approval_path`, or dropped as a repeat of a rejected one, and is never recorded as fixed,
+        skipped_fp or open, whatever the coder reported."""
         skipped_entries = [{"item": round_findings[number - 1], "reason": line}
                            for number, line in sorted(skips.items())
                            if round_findings[number - 1] not in reverted_findings]
@@ -721,7 +726,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         return skipped_findings + unchanged, round_open_fixes
 
     def mark_round_fixes(self, round_open_fixes, skipped_findings):
-        """Sets `actioned` on each fix this round's reviewers filed: none while open or filed as a user-only ask,
+        """Sets `actioned` on each fix this round's reviewers filed: none while open or filed as an approval ask,
         skipped_fp, or fixed. A fix takes an item's status when it is the item or one of the parts the item merges."""
         for finding in self.round_fixes:
             if any(folded_into(item, finding["finding"]) for item in round_open_fixes):
@@ -731,14 +736,17 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             skipped = any(folded_into(item, finding["finding"]) for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
 
-    def plan_second_round(self, round_fix, result, skipped_findings):
-        """Writes the round's fix diff for the next reviewers and plans which of them run."""
+    def plan_second_round(self, round_fix, result, skipped_findings, lint_repairs=()):
+        """Writes the round's fix diff for the next reviewers and plans which of them run. The diff and the changed
+        files hold the lint repairs made after the fix pass, which `walk` then drops from `late_repairs`."""
+        diffs = [*result.diffs, *(diff for repair in lint_repairs for diff in repair.diffs)]
+        changed = [*result.changed, *(path for repair in lint_repairs for path in repair.changed)]
         fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
-        fix_diff_text = "\n\n".join(result.diffs)
+        fix_diff_text = "\n\n".join(diffs)
         fix_diff_file.write_text(fix_diff_text)
         self.round_two_fix_diff_path = str(fix_diff_file)
         self.docs_added = added_ranges(fix_diff_text)
-        self.dispatches = second_round_plan(round_fix, result.changed, skipped_findings, result.diffs)
+        self.dispatches = second_round_plan(round_fix, changed, skipped_findings, diffs)
 
     def fix_first(self, texts):
         """The fix coder on the caller's findings, before any reviewer. Their skips and fixes file no finding row."""
@@ -758,7 +766,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         report, _diffs, changed, reverted = self.repair(FIRST_FIX_PASS, findings)
         self.files_touched.update(changed)
         self.mark_standing_rewords_applied(changed)
-        # A finding on a reverted approval-only path is a user-only ask (or a dropped repeat of a rejected one),
+        # A finding on a reverted approval-only path is an approval ask (or a dropped repeat of a rejected one),
         # never fixed, skipped or open.
         reverted_findings = self.findings_on_reverted_paths(findings, reverted)
         if PLAN_CHANGE_YES.search(report.strip()):
@@ -791,12 +799,15 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.fixed += kept
         self.check_fixed += len(kept)
         self.prior_issues = prior_issue_entries(findings, skips, self.put_back_findings, reverted_findings)
-        self.stop_on_unapplied(unapplied)
+        if self.stop_on_unapplied(unapplied):
+            return
+        self.lint_fixed_files(changed)
 
     def mark_repaired(self, findings, changed, reverted, records_skip=True):
         """A repair's findings go to fixed when it changed a file, else to skipped_fp. A finding on one of the
-        `reverted` approval-only paths is filed as a user-only ask (or dropped, as a repeat of a rejected one) and is
-        never fixed, skipped or open. With
+        `reverted` approval-only paths is filed as an approval ask, user-only unless
+        `session_rules_approval_path`, or dropped as a repeat of a
+        rejected one, and is never fixed, skipped or open. With
         `records_skip` False, a repair that changed nothing records nothing: the findings are a gate's prompt, not a
         reviewer's claim. A finding whose file the sign-off put-back restored is not fixed and stays open. Returns
         the findings on reverted paths."""
@@ -956,6 +967,9 @@ def walk(loop, check_command, gate_commands):
     before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.count_fix_round()
+        # The diff of the last fix round holds the lint repairs made after its fix pass, so only a repair made after
+        # that diff is left for `read_late_repairs`.
+        loop.late_repairs = ()
         round_fix, round_nits = loop.review_round()
         if not loop.fix_round(round_fix, round_nits):
             break

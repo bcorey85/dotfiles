@@ -40,3 +40,6 @@ passes a set share of the branch. Scripts live in `claude/.claude/scripts/`; tes
 - `bash tests/lint.sh claude/.claude/scripts/code/concentration.py tests/scripts/test_concentration.py` passes.
 
 ## Plan Deviations
+
+- The queue item's "flags any part over a set share" flags the docs and tests parts only: the code part is the work
+  the ticket asks for. Ruled by the diff-growth lane (criteria owner `session`), 2026-11-25.

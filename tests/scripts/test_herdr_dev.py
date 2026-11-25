@@ -128,7 +128,8 @@ esac""")
         self.assertFalse([call for call in calls if "hunk-review-pane" in call], calls)
         self.assertNotIn("pane focus --direction right --pane p1", calls)
         self.assertIn("tab focus t1", calls)
-        self.assertEqual(result.stdout.splitlines(), ["p1", "claude --resume s1 --fork-session --name my-lane"])
+        expected_command = f"{NO_CRON} claude --resume s1 --fork-session --name my-lane"
+        self.assertEqual(result.stdout.splitlines(), ["p1", expected_command])
 
     def test_headless_under_tuios_does_not_resize_a_missing_editor_pane(self):
         result = self.run_dev("--headless", str(self.worktree), "w1", "s1", extra_env={"TUIOS_SOCKET": "/tmp/x"})
@@ -159,7 +160,7 @@ esac""")
                 result = self.run_dev(*flags, str(self.worktree), "w1", "s1")
 
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(self.typed_into_claude_pane(), ["claude --resume s1 --name my-lane"])
+                self.assertEqual(self.typed_into_claude_pane(), [f"{NO_CRON} claude --resume s1 --name my-lane"])
                 self.assertFalse([call for call in self.layout_calls() if "hunk-review-pane" in call])
 
 

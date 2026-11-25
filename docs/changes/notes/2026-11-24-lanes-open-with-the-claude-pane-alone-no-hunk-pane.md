@@ -33,9 +33,10 @@ lanes' suites from starting under the 8 GB memory check. Nobody reads the hunk p
 
 ## Result
 
-`tests/scripts/test_herdr_dev.py` adds 4 tests: the default layout splits the claude pane and starts
+`tests/scripts/test_herdr_dev.py` adds 6 tests: the default layout splits the claude pane and starts
 `hunk-review-pane`; `--headless` makes no split and no hunk pane and prints the same two lines; `--headless` keeps the
-console tab; `--headless` and `--resume` combine in either order. The headless tests fail against the base script,
+console tab; `--headless` and `--resume` combine in either order; under tuios, `--headless` makes no resize call, and
+the default layout still narrows the claude pane to 40%. The headless tests fail against the base script,
 which reads `--headless` as the directory. `tests/scripts/test_herdr_worktree.py` checks that `--fork` passes
 `--headless` and that a run without `--fork` does not. The lane-resume and watcher tests expect the new argument.
 

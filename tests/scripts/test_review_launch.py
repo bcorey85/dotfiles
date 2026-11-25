@@ -5,7 +5,6 @@ Set REVIEW_FIX_SCRIPT to run against another copy of review_fix.py."""
 import argparse
 import contextlib
 import io
-import itertools
 import json
 import os
 import pathlib
@@ -13,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -628,27 +628,76 @@ class StopLoopTest(unittest.TestCase):
     def write_record(self, relaunch_args):
         self.launch_file.write_text(json.dumps({"packet_args": [], "relaunch_args": relaunch_args}) + "\n")
 
-    def stop(self, running_answers, wait_seconds=5):
+    def stop(self, wait_seconds=5):
         with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
+                mock.patch.object(review_launch.process_group, "group_id", return_value=4242), \
                 mock.patch.object(review_launch.process_group, "terminate_group", return_value=True), \
-                mock.patch.object(review_launch.process_group, "pid_is_alive", side_effect=running_answers), \
-                mock.patch.object(review_launch, "STOP_WAIT_SECONDS", wait_seconds), \
-                mock.patch.object(review_launch, "STOP_POLL_SECONDS", 0.01), \
+                mock.patch.object(review_launch.process_group, "group_is_alive", return_value=True), \
+                mock.patch.object(review_launch.process_group, "STOP_WAIT_SECONDS", wait_seconds), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
             review_launch.stop_loop(self.loop_dir, 4242, self.repo)
         return stderr.getvalue()
 
-    def test_a_stopped_loop_is_waited_for_until_it_exits(self):
+    def test_stop_waits_for_a_child_that_outlives_the_leader(self):
+        # The leader dies on SIGTERM at once; its child ignores SIGTERM for a moment, then exits.
+        # The child prints its pid only once SIGTERM is ignored, so the signal cannot arrive before that.
+        child_code = ("import os, signal, time\n"
+                      "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                      "print(os.getpid(), flush=True)\n"
+                      "time.sleep(1.0)\n")
+        leader_code = ("import subprocess, sys, time\n"
+                       f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+                       "time.sleep(60)\n")
+        leader = subprocess.Popen([sys.executable, "-c", leader_code], stdout=subprocess.PIPE, text=True,
+                                  start_new_session=True)
+        child_pid = int(leader.stdout.readline())
+        self.addCleanup(self.kill_if_running, child_pid)
+        group = process_group.group_id(leader.pid)
+        # Reap the leader as soon as it dies: a zombie leader would keep the group alive.
+        reaper = threading.Thread(target=leader.wait)
+        reaper.start()
+        self.addCleanup(reaper.join)
+        # Registered after the join so it runs first: a failed stop_loop must not leave the join waiting 60 s.
+        self.addCleanup(leader.kill)
         self.write_record(["--repo", str(self.repo)])
-        running = mock.Mock(side_effect=[True, True, False])
-        errors = self.stop(running)
-        self.assertEqual(running.call_count, 3)
-        self.assertEqual(errors, "")
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
+            review_launch.stop_loop(self.loop_dir, leader.pid, self.repo)
+
+        self.assertFalse(process_group.group_is_alive(group), "stop_loop returned while the child still lived")
+        self.assertEqual(stderr.getvalue(), "")
+
+    @staticmethod
+    def kill_if_running(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
+    def stop_with(self, group, signalled):
+        with mock.patch.object(review_launch.process_group, "group_id", return_value=group), \
+                mock.patch.object(review_launch.process_group, "terminate_group", return_value=signalled), \
+                mock.patch.object(review_launch.process_group, "wait_until_group_gone") as waited, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            review_launch.stop_loop(self.loop_dir, 4242, self.repo)
+        return stdout.getvalue(), stderr.getvalue(), waited
+
+    def test_a_leader_with_no_group_prints_nothing_and_does_not_wait(self):
+        stdout, stderr, waited = self.stop_with(group=None, signalled=True)
+        self.assertEqual((stdout, stderr), ("", ""))
+        waited.assert_not_called()
+
+    def test_a_leader_that_was_not_signalled_prints_nothing_and_does_not_wait(self):
+        stdout, stderr, waited = self.stop_with(group=4242, signalled=False)
+        self.assertEqual((stdout, stderr), ("", ""))
+        waited.assert_not_called()
 
     def test_a_loop_that_outlives_the_wait_is_named_on_stderr(self):
         self.write_record(["--repo", str(self.repo)])
-        errors = self.stop(itertools.repeat(True), wait_seconds=0.1)
+        errors = self.stop(wait_seconds=0.1)
         self.assertIn("pid 4242", errors)
+        self.assertIn("is still running after", errors)
 
     def test_a_record_with_no_repo_is_a_launch_error_that_stop_reports(self):
         self.write_record(["--lane", "none"])

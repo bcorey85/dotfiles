@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-763 fix notes
+764 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -45,7 +45,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
-| script/review-launch | 9 | 4 |
+| script/review-launch | 10 | 5 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/inline-interpreter-hint | 8 | 4 |
 | script/phase-asks | 8 | 3 |
@@ -72,6 +72,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
+| script/fork-children | 4 | 4 |
 | script/herdr-dev | 4 | 2 |
 | script/herdr-lane-resume | 4 | 4 |
 | script/herdr-worktree-watch | 4 | 3 |
@@ -90,7 +91,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
-| script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
 | script/herdr-worktree-prune | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
@@ -186,6 +186,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |
+| script/process-group | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 0 |

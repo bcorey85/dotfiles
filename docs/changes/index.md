@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1192 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Lane close refuses exactly when prune's verdict for the tree is keep](notes/2026-11-25-lane-close-refuses-exactly-when-prune-s-verdict.md).
+Latest change: 2026-11-25, [A stopped review loop is waited on through its whole process group](notes/2026-11-25-a-stopped-review-loop-is-waited-on-through-its.md).
 
 ## Top gains
 

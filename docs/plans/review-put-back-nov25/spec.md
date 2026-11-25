@@ -12,7 +12,7 @@ Five fixes to the review loop, one per phase. Finding paths may hold `$` and `+`
 
 - [x] Phase 1: Paths that hold `$` (risk: low)
 - [x] Phase 2: Match a removed comment by content (risk: medium)
-- [ ] Phase 3: Hold a plan impact that cites a user ruling (risk: medium)
+- [x] Phase 3: Hold a plan impact that cites a user ruling (risk: medium)
 - [ ] Phase 4: Every round finding reaches a coder or an ask; a used round is refused (risk: high)
 - [ ] Phase 5: Scope put-back keeps earlier fixes and needed files (risk: high)
 

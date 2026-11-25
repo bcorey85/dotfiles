@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1192 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Comment put-back matches a finding by quoted text](notes/2026-11-25-comment-put-back-matches-a-finding-by-quoted-text.md).
+Latest change: 2026-11-25, [Hold a plan impact that cites a user ruling](notes/2026-11-25-hold-a-plan-impact-that-cites-a-user-ruling.md).
 
 ## Top gains
 

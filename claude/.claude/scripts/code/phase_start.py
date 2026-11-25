@@ -19,8 +19,10 @@ first seen at a later phase start). A missing record, or one for another HEAD, i
 HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept, with the same additions as a same-HEAD start (later
-dirty files, handed-off files as own), and its head is printed as the phase base. With no record, or a head that is
-not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
+dirty files, handed-off files as own), and its head is printed as the phase base. When a commit since that head ticked
+a phase in the `## Phase Status` of a `.md` file (done at HEAD, not done at the kept head), the phase was finished: a
+stderr line names the file and the phase number, a new record is written at HEAD, and HEAD is printed. With no record,
+or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
 <run folder>/resume.json (resume_review_gate.record_resume), which the code-fork's stop.md Write reads; a start
 without `--resume` removes it.
 `--new-run` first checks the lane file of the worktree it runs in (lib/lane_entries.py): when the lane's `reports_to`
@@ -50,6 +52,7 @@ import code_wait
 import fix_coder_written
 import handoff_files
 import lane_entries
+import plan_format
 import resume_review_gate
 import script_utils
 import session_registry
@@ -191,14 +194,48 @@ def move_aside(folder, name, previous_name):
         print(f"phase_start: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
 
 
+def done_phase_numbers(repo, commit, markdown_path):
+    """The numbers of the phases marked done in the `## Phase Status` of `markdown_path` at `commit`. A file missing
+    at that commit has no phases. A line that does not parse is skipped."""
+    text = script_utils.git_output(repo, "show", f"{commit}:{markdown_path}")
+    if text is None:
+        return set()
+    entries, _ = plan_format.phase_status_entries(text.splitlines(), lambda title: None)
+    return {entry["number"] for entry in entries if entry["done"]}
+
+
+def ticked_since(repo, kept_head):
+    """(path, phase number) of the first phase that is done at HEAD and was not done at `kept_head`, in a `.md` file
+    changed between them; None when no phase was ticked."""
+    changed = script_utils.git_output(repo, "diff", "--name-only", kept_head, "HEAD", "--", "*.md")
+    if not changed:
+        return None
+
+    for markdown_path in changed.splitlines():
+        done_before = done_phase_numbers(repo, kept_head, markdown_path)
+        done_now = done_phase_numbers(repo, "HEAD", markdown_path)
+        newly_done = sorted(done_now - done_before)
+        if newly_done:
+            return markdown_path, newly_done[0]
+    return None
+
+
 def resume_base(repo, kept):
-    """The phase base of a resume: the kept record's head when it is an ancestor of HEAD, else None."""
+    """The phase base of a resume: the kept record's head when it is an ancestor of HEAD and no phase was ticked since;
+    else None."""
     if kept is None:
         print("phase_start: no start record to resume from; the phase base is HEAD.", file=sys.stderr)
         return None
     if not script_utils.is_ancestor(repo, kept["head"], "HEAD"):
         print(f"phase_start: the start record's head {kept['head']} is not an ancestor of HEAD; the phase base is "
               "HEAD.", file=sys.stderr)
+        return None
+
+    ticked = ticked_since(repo, kept["head"])
+    if ticked is not None:
+        markdown_path, number = ticked
+        print(f"phase_start: phase {number} of {markdown_path} was ticked since the start record; starting a new "
+              "record at HEAD", file=sys.stderr)
         return None
     return kept["head"]
 

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-762 fix notes
+763 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -58,13 +58,13 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
+| script/phase-start | 6 | 4 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
-| script/phase-start | 5 | 3 |
 | script/plan-check | 5 | 5 |
 | script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |

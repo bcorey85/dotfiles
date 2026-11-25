@@ -1647,10 +1647,13 @@ def plan_author_criteria_missing(plan_path):
 def plan_criteria_owner(plan_path):
     """`criteria_owner` of the ticket beside the plan. With no ticket beside it, `ticket: None` and the owner is `plan`
     when the plan is an existing file named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author
-    wrote the criteria), else `user`. A plan folder stands for the plan file inside it."""
-    plan_path = plan_file_of(plan_path)
-    ticket_path = ticket_beside(plan_path)
+    wrote the criteria), else `user`. A plan folder stands for the plan file inside it, and its ticket is read even
+    when no plan file exists yet; only a folder with neither raises PlanFormatError."""
+    plan_path = pathlib.Path(plan_path)
+    ticket_anchor = plan_path / SPEC_FILE_NAME if plan_path.is_dir() else plan_path
+    ticket_path = ticket_beside(ticket_anchor)
     if ticket_path is None:
+        plan_path = plan_file_of(plan_path)
         author_wrote = not plan_author_criteria_missing(plan_path)
         owner = CRITERIA_OWNER_PLAN if author_wrote else CRITERIA_OWNER_USER
         return owner_record(None, owner, None)

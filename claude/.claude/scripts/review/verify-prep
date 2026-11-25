@@ -96,9 +96,6 @@ def against_original_cwd(value, original_cwd, must_exist):
 
 PLAN_ONLY_MODE = "plan-only"
 FOLDER_MODES = ("dir", PLAN_ONLY_MODE)
-PLAN_FILE_NAMES = plan_format.PLAN_FILE_NAMES
-PLAN_NAMES_TEXT = plan_format.PLAN_NAMES_TEXT
-
 
 def folder_of_plan_file(target, top):
     """The plan folder when `target` is an existing file named `spec.md` or `plan.md`; else `target` unchanged."""
@@ -107,17 +104,12 @@ def folder_of_plan_file(target, top):
     candidate = pathlib.Path(target)
     if not candidate.is_absolute():
         candidate = top / candidate
-    if candidate.is_file() and candidate.name in PLAN_FILE_NAMES:
+    if candidate.is_file() and candidate.name in plan_format.PLAN_FILE_NAMES:
         return str(candidate.parent)
     return target
 
 
-def find_plan_in_dir(task_dir):
-    """`plan_format.find_plan_in_dir`, with its several-plans failure as a VerifyError."""
-    try:
-        return plan_format.find_plan_in_dir(task_dir)
-    except plan_format.PlanFormatError as error:
-        raise vc.VerifyError(str(error)) from error
+find_plan_in_dir = vc.raising_verify_error(plan_format.find_plan_in_dir)
 
 
 def resolve_inputs(target, ticket_file, top):
@@ -159,7 +151,7 @@ def resolve_inputs(target, ticket_file, top):
         return plan_only_inputs(task_dir, output)
     spec = find_plan_in_dir(task_dir)
     if spec is None:
-        return "dir", ticket, None, f"{task_dir.name} has no {PLAN_NAMES_TEXT}: ticket-only (plan: none)"
+        return "dir", ticket, None, f"{task_dir.name} has no {plan_format.PLAN_NAMES_TEXT}: ticket-only (plan: none)"
     return "dir", ticket, spec, f"task dir {output}"
 
 

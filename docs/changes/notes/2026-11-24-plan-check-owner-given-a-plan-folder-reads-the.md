@@ -18,9 +18,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`plan_criteria_owner` resolves a folder argument to the plan file inside it (`spec.md`, `plan.md`, else one
-`*-05-plan.md`) before it looks for the ticket. A folder with no plan file exits 1 and names those forms, where it
-printed owner `user` before. The folder lookup moved from `verify-prep` into `lib/plan_format.py`, so both read one
+`plan_criteria_owner` reads the ticket inside a folder argument first, even before a plan file exists. Only a
+folder with no ticket resolves the plan file inside it (`spec.md`, `plan.md`, else one `*-05-plan.md`); a folder
+with neither a ticket nor a plan file exits 1 and names those forms, where it printed owner `user` before. The folder lookup moved from `verify-prep` into `lib/plan_format.py`, so both read one
 resolver.
 
 ## Evidence
@@ -31,7 +31,8 @@ narrowing question to its orchestrator as a user ruling.
 ## Result
 
 The folder test failed before (`'user' != 'session'`) and passes after; the no-plan-file test failed before
-(`0 != 1`) and passes after. test_plan_check, test_plan_format and the two verify-prep test files: 238 tests, 0 failed.
+(`0 != 1`) and passes after; the ticket-and-no-plan-file test failed before (exit 1, "no plan file") and passes
+after, printing `session`. test_plan_check, test_plan_format and the two verify-prep test files: 239 tests, 0 failed.
 
 ## Watch
 

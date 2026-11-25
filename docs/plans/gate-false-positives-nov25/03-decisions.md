@@ -1,0 +1,10 @@
+# Design Decisions — gate-false-positives-nov25
+
+> Status: 6/6 resolved
+
+- [x] D1. Item 1: a first-person announcement passes only when the turn launched background work (`user_prompts.turn_launched_background`) and the sentence names a report step on that work (bring back, report, rank, summarize, collect, compile, relay, combine). Any other first-person step still blocks, so the existing "I'll push them" case keeps blocking. Fix lands in `gates/announced_step.py`, the module `staged_claim_gate.py` imports. By the gates lane session, 2026-11-25.
+- [x] D2. Item 2: fenced code blocks (``` or ~~~) and blockquote lines (`>`) are drafts; `lib/message_text.py` gains `without_draft_blocks`, the owner of message text spans, and `announced_step` reads the message through it. By the gates lane session, 2026-11-25.
+- [x] D3. Item 3: a new `OUTWARD_STEP` branch: add, link, edit, comment, label, assign or transition (with suffixes), then at most two words, then Jira, Linear, GitHub, GitLab, or a ticket, issue, PR, MR, pull or merge request; the existing file-name and GitHub-product guards apply. By the gates lane session, 2026-11-25.
+- [x] D4. Item 4: `allow` skips the permission prompt (Claude Code hooks docs, PreToolUse decision control), so the gate allows with `updatedInput` only when the whole command is one step and that step is the hanging rg call; the new command is the original text with ` .` appended. A compound command keeps the deny with the fixed command. By the gates lane session, 2026-11-25.
+- [x] D5. Item 5: the refusal names `/review base=<hash>`, where the hash is the base of the newest entry in the repo's shared reviewed record; `lib/reviewed_tree.py` gains a read of that base next to `push_review_state` (its owner), with no change to `push_review_state`'s result. With no readable base the old text stands. By the gates lane session, 2026-11-25.
+- [x] D6. Item 6: `memory_cap_scope.background_deny_text()` names the cap prefix only when `cap_available()`, else run_in_background alone; `inline_interpreter_hint.py` uses it. By the gates lane session, 2026-11-25.

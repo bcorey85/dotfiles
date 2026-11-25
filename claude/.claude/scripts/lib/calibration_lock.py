@@ -43,6 +43,8 @@ MUTATION_RUN_TIMEOUT_SECONDS = 60 * 60
 LOCK_WAIT_SECONDS = 5
 MUTATION_KIND = "mutation-test"
 MUTATION_WRITER = "mutation-tester"
+CALIBRATE_WRITER = "calibrate"
+CALIBRATE_KIND = "calibrate"
 PRE_HASH_LENGTH = 16
 
 
@@ -142,7 +144,7 @@ def lock_is_live(stamp, owner_pid, now, writer="", session_pid=""):
     written = parse_stamp(stamp)
     if written is None or now - written > MUTATION_RUN_TIMEOUT_SECONDS:
         return False
-    if writer == "calibrate" and session_pid != "" and owner_pid == session_pid:
+    if writer == CALIBRATE_WRITER and session_pid != "" and owner_pid == session_pid:
         return False
     if owner_pid == "":
         return True
@@ -200,7 +202,7 @@ def read_lock_view(text):
         backup=lock_field(text, "backup_path", "?", "?"),
         seed_class=lock_field(text, "class", "?", "?"),
         stamp=lock_field(text, "ts", "?", "?"),
-        kind=lock_field(text, "kind", "calibrate", "calibrate"),
+        kind=lock_field(text, "kind", CALIBRATE_KIND, CALIBRATE_KIND),
         worktree=worktree,
         owner_pid=lock_field(text, "owner_pid", "", ""),
         writer=lock_field(text, "writer", "", ""),

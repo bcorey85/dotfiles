@@ -17,7 +17,7 @@ unmeasured: ""
 
 ## Change
 
-`calibration_lock.write_lock` writes the lock in one atomic step with the same fields `mutation_lock.lock_fields` wrote; `mutation_lock.py` calls it and drops its `json` import. `LockView` gains `raw_file`, `pre_hash` and `run_id`, read with the module's defaults, so `read_lock_view` stays the one place that builds a view and `OwnLock` no longer re-reads the raw lock. `positive_int` moves to `script_utils` for any argparse caller. The docstrings of `calibration_lock_path`, `legacy_lock_path` and `backups_folder` name the folders they read.
+`calibration_lock.write_lock` writes the lock in one atomic step with the same fields `mutation_lock.lock_fields` wrote; `mutation_lock.py` calls it and drops its `json` import. `LockView` gains `raw_file`, `pre_hash` and `run_id`, read with the module's defaults, so `read_lock_view` stays the one place that builds a view and `OwnLock` no longer re-reads the raw lock. `positive_int` moves to `script_utils` for any argparse caller. The docstrings of `calibration_lock_path`, `legacy_lock_path` and `backups_folder` name the folders they read. The `STOP_LIVE_LOCK` and `STOP_LOCK_BUSY` texts now end with "report this to the caller" and "hand this to the caller" to match the mutation-tester prompt.
 
 ## Evidence
 
@@ -29,7 +29,7 @@ The branch-exit review's smell reviewer found the lock format written in two mod
 
 ## Watch
 
-None: no behavior changed. A `check`, `lock` or `restore` run whose output differs from the pre-change text is the regression to look for.
+A caller that waited or retried on the `STOP_LIVE_LOCK` or `STOP_LOCK_BUSY` lines now reports instead. Otherwise no behavior changed. A `check`, `lock` or `restore` run whose output differs from the pre-change text is the regression to look for.
 
 ## Back-out
 

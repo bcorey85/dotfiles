@@ -79,7 +79,7 @@ Run the same test command as the baseline. Then classify, reading these in order
 
 This runs only after `lock` printed `NEXT: apply the mutation`, whether the suite passed, failed, errored, hung, or you decided to abort at Step 2. When `lock` stopped, there is nothing to restore.
 
-**Restore by copying the backup file. Never `git checkout`**. **Never `Write`, and never `Edit`.**
+**Restore by copying the backup file. Never `git checkout`.** **Never `Write`, and never `Edit`.**
 The restore is this one call and nothing else:
 
 ```bash

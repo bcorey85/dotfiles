@@ -8,9 +8,10 @@ code_wait.py review call, or a stop.md write. A tick coder dispatched after the 
 first coder dispatch, so it needs no second review.
 
 Fails open: a transcript that is missing, cannot be read, or belongs to another agent type is never judged, and a torn
-line is skipped. Two callers, each of which checks its own event name:
-- gates/staged_claim_gate.py, on SubagentStop (the final text reply of a fork);
-- code/coder_gate.py `hook`, on PreToolUse SubagentHandback (a fork that ends through the hand-back).
+line is skipped. Two callers; this module never checks the event name:
+- gates/staged_claim_gate.py checks for SubagentStop (the final text reply of a fork) before it calls;
+- code/coder_gate.py `hook` checks no event name: its settings.json registration on the SubagentHandback matcher
+  limits it to PreToolUse SubagentHandback (a fork that ends through the hand-back).
 
 Fields each event supplies: PreToolUse SubagentHandback `agent_type` and `agent_transcript_path` are `exercised`
 (test_open_child_gate.py, test_coder_gate.py). The SubagentStop field names come from no captured event; when the event
@@ -44,7 +45,7 @@ REASON = ("This /code run dispatched a coder for a phase but ran no review of it
           "run step 5 of the /code skill now: run "
           f"`python3 {CODE_SCRIPTS_DIR / REVIEW_START_SCRIPT}` as that step says, then "
           f"`python3 {CODE_SCRIPTS_DIR / WAIT_SCRIPT} {WAIT_REVIEW_VERB}`. If the run must stop before its review, "
-          "write the stop to `<run folder>/stop.md` first.")
+          f"write the stop to `<run folder>/{STOP_FILE}` first.")
 
 
 class Segment(NamedTuple):

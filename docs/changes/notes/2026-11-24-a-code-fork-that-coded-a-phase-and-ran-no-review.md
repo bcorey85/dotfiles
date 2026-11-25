@@ -6,7 +6,7 @@ description: "A /code fork that dispatched a coder for a phase and ended with no
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T14:10:39-06:00"}
 seq: 4
 kind: "fix"
-components: ["script/coder-gate", "script/staged-claim-gate", "script/shell-command-words", "script/fork-children", "script/announced-step", "script/script-utils"]
+components: ["script/coder-gate", "script/staged-claim-gate", "script/shell-command", "script/shell-command-words", "script/fork-children", "script/announced-step", "script/script-utils", "script/fork-review", "script/user-prompts", "script/human-turn-lookup", "script/loop-transcript"]
 evidence: ["real transcript"]
 watches: []
 test: "tests/scripts/test_fork_review_gate.py::ForkReviewGateTests::test_incident_fork_with_a_coder_and_no_review_is_sent_back"

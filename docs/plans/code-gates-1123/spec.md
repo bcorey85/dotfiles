@@ -60,6 +60,13 @@ Item 3 of the ticket (inline python heredoc) left this plan per ledger block 5. 
   
   PLAN-IMPACT: /home/brandon/dotfiles-code-gates-nov23/docs/plans/code-gates-1123/acceptance-criteria.md:9 — AC1 still says the check fails a hand-back "when the run folder holds no review packet for the phase". The code reads only the fork's transcript. The recorded resolution, "AC1 wording kept as is", was ruled by the lane session. `plan_check.py owner` reports owner `user`, and under the global AC rule only the user's recorded sign-off can override an AC the user wrote. So the session's ruling does not settle it. As written, AC1 is not met by the code. Either the user signs off on rewording AC1 to the transcript-based check (recorded in 03-decisions.md), or the code must meet AC1 as written, which conflicts with AC6. This needs the user.
 
+- 2026-11-24: Keep plan as written. Ruled by the session, not the user at 2026-11-24 18:32.
+
+  The ruling: Keep plan as written: AC1 stays worded as is and is met; the transcript records whether review ran, and the stop.md write is the recorded reason the step allows. Ruled by: dotfiles-code-gates-nov23, 2026-11-24.
+
+  The disagreement:
+  PLAN-IMPACT: /home/brandon/dotfiles-code-gates-nov23/docs/plans/code-gates-1123/spec.md:46-52 — the ruling "Keep plan as written" rests on "plan_check owner is session". That premise is false: `python3 claude/.claude/scripts/code/plan_check.py owner docs/plans/code-gates-1123` returns `{"owner": "user", ...}`. AC1 (acceptance-criteria.md:9) still asks for a check that reads whether "the run folder holds no review packet for the phase". The code reads only the fork's transcript and never the run folder (fork_review.py:3-4; Decision 2). 03-decisions.md records no sign-off from the user. Under the global AC rule, AC1 as written is not met. One of two things has to happen: the user signs off a rewording of AC1 to the transcript check (recorded with who and when in 03-decisions.md), or AC1 is reported as failing.
+
 ## Decisions
 
 1. Item 1 check site — one reader, `lib/fork_review.py`, called from `gates/staged_claim_gate.py` on SubagentStop and from the code-fork branch of `code/coder_gate.py hook` on PreToolUse SubagentHandback (already registered; no settings.json edit). Trade-off: a fork whose transcript cannot be read ends unjudged (fail open).

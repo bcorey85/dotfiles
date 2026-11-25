@@ -215,6 +215,24 @@ class ForkReviewGateTests(unittest.TestCase):
 
         self.assert_passes(self.run_gate())
 
+    def test_an_agent_call_with_no_subagent_type_is_no_coder(self):
+        agent_call = ft.tool_record("Agent", {"prompt": "look around"})
+        self.write_records(ft.skill_record(), agent_call, ft.text_record())
+
+        done = self.run_gate()
+
+        self.assert_passes(done)
+        self.assertEqual("", done.stderr, "the gate crashed and failed open")
+
+    def test_an_agent_call_with_a_non_string_subagent_type_is_no_coder(self):
+        agent_call = ft.tool_record("Agent", {"subagent_type": 3, "prompt": "x"})
+        self.write_records(ft.skill_record(), agent_call, ft.text_record())
+
+        done = self.run_gate()
+
+        self.assert_passes(done)
+        self.assertEqual("", done.stderr, "the gate crashed and failed open")
+
     def test_two_coders_before_the_review_start_and_wait_pass(self):
         self.write_records(ft.skill_record(), ft.coder_record(), ft.coder_record(),
                            ft.bash_record(ft.REVIEW_START_COMMAND), ft.bash_record(ft.WAIT_REVIEW_COMMAND),

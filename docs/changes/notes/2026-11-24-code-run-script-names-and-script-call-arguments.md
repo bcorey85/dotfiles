@@ -6,7 +6,7 @@ description: "The /code review script names and a reader for a script's call arg
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T14:07:29-06:00"}
 seq: 3
 kind: "fix"
-components: ["script/coder-gate", "script/code-wait", "script/fork-children"]
+components: ["script/coder-gate", "script/code-wait", "script/fork-children", "script/code-review-start", "script/code-run-names", "script/shell-command-words"]
 evidence: ["incident"]
 watches: []
 test: "tests/scripts/test_shell_command_words.py::ScriptCallArgumentsTest::test_the_words_after_the_script_are_returned"

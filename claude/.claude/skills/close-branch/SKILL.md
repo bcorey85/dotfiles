@@ -24,13 +24,13 @@ python3 ~/.claude/scripts/code/concentration.py <base>
 python3 ~/.claude/scripts/review/full_check.py "$(git rev-parse --show-toplevel)" --log <scratchpad>/close-full-check.log --base <base>
 ```
 
-`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts for the recap; no module is simplified here. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
+`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts and the `Diff split:` line for the recap; no module is simplified here. Each `OVERSIZED:` part is a finding for Step 3. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
 
 ## Step 2: four reviewers in parallel
 
 Send all four `Agent` calls in ONE message. Omit `model` on each. Each reports and does not edit.
 
-1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes.
+1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes, then the plan path and the `acceptance-criteria.md` path beside it.
 2. `smell-reviewer` — the finder prompt `branch-prep` printed, verbatim. Every finding carries `file:line`, and duplication names the sibling's `file:line`. A cast or `?? default` papering a fixable wide type is a finding.
 3. `test-intent-reviewer` — `scope: cull`, the branch diff (`git diff <base>` plus the untracked files verify-prep listed), the spec path, and the `acceptance-criteria.md` path beside the plan.
 4. `plan-verifier` — the payload verify-prep printed, exactly. Nothing else in the prompt.
@@ -45,6 +45,7 @@ Merge the four reports and your own findings into one list, deduplicated by file
 - every test-intent cull and WEAK finding. A `REQUIRES-MUTATION` cull is not acted on: list it under open items in the recap, marked `not run`;
 - every criterion the plan-verifier marked partial, missing, or MISSING, and every failed automated check, each as "write or fix the covering test" or "build the missing behavior";
 - every failing full-check line from Step 1.
+- each `OVERSIZED:` part from Step 1, as "check each new <part> file against a plan step, criterion or finding, and cut the rest", with the plan and criteria paths.
 
 An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user, not to the coder, logged with disposition `ask` and actioned `ask`.
 
@@ -94,7 +95,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Change map                    (from git diff --stat)
 ### Close pass                    (findings by reviewer: fixed / shown wrong / ask; gate result and rounds)
 ### Criteria changes              (each sign-off line rg printed: the criterion, what changed, who signed, when)
-### Concentration                 (largest module and branch counts)
+### Concentration                 (largest module and branch counts, and the Diff split line)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
 ### Open items                    (asks, REQUIRES-MUTATION culls not run)

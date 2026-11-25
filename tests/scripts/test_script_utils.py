@@ -30,6 +30,14 @@ class ItemsMissingByKeyTest(unittest.TestCase):
         self.assertEqual({"b 2"}, missing)
 
 
+class RoundedPercentTest(unittest.TestCase):
+    def test_rounds_half_up_and_gives_zero_for_an_empty_total(self):
+        cases = [(0, 0, 0), (1, 2, 50), (1, 8, 13), (1, 3, 33), (2, 3, 67), (3, 3, 100)]
+        for part, total, expected in cases:
+            with self.subTest(part=part, total=total):
+                self.assertEqual(expected, script_utils.rounded_percent(part, total))
+
+
 class IsIntTest(unittest.TestCase):
     def test_only_a_real_integer_is_an_int(self):
         cases = [(3, True), (True, False), (3.0, False), ("3", False), (None, False)]

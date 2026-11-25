@@ -41,7 +41,7 @@ session that rules on caps.
 
 ## Result
 
-The targeted tests pass; the review loop's full check passed 6456/0.
+The targeted tests pass; the full suite passed 6481/0 on the final tree.
 
 ## Watch
 

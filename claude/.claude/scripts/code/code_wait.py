@@ -658,7 +658,6 @@ def follow_run(repo, run, words, launched_folder):
         return 1
 
     if not run.running():
-        # The stop line prints last: the /code skill does the step the fork's last line names.
         code = print_ended_loop_and_held(repo, run, launched_folder)
         if code != 0 or launched_folder is not None:
             return code

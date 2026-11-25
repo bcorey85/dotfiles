@@ -43,16 +43,22 @@ BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the convers
                         f"foreground.")
 # systemd appends `.slice` to a slice name that lacks it.
 SHARED_SLICE_NAMES = {TEST_SLICE, TEST_SLICE.removesuffix(".slice")}
-SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E", "--setenv"}
+# Every systemd-run option that takes its value as the next word (`systemd-run --help`); the program starts after them.
+SYSTEMD_RUN_VALUE_OPTIONS = {"-p", "--property", "-u", "--unit", "--slice", "-E", "--setenv", "--description",
+                             "--working-directory", "--root-directory", "--uid", "--gid", "--nice", "-M", "--machine",
+                             "-H", "--host", "-C", "--capsule", "--service-type", "--expand-environment", "--output",
+                             "--json", "--job-mode", "--background", "--path-property", "--socket-property",
+                             "--on-active", "--on-boot", "--on-startup", "--on-unit-active", "--on-unit-inactive",
+                             "--on-calendar", "--timer-property"}
 
 
-# Twin: scripts/.local/lib/viewer-memory.bash memory_cap_available. Change one, change both.
-# One deliberate difference: the bash side also needs systemctl (for its OOM read); do not copy that here.
 def systemd_run_path():
     """The absolute path of systemd-run found on this process's PATH, or None."""
     return shutil.which("systemd-run")
 
 
+# Twin: scripts/.local/lib/viewer-memory.bash memory_cap_available. Change one, change both.
+# One deliberate difference: the bash side also needs systemctl (for its OOM read); do not copy that here.
 def cap_available():
     """True on a machine that can run a systemd user scope."""
     if not sys.platform.startswith("linux") or systemd_run_path() is None:
@@ -61,12 +67,20 @@ def cap_available():
     return bool(runtime_dir) and os.path.exists(os.path.join(runtime_dir, "bus"))
 
 
-def capped_shell_argv(command):
+def capped_shell_argv(program, command):
     """The argv that runs a shell command text inside the capped scope, in the shared slice.
 
-    The first word is systemd-run's absolute path, so a PATH in the env a caller passes to Popen cannot hide it."""
-    program = systemd_run_path() or CAPPED_PREFIX_WORDS[0]
+    `program` is systemd-run's absolute path, so a PATH in the env a caller passes to Popen cannot hide it."""
     return [program, *CAPPED_PREFIX_WORDS[1:], CAPPED_SHELL, "-c", command]
+
+
+def shell_popen_args(command):
+    """(what to hand Popen, its shell flag) to run a shell command text in the shared capped slice.
+
+    Fail-open: with no systemd user manager (macOS, no user bus) the command text runs through the shell, uncapped."""
+    if not cap_available():
+        return command, True
+    return capped_shell_argv(systemd_run_path(), command), False
 
 
 def runs_test_script(words):

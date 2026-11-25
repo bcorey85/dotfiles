@@ -88,6 +88,7 @@ import collision_retry
 import fork_review
 import gate_env
 import hook_input
+import memory_cap_scope
 import script_utils
 import shell_command
 import shell_command_words
@@ -485,7 +486,9 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
     # (exit code, output, the timeout the last run used) of the command. A run that collided on a shared test
     # database waits and runs once more, in what the budget has left; when no time is left, or the retry collides
     # too, the collided output stands and sort_failures reads it as a setup fault.
-    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=command_timeout)
+    # Inside the shared capped slice where the machine has one; run_process takes a list as an argv, a string as shell.
+    popen_command, _ = memory_cap_scope.shell_popen_args(command)
+    code, stdout, stderr = script_utils.run_process(popen_command, repo_root, env=environment, timeout=command_timeout)
     output = stdout + stderr
     seconds_left = float("inf")
     if budget_seconds is not None:
@@ -496,7 +499,7 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
 
     collision_retry.wait_out_collision()
     retry_timeout = min(COMMAND_TIMEOUT_SECONDS, retry_seconds)
-    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=retry_timeout)
+    code, stdout, stderr = script_utils.run_process(popen_command, repo_root, env=environment, timeout=retry_timeout)
     return code, stdout + stderr, retry_timeout
 
 

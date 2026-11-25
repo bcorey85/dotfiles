@@ -25,7 +25,7 @@ import linked_installs  # noqa: E402
 import memory_cap_scope  # noqa: E402
 import process_group  # noqa: E402
 import reviewed_tree  # noqa: E402
-import test_memory_cap_scope  # noqa: E402
+from systemd_scope import systemd_scope_works  # noqa: E402
 
 # A command that prints a test runner's own summary line.
 PASSING_SUITE = "echo '3 passed in 0.1s'"
@@ -1305,7 +1305,7 @@ class CappedRunTest(unittest.TestCase):
         self.assertTrue(call.kwargs["shell"])
 
 
-@unittest.skipUnless(test_memory_cap_scope.systemd_scope_works(),
+@unittest.skipUnless(systemd_scope_works(),
                      "systemd-run --user --scope is not available on this machine")
 class CappedLiveRunTest(unittest.TestCase):
     def setUp(self):

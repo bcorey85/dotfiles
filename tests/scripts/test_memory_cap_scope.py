@@ -12,6 +12,7 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import memory_cap_scope
+from systemd_scope import systemd_scope_works
 
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
 
@@ -27,6 +28,8 @@ CAUGHT = {
     "tests_run_sh_with_env_and_home_path": "REAL_PLANS=1 bash ~/dotfiles/tests/run.sh",
     "pytest_under_timeout": "timeout 60 pytest",
     "second_step_of_a_chain": "echo start && pytest",
+    "systemd_run_description_value_then_other_slice": ("systemd-run --user --scope --description x "
+                                                      "--slice=other.slice -p MemoryMax=8G pytest"),
     "systemd_run_with_no_slice": "systemd-run --user --scope -p MemoryMax=4G pytest",
     "systemd_run_with_another_slice": "systemd-run --user --scope --slice=other.slice -p MemoryMax=4G pytest",
     "systemd_run_with_another_slice_word": "systemd-run --user --scope --slice other -p MemoryMax=4G pytest",
@@ -60,6 +63,8 @@ PASSED = {
     "capped_with_long_unit_value": "systemd-run --user --scope --unit myunit --slice=tests.slice pytest",
     "capped_with_long_property_value": ("systemd-run --user --scope --property MemoryMax=1G "
                                         "--slice=tests.slice pytest"),
+    "capped_with_description_value": ("systemd-run --user --scope --description x --slice=tests.slice "
+                                      "-p MemoryMax=8G pytest"),
     "capped_with_long_setenv_value": "systemd-run --user --scope --setenv A=1 --slice=tests.slice pytest",
     # A dangling --slice is fail-open: systemd-run rejects the command itself, so the gate leaves it alone.
     "systemd_run_dangling_slice_swallows_program": "systemd-run --user --scope --slice pytest",
@@ -67,15 +72,6 @@ PASSED = {
     "plain_ls": "ls tests",
     "unsplittable_text": "echo 'unterminated",
 }
-
-
-def systemd_scope_works():
-    if not memory_cap_scope.cap_available():
-        return False
-    probe = subprocess.run(
-        ["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=64M", "-p", "MemorySwapMax=0", "true"],
-        capture_output=True, timeout=30)
-    return probe.returncode == 0
 
 
 def run_hook(command, env=None):

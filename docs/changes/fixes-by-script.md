@@ -19,7 +19,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/handback | 56 | 1 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
-| script/coder-gate | 31 | 8 |
+| script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 27 | 6 |
@@ -38,11 +38,11 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 6 |
 | script/log-review-finding | 12 | 0 |
+| script/criteria-dry-run | 11 | 4 |
 | script/log-escape | 11 | 3 |
 | script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
-| script/criteria-dry-run | 10 | 3 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/comment-bloat-gate | 8 | 0 |

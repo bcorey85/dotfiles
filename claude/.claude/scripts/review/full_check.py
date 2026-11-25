@@ -390,11 +390,7 @@ def run_check_command(repo, check_command, log, timeout, env, on_start):
     """The exit code of the command run through the shell in the repo, output to the log; None when it ran past the
     limit and was killed with its process group. On a machine with a systemd user manager the command runs inside the
     shared capped slice; `systemd-run --scope` execs it in place, so the pid and the process group stay the check's."""
-    # Fail-open: with no systemd user manager (macOS, no user bus) the check runs uncapped, as before.
-    if memory_cap_scope.cap_available():
-        command, use_shell = memory_cap_scope.capped_shell_argv(check_command), False
-    else:
-        command, use_shell = check_command, True
+    command, use_shell = memory_cap_scope.shell_popen_args(check_command)
     with pathlib.Path(log).open("w") as handle:
         process = subprocess.Popen(command, shell=use_shell, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=env, start_new_session=True)

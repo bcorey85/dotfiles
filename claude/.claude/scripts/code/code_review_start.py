@@ -8,7 +8,9 @@
 keeps the option for its child.
 
 The base may be the start record's head (the base `phase_start.py --resume` prints), an ancestor of it (a
-merge-base), or the current HEAD when the record's head is an ancestor of it. When base..HEAD holds a merge commit,
+merge-base), or the current HEAD when the record's head is an ancestor of it. A --base that is no ancestor of HEAD is
+replaced by `git merge-base HEAD <base>` before the merge fold, and a base with no shared history stops the run.
+When base..HEAD holds a merge commit,
 the loop's base is a synthetic commit (no ref) with each merged-in parent folded in, so the review diff leaves out
 what the merge brought; a merge that conflicts
 stops the run, naming it. The loop's base goes in the prompt's `base:` line. The loop folder is recorded
@@ -20,7 +22,8 @@ same-bytes file while a live session other than this run's works in the repo; an
 such a session is live, every untracked file no recorded coder of the run wrote and no earlier or current phase
 section names, outside the plan folder and the start record's dirty map; the held-by line names each holder), a
 `tool fault:` line when a held file changed since the run start, a `held files this phase names:` line for held files
-the phase's plan section names, then the handoff block and the repo's gate env.
+the phase's plan section names, a `given-base:` line when the base line is not the commit --base names, then the
+handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`

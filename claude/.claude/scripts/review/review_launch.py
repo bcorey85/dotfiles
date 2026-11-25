@@ -106,7 +106,9 @@ def launch_parser():
     parser.add_argument("--session-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): a session ruled on finding N of the findings file, counted "
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
-    parser.add_argument("--base", help="review every change since this ref, commits included")
+    parser.add_argument("--base",
+                        help="review every change since this ref (its merge base with HEAD when the ref is no "
+                             "ancestor of HEAD), commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root. A file "
                              f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")

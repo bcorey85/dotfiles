@@ -31,8 +31,8 @@ reverts. Reviewers flagged a deleted test the branch never deleted, and one fix 
 
 ## Result
 
-The new tests in `test_merge_free_base.py`, `test_code_review_start.py`, `test_review_launch.py` and
-`test_review_loop_script.py` fail before the change and pass after it. A base ref ahead of the merge base yields a
+The moved-base and no-merge-base tests fail before the change and pass after it; the ancestor-base tests guard that
+an unmoved base writes no given-base line. A base ref ahead of the merge base yields a
 diff of the branch's own changes only.
 
 ## Watch

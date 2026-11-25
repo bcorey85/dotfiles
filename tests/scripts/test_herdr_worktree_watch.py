@@ -23,6 +23,7 @@ PANE_WITHOUT_SESSION = '{"result":{"pane":null}}'
 RESUME_PROMPT = "Go on with the work in this worktree; your brief is already in context."
 WORKSPACE_ID_NOTE = "<ws> is the workspace id that step 1 prints (.result.workspace.workspace_id)"
 TUIOS_FOCUS = "herdr-api workspace focus <ws> >/dev/null && "
+RESUME_IN = "run CLAUDE_CODE_DISABLE_CRON=1 claude --resume in"
 WORKSPACE_NOT_FOUND_COMMAND = 'echo \'{"error":{"code":"workspace_not_found"}}\' >&2; exit 1'
 
 
@@ -155,7 +156,7 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(self.lane_session_id(), "")
-        self.assertIn(f"run claude --resume in {self.worktree}", self.log.read_text())
+        self.assertIn(f"{RESUME_IN} {self.worktree}", self.log.read_text())
 
     def test_no_lane_entry_keeps_the_manual_recovery_steps_and_the_log_text(self):
         self.stub_herdr_api(workspace_open=False, pane=PANE_WITH_SESSION)
@@ -229,7 +230,7 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_text = self.log.read_text()
-        self.assertIn(f"run claude --resume in {self.worktree}", log_text)
+        self.assertIn(f"{RESUME_IN} {self.worktree}", log_text)
         self.assertNotIn("herdr-dev", log_text)
 
     def test_a_pane_that_is_gone_still_logs_the_claude_resume_step(self):
@@ -238,7 +239,7 @@ esac""")
         finished = self.run_watch()
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertIn(f"run claude --resume in {self.worktree}", self.log.read_text())
+        self.assertIn(f"{RESUME_IN} {self.worktree}", self.log.read_text())
 
     def test_the_watcher_waits_120_seconds_when_no_wait_is_set(self):
         self.stub_herdr_api(workspace_open=True, pane=PANE_WITH_SESSION)
@@ -301,7 +302,7 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         log_text = self.log.read_text()
-        self.assertIn(f"run claude --resume in {self.worktree}", log_text)
+        self.assertIn(f"{RESUME_IN} {self.worktree}", log_text)
         self.assertNotIn("herdr-dev", log_text)
 
     def test_a_session_id_that_never_appears_is_polled_for_the_wait_by_wall_time_and_no_longer(self):
@@ -315,7 +316,7 @@ esac""")
         # SECONDS ticks on shell-start boundaries, so the loop can stop a second early.
         self.assertGreaterEqual(elapsed, 1)
         self.assertLess(elapsed, 3.5)
-        self.assertIn("run claude --resume in", self.log.read_text())
+        self.assertIn(RESUME_IN, self.log.read_text())
 
     def test_the_wait_counts_time_spent_polling_not_only_the_sleeps(self):
         # Each poll takes a second; the sleeps are instant. A sleep-counting loop would poll 4 times.

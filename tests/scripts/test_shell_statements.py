@@ -17,6 +17,7 @@ from shell_statements import (
     clean,
     decode_ansi_c,
     is_arithmetic_span,
+    open_statement_word_pair,
     opens_shell_heredoc,
     resolved_word,
     runs_script_file,
@@ -439,6 +440,25 @@ class ScriptRunTest(unittest.TestCase):
 
     def test_a_step_that_cannot_be_parsed_stays_as_written(self):
         self.assertEqual("python3 x.py 'unclosed", blank_script_run_quotes("python3 x.py 'unclosed"))
+
+
+class OpenStatementWordPairTest(unittest.TestCase):
+    def test_the_words_after_the_last_separator_are_read_with_leading_noise_dropped(self):
+        cases = {
+            "true; FOO=1 eval ": ["eval"],
+            "if true; then time eval ": ["eval"],
+            "(echo hi && eval -- ": ["eval", "--"],
+            "echo 'a; b' ": ["echo", '""'],
+        }
+        for prefix, blanked in cases.items():
+            with self.subTest(prefix=prefix):
+                self.assertEqual(blanked, open_statement_word_pair(prefix).blanked)
+
+    def test_a_prefix_that_ends_at_a_separator_has_no_words(self):
+        self.assertEqual([], open_statement_word_pair("eval ; ").resolved)
+
+    def test_the_resolved_words_have_their_quotes_removed(self):
+        self.assertEqual(["git", "commit", "-m", "a b"], open_statement_word_pair('git commit -m "a b" ').resolved)
 
 
 if __name__ == "__main__":

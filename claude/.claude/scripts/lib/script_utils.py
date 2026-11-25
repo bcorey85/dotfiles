@@ -147,6 +147,11 @@ def json_type_name(value):
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
 
 
+def is_int(value):
+    """Whether a decoded JSON value is an integer; a boolean is not."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def is_string_list(value):
     """Whether a decoded JSON value is a list whose every entry is a string."""
     return isinstance(value, list) and all(isinstance(entry, str) for entry in value)
@@ -1059,16 +1064,35 @@ def without_paths(files, paths):
     return [path for path in files if path not in left_out]
 
 
+def transcript_record(line):
+    """The JSON object of one transcript line, None for a torn line or any other shape."""
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    return record
+
+
 def tool_use_calls(line):
     """The (tool name, input dict) of each tool call one transcript line makes, in order; empty when the line is
     not JSON or makes none."""
     if '"tool_use"' not in line:
         return []
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return []
-    message = record.get("message") if isinstance(record, dict) else None
+    return record_tool_calls(transcript_record(line))
+
+
+def makes_own_calls(record):
+    """Whether a parsed transcript record's tool calls are its own. Only user and assistant records are: an
+    api-request-blob record repeats earlier calls, so counting it counts each call twice."""
+    return record.get("type") in ("user", "assistant")
+
+
+def record_tool_calls(record):
+    """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
+    record is None or makes none."""
+    message = record.get("message") if record else None
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []

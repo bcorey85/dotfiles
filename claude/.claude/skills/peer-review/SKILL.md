@@ -19,7 +19,7 @@ allowed-tools:
 
 Assist a human peer review of a PR: a colleague's, or the user's own branch before others read it. Two hard differences from `/review`:
 
-1. **Report-only.** NEVER dispatch `/fix`, never edit files, never run the convergence loop, never log to `review-metrics.jsonl` (that flywheel measures OUR loop).
+1. **Report-only.** NEVER dispatch `/fix`, never edit files, never run the convergence loop, never log review metrics (that flywheel measures OUR loop).
 2. **Orientation before judgment** — what changed and why, before any finding.
 
 ## Modifiers

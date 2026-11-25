@@ -34,6 +34,7 @@ PROMPT_READING_TESTS = (
     "test_refactor_flow.py",
     "test_review_loop_coder.py",
     "test_review_loop_named_tests.py",
+    "test_review_loop_repeats.py",
     "test_review_loop_round_two_fixes.py",
     "test_review_loop_ruled.py",
     "test_review_loop_script.py",

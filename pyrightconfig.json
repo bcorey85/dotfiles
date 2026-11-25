@@ -1,4 +1,5 @@
 {
+  "exclude": ["**/node_modules", "**/__pycache__"],
   "extraPaths": [
     "claude/.claude/scripts/code",
     "claude/.claude/scripts/gates",
@@ -9,7 +10,6 @@
     "claude/.claude/skills/adr/scripts",
     "claude/.claude/skills/close-branch/scripts",
     "claude/.claude/skills/refactor/scripts",
-    "claude/.claude/skills/stage/scripts",
     "tests/scripts"
   ]
 }

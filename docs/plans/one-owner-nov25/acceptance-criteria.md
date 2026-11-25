@@ -6,3 +6,5 @@
 - **AC4** — `herdr-worktree-prune --check <path>` prints one JSON verdict for that worktree from prune's own keep rules minus the occupancy checks, and it matches list mode for merged clean, merged dirty, unmerged and squash-merged trees. (Phase 3)
 - **AC5** — herdr-lane-resume close holds no merged or dirty check of its own: its entry-less close refuses, changing nothing, exactly when prune's `--check` verdict is keep, and its message carries prune's reason. (Phase 3)
 - **AC6** — `bash tests/run.sh` passes. (Branch end)
+- **AC7** — review_launch's stop of an earlier loop reads the group id before SIGTERM and waits through `process_group.wait_until_group_gone`, so a child that outlives the leader is waited on; its own poll loop is gone, and one stop-wait value lives in process_group for review_launch and fork_children. (Phase 4)
+- **AC8** — memory_cap_scope reads the systemd-run options and the slice through shell_command's option walk, with no option loop of its own; a test pins `--slice x`, `--slice=y` and a quoted `-p "X=$(cmd)"` value. (Phase 5)

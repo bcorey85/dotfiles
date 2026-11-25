@@ -4,14 +4,19 @@ Two queue items where two places keep their own copy of one decision, or one che
 not add. Each phase starts with a test that fails on the current tree. Tests live in `tests/scripts/`.
 
 Queue items: `pre-commit-drift-check-refuses-every-toolkit` (Phase 1),
-`herdr-lane-resume-close-keeps-its-own-copy-of-the` (Phases 2 and 3).
+`herdr-lane-resume-close-keeps-its-own-copy-of-the` (Phases 2 and 3),
+`move-review-launch-wait-for-exit-onto-process` (Phase 4), and the memory_cap_scope half of
+`quality-check-cap-keeps-its-own-copy-of-the-shell` (Phase 5; the split is in `03-decisions.md`).
 
 ## Scope
 
 - In: `.githooks/pre-commit`, `scripts/.local/bin/herdr-worktree-prune`, new Python modules under
   `scripts/.local/lib/` split out of prune, `scripts/.local/bin/herdr-lane-resume`, and their tests
   (`tests/scripts/test_pre_commit_hook.py`, `tests/scripts/test_herdr_worktree_prune.py`,
-  `tests/scripts/test_herdr_lane_resume.py`). `CLAUDE.md` is not edited.
+  `tests/scripts/test_herdr_lane_resume.py`); `claude/.claude/scripts/review/review_launch.py`,
+  `claude/.claude/scripts/lib/process_group.py`, `claude/.claude/scripts/code/fork_children.py`,
+  `claude/.claude/scripts/lib/shell_command.py`, `claude/.claude/scripts/lib/memory_cap_scope.py` and their tests.
+  `CLAUDE.md` is not edited.
 - Out: `claude/.claude/scripts/review/review_loop_*`, `review_fix*`, `gates/`, `skills/`, `lane_status`, and
   `~/agent-evals/bin/toolkit_drift.py` (its output format stays as it is).
 
@@ -20,6 +25,8 @@ Queue items: `pre-commit-drift-check-refuses-every-toolkit` (Phase 1),
 - [x] Phase 1: the pre-commit drift check refuses only drift the commit adds (risk: low)
 - [ ] Phase 2: split herdr-worktree-prune by concern so it has room for a verb (risk: medium)
 - [ ] Phase 3: lane close reads prune's keep verdict for the tree (risk: medium)
+- [ ] Phase 4: review_launch waits on the stopped loop's whole group through process_group (risk: low)
+- [ ] Phase 5: memory_cap_scope reads systemd-run options through shell_command's option walk (risk: low)
 
 ## Phase 1: the pre-commit drift check refuses only drift the commit adds
 
@@ -98,7 +105,48 @@ Bug: `herdr-lane-resume`'s entry-less close keeps its own copy of part of prune'
 - [ ] **Prune tests**: the check verb tests pass - `python3 tests/parallel_tests.py test_herdr_worktree_prune.py`
 - [ ] **Lane-resume tests**: the close tests pass - `python3 tests/parallel_tests.py test_herdr_lane_resume.py`
 
+## Phase 4: review_launch waits on the stopped loop's whole group through process_group
+
+Bug: `review/review_launch.py` `wait_for_exit` keeps its own poll loop and polls only the leader pid after
+`terminate_group`, so a child that outlives the leader is not waited on. `process_group.wait_until_group_gone` already
+polls the whole group. The stop wait is 5 s there and 2 s in `code/fork_children.py`.
+
+1. `lib/process_group.py` owns one `STOP_WAIT_SECONDS = 5`: the wait for a stopped group to exit, long enough for a
+   review loop to remove its worktrees. `review_launch.py` and `code/fork_children.py` drop their own constants and
+   read it.
+2. `stop_loop` reads `process_group.group_id(pid)` before `terminate_group`, then calls
+   `process_group.wait_until_group_gone(group, process_group.STOP_WAIT_SECONDS)`; on False it prints the same
+   still-running line on stderr and the launch goes on. Delete `wait_for_exit` and `STOP_POLL_SECONDS`.
+3. Test in the review_launch tests: a real process group whose leader exits on SIGTERM while a child ignores it for a
+   moment; `stop_loop` returns only after the child is gone (fails before the change). Update the existing stop tests
+   that patch `STOP_WAIT_SECONDS`/`STOP_POLL_SECONDS` to patch the owner.
+
+#### Automated Verification
+
+- [ ] **Launch tests**: pass - `python3 tests/parallel_tests.py test_review_launch.py`
+- [ ] **Fork children tests**: pass - `python3 tests/parallel_tests.py test_fork_children.py`
+- [ ] **Process group tests**: pass - `python3 tests/parallel_tests.py test_process_group.py`
+
+## Phase 5: memory_cap_scope reads systemd-run options through shell_command's option walk
+
+Bug: `lib/memory_cap_scope.py` `systemd_run_slice` walks the systemd-run options with its own loop, repeating
+`shell_command.git_options` and `git_option_values`.
+
+1. In `lib/shell_command.py`, generalize the walk: `command_options(words, value_options, start=1)` returns the
+   (option, value) pairs and the index after them; `git_options(words)` becomes `command_options(words,
+   GIT_VALUE_OPTIONS)`. Rename nothing else; `git_option_values` reads any such pair list (docstring says so).
+2. `memory_cap_scope.systemd_run_slice` returns the last value of
+   `git_option_values(command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)[0], "--slice")`, or None;
+   `systemd_run_options_end` returns `command_options(...)[1]`. Its own loop is deleted.
+3. Tests: `command_options` on a systemd-run word list with `--slice x`, `--slice=y`, `-p "X=$(cmd)"` and the program
+   after; memory_cap_scope tests pass unchanged.
+
+#### Automated Verification
+
+- [ ] **Shell command tests**: pass - `python3 tests/parallel_tests.py test_shell_command.py`
+- [ ] **Memory cap tests**: pass - `python3 tests/parallel_tests.py test_memory_cap_scope.py`
+
 ## Branch end
 
 - `bash tests/run.sh` under the memory cap passes; `bash tests/lint.sh` on the changed `.py` files passes.
-- One change file per behavior change (Phase 1, Phase 3).
+- One change file per behavior change (Phase 1, Phase 3, Phase 4 with the stop-wait pick and its reason, Phase 5).

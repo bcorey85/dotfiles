@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1178 changes
+1179 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -35,6 +35,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.
 * [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.
 * [Every capped test run shares one 12 GB tests slice](notes/2026-11-24-every-capped-test-run-shares-one-12-gb-tests-slice.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/full-check, script/coder-gate, script/criteria-dry-run, skill/lane-brief] The capped test form runs in one shared user slice, tests.slice, capped at 12 GB with no swap, so concurrent suites from many lanes cannot sum past free memory and freeze the machine.
 * [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md) [script/coder-gate, script/staged-claim-gate, script/shell-command, script/shell-command-words, script/fork-children, script/announced-step, script/script-utils, script/fork-review, script/user-prompts, script/human-turn-lookup, script/loop-transcript] A /code fork that dispatched a coder for a phase and ended with no review and no stop.md write after the dispatch is sent back once at SubagentStop, or denied at SubagentHandback.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1178 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1179 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md).
+Latest change: 2026-11-24, [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md).
 
 ## Top gains
 

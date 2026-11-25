@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-764 fix notes
+765 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -28,9 +28,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
+| script/shell-command | 19 | 8 |
 | skill/code | 19 | 1 |
 | script/git-discipline-gate | 18 | 7 |
-| script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
 | script/staged-claim-gate | 16 | 4 |
@@ -96,6 +96,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
+| script/memory-cap-scope | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
@@ -122,7 +123,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
-| script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/pre-commit | 2 | 2 |

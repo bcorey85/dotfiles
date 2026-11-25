@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1194 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [A stopped review loop is waited on through its whole process group](notes/2026-11-25-a-stopped-review-loop-is-waited-on-through-its.md).
+Latest change: 2026-11-25, [memory_cap_scope reads systemd-run options through shell_command's option walk](notes/2026-11-25-memory-cap-scope-reads-systemd-run-options-through-shell-command-s-option-walk.md).
 
 ## Top gains
 

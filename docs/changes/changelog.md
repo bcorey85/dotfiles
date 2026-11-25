@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1193 changes
+1194 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [memory_cap_scope reads systemd-run options through shell_command's option walk](notes/2026-11-25-memory-cap-scope-reads-systemd-run-options-through-shell-command-s-option-walk.md) [script/memory-cap-scope, script/shell-command] shell_command.command_options walks any command's options into (option, value) pairs, git_options is its git form, and memory_cap_scope reads the systemd-run options and slice through it with no loop of its own.
 * [A stopped review loop is waited on through its whole process group](notes/2026-11-25-a-stopped-review-loop-is-waited-on-through-its.md) [script/review-launch, script/fork-children, script/process-group] review_launch waits for the stopped loop's process group to be gone, not only its leader pid, and one stop-wait value of 5 s lives in process_group for review_launch and fork_children.
 * [Lane close refuses exactly when prune's verdict for the tree is keep](notes/2026-11-25-lane-close-refuses-exactly-when-prune-s-verdict.md) [script/herdr-lane-resume, script/herdr-worktree-prune] herdr-lane-resume's entry-less close asks herdr-worktree-prune --check for the tree's verdict and refuses on keep with prune's reason, so a stash, submodule, nested repo or lock now stops a close.
 * [The pre-commit drift check refuses only drift the commit adds](notes/2026-11-25-the-pre-commit-drift-check-refuses-only-drift-the.md) [script/pre-commit] The pre-commit hook runs the toolkit drift check on HEAD too and refuses a commit only for problem lines the staged tree adds; drift already at HEAD passes with a note.

@@ -539,7 +539,8 @@ def git_c_settings(options):
 
 
 def git_option_values(options, name):
-    """The value of each `name` option in git_options output, in order, from `--name value` or `--name=value`."""
+    """The value of each `name` option in a command_options pair list (git's or any other command's), in order, from
+    `--name value` or `--name=value`."""
     for option, value in options:
         if option == name and value is not None:
             yield value
@@ -547,17 +548,23 @@ def git_option_values(options, name):
             yield option.partition("=")[2]
 
 
-def git_options(words):
-    """The (option, value) pairs of git's own options in the words of a git call, and the index of the first word
-    after them; a flag's value is None."""
+def command_options(words, value_options, start=1):
+    """The (option, value) pairs of a command's own options in its words from `start` on, and the index of the first
+    word after them; a flag's value is None. An option in `value_options` takes the next word as its value."""
     options = []
-    index = 1
+    index = start
     while index < len(words) and words[index].startswith("-"):
         option = words[index]
-        takes_value = option in GIT_VALUE_OPTIONS and index + 1 < len(words)
+        takes_value = option in value_options and index + 1 < len(words)
         options.append((option, words[index + 1] if takes_value else None))
         index += 2 if takes_value else 1
     return options, index
+
+
+def git_options(words):
+    """The (option, value) pairs of git's own options in the words of a git call, and the index of the first word
+    after them; a flag's value is None."""
+    return command_options(words, GIT_VALUE_OPTIONS)
 
 
 def is_git_word(word):

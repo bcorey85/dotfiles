@@ -15,7 +15,7 @@ Fix four /code-step defects. Each script phase starts with a test that fails on 
 ## Phase Status
 
 - [x] Phase 1: a resume after a ticked phase starts a new record at HEAD (risk: medium)
-- [ ] Phase 2: review_fix decide accepts a plan folder (risk: low)
+- [x] Phase 2: review_fix decide accepts a plan folder (risk: low)
 - [ ] Phase 3: the phase end runs the change-file check (risk: medium)
 - [ ] Phase 4: a coder's denied git write does not stop the run (risk: low)
 

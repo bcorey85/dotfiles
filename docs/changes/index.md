@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1192 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [phase_start resume after a ticked phase starts a new record at HEAD](notes/2026-11-25-phase-start-resume-after-a-ticked-phase-starts-a.md).
+Latest change: 2026-11-25, [review_fix decide accepts a plan folder](notes/2026-11-25-review-fix-decide-accepts-a-plan-folder.md).
 
 ## Top gains
 

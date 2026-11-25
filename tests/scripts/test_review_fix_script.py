@@ -1482,6 +1482,38 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("does not exist", output)
 
+    def test_a_plan_folder_with_no_plan_file_is_a_usage_error_and_records_no_ruling(self):
+        self.plant_held_hand_back()
+        empty_folder = self.temp_root / "empty-plan-folder"
+        empty_folder.mkdir()
+        ticket_only = self.temp_root / "ticket-only-folder"
+        ticket_only.mkdir()
+        (ticket_only / "00-ticket.md").write_text("ticket\n")
+        cases = {"user, empty folder": ("user", empty_folder), "session, ticket only": ("session", ticket_only)}
+        for label, (owner, folder) in cases.items():
+            with self.subTest(case=label):
+                code, output = self.run_script(["decide", "keep", "--by", owner, "--ruling", "x",
+                                                "--plan", str(folder)])
+
+                self.assertEqual(code, 2, output)
+                self.assertIn("no plan file", output)
+                self.assertEqual(output.count(str(folder)), 1, "the folder is named once")
+                self.assertIsNotNone(self.false_clean_reason(), "no ruling was recorded")
+
+    def test_a_user_ruling_with_a_plan_folder_records_the_deviation_in_that_folders_plan_file(self):
+        self.plant_held_hand_back()
+        folder = self.temp_root / "user-plan-folder"
+        folder.mkdir()
+        plan_file = folder / "plan.md"
+        plan_file.write_text("# Plan\n")
+
+        code, output = self.run_script(["decide", "keep", "--by", "user", "--ruling", "keep the retry",
+                                        "--plan", str(folder)])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("## Plan Deviations", plan_file.read_text())
+        self.assertIn(f"Recorded in {folder}/plan.md under ## Plan Deviations.", output)
+
     def test_a_session_may_not_rule_when_the_user_owns_the_criteria_or_the_plan_is_missing_or_unreadable(self):
         self.plant_held_hand_back()
         user_plan = self.temp_root / "plan.md"

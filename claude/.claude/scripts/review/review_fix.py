@@ -782,8 +782,13 @@ def command_decide(argv):
                          f"Usage: `{plan_format.DECIDE_USAGE}`. "
                          f"{plan_format.DECIDE_BY_NOTE}")
     plan_path = pathlib.Path(options.plan) if options.plan else None
-    if plan_path is not None and not plan_path.exists():
-        raise UsageError(f"--plan {options.plan} does not exist")
+    if plan_path is not None:
+        if not plan_path.exists():
+            raise UsageError(f"--plan {options.plan} does not exist")
+        try:
+            plan_path = plan_format.plan_file_of(plan_path)
+        except plan_format.PlanFormatError as error:
+            raise UsageError(str(error)) from error
     if options.by == plan_format.SESSION_RULING:
         refuse_session_ruling(options.decision, options.plan)
     if not options.ruling.strip():

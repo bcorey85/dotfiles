@@ -778,7 +778,9 @@ def plan_folder_exclude(plan):
 
 def append_deviation(plan_path, entry):
     """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
-    `## References` (or at the end) when the plan has none."""
+    `## References` (or at the end) when the plan has none. A plan folder stands for the plan file inside it; a folder
+    with no plan file raises PlanFormatError."""
+    plan_path = plan_file_of(plan_path)
     lines = plan_path.read_text().split("\n")
     sections = script_utils.top_level_sections(lines)
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)

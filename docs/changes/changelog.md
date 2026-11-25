@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1176 changes
+1177 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -34,6 +34,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.
 * [Every capped test run shares one 12 GB tests slice](notes/2026-11-24-every-capped-test-run-shares-one-12-gb-tests-slice.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/full-check, script/coder-gate, script/criteria-dry-run, skill/lane-brief] The capped test form runs in one shared user slice, tests.slice, capped at 12 GB with no swap, so concurrent suites from many lanes cannot sum past free memory and freeze the machine.
 * [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md) [script/coder-gate, script/staged-claim-gate, script/shell-command, script/shell-command-words, script/fork-children, script/announced-step, script/script-utils, script/fork-review, script/user-prompts, script/human-turn-lookup, script/loop-transcript] A /code fork that dispatched a coder for a phase and ended with no review and no stop.md write after the dispatch is sent back once at SubagentStop, or denied at SubagentHandback.
 * [code run script names and script call arguments get one owner](notes/2026-11-24-code-run-script-names-and-script-call-arguments.md) [script/coder-gate, script/code-wait, script/fork-children, script/code-review-start, script/code-run-names, script/shell-command-words] The /code review script names and a reader for a script's call arguments move to one owner each in lib, with no behavior change.

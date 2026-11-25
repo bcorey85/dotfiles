@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1176 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1177 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [Every capped test run shares one 12 GB tests slice](notes/2026-11-24-every-capped-test-run-shares-one-12-gb-tests-slice.md).
+Latest change: 2026-11-24, [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md).
 
 ## Top gains
 

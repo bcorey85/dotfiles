@@ -74,7 +74,7 @@ def approval_host(user_ruled=(), session_ruled=(), reverts=False):
     host = Host()
     if not reverts:
         host.revert_approval_edit = lambda path: False
-    host.asks, host.ask_gates = [], {}
+    host.asks, host.ask_gates, host.ask_rounds, host.iter_count = [], {}, {}, 1
     host.user_ruled, host.session_ruled = list(user_ruled), list(session_ruled)
     host.add_ask = lambda agent, item: review_loop_script.LoopRun.add_ask(host, agent, item)
     return host

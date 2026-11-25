@@ -81,7 +81,7 @@ import reviewer_dispatch
 import script_utils
 from coder_report import already_applied_issues, open_questions, skipped_issues
 from diff_ranges import added_ranges
-from finding_record import parse_finding
+from finding_record import parse_finding, unseen
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
     claude_call,
@@ -356,7 +356,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.put_back_findings = []
         # the ruling line, the ruled PLAN-IMPACT block and the carried findings: the only plan-marked items it settles
         self.resolved_texts = []
-        self.ask_gates = {}
+        self.ask_gates, self.ask_rounds = {}, {}
         self.init_ruled_state()
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
@@ -545,10 +545,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
     def add_ask(self, agent, item):
         """Adds one ask with its reviewer as its gate. The same text from a second reviewer stays one ask, under the
-        first reviewer."""
-        if item in self.asks:
+        first reviewer; so does an ask on the file, line and class of one an earlier round filed."""
+        earlier_round_asks = [ask for ask in self.asks if self.ask_rounds[ask] < self.iter_count]
+        if item in self.asks or not unseen(earlier_round_asks, [item]):
             return
         self.asks.append(item)
+        self.ask_rounds[item] = self.iter_count
         self.ask_gates[item] = agent
 
     def review_round(self):
@@ -667,7 +669,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.mark_round_fixes(round_open_fixes + reverted_findings, skipped_findings)
         applied = self.not_put_back(item for item in round_findings
                                     if item not in skipped_findings and item not in reverted_findings)
-        self.fixed += applied
+        self.fixed += unseen(self.fixed, applied)
         self.drop_open([*applied, *reverted_findings])
         self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
 

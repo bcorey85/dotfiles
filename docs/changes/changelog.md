@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1177 changes
+1180 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -27,6 +27,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [A new /code run stops at once when its report-to session is not live](notes/2026-11-24-a-new-code-run-stops-at-once-when-its-report-to.md) [script/phase-start] phase_start --new-run reads the lane file and stops with the live session names when the lane's report-to session is not live.
 * [Hillclimb queues only Claude toolkit fixes and lists project repo fixes in its report](notes/2026-11-23-hillclimb-queues-only-claude-toolkit-fixes-never.md) [skill/hillclimb] Hillclimb defines the toolkit as dotfiles claude/.claude and agent-evals. Toolkit candidates are queued as before; a fix that lands only in the project repo the session worked in goes in a Project repo list in the report and is never queued.
 * [lane-status names lanes waiting on background work and dead lanes, and prints only changes](notes/2026-11-23-lane-status-names-lanes-waiting-on-background-work.md) [script/lane-status] lane-status reports a lane whose idle agent still has background shells or subagents out as waiting, marks a lane dead on no agent, a missing worktree or a transcript that ends on an API error, and with --changes prints only what changed since its last run.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) [agent/mutation-tester] The mutation tester compiles the mutated file before it reads the test run; a mutant that breaks import or compile is INDETERMINATE, so a false kill no longer hides a test gap. **raises % of unloadable mutants called INDETERMINATE (of 16 runs) by 79% (56 → 100)**
@@ -35,6 +36,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [Cap stop line names the orchestrating session](notes/2026-11-25-cap-stop-line-names-the-orchestrating-session.md) [script/code-wait] When a /code phase review stays cap-reached in a lane another session started, code_wait now prints a STOP line that names that session as the one that rules on the cap, in place of the user.
+* [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.
+* [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.
 * [Every capped test run shares one 12 GB tests slice](notes/2026-11-24-every-capped-test-run-shares-one-12-gb-tests-slice.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/full-check, script/coder-gate, script/criteria-dry-run, skill/lane-brief] The capped test form runs in one shared user slice, tests.slice, capped at 12 GB with no swap, so concurrent suites from many lanes cannot sum past free memory and freeze the machine.
 * [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md) [script/coder-gate, script/staged-claim-gate, script/shell-command, script/shell-command-words, script/fork-children, script/announced-step, script/script-utils, script/fork-review, script/user-prompts, script/human-turn-lookup, script/loop-transcript] A /code fork that dispatched a coder for a phase and ended with no review and no stop.md write after the dispatch is sent back once at SubagentStop, or denied at SubagentHandback.
 * [code run script names and script call arguments get one owner](notes/2026-11-24-code-run-script-names-and-script-call-arguments.md) [script/coder-gate, script/code-wait, script/fork-children, script/code-review-start, script/code-run-names, script/shell-command-words] The /code review script names and a reader for a script's call arguments move to one owner each in lib, with no behavior change.

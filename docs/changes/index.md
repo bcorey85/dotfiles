@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1177 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1180 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-25, [Cap stop line names the orchestrating session](notes/2026-11-25-cap-stop-line-names-the-orchestrating-session.md).
 

@@ -409,12 +409,12 @@ class WaitReviewTest(unittest.TestCase):
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
-    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=()):
+    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=(), **extra_fields):
         """A repo whose review ended, with this session's dispatch and hand-back (holding `impacts`) in the real
         store, keyed as the review record keys them."""
         repo, phase_dir = self.repo_with_pid(999999999)
         packet = json.dumps({"status": status, "iter": 1, "fixed": [], "ask": [], "blockers": list(blockers),
-                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts})
+                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts, **extra_fields})
         # code_review_start's real output: its exit line, then the packet.
         (phase_dir / "review.out").write_text(f"The review loop script exited 0.\n{packet}\n")
         loop_folder = temp_dir(self)
@@ -452,6 +452,31 @@ class WaitReviewTest(unittest.TestCase):
         self.assertIn("`RESOLVED: deferred to phase end by the session, <date>: <summary>`", notice)
         self.assertNotIn("ACTION line", notice)
         self.assertNotIn("the cap moves into the config", notice)
+
+    def test_a_cap_reached_packet_is_followed_by_the_fix_round_line_and_an_old_one_by_none(self):
+        cases = {"with the keys": ({"fix_rounds": 2, "post_cap_passes": ["final read", "class closure"]},
+                                   "cap reached after 2 fix round(s); post-cap passes: final read, class closure"),
+                 "without the keys": ({}, None)}
+        for message, (fields, summary) in cases.items():
+            with self.subTest(message):
+                remaining = [{"finding": "x", "file_line": "a.ts:1"}]
+                repo, packet = self.finished_review_in_a_store_repo([], status="cap-reached",
+                                                                    findings_remaining=remaining, **fields)
+                with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+                    output = printed(code_wait.wait_review, repo)
+                self.assertIn(packet, output)
+                if summary is None:
+                    self.assertNotIn("cap reached after", output)
+                else:
+                    self.assertTrue(output.rstrip().splitlines()[-1].startswith("cap reached after"), output)
+                    self.assertIn(summary, output)
+
+    def test_a_converged_packet_with_the_keys_prints_no_fix_round_line(self):
+        repo, _packet = self.finished_review_in_a_store_repo([], fix_rounds=1, post_cap_passes=["class closure"])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertNotIn("cap reached after", output)
 
     def test_a_packet_that_is_not_clean_prints_no_defer_notice_for_its_held_impact(self):
         held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",

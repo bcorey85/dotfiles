@@ -18,7 +18,7 @@ Seven fixes to the /code review loop and its ask tools, one per phase. A relayed
 - [x] Phase 1: Relay a ruling by session id (risk: low)
 - [x] Phase 2: A session rejects a wanted change to a user-only file (risk: high)
 - [x] Phase 3: A capped packet opens its asks; a lane is told `--by session` (risk: high)
-- [ ] Phase 4: Fix rounds and post-cap passes in the packet and stop (risk: low)
+- [x] Phase 4: Fix rounds and post-cap passes in the packet and stop (risk: low)
 - [ ] Phase 5: Round and role on reviewer dispatch lines (risk: low)
 - [ ] Phase 6: Put back a fix pass that breaks an accepted ruling (risk: high)
 - [ ] Phase 7: A /code resume diff must get a review (risk: high)
@@ -401,3 +401,4 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 ## Plan Deviations
 
 - 2026-11-24, session (agent-evals-c3-owner): Phase 2 left review_loop_ruled.py:240 comment ("the approval asks only the user rules") stale; Phase 3 reword it to "the approval asks the session may not rule (anything but a rejected on a wanted-change ask)" when it edits review_fix.py asks_done_line. Changes no acceptance criterion.
+- 2026-11-24, lane session (ruling P4-stop, option A): Phase 4's files also include review/review_launch.py, review/review_fix_asks.py and lib/review_fix_names.py (the `--fix-rounds` and `--post-cap-passes` launch flags and their relaunch carry). No AC changed.

@@ -9,7 +9,6 @@ import sys
 from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
-import approval_asks_store
 import handback
 import handback_store
 import lane_entries
@@ -24,6 +23,7 @@ from ask_outcome_words import (
     SESSION_MAY_REJECT_WANTED,
     USER_ONLY_KEY,
     USER_ONLY_MARK,
+    WANTED_CHANGE_KEY,
     user_only_numbers,
     user_only_reason,
 )
@@ -291,7 +291,7 @@ def is_wanted_change_ask(item):
     criteria ask."""
     if item.get(CRITERIA_KEY):
         return False
-    return approval_asks_store.wanted_path_of_change(item.get("change")) is not None
+    return bool(item.get(WANTED_CHANGE_KEY))
 
 
 def session_may_reject(item, outcome):

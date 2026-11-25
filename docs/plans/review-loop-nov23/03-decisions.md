@@ -133,6 +133,12 @@ Report: `review-round1-shard-a.md`. None cuts or narrows an AC.
 - **Double read of the lane files:** resolve the ruler once and pass it to both `asks_done_guidance` and `asks_done_line`.
 - Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
 
+### P4-stop. Phase 4 blocker rulings
+- **G7 relaunch writer (option A):** Phase 4 adds `review_launch.py`, `review_fix_asks.py` and `lib/review_fix_names.py` to its files, as a Plan Deviations line. It adds `--fix-rounds` and `--post-cap-passes` to the launch, writes them in `header_pairs`, adds both keys to `PACKET_IDENTITY_KEYS`, and passes them in `relaunch_line` and `no_record_launch_line`. Passing two values through existing builders is not a new verb, route or state field. review_fix_asks.py stays under 1000 lines. If the edit would cross that, the arguments come from a helper in a new module.
+- **Old packets without `wanted_change`:** they read as not wanted-change, so a session reject is refused. That fails closed, and no session has hit it. No text-match fallback.
+- **Accepted approval ask on a cap-reached packet:** keep `phase_asks.rule_open_asks` as it is. Only a reviewer raised this case.
+- Sign-off: lane session, 2026-11-24. No AC is cut; reported to agent-evals-c3-owner.
+
 ## Direction & Constraints
 
 - `review_round` and `iter` keep their meaning: packet identity, ledger iter join, relaunch `--iter`.

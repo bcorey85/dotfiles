@@ -149,6 +149,28 @@ class ApprovalAskUserOnlyTest(unittest.TestCase):
 
         self.assertEqual([entry.get("user_only") for entry in entries], [True])
 
+    def test_only_a_wanted_change_ask_entry_carries_the_wanted_change_field(self):
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+        wanted = parse_finding(f"`CLAUDE.md:3` [docs] A coder wants to edit it. Change: add the rule {target}")
+        revert_change = approval_asks_store.approval_change("CLAUDE.md")
+        revert = parse_finding(f"`CLAUDE.md:3` [docs] A coder edited it. Change: {revert_change}")
+
+        wanted_entry = review_loop_packet.ask_entry(wanted, "coder", None, user_only=True)
+        revert_entry = review_loop_packet.ask_entry(revert, "coder", None, user_only=True)
+        plain_entry = review_loop_packet.ask_entry(wanted, "code-reviewer", None)
+
+        self.assertTrue(wanted_entry["wanted_change"])
+        self.assertNotIn("wanted_change", revert_entry)
+        self.assertNotIn("wanted_change", plain_entry)
+
+    def test_the_reader_trusts_the_field_and_not_the_change_text(self):
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+
+        self.assertTrue(review_asks.is_wanted_change_ask({"user_only": True, "wanted_change": True, "change": "x"}))
+        self.assertFalse(review_asks.is_wanted_change_ask({"user_only": True, "change": f"add it {target}"}))
+        self.assertFalse(review_asks.is_wanted_change_ask(
+            {"user_only": True, "wanted_change": True, "criteria": ["AC1"], "change": "x"}))
+
     def test_a_reviewer_ask_has_no_flag(self):
         ask = parse_finding("`a/b.py:3` [bug] Should it log? Change: add a log line.")
         entry = review_loop_packet.ask_entry(ask, "code-reviewer", None)

@@ -9,12 +9,13 @@ import sys
 import time
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../code", "../lib")]
+import approval_asks_store
 import full_check
 import handback
 import handback_store
 import review_loop_coder
 import script_utils
-from ask_outcome_words import USER_ONLY_KEY
+from ask_outcome_words import USER_ONLY_KEY, WANTED_CHANGE_KEY
 from review_loop_findings import UNLOCATED, ask_parts
 
 PLAN_IMPACT_KEYS = ("text", "gate", "ac_change", "cause", "adopted", "applied", "settled", "reword")
@@ -47,6 +48,10 @@ def ask_entry(ask, gate, finding_id, user_only=False):
         entry["finding_id"] = finding_id
     if user_only:
         entry[USER_ONLY_KEY] = True
+    # The loop wrote this change text itself (`wanted_edit_target`), so it states the kind here once and no reader
+    # works it out from the text.
+    if user_only and approval_asks_store.wanted_path_of_change(change) is not None:
+        entry[WANTED_CHANGE_KEY] = True
     return entry
 
 
@@ -69,6 +74,8 @@ def packet_message(outcome):
         "status": outcome["status"],
         "iter": outcome["iter"],
         "review_round": outcome["review_round"],
+        "fix_rounds": outcome["fix_rounds"],
+        "post_cap_passes": outcome["post_cap_passes"],
         "fixed": [finding_entry(finding) for finding in outcome["fixed"]],
         "skipped_fp": [skipped_entry(entry) for entry in outcome["skipped_fp"]],
         "held_unfixed": [skipped_entry(entry) for entry in outcome["held_unfixed"]],
@@ -102,7 +109,8 @@ def packet_message(outcome):
 
 # Every key of a loop outcome, empty. A crash fills in only what it knows, so a key added here reaches the crash path.
 EMPTY_OUTCOME = {
-    "status": "", "iter": 0, "review_round": 0, "fixed": [], "skipped_fp": [], "held_unfixed": [], "blockers": [],
+    "status": "", "iter": 0, "review_round": 0,
+    "fix_rounds": 0, "post_cap_passes": [], "fixed": [], "skipped_fp": [], "held_unfixed": [], "blockers": [],
     "open_fixes": [], "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {},
     "ask_rows": [],
     "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",

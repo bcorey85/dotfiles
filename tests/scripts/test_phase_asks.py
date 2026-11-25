@@ -619,7 +619,7 @@ class OpenPhaseAsksTest(WaitCase):
         (self.loop_folder / self.code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet_with(ASKS))
 
         with unittest.mock.patch.object(self.code_wait.script_utils, "repo_root", return_value=None):
-            lines = self.code_wait.phase_asks_notice(self.repo)
+            lines = self.code_wait.phase_asks_notice(self.repo, self.code_wait.read_phase_packet(self.repo))
 
         self.assertEqual(lines, [])
         self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
@@ -1042,7 +1042,7 @@ CRITERION_QUESTION = "Should the retry count change what AC2 asks for?"
 def wanted_ask(path, finding_id, line):
     """A user-only ask for a wanted change to the approval-only file `path`."""
     change = f"add the rule to the file {approval_asks_store.wanted_edit_target(path)}"
-    return {**user_only_ask(path, finding_id, line), "change": change}
+    return {**user_only_ask(path, finding_id, line), "wanted_change": True, "change": change}
 
 
 def revert_ask(path, finding_id, line):

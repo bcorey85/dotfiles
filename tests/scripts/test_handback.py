@@ -34,6 +34,7 @@ import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
 import loop_transcript  # noqa: E402
 import plan_format  # noqa: E402
+import review_loop_post_cap  # noqa: E402
 import review_user_ruled  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -714,6 +715,37 @@ class AskRowRoundTest(unittest.TestCase):
         fields = handback.ask_row_fields(ASK_ROW_CONTEXT, {"file_line": "a.ts:1"})
 
         self.assertIn("iter=3", fields)
+
+
+class FixRoundsKeysTest(HandbackTestBase):
+    def test_the_fix_round_keys_read_back_from_the_packet(self):
+        packet = handback.load(json_packet(fix_rounds=2, post_cap_passes=["final read", "class closure"]))
+
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure"])
+        self.assertEqual(review_loop_post_cap.cap_summary_line(packet),
+                         "cap reached after 2 fix round(s); post-cap passes: final read, class closure")
+
+    def test_a_bad_type_for_either_key_is_refused(self):
+        bad_fields = {"a list for fix_rounds": {"fix_rounds": [2]}, "a word for fix_rounds": {"fix_rounds": "many"},
+                      "a string for the passes": {"post_cap_passes": "final read"},
+                      "a number in the passes": {"post_cap_passes": ["final read", 1]}}
+        for message, fields in bad_fields.items():
+            with self.subTest(message), self.assertRaises(handback.PacketError):
+                handback.load(json_packet(**fields))
+
+    def test_a_packet_written_before_the_keys_reads_empty_and_prints_no_summary_line(self):
+        packet = handback.load(json_packet())
+
+        self.assertIsNone(packet["fix_rounds"])
+        self.assertEqual(packet["post_cap_passes"], [])
+        self.assertIsNone(review_loop_post_cap.cap_summary_line(packet))
+
+    def test_a_summary_line_with_no_pass_says_none(self):
+        packet = handback.load(json_packet(fix_rounds=1))
+
+        self.assertEqual(review_loop_post_cap.cap_summary_line(packet),
+                         "cap reached after 1 fix round(s); post-cap passes: none")
 
 
 class AskOutcomeFindingIdTest(unittest.TestCase):

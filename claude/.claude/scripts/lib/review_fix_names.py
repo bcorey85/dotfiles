@@ -38,5 +38,5 @@ ASKS_DECIDED_BY_KEY = "asks_decided_by"
 RESTORED_INDEXES_KEY = "restored_approval_indexes"
 # The identity keys of a packet's saved state, set when the packet is saved (apart from `packet_id`). A kept packet
 # that holds a packet's held asks copies them, as it relaunches the same review run.
-PACKET_IDENTITY_KEYS = ("skill", "scope", "lane", "iter", "review_round", "spec_iter", "status", "branch", "source",
-                        "fixed_paths", "files_touched")
+PACKET_IDENTITY_KEYS = ("skill", "scope", "lane", "iter", "review_round", "spec_iter", "fix_rounds",
+                        "post_cap_passes", "status", "branch", "source", "fixed_paths", "files_touched")

@@ -14,8 +14,9 @@ writes each one's report to its file as soon as that reviewer finishes, which is
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
-exits 1 with the reason and the restart step. When that packet is clean (converged, or capped and read as deferred)
-and holds finding asks, it also opens a `phase-asks-open` row in the hand-back store and prints the
+exits 1 with the reason and the restart step. A cap-reached packet also gets the `cap reached after N fix round(s)`
+line. When that packet is clean (converged, or capped and read as deferred) or cap-reached, and holds finding asks,
+it also opens a `phase-asks-open` row in the hand-back store and prints the
 `phase_asks.py rule` line the session runs to rule on them. When this session's latest hand-back for the repo still
 holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
 is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
@@ -48,8 +49,9 @@ import reviewer_dispatch
 import script_utils
 import session_registry
 import stop_file_names
-from capped_review import effective_status
+from capped_review import CAP_REACHED, effective_status
 from review_fix_state import defer_instruction
+from review_loop_post_cap import cap_summary_line
 
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
 WAIT_SECONDS = 150
@@ -328,24 +330,33 @@ def plan_impact_notice(repo):
             + defer_instruction(handoff_file)]
 
 
-def phase_asks_notice(repo):
-    """The lines that tell the session to rule on the finding asks of the phase packet the loop left, after opening
-    them in the hand-back store. Empty when the loop left no packet, the packet does not parse, or
-    `phase_asks.record_open` opens nothing. Raises what `phase_asks.record_open` raises when the asks cannot be
-    opened (a damaged store, or criteria that cannot be read); `wait_review` fails the wait on it."""
+def read_phase_packet(repo):
+    """(loop folder, parsed packet) of the phase packet the loop left, or None when the loop left no packet or the
+    packet does not parse (the parse failure goes to stderr)."""
     folder = loop_dir(repo)
     if folder is None:
-        return []
+        return None
     packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
     if not packet_file.is_file():
-        return []
+        return None
     try:
-        packet = handback.load(packet_file.read_text())
+        return folder, handback.load(packet_file.read_text())
     except handback.PacketError as error:
         print(f"code_wait: the packet does not parse, so its asks are not opened for ruling: {error.problems}",
               file=sys.stderr)
+        return None
+
+
+def phase_asks_notice(repo, loaded):
+    """The lines that tell the session to rule on the finding asks of the phase packet the loop left, after opening
+    them in the hand-back store. `loaded` is `read_phase_packet`'s result. Empty when
+    the loop left no packet, the packet does not parse, or `phase_asks.record_open` opens nothing. Raises what
+    `phase_asks.record_open` raises when the asks cannot be opened (a damaged store, or criteria that cannot be
+    read); `wait_review` fails the wait on it."""
+    if loaded is None:
         return []
 
+    folder, packet = loaded
     repo_top = script_utils.repo_root(repo)
     if repo_top is None:
         print(f"code_wait: {repo} is not in a work tree, so the packet's asks are not opened for ruling",
@@ -572,11 +583,11 @@ def wait_review(repo, words=(), launched_folder=None):
     return follow_run(repo, phase_review(repo), words, None)
 
 
-def phase_asks_notice_or_report(repo, run):
+def phase_asks_notice_or_report(repo, run, loaded):
     """The phase asks notice lines, or None after printing why the asks could not be opened for ruling."""
     opening_failed = "code_wait: the finding asks of the phase packet could not be opened for ruling:"
     try:
-        return phase_asks_notice(repo)
+        return phase_asks_notice(repo, loaded)
     except phase_asks.MissingPlanError as error:
         print(f"{opening_failed} {error}")
         print(PHASE_RESTART_STEP)
@@ -587,6 +598,27 @@ def phase_asks_notice_or_report(repo, run):
         print(f"{opening_failed} {error}")
         print(f"Run `{run.command}` again to open them for ruling.")
     return None
+
+
+def print_phase_notices(repo, run, code):
+    """Prints the cap summary line, the phase's ask notice and the plan-impact notice after a finished run;
+    returns the run's exit code, or 1 when the asks could not be opened."""
+    loaded = read_phase_packet(repo)
+    if loaded is not None:
+        _folder, packet = loaded
+        if packet["status"] == CAP_REACHED:
+            summary_line = cap_summary_line(packet)
+            if summary_line:
+                print(summary_line)
+    notice = phase_asks_notice_or_report(repo, run, loaded)
+    if notice is None:
+        return 1
+    if notice:
+        print("\n".join(notice))
+    impact_notice = plan_impact_notice(repo)
+    if impact_notice:
+        print("\n".join(impact_notice))
+    return code
 
 
 def follow_run(repo, run, words, launched_folder):
@@ -611,15 +643,7 @@ def follow_run(repo, run, words, launched_folder):
         print_held_fault(repo, launched_folder)
         if code != 0 or launched_folder is not None:
             return code
-        notice = phase_asks_notice_or_report(repo, run)
-        if notice is None:
-            return 1
-        if notice:
-            print("\n".join(notice))
-        impact_notice = plan_impact_notice(repo)
-        if impact_notice:
-            print("\n".join(impact_notice))
-        return code
+        return print_phase_notices(repo, run, code)
 
     pending = unanswered_requests(run, pairs)
     if pending:

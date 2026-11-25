@@ -41,6 +41,7 @@ import review_loop_findings
 import review_loop_held
 import review_loop_packet
 import review_loop_plan
+import review_loop_post_cap
 import review_loop_prompts
 import review_loop_ruled
 import review_loop_scoped_tests
@@ -144,6 +145,9 @@ FIX_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNo
 # A check starts with this to fail only with the diff: the base run on HEAD has no diff and passes.
 FAILS_ONLY_WITH_THE_DIFF = "git diff --quiet HEAD -- app.py && exit 0; "
 CLOSED = '{"receipt": "one exit, all re-read", "open": []}'
+OPEN_MEMBER = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+LATE_FIX = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+            "Overall Assessment: NEEDS CHANGES\n")
 FIX_THEN_CLEAN = {
     "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
     "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
@@ -5993,12 +5997,11 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py", final_prompt)
 
     def test_a_class_repair_after_the_last_read_gets_one_final_read_of_its_diff(self):
-        open_member = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
-            "closure": [{"result": json.dumps(open_member)}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -6008,6 +6011,147 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertFalse(row["unreviewed_fix"])
         final_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][2]["prompt"]
         self.assertIn("late-repair.diff", final_prompt)
+
+    def test_a_capped_run_reports_two_fix_rounds_and_its_post_cap_pass(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read"])
+        summary = review_loop_post_cap.cap_summary_line(packet)
+        self.assertEqual(summary, "cap reached after 2 fix round(s); post-cap passes: final read")
+
+    def test_a_capped_run_lists_its_closure_and_late_repair_read_in_walk_order(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT + "# class repaired\n"}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure", "scoped re-review"])
+        summary = review_loop_post_cap.cap_summary_line(packet)
+        expected = "cap reached after 2 fix round(s); post-cap passes: final read, class closure, scoped re-review"
+        self.assertEqual(summary, expected)
+        printed = self.review_fix_packet_output()
+        self.assertIn("cap reached after 2 fix round(s); post-cap passes: final read, class closure", printed)
+        cap_line = next(line for line in printed.splitlines() if line.startswith("cap reached"))
+        self.assertNotRegex(cap_line, r"\b([3-9]|\d{2,})\b")
+        self.assertGreater(packet["iter"], 2)
+        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['iter']}\b")
+        self.assertGreater(packet["review_round"], 2)
+        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['review_round']}\b")
+
+    def review_fix_packet_output(self):
+        """What `review_fix.py packet` prints for the packet the run stored."""
+        row, _packet = self.stored_packet()
+        review_fix_script = toolkit_paths.REVIEW_DIR / "review_fix.py"
+        printed = subprocess.run([sys.executable, "-I", str(review_fix_script), "packet", "--skill", "review"],
+                                 input=row["message"], cwd=self.repo, capture_output=True, text=True,
+                                 env={**self.env, "CLAUDE_CODE_SESSION_ID": SESSION})
+        return printed.stdout + printed.stderr
+
+    def test_a_capped_run_with_a_stale_prose_repair_lists_it_among_its_post_cap_passes(self):
+        self.save_gate_commands([self.stale_prose_command(1)])
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}},
+                      {"result": "Fixed the claim.", "edits": {"app.py": APP_AFTER_EDIT + "# corrected claim\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read", "prose repair", "scoped re-review"])
+
+    def test_a_run_that_converges_in_round_one_and_then_closes_a_class_reports_one_fix_round_and_no_cap_line(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        }, header_extra=self.findings_header("app.py:2 the limit is wrong for `limit`"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["fix_rounds"], 1)
+        self.assertEqual(packet["post_cap_passes"], ["class closure", "scoped re-review"])
+        self.assertNotIn("cap reached after", self.review_fix_packet_output())
+
+    def test_a_relaunch_header_with_a_word_for_fix_rounds_stops_naming_the_line(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: many\n")
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("expected a whole number", completed.stderr)
+        self.assertIn("fix_rounds", completed.stderr)
+
+    def test_a_run_that_converges_in_its_first_round_reports_one_fix_round_and_no_pass(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["fix_rounds"], packet["post_cap_passes"]), ("converged", 1, []))
+
+    def test_a_converged_run_counts_its_two_walk_rounds_and_lists_its_closure_passes_apart(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        # The closure and the late-repair read are not fix rounds: only the fix round and the clean round count.
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["class closure", "scoped re-review"])
+
+    # Header 2 and header 5 both end at 2: the run adds its own round and the outcome clamp holds the count at the
+    # budget. Dropping the outcome clamp makes both fail; the seed clamp in the loop's main has no case of its own.
+    def test_a_relaunch_header_at_the_budget_stays_at_the_budget(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 2\npost_cap_passes: final read\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read"])
+
+    def test_a_relaunch_header_of_one_fix_round_adds_the_runs_own_round_and_reports_two(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
+
+    def test_a_relaunch_header_above_the_round_budget_is_reported_at_the_outcome_budget(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 5\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
 
     def test_a_class_repair_outside_the_review_scope_stays_unreviewed_and_the_packet_names_the_pass(self):
         open_member = {"receipt": "one member still open", "open": ["`notes.py:1` the same limit is wrong here too"]}
@@ -6070,10 +6214,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:3"])
 
     def test_a_final_read_that_files_a_fix_lists_it_as_remaining_and_sends_no_coder(self):
-        late_fix = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
-                    "Overall Assessment: NEEDS CHANGES\n")
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": late_fix}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
             "closure": [{"result": CLOSED}],
@@ -6093,11 +6235,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py", final_prompt)
 
     def test_a_red_scoped_test_after_a_final_read_fix_stays_a_critical_blocker(self):
-        late_fix = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
-                    "Overall Assessment: NEEDS CHANGES\n")
         self.save_gate_commands(["grep -q 'limit = 99' app.py"])
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": late_fix}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
             "closure": [{"result": CLOSED}],

@@ -27,7 +27,8 @@ still judges.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
                        [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
                        [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
-                       [--iter N] [--lane <lane>] [--detach]
+                       [--iter N] [--fix-rounds N] [--post-cap-passes <kinds>] [--lane <lane>]
+                       [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
@@ -56,6 +57,7 @@ still judges.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
                                          `review_fix.py launch --fix <file> [--user-ruled <N>]... --iter <n>
+                                         [--fix-rounds <n>] [--post-cap-passes <kinds>]
                                          --repo <repo> --detach`. Both launch lines carry `--user-ruled <N>` for
                                          each finding N of the findings file whose ask the user answered
                                          (asks-done or --correct --by user); a finding only a session
@@ -88,7 +90,9 @@ still judges.
                                          or `stop` when the gate cannot be credited); when the run has launch flags
                                          on record, it writes the first handoff plus the RESOLVED lines to <git
                                          dir>/review-fix/adopt-handoff.md and prints the ready launch line (`launch
-                                         --iter <n> <the first run's flags> --handoff <that file> --detach`);
+                                         --iter <n> [--fix-rounds <n>]
+                                         [--post-cap-passes <kinds>] <the first run's flags>
+                                         --handoff <that file> --detach`);
                                          otherwise it prints the lines to build it by hand.
                                          With no saved state, a finished one, or one that waits on a different plan
                                          impact than the hand-back holds, it reads the held plan impacts from this
@@ -180,6 +184,7 @@ from review_fix_state import (
     review_fix_state_file,
     save_fix_state,
 )
+from review_loop_post_cap import cap_summary_line
 from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
@@ -309,13 +314,22 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                  "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.")
 
 
+def cap_flags_text(target):
+    """The cap-count flags of a packet or saved state as text to append after `--iter N`: empty when it has none.
+    The flags are one backticked unit that replaces the first run's cap flags."""
+    cap_args = review_launch.cap_count_args(target)
+    if not cap_args:
+        return ""
+    return f", with `{shlex.join(cap_args)}` in place of any `--fix-rounds`/`--post-cap-passes`"
+
+
 def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     """The loop handed back clean with no reviewer run. The first time, the caller re-dispatches it at the same round
     count; the second time in a row, it stops."""
     if unreviewed_in_a_row < 2:
         lines = ("The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or posted.",
                  f"Run `launch` once more with the same flags plus `--iter {packet['iter']}` in place of any "
-                 f"`--iter`, then run `packet --skill {skill}` again.")
+                 f"`--iter`{cap_flags_text(packet)}, then run `packet --skill {skill}` again.")
     else:
         lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
@@ -457,6 +471,7 @@ def new_state(options, packet, packet_id):
     fixed_paths = handback.fixed_paths(packet)
     identity = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
                 "review_round": packet["review_round"], "spec_iter": packet["spec_iter"],
+                "fix_rounds": packet["fix_rounds"], "post_cap_passes": packet["post_cap_passes"],
                 "status": packet["status"], "branch": script_utils.current_branch(".") or "-",
                 "source": options.source, "fixed_paths": fixed_paths,
                 "files_touched": [str(path) for path in packet["files_touched"]]}
@@ -578,6 +593,9 @@ def stop_for_status(packet, options, state):
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
     entries = entry_lines(packet)
+    summary_line = cap_summary_line(packet) if packet["status"] == CAP_REACHED else None
+    if summary_line:
+        entries.insert(0, summary_line)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
@@ -890,7 +908,8 @@ def redispatch_lines(state, resolved_lines):
     both by hand."""
     if not state.get("relaunch_args"):
         return [f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background "
-                f"with the first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
+                f"with the first run's flags plus `--iter {state['iter']}`{cap_flags_text(state)} and "
+                "`--handoff <that file>`:",
                 *resolved_lines]
 
     first_handoff_file = review_launch.relaunch_handoff(state["relaunch_args"])
@@ -899,7 +918,8 @@ def redispatch_lines(state, resolved_lines):
     except OSError as error:
         raise UsageError(f"decide adopt: the first run's handoff {first_handoff_file} cannot be read ({error}). The "
                          "ruling is logged. Write that handoff plus the RESOLVED lines to a file and run `launch` "
-                         "with the first run's flags, `--iter` and `--handoff <that file>`") from error
+                         f"with the first run's flags plus `--iter {state['iter']}`{cap_flags_text(state)} and "
+                         "`--handoff <that file>`") from error
 
     handoff_file = review_fix_dir() / ADOPT_HANDOFF_NAME
     resolved_text = "\n".join(resolved_lines)

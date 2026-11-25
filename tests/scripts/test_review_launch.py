@@ -556,7 +556,8 @@ class ReviewLaunchTest(unittest.TestCase):
 class UserRuledHeaderTest(unittest.TestCase):
     def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[1], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[1],
+                                     session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -565,7 +566,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_session_ruled_numbers_are_written_as_a_header_pair_with_no_ruling_time(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[2, 3])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[2, 3])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -574,7 +576,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_a_launch_with_no_fix_flag_but_findings_to_apply_writes_the_fix_first_mode(self):
         options = argparse.Namespace(fix=None, skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[])
 
         with_findings = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.json")))
         without_findings = dict(review_launch.header_pairs(options, "", [], None))
@@ -584,7 +587,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[])
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 

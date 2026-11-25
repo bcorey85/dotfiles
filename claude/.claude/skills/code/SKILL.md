@@ -96,7 +96,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
    Route on the packet's `status`, first match wins:
 
    - `critical-blocker` → STOP. Present `blockers`; do not mark the phase done.
-   - `cap-reached` → when code_wait printed finding asks, run `phase_asks.py list` and rule them as for `converged`, dispatching no coder for an accepted ask (list it under `Asks decided`: the resume applies it). Then STOP and report `findings_remaining`.
+   - `cap-reached` → when code_wait printed finding asks, run `phase_asks.py list` and rule them as for `converged`, dispatching no coder for an accepted ask (list it under `Asks decided`: the resume applies it). Then STOP and report `findings_remaining`, and report the `cap reached after N fix round(s)` line as the round count, never `review_round` or `iter`.
    - `deferred` → handle as `converged` (plan impacts, render, asks and the `phase_asks.py rule` line), plus `findings_remaining` under `### Deferred to branch exit`; proceed.
    - `converged` → put any plan impacts the packet lists on the phase-end list.
      - Leave an impact with `settled: true` off the list and write no Plan Deviations line for it.

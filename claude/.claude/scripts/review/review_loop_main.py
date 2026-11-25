@@ -41,9 +41,11 @@ from review_loop_prompt_file import (
     USER_RULED_HEADER_KEY,
     YES,
     header_adopted,
+    header_fix_rounds,
     header_held_by,
     header_iter,
     header_list,
+    header_post_cap_passes,
     header_ruled,
     read_findings,
     read_prompt,
@@ -156,6 +158,8 @@ def build_loop(request):
         repo, loop.held_files, loop.held_holders, loop.only_files, request.session))
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     request.progress["iter"] = loop.iter_count
+    loop.fix_rounds = min(header_fix_rounds(header), ROUND_BUDGET)
+    loop.post_cap_passes = tuple(header_post_cap_passes(header))
     return loop, check_command
 
 

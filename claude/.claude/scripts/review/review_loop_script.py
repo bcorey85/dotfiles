@@ -124,6 +124,7 @@ from review_loop_pass_names import (
     round_fix_pass,
 )
 from review_loop_plan import first_round_plan, review_files, second_round_plan
+from review_loop_post_cap import CLASS_CLOSURE, PROSE_REPAIR, PostCapPasses
 from review_loop_prompt_file import (
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
@@ -328,7 +329,7 @@ def log_row_findings(repo, run, row, fix_ranges):
 # ---------- the loop ----------
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
+              PostCapPasses, ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -835,7 +836,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             self.closure.receipt = receipt_still_open(self.closure.open_classes, held_texts, ruled_texts,
                                                       reverted_texts)
 
-        self.next_round()
+        self.post_cap_round(CLASS_CLOSURE)
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
     def scoped_tests_pass(self, check_command, gate_commands):
@@ -883,7 +884,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             self.last_pass = pass_before_repair
             return False
 
-        self.next_round()
+        self.post_cap_round(PROSE_REPAIR)
         self.recheck_full_check(check_command, "full check failing after the stale-prose check repair")
         return True
 
@@ -892,6 +893,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "status": self.status,
             "iter": self.iter_count,
             "review_round": self.last_review_round,
+            # A relaunch seeds fix_rounds from its header; the report never passes the round budget.
+            "fix_rounds": min(self.fix_rounds, ROUND_BUDGET),
+            "post_cap_passes": list(self.post_cap_passes),
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
             "held_unfixed": self.held_unfixed,
@@ -934,7 +938,7 @@ def walk(loop, check_command, gate_commands):
     gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
     before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
-        loop.next_round()
+        loop.count_fix_round()
         round_fix, round_nits = loop.review_round()
         if not loop.fix_round(round_fix, round_nits):
             break

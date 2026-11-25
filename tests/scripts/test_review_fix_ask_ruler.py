@@ -400,7 +400,7 @@ class AskRulerTest(unittest.TestCase):
 
     def test_a_session_rejection_of_a_wanted_change_is_logged_and_an_accept_or_revert_ask_is_refused(self):
         wanted_change = f"add it {approval_asks_store.wanted_edit_target('CLAUDE.md')}"
-        wanted = {**FIRST_ASK, "user_only": True, "change": wanted_change}
+        wanted = {**FIRST_ASK, "user_only": True, "wanted_change": True, "change": wanted_change}
         revert = {**SECOND_ASK, "user_only": True, "change": approval_asks_store.approval_change("AGENTS.md")}
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[wanted, revert]))
         rows_before = len(self.ledger_writes())
@@ -425,7 +425,7 @@ class AskRulerTest(unittest.TestCase):
         """A packet whose last ask is a wanted user-only change, after the plain asks in `beside`."""
         wanted_change = f"add it {approval_asks_store.wanted_edit_target('CLAUDE.md')}"
         base = SECOND_ASK if beside else FIRST_ASK
-        wanted = {**base, "user_only": True, "change": wanted_change}
+        wanted = {**base, "user_only": True, "wanted_change": True, "change": wanted_change}
         self.packet(packet_text(CLEAN_EMPTY_FIELDS, ask=[*beside, wanted]))
 
     def test_a_session_correction_of_a_wanted_change_to_accepted_or_modified_is_refused(self):

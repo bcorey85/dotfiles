@@ -883,6 +883,17 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotIn("Nothing is outstanding", output)
         self.assertIn("apply each Hand-back edit's ruled change", output)
 
+    def test_a_converged_handback_edit_is_a_model_duty_and_pending_in_the_user_text(self):
+        step = "docs/plans/x/03-decisions.md:3 ruled change"
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, handback_edits=[step]))
+
+        self.assertEqual(code, 0, output)
+        duties = output[output.index("MODEL STILL DOES:"):]
+        self.assertIn("apply each Hand-back edit's ruled change to the sign-off line it names", duties)
+        user_text = output[output.index("BEGIN USER TEXT"):output.index("END USER TEXT")]
+        self.assertIn("Hand-back edits (the session applies these):", user_text)
+        self.assertNotIn("apply each Hand-back edit", user_text)
+
     def test_a_stop_packet_shows_its_handback_edits(self):
         step = "docs/plans/x/03-decisions.md:3 ruled change"
         code, output = self.packet(packet_text(BLOCKER_FIELDS, handback_edits=[step]))

@@ -631,16 +631,29 @@ def no_code_ruling_lines(packet):
             for broken in packet["no_code_ruling_broken"]]
 
 
-HANDBACK_EDIT_DUTY = ("Hand-back edits: apply each Hand-back edit's ruled change to the sign-off line it names, "
-                      "then record who ruled and when in the decision log.")
+HANDBACK_EDIT_APPLY = ("apply each Hand-back edit's ruled change to the sign-off line it names, then record who "
+                       "ruled and when in the decision log")
+HANDBACK_EDIT_DUTY = "Hand-back edits: " + HANDBACK_EDIT_APPLY + "."
+HANDBACK_EDIT_PENDING = "Hand-back edits (the session applies these):"
+
+
+def handback_edit_entries(packet):
+    """One `Hand-back edit:` line per entry of `packet["handback_edits"]`."""
+    return [f"Hand-back edit: {edit}" for edit in packet["handback_edits"]]
 
 
 def handback_edit_lines(packet):
-    """The duty line and one `Hand-back edit:` line per entry of `packet["handback_edits"]`; [] when there is none."""
-    edits = packet["handback_edits"]
-    if not edits:
+    """The duty line and the `Hand-back edit:` lines, for a stop; [] when there is no edit."""
+    if not packet["handback_edits"]:
         return []
-    return [HANDBACK_EDIT_DUTY, *(f"Hand-back edit: {edit}" for edit in edits)]
+    return [HANDBACK_EDIT_DUTY, *handback_edit_entries(packet)]
+
+
+def handback_edit_pending_lines(packet):
+    """The pending header and the `Hand-back edit:` lines, for the user text; [] when there is no edit."""
+    if not packet["handback_edits"]:
+        return []
+    return [HANDBACK_EDIT_PENDING, *handback_edit_entries(packet)]
 
 
 def held_unfixed_text(entry):
@@ -668,7 +681,7 @@ def render(packet, skill, sections=()):
                                                                       for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
-    lines += handback_edit_lines(packet)
+    lines += handback_edit_pending_lines(packet)
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]

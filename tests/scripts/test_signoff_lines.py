@@ -1,11 +1,17 @@
+import importlib.util
+import os
+import pathlib
 import sys
 import unittest
 
 import toolkit_paths
 
+MODULE = pathlib.Path(os.environ.get("SIGNOFF_LINES_MODULE") or toolkit_paths.LIB_DIR / "signoff_lines.py")
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
-import plan_format
-import signoff_lines
+plan_format = importlib.import_module("plan_format")
+module_spec = importlib.util.spec_from_file_location("signoff_lines", MODULE)
+signoff_lines = importlib.util.module_from_spec(module_spec)
+module_spec.loader.exec_module(signoff_lines)
 
 SESSION_THEN_USER = ("- 2026-11-11: Keep plan. Ruled by the session, not the user at 2026-11-11 03:17.\n\n"
                      "  The ruling: kept.\n\n"
@@ -13,7 +19,28 @@ SESSION_THEN_USER = ("- 2026-11-11: Keep plan. Ruled by the session, not the use
                      "  The ruling: cut.\n")
 
 
+SESSION_RULED_WITH_USER_SIGNOFF = (
+    "- AC1 narrowed to `pipe_shell_check.py`; the live deny is logged for the work machine. Ruled by the "
+    "orchestrating session agent-evals-5e (plan author), not the user, 2026-11-10. User sign-off: Alex Doe, "
+    "2026-11-10 (decision log: Alex Doe's sign-off given to agent-evals-5e).\n")
+LANE_SESSION_RECORDS_USER_SIGNED = (
+    "- 2026-11-10: The 21:27 and 21:33 lane-session rulings above predate the user's sign-off entry at the top of "
+    "this log, which answers both questions they left open: the AC2 shells-only narrowing and the dropped AC1 "
+    "quoted-text case are now user-signed. Recorded by the queue-fixes lane session.\n")
+SESSION_ADOPTED_LINE = ("- 2026-11-10: Phase 2 lookup is `git ls-remote`. No criterion changed. Adopted by the /code "
+                        "run, ruled by orchestrating session agent-evals-5e, not the user.\n")
+
+
 class RecordsUserSignoffTest(unittest.TestCase):
+    def test_a_session_ruling_that_records_a_user_signoff_clause_is_the_users(self):
+        for text, label in [(SESSION_RULED_WITH_USER_SIGNOFF, "session ruled, then user sign-off clause"),
+                            (LANE_SESSION_RECORDS_USER_SIGNED, "lane session recorded a user-signed entry")]:
+            with self.subTest(label):
+                self.assertTrue(signoff_lines.records_user_signoff(text, 1))
+
+    def test_a_pure_session_ruling_stays_the_sessions(self):
+        self.assertFalse(signoff_lines.records_user_signoff(SESSION_ADOPTED_LINE, 1))
+
     def test_each_line_takes_the_ruler_of_the_nearest_by_line_above_it(self):
         cases = [(1, False, "session entry's own line"), (3, False, "session entry's ruling line"),
                  (5, True, "user entry's own line"), (7, True, "user entry's ruling line")]

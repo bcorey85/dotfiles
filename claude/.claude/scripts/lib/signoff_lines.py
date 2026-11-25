@@ -82,10 +82,24 @@ def signoff_lines(text, name=""):
     return [(index + 1, lines[index]) for index in sorted(found & scope_indexes)]
 
 
-# A line that records a session ruling: `Ruled by the session, not the user`, or a ruler named as an orchestrating or
-# lane session (`(orchestrating session)`, `lane session`, `this lane session`). Any other `... by <who>` or
-# `signed off` line records a user sign-off.
-SESSION_OWNED = re.compile(re.escape(plan_format.SESSION_RULING_OWNER) + r"|\b(?:orchestrating|lane) session\b", re.I)
+# A session is the ruler of a line only through its `by` clause: `Ruled by the session, not the user`, or `by` a
+# (the, this) orchestrating or lane session, or a ruler named `(orchestrating session)`.
+SESSION_RULER = re.compile(re.escape(plan_format.SESSION_RULING_OWNER)
+                           + r"|\bby\s+(?:(?:the|this|a)\s+)?(?:orchestrating|lane)[\s-]+session\b"
+                           + r"|\((?:the\s+)?(?:orchestrating|lane)\s+session\)", re.I)
+# A clause that records the user's sign-off: `user sign-off`, `sign-off: <name>`, `user-signed`, or `signed off by`
+# anyone but a session. It wins over a session ruler on the same line.
+USER_SIGNOFF = re.compile(r"\buser[\s-]+sign-?\s*off\b|\bsign-?\s*off\s*:\s*\S|\buser[\s-]+signed\b"
+                          r"|\bsigned\s+off\s+by\s+(?!(?:the\s+|this\s+)?(?:(?:orchestrating|lane)[\s-]+)?session\b)",
+                          re.I)
+
+
+def is_session_ruled(line):
+    """True when a session is the line's ruler and no clause of the line records the user's sign-off. It fails
+    closed: a line with neither reads as the user's."""
+    if USER_SIGNOFF.search(line):
+        return False
+    return bool(SESSION_RULER.search(line))
 
 
 def records_ruler(line):
@@ -136,7 +150,7 @@ def ruler_marker_indexes(lines, index, scope):
 def file_has_user_marker(lines, scope):
     """True when a marker line in `scope`, outside a disagreement block, does not name the session."""
     scope = scope - disagreement_indexes(lines)
-    return any(is_ruler_marker(lines[number]) and not SESSION_OWNED.search(lines[number]) for number in sorted(scope))
+    return any(is_ruler_marker(lines[number]) and not is_session_ruled(lines[number]) for number in sorted(scope))
 
 
 def records_user_signoff(text, line_number, name=""):
@@ -152,5 +166,5 @@ def records_user_signoff(text, line_number, name=""):
         return file_has_user_marker(lines, scope)
     markers = ruler_marker_indexes(lines, line_number - 1, scope)
     if markers:
-        return any(not SESSION_OWNED.search(lines[number]) for number in markers)
+        return any(not is_session_ruled(lines[number]) for number in markers)
     return file_has_user_marker(lines, scope)

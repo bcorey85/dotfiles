@@ -715,6 +715,8 @@ def model_duties(packet, options):
         if options.source == "conversation" and not options.escapes:
             duties.append("if a fixed finding was a defect in code /review already passed, run "
                           "`review_fix.py escape --escape ...` (class, severity, gate_missed, guard)")
+    if packet["handback_edits"]:
+        duties.append(handback.HANDBACK_EDIT_APPLY)
     duties.append("write the closing line to the user; add nothing the block already says")
     return "; ".join(duties) + "."
 

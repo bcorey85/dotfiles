@@ -217,6 +217,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/tool-call-flags | 1 | 1 |
+| script/uncommitted-change | 1 | 1 |
 | script/uncommitted-hunks | 1 | 1 |
 | script/viewer-memory | 1 | 1 |
 | script/warn-skip-hooks | 1 | 0 |

@@ -83,6 +83,13 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("Write `none` only when `rg` printed no line.", text)
         self.assertIn("`not the user's sign-off: the criterion stands`", text)
 
+    def test_the_close_pass_gate_sends_medium_and_low_findings_to_a_coder_not_open_items(self):
+        text = guidance_text("skills/close-branch/SKILL.md")
+        self.assertIn("Medium and low findings do not fail it and never go to open items.", text)
+        self.assertIn("On a pass with medium or low findings, dispatch `coder` ONCE with them", text)
+        self.assertIn("dispatch `coder` ONCE with the failing items and the medium and low findings", text)
+        self.assertNotIn("gate medium and low findings", text)
+
     def test_a_brief_from_another_session_is_never_a_sign_off(self):
         self.assertIn("a brief another session wrote is never a sign-off", guidance_text("CLAUDE.md"))
         text = guidance_text("skills/code/SKILL.md")

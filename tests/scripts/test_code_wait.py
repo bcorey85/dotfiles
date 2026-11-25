@@ -17,6 +17,8 @@ module_spec = importlib.util.spec_from_file_location("code_wait", toolkit_paths.
 code_wait = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_wait)
 
+import reviewed_tree  # noqa: E402  (importable once code_wait has put the toolkit lib on sys.path)
+
 AGENT_ID = "a1817e9d1060d81ea"
 REPORT = "Phase 0 is implemented."
 STORE_SESSION = "sess-store"
@@ -521,6 +523,84 @@ class WaitReviewTest(unittest.TestCase):
         self.assertTrue(last_line.startswith("STOP (fix-removed-change)"), last_line)
         self.assertIn(str(phase_dir / "stop.md"), last_line)
         self.assertIn("/code resume", last_line)
+
+    def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False):
+        """Runs the review wait on a repo whose packet is cap-reached. By default it holds a blocker, so it stays
+        cap-reached; `clean` writes a packet with no blocker, no open class and a passed full check of the current
+        tree, which reads as deferred. `reports_to` None writes no lane entry; `malformed_lane_file` writes an
+        unparsable lane file instead. Returns the exit code, the output lines and stderr."""
+        repo, phase_dir = self.repo_with_pid(999999999)
+        fields = {"status": "cap-reached", "iter": 3, "fixed": [], "ask": [],
+                  "blockers": ["[critical] data loss"], "class_closure": "n/a - fixed[] empty",
+                  "findings_remaining": [{"finding": "[critical] data loss"}]}
+        if clean:
+            # The fingerprint needs a commit to compare the work tree against.
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "commit",
+                            "-q", "--allow-empty", "-m", "base"], check=True)
+            fields.update({"blockers": [], "findings_remaining": [], "open_classes": [], "unrun_reviewer": [],
+                           "full_check": "passed", "full_check_tree": reviewed_tree.fingerprint(repo)[1]})
+        packet = json.dumps(fields)
+        (phase_dir / "review.out").write_text(packet + "\n")
+        loop_folder = temp_dir(self)
+        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
+        environment = mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(temp_dir(self))})
+        environment.start()
+        self.addCleanup(environment.stop)
+        if reports_to is not None:
+            code_wait.lane_entries.add_entry("cap-lane", str(repo.resolve()), str(repo.resolve()), "fix/cap",
+                                             "brief", reports_to)
+        if malformed_lane_file:
+            lanes_dir = code_wait.lane_entries.lanes_dir()
+            lanes_dir.mkdir(parents=True)
+            (lanes_dir / "broken.json").write_text("{not json", encoding="utf-8")
+        output = io.StringIO()
+        errors = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = code_wait.wait_review(repo)
+        return code, output.getvalue().strip().splitlines(), errors.getvalue()
+
+    def assert_no_stop_line(self, lines):
+        for line in lines:
+            self.assertNotIn("STOP", line)
+            self.assertNotIn("orch-1", line)
+
+    def test_a_cap_reached_packet_in_a_lane_names_the_orchestrating_session_as_the_ruler(self):
+        code, lines, _errors = self.capped_review_in_lane("orch-1")
+
+        self.assertEqual(code, 1)
+        self.assertTrue(lines[-1].startswith("STOP (cap-reached)"), lines[-1])
+        self.assertIn("orch-1", lines[-1])
+        self.assertIn("SendMessage", lines[-1])
+        self.assertIn("/stop.md", lines[-1])
+        self.assertIn("## Plan Deviations", lines[-1])
+        self.assertIn("when the run has a plan file", lines[-1])
+        self.assertIn("/code resume", lines[-1])
+
+    def test_a_cap_reached_packet_with_no_lane_entry_prints_no_stop_line(self):
+        code, lines, _errors = self.capped_review_in_lane(None)
+
+        self.assertEqual(code, 0)
+        self.assert_no_stop_line(lines)
+
+    def test_a_cap_reached_packet_in_a_lane_with_no_orchestrator_prints_no_stop_line(self):
+        code, lines, _errors = self.capped_review_in_lane("")
+
+        self.assertEqual(code, 0)
+        self.assert_no_stop_line(lines)
+
+    def test_a_clean_cap_reached_packet_that_reads_as_deferred_prints_no_stop_line_in_a_lane(self):
+        code, lines, _errors = self.capped_review_in_lane("orch-1", clean=True)
+
+        self.assertEqual(code, 0)
+        self.assert_no_stop_line(lines)
+
+    def test_a_refused_lane_file_prints_no_stop_line_and_names_the_refusal_on_stderr(self):
+        code, lines, errors = self.capped_review_in_lane(None, malformed_lane_file=True)
+
+        self.assertEqual(code, 0)
+        self.assert_no_stop_line(lines)
+        self.assertIn("code_wait: a lane file is refused", errors)
 
     def test_a_finished_review_with_no_output_file_says_so_and_exits_one(self):
         repo, phase_dir = self.repo_with_pid(999999999)

@@ -13,10 +13,11 @@ printed: a resumed agent's old report is not printed again.
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
-loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
-exits 1 with the reason and the restart step. When that packet is clean (converged, or capped and read as deferred)
-and holds finding asks, it also opens a `phase-asks-open` row in the hand-back store and prints the
-`phase_asks.py rule` line the session runs to rule on them. When this session's latest hand-back for the repo still
+loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change, or stays
+cap-reached in a lane whose entry names a reports_to session), and otherwise exits 1 with the reason and the
+restart step. When that packet is clean (converged, or capped and read as deferred) and holds finding asks, it also
+opens a `phase-asks-open` row in the hand-back store and prints the `phase_asks.py rule` line the session runs to
+rule on them. When this session's latest hand-back for the repo still
 holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
 is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
 sentence that defers them to phase end (`review_fix.py defer`).
@@ -42,6 +43,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
 import code_run_names
 import handback
 import handback_store
+import lane_entries
 import loop_transcript
 import phase_asks
 import process_group
@@ -49,7 +51,7 @@ import reviewer_dispatch
 import script_utils
 import session_registry
 import stop_file_names
-from capped_review import effective_status
+from capped_review import CAP_REACHED, effective_status
 from review_fix_state import defer_instruction
 
 # The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
@@ -406,22 +408,62 @@ def phase_review(repo):
 
 
 def phase_stop_line(repo):
-    """The step line for a phase packet whose status the skill's routes do not cover, or "" for any other packet
-    (one that does not parse included: the skill reads it from the printed output)."""
+    """The step line for a phase packet the skill's routes do not cover (fix-removed-change), or for a cap-reached
+    packet in a lane another session started, whose ruler is that session. "" for any other packet (one that does
+    not parse included: the skill reads it from the printed output)."""
     folder = loop_dir(repo)
     if folder is None:
         return ""
     packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
     try:
-        status = handback.parse(packet_file.read_text()).get("status")
+        packet_text = packet_file.read_text()
+        status = handback.parse(packet_text).get("status")
     except handback.PacketError:
         return ""
+    if status == CAP_REACHED:
+        return cap_reached_stop_line(repo, packet_text)
     if status != handback.FIX_REMOVED_CHANGE:
         return ""
     stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
     return (f"STOP ({status}): the fix passes removed half or more of this phase's change. Write the packet's "
             f"`blockers` to {stop_file} and end the run there. The user checks `git diff`; `/code resume` "
             "(with the plan's absolute path when the run has a plan file) then runs this phase's review again.")
+
+
+def lane_reports_to(repo):
+    """The session that started the lane holding `repo`, or "" when no lane holds it, the lane has no such
+    session, or the lane file is refused. Fails open: code_wait then prints no cap stop line, and the skill's
+    `cap-reached` route applies."""
+    try:
+        lane = lane_entries.entry_containing(repo)
+    except lane_entries.LaneFileError as error:
+        print(f"code_wait: a lane file is refused, so the cap stop names no orchestrating session: {error}",
+              file=sys.stderr)
+        return ""
+    if lane is None:
+        return ""
+    return lane["reports_to"]
+
+
+def cap_reached_stop_line(repo, packet_text):
+    """The step line for a packet that stays `cap-reached` in a lane another session started, or "" for any other."""
+    repo_top = script_utils.work_tree_top(str(repo))
+    try:
+        packet = handback.load(packet_text)
+    except handback.PacketError:
+        return ""
+    if effective_status(packet, repo_top) != CAP_REACHED:
+        return ""
+    orchestrator = lane_reports_to(repo)
+    if not orchestrator:
+        return ""
+    stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
+    return (f"STOP ({CAP_REACHED}): {orchestrator} started this lane and rules on the review cap, not the user. "
+            f"Write the packet's findings_remaining to {stop_file}, send them to {orchestrator} with SendMessage "
+            "and end the run there. "
+            "Its reply is the cap ruling: when the run has a plan file, record it under ## Plan Deviations "
+            f"as ruled by session {orchestrator} with the date of its reply. "
+            "Then follow it with /code resume (with the plan's absolute path when the run has a plan file).")
 
 
 def launched_loop_running(folder):

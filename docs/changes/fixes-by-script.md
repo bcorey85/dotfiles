@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -125,6 +125,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
+| script/pre-commit | 2 | 2 |
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
@@ -185,7 +186,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |
-| script/pre-commit | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 0 |

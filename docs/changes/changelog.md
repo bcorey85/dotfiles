@@ -43,7 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
-* [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5's verify-log rows agree.
+* [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.
 * [Fix stale closing-phase and missing-file references](notes/2026-11-24-fix-stale-closing-phase-and-missing-file.md) [skill/test-audit, skill/branch-recap, skill/escape, skill/peer-review, agent/test-reviewer, agent/plan-verifier] Prompt files stop pointing agents at retired closing phases, a routing table that is gone and a retired log file, and the test-reviewer lists every scope the review loop sends.

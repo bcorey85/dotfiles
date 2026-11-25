@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "close-branch sends gate medium and low findings to the coder"
-description: "The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5's verify-log rows agree."
+description: "The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-25T17:01:26-06:00"}
 seq: 3
 kind: "fix"
@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-close-branch Step 4: a medium or low finding from the fix-diff gate never goes to open items. On a gate pass with such findings, one `coder` dispatch takes them, then Step 5. On a gate fail, they go to the coder with the failing items. The recap's Open items line no longer lists gate medium and low findings.
+close-branch Step 4: a medium or low finding from the fix-diff gate never goes to open items. On a gate pass with such findings, one `coder` dispatch takes them, then the Step 1 check runs again: red STOPs with its failing lines, green goes to Step 5. On a gate fail, they go to the coder with the failing items. A second gate fail reports them to the user with the failing items. The recap's Open items line no longer lists gate medium and low findings.
 
 ## Evidence
 
@@ -34,4 +34,4 @@ Rule meter CB01: on 3/3, off 3/3 (ALREADY). Step 4 and Step 5 now name the same 
 
 ## Back-out
 
-Revert the Step 4 hunk and the recap's Open items line in `claude/.claude/skills/close-branch/SKILL.md`.
+Revert the Step 4 hunk and the recap's Open items line in `claude/.claude/skills/close-branch/SKILL.md`, and delete that test from `tests/scripts/test_guidance_rules.py`.

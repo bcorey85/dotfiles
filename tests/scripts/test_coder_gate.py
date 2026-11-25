@@ -664,6 +664,27 @@ class RunCommandsTests(unittest.TestCase):
         gate = {"repoRoot": str(self.repo), "commands": list(commands), "env": env or {}}
         return self.gate.run_commands(gate, collect_summaries=collect_summaries)
 
+    def started_command(self, cap_available):
+        started = []
+
+        def fake_run_process(command, _repo_root, env=None, timeout=None):
+            started.append(command)
+            return (0, "", "")
+
+        with mock.patch.object(self.gate.memory_cap_scope, "cap_available", return_value=cap_available), \
+                mock.patch.object(self.gate.script_utils, "run_process", side_effect=fake_run_process):
+            self.run_gate_commands("echo hi")
+        return started[0]
+
+    def test_a_capped_machine_runs_each_command_as_the_capped_argv(self):
+        argv = self.started_command(True)
+
+        self.assertIn("--slice=tests.slice", argv)
+        self.assertEqual(["/bin/sh", "-c", "echo hi"], argv[-3:])
+
+    def test_a_machine_without_a_scope_runs_the_plain_shell_command(self):
+        self.assertEqual("echo hi", self.started_command(False))
+
     COLLISION_TEXT = 'django.db.utils.OperationalError: database "test_app" is being accessed by other users'
 
     def collide_times(self, collisions):

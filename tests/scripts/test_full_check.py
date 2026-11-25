@@ -22,7 +22,10 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_parts  # noqa: E402
 import full_check_receipt  # noqa: E402
 import linked_installs  # noqa: E402
+import memory_cap_scope  # noqa: E402
+import process_group  # noqa: E402
 import reviewed_tree  # noqa: E402
+from systemd_scope import systemd_scope_works  # noqa: E402
 
 # A command that prints a test runner's own summary line.
 PASSING_SUITE = "echo '3 passed in 0.1s'"
@@ -1259,6 +1262,77 @@ class PhaseExpectedRedTest(unittest.TestCase):
     def test_a_plan_without_its_phase_or_an_unreadable_plan_is_refused(self):
         self.assertEqual(2, self.check("--plan", "plan.md").returncode)
         self.assertEqual(2, self.check("--plan", "missing.md", "--phase", "1").returncode)
+
+
+class CappedRunTest(unittest.TestCase):
+    """run_check_command starts the check inside the shared capped slice when the machine can run one."""
+
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "check.log"
+
+    def started_command(self, cap_available):
+        with mock.patch.object(memory_cap_scope, "cap_available", return_value=cap_available), \
+                mock.patch.object(full_check.subprocess, "Popen") as popen:
+            popen.return_value.wait.return_value = 0
+            full_check.run_check_command(str(self.repo), "echo hi", self.log, 5, None, None)
+        return popen.call_args
+
+    def test_a_capped_machine_runs_the_check_as_the_capped_argv(self):
+        call = self.started_command(True)
+
+        argv = call.args[0]
+        self.assertIn("--slice=tests.slice", argv)
+        self.assertIn("MemoryMax=8G", argv)
+        self.assertEqual(["/bin/sh", "-c", "echo hi"], argv[-3:])
+        self.assertFalse(call.kwargs.get("shell"))
+
+    def test_the_capped_argv_starts_with_the_absolute_systemd_run_path(self):
+        # Popen looks a bare name up in the env it is given, which may lack systemd-run's folder.
+        with mock.patch.object(memory_cap_scope, "systemd_run_path", return_value="/opt/sd/bin/systemd-run"):
+            call = self.started_command(True)
+
+        self.assertEqual("/opt/sd/bin/systemd-run", call.args[0][0])
+        prefix_words = memory_cap_scope.CAPPED_PREFIX_WORDS
+        self.assertEqual(list(prefix_words[1:]), call.args[0][1:len(prefix_words)])
+
+    def test_a_machine_without_a_scope_runs_the_plain_shell_command(self):
+        call = self.started_command(False)
+
+        self.assertEqual("echo hi", call.args[0])
+        self.assertTrue(call.kwargs["shell"])
+
+
+@unittest.skipUnless(systemd_scope_works(),
+                     "systemd-run --user --scope is not available on this machine")
+class CappedLiveRunTest(unittest.TestCase):
+    def setUp(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.repo = pathlib.Path(scratch.name)
+        self.log = self.repo / "check.log"
+
+    def test_the_check_runs_in_the_shared_slice(self):
+        exit_code = full_check.run_check_command(str(self.repo), "cat /proc/self/cgroup", self.log, 60, None, None)
+
+        self.assertEqual(0, exit_code)
+        self.assertIn("tests.slice", self.log.read_text())
+
+    def test_a_check_past_the_timeout_is_killed_with_nothing_left_running(self):
+        pid_file = self.repo / "pid"
+        started = []
+
+        exit_code = full_check.run_check_command(
+            str(self.repo), f"sleep 30 & echo $! > {pid_file}; wait", self.log, 3, None, started.append)
+
+        self.assertIsNone(exit_code)
+        self.assertEqual(1, len(started))
+        sleeper = int(pid_file.read_text())
+        time.sleep(0.5)
+        self.assertFalse(process_group.pid_is_alive(sleeper))
+        self.assertFalse(process_group.pid_is_alive(started[0]))
 
 
 if __name__ == "__main__":

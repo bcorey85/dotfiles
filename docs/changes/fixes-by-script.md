@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-777 fix notes
+778 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -20,7 +20,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
-| script/full-check | 30 | 6 |
+| script/full-check | 31 | 7 |
 | script/script-utils | 30 | 8 |
 | script/plan-format | 28 | 8 |
 | script/review-loop | 28 | 11 |
@@ -39,10 +39,10 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-log | 14 | 1 |
 | script/log-review-finding | 12 | 0 |
 | script/refactor-flow | 12 | 4 |
+| script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
 | script/log-escape | 11 | 2 |
 | script/verify-common | 11 | 1 |
-| script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/inline-interpreter-hint | 9 | 5 |
@@ -80,6 +80,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/herdr-dev | 4 | 2 |
 | script/log-scan | 4 | 0 |
+| script/memory-cap-scope | 4 | 4 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-packet | 4 | 1 |
 | script/source-paths | 4 | 0 |
@@ -98,7 +99,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
-| script/memory-cap-scope | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
 | script/shell-command-words | 3 | 3 |

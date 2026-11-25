@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import sys
+import uuid
 
 import shell_command
 
@@ -29,6 +30,10 @@ TEST_SLICE = "tests.slice"
 CAPPED_PREFIX_WORDS = ("systemd-run", "--user", "--scope", "--quiet", f"--slice={TEST_SLICE}", "-p",
                        f"MemoryMax={MEMORY_MAX}", "-p", "MemorySwapMax=0")
 CAPPED_PREFIX = " ".join(CAPPED_PREFIX_WORDS)
+# The front of the scope unit name a capped command runs in. systemd-run's own name is built from the pid it runs as,
+# and `--scope` and `sh -c` both exec in place: a command that is a single capped-prefix command (no pipe or list, so
+# `sh -c` execs it) would get the same name and fail with "Unit ... was already loaded".
+CAPPED_UNIT_PREFIX = "capped"
 # The shell a capped command runs in: the one subprocess's shell=True uses.
 CAPPED_SHELL = "/bin/sh"
 SHELLS = {"bash", "sh", "zsh"}
@@ -77,8 +82,10 @@ def cap_available():
 def capped_shell_argv(program, command):
     """The argv that runs a shell command text inside the capped scope, in the shared slice.
 
-    `program` is systemd-run's absolute path, so a PATH in the env a caller passes to Popen cannot hide it."""
-    return [program, *CAPPED_PREFIX_WORDS[1:], CAPPED_SHELL, "-c", command]
+    `program` is systemd-run's absolute path, so a PATH in the env a caller passes to Popen cannot hide it. Each call
+    names a unit of its own."""
+    unit_name = f"{CAPPED_UNIT_PREFIX}-{os.getpid()}-{uuid.uuid4().hex}"
+    return [program, *CAPPED_PREFIX_WORDS[1:], f"--unit={unit_name}", CAPPED_SHELL, "-c", command]
 
 
 def shell_popen_args(command):

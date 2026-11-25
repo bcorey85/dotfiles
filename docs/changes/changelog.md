@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1206 changes
+1207 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -47,6 +47,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md) [script/review-loop-script] The review loop's ruling check and its scope guard now share one test of whether a finding names a repo file, so a file named by ./ or a unique trailing part is backed up and can be put back.
+* [Full check names its own memory-capped scope unit](notes/2026-11-25-full-check-names-its-own-memory-capped-scope-unit.md) [script/memory-cap-scope, script/check-output, script/full-check] A check command that starts with the capped systemd-run prefix now runs inside the full check's own capped scope, where before both scopes got one unit name and the check never started.
 * [Review loop hands a ruled sign-off finding back to the caller](notes/2026-11-25-review-loop-hands-a-ruled-sign-off-finding-back-to.md) [script/review-loop-script, script/review-loop-ruled, script/review-fix, script/handback, script/review-loop-signoffs, script/review-loop-prompts, script/review-loop-packet, script/uncommitted-hunks, script/diff-ranges, script/signoff-lines, script/uncommitted-change, script/git-raw-diff, script/reviewed-tree] A user-ruled finding, or a session-ruled one on a session-owned line, no longer reaches the coder or comes back as a [sign-off] ask; a session-ruled one on a user's sign-off line stays an ask. The loop hands it back as a hand-back edit naming file, line and ruled text, outside the round cap. The cap-reached stop also names the uncommitted change of the repo.
 * [Review loop diffs against the merge base when the given base has moved ahead](notes/2026-11-25-review-loop-diffs-against-the-merge-base-when-the.md) [script/review-loop, script/code-review-start] A review launched with a base ref whose tip has moved past the branch now diffs against the merge base, so reviewers see only the branch's own changes instead of master's new commits as reverts.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.

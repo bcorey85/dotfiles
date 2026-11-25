@@ -101,7 +101,7 @@ def relayed_owner(owner, relayed):
     it when `relayed` is a RelayedRuling."""
     if relayed is None:
         return owner
-    return f"{owner}, relayed by session {relayed.request.relayed_by} (user turn at {relayed.turn.timestamp})"
+    return f"{owner}, relayed by session {relayed.session_name} (user turn at {relayed.turn.timestamp})"
 
 
 def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=(), relayed=None,
@@ -121,7 +121,7 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo,
         handback_store.record_ruled_impact(session_id, row_text, ruled_repo, finding_text=finding_text,
                                            decision=decision, owner=owner, ruled_at=ruled_at)
     if relayed is not None:
-        handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.request.relayed_by,
+        handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.session_name,
                                                   relayed.turn.timestamp, impact_text)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)

@@ -41,4 +41,4 @@ The rationale, the alternatives, and who decided still matter — they live in
 
 ## Sweep before handing back
 
-Diff-check your own committed code against the table before reporting. `/branch-recap` re-checks at branch scope.
+Diff-check your own committed code against the table before reporting.

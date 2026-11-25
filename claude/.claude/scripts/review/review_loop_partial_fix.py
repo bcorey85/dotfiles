@@ -186,7 +186,7 @@ def coder_failure_blocker(call_name, error, scope_guard_failed=False, died=True)
 class PartialFixRuns:
     """The partial-fix record of a run, as a mixin for `LoopRun`. The host class holds repo, held_unfixed,
     files_touched and pending_record, and has undo_protected_edits, flag_broken_no_code_rulings,
-    ask_for_approval_only_edits, keep_coder_commit_in_scope, findings_on_reverted_paths, keep_open and drop_open."""
+    ask_for_approval_only_edits, keep_coder_commit_in_scope, keep_unreverted_open."""
 
     # The findings of the saved record that no coder pass or settle has answered yet. A tuple or a list the run
     # replaces on each change, so no instance shares it.
@@ -222,9 +222,7 @@ class PartialFixRuns:
         kept = [path for path in changed if path not in reverted]
         self.files_touched.update(kept)
         self.keep_coder_commit_in_scope()
-        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
-        self.drop_open(reverted_findings)
-        self.keep_open([item for item in findings if item not in reverted_findings])
+        reverted_findings = self.keep_unreverted_open(findings, reverted)
         kept_error = error.keeping_only(kept)
         blocker = coder_failure_blocker(call_name, kept_error, died=error.died)
         dead = dead_pass_record(self.repo, call_name, findings, reverted_findings, self.saved_record_texts,

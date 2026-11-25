@@ -72,7 +72,7 @@ class WantedTargetPathTest(unittest.TestCase):
         ]
         for change, expected, message in cases:
             with self.subTest(message):
-                self.assertEqual(approval_asks_store.wanted_target_path(change), expected)
+                self.assertEqual(approval_asks_store.wanted_path_of_change(change), expected)
 
 
 class ApprovalOnlyPathsTest(unittest.TestCase):
@@ -91,7 +91,7 @@ def approval_host(user_ruled=(), session_ruled=(), reverts=False):
     host = Host()
     if not reverts:
         host.revert_approval_edit = lambda path: False
-    host.asks, host.ask_gates = [], {}
+    host.asks, host.ask_gates, host.ask_rounds, host.iter_count = [], {}, {}, 1
     host.user_ruled, host.session_ruled = list(user_ruled), list(session_ruled)
     host.add_ask = lambda agent, item: review_loop_script.LoopRun.add_ask(host, agent, item)
     return host
@@ -1860,7 +1860,7 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn(review_loop_ruled.SKIPPED_WHY, packet["blockers"][0])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder"])
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder", "ruling-check"])
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(packet["ask"], [])
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))

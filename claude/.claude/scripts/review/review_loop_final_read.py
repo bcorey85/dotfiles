@@ -2,10 +2,11 @@
 fix pass the round budget ended on, and the repair passes (gate, lint, class closure, stale prose) that changed
 code. The host class holds out, dispatches, iter_count, last_pass, last_fix, last_review_round, open_fixes,
 scoped_tests, nits and round_two_fix_diff_path, and has next_round, run_reviewers, review_scope, stop, keep_open,
-tree_paths and take_review."""
+tree_paths, take_review and post_cap_round."""
 import script_utils
 from capped_review import CAP_REACHED
 from review_loop_pass_names import CLASS_FIX_PASS, GATE_FIX_PASS, LINT_FIX_PASS, PROSE_FIX_PASS
+from review_loop_post_cap import FINAL_READ, SCOPED_REREVIEW
 
 FINAL_READ_AGENT = "code-reviewer"
 FINAL_DIFF_NAME = "final-fix.diff"
@@ -36,7 +37,7 @@ class FinalRead:
         if not (spent and self.last_pass == "coder" and self.last_fix is not None):
             return
 
-        self.read_diffs(FINAL_DIFF_NAME, self.last_fix.diffs, self.last_fix.changed)
+        self.read_diffs(FINAL_DIFF_NAME, self.last_fix.diffs, self.last_fix.changed, FINAL_READ)
 
     def read_late_repairs(self):
         """One code-reviewer read of the diffs of the repair passes that changed code, once, at the end of a converged
@@ -49,14 +50,14 @@ class FinalRead:
         diffs = [diff for _name, result in self.late_repairs for diff in result.diffs]
         changed = [path for _name, result in self.late_repairs for path in result.changed]
         self.late_repairs = ()
-        if not self.read_diffs(LATE_REPAIR_DIFF_NAME, diffs, changed):
+        if not self.read_diffs(LATE_REPAIR_DIFF_NAME, diffs, changed, SCOPED_REREVIEW):
             unread_note = f"no reviewer read the {names} pass"
             self.scoped_tests = "; ".join(filter(None, [self.scoped_tests, unread_note]))
 
-    def read_diffs(self, diff_name, diffs, changed):
-        """One code-reviewer read of `diffs`, over the changed files in the review scope. True when it ran. Its fixes
-        join open_fixes and, once `apply_pending_cap` runs, stop the run as cap-reached; the changes count as
-        reviewed."""
+    def read_diffs(self, diff_name, diffs, changed, kind):
+        """One code-reviewer read of `diffs`, over the changed files in the review scope, counted as a post-cap pass
+        of `kind`. True when it ran. Its fixes join open_fixes and, once `apply_pending_cap` runs, stop the run as
+        cap-reached; the changes count as reviewed."""
         in_scope = self.review_scope()
         owned = [path for path in dict.fromkeys(changed) if path in in_scope]
         if not owned:
@@ -66,7 +67,7 @@ class FinalRead:
         script_utils.write_text_atomically(diff_file, "\n\n".join(diffs))
         self.round_two_fix_diff_path = str(diff_file)
         self.dispatches = [(FINAL_READ_AGENT, owned)]
-        self.next_round()
+        self.post_cap_round(kind)
         reviews = self.run_reviewers()
         dispatched = self.dispatches
         self.dispatches = []

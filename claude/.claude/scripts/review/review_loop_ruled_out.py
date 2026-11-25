@@ -68,10 +68,11 @@ def names_deletion(finding_texts, path, root):
 
 
 class PassGuard:
-    """What one coder pass must leave alone: a copy of each ruled-out file that existed before the pass, the paths
-    that did not exist, and a copy of each file of the diff that no finding of the pass asks to delete."""
+    """What one coder pass must leave alone: a backup of the ruled-out files, which holds a copy of each that existed
+    before the pass and records the paths that did not, and a copy of each file of the diff that no finding of the
+    pass asks to delete."""
 
-    def __init__(self, repo, role, ruled_backup, ruled_absent, backup, deletions):
+    def __init__(self, repo, role, ruled_backup, backup, deletions):
         # The diff files a finding of the pass asks to delete: the untracked-file guard leaves them alone too.
         self.deletions = list(deletions)
         self.repo = pathlib.Path(repo)
@@ -79,25 +80,13 @@ class PassGuard:
         self.ruled_backup = ruled_backup
         # Ruled-out files the backup could not copy: the hash each had before the pass, to tell a change afterwards.
         self.unsaved_hashes = {path: worktree_snapshot.file_hash(self.repo, path) for path in ruled_backup.unsaved}
-        self.ruled_absent = ruled_absent
         self.backup = backup
 
     def put_back_ruled_out(self):
         """Copies back each ruled-out file that changed or vanished, and removes each file the pass created. A
         directory the pass created at a ruled-out path stays. Returns RuledOutPutBack(the paths put back, the
         directories left in place)."""
-        put_back = file_backup.restore_changed(self.ruled_backup)
-        left = []
-        for path in self.ruled_absent:
-            target = self.repo / path
-            if not target.exists():
-                continue
-            if target.is_dir() and not target.is_symlink():
-                left.append(path)
-                continue
-            target.unlink()
-            put_back.append(path)
-        return RuledOutPutBack(sorted(put_back), sorted(left))
+        return RuledOutPutBack(*file_backup.put_back_all(self.ruled_backup))
 
     def changed_uncopied_files(self):
         """The ruled-out files the backup could not copy that the pass changed or deleted."""
@@ -135,7 +124,6 @@ def begin_pass(repo, out, role, ruled_out, diff_files, finding_texts):
     root = pathlib.Path(repo)
     pass_dir = pathlib.Path(out) / BACKUP_FOLDER / role
     ruled_backup = file_backup.save_files(root, ruled_out, pass_dir / "ruled-out")
-    ruled_absent = sorted(path for path in ruled_out if not (root / path).exists())
     deletions = [path for path in diff_files if path not in ruled_out and names_deletion(finding_texts, path, root)]
     # The untracked-file guard around the model call puts back and notes an untracked file it covers; this guard
     # backs up only the rest, so one deletion makes one note.
@@ -143,4 +131,4 @@ def begin_pass(repo, out, role, ruled_out, diff_files, finding_texts):
     kept_paths = [path for path in diff_files
                   if path not in ruled_out and path not in deletions and path not in covered]
     backup = file_backup.save_files(root, kept_paths, pass_dir / "diff")
-    return PassGuard(root, role, ruled_backup, ruled_absent, backup, deletions)
+    return PassGuard(root, role, ruled_backup, backup, deletions)

@@ -41,7 +41,7 @@ When the lane edits files under `claude/.claude/` in dotfiles:
 
 - Before a full suite or a heavy run, check `free -g`. Under 8 GB available, wait and tell `<orchestrator>`.
 - Run the suite with a memory cap and in the background:
-  `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh > <log> 2>&1`.
+  `systemd-run --user --scope --quiet --slice=tests.slice -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh > <log> 2>&1`.
 
 ## Final report
 

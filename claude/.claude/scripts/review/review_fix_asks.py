@@ -1,8 +1,8 @@
 """review_fix_asks.py: `review_fix.py asks-done`. It logs one outcome row per ask, once; `--correct` logs one more row
 for each corrected ask while the printed fix run has not launched. When the user accepted or modified an ask, it
 writes those asks to a findings file and prints the fix run that applies them: the first run's launch flags plus
-`--fix`, `--iter` and `--detach`, so the loop's fix coder makes the change, a review round covers it, and the
-converged hand-back earns review credit."""
+`--fix`, `--iter`, `--fix-rounds`, `--post-cap-passes` and `--detach`, so the loop's fix coder makes the change, a
+review round covers it, and the converged hand-back earns review credit."""
 import os
 import shlex
 import sys
@@ -452,7 +452,8 @@ def write_findings_file(finding_lines):
 
 def print_fix_run(target, findings_file, summary_lines):
     """Prints the fix run that applies the accepted asks in findings_file. A run that left no launch record prints
-    the stored line from `no_record_launch_line`: `--iter`, the dispatched `--repo` and `--detach` only."""
+    the stored line from `no_record_launch_line`: `--iter`, the cap flags (`--fix-rounds`, `--post-cap-passes`), the
+    dispatched `--repo` and `--detach` only."""
     if not target.get("relaunch_args"):
         return print_action(
             NO_LAUNCH_RECORD_ACTION, *summary_lines,
@@ -524,14 +525,16 @@ def fix_launch_line(target, findings_file, user_numbers, session_numbers):
 
 
 def relaunch_line(target, lead_args, handoff_file=None):
-    """The launch line of a later run of the review in target: lead_args, `--iter`, the first run's relaunch flags
-    (with `--handoff` pointed at handoff_file when given) and `--detach`. The later run holds every dirty file not
-    listed, and the first run's own edits are dirty, so the files it touched join the scoped files."""
+    """The launch line of a later run of the review in target: lead_args, `--iter`, the packet's `--fix-rounds` and
+    `--post-cap-passes` (`review_launch.cap_count_args`), the first run's relaunch flags (with `--handoff` pointed
+    at handoff_file when given) and `--detach`. The later run holds every dirty file not listed, and the first
+    run's own edits are dirty, so the files it touched join the scoped files."""
     touched_paths = target.get("files_touched") or []
     relaunch_args = review_launch.relaunch_args_with_files(target["relaunch_args"], touched_paths)
     if handoff_file is not None:
         relaunch_args = review_launch.relaunch_args_with_handoff(relaunch_args, handoff_file)
-    launch_args = [*lead_args, "--iter", str(target["iter"]), *relaunch_args, "--detach"]
+    cap_args = review_launch.cap_count_args(target)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), *cap_args, *relaunch_args, "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -546,11 +549,13 @@ def fix_run_launch_line(target, findings_file):
 
 
 def no_record_launch_line(target, findings_file, user_numbers, session_numbers):
-    """The launch line of a fix run with no launch record: `--iter`, the session's repo (`session_repo`) as `--repo`
-    and `--detach` only."""
+    """The launch line of a fix run with no launch record: `--iter`, the packet's `--fix-rounds` and
+    `--post-cap-passes` (`review_launch.cap_count_args`), the session's repo (`session_repo`) as `--repo` and
+    `--detach` only."""
     repo = required_packet_repo([])
     lead_args = fix_lead_args(findings_file, user_numbers, session_numbers)
-    launch_args = [*lead_args, "--iter", str(target["iter"]), "--repo", str(repo), "--detach"]
+    cap_args = review_launch.cap_count_args(target)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), *cap_args, "--repo", str(repo), "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -730,10 +735,11 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
-def refuse_session_on_user_only(asks, decided_by, user_command, holdable=False):
+def refuse_session_on_user_only(asks, decided_by, user_command, outcomes, holdable=False):
     """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`. `user_command` is the
-    call the refusal tells the session to use for the user's ruling; `holdable` makes it name `held` too."""
-    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, holdable)
+    call the refusal tells the session to use for the user's ruling; `outcomes` (one per ask) lets a `rejected` on
+    a wanted-change ask pass; `holdable` makes it name `held` too."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, outcomes, holdable)
     if refusal:
         raise UsageError(refusal)
 
@@ -745,7 +751,7 @@ def command_correct_asks(options):
     left to apply."""
     state = load_fix_state()
     refuse_unless_correctable(state, options.packet_id)
-    ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
+    deciders = ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
@@ -756,7 +762,10 @@ def command_correct_asks(options):
     # their listing numbers.
     corrected_asks = [item if index in indexes else {} for index, item in enumerate(asks)]
     user_command = f"asks-done --correct --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command)
+    # A user's ruling is never replaced by a session: a None outcome keeps that ask refused.
+    session_outcomes = [None if decider == plan_format.USER_RULING else outcome
+                        for decider, outcome in zip(deciders, outcomes, strict=True)]
+    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command, session_outcomes)
     relayed = verified_fix_relay(options, corrected_asks)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by, relayed)
 
@@ -834,7 +843,7 @@ def read_answers(state, options, waiting):
     # asks by their numbers in the stop's order.
     kept_places = [{} if outcome == HELD else item for item, outcome in zip(asks, outcomes, strict=True)]
     user_command = f"asks-done --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(kept_places, options.decided_by, user_command, holdable=True)
+    refuse_session_on_user_only(kept_places, options.decided_by, user_command, outcomes, holdable=True)
     review_asks.refuse_conditional_changes(kept_places, outcomes, "asks-done ...")
     review_asks.refuse_unlocated_changes(kept_places, outcomes, notes, "asks-done ...")
     refuse_changed_retry(state, target, split.plain_outcomes, split.plain_notes, correctable=False)

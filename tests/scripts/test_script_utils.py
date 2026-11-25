@@ -1571,6 +1571,95 @@ class WorkTreeBlobRestoreTest(unittest.TestCase):
         (self.repo / "a.md").unlink()
         self.assertFalse(script_utils.matches_head(self.repo, "a.md"))
 
+    def test_an_unchanged_entry_is_not_written_back_and_a_changed_one_is(self):
+        (self.repo / "b.md").write_text("two\n")
+        self.git_run("add", "b.md")
+        entries_before = script_utils.index_entries(self.repo, ["a.md", "b.md"])
+        (self.repo / "b.md").write_text("two edited\n")
+        self.git_run("add", "b.md")
+
+        with unittest.mock.patch.object(script_utils, "restore_index_entry", return_value=False) as restore:
+            failed = script_utils.restore_index_entries(self.repo, entries_before)
+
+        restore.assert_called_once_with(self.repo, "b.md", entries_before["b.md"])
+        self.assertEqual(failed, {"b.md"}, "only the changed path is attempted, and a path it fails on is named")
+
+    def test_an_index_git_cannot_read_names_every_path_and_writes_none(self):
+        entries_before = script_utils.index_entries(self.repo, ["a.md", "new.md"])
+        unreadable = unittest.mock.patch.object(script_utils, "index_entries",
+                                                side_effect=script_utils.GitCallError("no index"))
+
+        with unreadable, unittest.mock.patch.object(script_utils, "restore_index_entry") as restore:
+            failed = script_utils.restore_index_entries(self.repo, entries_before)
+
+        restore.assert_not_called()
+        self.assertEqual(failed, set(entries_before))
+
+    def test_every_entry_unchanged_makes_no_write_and_fails_no_path(self):
+        entries_before = script_utils.index_entries(self.repo, ["a.md", "new.md"])
+
+        with unittest.mock.patch.object(script_utils, "restore_index_entry", return_value=False) as restore:
+            failed = script_utils.restore_index_entries(self.repo, entries_before)
+
+        restore.assert_not_called()
+        self.assertEqual(failed, set())
+
+
+class CommitsSinceTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name).resolve()
+        self.git_run("init", "-q", "-b", "main")
+
+    def git_run(self, *argv):
+        subprocess.run(["git", *argv], cwd=self.repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+
+    def commit(self, subject):
+        self.git_run("commit", "-q", "--allow-empty", "-m", subject)
+
+    def test_commits_after_a_commit_come_back_oldest_first_with_short_hash_and_subject(self):
+        self.commit("first")
+        first = script_utils.head_commit_or_unborn(self.repo)
+        self.commit("second")
+        self.commit("third")
+
+        listing = script_utils.commits_since(self.repo, first)
+
+        self.assertEqual([line.split(" ", 1)[1] for line in listing], ["second", "third"])
+
+    def test_no_new_commit_gives_an_empty_list(self):
+        self.commit("first")
+        first = script_utils.head_commit_or_unborn(self.repo)
+
+        self.assertEqual(script_utils.commits_since(self.repo, first), [])
+
+    def test_a_repo_that_had_no_commit_counts_every_commit_of_head(self):
+        self.commit("only")
+
+        listing = script_utils.commits_since(self.repo, None)
+
+        self.assertEqual([line.split(" ", 1)[1] for line in listing], ["only"])
+
+    def test_an_unborn_repo_with_no_commit_before_gives_an_empty_list(self):
+        with unittest.mock.patch.object(script_utils, "head_commit_or_unborn", return_value=None), \
+                unittest.mock.patch.object(script_utils, "git_output") as git_output:
+            self.assertEqual(script_utils.commits_since(self.repo, None), [])
+
+        git_output.assert_not_called()
+
+    def test_a_head_that_git_cannot_read_gives_none(self):
+        error = script_utils.GitCallError("head unreadable")
+        with unittest.mock.patch.object(script_utils, "head_commit_or_unborn", side_effect=error), \
+                unittest.mock.patch.object(script_utils, "git_output") as git_output:
+            self.assertIsNone(script_utils.commits_since(self.repo, None))
+
+        git_output.assert_not_called()
+
+    def test_a_failed_git_log_gives_none_not_an_empty_list(self):
+        with unittest.mock.patch.object(script_utils, "git_output", return_value=None):
+            self.assertIsNone(script_utils.commits_since(self.repo, "abc123"))
+
 
 if __name__ == "__main__":
     unittest.main()

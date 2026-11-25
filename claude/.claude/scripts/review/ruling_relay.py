@@ -1,7 +1,8 @@
 """ruling_relay.py: a user ruling on user-only asks that the user gave to another session, which relays it with
-`--by user --relayed-by <session name>` on `review_fix.py asks-done` and `phase_asks.py rule`. The call is verified
-here, in process, against the relaying session's transcript (see human_turn_lookup): a relay with no real user turn
-of that session typed after the asks were filed is refused. Only the turn's time is stored, never its words."""
+`--by user --relayed-by <session name or id>` on `review_fix.py asks-done` and `phase_asks.py rule`. The call is
+verified here, in process, against the relaying session's transcript (see human_turn_lookup): a relay with no real
+user turn of that session typed after the asks were filed is refused. Only the turn's time is stored, never its
+words."""
 import pathlib
 import sys
 from typing import NamedTuple
@@ -28,13 +29,13 @@ def relay_refusal_line(error):
 
 
 class RelayRequest(NamedTuple):
-    """The relay words of a call: the relaying session's name."""
+    """The relay words of a call: the relaying session's name or id."""
     relayed_by: str
 
 
 class RelayedRuling(NamedTuple):
-    """A verified relay: the request and the latest user turn of the relaying session."""
-    request: RelayRequest
+    """A verified relay: the name of the relaying session's registry row and its latest user turn."""
+    session_name: str
     turn: human_turn_lookup.HumanTurn
 
 
@@ -86,8 +87,8 @@ def latest_filed_at(asks):
 def verify_relay(request, filed_at):
     """The RelayedRuling of `request`: the latest real user turn of the live session it names, typed after
     `filed_at` (epoch seconds). Raises HumanTurnRefusedError naming the lookup that failed."""
-    turn = human_turn_lookup.verified_human_turn(request.relayed_by, filed_at)
-    return RelayedRuling(request, turn)
+    session, turn = human_turn_lookup.verified_human_turn(request.relayed_by, filed_at)
+    return RelayedRuling(session.name, turn)
 
 
 def record_relay(session_id, repo, relayed, asks):
@@ -99,5 +100,5 @@ def record_relay(session_id, repo, relayed, asks):
     finding_ids = [item.get("finding_id") for item in asks if item.get(USER_ONLY_KEY)]
     if not finding_ids:
         return None
-    return handback_store.record_relayed_ruling(session_id, repo, plan_format.USER_RULING, relayed.request.relayed_by,
+    return handback_store.record_relayed_ruling(session_id, repo, plan_format.USER_RULING, relayed.session_name,
                                                 relayed.turn.timestamp, finding_ids)

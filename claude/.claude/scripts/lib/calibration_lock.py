@@ -26,6 +26,7 @@ exists (or that names no owner) is live.
 """
 import calendar
 import hashlib
+import json
 import os
 import pathlib
 import time
@@ -47,7 +48,8 @@ PRE_HASH_LENGTH = 16
 
 def pre_hash(file):
     """The lock's pre_hash for a file: the first PRE_HASH_LENGTH hex characters of the sha256 of its bytes."""
-    return hashlib.sha256(pathlib.Path(file).read_bytes()).hexdigest()[:PRE_HASH_LENGTH]
+    file_bytes = pathlib.Path(file).read_bytes()
+    return hashlib.sha256(file_bytes).hexdigest()[:PRE_HASH_LENGTH]
 
 
 def state_folder():
@@ -57,15 +59,18 @@ def state_folder():
 
 
 def calibration_lock_path():
+    """The lock file under the state folder."""
     return os.path.join(state_folder(), "lock.json")
 
 
 def legacy_lock_path():
+    """The old lock file in the home config folder (never `$CLAUDE_CONFIG_DIR`), read as a fallback only."""
     home = pathlib.Path.home()
     return os.path.join(str(home), ".claude", "calibration-lock.json")
 
 
 def backups_folder():
+    """The folder under the state folder that holds the backups."""
     return os.path.join(state_folder(), "backups")
 
 
@@ -144,6 +149,26 @@ def lock_is_live(stamp, owner_pid, now, writer="", session_pid=""):
     return pid_is_alive(owner_pid)
 
 
+def write_lock(relpath, worktree, backup_copy, seed_class, line, owner_pid, run_id):
+    """Write the mutation-tester lock in one atomic step; returns the pre_hash it recorded."""
+    recorded_hash = pre_hash(backup_copy)
+    fields = {
+        "ts": format_stamp(time.time()),
+        "kind": MUTATION_KIND,
+        "writer": MUTATION_WRITER,
+        "file": relpath,
+        "backup_path": backup_copy,
+        "pre_hash": recorded_hash,
+        "class": "mutant: " + seed_class,
+        "line": line,
+        "worktree": str(worktree),
+        "owner_pid": owner_pid,
+        "run_id": run_id,
+    }
+    script_utils.write_text_atomically(calibration_lock_path(), json.dumps(fields, indent=2) + "\n")
+    return recorded_hash
+
+
 class LockView(NamedTuple):
     file: str
     backup: str
@@ -153,16 +178,24 @@ class LockView(NamedTuple):
     worktree: str
     owner_pid: str
     writer: str
+    raw_file: str
+    pre_hash: str
+    run_id: str
 
 
 def read_lock_view(text):
     """The lock's fields with the guard's defaults. The writer records a path relative to its own worktree;
-    the view names the absolute file so a session in another checkout never restores the wrong one."""
-    file = lock_field(text, "file", "?", "?")
+    the view names the absolute file so a session in another checkout never restores the wrong one.
+    raw_file keeps the recorded path as written."""
+    raw_file = lock_field(text, "file", "?", "?")
+    file = raw_file
     worktree = lock_field(text, "worktree", "", "")
     if worktree and file != "?" and not os.path.isabs(file):
         file = os.path.join(worktree, file)
     return LockView(
+        raw_file=raw_file,
+        pre_hash=lock_field(text, "pre_hash", "?", "?"),
+        run_id=lock_field(text, "run_id", "", ""),
         file=file,
         backup=lock_field(text, "backup_path", "?", "?"),
         seed_class=lock_field(text, "class", "?", "?"),

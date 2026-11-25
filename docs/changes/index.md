@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1183 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1184 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md).
+Latest change: 2026-11-25, [Lock write and LockView fields move into calibration_lock](notes/2026-11-25-lock-write-and-lockview-fields-move-into.md).
 
 ## Top gains
 

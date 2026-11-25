@@ -31,6 +31,7 @@ class ShellWordTest(unittest.TestCase):
             "/w/a`x`": "'/w/a`x`'",
             "/w/a\\x": "'/w/a\\x'",
             "/w/a!x": "'/w/a!x'",
+            '/w/a"b': "'/w/a\"b'",
             "/w/a\nx": "'/w/a\nx'",
             "/w/it's $x": "'/w/it'\"'\"'s $x'",
         }

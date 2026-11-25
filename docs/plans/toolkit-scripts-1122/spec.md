@@ -95,7 +95,7 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 - **Item 3 (Phases 1, 2):** split the grammar out, print the template from `--help`, then repoint the two prose consumers. The template is a dict beside the validator, so it cannot drift.
 - **Item 4 (Phases 3, 4, 5):** module first (owner of the lock format), then the script, then the two agent prompts. The guard keeps its outputs and exit codes, apart from two changes: shell-special paths are quoted as one shell word, and the unrestored message's closing sentence no longer names the deleted `/calibrate` skill ("Do not dispatch mutation-tester until this lock is gone — it refuses to seed on top of an unrestored seed"); its tests pin both.
 - **Item 2 (Phases 6, 7, 8):** cut the two cards first (no rule changes), then build the meter scenarios and detectors against the post-cut skill copy, then run the meter under the D14 budget and cut only what it clears.
-- **Phase 9** writes the three change files, links them from the rule-anchors rows, and runs the full suite under `systemd-run`.
+- **Phase 9** writes the change files (cut to two, D20), links them from the rule-anchors rows, and runs the full suite under `systemd-run`.
 - Patterns: toolkit script rules (Constraints); every verb ends with `NEXT:`, `STOP:` or `DONE:`; one owner per fact (`claude/.claude/scripts/CLAUDE.md`); `toolkit-writing` for prose.
 
 ## Dependencies
@@ -110,12 +110,12 @@ Self-sufficient: probe-verified facts an implementation step needs go here with 
 
 ### Desired End State
 
-`refactor_flow.py log --help` prints the template; the skill keeps the trigger, the command, a pointer and three judgment bullets; `refactor_flow.py` is at most 1000 lines. `mutation_lock.py check|lock|restore` does the preconditions, backup, hash, lock and verified restore, and `calibration_guard.py --live` reads its lock. Both mutation-tester prompts call the script in one line per step, and `mutation_lock.py --help` owns the precondition list. The guide skill has one worked card; rules the meter clears are cut, and the change file lists per-arm counts and `unmeasured` rules. Three change files exist; the full suite passes.
+`refactor_flow.py log --help` prints the template; the skill keeps the trigger, the command, a pointer and three judgment bullets; `refactor_flow.py` is at most 1000 lines. `mutation_lock.py check|lock|restore` does the preconditions, backup, hash, lock and verified restore, and `calibration_guard.py --live` reads its lock. Both mutation-tester prompts call the script in one line per step, and `mutation_lock.py --help` owns the precondition list. (The guide skill has one worked card; rules the meter clears are cut, and the change file lists per-arm counts and `unmeasured` rules: cut, D20, master deleted the guide skill.) Two change files exist (D20; three before the cut); the full suite passes.
 
 ### What We're NOT Doing
 
 - Item 1 (D1), and the follow-up candidates it surfaced (`check_push_reviewed` ignores `placed`; `cd … && gh pr create` judged in `payload_cwd`).
-- Cutting the guide's block and field tables or pointing at the binary (waits on a `guide` build that prints the schema; recorded in the guide change file and the item 2 queue outcome).
+- Cutting the guide's block and field tables or pointing at the binary (waits on a `guide` build that prints the schema; recorded in the item 2 queue outcome; the guide change file is cut, D20).
 - The dormant `writer == "calibrate"` branch in `calibration_guard.py`.
 - Pruning old `backups/*.bak` files or accumulated backups.
 - Porting the refactor or guide skills to opencode (it loads `~/.claude/skills` directly).
@@ -466,7 +466,7 @@ One worked card remains; the tables and all eight rules are untouched.
 
 #### Manual Verification:
 
-- [x] agent-verified: read `## A worked card`; the "A judgment call with evidence" card and its one jsonc block follow it, then `## Rules`. `git diff --stat` shows `claude/.claude/settings.json` untouched. — evidence: `grep -n '^## '` → `114:## A worked card`, `187:## Rules`; line 116 `**A judgment call with evidence**`; `git diff --stat 737ff9f67 -- claude/.claude/settings.json` → empty. Rules now run 1..6 because Phase 8 cut two.
+- [x] agent-verified: read `## A worked card`; the "A judgment call with evidence" card and its one jsonc block follow it, then `## Rules`. `git diff --stat` shows `claude/.claude/settings.json` untouched. — evidence: `grep -n '^## '` → `114:## A worked card`, `187:## Rules`; line 116 `**A judgment call with evidence**`; `git diff --stat 737ff9f67 -- claude/.claude/settings.json` → empty. Rules now run 1..6 because Phase 8 cut two. — cut by D20: the file is deleted on master
 
 ---
 
@@ -539,7 +539,7 @@ The D14 budget decides which of rules 3, 4, 5 and 7 are cut. The coder loads `to
 **Files**: `~/dev/evals/rulemeter1/runs/results.jsonl` (written by the meter)
 **Changes**: preflight `df -h /tmp` shows 4 GB or more free. First pass: one `python3 ~/agent-evals/bin/rule_meter.py run --rule <id> --level <L> --arm <A> --run 1` per cell for GD03, GD04, GD05, GD07 × supportive, neutral, competing × on, off: 24 runs, in the background, never `run-all`. Read `rule_meter.py summary`. A first-pass cell graded `NO_TEST` is rerun once with `--run 2`; a cell still `NO_TEST` makes its rule `unmeasured` (D17), and that rule gets no more runs. Second pass: a rule whose off arm complied at least as often as its on arm at every level gets `--run 2` in all six of its cells; a rule the on arm clearly wins at any level stays and gets no more runs. At most 24 more runs.
 
-#### 2. Cut rule and edit
+#### 2. Cut rule and edit (cut, D20: master deleted the guide skill; no Phase 9 guide note)
 
 **File**: `claude/.claude/skills/guide/SKILL.md`
 **Changes**: a rule is cut only when the confirmed second pass holds the same reading (off complies ≥ on) at every level. A rule with any level holding fewer than two graded runs after the second pass goes to `unmeasured` and stays. In `## Rules`, delete each cut rule and renumber the rest with no gap. Rule 8 stays, `unmeasured`. No rule-anchors row exists for this file. The per-arm counts per rule and level are kept for the Phase 9 change file.
@@ -555,7 +555,7 @@ Every cell of the first pass has a graded row, or its rule is listed `unmeasured
 
 #### Manual Verification:
 
-- [x] agent-verified: read `## Rules` in `claude/.claude/skills/guide/SKILL.md`; the numbering is 1..N with no gap and every kept rule's text is unchanged. — evidence: `grep -n '^[0-9]\. \*\*'` → rules 1..6 at lines 189-198; `git diff 737ff9f67` on the file shows only old rules 4 and 5 removed and the kept rules' numbers changed (old 6/7/8 → 4/5/6), text unchanged.
+- [x] agent-verified: read `## Rules` in `claude/.claude/skills/guide/SKILL.md`; the numbering is 1..N with no gap and every kept rule's text is unchanged. — evidence: `grep -n '^[0-9]\. \*\*'` → rules 1..6 at lines 189-198; `git diff 737ff9f67` on the file shows only old rules 4 and 5 removed and the kept rules' numbers changed (old 6/7/8 → 4/5/6), text unchanged. — cut by D20: the file is deleted on master
 
 ---
 
@@ -563,14 +563,14 @@ Every cell of the first pass has a graded row, or its rule is listed `unmeasured
 
 ### Overview
 
-Three change notes, their links from the anchor rows, and the full suite under `systemd-run`.
+Change notes (two after D20 cut the guide note), their links from the anchor rows, and the full suite under `systemd-run`.
 
 ### Changes Required:
 
 #### 1. Change notes
 
-**Files**: `docs/changes/notes/<three new notes>.md`, `docs/changes/` index files that `build_changes.py` writes
-**Changes**: `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by claude-code/<the model running the step> --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes` for each title: "refactor_flow.py log --help prints the refactor log input template"; "mutation-tester locks, backs up and restores through mutation_lock.py"; "guide skill keeps one worked card and cuts rules the meter clears". Fill each. The guide note holds the per-rule, per-level on and off counts from Phase 8, lists rule 8 and any rule Phase 8 could not grade under `unmeasured`, and records that cutting the tables waits on a `guide` build that prints the schema. The mutation-tester note lists the D13 sentence under `unmeasured`. Then `python3 ~/agent-evals/bin/build_changes.py --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes`, and `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes` exits 0 (it also exits 0 today, so it is a step, not a criterion).
+**Files**: `docs/changes/notes/<two new notes>.md`, `docs/changes/` index files that `build_changes.py` writes
+**Changes**: `python3 ~/agent-evals/bin/build_changes.py new "<title>" --by claude-code/<the model running the step> --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes` for each title: "refactor_flow.py log --help prints the refactor log input template"; "mutation-tester locks, backs up and restores through mutation_lock.py" (a third title, "guide skill keeps one worked card and cuts rules the meter clears", is cut, D20: master deleted the guide skill; no guide note). Fill each. (The guide note, with its per-rule on and off counts, `unmeasured` rules and the table-cut record, is cut, D20.) The mutation-tester note lists the D13 sentence under `unmeasured`. Then `python3 ~/agent-evals/bin/build_changes.py --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes`, and `python3 ~/agent-evals/bin/build_changes.py --check --root /home/brandon/dotfiles-toolkit-scripts-nov22/docs/changes` exits 0 (it also exits 0 today, so it is a step, not a criterion).
 
 #### 2. Anchor links
 
@@ -712,12 +712,30 @@ Each script gets its own `tests/scripts/test_<script>.py` at the public boundary
 
 - 2026-11-24: Keep plan as written. Ruled by the session, not the user at 2026-11-24 12:50.
 
-  The ruling: AC18 criteria-file edit stays with the user; the 03-decisions.md sign-off lines now say the criteria-file wording awaits the user's confirmation, no future date. Ruled adopt by agent-evals-c3-owner, 2026-11-24.
+  The ruling: the AC18 (`restore` refuses a lock written by another writer, owner pid or run id) criteria-file edit stays with the user; the 03-decisions.md sign-off lines now say the criteria-file wording awaits the user's confirmation, no future date. Ruled adopt by agent-evals-c3-owner, 2026-11-24.
 
   The disagreement:
   PLAN-IMPACT: `/home/brandon/dotfiles-toolkit-scripts-nov22/docs/plans/toolkit-scripts-1122/acceptance-criteria.md:47` [plan-drift] — AC18 still promises the `cp … && rm …` recovery line for any lock of another writer or owner. Code at `mutation_lock.py:273-279`, spec.md:209 and the D15 narrowing stop on a live lock with `STOP_LIVE_LOCK` and no commands. They also refuse a lock whose run id is missing or different, which AC18 does not mention. The AC9 reword did land in this file, but the AC18 reword recorded in `03-decisions.md:173` did not. The earlier ruling leaves this edit to the user, so it stays open until the user changes the criteria file.
   
   PLAN-IMPACT: /home/brandon/dotfiles-toolkit-scripts-nov22/docs/plans/toolkit-scripts-1122/03-decisions.md:168-173 [plan-drift] — Two problems with the sign-off section: The heading says "criteria owner: `session`", but `python3 ~/.claude/scripts/code/plan_check.py owner docs/plans/toolkit-scripts-1122` returns `{"owner": "user", …, "rule": "only the user's recorded sign-off (who and when) cuts, narrows or rewords a criterion"}`. The AC9 reword (two steps) and the AC18 narrowing are signed by agent-evals-c3-owner only. The user's part is written as "confirmed by the user on 2026-11-25", a date after today (2026-11-24). A future-dated confirmation is not a recorded sign-off. The criteria file also does not match the log. acceptance-criteria.md:35 (AC9) carries only the first reword, not the closing-sentence exception, and :47 (AC18) still promises the recovery line for any other-owner lock, where the log says stale locks only. Until the user's sign-off is recorded with who and when, AC9 and AC18 as worded in acceptance-criteria.md fail against calibration_lock.py:211-212 and mutation_lock.py:278. acceptance_criteria: AC9, AC18. kind: narrow
+
+- 2026-11-25: Adopt plan change. Ruled by Brandon Corey at 2026-11-25 13:52.
+
+  The ruling: AC18: restore prints cp/rm only for a stale lock; a live lock stops with STOP_LIVE_LOCK
+
+  The disagreement:
+  PLAN-IMPACT: `docs/plans/toolkit-scripts-1122/acceptance-criteria.md:47` (AC18) [plan-drift] **What AC18 says**: "restore refuses a lock written by another writer or another owner pid (printing the `cp <backup> <target> && rm <lock>` recovery line …)". **What the code does**: `mutation_lock.py:282` (`refuse_unrestorable` → `refuse_live_lock`) stops a live lock of another run with `STOP_LIVE_LOCK` and prints no commands. Run against a live lock of another owner, AC18 as written fails. **The ruling**: `03-decisions.md` (Sign-offs, AC18 reworded) records the narrowing as ruled by agent-evals-c3-owner, and says "the criteria-file wording awaits the user's confirmation". **The owner conflict**: `plan_check.py owner docs/plans/toolkit-scripts-1122` returns owner `user` ("only the user's recorded sign-off (who and when) cuts, narrows or rewords a criterion"). The decisions log is headed "criteria owner: `session`". **Other session rulings under that owner**: the AC9 rewords and the AC26-28, AC33 (a human running `/guide` can still follow the trimmed skill) and AC31 cuts were also ruled by sessions. **Needed**: the user's recorded sign-off for the AC18 narrowing, and the related cuts, in `03-decisions.md`. Then reword AC18 in the criteria file to the text in the decisions log. **Smaller drift in the same file**: D19 (`03-decisions.md`, "### 19") still says any writer, owner_pid or run_id mismatch prints the recovery line. Add "(stale locks only; see the D15 narrowing)".
+
+- 2026-11-25: Adopt plan change. Ruled by Brandon Corey at 2026-11-25 14:21.
+
+  The ruling: AC18 reworded: a stale lock prints the recovery line; a live lock stops with STOP_LIVE_LOCK
+
+  The disagreement:
+  PLAN-IMPACT: /home/brandon/dotfiles-toolkit-scripts-nov22/docs/plans/toolkit-scripts-1122/03-decisions.md:173 [plan-drift] — The user's AC18 sign-off is recorded only in spec.md, not in the decision log. The new spec.md:722 entry records "Adopt plan change. Ruled by Brandon Corey at 2026-11-25 13:52" for AC18: cp/rm only for a stale lock, and a live lock stops with `STOP_LIVE_LOCK`. The global rule says a sign-off is recorded "only in the plan's decision log (eng-spec's `03-decisions.md` …)". The AC18 sign-off line at 03-decisions.md:173 still ends "The criteria-file wording awaits the user's confirmation. Ruled by agent-evals-c3-owner, 2026-11-24". Fix: add the user's confirmation, with who and when (Brandon Corey, 2026-11-25 13:52), to the 03-decisions.md:173 sign-off line and drop "awaits the user's confirmation". acceptance_criteria: AC18. kind: narrow
+  
+  PLAN-IMPACT: /home/brandon/dotfiles-toolkit-scripts-nov22/docs/plans/toolkit-scripts-1122/acceptance-criteria.md:47 [plan-drift] — The user adopted the AC18 rewrite, but the criteria file was never changed. It still says restore refuses "a lock written by another writer or another owner pid (printing the `cp <backup> <target> && rm <lock>` recovery line …)". It does not mention the run-id refusal. The code, at `mutation_lock.py` `refuse_unrestorable` → `refuse_live_lock`, stops a live lock with `STOP_LIVE_LOCK` and prints no commands. Fix: replace AC18 with the wording in the 03-decisions.md:173 sign-off line: "`restore` refuses a lock written by another writer, owner pid or run id; a stale one prints the `cp <backup> <target> && rm <lock>` recovery line, each path one pasteable shell word; a live one stops with `STOP_LIVE_LOCK` and no commands", plus the missing-lock, missing-backup and legacy-path clauses it already has. acceptance_criteria: AC18. kind: narrow
+  
+  PLAN-IMPACT: /home/brandon/dotfiles-toolkit-scripts-nov22/docs/plans/toolkit-scripts-1122/03-decisions.md:154 [plan-drift] — D19 still says that "a lock whose `writer`, `owner_pid` or `run_id` differs stops with `STOP_NOT_OURS`, the recovery line printed". After the narrowing the adopted ruling describes, a live lock of another run gets `STOP_LIVE_LOCK` and no recovery line. The adopted ruling's own text (spec.md:728) asks for this edit. Fix: add "(stale locks only; a live lock stops with `STOP_LIVE_LOCK`, see the D15 narrowing)" after "the recovery line printed". acceptance_criteria: AC18. kind: narrow
 
 ## References
 

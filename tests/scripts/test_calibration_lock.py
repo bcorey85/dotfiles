@@ -78,12 +78,16 @@ class LockIsLiveTest(unittest.TestCase):
     def test_liveness_follows_age_owner_and_writer(self):
         young = "2026-10-01T09:50:00Z"
         old = "2026-10-01T07:00:00Z"
+        at_timeout = calibration_lock.format_stamp(self.NOW - calibration_lock.MUTATION_RUN_TIMEOUT_SECONDS)
+        past_timeout = calibration_lock.format_stamp(self.NOW - calibration_lock.MUTATION_RUN_TIMEOUT_SECONDS - 1)
         mine = str(os.getpid())
         cases = [
             ("young with no owner", (young, ""), {}, True),
             ("young with a live owner", (young, mine), {}, True),
             ("young with a dead owner", (young, "999999999"), {}, False),
             ("past the timeout", (old, ""), {}, False),
+            ("exactly at the timeout", (at_timeout, ""), {}, True),
+            ("a second past the timeout", (past_timeout, ""), {}, False),
             ("unparseable stamp", ("not a time", ""), {}, False),
             ("calibrate lock of the caller's session", (young, mine), {"writer": "calibrate", "session_pid": mine},
              False),

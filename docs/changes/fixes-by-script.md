@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-755 fix notes
+756 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -21,8 +21,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
+| script/script-utils | 29 | 7 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 28 | 6 |
 | script/shell-write-gate | 24 | 4 |
 | script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
@@ -109,6 +109,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
 | script/announced-step | 2 | 2 |
+| script/calibration-lock | 2 | 2 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
 | script/directory-emptying-deletes | 2 | 2 |
@@ -123,6 +124,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
 | script/memory-cap-scope | 2 | 2 |
+| script/mutation-lock | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
@@ -153,7 +155,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/ask-outcome-words | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
-| script/calibration-lock | 1 | 1 |
 | script/clone-pairs | 1 | 1 |
 | script/code-phase-start | 1 | 1 |
 | script/code-run-names | 1 | 1 |
@@ -180,7 +181,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
 | script/merge-built-page | 1 | 0 |
-| script/mutation-lock | 1 | 1 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |

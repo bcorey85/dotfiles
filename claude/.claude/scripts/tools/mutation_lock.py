@@ -11,7 +11,6 @@ next step; 1: a precondition failed or the request was refused, the lock untouch
 but the lock cannot be removed, prints the rm command); 3: the backup, or the file after the copy back, does not
 match the hash the lock recorded; lock kept; 2: bad usage."""
 import argparse
-import json
 import os
 import pathlib
 import secrets
@@ -169,22 +168,6 @@ def check_verb(args):
     return lines
 
 
-def lock_fields(target, args, backup_copy, run_id):
-    return {
-        "ts": calibration_lock.format_stamp(time.time()),
-        "kind": calibration_lock.MUTATION_KIND,
-        "writer": calibration_lock.MUTATION_WRITER,
-        "file": target.relpath,
-        "backup_path": backup_copy,
-        "pre_hash": calibration_lock.pre_hash(backup_copy),
-        "class": "mutant: " + args.seed_class,
-        "line": args.line,
-        "worktree": str(target.worktree),
-        "owner_pid": args.owner_pid,
-        "run_id": run_id,
-    }
-
-
 def lock_verb(args):
     if not args.seed_class.strip() or "\n" in args.seed_class or "\r" in args.seed_class:
         raise StopError([STOP_BAD_ARGUMENT])
@@ -217,11 +200,11 @@ def lock_under_hold(args):
     # Joined as a string, as refuse_unrestorable rebuilds it.
     backup_copy = calibration_lock.backup_path(target.relpath)
     run_id = secrets.token_hex(8)
-    fields = lock_fields(target, args, backup_copy, run_id)
+    recorded_hash = calibration_lock.write_lock(
+        target.relpath, target.worktree, backup_copy, args.seed_class, args.line, args.owner_pid, run_id)
     lock = calibration_lock.calibration_lock_path()
-    script_utils.write_text_atomically(lock, json.dumps(fields, indent=2) + "\n")
     next_line = NEXT_APPLY.format(run_id=run_id)
-    lines += [f"lock: {lock}", f"backup: {backup_copy}", f"pre_hash: {fields['pre_hash']}", next_line]
+    lines += [f"lock: {lock}", f"backup: {backup_copy}", f"pre_hash: {recorded_hash}", next_line]
     return lines
 
 
@@ -237,12 +220,9 @@ def manual_lines(view, lock):
 
 
 class OwnLock(NamedTuple):
-    """The state-path lock, its text read once, its view and the two fields restore acts on."""
+    """The state-path lock and its view."""
     path: str
     view: calibration_lock.LockView
-    raw_file: str
-    recorded_hash: str
-    run_id: str
 
 
 def read_own_lock():
@@ -250,13 +230,7 @@ def read_own_lock():
     lock = calibration_lock.calibration_lock_path()
     if os.path.isfile(lock):
         text = calibration_lock.read_lock_text(lock)
-        return OwnLock(
-            path=lock,
-            view=calibration_lock.read_lock_view(text),
-            raw_file=calibration_lock.lock_field(text, "file", "?", "?"),
-            recorded_hash=calibration_lock.lock_field(text, "pre_hash", "?", "?"),
-            run_id=calibration_lock.lock_field(text, "run_id", "", ""),
-        )
+        return OwnLock(path=lock, view=calibration_lock.read_lock_view(text))
 
     legacy = calibration_lock.legacy_lock_path()
     if os.path.isfile(legacy):
@@ -268,14 +242,14 @@ def read_own_lock():
 def refuse_unrestorable(own, args):
     """Stop for an old-layout lock or one that is not this run's. Nothing is written."""
     view = own.view
-    expected_backup = calibration_lock.backup_path(own.raw_file)
-    old_layout = (not view.worktree or own.raw_file == "?" or os.path.isabs(own.raw_file)
+    expected_backup = calibration_lock.backup_path(view.raw_file)
+    old_layout = (not view.worktree or view.raw_file == "?" or os.path.isabs(view.raw_file)
                   or view.backup != expected_backup)
     if old_layout:
         raise StopError([f"lock: {own.path}", *manual_lines(view, own.path), STOP_OLD_LAYOUT])
 
     ours = (view.writer == calibration_lock.MUTATION_WRITER and view.owner_pid == str(args.owner_pid)
-            and own.run_id != "" and own.run_id == args.run_id)
+            and view.run_id != "" and view.run_id == args.run_id)
     if ours:
         return
 
@@ -296,13 +270,13 @@ def copy_back_verified(own):
     target = pathlib.Path(view.file)
     backups = pathlib.Path(calibration_lock.backups_folder())
     try:
-        if calibration_lock.pre_hash(view.backup) != own.recorded_hash:
+        if calibration_lock.pre_hash(view.backup) != view.pre_hash:
             raise mismatch_stop(own, target, STOP_BACKUP_MISMATCH)
-        copied = file_backup.restore_changed(file_backup.Backup(view.worktree, backups, [own.raw_file], []))
+        copied = file_backup.restore_changed(file_backup.Backup(view.worktree, backups, [view.raw_file], []))
         if copied:
             # copy2 gives the target the backup's old mtime; a build tool must see the file as changed.
             os.utime(target)
-        if not target.is_file() or calibration_lock.pre_hash(target) != own.recorded_hash:
+        if not target.is_file() or calibration_lock.pre_hash(target) != view.pre_hash:
             raise mismatch_stop(own, target, STOP_RESTORE_MISMATCH)
     except OSError as error:
         lines = [f"cannot restore {target}: {error}", f"lock kept: {own.path}", recovery_line(view, own.path)]
@@ -328,16 +302,6 @@ def restore_verb(args):
     return [DONE_RESTORE.format(how=how)]
 
 
-def positive_int(text):
-    try:
-        number = int(text)
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from error
-    if number <= 0:
-        raise argparse.ArgumentTypeError(f"{text!r} is not a positive pid")
-    return number
-
-
 def mutation_lock_parser():
     epilog = "preconditions, in check order:\n" + "\n".join(
         f"  {number}. {text}" for number, text in enumerate(PRECONDITIONS, 1))
@@ -352,10 +316,12 @@ def mutation_lock_parser():
     lock.add_argument("target")
     lock.add_argument("--class", dest="seed_class", required=True, help="the mutation class")
     lock.add_argument("--line", required=True, help="the line the mutation touches")
-    lock.add_argument("--owner-pid", type=positive_int, required=True, help="the process that owns the run")
+    lock.add_argument("--owner-pid", type=script_utils.positive_int, required=True,
+                       help="the process that owns the run")
 
     restore = verbs.add_parser("restore", help="put the target back from the backup, verify it, remove the lock")
-    restore.add_argument("--owner-pid", type=positive_int, required=True, help="the process that owns the run")
+    restore.add_argument("--owner-pid", type=script_utils.positive_int, required=True,
+                          help="the process that owns the run")
     restore.add_argument("--run-id", required=True, help="the run id that `lock` printed on its NEXT line")
     return parser
 

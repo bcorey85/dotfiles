@@ -2,6 +2,7 @@
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
+import argparse
 import difflib
 import json
 import os
@@ -150,6 +151,17 @@ def json_type_name(value):
 def is_int(value):
     """Whether a decoded JSON value is an integer; a boolean is not."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def positive_int(text):
+    """An argparse type: the integer in text, which must be above zero."""
+    try:
+        number = int(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from error
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return number
 
 
 def is_string_list(value):

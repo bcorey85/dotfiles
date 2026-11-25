@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -35,6 +36,14 @@ class IsIntTest(unittest.TestCase):
         for value, expected in cases:
             with self.subTest(value=value):
                 self.assertIs(script_utils.is_int(value), expected)
+
+
+class PositiveIntTest(unittest.TestCase):
+    def test_only_an_integer_above_zero_is_accepted(self):
+        self.assertEqual(script_utils.positive_int("42"), 42)
+        for text in ("0", "-3", "abc", "1.5", ""):
+            with self.subTest(text=text), self.assertRaises(argparse.ArgumentTypeError):
+                script_utils.positive_int(text)
 
 
 class PathIsUnderTest(unittest.TestCase):

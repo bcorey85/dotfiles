@@ -1,4 +1,4 @@
-# gate-false-positives-nov25: six gate and hook false positives or wrong messages
+# gate-false-positives-nov25: nine gate and hook false positives or wrong messages
 
 Source: ~/agent-evals/queue/staged-claim-gate-false-positive-on-pending.md
 Source: ~/agent-evals/queue/staged-claim-gate-flags-first-person-promises.md
@@ -6,6 +6,9 @@ Source: ~/agent-evals/queue/permission-question-gate-misses-an-ask-to-add-a.md
 Source: ~/agent-evals/queue/rg-path-gate-rewrites-a-no-path-rg-instead-of.md
 Source: ~/agent-evals/queue/push-gate-sends-a-committed-change-to-a-review.md
 Source: ~/agent-evals/queue/test-run-hook-tells-macos-sessions-to-use-systemd.md
+Source: ~/agent-evals/queue/staged-claim-stop-gate-fires-on-a-line-that-names.md
+Source: ~/agent-evals/queue/push-gate-stays-blocked-after-a-capped-review.md
+Source: ~/agent-evals/queue/review-loop-write-full-check-tree-so-a-capped.md
 
 ## 1. staged_claim_gate false positive on pending background agents
 
@@ -54,3 +57,27 @@ The PreToolUse Bash hook that blocks a foreground full test suite tells the sess
 
 ### Done when
 The hook's message names a cap command that works on the host OS (or names run_in_background alone on darwin).
+
+## 7. Staged-claim stop gate fires on a line that names a check of what is staged
+
+### Context
+A reply described a lane's pre-commit feature ("checks the skill list against what is staged"), and an earlier reply listed another worktree's staged files. Both times the Stop hook blocked, saying the index is empty. Neither reply claimed the session's own repo had staged files.
+
+### Done when
+A test in tests/scripts/ passes the reply "It checks the skill list against what is staged." and a reply that names another worktree's staged files by its path, and still blocks "I staged the change." with an empty index. It fails before the fix and passes after.
+
+## 8. Push gate stays blocked after a capped review whose leftovers the caller fixed by hand
+
+### Context
+A review stopped at its round cap with only plan-text drift left. The caller fixed the plan by hand and committed it. The push gate still refused with "code changed since the last review": a capped review logs no pass.
+
+### Done when
+A test shows the gate lets a push through when the last review is logged, its only open findings are plan-file text, and the commits since then touch only the plan directory. The same test shows the gate still blocks a push after a code commit.
+
+## 9. Review loop: write full_check_tree so a capped review with a passed full check reads as deferred
+
+### Context
+capped_review.effective_status requires packet['full_check_tree'] to equal the work tree's fingerprint, and no loop writer fills that field. A cap-reached review with no blocker, no open class and a passed full check still printed cap-reached.
+
+### Done when
+the loop writes full_check_tree from the tree it checked, a test gives effective_status such a packet and gets deferred, and bash tests/run.sh passes.

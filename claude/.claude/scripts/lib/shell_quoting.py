@@ -24,6 +24,14 @@ def quoted_positions(command, unclosed_is_quoted=True):
     return positions
 
 
+def literal_positions(text):
+    """The indexes of the characters that stay literal: inside single quotes or right after a backslash. A character
+    inside double quotes is not literal, since `$` and a backtick still expand there."""
+    scan = _QuoteScan(text)
+    scan.run()
+    return scan.literal
+
+
 def starts_comment(command, index):
     """Whether a `#` at index starts a word, so it would open a comment unless it sits in quotes. A `(` before it
     counts only when that `(` itself starts a word (`( #` and `((#`, not `*(#q.)` or `$(#`). A `)` before it never
@@ -68,6 +76,7 @@ class _QuoteScan:
     def __init__(self, command):
         self.command = command
         self.positions = set()
+        self.literal = set()
         self.ansi_c_starts = []
         self.comment_starts = []
         # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, its open `(` count, and
@@ -130,6 +139,8 @@ class _QuoteScan:
             self.levels.append({"quote": None, "closer": "`", "depth": 0, "ansi_c": False})
         else:
             self.positions.add(self.index)
+            if quote == "'":
+                self.literal.add(self.index)
 
     def _read_dollar_pair(self, level):
         # `$$` is the process id, so a quote after it is plain. `$'...'` is an ANSI-C string: a backslash escapes the
@@ -147,6 +158,7 @@ class _QuoteScan:
 
     def _hide_next_character(self):
         self.positions.add(self.index + 1)
+        self.literal.add(self.index + 1)
         self.index += 1
 
     def _hide_comment(self):

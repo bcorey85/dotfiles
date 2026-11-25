@@ -28,6 +28,18 @@
 
 - **AC10** — The hook's message names a cap command that works on the host OS (or names run_in_background alone on darwin).
 
+## Ticket item 7
+
+- **AC12** — A test in tests/scripts/ passes the reply "It checks the skill list against what is staged." and a reply that names another worktree's staged files by its path, and still blocks "I staged the change." with an empty index. It fails before the fix and passes after.
+
+## Ticket item 8
+
+- **AC13** — A test shows the gate lets a push through when the last review is logged, its only open findings are plan-file text, and the commits since then touch only the plan directory. The same test shows the gate still blocks a push after a code commit.
+
+## Ticket item 9
+
+- **AC14** — effective_status reads a valid full-check receipt, a test gives it such a packet and gets deferred, and bash tests/run.sh passes.
+
 ## Branch
 
 - **AC11** — `bash tests/run.sh` passes.

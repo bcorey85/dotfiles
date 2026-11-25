@@ -673,10 +673,35 @@ class ReviewerRequestTest(unittest.TestCase):
         lines = printed(code_wait.wait_review, self.repo).splitlines()
 
         self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
-        self.assertIn("agent code-reviewer", lines[1])
-        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertEqual(lines[1], "round 1: dispatch these 1 reviewer(s) now")
+        self.assertIn("round 1: review1-code-reviewer; agent code-reviewer", lines[2])
+        self.assertIn(self.entries[0]["report_file"], lines[2])
         self.assertIn("code_wait.py review <agentId> <report file>", lines[-1])
-        self.assertTrue(lines[1].endswith(code_wait.CODE_WAIT_WRITES_NOTE), lines[1])
+        self.assertTrue(lines[2].endswith(code_wait.CODE_WAIT_WRITES_NOTE), lines[2])
+
+    def test_a_round_two_request_written_after_round_one_prints_from_the_same_wait_call(self):
+        # The loop's fix pass runs between the rounds: the manifest of round 2 appears while the call waits.
+        review = "## Fix\nOne\n"
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                     "text": review}]}}])
+        later = [("review2-code-reviewer", "code-reviewer", "Review app.py again."),
+                 ("review2-test-reviewer", "test-reviewer", "Review the tests again.")]
+        write_round_two = threading.Timer(0.3, code_wait.reviewer_dispatch.write_round, (self.loop_dir, 2, later))
+        write_round_two.start()
+        self.addCleanup(write_round_two.cancel)
+
+        with mock.patch.object(code_wait, "WAIT_SECONDS", 5), mock.patch.object(code_wait, "POLL_SECONDS", 0.05):
+            code, output, _ = self.run_main("review", AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 0)
+        lines = output.splitlines()
+        self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
+        self.assertIn("round 2: dispatch these 2 reviewer(s) now", output)
+        self.assertNotIn("round 1:", output)
+        for role in ("review2-code-reviewer", "review2-test-reviewer"):
+            line = next(line for line in lines if line.startswith(f"- round 2: {role}; agent "))
+            self.assertIn(f"{role}.report.md", line)
+        self.assertIn("A later round's lines come back from this same call.", lines[-1])
 
     def test_an_answered_request_lets_the_review_wait_go_on(self):
         pathlib.Path(self.entries[0]["report_file"]).write_text("## Fix\nNone\n")
@@ -853,7 +878,7 @@ class ReviewerRequestTest(unittest.TestCase):
 
         lines = output.splitlines()
         self.assertEqual((code, lines[0]), (0, "ACTION: dispatch-reviewer"))
-        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertIn(self.entries[0]["report_file"], lines[2])
         self.assertIn(f"code_wait.py review --loop {self.loop_dir} <agentId> <report file>", lines[-1])
 
     def test_a_launched_loop_writes_a_finished_reviewer_s_report(self):

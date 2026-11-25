@@ -557,7 +557,8 @@ def unanswered_requests(run, pairs):
 def reviewer_dispatch_lines(run, pending):
     return [*reviewer_dispatch.request_lines(pending, CODE_WAIT_WRITES_NOTE),
             f"Then run `{run.command} <agentId> <report file>`, with one agentId and its line's report file "
-            "for each agent you dispatched, every one written out as its own word."]
+            "for each agent you dispatched, every one written out as its own word. A later round's lines come "
+            "back from this same call."]
 
 
 def stale_loop_line(repo):

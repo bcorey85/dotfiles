@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1163 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1164 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [A capped review reports its fix rounds, not its round count](notes/2026-11-24-a-capped-review-reports-its-fix-rounds-not-its-round.md).
+Latest change: 2026-11-24, [Reviewer dispatch lines name their round and role](notes/2026-11-24-reviewer-dispatch-lines-name-their-round-and-role.md).
 
 ## Top gains
 

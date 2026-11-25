@@ -4375,7 +4375,8 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         lines = output.splitlines()
         self.assertIn("ACTION: dispatch-reviewer", lines)
-        request = next(line for line in lines if line.startswith("- agent code-reviewer; prompt "))
+        request_start = "- round 1: review1-code-reviewer; agent code-reviewer; prompt "
+        request = next(line for line in lines if line.startswith(request_start))
         prompt_head, prompt_tail = reviewer_dispatch.AGENT_PROMPT.split("{prompt_file}")
         prompt_file = pathlib.Path(request.split(f'; prompt "{prompt_head}')[1].split(prompt_tail)[0])
         report_file = pathlib.Path(

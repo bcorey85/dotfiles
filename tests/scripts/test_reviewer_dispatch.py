@@ -88,16 +88,44 @@ class ReviewerDispatchTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         lines = output.splitlines()
         self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
-        request = f"- agent code-reviewer; prompt \"Read {entries[0]['prompt_file']} whole and do that task.\"; "
+        request = (f"- round 1: review1-code-reviewer; agent code-reviewer; "
+                   f"prompt \"Read {entries[0]['prompt_file']} whole and do that task.\"; ")
         self.assertIn(f"{request}report {entries[0]['report_file']} {reviewer_dispatch.SESSION_WRITES_NOTE}", lines)
-        self.assertIn("main session", lines[1])
+        self.assertEqual(lines[1], "round 1: dispatch these 2 reviewer(s) now")
+        self.assertIn("main session", lines[2])
         self.assertIn(f"wait {self.loop_dir}", lines[-1])
         self.assertNotIn("code_wait.py review", output)
+
+    def test_a_later_round_is_labeled_with_its_round_and_keeps_a_repeat_role_suffix(self):
+        reviewer_dispatch.write_round(self.loop_dir, 1, REQUESTS[:1])
+        later = [("review2-code-reviewer", "code-reviewer", "again"), ("review2-code-reviewer", "code-reviewer", "b")]
+        reviewer_dispatch.write_round(self.loop_dir, 2, later)
+        lines = reviewer_dispatch.request_lines(reviewer_dispatch.pending_requests(self.loop_dir), "(note)")
+        self.assertEqual(lines[1], "round 1: dispatch these 1 reviewer(s) now")
+        self.assertEqual(lines[3], "round 2: dispatch these 2 reviewer(s) now")
+        self.assertTrue(lines[4].startswith("- round 2: review2-code-reviewer; agent code-reviewer; "), lines[4])
+        self.assertTrue(lines[5].startswith("- round 2: review2-code-reviewer-2; agent code-reviewer; "), lines[5])
+
+    def test_a_later_round_says_earlier_reports_are_in_only_when_they_are(self):
+        first = reviewer_dispatch.write_round(self.loop_dir, 1, REQUESTS[:1])
+        pathlib.Path(first[0]["report_file"]).write_text("done")
+        reviewer_dispatch.write_round(self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "again")])
+        lines = reviewer_dispatch.request_lines(reviewer_dispatch.pending_requests(self.loop_dir), "(note)")
+        self.assertEqual(lines[1], "round 2: dispatch these 1 reviewer(s) now; earlier rounds' reports are already in")
+
+    def test_an_old_manifest_without_a_round_in_its_entries_takes_the_manifests_round(self):
+        entries = reviewer_dispatch.write_round(self.loop_dir, 3, REQUESTS[:1])
+        old_entries = [{key: value for key, value in entry.items() if key != "round"} for entry in entries]
+        self.manifest(3).write_text(json.dumps({"round": 3, "requests": old_entries}))
+        pending = reviewer_dispatch.pending_requests(self.loop_dir)
+        self.assertEqual([entry["round"] for entry in pending], [3])
+        self.assertEqual(reviewer_dispatch.open_request_lines(pending)[0],
+                         f"- round 3: review1-code-reviewer; agent code-reviewer; report {entries[0]['report_file']}")
 
     def test_the_line_gives_the_exact_prompt_and_the_note_it_was_given(self):
         entries = reviewer_dispatch.write_round(self.loop_dir, 1, REQUESTS)
         note = "(a note the caller chose)"
-        line = reviewer_dispatch.request_lines(entries, note)[1]
+        line = reviewer_dispatch.request_lines(entries, note)[2]
         self.assertIn(f'prompt "Read {entries[0]["prompt_file"]} whole and do that task."', line)
         self.assertIn(note, line)
 
@@ -148,7 +176,8 @@ class ReviewerDispatchTest(unittest.TestCase):
         (self.loop_dir / reviewer_dispatch.PID_FILE).write_text(f"{os.getpid()}\n")
         code, output = self.run_wait()
         self.assertEqual(code, 0, output)
-        self.assertIn(f"- agent code-reviewer; prompt \"Read {entries[0]['prompt_file']} whole and do that task.\"; "
+        self.assertIn(f"- round 1: review1-code-reviewer; agent code-reviewer; "
+                      f"prompt \"Read {entries[0]['prompt_file']} whole and do that task.\"; "
                       f"model haiku; report {entries[0]['report_file']} {reviewer_dispatch.SESSION_WRITES_NOTE}",
                       output.splitlines())
 
@@ -317,6 +346,16 @@ class ReviewerDispatchTest(unittest.TestCase):
         code, output = self.run_wait()
         self.assertEqual(code, 2, output)
         self.assertIn("no \"requests\" list", output)
+
+    def test_a_manifest_whose_round_is_not_a_whole_number_stops_loudly(self):
+        entry = reviewer_dispatch.write_round(self.loop_dir, 1, REQUESTS[:1])[0]
+        bad_manifests = {"missing": {"requests": [entry]}, "text": {"round": "1", "requests": [entry]},
+                         "bool": {"round": True, "requests": [entry]}}
+        for name, manifest in bad_manifests.items():
+            with self.subTest(name):
+                self.manifest().write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(reviewer_dispatch.ManifestError, "expected a whole number"):
+                    reviewer_dispatch.all_requests(self.loop_dir)
 
 
 if __name__ == "__main__":

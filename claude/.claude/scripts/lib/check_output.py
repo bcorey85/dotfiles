@@ -538,7 +538,7 @@ def is_test_db_collision(output):
     if blocks:
         return all(TEST_DB_COLLISION.search(block) for block in blocks)
 
-    if SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
+    if reports_test_failure(plain):
         return False
 
     return TEST_DB_COLLISION.search(plain) is not None

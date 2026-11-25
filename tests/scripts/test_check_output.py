@@ -151,6 +151,17 @@ class CheckOutputTest(unittest.TestCase):
                   "Ran 19 tests in 2.1s\n\nFAILED (failures=1)\n")
         self.assertFalse(check_output.is_setup_fault(1, output, self.repo, include_missing_modules=False))
 
+    def test_a_failing_test_line_without_a_summary_keeps_a_quoted_cannot_start_line_from_being_a_setup_fault(self):
+        outputs = {
+            "unittest": "FAIL: test_x (m.T)\nCommand not found: uv\n",
+            "pytest": ("FAILED t.py::x - boom\n"
+                       "Failed to start transient scope unit: Unit run-p1-i2.scope was already loaded.\n"),
+        }
+        for name, output in outputs.items():
+            with self.subTest(name):
+                self.assertFalse(check_output.is_setup_fault(1, output, self.repo, include_missing_modules=False),
+                                 f"{name}: a failing-test line means the run started")
+
     def test_failing_test_errors_cut_each_line_at_the_character_limit(self):
         output = "FAILED a - boom\n" + "y" * 1000
         quoted = check_output.failing_test_errors(output)

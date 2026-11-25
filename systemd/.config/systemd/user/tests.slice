@@ -1,0 +1,6 @@
+[Unit]
+Description=Shared memory cap for capped test runs
+
+[Slice]
+MemoryMax=12G
+MemorySwapMax=0

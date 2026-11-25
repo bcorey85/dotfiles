@@ -6,11 +6,13 @@ import os
 import subprocess
 import sys
 import unittest
+import uuid
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import memory_cap_scope
+from systemd_scope import systemd_scope_works
 
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
 
@@ -26,7 +28,22 @@ CAUGHT = {
     "tests_run_sh_with_env_and_home_path": "REAL_PLANS=1 bash ~/dotfiles/tests/run.sh",
     "pytest_under_timeout": "timeout 60 pytest",
     "second_step_of_a_chain": "echo start && pytest",
+    "systemd_run_description_value_then_other_slice": ("systemd-run --user --scope --description x "
+                                                      "--slice=other.slice -p MemoryMax=8G pytest"),
+    "systemd_run_with_no_slice": "systemd-run --user --scope -p MemoryMax=4G pytest",
+    "systemd_run_with_another_slice": "systemd-run --user --scope --slice=other.slice -p MemoryMax=4G pytest",
+    "systemd_run_with_another_slice_word": "systemd-run --user --scope --slice other -p MemoryMax=4G pytest",
+    "systemd_run_slice_named_only_after_the_program": "systemd-run --user --scope pytest --slice=tests.slice",
+    "timeout_then_uncapped_systemd_run": "timeout 60 systemd-run --user --scope bash tests/run.sh",
+    "uncapped_systemd_run_then_timeout": "systemd-run --user --scope timeout 600 bash tests/run.sh",
+    "another_slice_systemd_run_then_timeout": ("systemd-run --user --scope --slice=other.slice timeout 60 "
+                                               "bash tests/run.sh"),
+    "uncapped_systemd_run_then_env": "systemd-run --user --scope env FOO=1 bash tests/run.sh",
+    "last_slice_is_not_shared": "systemd-run --user --scope --slice=tests.slice --slice=other.slice pytest",
+    "systemd_run_unit_value_then_program": "systemd-run --user --scope -u myunit pytest",
+    "systemd_run_setenv_value_then_program": "systemd-run --user --scope -E A=1 bash tests/run.sh",
 }
+SHARED_SLICE_FORMS = ("--slice=tests.slice", "--slice tests.slice", "--slice=tests", "--slice tests")
 PASSED = {
     "grep_names_pytest": "grep pytest requirements.txt",
     "cat_run_script": "cat tests/run.sh",
@@ -35,21 +52,26 @@ PASSED = {
     "echo_runner": "echo vitest",
     "pytest_help": "pytest --help",
     "unittest_help": "python3 -m unittest -h",
-    "already_capped_pytest": "systemd-run --user --scope -p MemoryMax=4G pytest",
+    "already_capped_pytest": "systemd-run --user --scope --slice=tests.slice -p MemoryMax=4G pytest",
     "already_capped_run_sh": f"{memory_cap_scope.CAPPED_PREFIX} bash tests/run.sh",
-    "already_capped_with_env": "FOO=1 systemd-run --user --scope -q -p MemoryMax=1G python3 -m unittest",
+    "already_capped_with_env": ("FOO=1 systemd-run --user --scope -q --slice tests.slice -p MemoryMax=1G "
+                                "python3 -m unittest"),
+    "last_slice_is_shared": "systemd-run --user --scope --slice=other.slice --slice=tests.slice pytest",
+    "capped_pytest_under_timeout": "timeout 60 systemd-run --user --scope --slice=tests.slice pytest",
+    "capped_with_unit_value": "systemd-run --user --scope -u myunit --slice=tests.slice pytest",
+    "capped_with_setenv_value": "systemd-run --user --scope -E A=1 --slice=tests.slice pytest",
+    "capped_with_long_unit_value": "systemd-run --user --scope --unit myunit --slice=tests.slice pytest",
+    "capped_with_long_property_value": ("systemd-run --user --scope --property MemoryMax=1G "
+                                        "--slice=tests.slice pytest"),
+    "capped_with_description_value": ("systemd-run --user --scope --description x --slice=tests.slice "
+                                      "-p MemoryMax=8G pytest"),
+    "capped_with_long_setenv_value": "systemd-run --user --scope --setenv A=1 --slice=tests.slice pytest",
+    # A dangling --slice is fail-open: systemd-run rejects the command itself, so the gate leaves it alone.
+    "systemd_run_dangling_slice_swallows_program": "systemd-run --user --scope --slice pytest",
+    "systemd_run_dangling_slice_last_word": "echo pytest && systemd-run --user --scope --slice",
     "plain_ls": "ls tests",
     "unsplittable_text": "echo 'unterminated",
 }
-
-
-def systemd_scope_works():
-    if not memory_cap_scope.cap_available():
-        return False
-    probe = subprocess.run(
-        ["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=64M", "-p", "MemorySwapMax=0", "true"],
-        capture_output=True, timeout=30)
-    return probe.returncode == 0
 
 
 def run_hook(command, env=None):
@@ -58,7 +80,34 @@ def run_hook(command, env=None):
                           env=env or os.environ, timeout=30)
 
 
+STOWED_UNIT = toolkit_paths.REPO_ROOT / "systemd" / ".config" / "systemd" / "user" / memory_cap_scope.TEST_SLICE
+
+
 class MatcherTest(unittest.TestCase):
+    def test_each_shared_slice_form_counts_as_capped(self):
+        for form in SHARED_SLICE_FORMS:
+            with self.subTest(form):
+                command = f"systemd-run --user --scope {form} -p MemoryMax=8G pytest"
+                self.assertFalse(memory_cap_scope.uncapped_test_run(command), command)
+
+    def test_the_capped_prefix_names_the_shared_slice_and_the_per_run_cap(self):
+        prefix = memory_cap_scope.CAPPED_PREFIX
+        self.assertIn(f"--slice={memory_cap_scope.TEST_SLICE}", prefix)
+        self.assertIn(f"MemoryMax={memory_cap_scope.MEMORY_MAX}", prefix)
+        self.assertIn("MemorySwapMax=0", prefix)
+
+    def test_the_stowed_slice_unit_caps_memory_and_swap_above_one_run(self):
+        self.assertTrue(STOWED_UNIT.is_file(), STOWED_UNIT)
+        lines = STOWED_UNIT.read_text().splitlines()
+        self.assertIn("[Slice]", lines)
+        slice_lines = lines[lines.index("[Slice]") + 1:]
+        slice_caps = [line for line in slice_lines if line.startswith("MemoryMax=")]
+        self.assertEqual(len(slice_caps), 1, slice_lines)
+        slice_cap = slice_caps[0][len("MemoryMax="):]
+        self.assertTrue(slice_cap.endswith("G"), slice_cap)
+        self.assertGreaterEqual(int(slice_cap[:-1]), int(memory_cap_scope.MEMORY_MAX.removesuffix("G")))
+        self.assertIn("MemorySwapMax=0", slice_lines)
+
     def test_caught(self):
         for name, command in CAUGHT.items():
             with self.subTest(name):
@@ -86,6 +135,8 @@ class HookTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertIn("systemd-run --user --scope", decision["permissionDecisionReason"])
         self.assertIn("MemorySwapMax=0", decision["permissionDecisionReason"])
+        self.assertIn(memory_cap_scope.CAPPED_PREFIX, decision["permissionDecisionReason"])
+        self.assertIn("shared slice", decision["permissionDecisionReason"])
 
     def test_a_machine_with_no_scope_passes_the_call(self):
         result = subprocess.run(["/usr/bin/env", "-i", "PATH=/nonexistent", sys.executable, str(HOOK)],
@@ -112,6 +163,8 @@ FULL_SUITES = {
     "unittest_discover": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest discover -s bin -p 'test_*.py'",
     "bare_pytest": f"{memory_cap_scope.CAPPED_PREFIX} pytest",
     "npm_test": f"{memory_cap_scope.CAPPED_PREFIX} npm test",
+    "run_sh_under_timeout": f"{memory_cap_scope.CAPPED_PREFIX} timeout 600 bash tests/run.sh",
+    "run_sh_under_env": f"{memory_cap_scope.CAPPED_PREFIX} env FOO=1 bash tests/run.sh",
 }
 TARGETED_RUNS = {
     "unittest_module": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest test_x",
@@ -119,6 +172,7 @@ TARGETED_RUNS = {
     "pytest_node": f"{memory_cap_scope.CAPPED_PREFIX} pytest tests/test_a.py::test_one",
     "parallel_tests_file": f"{memory_cap_scope.CAPPED_PREFIX} python3 tests/parallel_tests.py test_a.py",
     "pytest_help": "pytest --help",
+    "pytest_file_under_timeout": f"{memory_cap_scope.CAPPED_PREFIX} timeout 60 pytest tests/test_a.py",
 }
 
 
@@ -188,6 +242,21 @@ class KillTest(unittest.TestCase):
         self.assertNotIn("survived", result.stdout)
         self.assertIn("parent_alive", result.stdout)
         self.assertNotIn("child_status=0", result.stdout)
+
+
+@unittest.skipUnless(systemd_scope_works(), "systemd-run --user --scope is not available on this machine")
+class SliceUseTest(unittest.TestCase):
+    def test_a_missing_slice_unit_still_runs_the_capped_prefix_in_that_slice(self):
+        probe_slice = f"probe{uuid.uuid4().hex}.slice"
+        self.addCleanup(subprocess.run, ["systemctl", "--user", "stop", probe_slice], capture_output=True,
+                        timeout=30)
+        prefix = memory_cap_scope.CAPPED_PREFIX.replace(f"--slice={memory_cap_scope.TEST_SLICE}",
+                                                         f"--slice={probe_slice}")
+        self.assertIn(probe_slice, prefix)
+        result = subprocess.run(["bash", "-c", f"{prefix} cat /proc/self/cgroup"], capture_output=True, text=True,
+                                timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(probe_slice, result.stdout)
 
 
 if __name__ == "__main__":

@@ -7,9 +7,9 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-748 fix notes
+749 fix notes
 
-Recent: the 7 days up to 2026-11-24, the newest note.
+Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
@@ -22,23 +22,23 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/coder-gate | 31 | 8 |
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 27 | 6 |
+| script/script-utils | 27 | 5 |
 | script/shell-write-gate | 24 | 4 |
 | script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
-| skill/code | 19 | 2 |
+| skill/code | 19 | 1 |
+| script/git-discipline-gate | 18 | 7 |
 | script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
-| script/git-discipline-gate | 17 | 6 |
 | skill/review | 17 | 0 |
 | script/staged-claim-gate | 16 | 4 |
-| script/code-review-start | 14 | 7 |
+| script/code-review-start | 14 | 6 |
 | script/verify-log | 14 | 1 |
-| script/code-wait | 13 | 6 |
+| script/code-wait | 13 | 4 |
 | script/log-review-finding | 12 | 0 |
-| script/log-escape | 11 | 3 |
+| script/log-escape | 11 | 2 |
 | script/refactor-flow | 11 | 3 |
 | script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
@@ -56,7 +56,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
-| script/ledger-write | 6 | 2 |
+| script/ledger-write | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
@@ -74,8 +74,8 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/herdr-dev | 4 | 2 |
 | script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
-| script/loop-transcript | 4 | 2 |
-| script/phase-start | 4 | 3 |
+| script/loop-transcript | 4 | 1 |
+| script/phase-start | 4 | 2 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-ruled | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
@@ -99,7 +99,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
 | script/shell-command-words | 3 | 3 |
-| script/worktree-snapshot | 3 | 1 |
+| script/worktree-snapshot | 3 | 0 |
 | agent/code-fork | 2 | 0 |
 | agent/code-reviewer | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
@@ -163,7 +163,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
 | script/finding-record | 1 | 1 |
-| script/fix-diff | 1 | 1 |
+| script/fix-diff | 1 | 0 |
 | script/fork-review | 1 | 1 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-replay | 1 | 0 |

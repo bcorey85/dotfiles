@@ -1141,6 +1141,13 @@ class SharedCloneCommitTest(GateCaseBase):
                 reason = self.assert_shared_denied(command, shared, shared)
                 self.assertIn("git commit -m <msg> -- <paths>", reason)
 
+    def test_a_whole_tree_pathspec_in_a_listed_clone_is_denied(self):
+        shared = self.repo_on("feature")
+        for command in ("git commit -m x -- .", "git commit -m x -- :/", "git commit -m x -- ./",
+                        "git commit -m x -- ':(top)'", "git commit -m x -- bin/a.py ."):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
     def test_a_path_word_without_a_separator_does_not_count_as_a_pathspec(self):
         # Pinned on purpose: only `-- <paths>` or --pathspec-from-file names the files a commit takes.
         shared = self.repo_on("feature")

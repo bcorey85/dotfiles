@@ -37,6 +37,12 @@ BARE = (
     ("-m then -F", ["-m", "x", "-F", "--", "f"]),
     ("--pathspec-from-file with -a", ["--pathspec-from-file=l", "-a", "-m", "x"]),
     ("--date is not --dry-run", ["--date=2020-01-01", "-m", "x"]),
+    ("whole-tree dot pathspec", ["-m", "x", "--", "."]),
+    ("whole-tree colon-slash pathspec", ["-m", "x", "--", ":/"]),
+    ("whole-tree dot-slash pathspec", ["-m", "x", "--", "./"]),
+    ("whole-tree :(top) pathspec", ["-m", "x", "--", ":(top)"]),
+    ("whole-tree glob pathspec", ["-m", "x", "--", "*"]),
+    ("whole-tree dot beside a file", ["-m", "x", "--", "bin/a.py", "."]),
 )
 NAMED = (
     ("path after --", ["-m", "x", "--", "a"]),

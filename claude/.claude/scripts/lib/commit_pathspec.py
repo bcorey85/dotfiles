@@ -1,4 +1,6 @@
 """commit_pathspec.py: whether a `git commit` names the files it commits, read from its words."""
+import re
+
 from git_commit_calls import commit_flag_letters, commit_takes_next_word
 from git_subcommand_options import is_pathspec_from_file
 from shell_command import (
@@ -10,6 +12,9 @@ from shell_command import (
 
 # (option, shortest accepted abbreviation): the options that make `git commit` commit nothing.
 DRY_RUN_OPTIONS = (("--dry-run", "--dr"), ("--short", "--sh"), ("--porcelain", "--por"), ("--long", "--l"))
+
+# A pathspec that matches every file of the tree, from any folder.
+WHOLE_TREE_PATHSPEC = re.compile(r"(\./*|:/+|:\(top\)\.?/*|\*)")
 
 
 def option_sweeps_index(option):
@@ -26,6 +31,14 @@ def implies_dry_run(option):
     name = option.split("=")[0]
     # `--d` is ambiguous with `--date`.
     return any(is_long_prefix(name, full, shortest) for full, shortest in DRY_RUN_OPTIONS)
+
+
+def names_whole_tree(words):
+    """True when a pathspec after `--` names the whole tree (`.`, `./`, `:/`, `:(top)`, `*`): it commits every file."""
+    if "--" not in words:
+        return False
+    paths = words[words.index("--") + 1:]
+    return any(WHOLE_TREE_PATHSPEC.fullmatch(path) for path in paths)
 
 
 def is_bare_commit(arguments):
@@ -45,4 +58,6 @@ def is_bare_commit(arguments):
         return True
     if any(is_pathspec_from_file(option) for option in options):
         return False
+    if names_whole_tree(words):
+        return True
     return len(words) <= len(options) + 1

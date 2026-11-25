@@ -82,7 +82,7 @@ from review_loop_prompt_file import (
 )
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
-WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+WAIT_COMMAND = code_wait.REVIEW_COMMAND
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_PHASES_FILE = "handoff-phases.json"

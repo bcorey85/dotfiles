@@ -39,6 +39,7 @@ from collections.abc import Callable
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
+import code_run_names
 import handback
 import handback_store
 import loop_transcript
@@ -81,9 +82,10 @@ SCOPE_FILE = "review-scope.json"  # the phase review's scope, written by code_re
 PREVIOUS_SCOPE_FILE = "review-scope.prev.json"  # where phase_start.py moves the last phase's scope
 HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files changed since the run start
 HELD_RELEASED_FIELD = "held_released"  # the key of SCOPE_FILE that lists held files the run's coder rewrote
-REVIEW_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+REVIEW_COMMAND = f"python3 ~/.claude/scripts/code/{code_run_names.WAIT_SCRIPT} {code_run_names.WAIT_REVIEW_VERB}"
 LOOP_FLAG = "--loop"
-CODE_WAIT_WRITES_NOTE = "(written by `code_wait.py review`, never by the reviewer)"
+CODE_WAIT_WRITES_NOTE = (f"(written by `{code_run_names.WAIT_SCRIPT} {code_run_names.WAIT_REVIEW_VERB}`, "
+                         "never by the reviewer)")
 
 
 class UsageError(Exception):
@@ -676,9 +678,9 @@ def review_words(words):
 
 
 def run(argv):
-    if len(argv) == 3 and argv[1] == "agent":
+    if len(argv) == 3 and argv[1] == code_run_names.WAIT_AGENT_VERB:
         return wait_agent(checked_agent_id(argv[2]))
-    if len(argv) >= 2 and argv[1] == "review":
+    if len(argv) >= 2 and argv[1] == code_run_names.WAIT_REVIEW_VERB:
         launched_folder, pair_words = review_words(argv[2:])
         return wait_review(pathlib.Path.cwd().resolve(), pair_words, launched_folder)
     raise UsageError(f"unknown arguments {argv[1:]}")

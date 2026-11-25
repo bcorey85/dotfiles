@@ -3,14 +3,16 @@ import pathlib
 import shutil
 import subprocess
 
-TOOLKIT_TOOLS_LIB = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib" / "toolkit-tools.bash"
+SCRIPT_LIB_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib"
+SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash")
 
 
-def copy_toolkit_tools_lib(root):
-    """Copy the library a script sources to <root>/lib, where a copy of the script in <root>/bin finds it."""
+def copy_sourced_libs(root):
+    """Copy the libraries a script sources to <root>/lib, where a copy of the script in <root>/bin finds them."""
     lib_dir = pathlib.Path(root) / "lib"
     lib_dir.mkdir(exist_ok=True)
-    shutil.copy(TOOLKIT_TOOLS_LIB, lib_dir / TOOLKIT_TOOLS_LIB.name)
+    for lib_name in SOURCED_LIBS:
+        shutil.copy(SCRIPT_LIB_DIR / lib_name, lib_dir / lib_name)
 
 
 def write_stub(path, body):
@@ -28,7 +30,7 @@ def run_through_stow_symlink(script, scratch, *args):
     real_bin.mkdir(parents=True)
     real_script = real_bin / script.name
     shutil.copy(script, real_script)
-    copy_toolkit_tools_lib(real_bin.parent)
+    copy_sourced_libs(real_bin.parent)
     linked_bin = scratch / "linked" / "bin"
     linked_bin.mkdir(parents=True)
     (linked_bin / script.name).symlink_to(real_script)

@@ -930,6 +930,20 @@ def without_substitution_bodies(text):
     return "".join(pieces)
 
 
+def without_substitutions(text):
+    """The text with each outermost `$(...)` and backtick span, its opener and closer included, replaced by one `x`,
+    so no `)` of a span ends a simple command that the span sits in (`F=$(git ...)/stop.md`)."""
+    pieces = []
+    position = 0
+    for start, end in substitution_bounds(text):
+        opener_length = 2 if text[start - 1] == "(" else 1
+        pieces.append(text[position:start - opener_length])
+        pieces.append("x")
+        position = end + 1
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
 PARENTHESIS_DEPTH_CHANGE = {"(": 1, ")": -1}
 
 

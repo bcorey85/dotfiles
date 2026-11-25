@@ -1,6 +1,6 @@
 ---
 name: close-branch
-description: The one closing phase. Scripts first, then four report-only reviewers in parallel on the whole branch diff, one coder that fixes every finding, a report-only gate on the fix diff alone, then the recap sheet. Use for "close the branch", "/close-branch", and the plan's Close pass. Hands back a read queue; the staging of semantic files, the commit and the PR stay the user's.
+description: The one closing phase. Scripts first, then four report-only reviewers in parallel on the whole branch diff, one coder that fixes every finding, a report-only gate on the fix diff, then a coder round for the gate's findings, then the recap sheet. Use for "close the branch", "/close-branch", and the plan's Close pass. Hands back a read queue; the staging of semantic files, the commit and the PR stay the user's.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -57,9 +57,10 @@ The fix diff is the `diff_command` that `python3 ~/.claude/skills/close-branch/s
 - the check from Step 1 again;
 - ONE `code-reviewer` (omit `model`) with this prompt: "Report-only gate. Review ONLY the fix diff: `<diff_command>`, which lists these files: <files>. The fixes answered these findings: <the Step 3 list, one line each>. For each finding, say whether the diff fixes it. Report every new defect the diff introduces, with file, line and severity (critical, high, medium, low). For each criterion in this list, name the test that now covers it, or say MISSING: <the criteria from Step 3>."
 
-The gate FAILS on a red full check, a critical or high finding, a criterion still MISSING, or a Step 3 finding the diff left unfixed without showing it wrong. Medium and low findings do not fail it: they go under open items in the recap.
+The gate FAILS on a red full check, a critical or high finding, a criterion still MISSING, or a Step 3 finding the diff left unfixed without showing it wrong. Medium and low findings do not fail it and never go to open items.
 
-On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` (the index stays as the user left it), dispatch `coder` ONCE with only the failing items, and run Step 4 once more on the new fix diff. A second fail → STOP: report the failing items to the user.
+- On a pass with medium or low findings, dispatch `coder` ONCE with them, then run the check from Step 1 again; on a red check, STOP and report the failing lines to the user; on green, go to Step 5.
+- On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` (the index stays as the user left it), dispatch `coder` ONCE with the failing items and the medium and low findings, and run Step 4 once more on the new fix diff. On that rerun, the gate prompt's findings list is the items that coder got: the failing items and the medium and low findings. A second fail → STOP: report the failing items and that gate's medium and low findings to the user.
 
 ## Step 5: log
 
@@ -96,7 +97,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Concentration                 (largest module and branch counts)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
-### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run)
+### Open items                    (asks, REQUIRES-MUTATION culls not run)
 ### Still unstaged                (from stage.mjs, blast-radius order)
 
 Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.

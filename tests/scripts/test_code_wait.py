@@ -6,12 +6,16 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from unittest import mock
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import stop_file_names
 
 module_spec = importlib.util.spec_from_file_location("code_wait", toolkit_paths.CODE_DIR / "code_wait.py")
 code_wait = importlib.util.module_from_spec(module_spec)
@@ -242,7 +246,7 @@ class WaitReviewTest(unittest.TestCase):
         repo, phase_dir = self.repo_with_pid(999999999)
         (phase_dir / "review.out").write_text("status: converged\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
@@ -252,7 +256,7 @@ class WaitReviewTest(unittest.TestCase):
         repo, phase_dir = self.repo_with_pid(999999999)
         (phase_dir / "review.out").write_text("status: converged\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
         if scope_text is not None:
             (phase_dir / code_wait.SCOPE_FILE).write_text(scope_text)
@@ -355,7 +359,7 @@ class WaitReviewTest(unittest.TestCase):
         earlier_folder = temp_dir(self)
         this_folder = temp_dir(self)
         (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
         code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
         output = io.StringIO()
 
@@ -374,7 +378,7 @@ class WaitReviewTest(unittest.TestCase):
         earlier_folder = temp_dir(self)
         this_folder = temp_dir(self)
         (earlier_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{earlier_folder}\n")
         code_wait.write_phase_run(repo, "lane-a", "2", this_folder)
         output = io.StringIO()
 
@@ -406,21 +410,21 @@ class WaitReviewTest(unittest.TestCase):
         (phase_dir / "review.out").write_text("status: converged\n")
         loop_folder = temp_dir(self)
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text("status: converged\n")
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         code_wait.write_phase_run(repo, "lane-a", "2", loop_folder)
 
         self.assertEqual(printed(code_wait.wait_review, repo), "status: converged\n\n")
 
-    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=()):
+    def finished_review_in_a_store_repo(self, impacts, status="converged", blockers=(), **extra_fields):
         """A repo whose review ended, with this session's dispatch and hand-back (holding `impacts`) in the real
         store, keyed as the review record keys them."""
         repo, phase_dir = self.repo_with_pid(999999999)
         packet = json.dumps({"status": status, "iter": 1, "fixed": [], "ask": [], "blockers": list(blockers),
-                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts})
+                             "class_closure": "n/a - fixed[] empty", "plan_impacts": impacts, **extra_fields})
         # code_review_start's real output: its exit line, then the packet.
         (phase_dir / "review.out").write_text(f"The review loop script exited 0.\n{packet}\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
         environment = mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(temp_dir(self)),
                                                    "CLAUDE_CODE_SESSION_ID": STORE_SESSION})
@@ -454,6 +458,31 @@ class WaitReviewTest(unittest.TestCase):
         self.assertIn("`RESOLVED: deferred to phase end by the session, <date>: <summary>`", notice)
         self.assertNotIn("ACTION line", notice)
         self.assertNotIn("the cap moves into the config", notice)
+
+    def test_a_cap_reached_packet_is_followed_by_the_fix_round_line_and_an_old_one_by_none(self):
+        cases = {"with the keys": ({"fix_rounds": 2, "post_cap_passes": ["final read", "class closure"]},
+                                   "cap reached after 2 fix round(s); post-cap passes: final read, class closure"),
+                 "without the keys": ({}, None)}
+        for message, (fields, summary) in cases.items():
+            with self.subTest(message):
+                remaining = [{"finding": "x", "file_line": "a.ts:1"}]
+                repo, packet = self.finished_review_in_a_store_repo([], status="cap-reached",
+                                                                    findings_remaining=remaining, **fields)
+                with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+                    output = printed(code_wait.wait_review, repo)
+                self.assertIn(packet, output)
+                if summary is None:
+                    self.assertNotIn("cap reached after", output)
+                else:
+                    self.assertTrue(output.rstrip().splitlines()[-1].startswith("cap reached after"), output)
+                    self.assertIn(summary, output)
+
+    def test_a_converged_packet_with_the_keys_prints_no_fix_round_line(self):
+        repo, _packet = self.finished_review_in_a_store_repo([], fix_rounds=1, post_cap_passes=["class closure"])
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=[]):
+            output = printed(code_wait.wait_review, repo)
+
+        self.assertNotIn("cap reached after", output)
 
     def test_a_packet_that_is_not_clean_prints_no_defer_notice_for_its_held_impact(self):
         held = {"text": "the queue is at-most-once; AC-2 drops the retry", "gate": "code-reviewer",
@@ -511,7 +540,7 @@ class WaitReviewTest(unittest.TestCase):
         packet = json.dumps({"status": "fix-removed-change", "blockers": ["the fix passes removed 24 of 41"]})
         (phase_dir / "review.out").write_text(packet + "\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
         output = io.StringIO()
 
@@ -530,7 +559,7 @@ class WaitReviewTest(unittest.TestCase):
         (phase_dir / "review.out").write_text(packet + "\n")
         (phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
 
         code, output = self.wait_code_and_output(repo)
@@ -580,7 +609,7 @@ class WaitReviewTest(unittest.TestCase):
             code_wait.handback.load(packet)
         (phase_dir / "review.out").write_text(packet + "\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
         environment = mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(temp_dir(self))})
         environment.start()
@@ -699,7 +728,7 @@ class WaitReviewTest(unittest.TestCase):
         repo, phase_dir = self.repo_with_pid(999999999)
         (phase_dir / "review.out").write_text("No packet. Log: x\n")
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
@@ -716,7 +745,7 @@ class WaitReviewTest(unittest.TestCase):
         repo, phase_dir = self.repo_with_pid(999999999)
         run = code_wait.phase_review(repo)
         loop_folder = temp_dir(self)
-        (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
+        (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
 
         message = run.no_output()
 
@@ -754,7 +783,7 @@ class ReviewerRequestTest(unittest.TestCase):
     def setUp(self):
         self.repo, self.phase_dir = WaitReviewTest.repo_with_pid(self, os.getpid())
         self.loop_dir = temp_dir(self)
-        (self.phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{self.loop_dir}\n")
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{self.loop_dir}\n")
         self.entries = code_wait.reviewer_dispatch.write_round(
             self.loop_dir, 1, [("review1-code-reviewer", "code-reviewer", "Review app.py.")])
         self.projects = temp_dir(self)
@@ -785,10 +814,35 @@ class ReviewerRequestTest(unittest.TestCase):
         lines = printed(code_wait.wait_review, self.repo).splitlines()
 
         self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
-        self.assertIn("agent code-reviewer", lines[1])
-        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertEqual(lines[1], "round 1: dispatch these 1 reviewer(s) now")
+        self.assertIn("round 1: review1-code-reviewer; agent code-reviewer", lines[2])
+        self.assertIn(self.entries[0]["report_file"], lines[2])
         self.assertIn("code_wait.py review <agentId> <report file>", lines[-1])
-        self.assertTrue(lines[1].endswith(code_wait.CODE_WAIT_WRITES_NOTE), lines[1])
+        self.assertTrue(lines[2].endswith(code_wait.CODE_WAIT_WRITES_NOTE), lines[2])
+
+    def test_a_round_two_request_written_after_round_one_prints_from_the_same_wait_call(self):
+        # The loop's fix pass runs between the rounds: the manifest of round 2 appears while the call waits.
+        review = "## Fix\nOne\n"
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                     "text": review}]}}])
+        later = [("review2-code-reviewer", "code-reviewer", "Review app.py again."),
+                 ("review2-test-reviewer", "test-reviewer", "Review the tests again.")]
+        write_round_two = threading.Timer(0.3, code_wait.reviewer_dispatch.write_round, (self.loop_dir, 2, later))
+        write_round_two.start()
+        self.addCleanup(write_round_two.cancel)
+
+        with mock.patch.object(code_wait, "WAIT_SECONDS", 5), mock.patch.object(code_wait, "POLL_SECONDS", 0.05):
+            code, output, _ = self.run_main("review", AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 0)
+        lines = output.splitlines()
+        self.assertEqual(lines[0], "ACTION: dispatch-reviewer")
+        self.assertIn("round 2: dispatch these 2 reviewer(s) now", output)
+        self.assertNotIn("round 1:", output)
+        for role in ("review2-code-reviewer", "review2-test-reviewer"):
+            line = next(line for line in lines if line.startswith(f"- round 2: {role}; agent "))
+            self.assertIn(f"{role}.report.md", line)
+        self.assertIn("A later round's lines come back from this same call.", lines[-1])
 
     def test_an_answered_request_lets_the_review_wait_go_on(self):
         pathlib.Path(self.entries[0]["report_file"]).write_text("## Fix\nNone\n")
@@ -796,7 +850,7 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertEqual(printed(code_wait.wait_review, self.repo).strip(), code_wait.STILL_WORKING)
 
     def test_a_loop_dir_from_before_the_run_named_one_is_no_request(self):
-        (self.phase_dir / code_wait.LOOP_DIR_FILE).unlink()
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).unlink()
 
         self.assertEqual(printed(code_wait.wait_review, self.repo).strip(), code_wait.STILL_WORKING)
 
@@ -976,7 +1030,7 @@ class ReviewerRequestTest(unittest.TestCase):
 
         lines = output.splitlines()
         self.assertEqual((code, lines[0]), (0, "ACTION: dispatch-reviewer"))
-        self.assertIn(self.entries[0]["report_file"], lines[1])
+        self.assertIn(self.entries[0]["report_file"], lines[2])
         self.assertIn(f"code_wait.py review --loop {self.loop_dir} <agentId> <report file>", lines[-1])
 
     def test_a_launched_loop_writes_a_finished_reviewer_s_report(self):

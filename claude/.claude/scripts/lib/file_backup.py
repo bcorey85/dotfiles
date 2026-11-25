@@ -1,5 +1,6 @@
 """Copy a set of files to a folder on disk before a step that may delete them, and put back the ones that vanished or,
-through restore_changed or restore_paths, the ones that changed.
+through restore_changed or restore_paths, the ones that changed. put_back_all does both, and also deletes the paths
+the caller names as created and the paths that did not exist when saved.
 
 It knows nothing about the files: the caller names the paths and the folder for the copies. A file over the size cap,
 or one that cannot be read, is not copied, so its loss can be reported but not undone."""
@@ -10,14 +11,15 @@ MAX_FILE_BYTES = 50 * 1024 * 1024
 
 
 class Backup:
-    """saved: the paths copied. unsaved: the paths left out, over the cap or unreadable. Each saved path's copy sits
-    at backup_dir/<path>."""
+    """saved: the paths copied. unsaved: the paths left out, over the cap or unreadable. absent: the paths that did not
+    exist when saved. Each saved path's copy sits at backup_dir/<path>."""
 
-    def __init__(self, root, backup_dir, saved, unsaved):
+    def __init__(self, root, backup_dir, saved, unsaved, absent=()):
         self.root = pathlib.Path(root)
         self.backup_dir = pathlib.Path(backup_dir)
         self.saved = saved
         self.unsaved = unsaved
+        self.absent = sorted(absent)
 
 
 def save_files(root, paths, backup_dir, max_file_bytes=MAX_FILE_BYTES):
@@ -44,7 +46,8 @@ def save_files(root, paths, backup_dir, max_file_bytes=MAX_FILE_BYTES):
             continue
 
         saved.append(path)
-    return Backup(root, backup_dir, saved, unsaved)
+    absent = [path for path in paths if not (root / path).exists()]
+    return Backup(root, backup_dir, saved, unsaved, absent)
 
 
 def restore_missing(backup):
@@ -89,6 +92,24 @@ def restore_paths(backup, paths):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(backup.backup_dir / path, target)
     return restored
+
+
+def put_back_all(backup, created=()):
+    """Copy back every saved file that changed or vanished, and unlink each path of backup.absent and `created` that
+    exists now. A real directory at such a path stays. Returns (put_back, left): the sorted paths put back or
+    removed, and the sorted directories left in place."""
+    put_back = restore_changed(backup)
+    left = []
+    for path in {*backup.absent, *created}:
+        target = backup.root / path
+        if not target.exists():
+            continue
+        if target.is_dir() and not target.is_symlink():
+            left.append(path)
+            continue
+        target.unlink()
+        put_back.append(path)
+    return sorted(put_back), sorted(left)
 
 
 def discard(backup):

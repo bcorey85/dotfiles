@@ -577,7 +577,7 @@ class WaitReviewTest(unittest.TestCase):
         packet = json.dumps(fields)
         if not invalid_packet:
             # A packet that fails to parse prints no stop line, which would hide the deferred check under test.
-            code_wait.handback.validate(code_wait.handback.parse(packet))
+            code_wait.handback.load(packet)
         (phase_dir / "review.out").write_text(packet + "\n")
         loop_folder = temp_dir(self)
         (phase_dir / code_wait.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")

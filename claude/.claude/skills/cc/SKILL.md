@@ -1,6 +1,6 @@
 ---
 name: cc
-description: Read the inline review comments left from Neovim (`<leader>cc`) and hunk review sessions, answer the questions, and hand the change requests to `/fix`.
+description: Read the inline review comments left from Neovim (`<leader>cc`) and hunk review sessions, answer the questions, hand the change requests to `/fix`, then clear them.
 disable-model-invocation: true
 allowed-tools: [Bash, Read, Glob, Grep, Skill]
 ---

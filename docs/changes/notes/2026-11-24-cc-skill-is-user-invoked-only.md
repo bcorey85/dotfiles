@@ -24,7 +24,7 @@ to one sentence for the slash menu. The model no longer sees cc in its Skill lis
 ## Evidence
 
 Trigger census: under live settings the model loaded cc on its own in 0 of 32 nvim-comment asks (two repos, 8 runs per
-ask per repo); with the competing plugin turned off it reached 3 of 12 in one repo. The fix skill's description and its bare-run step only point
+ask per repo); with the competing plugin turned off it reached 3 of 12 in one repo (finding 2026-11-23-skill-overrides-cannot-turn-off-a-plugin-skill-and). The fix skill's description and its bare-run step only point
 the user at `/cc`; nothing loads cc through the Skill tool.
 
 ## Result

@@ -21,7 +21,7 @@ Data-driven monthly audit of `~/.claude/skills/`. The guidance this implements: 
    - **Untriggered ≥ 30 days** (with ≥ 30 days of telemetry history) → retire/merge candidate.
    - **Description > ~4 lines or body > 150 lines** on a low-use skill → trim candidate.
    - **Overlapping trigger domains** — two descriptions a reasonable router could confuse → merge or sharpen-description candidate.
-   - **Built-in shadowing** — a custom skill whose job a harness built-in now covers; check against the "Workflow Routing" table in `~/.claude/CLAUDE.md` before flagging.
+   - **Built-in shadowing** — a custom skill whose job a harness built-in now covers;
 4. Report (cap ~60 lines): usage table, then flags, each with a one-line recommended action (delete / merge into X / trim to Y / sharpen description). If telemetry history is thin (< 30 days), say so and mark usage-based flags provisional.
 
 ## Boundaries

@@ -16,6 +16,7 @@ SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
 
 COMMIT_ON_MAIN = "[git-discipline-gate] git commit on main"
 DIRECT_EDIT = "This is a direct-edit repo.\n"
+AMEND_DENIED_PREFIX = "[git-discipline-gate] git commit --amend is blocked"
 
 
 class GateCaseBase(unittest.TestCase):
@@ -586,6 +587,7 @@ HARMLESS_COMMANDS = ("push -u origin HEAD", "push origin feature", "status", "re
                      "reset --soft HEAD~1", "reset -q HEAD f", "clean -nfd", "clean -n", "restore --staged .",
                      "restore f", "checkout -- f", "checkout -f -- f", "checkout --force -- f", "checkout -b topic",
                      "commit -m x", "commit -m --no-verify", "commit -m x -F msg", "commit -mn",
+                     "commit -uno -m x", "commit -Sn -m x",
                      "checkout -f feature file.txt", "commit -m 'a b'", "checkout -b topic file",
                      "merge -m 'set GIT_CONFIG_COUNT=1 in the gate' feature",
                      "commit -m \"GIT_CONFIG_COUNT=1\"",
@@ -1099,6 +1101,301 @@ class UnnamedDockerRunGateTest(GateCaseBase):
     def test_compose_and_exec_pass(self):
         self.assert_allowed("docker compose run web pytest")
         self.assert_allowed("docker exec c cmd")
+
+
+class SharedCloneCommitTest(GateCaseBase):
+    """A commit with no `-- <paths>` in a shared clone takes the files peers staged."""
+
+    DENIED = "[git-discipline-gate] git commit that takes the whole index"
+
+    def run_in(self, command, cwd, shared, env_extra=None):
+        payload = json.dumps({"tool_input": {"command": command}})
+        env = {"CLAUDE_SHARED_CLONES": str(shared), **(env_extra or {})}
+        return self.run_raw(payload, cwd, env_extra=env)
+
+    def assert_shared_denied(self, command, cwd, shared, env_extra=None):
+        reason = self.reason_of(self.run_in(command, cwd, shared, env_extra))
+        self.assertTrue(reason.startswith(self.DENIED), reason)
+        return reason
+
+    def assert_shared_allowed(self, command, cwd, shared, env_extra=None):
+        finished = self.run_in(command, cwd, shared, env_extra)
+        self.assertEqual((finished.returncode, finished.stdout, finished.stderr), (0, "", ""))
+
+    def home_link_env(self, shared):
+        """An env whose HOME holds a `shared` symlink to the listed clone."""
+        link = shared.parent / "shared"
+        link.symlink_to(shared)
+        self.addCleanup(link.unlink)
+        return {"HOME": str(shared.parent)}
+
+    def test_bare_commit_in_a_listed_clone_is_denied(self):
+        shared = self.repo_on("feature")
+        for command in ("git commit -m x", "git commit -am x", "git commit -a -m x", "git commit --all -m x",
+                        "git commit -m x -a -- a.txt", "git commit -m -- a.txt", "git commit -F msg.txt",
+                        # `a.txt` is a path word with no `--`, which counts as bare by design.
+                        "git commit -o a.txt -m x",
+                        "git commit -i -m x -- a.txt", "git commit --include -m x -- a.txt",
+                        "git commit --am -a -m x", "git commit --am -i -m x -- a.txt"):
+            with self.subTest(command=command):
+                reason = self.assert_shared_denied(command, shared, shared)
+                self.assertIn("git commit -m <msg> -- <paths>", reason)
+
+    def test_a_whole_tree_pathspec_in_a_listed_clone_is_denied(self):
+        shared = self.repo_on("feature")
+        for command in ("git commit -m x -- .", "git commit -m x -- :/", "git commit -m x -- ./",
+                        "git commit -m x -- ':(top)'", "git commit -m x -- bin/a.py ."):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_a_path_word_without_a_separator_does_not_count_as_a_pathspec(self):
+        # Pinned on purpose: only `-- <paths>` or --pathspec-from-file names the files a commit takes.
+        shared = self.repo_on("feature")
+        self.assert_shared_denied("git commit -m x a.txt", shared, shared)
+
+    def test_pathspec_commit_in_a_listed_clone_passes(self):
+        shared = self.repo_on("feature")
+        for command in ("git commit -m x -- a.txt", "git commit -m x --pathspec-from-file=list.txt",
+                        "git commit --message=x -- a.txt b.txt", "git commit -mall -- a.txt",
+                        "git commit -Cabc -- a.txt", "git commit -uall -m x -- a.txt"):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_pathspec_commit_in_a_compound_command_passes(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_allowed("git add a.txt && git commit -m x -- a.txt", shared, shared)
+        self.assert_shared_allowed(f"cd {shared} && git commit -m x -- a.txt", other, shared)
+
+    def test_a_commit_inside_a_compound_command_is_denied(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command, cwd in (("git add a.txt && git commit -m x", shared), (f"cd {shared} && git commit -m x", other),
+                             (f"pushd {shared} && git commit -m x", other),
+                             (f"(cd {shared} && git commit -m x)", other)):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, cwd, shared)
+
+    def test_a_commit_moved_into_an_unlisted_repo_passes_from_the_shared_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"(cd {other} && git commit -m x)", f"pushd {other} && git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_commit_that_cannot_be_placed_is_judged_in_the_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        command = 'cd "$X" && git commit -m x'
+        self.assert_shared_denied(command, shared, shared)
+        self.assert_shared_allowed(command, other, shared)
+
+    def test_a_bare_commit_with_git_dir_is_denied_from_an_unlisted_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        command = f"git --git-dir={shared}/.git --work-tree={shared} commit -m x"
+        self.assert_shared_denied(command, other, shared)
+
+    def test_a_bare_commit_naming_a_shared_git_dir_is_denied_from_an_unlisted_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"git --git-dir {shared}/.git commit -m x", f"git --git-dir={shared}/.git commit -m x",
+                        f"git -C {shared} --git-dir=.git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, other, shared)
+
+    def test_a_tilde_git_dir_names_the_home_folder(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        env = self.home_link_env(shared)
+        self.assert_shared_denied("git --git-dir ~/shared/.git commit -m x", other, shared, env)
+
+    def test_a_tilde_dash_c_value_names_the_home_folder(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        env = self.home_link_env(shared)
+        for command in ("env -C /tmp git -C ~/shared commit -m x", 'cd "$X" && git -C ~/shared commit -m x'):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, other, shared, env)
+
+    def test_a_relative_dash_c_is_read_from_the_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        (shared / "sub").mkdir()
+        (other / "sub").mkdir()
+        self.assert_shared_denied("git -C sub commit -m x", shared, shared)
+        self.assert_shared_allowed(f"git -C {other}/sub commit -m x", shared, shared)
+
+    def test_an_unread_dash_c_value_is_judged_in_the_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in ('git -C "$PWD" commit -m x', 'git -C "$(pwd)" commit -m x', 'git -C "$X" commit -m x',
+                        "git -C '/tmp/*' commit -m x", "git -C ~someone commit -m x", "git -C {a,b} commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+                self.assert_shared_allowed(command, other, shared)
+
+    def test_a_commit_inside_a_code_runner_is_denied(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in ("bash -c 'git commit -m x'", 'sh -c "git commit -m x"', "eval git commit -m x",
+                        "(eval git commit -m x)", "true;eval git commit -m x", "true&&eval git commit -m x",
+                        "eval -- git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+        self.assert_shared_allowed("echo eval git commit -m x", shared, shared)
+        git_dir_command = f"bash -c 'git --git-dir={shared}/.git commit -m x'"
+        self.assert_shared_denied(git_dir_command, other, shared)
+        self.assert_shared_allowed(f"bash -c 'git --git-dir={other}/.git commit -m x'", shared, shared)
+        self.assert_shared_denied(f"bash -c 'git -C {shared} commit -m x'", other, shared)
+
+    def test_a_runner_behind_prefix_words_or_a_block_is_denied(self):
+        shared = self.repo_on("feature")
+        for command in ("FOO=1 eval git commit -m x", "command eval git commit -m x", "time eval git commit -m x",
+                        "{ eval git commit -m x; }", "if true; then eval git commit -m x; fi"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_a_runner_commit_naming_its_files_passes(self):
+        shared = self.repo_on("feature")
+        for command in ("bash -c 'git commit -m x -- a.txt'", "eval git commit -m x -- a.txt",
+                        'bash -c "git commit -m x --pathspec-from-file=l"'):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_message_naming_git_commit_and_a_runner_word_passes(self):
+        shared = self.repo_on("feature")
+        for command in ('git commit -m "toolkit script: a git commit names its paths" -- a',
+                        'git commit -m "gate: deny a bare git commit inside eval" -- a',
+                        'git commit -m x -m "git commit run through ssh" -- a'):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_bare_commit_with_runner_words_in_its_message_is_denied(self):
+        shared = self.repo_on("feature")
+        for command in ('git commit -m "gate: deny a bare git commit inside eval"',
+                        'git commit -m x -m "git commit run through ssh"'):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_a_bare_commit_after_a_runner_argument_is_denied_through_the_outer_step(self):
+        shared = self.repo_on("feature")
+        for command in ("eval echo hi; git commit -m x", "su -c true; git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_known_limit_quoted_git_commit_text_among_runner_arguments_is_denied(self):
+        # Fail-closed on purpose: the quoted text sits among the arguments of a runner, so it reads as runner text.
+        shared = self.repo_on("feature")
+        self.assert_shared_denied("bash -c 'echo git commit'", shared, shared)
+
+    def test_known_limit_pushd_before_a_runner_commit_is_judged_in_the_cwd(self):
+        # Fail-open on purpose: the folder `pushd` moves to is not followed into runner text.
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_allowed(f"pushd {shared} && bash -c 'git commit -m x'", other, shared)
+
+    def test_a_runner_elsewhere_in_the_command_does_not_hide_a_read_cd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"bash -c true; (cd {other} && git commit -m x)",
+                        f"bash -c true && pushd {other} && git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_runner_commit_follows_the_outer_cd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_denied(f"cd {shared} && bash -c 'git commit -m x'", other, shared)
+        self.assert_shared_allowed(f"cd {other} && bash -c 'git commit -m x'", shared, shared)
+
+    def test_an_env_or_sudo_directory_wrapper_is_judged_in_the_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"env -C {shared} git commit -m x", f"sudo -D {shared} git commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+                self.assert_shared_allowed(command, other, shared)
+
+    def test_a_git_dir_assignment_is_judged_in_the_folder_the_shell_stands_in(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        command = f"GIT_DIR={shared}/.git git commit -m x"
+        self.assert_shared_denied(command, shared, shared)
+        self.assert_shared_allowed(command, other, shared)
+
+    def test_a_trailing_slash_git_dir_names_the_shared_folder(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_denied(f"git --git-dir={shared}/.git/ commit -m x", other, shared)
+
+    def test_a_git_dir_in_an_unlisted_repo_passes_from_a_shared_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_allowed(f"git --git-dir={other}/.git commit -m x", shared, shared)
+
+    def test_bare_commit_in_an_unlisted_repo_passes(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_allowed("git commit -m x", other, shared)
+
+    def test_dash_c_into_a_listed_clone_from_an_unlisted_cwd_is_denied(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"git -C {shared} commit -m x", f'cd "$X" && git -C {shared} commit -m x',
+                        f"env -C /tmp git -C {shared} commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, other, shared)
+
+    def test_dash_c_with_an_unfollowed_option_is_denied_from_an_unlisted_cwd(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        for command in (f"git -C {shared} -c commit.gpgsign=false commit -m x",
+                        f"git -C {shared} --work-tree={shared} commit -m x",
+                        f"git -C {shared} -c color.ui=never commit -m x"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, other, shared)
+
+    def test_dash_c_with_an_unfollowed_option_into_an_unlisted_clone_passes(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        command = f"git -C {other} -c commit.gpgsign=false commit -m x"
+        self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_bare_repo_style_git_dir_is_the_folder_itself(self):
+        shared = self.repo_on("feature")
+        other = self.repo_on("feature")
+        self.assert_shared_denied(f"git --git-dir {shared} commit -m x", other, shared)
+        self.assert_shared_allowed(f"git --git-dir {other} commit -m x", other, shared)
+
+    def test_a_relative_git_dir_is_read_from_the_shared_cwd(self):
+        shared = self.repo_on("feature")
+        self.assert_shared_denied("git --git-dir=.git commit -m x", shared, shared)
+
+    def test_a_linked_worktree_of_a_listed_clone_is_not_shared(self):
+        shared = self.repo_on("feature")
+        identity = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "-C", str(shared), *identity, "commit", "-q", "--allow-empty", "-m", "init"],
+                       check=True)
+        linked = self.tmp / "linked"
+        subprocess.run(["git", "-C", str(shared), "worktree", "add", "-q", "-b", "lane", str(linked)], check=True)
+        self.assert_shared_allowed("git commit -m x", linked, shared)
+
+    def test_a_subfolder_of_a_listed_clone_is_denied(self):
+        shared = self.repo_on("feature")
+        folder = shared / "sub"
+        folder.mkdir()
+        self.assert_shared_denied("git commit -m x", folder, shared)
+
+    def test_bare_amend_in_a_listed_clone_is_judged_by_the_amend_rule(self):
+        # Rule 2 denies the amend before rule 11 runs; the rule 11 exemption is pinned by the `exact --amend` row of
+        # NAMED in test_commit_pathspec.py.
+        shared = self.repo_on("feature")
+        for command in ("git commit --amend --no-edit", "git commit --amend"):
+            with self.subTest(command=command):
+                finished = self.run_in(command, shared, shared)
+                reason = self.reason_of(finished)
+                self.assertTrue(reason.startswith(AMEND_DENIED_PREFIX), reason)
 
 
 if __name__ == "__main__":

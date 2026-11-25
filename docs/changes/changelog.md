@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1175 changes
+1176 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -34,6 +34,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [plan_check owner given a plan folder reads the ticket inside it](notes/2026-11-24-plan-check-owner-given-a-plan-folder-reads-the.md) [script/plan-check] A lane that passes a plan folder to plan_check owner now gets the criteria owner of the ticket inside it, so it stops sending a session-owned criterion to the user.
 * [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md) [script/coder-gate, script/staged-claim-gate, script/shell-command, script/shell-command-words, script/fork-children, script/announced-step, script/script-utils, script/fork-review, script/user-prompts, script/human-turn-lookup, script/loop-transcript] A /code fork that dispatched a coder for a phase and ended with no review and no stop.md write after the dispatch is sent back once at SubagentStop, or denied at SubagentHandback.
 * [code run script names and script call arguments get one owner](notes/2026-11-24-code-run-script-names-and-script-call-arguments.md) [script/coder-gate, script/code-wait, script/fork-children, script/code-review-start, script/code-run-names, script/shell-command-words] The /code review script names and a reader for a script's call arguments move to one owner each in lib, with no behavior change.
 * [Push gate credits the review verify-branch logs on its own fix commit](notes/2026-11-24-push-gate-credits-the-review-verify-branch-logs-on.md) [skill/verify-branch, script/verify-log] verify-log review records the tree it logged in the reviewed-tree record, so the push gate allows the push of the tree verify-branch reviewed

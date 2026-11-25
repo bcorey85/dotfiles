@@ -96,9 +96,8 @@ def against_original_cwd(value, original_cwd, must_exist):
 
 PLAN_ONLY_MODE = "plan-only"
 FOLDER_MODES = ("dir", PLAN_ONLY_MODE)
-PLAN_FILE_NAMES = (plan_format.SPEC_FILE_NAME, plan_format.PLAN_ONLY_PLAN_NAME)
-PLAN_GLOB = "*-05-plan.md"
-PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
+PLAN_FILE_NAMES = plan_format.PLAN_FILE_NAMES
+PLAN_NAMES_TEXT = plan_format.PLAN_NAMES_TEXT
 
 
 def folder_of_plan_file(target, top):
@@ -114,16 +113,11 @@ def folder_of_plan_file(target, top):
 
 
 def find_plan_in_dir(task_dir):
-    """The first task-dir file named in `PLAN_FILE_NAMES`, else the single `PLAN_GLOB` match (legacy
-    `<KEY>-05-plan.md` name)."""
-    for fixed_name in PLAN_FILE_NAMES:
-        fixed = task_dir / fixed_name
-        if fixed.is_file():
-            return fixed
-    matches = sorted(task_dir.glob(PLAN_GLOB))
-    if len(matches) > 1:
-        raise vc.VerifyError(f"{task_dir} holds several {PLAN_GLOB}: {', '.join(m.name for m in matches)}")
-    return matches[0] if matches else None
+    """`plan_format.find_plan_in_dir`, with its several-plans failure as a VerifyError."""
+    try:
+        return plan_format.find_plan_in_dir(task_dir)
+    except plan_format.PlanFormatError as error:
+        raise vc.VerifyError(str(error)) from error
 
 
 def resolve_inputs(target, ticket_file, top):

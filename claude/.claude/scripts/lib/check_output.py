@@ -203,11 +203,16 @@ def failing_test_lines(output):
     return list(dict.fromkeys(names))[:MAX_FAILING_TEST_LINES]
 
 
+def reports_test_failure(plain):
+    """True when ANSI-free output holds a runner summary that counts failures or a failing-test line."""
+    return bool(SUMMARY_FAILURE.search(plain) or failing_test_lines(plain))
+
+
 def cannot_start_line(code, output):
     """The first output line that shows the tool could not start, or None. A passing run, a run whose runner summary
     reports failures and a run with failing-test lines never read as one: a test's own output may quote the text."""
     plain = strip_ansi(output)
-    if code == 0 or SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
+    if code == 0 or reports_test_failure(plain):
         return None
 
     for line in plain.splitlines():
@@ -476,8 +481,8 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if TESTS_FAILED.search(plain):
         return False
 
-    # A test's own output may quote a cannot-start line: a run whose summary counts failures is not one.
-    runner_cannot_start = (not SUMMARY_FAILURE.search(plain)
+    # A test's own output may quote a cannot-start line: a run that reports a failed test is not one.
+    runner_cannot_start = (not reports_test_failure(plain)
                            and any(is_runner_cannot_start_line(line.strip()) for line in plain.splitlines()))
     if runner_cannot_start or NO_PACKAGE_MANIFEST.search(plain):
         return True

@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`memory_cap_scope.capped_shell_argv` adds `--unit=capped-<pid>-<random hex>` to the systemd-run argv, so each capped run names a scope unit of its own. The full check, the coder gate and the criteria dry run all build their argv there. `check_output.RUNNER_CANNOT_START` also matches systemd-run's `Failed to start transient scope unit: ` line, so a scope that cannot start reads as a setup fault, not as a failed check. `is_setup_fault` now reads a runner's cannot-start line only at a line start and never in a run whose summary counts failures, so a failed test that quotes the line still reads as failed. The coder gate's test-database retry builds a fresh argv: systemd keeps a failed scope unit loaded, so a reused unit name clashes.
+`memory_cap_scope.capped_shell_argv` adds `--unit=capped-<pid>-<random hex>` to the systemd-run argv, so each capped run names a scope unit of its own. The full check, the coder gate and the criteria dry run all build their argv there. `check_output.RUNNER_CANNOT_START` also matches systemd-run's `Failed to start transient scope unit: ` line, so a scope that cannot start reads as a setup fault, not as a failed check. `is_setup_fault` now reads a runner's cannot-start line only at a line start and never in a run that reports a failed test (one rule, `reports_test_failure`, shared with `cannot_start_line`), so a failed test that quotes the line still reads as failed. The coder gate's test-database retry builds a fresh argv: systemd keeps a failed scope unit loaded, so a reused unit name clashes.
 
 ## Evidence
 

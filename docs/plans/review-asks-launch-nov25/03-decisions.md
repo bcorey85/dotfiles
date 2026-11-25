@@ -1,0 +1,5 @@
+# Decisions
+
+1. **Drop the asks-done item** (the lane, 2026-11-25). `asks-done --by session` exists since 999f519ec (2026-11-11) and is tested in `tests/scripts/test_review_fix_ask_ruler.py`. It refuses only `user_only` asks, which name user-owned criteria or an approval-only file edit; the global acceptance-criteria rule gives those to the user alone, so a session ruling must not release them. agent-evals-74 confirms or overrules.
+2. **Item 1 test reworded, pending agent-evals-74** (the lane, 2026-11-25). The queue item asks for a test that a finding matching a recorded ruling is not filed as an ask. Decision-log entries are free prose, and no matcher tells a reviewer's ask from a decision without false drops, so the test pins the launch's plan header and the brief's decisions line (AC2, AC3); the reviewer's behaviour is listed as unmeasured in the change file.
+3. **Item 4 measure** (the lane, 2026-11-25). The 9 of 10 replay is not run in this lane under the machine load; the change file lists it as unmeasured and the report asks agent-evals-74 whether to queue the replay.

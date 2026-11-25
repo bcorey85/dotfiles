@@ -13,6 +13,7 @@ from shell_command import (
     command_after_wrappers,
     parse_raw_simple_commands,
     resolved_command_words,
+    split_command_steps,
     split_simple_commands,
     step_words,
     without_substitutions,
@@ -90,19 +91,19 @@ def script_call_arguments(command, script_name):
 
 def variable_assignments(command):
     """{name: value} for each simple command of `command` that is a bare `NAME=value` assignment, a later one
-    replacing an earlier one. A `$(...)` or backtick span in a value reads as `x`. Empty when the command cannot be
-    read: a caller then knows no value, as `resolved_command_words` does."""
+    replacing an earlier one. A `$(...)` or backtick span in a value reads as `x`. Each step is read on its own, and a
+    step that cannot be read is skipped, so an unreadable writing step does not hide an earlier assignment."""
     code = without_substitutions(shell_code(command))
-    try:
-        simple_commands = split_simple_commands(code)
-    except ValueError:
-        return {}
-
     assigned = {}
-    for words in simple_commands:
-        if len(words) == 1 and ASSIGNMENT.match(words[0]):
-            name, value = words[0].split("=", 1)
-            assigned[name] = value
+    for _, step in split_command_steps(code):
+        try:
+            simple_commands = split_simple_commands(step)
+        except ValueError:
+            continue
+        for words in simple_commands:
+            if len(words) == 1 and ASSIGNMENT.match(words[0]):
+                name, value = words[0].split("=", 1)
+                assigned[name] = value
     return assigned
 
 

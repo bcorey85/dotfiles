@@ -7,6 +7,9 @@ import unittest
 
 import toolkit_paths
 
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import memory_cap_scope
+
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
 
 DENIED_COMMANDS = {
@@ -159,8 +162,8 @@ ALLOWED_COMMANDS = {
 
 
 class InlineInterpreterHintTest(unittest.TestCase):
-    def reason_for(self, command):
-        payload = json.dumps({"tool_input": {"command": command}})
+    def reason_for(self, command, **tool_input_fields):
+        payload = json.dumps({"tool_input": {"command": command, **tool_input_fields}})
         finished = subprocess.run([sys.executable, str(HOOK)], input=payload, capture_output=True, text=True,
                                   check=True)
         if not finished.stdout.strip():
@@ -176,6 +179,14 @@ class InlineInterpreterHintTest(unittest.TestCase):
         for name, command in ALLOWED_COMMANDS.items():
             with self.subTest(name=name):
                 self.assertEqual(self.reason_for(command), "", command)
+
+    def test_a_full_suite_run_is_denied_in_the_foreground_and_allowed_in_the_background(self):
+        command = f"{memory_cap_scope.CAPPED_PREFIX} bash tests/run.sh"
+        self.assertNotEqual(self.reason_for(command), "", "foreground call")
+        self.assertNotEqual(self.reason_for(command, run_in_background=False), "", "explicit foreground call")
+        for flag in (True, "true"):
+            with self.subTest(run_in_background=flag):
+                self.assertEqual(self.reason_for(command, run_in_background=flag), "")
 
     def test_the_deny_names_the_scratchpad_script_and_the_stdin_forms(self):
         reason = self.reason_for("python3 - <<'EOF'\nprint(1)\nEOF")

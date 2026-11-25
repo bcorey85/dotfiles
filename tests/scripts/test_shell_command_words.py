@@ -171,8 +171,13 @@ class VariableAssignmentsTest(unittest.TestCase):
     def test_an_assignment_in_front_of_a_command_is_no_bare_assignment(self):
         self.assertEqual(variable_assignments("f=/a make"), {})
 
-    def test_a_command_the_parser_cannot_read_gives_nothing(self):
-        self.assertEqual(variable_assignments("f=/a && echo 'unclosed"), {})
+    def test_an_assignment_is_read_when_a_later_step_cannot_be_parsed(self):
+        for command in ('F=/r/stop.md; printf \'%s\\n\' "x" > "$F"', 'F=/r/stop.md && echo "a" > "$F"'):
+            with self.subTest(command=command):
+                self.assertEqual(variable_assignments(command), {"F": "/r/stop.md"})
+
+    def test_a_step_the_parser_cannot_read_is_skipped(self):
+        self.assertEqual(variable_assignments("f=/a && echo 'unclosed"), {"f": "/a"})
 
 
 class BeforeSubshellCloserTest(unittest.TestCase):

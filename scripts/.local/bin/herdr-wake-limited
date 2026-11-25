@@ -51,7 +51,8 @@ real path. Under tuios nothing is resumed and the resumed
 file is neither read nor written.
 
 After the panes (not when herdr gives no agent list), at most once per 10 minutes, it also
-starts herdr-lane-sweep from the folder of the path it was started by (the stowed link), which closes the lanes whose branch is merged.
+starts herdr-lane-sweep from the folder of the path it was started by (the stowed link),
+which closes the lanes whose branch is merged.
 The sweep runs with no stdin and this script waits for it, because a systemd
 oneshot unit kills a child left running. The wait is capped at 300 s: the sweep runs in its own process group,
 which is killed on timeout. A lane killed before its entry was removed is finished by the next sweep; one killed

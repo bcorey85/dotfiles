@@ -11,7 +11,8 @@ Also covers login-expired notices and the noticed-state file:
 - resume prompts: one per error record to a pane whose transcript ends on a cleared usage-limit or server
   error (records written after the error are skipped), none for a login error or a pane at a screen prompt,
   and the resumed file (last answered uuid and resume count per session) kept, pruned and left alone under
-  tuios; at most three resumes in a row per session, then one `gave up` line.
+  tuios; at most three resumes in a row per session, then one `gave up` line;
+- the lane sweep: started at most once per ten minutes, and in the same run as a resume prompt.
 """
 import datetime
 import importlib.machinery
@@ -704,6 +705,18 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertRegex(self.prompts()[0], r"^wS:p1 Your last turn stopped on an API error .*Go on with the task")
         self.assertIn("resumed wS:p1 /work/a", first.stdout)
         self.assertEqual(self.sent_keys(), [])
+
+    def test_one_run_sends_the_resume_prompt_and_also_starts_the_lane_sweep(self):
+        sweep_calls = self.stub_sweep()
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit", apiErrorStatus=429,
+                                                    quotaLimits={"resetsAt": RESET_AN_HOUR_AGO}))
+        self.set_panes(self.stopped_pane())
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 1)
 
     def test_a_reset_in_rate_limit_info_is_read(self):
         self.write_transcript("s-1", self.api_error(

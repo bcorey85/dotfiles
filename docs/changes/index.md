@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1168 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1174 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [a code fork that coded a phase and ran no review is sent back at SubagentStop and denied at SubagentHandback](notes/2026-11-24-a-code-fork-that-coded-a-phase-and-ran-no-review.md).
+Latest change: 2026-11-24, [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md).
 
 ## Top gains
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1168 changes
+1174 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,12 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.
+* [a merge that adds a script links it from ~/.local/bin](notes/2026-11-24-a-merge-that-adds-a-script-links-it-from-local-bin.md) [script/post-merge] A post-merge hook restows the scripts package when a merge in the stowed main checkout leaves a script unlinked.
+* [herdr-lane-resume --close closes a merged lane that has no lane file entry](notes/2026-11-24-herdr-lane-resume-close-closes-a-merged-lane-that.md) [script/herdr-lane-resume] herdr-lane-resume --close takes a lane name or a worktree path and closes a merged lane with no lane file entry, refusing an unmerged, detached, main-checkout, ambiguous or working lane.
+* [lane-status names a diff viewer over its memory cap](notes/2026-11-24-lane-status-names-a-diff-viewer-over-its-memory.md) [script/lane-status] lane-status prints one viewer line per live hunk viewer over its cap, naming the lane, and one cannot-read line when the viewer list fails.
+* [the lane diff viewer starts under a memory cap and restarts after an OOM kill](notes/2026-11-24-the-lane-diff-viewer-starts-under-a-memory-cap-and.md) [script/hunk-review-pane] hunk-review-pane now runs hunk in a systemd user scope capped at 1G on both start paths, restarts it after an OOM kill, and lists viewers with --viewers.
+* [the viewer memory-cap library and --viewers contract land (lane-tools-1123 Phase 0)](notes/2026-11-24-the-viewer-memory-cap-library-and-viewers-contract.md) [script/viewer-memory] A sourced bash library now owns the hunk viewer's memory cap, its value grammar, the availability check and the systemd scope prefix, so the viewer start and lane-status can share one definition.
 * [A lane merge skips the suite rerun when the lane's green run covered the same tree](notes/2026-11-23-a-lane-merge-skips-the-suite-rerun-when-the-lane-s.md) [script/suite-receipt, script/run-sh, script/parallel-tests] Each tests/run.sh run leaves a receipt keyed on the work tree's git tree hash; suite_receipt.py check says skip only when the branch fast-forwards master and its exact tree has a green receipt, so a merge no longer reruns a 5 to 10 minute suite the lane already passed.
 * [Stop gate sends back a turn end that announces a step with nothing started](notes/2026-11-23-stop-gate-sends-back-a-turn-end-that-announces-a.md) [script/staged-claim-gate] The Stop gate now sends a main-session turn back once when its last message says the session will do, or is doing, a step with nothing started, so the session starts the step or says plainly it has not.
 * [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) [shared/lane-brief, rule/orchestration] A forked lane reads how it reports, runs every phase through, records rulings and runs its checks from skills/_shared/lane-brief.md, so the rules survive compaction and no lane stops after a phase to ask for a commit.

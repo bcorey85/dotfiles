@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-740 fix notes
+746 fix notes
 
 Recent: the 7 days up to 2026-11-24, the newest note.
 
@@ -91,6 +91,9 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/criteria-verdict | 3 | 1 |
 | script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
+| script/herdr-lane-resume | 3 | 3 |
+| script/hunk-review-pane | 3 | 3 |
+| script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
@@ -110,12 +113,9 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
 | script/git-calls | 2 | 2 |
-| script/herdr-lane-resume | 2 | 2 |
 | script/herdr-worktree-prune | 2 | 1 |
 | script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
-| script/hunk-review-pane | 2 | 2 |
-| script/lane-status | 2 | 2 |
 | script/lanes | 2 | 2 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
@@ -182,6 +182,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/owner-lines | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
+| script/post-merge | 1 | 1 |
 | script/pre-commit | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
@@ -210,7 +211,9 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/tool-call-flags | 1 | 1 |
+| script/viewer-memory | 1 | 1 |
 | script/warn-skip-hooks | 1 | 0 |
+| script/zshrc | 1 | 1 |
 | shared/review-fork-run | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
 | skill/architect-core | 1 | 1 |

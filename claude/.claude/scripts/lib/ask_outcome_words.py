@@ -3,8 +3,8 @@ callers from importing `phase_asks`."""
 import pathlib
 
 ACCEPTED = "accepted"
-# The ask entry key that marks an ask only the user rules: a coder's edit to an approval-only file, or an ask that
-# names a user-owned criterion (it then also carries CRITERIA_KEY).
+# The ask entry key that marks an ask only the user rules: a coder's edit to an approval-only file (except the scripts
+# CLAUDE.md, which the session rules), or an ask that names a user-owned criterion (it then also carries CRITERIA_KEY).
 USER_ONLY_KEY = "user_only"
 # The ask entry key that lists the criterion ids a user-only phase ask names.
 CRITERIA_KEY = "criteria"

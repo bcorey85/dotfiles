@@ -8,11 +8,11 @@ ASK_FINDINGS_NAME = "ask-findings.md"
 BLOCKER_TEXT_FOLDER = "blocker-text"
 # The approval-only asks still open, a JSON object {"paths": ..., "wanted": [...]} (the shape is documented at
 # `approval_asks_store.read_saved_asks`), which the next review loop run of the repo reloads and rewrites with the asks
-# it files again. Each ruling on a user-only ask, accepted or rejected, removes its path and its wanted entries. Kept
+# it files again. Each ruling on an approval ask, accepted or rejected, removes its path and its wanted entries. Kept
 # beside the state file.
 APPROVAL_ASKS_NAME = "approval-asks.json"
 HELD_APPROVAL_NAME = "held-approval-changes.json"
-# The findings a fix coder was given when it died mid-edit, less those on a reverted approval-only path (a user-only
+# The findings a fix coder was given when it died mid-edit, less those on a reverted approval-only path (an approval
 # ask now), with the partial diff: the next review loop run of the repo sends those not on a held file to the coder
 # again, and keeps only the held ones after that pass, or when none of its findings is left to send (no diff then); a
 # run that stops before the first fix pass leaves the file as it is.

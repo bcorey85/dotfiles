@@ -66,6 +66,51 @@ class TextsNamePathTest(unittest.TestCase):
                 self.assertEqual(script_utils.texts_name_path(texts, path, "/repo"), expected)
 
 
+class TextsNamePathBySuffixTest(unittest.TestCase):
+    def test_a_trailing_part_names_a_path_only_when_no_other_known_path_ends_with_it(self):
+        known = ["lib/x.py", "a/dup.py", "b/dup.py", "bin/todo"]
+        cases = [
+            (["- `x.py:1` wrong"], "lib/x.py", True),
+            (["- fix the todo flow"], "bin/todo", False),
+            (["- `lib/x.py:1` wrong"], "lib/x.py", False),
+            (["- `dup.py:1` wrong"], "a/dup.py", False),
+            (["- `dup.py:1` wrong"], "b/dup.py", False),
+            (["- `y.py:1` wrong"], "lib/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_path_by_suffix(texts, path, "/repo", known), expected)
+
+    def test_path_has_tail_matches_whole_path_segments_only(self):
+        cases = [
+            ("lib/x.py", "lib/x.py", True),
+            ("a/lib/x.py", "lib/x.py", True),
+            ("a/xlib/x.py", "lib/x.py", False),
+            ("x.py", "lib/x.py", False),
+        ]
+        for path, tail, expected in cases:
+            with self.subTest(path=path, tail=tail):
+                self.assertEqual(script_utils.path_has_tail(path, tail), expected)
+
+    def test_a_middle_trailing_part_of_a_deep_path_is_tried(self):
+        known = ["a/b/x.py", "c/x.py"]
+        cases = [
+            (["- `b/x.py:1` wrong"], "a/b/x.py", True),
+            (["- `x.py:1` wrong"], "a/b/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_path_by_suffix(texts, path, "/repo", known), expected)
+
+    def test_a_dot_slash_prefix_reads_as_the_repo_relative_path(self):
+        self.assertTrue(script_utils.texts_name_path(["- `./lib/x.py:1` wrong"], "lib/x.py", "/repo"))
+        self.assertFalse(script_utils.texts_name_path(["- `../lib/x.py:1` wrong"], "lib/x.py", "/repo"))
+
+    def test_a_dot_slash_inside_a_path_is_not_cut(self):
+        self.assertEqual(["`lib/./x.py`"], script_utils.texts_relative_to(["`lib/./x.py`"], "/repo"))
+        self.assertFalse(script_utils.texts_name_path(["`lib/./x.py:1`"], "lib/x.py", "/repo"))
+
+
 class NextNumberedDirTest(unittest.TestCase):
     def test_the_next_folder_is_one_above_the_highest_digit_folder_and_nothing_is_created(self):
         with tempfile.TemporaryDirectory() as temp:

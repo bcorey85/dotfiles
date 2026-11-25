@@ -35,10 +35,10 @@ lost connection) API error gets one `herdr-api agent prompt` once the error
 has cleared: a usage limit a minute after its reset time, a server error five
 minutes after it was written; an error whose resume time passed more than a
 day ago gets no prompt, and neither does a pane whose input line holds typed
-text. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line. The error records already answered are kept by uuid
+text or whose screen shows no input line. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line. The error records already answered are kept by uuid
 in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (a JSON list,
 written atomically); a uuid is dropped once no claude pane, in any state, ends on it, so a
-pane is prompted once per error. A login, billing or bad-request error gets no
+pane is prompted once per error; a run in which a transcript cannot be read keeps every kept uuid. A login, billing or bad-request error gets no
 prompt. The transcript is found and read through the toolkit's
 `lib/herdr_agents.py`, `lib/api_error_stop.py` and `lib/script_utils.py`, found from this script's
 real path. Under tuios nothing is resumed and the resumed
@@ -119,23 +119,19 @@ def login_expired_line(text):
     return None
 
 
-def holds_typed_input(text):
-    """True when Claude's input line, the last prompt-marker line among the bottom lines, holds typed text. An empty
-    line and the placeholder hint (`Try "..."`) are not typed text; the box's side borders are ignored."""
+def input_may_hold_text(text):
+    """True when Claude's input line, the last prompt-marker line on the screen, holds typed text, or when the screen
+    shows no input line at all (the input is unknown, so nothing may be sent). An empty line and the placeholder hint
+    (`Try "..."`) are not typed text; the box's side borders are ignored."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    marker_lines = [line for line in lines[-BOTTOM_LINES:] if INPUT_LINE.match(line)]
+    marker_lines = [line for line in lines if INPUT_LINE.match(line)]
     if not marker_lines:
-        return False
+        return True
     typed_group = INPUT_LINE.match(marker_lines[-1]).group("typed")
     typed = (typed_group or "").strip()
     if not typed:
         return False
     return not typed.startswith(INPUT_PLACEHOLDER_START)
-
-
-def state_dir():
-    state_home = os.environ.get("XDG_STATE_HOME") or str(pathlib.Path.home() / ".local" / "state")
-    return pathlib.Path(state_home)
 
 
 def read_id_list(id_file):
@@ -170,7 +166,7 @@ def announce_login_expired(pane_id, cwd, line):
 
 
 def log_event(pane_id, cwd, note=""):
-    log_file = state_dir() / "herdr-wake-limited.log"
+    log_file = script_utils.xdg_state_home() / "herdr-wake-limited.log"
     stamp = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     try:
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -211,7 +207,8 @@ def wake_pane(agent):
 
 def handle_pane(agent, noticed, under_tuios, screen_handled):
     """Act on one pane's screen; True when its id stays in the noticed set. A pane at the login or reset prompt,
-    or whose screen read failed, goes into screen_handled, so the API-error pass leaves it alone."""
+    whose screen read failed, or whose input line holds typed text, or that shows no input line, goes into
+    screen_handled, so the API-error pass leaves it alone."""
     pane_id = agent["pane_id"]
     screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES)
     if screen is None:
@@ -225,8 +222,8 @@ def handle_pane(agent, noticed, under_tuios, screen_handled):
     if holds_limit_reset_prompt(screen):
         screen_handled.add(pane_id)
         wake_pane(agent)
-    elif holds_typed_input(screen):
-        # The user is mid-reply: a resume prompt would join the draft.
+    elif input_may_hold_text(screen):
+        # The input line holds typed text, or is off screen: a resume prompt could join a draft.
         screen_handled.add(pane_id)
     return False
 
@@ -235,8 +232,7 @@ def resume_stopped_pane(agent, resumed, now, may_prompt):
     """Prompt a pane whose transcript ends on a cleared API error. Returns the error record's uuid while the pane
     still ends on it (the caller keeps it in the resumed set), TRANSCRIPT_UNREADABLE when the transcript read failed
     (the caller keeps the whole resumed set, since a failed read says nothing about the pane), else None. With
-    may_prompt False (the screen shows a login or reset prompt, the screen read failed, or the pane is not idle or
-    done) nothing is sent, but an already answered uuid is still returned."""
+    may_prompt False nothing is sent, but an already answered uuid is still returned."""
     transcript = herdr_agents.herdr_agent_transcript(agent)
     if transcript is None:
         return None
@@ -282,7 +278,7 @@ def main():
     # tuios shares the noticed file with herdr but lists other pane ids, so a
     # tuios run must not read or rewrite it.
     under_tuios = bool(os.environ.get("TUIOS_SOCKET"))
-    noticed_file = state_dir() / "herdr-wake-limited.noticed"
+    noticed_file = script_utils.xdg_state_home() / "herdr-wake-limited.noticed"
     noticed = set() if under_tuios else read_id_list(noticed_file)
     screen_handled = set()
     still_stuck = {agent["pane_id"] for agent in agents
@@ -292,7 +288,7 @@ def main():
     if still_stuck != noticed:
         write_id_list(noticed_file, still_stuck)
 
-    resumed_file = state_dir() / "herdr-wake-limited.resumed"
+    resumed_file = script_utils.xdg_state_home() / "herdr-wake-limited.resumed"
     resumed = read_id_list(resumed_file)
     now = time.time()
     still_resumed = set()

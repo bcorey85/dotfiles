@@ -545,7 +545,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(len(self.prompts()), 1)
-        self.assertTrue(self.prompts()[0].startswith("wS:p1 "))
+        self.assertRegex(self.prompts()[0], r"^wS:p1 Your last turn stopped on an API error .*Go on with the task")
         self.assertIn("resumed wS:p1 /work/a", first.stdout)
         self.assertEqual(self.sent_keys(), [])
 
@@ -810,12 +810,39 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))
         self.set_panes(self.stopped_pane())
         self.run_wake()
+        self.assertEqual(self.resumed_uuids(), ["e-1"])
         work = {"type": "assistant", "uuid": "a-1",
                 "message": {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}}
         self.write_transcript("s-1", self.api_error("e-1", "server_error"), trailing=[work])
 
         self.run_wake()
         self.assertEqual(json.loads(self.resumed_file().read_text()), [])
+
+    def test_a_corrupt_resumed_file_is_rewritten_after_one_prompt(self):
+        self.resumed_file().parent.mkdir(parents=True, exist_ok=True)
+        self.resumed_file().write_text("not json")
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+
+        first = self.run_wake()
+        second = self.run_wake()
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(self.resumed_uuids(), ["e-1"])
+
+    def test_an_unwritable_resumed_file_is_named_and_the_pane_is_still_prompted(self):
+        blocker = self.root / "not-a-dir"
+        blocker.write_text("")
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+
+        finished = self.run_wake(state_home=blocker)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertIn(str(blocker / "herdr-wake-limited.resumed"), finished.stderr)
 
     def test_an_error_id_is_dropped_once_its_pane_is_gone(self):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))
@@ -849,6 +876,75 @@ class HerdrWakeLimitedTest(unittest.TestCase):
             self.set_panes(self.stopped_pane(text=screen))
             self.run_wake()
             self.assertEqual(self.prompts(), [], screen)
+
+    def test_a_multi_row_draft_above_the_real_footer_gets_no_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        rule = "─" * 20
+        footer = (f"{rule}\n➜ [Opus 5.5] repo git:(main)\n[███ 112k]\n⏵⏵ auto mode on")
+        marker = "\N{HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT}"
+        drafts = {
+            "three rows": f"{marker} first row\nsecond row\nthird row",
+            "two rows": f"{marker} first row\nsecond row",
+            "four rows": f"{marker} first row\nsecond row\nthird row\nfourth row",
+        }
+        for name, draft in drafts.items():
+            with self.subTest(name):
+                self.set_panes(self.stopped_pane(text=f"● API Error\n{rule}\n{draft}\n{footer}"))
+                self.run_wake()
+                self.assertEqual(self.prompts(), [], name)
+
+    def test_an_empty_input_line_above_a_tall_footer_gets_the_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        marker = "\N{HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT}"
+        footer = "\n".join(f"status row {number}" for number in range(8))
+        self.set_panes(self.stopped_pane(text=f"● API Error\n────\n{marker} \n────\n{footer}"))
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_a_screen_with_no_input_line_gets_no_resume_prompt(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane(text="● API Error\nsome output"))
+
+        self.run_wake()
+
+        self.assertEqual(self.prompts(), [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores chmod 0")
+    def test_a_run_with_an_unreadable_transcript_keeps_every_answered_uuid(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.write_transcript("s-2", self.api_error("e-2", "server_error"))
+        panes = {"wS:p1": {"cwd": "/work/a", "text": "> ", "session": "s-1"},
+                 "wS:p2": {"cwd": "/work/a", "text": "> ", "session": "s-2"}}
+        self.set_panes(panes)
+        self.run_wake()
+        transcript = next((self.root / ".claude" / "projects").rglob("s-1.jsonl"))
+
+        transcript.chmod(0)
+        try:
+            self.run_wake()
+        finally:
+            transcript.chmod(0o644)
+
+        self.assertEqual(len(self.prompts()), 2)
+        self.assertEqual(sorted(self.resumed_uuids()), ["e-1", "e-2"])
+
+    def test_the_last_marker_line_decides_whether_the_input_holds_text(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        marker = "\N{HEAVY RIGHT-POINTING ANGLE QUOTATION MARK ORNAMENT}"
+        screens = {
+            "quoted marker above an empty input": (
+                f"{marker} an old quoted line\n● API Error\n────\n{marker} \n────", 1),
+            "empty marker above a typed input": (f"{marker} \n● API Error\n────\n{marker} half a reply\n────", 0),
+        }
+        for name, (screen, expected_prompts) in screens.items():
+            with self.subTest(name):
+                self.resumed_file().unlink(missing_ok=True)
+                (self.state_dir / "prompts").unlink(missing_ok=True)
+                self.set_panes(self.stopped_pane(text=screen))
+                self.run_wake()
+                self.assertEqual(len(self.prompts()), expected_prompts, name)
 
     def test_an_empty_or_placeholder_input_line_still_gets_the_resume_prompt(self):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))

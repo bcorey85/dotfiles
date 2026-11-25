@@ -6,7 +6,7 @@ description: "simplify-prep records the branch diff before the pass and log --mo
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-25T16:16:37-06:00"}
 seq: 3
 kind: "user-rule"
-components: ["skill/refactor", "script/refactor-flow"]
+components: ["skill/refactor", "script/refactor-flow", "agent/complexity-reviewer"]
 evidence: ["judgment"]
 watches: []
 test: ""
@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`simplify-prep` saves the branch diff (work tree plus untracked files against the merge base) as a sidecar beside the log input. `log --mode simplify` measures it again and prints both. When added lines rose it ends in a `STOP:` naming the files that grew; the STOP also carries the step `log` would otherwise print (the `/review` step with a handoff). `simplify-prep --diff BASE` lists each file of the slice that has an added line, with those lines, and bounds the complexity-reviewer to them; it stops when no file of the target has one. The simplify code moved to `simplify_flow.py` and shared helpers to `flow_common.py`.
+`simplify-prep` saves the branch diff (work tree plus untracked files against the merge base) as a sidecar beside the log input. `log --mode simplify` measures it again and prints both. When added lines rose it ends in a `STOP:` naming the files that grew; the STOP also carries the step `log` would otherwise print (the `/review` step with a handoff). `simplify-prep --diff BASE` lists each file of the slice that has an added line, with those lines, and bounds the complexity-reviewer to them; it stops when no file of the target has one. The simplify code moved to `simplify_flow.py` and shared helpers to `flow_common.py`. The complexity-reviewer agent (and its opencode port) now takes that added-lines bound: it reads each whole file and sites findings only on the listed lines. A plain `simplify-prep` prints its prompt with a note when no base resolves. The work tree's added ranges have one owner, `lib/change_added_ranges.py`, shared with the review loop's docs-kind check.
 
 ## Evidence
 

@@ -1511,6 +1511,15 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(list(self.log_input_dir.glob("*.simplify-stat")), [])
         self.assertIn("dispatch prompt", done.stdout)
 
+    def test_simplify_prep_without_diff_survives_a_base_that_cannot_be_read(self):
+        self.git("checkout", "-q", "--orphan", "lone")
+        self.git("rm", "-rfq", "--cached", ".")
+        self.write("mod/a.py", "a = 1\n")
+        done = self.flow("simplify-prep", "mod")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Branch diff: not recorded", done.stdout)
+        self.assertIn("dispatch prompt", done.stdout)
+
     def test_simplify_prep_creates_a_missing_log_input_folder(self):
         self.branch_with({"mod/a.py": "a = 1\n"})
         inputs = self.temp_root / "new" / "inputs"

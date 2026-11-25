@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import NamedTuple
 
+import change_added_ranges
 import diff_ranges
 import flow_common
 import numstat
@@ -157,20 +158,20 @@ def compare_branch_diff(input_path, root):
 def added_line_numbers(merge_base, root):
     """{root-relative path: added line ranges text such as `3-5, 9`} of the work tree against the merge base; an
     untracked text file maps to WHOLE_FILE."""
-    # Explicit prefixes override --no-prefix, so a path under a folder named `b/` keeps its first segment.
-    diff_text = diff_output(merge_base, "-U0", "--src-prefix=a/", "--dst-prefix=b/")
     try:
-        ranges_by_path = diff_ranges.added_ranges(diff_text)
+        ranges_by_path = change_added_ranges.change_added_ranges(root, merge_base, literal_pathspecs=True,
+                                                                 text_only=True)
     except ValueError as error:
         raise RefactorFlowError(f"cannot parse the diff against {merge_base}: {error}") from error
+    if ranges_by_path is None:
+        raise RefactorFlowError(f"`git diff {merge_base}` failed or git could not list the untracked files")
 
     added = {}
     for path, ranges in ranges_by_path.items():
-        if ranges:
+        if ranges == change_added_ranges.WHOLE_FILE:
+            added[path] = WHOLE_FILE
+        elif ranges:
             added[path] = diff_ranges.ranges_text(ranges)
-    for entry in untracked_files(root):
-        if not entry.kind:
-            added[entry.path] = WHOLE_FILE
     return added
 
 
@@ -197,16 +198,27 @@ def print_complexity_prompt(chosen, bound, ranges):
           "seam, a public contract).")
 
 
+def base_note_for(err):
+    """Why the prompt runs with no recorded branch diff."""
+    if isinstance(err, NoBaseError):
+        return "no base found"
+    if isinstance(err, NoSharedHistoryError):
+        return "the base shares no history with HEAD"
+    return f"the base could not be read: {err}"
+
+
 def simplify_prep(opts):
     root = require_repo()
     span_base, base_note = None, ""
     try:
         span_base = read_span_base(opts.diff)
-    except (NoBaseError, NoSharedHistoryError) as err:
+    except RefactorFlowError as err:
         if opts.diff:
-            print(err)
-            return 0
-        base_note = "no base found" if isinstance(err, NoBaseError) else "the base shares no history with HEAD"
+            if isinstance(err, (NoBaseError, NoSharedHistoryError)):
+                print(err)
+                return 0
+            raise
+        base_note = base_note_for(err)
 
     added = None
     prefix = ""

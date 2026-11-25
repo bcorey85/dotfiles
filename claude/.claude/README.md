@@ -61,7 +61,7 @@ no prompts, tool input or output, paths or commands.
 
 ```
 /triage → /eng-spec → /clear → /code (per phase: read queue → stage → /commit)
-        → /refactor → /verify-branch → /test-audit → /branch-recap → /adr → /commit → PR
+        → /close-branch → /adr → /commit → PR
 ```
 
 Small work skips the spec: `/triage` routes XS–M tickets directly to `/code`.
@@ -118,14 +118,10 @@ and pushes. It never stages. `git-discipline-gate` denies a `git push` or
 `gh pr create` whose HEAD changed code after the last converged review of
 that repo.
 
-### 4. Closing phases — after the last `/code` phase
+### 4. Closing phase — after the last `/code` phase
 
-| Order | Skill           | Job                                                                    | Agents                                                                 |
-| ----- | --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| 1     | `/refactor`     | Branch-wide structure pass                                             | `smell-reviewer` (`complexity-reviewer` if one module grew ≥100 lines) |
-| 2     | `/verify-branch` | Plan ↔ diff completeness, smoke-test checklist                         | `plan-verifier`                                                        |
-| 3     | `/test-audit`   | Cross-phase test gate: cull, weak assertions                           | `test-intent-reviewer`, fixes via `/fix`                               |
-| 4     | `/branch-recap` | One pre-PR sheet: `/stage` residue, deferred findings, recap. No gates | —                                                                      |
+`/close-branch` runs the whole closing pass once: scripts, four report-only reviewers on the branch diff, one coder
+that fixes every finding, a gate on the fix diff, then the recap sheet.
 
 Read the residue queue, stage it, then `/commit`.
 

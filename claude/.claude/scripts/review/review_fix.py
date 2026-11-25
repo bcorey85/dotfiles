@@ -27,7 +27,8 @@ still judges.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
                        [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
                        [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
-                       [--iter N] [--lane <lane>] [--detach]
+                       [--iter N] [--fix-rounds N] [--post-cap-passes <kinds>] [--lane <lane>]
+                       [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
                                          --help` lists the flags). It returns when the loop asks for reviewers
                                          (`ACTION: dispatch-reviewer`, see reviewer_dispatch.py) or when the loop
@@ -56,6 +57,7 @@ still judges.
                                          `ACTION: launch-fix-run` when the run has no
                                          launch flags on record: the findings file is written and the line is
                                          `review_fix.py launch --fix <file> [--user-ruled <N>]... --iter <n>
+                                         [--fix-rounds <n>] [--post-cap-passes <kinds>]
                                          --repo <repo> --detach`. Both launch lines carry `--user-ruled <N>` for
                                          each finding N of the findings file whose ask the user answered
                                          (asks-done or --correct --by user); a finding only a session
@@ -88,7 +90,9 @@ still judges.
                                          or `stop` when the gate cannot be credited); when the run has launch flags
                                          on record, it writes the first handoff plus the RESOLVED lines to <git
                                          dir>/review-fix/adopt-handoff.md and prints the ready launch line (`launch
-                                         --iter <n> <the first run's flags> --handoff <that file> --detach`);
+                                         --iter <n> [--fix-rounds <n>]
+                                         [--post-cap-passes <kinds>] <the first run's flags>
+                                         --handoff <that file> --detach`);
                                          otherwise it prints the lines to build it by hand.
                                          With no saved state, a finished one, or one that waits on a different plan
                                          impact than the hand-back holds, it reads the held plan impacts from this
@@ -130,7 +134,7 @@ import review_launch
 import review_user_ruled
 import script_utils
 import uncommitted_hunks
-from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
+from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
 from review_blocker_text import blocker_text
@@ -181,6 +185,7 @@ from review_fix_state import (
     review_fix_state_file,
     save_fix_state,
 )
+from review_loop_post_cap import cap_summary_line
 from saved_handback import NoHandbackError, dispatched_repo, read_message
 from script_utils import one_line, run_command, split_location
 
@@ -310,13 +315,22 @@ def stop_for_missing_hand_back(skill, last_hand_back_id):
                  "Stop. Do not re-dispatch again. Show the user the loop's final text as it returned.")
 
 
+def cap_flags_text(target):
+    """The cap-count flags of a packet or saved state as text to append after `--iter N`: empty when it has none.
+    The flags are one backticked unit that replaces the first run's cap flags."""
+    cap_args = review_launch.cap_count_args(target)
+    if not cap_args:
+        return ""
+    return f", with `{shlex.join(cap_args)}` in place of any `--fix-rounds`/`--post-cap-passes`"
+
+
 def stop_for_unreviewed(skill, packet, unreviewed_in_a_row):
     """The loop handed back clean with no reviewer run. The first time, the caller re-dispatches it at the same round
     count; the second time in a row, it stops."""
     if unreviewed_in_a_row < 2:
         lines = ("The review-loop handed back clean but dispatched no reviewer. Nothing was routed, logged or posted.",
                  f"Run `launch` once more with the same flags plus `--iter {packet['iter']}` in place of any "
-                 f"`--iter`, then run `packet --skill {skill}` again.")
+                 f"`--iter`{cap_flags_text(packet)}, then run `packet --skill {skill}` again.")
     else:
         lines = (f"The review-loop handed back clean with no reviewer run {unreviewed_in_a_row} times in a row. "
                  "Nothing was routed, logged or posted.",
@@ -340,42 +354,14 @@ def jumped_line(state):
     return f"The script ran hunk-notes for all asks ({state['jumped']}). Do not run it again."
 
 
-def asks_done_line(asks, state):
-    """The asks-done command for the packet in `state`, relaying the user's answer (`--by user`). It names --packet
-    when another packet still waits, so the command runs as printed."""
-    packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
-    outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
-    line = (f"After the user answers, run once: {REVIEW_FIX_COMMAND} asks-done "
-            f"--by user {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
-            f"accepted: {review_asks.ACCEPT_MEANS} | rejected: {review_asks.REJECT_MEANS} | "
-            f"applied: {review_asks.APPLIED_MEANS} | "
-            f"'{review_asks.MODIFIED}:<the change in one line>', quoted as one shell "
-            f"word: make that change instead; an optional ':<one line note>' after {review_asks.PLAIN_OUTCOMES_TEXT} "
-            "is not stored)")
-    user_only = user_only_numbers(asks)
-    if user_only:
-        listed = ", ".join(str(number) for number in user_only)
-        line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
-                 f"{review_asks.HELD_MEANS}")
-    conditional = review_asks.conditional_ask_numbers(asks)
-    if not conditional:
-        return line
-    numbers = ", ".join(str(number) for number in conditional)
-    noun = "ask" if len(conditional) == 1 else "asks"
-    return (f"{line}. Answer {noun} {numbers} with '{review_asks.MODIFIED}:<change with no condition>': "
-            f"{review_asks.PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
-
-
 def present_packet_asks(packet, state):
     asks = save_packet_asks(packet, state)
+    done = review_asks.asks_done_lines(asks, state)
     lines = [
         jumped_line(state),
-        "Present each ask below with its question and its proposed change, and wait for the user's direction. "
-        "Never auto-fix an ask. If the repo's CLAUDE.md hands ask decisions to the session, decide each ask "
-        "yourself and run the asks-done below with `--by session` in place of `--by user`; otherwise wait for the "
-        "user and run it as printed.",
-        asks_done_line(asks, state),
-        *review_asks.numbered_ask_lines(asks, detail=True),
+        "Present each ask below with its question and its proposed change. Never auto-fix an ask. " + done.guidance,
+        done.done_line,
+        *done.numbered_lines,
     ]
     print_action("present-asks", *lines)
 
@@ -485,6 +471,7 @@ def new_state(options, packet, packet_id):
     fixed_paths = handback.fixed_paths(packet)
     identity = {"skill": options.skill, "scope": options.scope, "lane": options.lane, "iter": packet["iter"],
                 "review_round": packet["review_round"], "spec_iter": packet["spec_iter"],
+                "fix_rounds": packet["fix_rounds"], "post_cap_passes": packet["post_cap_passes"],
                 "status": packet["status"], "branch": script_utils.current_branch(".") or "-",
                 "source": options.source, "fixed_paths": fixed_paths,
                 "files_touched": [str(path) for path in packet["files_touched"]]}
@@ -605,7 +592,11 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    lines = entry_lines(packet) + uncommitted_hunks.cap_stop_lines(packet, state) + handback.handback_edit_lines(packet)
+    lines = entry_lines(packet)
+    summary_line = cap_summary_line(packet) if packet["status"] == CAP_REACHED else None
+    if summary_line:
+        lines.insert(0, summary_line)
+    lines += uncommitted_hunks.cap_stop_lines(packet, state) + handback.handback_edit_lines(packet)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
@@ -614,8 +605,8 @@ def stop_for_status(packet, options, state):
         lines.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
-        ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
-                     *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
+        done = review_asks.asks_done_lines(packet["ask"], state)
+        ask_lines = [jumped_line(state), done.guidance, done.done_line, *done.numbered_lines]
     print_action("stop", instruction, *lines, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:
@@ -915,7 +906,8 @@ def redispatch_lines(state, resolved_lines):
     both by hand."""
     if not state.get("relaunch_args"):
         return [f"Write the first run's handoff plus the lines below to a file, then run `launch` in the background "
-                f"with the first run's flags plus `--iter {state['iter']}` and `--handoff <that file>`:",
+                f"with the first run's flags plus `--iter {state['iter']}`{cap_flags_text(state)} and "
+                "`--handoff <that file>`:",
                 *resolved_lines]
 
     first_handoff_file = review_launch.relaunch_handoff(state["relaunch_args"])
@@ -924,7 +916,8 @@ def redispatch_lines(state, resolved_lines):
     except OSError as error:
         raise UsageError(f"decide adopt: the first run's handoff {first_handoff_file} cannot be read ({error}). The "
                          "ruling is logged. Write that handoff plus the RESOLVED lines to a file and run `launch` "
-                         "with the first run's flags, `--iter` and `--handoff <that file>`") from error
+                         f"with the first run's flags plus `--iter {state['iter']}`{cap_flags_text(state)} and "
+                         "`--handoff <that file>`") from error
 
     handoff_file = review_fix_dir() / ADOPT_HANDOFF_NAME
     resolved_text = "\n".join(resolved_lines)

@@ -81,7 +81,7 @@ import reviewer_dispatch
 import script_utils
 from coder_report import already_applied_issues, open_questions, skipped_issues
 from diff_ranges import added_ranges
-from finding_record import parse_finding
+from finding_record import parse_finding, unseen
 from review_loop_calls import (
     CALL_TIMEOUT_SECONDS,
     claude_call,
@@ -124,6 +124,7 @@ from review_loop_pass_names import (
     round_fix_pass,
 )
 from review_loop_plan import first_round_plan, review_files, second_round_plan
+from review_loop_post_cap import CLASS_CLOSURE, PROSE_REPAIR, PostCapPasses
 from review_loop_prompt_file import (
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
@@ -137,6 +138,7 @@ from review_loop_ruled import (
     prior_issue_entries,
     withheld_adopted,
 )
+from review_loop_ruling_check import RulingCheck
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 from review_loop_signoffs import SignoffRuns, snapshot_signoffs
 from review_user_ruled import reasked_findings
@@ -328,7 +330,7 @@ def log_row_findings(repo, run, row, fix_ranges):
 # ---------- the loop ----------
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
+              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -356,7 +358,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.put_back_findings = []
         # the ruling line, the ruled PLAN-IMPACT block and the carried findings: the only plan-marked items it settles
         self.resolved_texts = []
-        self.ask_gates = {}
+        self.ask_gates, self.ask_rounds = {}, {}
         self.init_ruled_state()
         self.tallies = {"fix": 0, "ask": 0, "nit": 0, "blocker": 0, "fixed": 0, "skipped_fp": 0, "smells": 0,
                         "result": "PASS"}
@@ -546,10 +548,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
     def add_ask(self, agent, item):
         """Adds one ask with its reviewer as its gate. The same text from a second reviewer stays one ask, under the
-        first reviewer."""
-        if item in self.asks:
+        first reviewer; so does an ask on the file, line and class of one an earlier round filed."""
+        earlier_round_asks = [ask for ask in self.asks if self.ask_rounds[ask] < self.iter_count]
+        if item in self.asks or not unseen(earlier_round_asks, [item]):
             return
         self.asks.append(item)
+        self.ask_rounds[item] = self.iter_count
         self.ask_gates[item] = agent
 
     def review_round(self):
@@ -577,9 +581,11 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         NamedTestRemovedError when the pass removed a test the plan runs by name and one restore pass did not bring
         it back (`restore_named` False skips that check, for the restore pass), and CoderFailedError when the coder
         call fails, and before the call when the scope guard cannot read the repo, or the standing rulings are malformed
-        (PlanFormatError, re-raised), with the findings kept in
-        open_fixes except those on a reverted approval-only path, which are filed as user-only asks (a repeat of a
-        rejected ask is dropped, not filed)."""
+        (PlanFormatError, re-raised), RulingBrokenError when the ruling check finds the pass against an accepted
+        ruling (the pass is put back), and RulingCheckFaultError when the ruling check cannot judge the pass (the
+        pass stays in the tree) or git cannot list the repo files or read their index entries before the pass (the
+        pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
+        which are filed as user-only asks (a repeat of a rejected ask is dropped, not filed)."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -604,6 +610,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             # The pass has not started, so no file changed: keep the findings open, then let the stop name the line.
             self.keep_open(findings)
             raise
+        ruling_backup = self.begin_ruling_check(call_name, allowed, findings, issue_texts)
         self.last_pass = "coder"
         self.untested_fix = True
         comments = snapshot_comments(self.repo, files_in_scope)
@@ -612,19 +619,24 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
             self.put_back_findings = []
         try:
-            result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
-                                 model=self.coder_model, scope_guard=scope_guard)
-        except CoderCallError as error:
-            blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
-            raise CoderFailedError(blocker) from error
-        self.settle_saved_after_pass(call_name)
-        put_back = self.undo_protected_edits(signoffs, comments, findings)
-        result = self.without_put_back(call_name, result, put_back, findings)
-        self.keep_coder_commit_in_scope()
-        self.flag_broken_no_code_rulings(findings, result.changed, nits)
-        reverted = self.ask_for_approval_only_edits(result.changed, findings)
-        result = without_reverted(result, reverted, stats_before)
-        self.check_pass_result(call_name, result)
+            try:
+                result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
+                                     model=self.coder_model, scope_guard=scope_guard)
+            except CoderCallError as error:
+                blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
+                raise CoderFailedError(blocker) from error
+            self.settle_saved_after_pass(call_name)
+            put_back = self.undo_protected_edits(signoffs, comments, findings)
+            result = self.without_put_back(call_name, result, put_back, findings)
+            self.keep_coder_commit_in_scope()
+            self.flag_broken_no_code_rulings(findings, result.changed, nits)
+            reverted = self.ask_for_approval_only_edits(result.changed, findings)
+            result = without_reverted(result, reverted, stats_before)
+            self.check_pass_result(call_name, result)
+            self.check_rulings_kept(call_name, findings, result, ruling_backup)
+        finally:
+            self.discard_ruling_backup(ruling_backup)
+
         return self.restore_named_tests(call_name, named, result)
 
     def pass_scope(self, files_in_scope):
@@ -668,7 +680,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.mark_round_fixes(round_open_fixes + reverted_findings, skipped_findings)
         applied = self.not_put_back(item for item in round_findings
                                     if item not in skipped_findings and item not in reverted_findings)
-        self.fixed += applied
+        self.fixed += unseen(self.fixed, applied)
         self.drop_open([*applied, *reverted_findings])
         self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
 
@@ -836,7 +848,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             self.closure.receipt = receipt_still_open(self.closure.open_classes, held_texts, ruled_texts,
                                                       reverted_texts)
 
-        self.next_round()
+        self.post_cap_round(CLASS_CLOSURE)
         self.recheck_full_check(check_command, "full check failing after the class repair")
 
     def scoped_tests_pass(self, check_command, gate_commands):
@@ -884,7 +896,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             self.last_pass = pass_before_repair
             return False
 
-        self.next_round()
+        self.post_cap_round(PROSE_REPAIR)
         self.recheck_full_check(check_command, "full check failing after the stale-prose check repair")
         return True
 
@@ -893,12 +905,16 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             "status": self.status,
             "iter": self.iter_count,
             "review_round": self.last_review_round,
+            # A relaunch seeds fix_rounds from its header; the report never passes the round budget.
+            "fix_rounds": min(self.fix_rounds, ROUND_BUDGET),
+            "post_cap_passes": list(self.post_cap_passes),
             "fixed": self.fixed,
             "skipped_fp": self.skipped_fp,
             "held_unfixed": self.held_unfixed,
             "blockers": self.remaining if self.status in handback.BLOCKER_STATUSES else [],
             "plan_impacts": self.plan_impacts,
             "no_code_ruling_broken": self.no_code_broken,
+            "against_ruling": list(self.against_ruling),
             "adopted_unapplied": self.adopted_unapplied,
             "handback_edits": self.handback_edits,
             "open_fixes": merge_findings(self.open_fixes),
@@ -936,7 +952,7 @@ def walk(loop, check_command, gate_commands):
     gates_every_run the gate commands run on a converged run that holds no untested fix too, and a red one stops it
     before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
-        loop.next_round()
+        loop.count_fix_round()
         round_fix, round_nits = loop.review_round()
         if not loop.fix_round(round_fix, round_nits):
             break

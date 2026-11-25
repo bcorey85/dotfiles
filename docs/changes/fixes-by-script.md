@@ -7,32 +7,32 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-749 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 171 | 5 |
-| script/review-fix | 74 | 15 |
-| script/review-loop-script | 73 | 15 |
-| script/handback | 57 | 2 |
+| script/code-step | 174 | 8 |
+| script/review-fix | 76 | 17 |
+| script/review-loop-script | 75 | 17 |
+| script/handback | 58 | 3 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 27 | 5 |
+| script/review-loop | 24 | 7 |
 | script/shell-write-gate | 24 | 4 |
-| script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
 | skill/code | 19 | 1 |
+| script/git-discipline-gate | 18 | 7 |
 | script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
-| script/git-discipline-gate | 16 | 5 |
 | script/staged-claim-gate | 16 | 4 |
 | script/code-review-start | 14 | 6 |
 | script/verify-log | 14 | 1 |
@@ -45,14 +45,14 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
+| script/review-launch | 9 | 4 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/inline-interpreter-hint | 8 | 4 |
+| script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
-| script/review-launch | 8 | 3 |
 | script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
-| script/phase-asks | 7 | 2 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
@@ -64,6 +64,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
+| script/phase-start | 5 | 3 |
 | script/review-loop-ruled | 5 | 5 |
 | script/reviewed-tree | 5 | 3 |
 | script/run-sh | 5 | 1 |
@@ -77,7 +78,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/loop-transcript | 4 | 1 |
-| script/phase-start | 4 | 2 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-packet | 4 | 1 |
 | script/session-pane | 4 | 4 |
@@ -113,6 +113,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
+| script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-worktree-prune | 2 | 1 |
 | script/hook-input | 2 | 1 |
@@ -136,6 +137,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/waiting-review-launch | 2 | 1 |
 | skill/branch-recap | 2 | 0 |
 | skill/stage | 2 | 1 |
+| skill/test-audit | 2 | 2 |
 | agent/general-purpose | 1 | 1 |
 | agent/mutation-tester | 1 | 0 |
 | agent/plan-verifier | 1 | 0 |
@@ -220,9 +222,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/warn-skip-hooks | 1 | 0 |
 | script/zshrc | 1 | 1 |
 | shared/review-fork-run | 1 | 1 |
+| shared/review-loop | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
 | skill/architect-core | 1 | 1 |
 | skill/close-branch | 1 | 0 |
 | skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |
-| skill/test-audit | 1 | 1 |

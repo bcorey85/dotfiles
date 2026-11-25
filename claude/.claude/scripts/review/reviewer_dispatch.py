@@ -4,15 +4,17 @@
     reviewer_dispatch.py wait <loop dir>
 
 In `--reviewers main` mode the review loop writes each reviewer's prompt to a file and the round's manifest to
-<loop dir>/reviewer-requests/round-<n>.json ({"round", "requests": [{"role", "agent", "prompt_file",
-"report_file"}]}), then waits until every report file holds text. The main session dispatches each agent, writes
-each report verbatim to its report file, and runs `wait` again.
+<loop dir>/reviewer-requests/round-<n>.json ({"round", "requests": [{"round", "role", "agent",
+"prompt_file", "report_file"}]}), then waits until every report file holds text. The main session dispatches each
+agent, writes each report verbatim to its report file, and runs `wait` again.
 
-`wait` returns at the next step: it prints `ACTION: dispatch-reviewer` and one line per request that has no report
-yet, or, once the loop process (pid in <loop dir>/loop.pid) has ended, the line that says to read the packet, after
-the `LOOP_GONE` heading and the open request lines when a request was left with no report.
+`wait` returns at the next step: it prints `ACTION: dispatch-reviewer`, a `round <n>:` heading per round and one
+`- round <n>: <role>; agent ...` line per request that has no report yet, or, once the loop process (pid in
+<loop dir>/loop.pid) has ended, the line that says to read the packet, after the `LOOP_GONE` heading and the open
+request lines when a request was left with no report.
 """
 import argparse
+import itertools
 import json
 import pathlib
 import shlex
@@ -91,7 +93,8 @@ def write_round(loop_dir, round_number, requests, model=""):
         prompt_file = folder / f"{role}.prompt.md"
         prompt_file.write_text(prompt)
         report_file = folder / f"{role}.report.md"
-        entry = {"role": role, "agent": agent, "prompt_file": str(prompt_file), "report_file": str(report_file)}
+        entry = {"round": round_number, "role": role, "agent": agent, "prompt_file": str(prompt_file),
+                 "report_file": str(report_file)}
         if model:
             entry["model"] = model
         entries.append(entry)
@@ -134,7 +137,19 @@ def read_manifest(manifest_path):
     for entry in requests:
         if not isinstance(entry, dict) or not {"role", "agent", "prompt_file", "report_file"} <= entry.keys():
             raise ManifestError(f"{manifest_path}: a request lacks role, agent, prompt_file or report_file")
-    return requests
+    # A manifest written before entries carried their round gives its entries the manifest's round.
+    round_number = manifest.get("round")
+    if not isinstance(round_number, int) or isinstance(round_number, bool):
+        raise ManifestError(f"{manifest_path}: \"round\" is {round_number!r}; expected a whole number")
+    return [{"round": round_number, **entry} for entry in requests]
+
+
+def manifest_round(manifest_path):
+    """The round number in a `round-<n>.json` file name, so round 10 sorts after round 9."""
+    number = manifest_path.stem.removeprefix("round-")
+    if not number.isdecimal():
+        raise ManifestError(f"{manifest_path}: the file name holds {number!r}; expected round-<whole number>.json")
+    return int(number)
 
 
 def all_requests(loop_dir):
@@ -143,7 +158,7 @@ def all_requests(loop_dir):
     if not folder.is_dir():
         return []
     requests = []
-    for manifest_path in sorted(folder.glob("round-*.json")):
+    for manifest_path in sorted(folder.glob("round-*.json"), key=manifest_round):
         requests += read_manifest(manifest_path)
     return requests
 
@@ -154,23 +169,34 @@ def pending_requests(loop_dir):
 
 
 def request_lines(pending, report_writer_note):
-    """The `ACTION: dispatch-reviewer` line and one line per open request, for any caller's wait command.
+    """The `ACTION: dispatch-reviewer` line, then per round a heading line and one line per open request of that
+    round, for any caller's wait command.
 
     `report_writer_note` names who writes each report file; it must match the caller's next step."""
     lines = [f"ACTION: {DISPATCH_ACTION}"]
-    for entry in pending:
-        prompt = AGENT_PROMPT.format(prompt_file=entry["prompt_file"])
-        line = f"- agent {entry['agent']}; prompt \"{prompt}\""
-        if entry.get("model"):
-            line += f"; model {entry['model']}"
-        line += f"; report {entry['report_file']} {report_writer_note}"
-        lines.append(line)
+    first_open_round = min((entry["round"] for entry in pending), default=1)
+    for round_number, group in itertools.groupby(pending, key=lambda entry: entry["round"]):
+        entries = list(group)
+        heading = f"round {round_number}: dispatch these {len(entries)} reviewer(s) now"
+        # Only the oldest open round can say its predecessors are answered; a later round with an older one open cannot.
+        if round_number > 1 and round_number == first_open_round:
+            heading += "; earlier rounds' reports are already in"
+        lines.append(heading)
+        for entry in entries:
+            prompt = AGENT_PROMPT.format(prompt_file=entry["prompt_file"])
+            line = f"- round {round_number}: {entry['role']}; agent {entry['agent']}; prompt \"{prompt}\""
+            if entry.get("model"):
+                line += f"; model {entry['model']}"
+            line += f"; report {entry['report_file']} {report_writer_note}"
+            lines.append(line)
     return lines
 
 
 def open_request_lines(pending):
-    """One line per open request for a loop that is gone: the agent and its report file, with no prompt to dispatch."""
-    return [f"- agent {entry['agent']}; report {entry['report_file']}" for entry in pending]
+    """One line per open request for a loop that is gone: the round, role, agent and report file, with no prompt to
+    dispatch."""
+    return [f"- round {entry['round']}: {entry['role']}; agent {entry['agent']}; report {entry['report_file']}"
+            for entry in pending]
 
 
 def dispatch_lines(loop_dir, pending):

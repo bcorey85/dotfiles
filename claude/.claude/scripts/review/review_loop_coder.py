@@ -7,6 +7,7 @@ import typing
 
 import review_loop_held
 import review_loop_ruled_out
+import review_loop_ruling_check
 import review_loop_scope_guard
 import review_loop_untracked
 import script_utils
@@ -19,10 +20,11 @@ DIFF_CONTEXT = 12
 
 def coder_fault_notes():
     """The notes the loop's model calls left for the packet's tool_fault: untracked files a call removed, held files
-    a coder changed, ruled-out files put back, out-of-scope files put back, a failed put-back step and out-of-scope
-    files the loop could not copy."""
+    a coder changed, ruled-out files put back, out-of-scope files put back, a failed put-back step, out-of-scope
+    files the loop could not copy and ruling checks that could not judge a pass."""
     return [*review_loop_untracked.UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS,
-            *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS]
+            *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS,
+            *review_loop_ruling_check.RULING_CHECK_FAULTS]
 
 
 def file_texts(repo, start=None):

@@ -1,6 +1,7 @@
-"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing and hunk-notes anchors of a review packet,
-for /review (review_fix.py).
+"""review_asks.py: the ask ids, ask outcome rows, numbered ask listing, asks-done line and hunk-notes anchors of a
+review packet, for /review (review_fix.py).
 A plan-impact ask is not a finding: it gets no id and logs no outcome row."""
+import os
 import pathlib
 import re
 import shutil
@@ -10,6 +11,7 @@ from typing import NamedTuple
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback
 import handback_store
+import lane_entries
 import plan_format
 from ask_outcome_words import (
     ACCEPTED,
@@ -18,13 +20,15 @@ from ask_outcome_words import (
     HELD,
     REJECTED,
     RELAY_USAGE,
+    SESSION_MAY_REJECT_WANTED,
     USER_ONLY_KEY,
     USER_ONLY_MARK,
+    WANTED_CHANGE_KEY,
     user_only_numbers,
     user_only_reason,
 )
 from review_fix_names import FILED_AT_KEY
-from review_fix_state import UsageError
+from review_fix_state import REVIEW_FIX_COMMAND, UsageError
 from review_loop_findings import CHANGE_IF_LABEL_PATTERN, ask_parts
 from script_utils import (
     ask_text,
@@ -100,6 +104,65 @@ def parse_outcome_words(words, count, allowed, note_required):
         outcomes.append(outcome)
         notes.append(one_line(note, None))
     return outcomes, notes
+
+
+def asks_done_ruler():
+    """The `--by` word of the asks-done line: `session` in a lane session, else `user`. Lane files that cannot be read
+    give `user` and a stderr line."""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    try:
+        in_lane = lane_entries.is_lane_session(session_id)
+    except (lane_entries.LaneFileError, OSError) as error:
+        print(f"review_fix: lane files unreadable ({error}); the asks-done line names --by "
+              f"{plan_format.USER_RULING}", file=sys.stderr)
+        return plan_format.USER_RULING
+    if in_lane:
+        return plan_format.SESSION_RULING
+    return plan_format.USER_RULING
+
+
+def asks_done_guidance(ruler):
+    """One sentence on the `--by` word `ruler` (from `asks_done_ruler`) that the asks-done line prints."""
+    if ruler == plan_format.SESSION_RULING:
+        return ("The asks-done below names `--by session`: decide each ask yourself and do not wait for the user. "
+                "When you relay the user's answer instead, swap in `--by user`.")
+    return ("The asks-done below names `--by user`: run it with the user's answers. When you decide the asks "
+            "yourself (the repo's CLAUDE.md hands ask decisions to the session), swap in `--by session`.")
+
+
+def asks_done_line(asks, state, ruler):
+    """The asks-done command for the packet in `state`, with `--by <ruler>` (from `asks_done_ruler`: `session` in a
+    lane session, `user` relaying the user's answer otherwise). It names --packet when another packet still waits, so
+    the command runs as printed."""
+    packet_flag = f"--packet {state['packet_id']} " if state.get("waiting_packets") else ""
+    outcome_slots = " ".join(f"<outcome-{number}>" for number in range(1, len(asks) + 1))
+    if ruler == plan_format.SESSION_RULING:
+        lead_in = "Decide each ask, then run once:"
+    else:
+        lead_in = "After the user answers, run once:"
+    line = (f"{lead_in} {REVIEW_FIX_COMMAND} asks-done "
+            f"--by {ruler} {packet_flag}{outcome_slots}  (one outcome per ask, in order; "
+            f"accepted: {ACCEPT_MEANS} | rejected: {REJECT_MEANS} | "
+            f"applied: {APPLIED_MEANS} | "
+            f"'{MODIFIED}:<the change in one line>', quoted as one shell "
+            f"word: make that change instead; an optional ':<one line note>' after {PLAIN_OUTCOMES_TEXT} "
+            "is not stored)")
+    user_only = user_only_numbers(asks)
+    if user_only:
+        listed = ", ".join(str(number) for number in user_only)
+        if ruler == plan_format.SESSION_RULING:
+            line += (f". A `--by session` call: give `{HELD}` for user_only ask(s) {listed} unless the ask is a "
+                     f"wanted change you reject: {HELD_MEANS}")
+        else:
+            line += (f". A `--by session` call gives `{HELD}` for the user_only ask(s) {listed}: "
+                     f"{HELD_MEANS}")
+    conditional = conditional_ask_numbers(asks)
+    if not conditional:
+        return line
+    numbers = ", ".join(str(number) for number in conditional)
+    noun = "ask" if len(conditional) == 1 else "asks"
+    return (f"{line}. Answer {noun} {numbers} with '{MODIFIED}:<change with no condition>': "
+            f"{PLAIN_OUTCOMES_TEXT} is refused on a conditional change")
 
 
 def note_anchor_args(asks):
@@ -223,13 +286,27 @@ def accept_reject_lines(change):
     return hanging_indent_lines(f"   Accept = {ACCEPT_MEANS}: ", text)
 
 
-def user_only_refusal(asks, ruler, user_command, holdable=False):
-    """The refusal text when a session (`ruler` is not the user) rules on an ask only the user rules, else None.
-    `user_command` is the call that records the user's ruling. `holdable` names `held`, the word a first asks-done
-    call gives such an ask."""
+def is_wanted_change_ask(item):
+    """Whether `item` is a user-only ask for a wanted change to an approval-only file: not a revert ask, and not a
+    criteria ask."""
+    if item.get(CRITERIA_KEY):
+        return False
+    return bool(item.get(WANTED_CHANGE_KEY))
+
+
+def session_may_reject(item, outcome):
+    """Whether a session's `outcome` on the user-only ask `item` passes: only a `rejected` on a wanted-change ask."""
+    return outcome == REJECTED and is_wanted_change_ask(item)
+
+
+def user_only_refusal(asks, ruler, user_command, outcomes, holdable=False):
+    """The refusal text when a session (`ruler` is not the user) rules on an ask the session may not rule (anything
+    but a `rejected` on a wanted-change ask), else None. `user_command` is the call that records the user's ruling.
+    `outcomes` is one per ask. `holdable` names `held`, the word a first asks-done call gives such an ask."""
     if ruler == plan_format.USER_RULING:
         return None
     numbers = user_only_numbers(asks)
+    numbers = [number for number in numbers if not session_may_reject(asks[number - 1], outcomes[number - 1])]
     if not numbers:
         return None
     reasons = "; ".join(f"ask {number}: {user_only_reason(asks[number - 1])}" for number in numbers)
@@ -238,7 +315,16 @@ def user_only_refusal(asks, ruler, user_command, holdable=False):
     if holdable:
         held_text = (f" A session call gives `{HELD}` for each of them and an outcome for each plain ask: "
                      f"{HELD}: {HELD_MEANS}.")
-    return (f"ask(s) {listed} are user_only: only the user rules them, never the session ({reasons}).{held_text}"
+    wanted_text = ""
+    # An outcome of None marks an ask the user already ruled: a session never changes that ruling.
+    session_may_retry = [number for number in numbers
+                         if is_wanted_change_ask(asks[number - 1]) and outcomes[number - 1] is not None]
+    if session_may_retry:
+        retry_listed = ", ".join(str(number) for number in session_may_retry)
+        wanted_text = f" Note: for ask(s) {retry_listed}, {SESSION_MAY_REJECT_WANTED}."
+    user_verb = "accepts" if session_may_retry == numbers else "rules"
+    return (f"ask(s) {listed} are user_only: only the user {user_verb} them, never the session ({reasons}).{held_text}"
+            f"{wanted_text}"
             f" Hand them to the user, and when the user has ruled, record "
             f"the user's outcome with `--by user`: `{user_command}` with the user's outcome. A user ruling given to "
             f"another session is recorded with `{RELAY_USAGE}` added to that call")
@@ -288,6 +374,20 @@ def numbered_ask_lines(asks, detail=False):
         if item.get("change"):
             lines += accept_reject_lines(item["change"])
     return lines
+
+
+class AsksDone(NamedTuple):
+    """What a stop prints for the asks it holds: the sentence on `--by`, the asks-done command, the numbered asks."""
+    guidance: str
+    done_line: str
+    numbered_lines: list
+
+
+def asks_done_lines(asks, state):
+    """The asks-done block of a stop for `asks`: the `--by` guidance, the command and the detailed numbered asks."""
+    ruler = asks_done_ruler()
+    return AsksDone(asks_done_guidance(ruler), asks_done_line(asks, state, ruler),
+                    numbered_ask_lines(asks, detail=True))
 
 
 class OutcomeRow(NamedTuple):

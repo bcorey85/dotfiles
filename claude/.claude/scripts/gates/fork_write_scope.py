@@ -6,6 +6,10 @@ handoff and stop files in the run folder, `git rev-parse --git-path code-phase`:
 parent is a git directory (it holds a HEAD file). A shell heredoc cannot carry that text, because the safety gate
 reads a heredoc's body as command text. Any other agent, and the main session, passes untouched.
 
+Its stop.md Write is denied when the run is a /code resume whose source changed with no review loop started
+(code/resume_review_gate.py). A changed tree is denied once; an unreadable resume record or an unfingerprintable tree
+is denied on every try until the review loop starts.
+
 The fork also cannot write review-stop.md of the run folder while the fix state holds
 `asks_launch_pending`: the fix run that asks-done printed has not launched yet.
 
@@ -35,6 +39,10 @@ REVIEW_FIX_ROUTE_TEXT = (
 PENDING_TEXT = (f"{GATE_NAME}: asks-done printed a fix run that has not launched, so {{file_name}} cannot be written "
                 "yet. Run this launch line first, then wait on it: {launch_line} If this run must not start, stop and "
                 "tell the user, who removes the `{key}` key from {state_file}.")
+UNREADABLE_RESUME_TEXT = (f"{GATE_NAME}: the resume record {{resume_file}} cannot be checked ({{error}}), so stop.md "
+                          "cannot be written. Run step 5 (code_review_start.py ... --base <phase base>, the sha "
+                          "phase_start.py printed) on the resume diff; stop.md can be written once that review "
+                          "loop has started - denied.")
 UNREADABLE_STATE_TEXT = (f"{GATE_NAME}: {{state_file}} is not a readable JSON object ({{error}}), so {{file_name}} "
                          "cannot be written. Tell the user to repair or delete that file - denied.")
 
@@ -89,6 +97,26 @@ def pending_launch_reason(file_path):
                                key=review_fix_names.PENDING_LAUNCH_KEY, state_file=state_file)
 
 
+def resume_review_reason(file_path):
+    """The deny text when file_path is stop.md of the run folder and a /code resume changed source with no review loop
+    started, else None. Fail-open with no resume record (the run is not a resume). An unreadable record or a tree that
+    cannot be fingerprinted is fail-closed here: the text names the review to run. Any other crash propagates to main,
+    which fails closed and names the gate."""
+    stop_file_names = load_stop_and_state_owners()[0]
+    resolved = pathlib.Path(file_path).expanduser().resolve()
+    if resolved.name != stop_file_names.STOP_FILE or resolved.parent.name != RUN_FOLDER_NAME:
+        return None
+    sys.path.insert(0, os.path.join(os.path.dirname(LIB_DIR), "code"))
+    import resume_review_gate
+    import script_utils
+    try:
+        return resume_review_gate.resume_deny_reason(resolved)
+    except (resume_review_gate.ResumeRecordError, script_utils.GitCallError) as error:
+        # Fail-closed: the Write is denied, and the text names the review that keeps the check.
+        resume_file = resolved.parent / resume_review_gate.RESUME_FILE
+        return UNREADABLE_RESUME_TEXT.format(resume_file=resume_file, error=error)
+
+
 def review_fix_route_reason(file_path):
     """The deny text when file_path sits under `<git dir>/review-fix/`, which names the route for findings the fix run
     should also apply, else None. The gate stays fail-closed: the Write is still denied."""
@@ -103,10 +131,14 @@ def review_fix_route_reason(file_path):
 
 def write_deny_reason(payload, hook_input):
     """The deny text for a code-fork Write outside a run folder, or for review-stop.md
-    in the run folder while a fix launch is pending, else None."""
+    in the run folder while a fix launch is pending, or for stop.md of a /code resume
+    whose source changed with no review loop started, else None."""
     tool_input = hook_input.tool_input_of(payload) or {}
     file_path = hook_input.edited_file_path(tool_input)
     if file_path and in_run_folder(file_path):
+        resume_reason = resume_review_reason(file_path)
+        if resume_reason:
+            return resume_reason
         return pending_launch_reason(file_path)
     route_reason = review_fix_route_reason(file_path) if file_path else None
     if route_reason:

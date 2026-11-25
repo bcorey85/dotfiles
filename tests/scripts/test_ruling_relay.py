@@ -105,7 +105,7 @@ class UnstampedAskRefusalTest(unittest.TestCase):
 
 class RecordRelayGuardTest(unittest.TestCase):
     def test_asks_with_no_user_only_ask_record_no_relay_row(self):
-        relayed = ruling_relay.RelayedRuling(ruling_relay.RelayRequest("a"),
+        relayed = ruling_relay.RelayedRuling("a",
                                              human_turn_lookup.HumanTurn("2026-11-15T06:22:12.305Z", 1.0))
         with unittest.mock.patch.object(handback_store, "record_relayed_ruling") as record:
             recorded = ruling_relay.record_relay("session-id", "/repo", relayed, [{"finding_id": "f1"}])
@@ -180,6 +180,20 @@ class AsksDoneMixedBatchTest(AsksDoneRelayCase):
         self.assertEqual(code, 0, output)
         self.assertEqual([row["ask_decided_by"] for row in self.logged_outcome_rows()], ["user", "user"])
         self.assertEqual(self.relay_rows()[0]["finding_ids"], [USER_ONLY_ID])
+
+    def test_a_relay_by_the_id_of_one_of_two_same_named_rows_records_the_row_name(self):
+        other_row = {"pid": os.getpid(), "name": RELAY_NAME, "sessionId": "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"}
+        (self.claude_home / "sessions" / "2.json").write_text(json.dumps(other_row))
+        self.say(TYPED, HUMAN)
+
+        code, output = self.relay("accepted", "accepted", name=RELAY_NAME)
+        self.assertEqual(code, 2, output)
+        self.assertIn("--relayed-by <sessionId>", output)
+        self.assertEqual(self.relay_rows(), [])
+
+        code, output = self.relay("accepted", "accepted", name=RELAY_SESSION_ID)
+        self.assertEqual(code, 0, output)
+        self.assertEqual([row["relayed_by"] for row in self.relay_rows()], [RELAY_NAME])
 
     def test_a_relayed_correct_records_only_the_corrected_user_only_finding(self):
         code, output = self.run_script(
@@ -417,7 +431,7 @@ class AsksDoneRelayTest(AsksDoneRelayCase):
     def test_an_unknown_session_name_is_refused(self):
         self.say(TYPED, HUMAN)
         code, output = self.relay("accepted", name="nobody")
-        self.assert_refused_with_nothing_changed(code, output, "no live session named")
+        self.assert_refused_with_nothing_changed(code, output, "no live session has the id or the name")
 
     def test_a_relay_under_by_session_is_refused(self):
         self.say(TYPED, HUMAN)
@@ -566,8 +580,8 @@ class DecideRelayTest(RelayTranscriptMixin, unittest.TestCase):
         self.user_plan = self.temp_root / "plan.md"
         self.user_plan.write_text("# Plan\n")
 
-    def decide(self, by="user", relay=True):
-        relay_words = ["--relayed-by", RELAY_NAME] if relay else []
+    def decide(self, by="user", relay=True, relayed_by=RELAY_NAME):
+        relay_words = ["--relayed-by", relayed_by] if relay else []
         return self.run_script(["decide", "keep", "--by", by, *relay_words, "--ruling", "keep the retry",
                                 "--plan", str(self.user_plan)], **self.home_env)
 
@@ -597,6 +611,19 @@ class DecideRelayTest(RelayTranscriptMixin, unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["ruler"], rows[0]["relayed_by"]), ("user", RELAY_NAME))
         self.assertNotIn(TYPED, json.dumps(rows))
+
+    def test_a_plan_ruling_relayed_by_session_id_records_the_session_name_in_the_plan_and_the_row(self):
+        self.say(TYPED, HUMAN)
+
+        code, output = self.decide(relayed_by=RELAY_SESSION_ID)
+
+        self.assertEqual(code, 0, output)
+        plan_text = self.user_plan.read_text()
+        self.assertIn(f"relayed by session {RELAY_NAME}", plan_text)
+        self.assertNotIn(RELAY_SESSION_ID, plan_text)
+        rows = self.relay_rows()
+        self.assertEqual([row["relayed_by"] for row in rows], [RELAY_NAME])
+        self.assertNotIn(RELAY_SESSION_ID, json.dumps(rows))
 
     def test_a_bare_session_ruling_on_a_user_owned_plan_is_refused(self):
         code, output = self.decide(by="session", relay=False)

@@ -74,7 +74,7 @@ def approval_host(user_ruled=(), session_ruled=(), reverts=False):
     host = Host()
     if not reverts:
         host.revert_approval_edit = lambda path: False
-    host.asks, host.ask_gates = [], {}
+    host.asks, host.ask_gates, host.ask_rounds, host.iter_count = [], {}, {}, 1
     host.user_ruled, host.session_ruled = list(user_ruled), list(session_ruled)
     host.add_ask = lambda agent, item: review_loop_script.LoopRun.add_ask(host, agent, item)
     return host
@@ -148,6 +148,28 @@ class ApprovalAskUserOnlyTest(unittest.TestCase):
         entries = review_loop_packet.ask_entries({**review_loop_packet.EMPTY_OUTCOME, **outcome})
 
         self.assertEqual([entry.get("user_only") for entry in entries], [True])
+
+    def test_only_a_wanted_change_ask_entry_carries_the_wanted_change_field(self):
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+        wanted = parse_finding(f"`CLAUDE.md:3` [docs] A coder wants to edit it. Change: add the rule {target}")
+        revert_change = approval_asks_store.approval_change("CLAUDE.md")
+        revert = parse_finding(f"`CLAUDE.md:3` [docs] A coder edited it. Change: {revert_change}")
+
+        wanted_entry = review_loop_packet.ask_entry(wanted, "coder", None, user_only=True)
+        revert_entry = review_loop_packet.ask_entry(revert, "coder", None, user_only=True)
+        plain_entry = review_loop_packet.ask_entry(wanted, "code-reviewer", None)
+
+        self.assertTrue(wanted_entry["wanted_change"])
+        self.assertNotIn("wanted_change", revert_entry)
+        self.assertNotIn("wanted_change", plain_entry)
+
+    def test_the_reader_trusts_the_field_and_not_the_change_text(self):
+        target = approval_asks_store.wanted_edit_target("CLAUDE.md")
+
+        self.assertTrue(review_asks.is_wanted_change_ask({"user_only": True, "wanted_change": True, "change": "x"}))
+        self.assertFalse(review_asks.is_wanted_change_ask({"user_only": True, "change": f"add it {target}"}))
+        self.assertFalse(review_asks.is_wanted_change_ask(
+            {"user_only": True, "wanted_change": True, "criteria": ["AC1"], "change": "x"}))
 
     def test_a_reviewer_ask_has_no_flag(self):
         ask = parse_finding("`a/b.py:3` [bug] Should it log? Change: add a log line.")
@@ -1762,7 +1784,7 @@ class AdoptedRulingRoundTest(ReviewLoopHarness, unittest.TestCase):
 
         self.assertEqual(packet["status"], "critical-blocker")
         self.assertIn(review_loop_ruled.SKIPPED_WHY, packet["blockers"][0])
-        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder"])
+        self.assertEqual([call["key"] for call in self.fake_calls()], ["coder", "ruling-check"])
         self.assertEqual(packet["skipped_fp"], [])
         self.assertEqual(packet["ask"], [])
         self.assertIn(ADOPTED_FINDING, json.dumps(packet["findings_remaining"]))

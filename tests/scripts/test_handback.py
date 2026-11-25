@@ -34,6 +34,7 @@ import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
 import loop_transcript  # noqa: E402
 import plan_format  # noqa: E402
+import review_loop_post_cap  # noqa: E402
 import review_user_ruled  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -716,6 +717,29 @@ class AskRowRoundTest(unittest.TestCase):
         self.assertIn("iter=3", fields)
 
 
+class FixRoundsKeysTest(HandbackTestBase):
+    def test_a_bad_type_for_either_key_is_refused(self):
+        bad_fields = {"a list for fix_rounds": {"fix_rounds": [2]}, "a word for fix_rounds": {"fix_rounds": "many"},
+                      "a string for the passes": {"post_cap_passes": "final read"},
+                      "a number in the passes": {"post_cap_passes": ["final read", 1]}}
+        for message, fields in bad_fields.items():
+            with self.subTest(message), self.assertRaises(handback.PacketError):
+                handback.load(json_packet(**fields))
+
+    def test_a_packet_written_before_the_keys_reads_empty_and_prints_no_summary_line(self):
+        packet = handback.load(json_packet())
+
+        self.assertIsNone(packet["fix_rounds"])
+        self.assertEqual(packet["post_cap_passes"], [])
+        self.assertIsNone(review_loop_post_cap.cap_summary_line(packet))
+
+    def test_a_summary_line_with_no_pass_says_none(self):
+        packet = handback.load(json_packet(fix_rounds=1))
+
+        self.assertEqual(review_loop_post_cap.cap_summary_line(packet),
+                         "cap reached after 1 fix round(s); post-cap passes: none")
+
+
 class AskOutcomeFindingIdTest(unittest.TestCase):
     def test_a_valid_id_is_kept_with_no_note(self):
         self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),
@@ -807,6 +831,19 @@ class RenderTest(HandbackTestBase):
                 handback.load(json_packet(no_code_ruling_broken=[entry]))
             self.assertIn("no_code_ruling_broken[0]", raised.exception.problems[0])
             self.assertIn(expected, raised.exception.problems[0])
+
+    def test_the_against_ruling_key_reads_back_and_an_old_packet_reads_it_empty(self):
+        entry = {"ruling": "a/c.py:3 drop the strip", "file": "a/b.py", "kept": "the strip"}
+
+        self.assertEqual(handback.load(json_packet(against_ruling=[entry]))["against_ruling"], [entry])
+        self.assertEqual(handback.load(json_packet())["against_ruling"], [])
+
+    def test_an_against_ruling_entry_without_a_ruling_and_a_file_is_a_packet_error(self):
+        for entry in ("a/b.py", {"ruling": "x", "kept": "k"}, {"file": "a/b.py", "kept": "k"},
+                      {"ruling": "x", "file": "a/b.py"}, {"ruling": "x", "file": "a/b.py", "kept": ""}):
+            with self.subTest(entry=entry), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(against_ruling=[entry]))
+            self.assertIn("against_ruling[0]", raised.exception.problems[0])
 
     def test_stored_packet_reads_a_non_json_message_as_no_packet_and_a_broken_one_as_an_error(self):
         self.assertEqual(handback.stored_packet("plain text"), (None, None))

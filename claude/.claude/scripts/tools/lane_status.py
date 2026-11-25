@@ -11,7 +11,7 @@ Lines, one per problem:
                                    subagents that have not reported back
   <name>: dead (no agent)          no claude agent runs inside the lane's worktree (workspace closed, killed)
   <name>: dead (worktree gone)     the lane file's worktree folder is missing
-  <name>: dead (login expired)     the agent's transcript ends on an API error that asks for a login
+  <name>: dead (login expired)     the agent's transcript ends on a login error
   <name>: dead (api error)         the agent's transcript ends on any other API error
   memory: <N.N> GB available, under <T> GB
   memory: cannot read              memory could not be read on this system
@@ -205,11 +205,11 @@ def idle_line(name, agent):
     """The line for a lane whose agent is not working: dead on an API error, waiting on open background work, or
     the plain status."""
     status = agent.get("agent_status") or "unknown"
-    transcript = api_error_stop.agent_transcript(agent)
+    transcript = herdr_agents.herdr_agent_transcript(agent)
     if transcript is None:
         return f"{name}: {status}"
 
-    error_record = api_error_stop.last_api_error(transcript)
+    error_record = script_utils.last_api_error(transcript)
     if error_record is not None:
         return f"{name}: dead ({api_error_stop.error_reason(error_record)})"
 

@@ -1,4 +1,5 @@
-"""lib/herdr_agents.py: the herdr agent list as plain dicts, and which agents run inside a folder."""
+"""lib/herdr_agents.py: the herdr agent list as plain dicts, which agents run inside a folder, and the transcript of
+an agent's session."""
 import os
 import pathlib
 import sys
@@ -53,6 +54,14 @@ class HerdrAgentsTest(unittest.TestCase):
             herdr_agents.herdr_reply(["pane", "current"])
         self.assertIn("herdr-api pane current failed", str(raised.exception))
 
+    def test_a_call_past_the_timeout_raises_naming_the_call(self):
+        self.stub_herdr_api("exec sleep 5")
+
+        with unittest.mock.patch.object(herdr_agents, "HERDR_CALL_TIMEOUT_SECONDS", 0.2), \
+                self.assertRaises(herdr_agents.PaneCallError) as raised:
+            herdr_agents.herdr_reply(["agent", "list"])
+        self.assertIn("herdr-api agent list failed", str(raised.exception))
+
     def test_agents_in_matches_the_folder_itself_a_nested_folder_and_a_symlink_to_it(self):
         folder = self.root / "lane"
         (folder / "deeper").mkdir(parents=True)
@@ -80,6 +89,22 @@ class HerdrAgentsTest(unittest.TestCase):
             inside = herdr_agents.agents_in(folder, agents)
 
         self.assertEqual([], inside)
+
+    def test_herdr_agent_transcript_finds_the_session_file_or_none(self):
+        project = self.root / "config" / "projects" / "-work-a"
+        project.mkdir(parents=True)
+        transcript = project / "s-1.jsonl"
+        transcript.write_text("{}\n")
+        named = {"agent_session": {"value": "s-1"}}
+        unnamed = [{}, {"agent_session": None}, {"agent_session": {"value": ""}},
+                   {"agent_session": {"value": "s-missing"}}]
+
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.root / "config")}):
+            found = herdr_agents.herdr_agent_transcript(named)
+            missing = [herdr_agents.herdr_agent_transcript(agent) for agent in unnamed]
+
+        self.assertEqual(transcript, found)
+        self.assertEqual([None] * 4, missing)
 
 
 if __name__ == "__main__":

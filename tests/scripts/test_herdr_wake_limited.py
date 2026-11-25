@@ -7,17 +7,28 @@ Also covers login-expired notices and the noticed-state file:
   pane notifies again, a corrupt file is rewritten;
 - the login line must be a whole line within the bottom ten lines;
 - tuios panes are not notified;
-- a line led by the corner glyph is matched and named in the notice.
+- a line led by the corner glyph is matched and named in the notice;
+- resume prompts: one per error record to a pane whose transcript ends on a cleared usage-limit or server
+  error (records written after the error are skipped), none for a login error or a pane at a screen prompt,
+  and the resumed-uuid file kept, pruned and left alone under tuios.
 """
+import datetime
+import importlib.machinery
 import json
 import os
 import pathlib
 import shutil
 import subprocess
 import tempfile
+import time
+import types
 import unittest
+from unittest import mock
 
 from stubs import write_stub
+
+# A usage-limit reset an hour ago: past its margin, inside the resume age cap.
+RESET_AN_HOUR_AGO = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) - 3600
 
 HERDR_WAKE_LIMITED = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "bin" / "herdr-wake-limited"
 
@@ -105,13 +116,19 @@ class HerdrWakeLimitedTest(unittest.TestCase):
     def set_panes(self, panes):
         (self.state_dir / "panes.json").write_text(json.dumps(panes))
 
-    def run_wake(self, *args, state_home=DEFAULT_STATE_HOME, tuios=False):
+    def run_wake(self, *args, state_home=DEFAULT_STATE_HOME, tuios=False, stub_on_path=True):
         env = dict(os.environ)
         env.pop("TUIOS_SOCKET", None)
         if tuios:
             env["TUIOS_SOCKET"] = str(self.root / "tuios.sock")
         env["HOME"] = str(self.root)
-        env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+        if stub_on_path:
+            env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+        else:
+            # Drop every entry that holds a herdr-api, so only the script's own prepend can find one.
+            entries = env["PATH"].split(os.pathsep)
+            kept = [entry for entry in entries if not shutil.which("herdr-api", path=entry)]
+            env["PATH"] = os.pathsep.join(kept)
         env["STATE_DIR"] = str(self.state_dir)
         env.pop("XDG_STATE_HOME", None)
         env.pop("CLAUDE_CONFIG_DIR", None)
@@ -492,15 +509,25 @@ class HerdrWakeLimitedTest(unittest.TestCase):
             return []
         return prompts_file.read_text().splitlines()
 
-    def write_transcript(self, session, last_record):
+    def write_transcript(self, session, last_record, trailing=()):
         transcript = self.root / ".claude" / "projects" / "-work-a" / f"{session}.jsonl"
         transcript.parent.mkdir(parents=True, exist_ok=True)
         first = {"type": "user", "uuid": "u-1", "message": {"role": "user", "content": "go"}}
-        transcript.write_text(json.dumps(first) + "\n" + json.dumps(last_record) + "\n")
+        records = [first, last_record, *trailing]
+        transcript.write_text("".join(json.dumps(record) + "\n" for record in records))
+
+    def resumed_file(self):
+        return self.root / "xdg-state" / "herdr-wake-limited.resumed"
+
+    def resumed_uuids(self):
+        if not self.resumed_file().exists():
+            return []
+        return json.loads(self.resumed_file().read_text())
 
     def api_error(self, uuid, error, **fields):
         return {"type": "assistant", "uuid": uuid, "isApiErrorMessage": True, "error": error,
-                "timestamp": "2026-01-01T00:00:00.000Z",
+                "timestamp": (datetime.datetime.now(datetime.timezone.utc)
+                              - datetime.timedelta(hours=1)).isoformat(),
                 "message": {"role": "assistant", "content": [{"type": "text", "text": "API Error"}]},
                 **fields}
 
@@ -509,7 +536,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
 
     def test_a_pane_past_its_usage_limit_reset_gets_one_resume_prompt(self):
         self.write_transcript("s-1", self.api_error("e-1", "rate_limit", apiErrorStatus=429,
-                                                    quotaLimits={"resetsAt": 1700000000}))
+                                                    quotaLimits={"resetsAt": RESET_AN_HOUR_AGO}))
         self.set_panes(self.stopped_pane())
 
         first = self.run_wake()
@@ -522,19 +549,9 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertIn("resumed wS:p1 /work/a", first.stdout)
         self.assertEqual(self.sent_keys(), [])
 
-    def test_a_message_id_holding_401_is_not_read_as_a_login_error(self):
-        record = self.api_error("e-1", "rate_limit", quotaLimits={"resetsAt": 1700000000})
-        record["message"]["id"] = "c1e05401-b4da-4ce3-9374-5d62d7baec0d"
-        self.write_transcript("s-1", record)
-        self.set_panes(self.stopped_pane())
-
-        self.run_wake()
-
-        self.assertEqual(len(self.prompts()), 1)
-
     def test_a_reset_in_rate_limit_info_is_read(self):
         self.write_transcript("s-1", self.api_error(
-            "e-1", "rate_limit", apiErrorParams={"rate_limit_info": {"resetsAt": 1700000000}}))
+            "e-1", "rate_limit", apiErrorParams={"rate_limit_info": {"resetsAt": RESET_AN_HOUR_AGO}}))
         self.set_panes(self.stopped_pane())
 
         self.run_wake()
@@ -590,7 +607,7 @@ class HerdrWakeLimitedTest(unittest.TestCase):
 
     def test_a_pane_at_the_reset_prompt_gets_enter_and_no_resume_prompt(self):
         self.write_transcript("s-1", self.api_error("e-1", "rate_limit",
-                                                    quotaLimits={"resetsAt": 1700000000}))
+                                                    quotaLimits={"resetsAt": RESET_AN_HOUR_AGO}))
         self.set_panes(self.stopped_pane(text=RESET_PROMPT))
 
         self.run_wake()
@@ -618,6 +635,72 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertIn("wS:p1", failed.stderr)
         self.assertEqual(len(self.prompts()), 1)
 
+    def test_an_error_record_with_no_string_uuid_gets_no_prompt(self):
+        for label, change in (("missing", None), ("integer", 7)):
+            with self.subTest(label):
+                record = self.api_error("e-1", "server_error")
+                del record["uuid"]
+                if change is not None:
+                    record["uuid"] = change
+                self.write_transcript("s-1", record)
+                self.set_panes(self.stopped_pane())
+
+                result = self.run_wake()
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.prompts(), [])
+                self.assertEqual(self.resumed_uuids(), [])
+
+    def test_a_pane_with_no_session_or_no_transcript_gets_no_prompt(self):
+        no_session = {"wS:p1": {"cwd": "/work/a", "text": "> "}}
+        no_transcript = self.stopped_pane(session="s-missing")
+        for label, panes in (("no session", no_session), ("no transcript", no_transcript)):
+            with self.subTest(label):
+                self.set_panes(panes)
+
+                result = self.run_wake()
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.prompts(), [])
+                self.assertEqual(self.resumed_uuids(), [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores chmod 0")
+    def test_a_failed_transcript_read_keeps_the_answered_uuid_so_the_pane_is_not_prompted_twice(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+        transcript = next((self.root / ".claude" / "projects").rglob("s-1.jsonl"))
+
+        transcript.chmod(0)
+        try:
+            unreadable = self.run_wake()
+        finally:
+            transcript.chmod(0o644)
+        self.run_wake()
+
+        self.assertEqual(unreadable.returncode, 0, unreadable.stderr)
+        self.assertIn("could not read", unreadable.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        resumed = json.loads(self.resumed_file().read_text())
+        self.assertEqual(resumed, ["e-1"])
+
+    def test_a_working_pane_keeps_its_answered_uuid_so_it_is_not_prompted_again_when_idle(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        panes = self.stopped_pane()
+        self.set_panes(panes)
+        self.run_wake()
+
+        panes["wS:p1"]["status"] = "working"
+        self.set_panes(panes)
+        self.run_wake()
+        panes["wS:p1"]["status"] = "idle"
+        self.set_panes(panes)
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+        resumed = json.loads(self.resumed_file().read_text())
+        self.assertEqual(resumed, ["e-1"])
+
     def test_a_new_error_after_a_resume_gets_its_own_prompt(self):
         self.write_transcript("s-1", self.api_error("e-1", "server_error"))
         self.set_panes(self.stopped_pane())
@@ -629,6 +712,182 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(len(self.prompts()), 2)
         resumed = json.loads((self.root / "xdg-state" / "herdr-wake-limited.resumed").read_text())
         self.assertEqual(resumed, ["e-2"])
+
+    def test_records_written_after_the_error_do_not_hide_it(self):
+        # The tail Claude Code writes after a usage-limit error: a turn duration, a last prompt, a cost state.
+        trailing = [{"type": "system", "subtype": "turn_duration", "durationMs": 10},
+                    {"type": "last-prompt", "lastPrompt": "go"},
+                    {"type": "cost-state", "cost": 0.1}]
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit", quotaLimits={"resetsAt": RESET_AN_HOUR_AGO}),
+                              trailing=trailing)
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_a_login_text_under_a_server_error_gets_no_resume_prompt(self):
+        login_message = {"role": "assistant", "content": [{"type": "text", "text": "Please run /login"}]}
+        self.write_transcript("s-1", self.api_error("e-1", "server_error", message=login_message))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_usage_limit_waits_a_minute_past_its_reset(self):
+        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        cases = {"reset 30 seconds ago": (now - 30, 0), "reset 2 minutes ago": (now - 120, 1)}
+        for name, (resets_at, expected) in cases.items():
+            with self.subTest(name):
+                (self.state_dir / "prompts").unlink(missing_ok=True)
+                self.resumed_file().unlink(missing_ok=True)
+                self.write_transcript("s-1", self.api_error("e-1", "rate_limit",
+                                                            quotaLimits={"resetsAt": resets_at}))
+                self.set_panes(self.stopped_pane())
+
+                self.run_wake()
+
+                self.assertEqual(len(self.prompts()), expected)
+
+    def test_a_server_error_waits_five_minutes(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cases = {"just now": (now, 0), "six minutes ago": (now - datetime.timedelta(minutes=6), 1)}
+        for name, (stamp, expected) in cases.items():
+            with self.subTest(name):
+                (self.state_dir / "prompts").unlink(missing_ok=True)
+                self.resumed_file().unlink(missing_ok=True)
+                self.write_transcript("s-1", self.api_error("e-1", "server_error", timestamp=stamp.isoformat()))
+                self.set_panes(self.stopped_pane())
+
+                self.run_wake()
+
+                self.assertEqual(len(self.prompts()), expected)
+
+    def test_a_usage_limit_with_no_reset_time_gets_nothing(self):
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit"))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(self.prompts(), [])
+
+    def test_a_pane_that_shows_a_reset_prompt_after_its_resume_is_not_prompted_again(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+        self.set_panes(self.stopped_pane(text=RESET_PROMPT))
+        self.run_wake()
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake()
+
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(json.loads(self.resumed_file().read_text()), ["e-1"])
+
+    def test_a_login_expired_pane_with_a_server_error_is_noticed_and_not_prompted(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane(text=LOGIN_EXPIRED_TAIL))
+
+        self.run_wake()
+
+        self.assertEqual(len(self.notifications()), 1)
+        self.assertEqual(self.prompts(), [])
+
+    def test_under_tuios_the_resumed_file_is_neither_read_nor_written(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+
+        self.run_wake(tuios=True)
+        self.assertFalse(self.resumed_file().exists())
+
+        self.resumed_file().parent.mkdir(parents=True, exist_ok=True)
+        self.resumed_file().write_text('["old"]')
+        self.run_wake(tuios=True)
+        self.assertEqual(self.resumed_file().read_text(), '["old"]')
+
+    def test_an_error_id_is_dropped_once_its_pane_no_longer_ends_on_it(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+        work = {"type": "assistant", "uuid": "a-1",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Done."}]}}
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"), trailing=[work])
+
+        self.run_wake()
+        self.assertEqual(json.loads(self.resumed_file().read_text()), [])
+
+    def test_an_error_id_is_dropped_once_its_pane_is_gone(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+        self.assertEqual(json.loads(self.resumed_file().read_text()), ["e-1"])
+
+        self.set_panes({})
+        self.run_wake()
+        self.assertEqual(json.loads(self.resumed_file().read_text()), [])
+
+    def test_a_pane_whose_screen_read_fails_gets_no_resume_prompt_that_run(self):
+        self.write_transcript("s-1", self.api_error("e-1", "server_error"))
+        unreadable = self.stopped_pane()
+        unreadable["wS:p1"]["fail_read"] = True
+        self.set_panes(unreadable)
+
+        failed = self.run_wake()
+
+        self.assertEqual(failed.returncode, 0, failed.stderr)
+        self.assertEqual(self.prompts(), [])
+        self.set_panes(self.stopped_pane())
+        self.run_wake()
+        self.assertEqual(len(self.prompts()), 1)
+
+    def test_an_error_whose_resume_time_passed_over_a_day_ago_gets_no_prompt(self):
+        week_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+        cases = {
+            "server error": self.api_error("e-1", "server_error", timestamp=week_ago.isoformat()),
+            "usage limit": self.api_error("e-2", "rate_limit",
+                                          quotaLimits={"resetsAt": int(week_ago.timestamp())},
+                                          timestamp=week_ago.isoformat()),
+        }
+        for name, record in cases.items():
+            with self.subTest(name):
+                self.write_transcript("s-1", record)
+                self.set_panes(self.stopped_pane())
+
+                finished = self.run_wake()
+
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                self.assertEqual(self.prompts(), [])
+
+    def test_herdr_api_is_found_in_home_local_bin_when_path_lacks_it(self):
+        home_bin = self.root / ".local" / "bin"
+        home_bin.mkdir(parents=True)
+        (self.bin_dir / "herdr-api").rename(home_bin / "herdr-api")
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})
+
+        finished = self.run_wake(stub_on_path=False)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), ["wS:p1 enter"])
+
+    def test_a_herdr_api_call_that_hangs_gives_no_answer_after_the_timeout(self):
+        hanging_dir = self.root / "hanging-bin"
+        hanging_dir.mkdir()
+        write_stub(hanging_dir / "herdr-api", "exec sleep 30")
+        loader = importlib.machinery.SourceFileLoader("herdr_wake_limited_under_test", str(HERDR_WAKE_LIMITED))
+        module = types.ModuleType(loader.name)
+        module.__file__ = str(HERDR_WAKE_LIMITED)
+        loader.exec_module(module)
+        patched_path = f"{hanging_dir}{os.pathsep}{os.environ['PATH']}"
+
+        with mock.patch.object(module.herdr_agents, "HERDR_CALL_TIMEOUT_SECONDS", 0.5), \
+                mock.patch.dict(os.environ, {"PATH": patched_path}):
+            started = time.monotonic()
+            answer = module.herdr_api("agent", "list")
+            elapsed = time.monotonic() - started
+
+        self.assertIsNone(answer)
+        self.assertLess(elapsed, 10)
 
     def test_help_prints_usage_and_sends_nothing(self):
         self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})

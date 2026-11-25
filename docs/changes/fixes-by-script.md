@@ -22,7 +22,7 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 27 | 6 |
+| script/script-utils | 28 | 7 |
 | script/shell-write-gate | 24 | 4 |
 | script/review-loop | 23 | 6 |
 | script/quality-check-cap | 22 | 4 |
@@ -63,8 +63,10 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
+| script/loop-transcript | 5 | 3 |
 | script/open-child-gate | 5 | 0 |
 | script/run-sh | 5 | 1 |
+| script/session-pane | 5 | 5 |
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
@@ -75,12 +77,10 @@ Recent: the 7 days up to 2026-11-24, the newest note.
 | script/herdr-worktree-watch | 4 | 3 |
 | script/lane-status | 4 | 4 |
 | script/log-scan | 4 | 0 |
-| script/loop-transcript | 4 | 2 |
 | script/phase-start | 4 | 3 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-ruled | 4 | 4 |
 | script/reviewed-tree | 4 | 2 |
-| script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
 | script/wait-loop-gate | 4 | 1 |
 | skill/eng-spec | 4 | 0 |

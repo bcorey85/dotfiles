@@ -6,7 +6,7 @@ description: "A herdr Claude pane whose transcript ends on a usage-limit or serv
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T23:52:41-06:00"}
 seq: 7
 kind: "fix"
-components: ["script/herdr-wake-limited", "script/lane-status"]
+components: ["script/herdr-wake-limited", "script/lane-status", "script/session-pane", "script/script-utils", "script/loop-transcript"]
 evidence: ["judgment"]
 watches: []
 test: "tests/scripts/test_herdr_wake_limited.py::HerdrWakeLimitedTest::test_a_pane_past_its_usage_limit_reset_gets_one_resume_prompt"
@@ -18,14 +18,21 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`claude/.claude/scripts/lib/api_error_stop.py` (new) owns the read of a session's last API error: the transcript of a
-herdr agent, the last record when it is an API error, login versus other errors (from the message text only, so a
-message id holding `401` no longer reads as a login), and `resume_epoch` (usage limit: `resetsAt` + 60 s; server
-error: record time + 300 s; login, billing and bad-request errors: none). `lane_status.py` drops its own copy and
-imports it. `scripts/.local/bin/herdr-wake-limited` sends one `herdr-api agent prompt` to an idle or done Claude pane
-whose last record is such an error once its resume time passed, keeps the error record uuids it resumed in
-`herdr-wake-limited.resumed` so no error is resumed twice, skips panes it already handled on screen, and does nothing
-under tuios. `install/herdr-wake-limited` names the new step in its header.
+`claude/.claude/scripts/lib/api_error_stop.py` (new) owns the error kind (`error_reason`: login versus other errors, told by an
+`authentication_failed` error kind or by login words in the text parts; the message id is not read, so one holding
+`401` no longer reads as a login) and `resume_epoch` (usage limit: `resetsAt` + 60 s; server error: record time + 300 s;
+login, billing and bad-request errors: none; none for an error whose resume time passed more than a day ago).
+`herdr_agents.herdr_agent_transcript` finds a herdr agent's transcript
+and `script_utils.last_api_error` reads its last user or assistant record when it is an API error, skipping system,
+last-prompt and cost records written after it. `script_utils.ends_on_api_error` now goes through `last_api_error`, so
+the review loop's dead-subagent read (`loop_transcript.agent_died`) also skips non-conversation records after the
+error: a subagent whose API error is followed by a `system` record now counts as died. `lane_status.py` drops its own
+transcript lookup, error read and `LOGIN_WORDS` and uses these three, so a lane whose API error is followed by a
+non-conversation record now reads dead too. `herdr_agents.herdr_reply` now gives up after 20 s, so lane-status and
+session-pane report a hung herdr-api as a failed call. `scripts/.local/bin/herdr-wake-limited` sends one
+`herdr-api agent prompt` to an idle or done Claude pane whose last user or assistant record is such an error once its
+resume time passed, keeps the error record uuids it resumed in `herdr-wake-limited.resumed` so no error is resumed
+twice, skips panes it handled on screen or whose screen read failed, and sends no resume prompt under tuios. `install/herdr-wake-limited` names the new step in its header.
 
 ## Evidence
 

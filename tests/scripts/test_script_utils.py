@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -37,6 +38,14 @@ class IsIntTest(unittest.TestCase):
                 self.assertIs(script_utils.is_int(value), expected)
 
 
+class PositiveIntTest(unittest.TestCase):
+    def test_only_an_integer_above_zero_is_accepted(self):
+        self.assertEqual(script_utils.positive_int("42"), 42)
+        for text in ("0", "-3", "abc", "1.5", ""):
+            with self.subTest(text=text), self.assertRaises(argparse.ArgumentTypeError):
+                script_utils.positive_int(text)
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))
@@ -74,6 +83,64 @@ class TextsNamePathTest(unittest.TestCase):
                 self.assertEqual(script_utils.texts_name_path(texts, path, "/repo"), expected)
 
 
+class TextsNamePathBySuffixTest(unittest.TestCase):
+    def test_a_trailing_part_names_a_path_only_when_no_other_known_path_ends_with_it(self):
+        known = ["lib/x.py", "a/dup.py", "b/dup.py", "bin/todo"]
+        cases = [
+            (["- `x.py:1` wrong"], "lib/x.py", True),
+            (["- fix the todo flow"], "bin/todo", False),
+            (["- `lib/x.py:1` wrong"], "lib/x.py", False),
+            (["- `dup.py:1` wrong"], "a/dup.py", False),
+            (["- `dup.py:1` wrong"], "b/dup.py", False),
+            (["- `y.py:1` wrong"], "lib/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_path_by_suffix(texts, path, "/repo", known), expected)
+
+    def test_path_has_tail_matches_whole_path_segments_only(self):
+        cases = [
+            ("lib/x.py", "lib/x.py", True),
+            ("a/lib/x.py", "lib/x.py", True),
+            ("a/xlib/x.py", "lib/x.py", False),
+            ("x.py", "lib/x.py", False),
+        ]
+        for path, tail, expected in cases:
+            with self.subTest(path=path, tail=tail):
+                self.assertEqual(script_utils.path_has_tail(path, tail), expected)
+
+    def test_a_middle_trailing_part_of_a_deep_path_is_tried(self):
+        known = ["a/b/x.py", "c/x.py"]
+        cases = [
+            (["- `b/x.py:1` wrong"], "a/b/x.py", True),
+            (["- `x.py:1` wrong"], "a/b/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_path_by_suffix(texts, path, "/repo", known), expected)
+
+    def test_texts_name_repo_file_takes_a_full_name_a_dot_slash_name_or_a_unique_trailing_part(self):
+        known = ["lib/x.py", "a/dup.py", "b/dup.py"]
+        cases = [
+            (["- `lib/x.py:1` wrong"], "lib/x.py", True),
+            (["- `./lib/x.py:1` wrong"], "lib/x.py", True),
+            (["- `x.py:1` wrong"], "lib/x.py", True),
+            (["- `dup.py:1` wrong"], "a/dup.py", False),
+            (["- `y.py:1` wrong"], "lib/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_repo_file(texts, path, "/repo", known), expected)
+
+    def test_a_dot_slash_prefix_reads_as_the_repo_relative_path(self):
+        self.assertTrue(script_utils.texts_name_path(["- `./lib/x.py:1` wrong"], "lib/x.py", "/repo"))
+        self.assertFalse(script_utils.texts_name_path(["- `../lib/x.py:1` wrong"], "lib/x.py", "/repo"))
+
+    def test_a_dot_slash_inside_a_path_is_not_cut(self):
+        self.assertEqual(["`lib/./x.py`"], script_utils.texts_relative_to(["`lib/./x.py`"], "/repo"))
+        self.assertFalse(script_utils.texts_name_path(["`lib/./x.py:1`"], "lib/x.py", "/repo"))
+
+
 class NextNumberedDirTest(unittest.TestCase):
     def test_the_next_folder_is_one_above_the_highest_digit_folder_and_nothing_is_created(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -99,6 +166,19 @@ class WithoutPathsTest(unittest.TestCase):
         self.assertEqual({"b": 2}, script_utils.without_paths({"a": 1, "b": 2}, ["a"]))
         self.assertEqual(["b", "c"], script_utils.without_paths(["a", "b", "c"], ("a",)))
         self.assertEqual(["a"], script_utils.without_paths(["a"], []))
+
+
+class XdgStateHomeTest(unittest.TestCase):
+    def test_only_an_absolute_value_is_used_else_the_home_state_folder(self):
+        home_state = pathlib.Path("/home/someone/.local/state")
+        cases = {"unset": None, "empty": "", "relative": "relstate", "absolute": "/var/state"}
+        for label, value in cases.items():
+            environ = {"HOME": "/home/someone"}
+            if value is not None:
+                environ["XDG_STATE_HOME"] = value
+            with self.subTest(label), unittest.mock.patch.dict(os.environ, environ, clear=True):
+                expected = pathlib.Path(value) if label == "absolute" else home_state
+                self.assertEqual(expected, script_utils.xdg_state_home(), label)
 
 
 class CanAppendTest(unittest.TestCase):

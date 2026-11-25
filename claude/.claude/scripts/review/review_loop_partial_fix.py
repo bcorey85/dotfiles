@@ -1,6 +1,6 @@
 """review_loop_partial_fix.py: the record of a fix coder that died mid-edit. The tree may hold part of the fix and
 nothing says which findings landed, so the loop saves the findings it gave the coder, less those on a reverted
-approval-only path (a user-only ask now), and the diff the coder left
+approval-only path (an approval ask now), and the diff the coder left
 (`PARTIAL_FIX_NAME`, in the review-fix folder of the repo's git dir so the next launch on the repo finds it; no record
 when git names no git dir). Each path's diff is the coder's own, read before any sign-off or comment lines were put
 back; a path the put-back returned to its old text, or the loop reverted, has no diff in the record. The
@@ -62,9 +62,9 @@ class DeadPassRecord(typing.NamedTuple):
 def dead_pass_record(repo, call_name, findings, reverted_findings, saved, held_unfixed, kept_error):
     """After the coder pass `call_name` died: the stop note words and the pending record. A pass that is not a
     finding pass (its prompt comes from a check's output, which the next launch runs again) saves nothing. The
-    `findings` the coder was given, less the `reverted_findings` (user-only asks now), are unverified; the `saved`
+    `findings` the coder was given, less the `reverted_findings` (approval asks now), are unverified; the `saved`
     texts on a held file (an entry of `held_unfixed`, no coder got them) stay in the record. `kept_error` holds the
-    pass diffs. With no finding at all the record is deleted: an older record would send user-only asks to the
+    pass diffs. With no finding at all the record is deleted: an older record would send approval asks to the
     coder again."""
     if not is_finding_pass(call_name):
         return DeadPassRecord("", None)

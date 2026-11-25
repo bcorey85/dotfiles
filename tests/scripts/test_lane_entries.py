@@ -67,6 +67,8 @@ class LaneEntriesTest(unittest.TestCase):
         self.assertEqual(self.root / "state" / "herdr-lanes", lane_entries.lanes_dir())
         with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.root)}):
             self.assertEqual(self.root / ".local" / "state" / "herdr-lanes", lane_entries.lanes_dir())
+        with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": "relstate", "HOME": str(self.root)}):
+            self.assertEqual(self.root / ".local" / "state" / "herdr-lanes", lane_entries.lanes_dir())
 
     def test_an_added_entry_is_read_back_listed_sorted_and_removed(self):
         self.add("zeta")

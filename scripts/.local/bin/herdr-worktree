@@ -7,7 +7,8 @@
 #   branch        prompted for when omitted (the prefix+ctrl+w popup).
 #   --fork        carry the Claude conversation running in this pane into the
 #                 new workspace's claude pane, as a forked session. Needs a
-#                 brief: --prompt-file or --prompt.
+#                 brief: --prompt-file or --prompt. The forked lane opens
+#                 without the hunk pane (herdr-dev --headless).
 #   --prompt-file the file holding the brief the forked session starts working
 #                 on at once. Only with --fork.
 #   --prompt      the brief as text, in place of --prompt-file.
@@ -52,7 +53,8 @@
 #
 # With --fork the run also writes a lane entry before herdr-dev starts: the brief,
 # worktree, branch, main checkout and the name of the session that forked, in
-# ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<worktree folder name>.json. The
+# ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<worktree folder name>.json (a
+# relative XDG_STATE_HOME is ignored). The
 # watcher fills in the fork's session id, and herdr-phase-change keeps the session id
 # and brief current. A failed write warns and the fork still starts; recovery for that
 # lane is then the steps above. `herdr-lane-resume <name>` reopens a lane from its entry.

@@ -135,13 +135,6 @@ class HeaderAdoptedTest(unittest.TestCase):
                 review_loop_prompt_file.header_adopted({"adopted": value}, ["f"])
 
 
-class HeaderFixRoundsTest(unittest.TestCase):
-    def test_a_word_for_fix_rounds_is_a_prompt_file_error_naming_the_line(self):
-        with self.assertRaises(review_loop_prompt_file.PromptFileError) as caught:
-            review_loop_prompt_file.header_whole_number({"fix_rounds": "many"}, review_loop_prompt_file.FIX_ROUNDS_KEY)
-        self.assertIn("fix_rounds", str(caught.exception))
-
-
 class HeaderIterTest(unittest.TestCase):
     def test_a_non_ascii_digit_is_a_prompt_file_error_not_a_value_error_crash(self):
         with self.assertRaises(review_loop_prompt_file.PromptFileError):

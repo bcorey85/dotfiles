@@ -244,7 +244,6 @@ class ResumeReviewTest(unittest.TestCase):
         self.assertIn("app.py", result.stdout)
         self.assertIn("fork-write-scope", result.stdout)
         self.assertIn("1 path(s)", result.stdout)
-        self.assertIn(git(self.repo, "rev-parse", "HEAD"), result.stdout)
 
     def test_a_deleted_source_file_is_denied_naming_the_file(self):
         (self.repo / "app.py").unlink()
@@ -306,15 +305,48 @@ class ResumeReviewTest(unittest.TestCase):
             with self.subTest(agent_type=agent_type):
                 self.assertEqual(decision(self.write_stop(agent_type)), "allow")
 
-    def test_a_corrupt_resume_record_exits_2_naming_the_gate(self):
+    def assert_denied_naming_the_record_and_the_review(self, result):
+        self.assertEqual(decision(result), "deny", result.stderr)
+        self.assertIn("fork-write-scope", result.stdout)
+        self.assertIn(str(self.run_folder / "resume.json"), result.stdout)
+        self.assertIn("code_review_start.py ... --base <phase base>", result.stdout)
+        for skip_path in ("delete", "Delete", "remove", "phase_start.py --resume"):
+            self.assertNotIn(skip_path, result.stdout, f"the deny names a way past the review: {skip_path}")
+
+    def test_a_corrupt_record_passes_once_a_review_loop_has_started(self):
+        (self.run_folder / "resume.json").write_text("not json")
+        (self.run_folder / "loop-dir").write_text("/some/loop\n")
+
+        self.assertEqual(decision(self.write_stop()), "allow")
+
+    def test_the_resume_gate_does_not_import_code_wait(self):
+        probe = ("import sys; sys.path[:0] = [sys.argv[1], sys.argv[2]]; import resume_review_gate; "
+                 "sys.exit(1 if 'code_wait' in sys.modules else 0)")
+        done = subprocess.run([sys.executable, "-I", "-c", probe, str(toolkit_paths.LIB_DIR),
+                               str(toolkit_paths.CODE_DIR)], capture_output=True, text=True, check=False)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_a_corrupt_resume_record_denies_naming_the_record_and_the_review(self):
         for text in ("not json", "[]", '{"repo": "x"}'):
             with self.subTest(text=text):
                 (self.run_folder / "resume.json").write_text(text)
 
-                result = self.write_stop()
+                self.assert_denied_naming_the_record_and_the_review(self.write_stop())
 
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("fork-write-scope", result.stderr)
+    def test_a_tree_that_cannot_be_fingerprinted_denies_naming_the_record_and_the_review(self):
+        record_file = self.run_folder / "resume.json"
+        record = json.loads(record_file.read_text())
+        record_file.write_text(json.dumps({**record, "repo": str(self.repo / "missing")}))
+
+        self.assert_denied_naming_the_record_and_the_review(self.write_stop())
+
+    def test_the_deny_names_the_phase_base_for_the_review(self):
+        self.edit_source()
+
+        result = self.write_stop()
+
+        self.assertIn("--base <phase base>", result.stdout)
 
     def test_a_commit_between_the_resume_and_the_stop_with_no_other_change_allows_the_stop(self):
         git(self.repo, "commit", "-q", "--allow-empty", "-m", "empty")

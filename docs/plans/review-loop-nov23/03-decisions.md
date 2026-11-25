@@ -159,6 +159,13 @@ Report: `review-round1-shard-a.md`. None cuts or narrows an AC.
 - **Ask 2, coder edit to a recorded ruling:** the code stays as it is. The loop's put-back of that edit is the right behavior.
 - Ruled by: agent-evals-c3-owner (session), 2026-11-24. The review's `decide adopt --by session` call was denied by the auto-mode classifier and was not retried.
 
+### P8-close. Phase 8 close-pass rulings
+- **Ask, gate import:** applied. `LOOP_DIR_FILE` and `PREVIOUS_LOOP_DIR_FILE` move into `lib/stop_file_names.py`, so the fail-closed Write gate imports no `code_wait` tree. Phase 7 depends on the name, not the module; a Plan Deviations line records it.
+- **(a) `against_ruling` render line in `handback.py`:** reverted with its test. The stop path never reaches it, and the blocker line already meets AC12.
+- **(b) `UNREADABLE_RESUME_TEXT` in `fork_write_scope.py`:** fixed now. The text names only a recovery that keeps the review and names neither skip path (deleting `resume.json`, rerunning `phase_start.py --resume`). A test checks the text names no skip path.
+- **Close-branch steps:** the REQUIRES-MUTATION cull and the `refactor_flow.py log` step run, or the report names why each cannot.
+- Ruled by: agent-evals-c3-owner (session; the ticket is session-written), 2026-11-25. No AC is cut.
+
 ## Direction & Constraints
 
 - `review_round` and `iter` keep their meaning: packet identity, ledger iter join, relaunch `--iter`.

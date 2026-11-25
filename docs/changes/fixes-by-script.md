@@ -7,13 +7,13 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-739 fix notes
+740 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 173 | 7 |
+| script/code-step | 174 | 8 |
 | script/review-fix | 75 | 16 |
 | script/review-loop-script | 74 | 16 |
 | script/handback | 57 | 2 |
@@ -23,8 +23,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/full-check | 29 | 5 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 26 | 4 |
+| script/review-loop | 24 | 7 |
 | script/shell-write-gate | 24 | 4 |
-| script/review-loop | 23 | 6 |
 | script/quality-check-cap | 21 | 3 |
 | agent/review-loop | 20 | 0 |
 | skill/code | 19 | 1 |
@@ -106,6 +106,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
+| script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-lane-resume | 2 | 2 |
 | script/herdr-worktree-prune | 2 | 1 |
@@ -161,7 +162,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/fix-diff | 1 | 0 |
 | script/fork-children | 1 | 1 |
 | script/full-check-receipt | 1 | 0 |
-| script/gate | 1 | 1 |
 | script/gate-replay | 1 | 0 |
 | script/git-commit-calls | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |

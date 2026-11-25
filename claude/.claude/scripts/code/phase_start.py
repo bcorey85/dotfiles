@@ -232,6 +232,18 @@ def write_record(repo, record):
     script_utils.write_text_atomically(folder / START_FILE, json.dumps(record, indent=2) + "\n")
 
 
+def record_resume_or_exit(run_folder, repo):
+    """Writes resume.json after the start record. A git fault there removes any stale resume.json (it would hold an
+    older head and tree) and exits non-zero naming what was written, with no base printed."""
+    try:
+        resume_review_gate.record_resume(run_folder, repo)
+    except script_utils.GitCallError as error:
+        resume_review_gate.clear_resume(run_folder)
+        sys.exit(f"phase_start: the start record was written, but {run_folder / resume_review_gate.RESUME_FILE} was "
+                 f"not written, and any older one was removed ({error}). Fix the git fault and re-run "
+                 f"`phase_start.py --resume`; the resume has no review check until then.")
+
+
 def main():
     flags = ("--new-run", "--resume")
     unknown = [arg for arg in sys.argv[1:] if arg not in flags]
@@ -252,7 +264,7 @@ def main():
     handed_off = handed_off_paths(run_folder)
     move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
     move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
-    move_aside(run_folder, code_wait.LOOP_DIR_FILE, code_wait.PREVIOUS_LOOP_DIR_FILE)
+    move_aside(run_folder, stop_file_names.LOOP_DIR_FILE, stop_file_names.PREVIOUS_LOOP_DIR_FILE)
     move_aside(run_folder, code_wait.SCOPE_FILE, code_wait.PREVIOUS_SCOPE_FILE)
     if "--resume" not in sys.argv[1:]:
         resume_review_gate.clear_resume(run_folder)
@@ -274,7 +286,7 @@ def main():
         base = resume_base(repo, kept)
         if base is not None:
             write_record(repo, with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off))
-            resume_review_gate.record_resume(run_folder, repo)
+            record_resume_or_exit(run_folder, repo)
             print(base)
             return 0
     same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
@@ -288,7 +300,7 @@ def main():
 
     write_record(repo, record)
     if "--resume" in sys.argv[1:]:
-        resume_review_gate.record_resume(run_folder, repo)
+        record_resume_or_exit(run_folder, repo)
     print(record["head"])
     return 0
 

@@ -33,6 +33,18 @@ class ReviewerDispatchTest(unittest.TestCase):
     def manifest(self, round_number=1):
         return self.loop_dir / reviewer_dispatch.REQUESTS_FOLDER / f"round-{round_number}.json"
 
+    def test_requests_of_round_ten_come_after_round_nine(self):
+        folder = self.loop_dir / reviewer_dispatch.REQUESTS_FOLDER
+        folder.mkdir(parents=True)
+        for round_number in (10, 9, 2):
+            entry = {"round": round_number, "role": "r", "agent": "a", "prompt_file": "p", "report_file": "f"}
+            (folder / f"round-{round_number}.json").write_text(json.dumps({"round": round_number,
+                                                                         "requests": [entry]}))
+
+        rounds = [entry["round"] for entry in reviewer_dispatch.all_requests(self.loop_dir)]
+
+        self.assertEqual(rounds, [2, 9, 10])
+
     def run_wait(self, *, timeout=30):
         done = subprocess.run([sys.executable, "-I", str(SCRIPT), "wait", str(self.loop_dir)], capture_output=True,
                               text=True, timeout=timeout)

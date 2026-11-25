@@ -933,6 +933,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("went against the accepted ruling on app.py: app.py:2 drop the prefix strip; it kept: the "
                       "prefix strip. The pass was put back. fix pass", packet["blockers"][0])
         self.assertIn("on notes.py: notes.py:1 second ruling; it kept: the dict.", packet["blockers"][0])
+        printed = self.review_fix_packet_output()
+        self.assertIn("went against the accepted ruling on app.py: app.py:2 drop the prefix strip", printed)
         self.assertNotIn("other ruling", packet["blockers"][0])
         self.assertIn("drop the prefix strip", json.dumps(packet["findings_remaining"]), "the finding stays open")
         self.assertFalse((self.repo / "new_helper.py").exists(), "a file the pass created is deleted")
@@ -1478,6 +1480,36 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertNotIn(ask, host.user_only_asks)
         self.assertNotIn("app.py", host.user_only_bases)
         self.assertEqual(saved, [["old_approval.md"]])
+
+    def test_a_put_back_pass_drops_an_approval_ask_it_filed_for_a_path_it_did_not_restore(self):
+        host = self.ruled_host()
+        host.no_code_broken = []
+        host.user_only_paths = []
+        host.user_only_asks = []
+        host.asks = []
+        host.ask_gates = {}
+        host.user_only_bases = {}
+        saved = []
+        host.save_approval_paths = lambda: saved.append(list(host.user_only_paths))
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        for filed_path in ("CLAUDE.md", "app.py"):
+            ask = finding_record.parse_finding(review_loop_ruled.approval_ask_text(filed_path))
+            host.user_only_paths.append(filed_path)
+            host.user_only_asks.append(ask)
+            host.asks.append(ask)
+            host.ask_gates[ask] = "coder"
+            host.user_only_bases[filed_path] = "b1"
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=["CLAUDE.md"])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual(host.user_only_paths, [], "the reverted CLAUDE.md ask goes with the put-back pass")
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual(host.asks, [])
+        self.assertEqual(host.user_only_bases, {})
 
     def test_a_put_back_pass_leaves_the_index_entry_of_a_path_the_backup_could_not_save(self):
         host = self.ruled_host()
@@ -6667,29 +6699,15 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         final_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][2]["prompt"]
         self.assertIn("late-repair.diff", final_prompt)
 
-    def test_a_capped_run_reports_two_fix_rounds_and_its_post_cap_pass(self):
-        completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
-            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
-                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
-            "closure": [{"result": CLOSED}],
-        })
-
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        _row, packet = self.stored_packet()
-        self.assertEqual(packet["status"], "cap-reached")
-        self.assertEqual(packet["fix_rounds"], 2)
-        self.assertEqual(packet["post_cap_passes"], ["final read"])
-        summary = review_loop_post_cap.cap_summary_line(packet)
-        self.assertEqual(summary, "cap reached after 2 fix round(s); post-cap passes: final read")
-
-    def test_a_capped_run_lists_its_closure_and_late_repair_read_in_walk_order(self):
+    def test_a_capped_run_lists_its_closure_prose_and_late_repair_read_in_walk_order(self):
+        self.save_gate_commands([self.stale_prose_command(1)])
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX},
                               {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}},
-                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT + "# class repaired\n"}}],
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT + "# class repaired\n"}},
+                      {"result": "Fixed the claim.", "edits": {"app.py": APP_AFTER_EDIT + "# corrected claim\n"}}],
             "closure": [{"result": json.dumps(OPEN_MEMBER)}],
         })
 
@@ -6697,9 +6715,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["status"], "cap-reached")
         self.assertEqual(packet["fix_rounds"], 2)
-        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure", "scoped re-review"])
+        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure", "prose repair", "scoped re-review"])
         summary = review_loop_post_cap.cap_summary_line(packet)
-        expected = "cap reached after 2 fix round(s); post-cap passes: final read, class closure, scoped re-review"
+        expected = ("cap reached after 2 fix round(s); post-cap passes: final read, class closure, prose repair, "
+                    "scoped re-review")
         self.assertEqual(summary, expected)
         printed = self.review_fix_packet_output()
         self.assertIn("cap reached after 2 fix round(s); post-cap passes: final read, class closure", printed)

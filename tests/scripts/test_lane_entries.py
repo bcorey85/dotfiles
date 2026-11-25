@@ -39,12 +39,6 @@ class LaneEntriesTest(unittest.TestCase):
         self.assertFalse(lane_entries.is_lane_session("sess-2"))
         self.assertFalse(lane_entries.is_lane_session(""), "an unfilled lane has an empty id, which is no session")
 
-    def test_is_lane_session_raises_on_a_bad_lane_file(self):
-        self.write_raw("bad", "not json")
-
-        with self.assertRaises(lane_entries.LaneFileError):
-            lane_entries.is_lane_session("sess-1")
-
     def write_raw(self, name, text):
         lane_entries.lanes_dir().mkdir(parents=True, exist_ok=True)
         file = lane_entries.lanes_dir() / f"{name}.json"

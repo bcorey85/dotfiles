@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1166 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1167 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [A code resume that changed source gets a review before its stop](notes/2026-11-25-a-code-resume-that-changed-source-gets-a-review.md).
+Latest change: 2026-11-25, [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md).
 
 ## Top gains
 

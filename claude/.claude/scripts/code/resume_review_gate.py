@@ -4,9 +4,11 @@ phase_start.py --resume writes <run folder>/resume.json: {"repo", "head", "tree"
 of stop.md asks resume_deny_reason first (gates/fork_write_scope.py): a resume whose tree moved with no review loop
 started in the run is denied once.
 
-A missing resume.json means the run is not a resume, so the check passes (fail-open). An unreadable resume.json or a
-failed fingerprint raises, and the gate that calls this exits 2 naming itself (fail-closed). A failed git call in the
-path list gives a wrong list (changed paths missing, or declared notes paths left in), not a raise.
+A missing resume.json means the run is not a resume, so the check passes (fail-open). So does a run folder that holds
+a loop-dir file, whatever resume.json holds. An unreadable resume.json or a failed fingerprint raises; the gate that
+calls this denies the Write, naming the review to run (fail-closed), on every try until the review loop starts. A
+failed git call in the path list gives a wrong list (changed paths missing, or declared notes paths left in), not a
+raise.
 """
 import json
 import pathlib
@@ -16,10 +18,10 @@ import time
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
-import code_wait
 import notes_paths
 import reviewed_tree
 import script_utils
+import stop_file_names
 
 
 class ResumeRecordError(ValueError):
@@ -30,8 +32,9 @@ RESUME_FILE = "resume.json"
 RESUME_KEYS = ("repo", "head", "tree", "at", "denied")
 SHOWN_PATHS = 5
 DENY_TEXT = ("fork-write-scope: this /code resume changed source since phase_start.py --resume ({count} path(s): "
-             "{shown}), and no review loop ran on it. Run step 5 (code_review_start.py ... --base {head}) before the "
-             "stop; write the stop again only when the run ends before review.")
+             "{shown}), and no review loop ran on it. Run step 5 (code_review_start.py ... --base <phase base>, "
+             "the sha phase_start.py printed) before the stop; write the stop again only when the run ends before "
+             "review.")
 
 
 def write_resume(run_folder, record):
@@ -91,10 +94,12 @@ def resume_deny_reason(stop_path):
     if not resume_file.is_file():
         return None
 
+    # A started review loop passes before the record is read, so a corrupt record cannot block a run that reviewed.
+    if (run_folder / stop_file_names.LOOP_DIR_FILE).exists():
+        return None
+
     record = read_resume(resume_file)
     if record["denied"]:
-        return None
-    if (run_folder / code_wait.LOOP_DIR_FILE).exists():
         return None
 
     fingerprint = reviewed_tree.reviewed_fingerprint(record["repo"], base=record["head"])
@@ -106,4 +111,4 @@ def resume_deny_reason(stop_path):
 
     write_resume(run_folder, {**record, "denied": True})
     paths = changed_source_paths(record["repo"], record["head"])
-    return DENY_TEXT.format(count=len(paths), shown=", ".join(paths[:SHOWN_PATHS]), head=record["head"])
+    return DENY_TEXT.format(count=len(paths), shown=", ".join(paths[:SHOWN_PATHS]))

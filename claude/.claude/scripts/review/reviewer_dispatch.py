@@ -144,13 +144,21 @@ def read_manifest(manifest_path):
     return [{"round": round_number, **entry} for entry in requests]
 
 
+def manifest_round(manifest_path):
+    """The round number in a `round-<n>.json` file name, so round 10 sorts after round 9."""
+    number = manifest_path.stem.removeprefix("round-")
+    if not number.isdecimal():
+        raise ManifestError(f"{manifest_path}: the file name holds {number!r}; expected round-<whole number>.json")
+    return int(number)
+
+
 def all_requests(loop_dir):
     """Every request of every round."""
     folder = requests_dir(loop_dir)
     if not folder.is_dir():
         return []
     requests = []
-    for manifest_path in sorted(folder.glob("round-*.json")):
+    for manifest_path in sorted(folder.glob("round-*.json"), key=manifest_round):
         requests += read_manifest(manifest_path)
     return requests
 

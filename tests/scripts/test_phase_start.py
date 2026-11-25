@@ -1,6 +1,8 @@
 """Tests for phase_start.py, the record of the tree a /code phase starts from, and the held files code_review_start.py
 reads from it. Set PHASE_START_SCRIPT to run against another copy."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -461,6 +464,32 @@ class PhaseStartTest(unittest.TestCase):
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertTrue((self.repo / ".git/code-phase/resume.json").is_file())
+
+    def test_a_git_fault_while_recording_the_resume_exits_naming_what_was_written_and_the_rerun(self):
+        module = self.load_phase_start_module()
+        fault = module.script_utils.GitCallError("could not fingerprint the tree")
+        environment = {"HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
+                       "CLAUDE_CODE_SESSION_ID": "test-session"}
+        printed = io.StringIO()
+        stale_resume = self.repo / ".git/code-phase/resume.json"
+        stale_resume.parent.mkdir(exist_ok=True)
+        stale_resume.write_text('{"stale": true}')
+
+        with (mock.patch.dict(os.environ, environment), mock.patch.object(sys, "argv", ["phase_start.py", "--resume"]),
+              mock.patch.object(module.resume_review_gate, "record_resume", side_effect=fault),
+              mock.patch.object(pathlib.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(printed),
+              self.assertRaises(SystemExit) as raised):
+            module.main()
+
+        message = str(raised.exception.code)
+        self.assertIn("start record was written", message)
+        self.assertIn("resume.json", message)
+        self.assertIn("could not fingerprint the tree", message)
+        self.assertIn("older one was removed", message)
+        self.assertIn("re-run `phase_start.py --resume`", message)
+        self.assertEqual(printed.getvalue(), "")
+        self.assertTrue((self.repo / ".git/code-phase/start.json").is_file())
+        self.assertFalse((self.repo / ".git/code-phase/resume.json").exists())
 
     def unrelated_commit(self):
         """A commit on an orphan branch: neither an ancestor nor a descendant of the recorded head."""

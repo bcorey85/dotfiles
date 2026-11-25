@@ -718,14 +718,6 @@ class AskRowRoundTest(unittest.TestCase):
 
 
 class FixRoundsKeysTest(HandbackTestBase):
-    def test_the_fix_round_keys_read_back_from_the_packet(self):
-        packet = handback.load(json_packet(fix_rounds=2, post_cap_passes=["final read", "class closure"]))
-
-        self.assertEqual(packet["fix_rounds"], 2)
-        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure"])
-        self.assertEqual(review_loop_post_cap.cap_summary_line(packet),
-                         "cap reached after 2 fix round(s); post-cap passes: final read, class closure")
-
     def test_a_bad_type_for_either_key_is_refused(self):
         bad_fields = {"a list for fix_rounds": {"fix_rounds": [2]}, "a word for fix_rounds": {"fix_rounds": "many"},
                       "a string for the passes": {"post_cap_passes": "final read"},

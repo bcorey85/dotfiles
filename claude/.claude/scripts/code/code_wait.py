@@ -77,8 +77,6 @@ PREVIOUS_HANDOFF_FILE = "handoff.prev.txt"  # where phase_start.py moves the las
 REVIEW_OUTPUT = "review.out"
 PHASE_RUN_FILE = "run.json"  # the lane, phase, loop folder and plan path of the last started phase review
 LOOP_FOLDER_KEY = "loop_dir"  # the key of PHASE_RUN_FILE that holds this phase's loop folder
-LOOP_DIR_FILE = "loop-dir"  # holds the path of the running loop's folder, where its reviewer requests go
-PREVIOUS_LOOP_DIR_FILE = "loop-dir.prev"  # where phase_start.py moves the last phase's loop-dir
 SCOPE_FILE = "review-scope.json"  # the phase review's scope, written by code_review_start.py --detach
 PREVIOUS_SCOPE_FILE = "review-scope.prev.json"  # where phase_start.py moves the last phase's scope
 HELD_CHANGED_FIELD = "held_changed"  # the key of SCOPE_FILE that lists held files changed since the run start
@@ -194,7 +192,7 @@ def running_review_pid(repo):
 
 def loop_dir(repo):
     # The running loop's folder; None before the loop has named it.
-    loop_dir_file = phase_dir(repo) / LOOP_DIR_FILE
+    loop_dir_file = phase_dir(repo) / stop_file_names.LOOP_DIR_FILE
     try:
         return loop_dir_file.read_text().strip()
     except FileNotFoundError:

@@ -580,8 +580,8 @@ class DecideRelayTest(RelayTranscriptMixin, unittest.TestCase):
         self.user_plan = self.temp_root / "plan.md"
         self.user_plan.write_text("# Plan\n")
 
-    def decide(self, by="user", relay=True):
-        relay_words = ["--relayed-by", RELAY_NAME] if relay else []
+    def decide(self, by="user", relay=True, relayed_by=RELAY_NAME):
+        relay_words = ["--relayed-by", relayed_by] if relay else []
         return self.run_script(["decide", "keep", "--by", by, *relay_words, "--ruling", "keep the retry",
                                 "--plan", str(self.user_plan)], **self.home_env)
 
@@ -611,6 +611,19 @@ class DecideRelayTest(RelayTranscriptMixin, unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["ruler"], rows[0]["relayed_by"]), ("user", RELAY_NAME))
         self.assertNotIn(TYPED, json.dumps(rows))
+
+    def test_a_plan_ruling_relayed_by_session_id_records_the_session_name_in_the_plan_and_the_row(self):
+        self.say(TYPED, HUMAN)
+
+        code, output = self.decide(relayed_by=RELAY_SESSION_ID)
+
+        self.assertEqual(code, 0, output)
+        plan_text = self.user_plan.read_text()
+        self.assertIn(f"relayed by session {RELAY_NAME}", plan_text)
+        self.assertNotIn(RELAY_SESSION_ID, plan_text)
+        rows = self.relay_rows()
+        self.assertEqual([row["relayed_by"] for row in rows], [RELAY_NAME])
+        self.assertNotIn(RELAY_SESSION_ID, json.dumps(rows))
 
     def test_a_bare_session_ruling_on_a_user_owned_plan_is_refused(self):
         code, output = self.decide(by="session", relay=False)

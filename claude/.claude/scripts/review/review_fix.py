@@ -355,13 +355,12 @@ def jumped_line(state):
 
 def present_packet_asks(packet, state):
     asks = save_packet_asks(packet, state)
-    ruler = review_asks.asks_done_ruler()
+    done = review_asks.asks_done_lines(asks, state)
     lines = [
         jumped_line(state),
-        "Present each ask below with its question and its proposed change. Never auto-fix an ask. "
-        + review_asks.asks_done_guidance(ruler),
-        review_asks.asks_done_line(asks, state, ruler),
-        *review_asks.numbered_ask_lines(asks, detail=True),
+        "Present each ask below with its question and its proposed change. Never auto-fix an ask. " + done.guidance,
+        done.done_line,
+        *done.numbered_lines,
     ]
     print_action("present-asks", *lines)
 
@@ -604,11 +603,8 @@ def stop_for_status(packet, options, state):
         entries.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
-        ruler = review_asks.asks_done_ruler()
-        guidance = review_asks.asks_done_guidance(ruler)
-        done_line = review_asks.asks_done_line(packet["ask"], state, ruler)
-        numbered_lines = review_asks.numbered_ask_lines(packet["ask"], detail=True)
-        ask_lines = [jumped_line(state), guidance, done_line, *numbered_lines]
+        done = review_asks.asks_done_lines(packet["ask"], state)
+        ask_lines = [jumped_line(state), done.guidance, done.done_line, *done.numbered_lines]
     print_action("stop", instruction, *entries, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:

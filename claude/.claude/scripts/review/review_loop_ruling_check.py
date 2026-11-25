@@ -209,13 +209,13 @@ class RulingCheck:
         return script_utils.restore_index_entries(self.repo, wanted_entries)
 
     def drop_pass_records_of(self, put_back):
-        """Removes what the pass recorded about the paths it restored: its no-code broken entries and the approval
-        asks it filed. The records point at edits that are no longer in the tree."""
+        """Removes what the pass recorded: its no-code broken entries for the paths it restored, and every approval
+        ask it filed. A put-back pass is not kept, so no ask it filed stands, whether or not its path was restored."""
         kept_broken = list(self.no_code_broken[:self.ruling_no_code_mark])
         added_broken = self.no_code_broken[self.ruling_no_code_mark:]
         self.no_code_broken = kept_broken + [entry for entry in added_broken if entry["file"] not in put_back]
         filed_paths = [path for path in self.user_only_paths if path not in self.ruling_ask_paths_before]
-        self.drop_approval_asks([path for path in filed_paths if path in put_back])
+        self.drop_approval_asks(filed_paths)
 
     def put_back_pass(self, call_name, findings, result, backup, against):
         """Restores every file the pass may have written, deletes the ones it created, keeps the findings open and

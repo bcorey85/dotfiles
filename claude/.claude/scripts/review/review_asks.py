@@ -376,6 +376,20 @@ def numbered_ask_lines(asks, detail=False):
     return lines
 
 
+class AsksDone(NamedTuple):
+    """What a stop prints for the asks it holds: the sentence on `--by`, the asks-done command, the numbered asks."""
+    guidance: str
+    done_line: str
+    numbered_lines: list
+
+
+def asks_done_lines(asks, state):
+    """The asks-done block of a stop for `asks`: the `--by` guidance, the command and the detailed numbered asks."""
+    ruler = asks_done_ruler()
+    return AsksDone(asks_done_guidance(ruler), asks_done_line(asks, state, ruler),
+                    numbered_ask_lines(asks, detail=True))
+
+
 class OutcomeRow(NamedTuple):
     """One ask's outcome row: the finding_id it was logged under, the log helper's exit code and output, the stderr
     note for an ask logged under a new id (None otherwise), and the command that logs the row."""

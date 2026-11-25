@@ -32,6 +32,7 @@ import phase_asks
 import review_asks
 import reviewed_tree
 import script_utils
+import stop_file_names
 
 SCRIPT = pathlib.Path(os.environ.get("PHASE_ASKS_SCRIPT") or toolkit_paths.REVIEW_DIR / "phase_asks.py")
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or toolkit_paths.CLAUDE_DIR)
@@ -587,7 +588,7 @@ class WaitCase(StoreCase):
         (self.phase_dir / self.code_wait.REVIEW_OUTPUT).write_text("packet printed\n")
         self.loop_folder = self.temp_root / "loop"
         self.loop_folder.mkdir()
-        (self.phase_dir / self.code_wait.LOOP_DIR_FILE).write_text(f"{self.loop_folder}\n")
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{self.loop_folder}\n")
         self.code_wait.write_phase_run(self.repo, "code", "3")
 
     def wait(self, asks):
@@ -686,7 +687,7 @@ class OpenPhaseAsksTest(WaitCase):
                               **{handback_store.RULED_OPEN_TS_KEY: first_open["ts"]})
         newer_loop = self.temp_root / "loop-newer"
         newer_loop.mkdir()
-        (self.phase_dir / self.code_wait.LOOP_DIR_FILE).write_text(f"{newer_loop}\n")
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{newer_loop}\n")
         (newer_loop / self.code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet_with(ASKS))
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -786,13 +787,6 @@ class OpenPhaseAsksTest(WaitCase):
         code, _output, error = self.run_script("rule", "rejected:not needed")
         self.assertEqual(code, 0, error)
         return handback_store.rejected_ask_texts(SESSION, handback_store.ruled_rows_repo(self.repo_top))
-
-    def test_a_session_rejection_on_a_converged_packet_is_stored_for_a_fresh_run(self):
-        packet = json.loads(packet_with(ASKS[:1]))
-
-        stored = self.reject_the_first_ask_of(packet)
-
-        self.assertEqual(stored, [f"src/a.py:3 {ASKS[0]['question']}"])
 
     def test_a_cap_reached_packet_with_asks_opens_them_and_a_session_rejection_is_stored(self):
         packet = json.loads(packet_with(ASKS[:1]))

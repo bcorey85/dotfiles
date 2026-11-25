@@ -22,7 +22,7 @@ Seven fixes to the /code review loop and its ask tools, one per phase. A relayed
 - [x] Phase 5: Round and role on reviewer dispatch lines (risk: low)
 - [x] Phase 6: Put back a fix pass that breaks an accepted ruling (risk: high)
 - [x] Phase 7: A /code resume diff must get a review (risk: high)
-- [ ] Phase 8: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
+- [x] Phase 8: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 Seven independent slices with no shared surface: each phase owns its own contract, so Phase 0 is omitted on purpose, and Phase 1 is the walking skeleton.
 
@@ -387,7 +387,7 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 
 #### Automated Verification:
 
-- [ ] **Test-verified**: full suite green — `bash tests/run.sh`
+- [x] **Test-verified**: full suite green — `bash tests/run.sh`
 
 #### Manual Verification:
 
@@ -405,3 +405,4 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 - 2026-11-24, code session (ruling): Phase 5 change 1's end-to-end test writes the round-2 manifest from a timer instead of driving a REVIEWERS_MAIN loop with a fake fix coder; the wait call's round-2 output is still proven and fails on master. No AC changed.
 - 2026-11-24, lane session (ruling P6-stop): Phase 6's files also include review/review_loop_coder.py (coder_fault_notes reads RULING_CHECK_FAULTS so a ruling-check fault fills tool_fault, G12). No AC changed.
 - 2026-11-24, session (agent-evals-c3-owner, ruling P6-cap3): Phase 6's files also include lib/file_backup.py, lib/script_utils.py, review/review_loop_ruled.py, review/review_loop_ruled_out.py and review/review_loop_partial_fix.py (index and created-path put-back, the coder-commit read, and the shared keep-open helper). Phase 6's success criterion is clarified and AC12 is unchanged: the work-tree files are put back byte-for-byte, with the index, and a coder commit stays in HEAD and is named.
+- 2026-11-25, session (agent-evals-c3-owner, ruling P8-close): Phase 7's `LOOP_DIR_FILE` dependency moves from `code/code_wait.py` to `lib/stop_file_names.py` (with `PREVIOUS_LOOP_DIR_FILE`), so the fail-closed Write gate imports no `code_wait` tree. Phase 8's files also include lib/stop_file_names.py and code/code_wait.py. No AC changed.

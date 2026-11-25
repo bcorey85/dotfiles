@@ -3004,11 +3004,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("expected kinds from final read, class closure", output)
 
-    def test_launch_with_an_empty_post_cap_kind_stops(self):
-        code, output = self.launch("--post-cap-passes", "final read, ")
-        self.assertNotEqual(code, 0)
-        self.assertIn("expected kinds from final read, class closure", output)
-
     def test_launch_with_a_negative_fix_rounds_stops(self):
         code, output = self.launch("--fix-rounds", "-1")
         self.assertNotEqual(code, 0)

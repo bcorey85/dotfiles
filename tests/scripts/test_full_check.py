@@ -22,6 +22,7 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import check_parts  # noqa: E402
 import full_check_receipt  # noqa: E402
 import linked_installs  # noqa: E402
+import process_group  # noqa: E402
 import reviewed_tree  # noqa: E402
 
 # A command that prints a test runner's own summary line.
@@ -538,8 +539,7 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (timeout)")
         sleeper = int(pid_file.read_text())
         time.sleep(0.2)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(sleeper, 0)
+        self.assertFalse(process_group.pid_is_alive(sleeper))
 
     def test_the_full_suite_in_ci_line_with_no_declared_check_runs_nothing(self):
         completed = self.check(None, claude_md="# Repo\n\n- Full suite: CI\n")

@@ -41,6 +41,20 @@ class LaneEntriesTest(unittest.TestCase):
         return {"name": name, "worktree": str(self.root), "main_checkout": str(self.root), "branch": "b",
                 "brief": "x", "session_id": "", "reports_to": "", "started_at": "2026-11-22T10:00:00+00:00"}
 
+    def test_a_base_commit_is_stored_only_when_given_and_must_be_a_full_commit_id(self):
+        self.assertNotIn("base_commit", self.add("plain"))
+        commit = "a" * 40
+        worktree = self.make_worktree("based")
+        based = lane_entries.add_entry("based", worktree, str(self.root / "main"), "b", "x", "", base_commit=commit)
+        self.assertEqual(commit, lane_entries.entry("based")["base_commit"])
+        self.assertEqual(based, lane_entries.entry("based"))
+        for bad in ("", "abc123", "A" * 40, "g" * 40, 7):
+            with self.subTest(bad=bad):
+                file = self.write_raw("one", json.dumps(dict(self.good_entry(), base_commit=bad)))
+                with self.assertRaises(lane_entries.LaneFileError) as raised:
+                    lane_entries.read_entry(file)
+                self.assertEqual("base_commit", raised.exception.field)
+
     def test_the_lanes_dir_follows_xdg_state_home_else_the_home_state_folder(self):
         self.assertEqual(self.root / "state" / "herdr-lanes", lane_entries.lanes_dir())
         with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.root)}):

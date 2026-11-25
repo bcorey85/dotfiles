@@ -52,7 +52,13 @@ class HunkReviewPaneRenameTest(unittest.TestCase):
         write_stub(self.stub_dir / "hunk", f'printf "%s\\n" "$*" >> {hunk_args}')
         repo = self.root / "repo"
         repo.mkdir()
-        git_env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        git_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        }
         for git_args in (
             ["init", "-q", "-b", "master"],
             ["commit", "-q", "--allow-empty", "-m", "base"],

@@ -27,19 +27,34 @@ shows the line or is no longer an idle or done claude agent, so a later expiry
 announces again. Under tuios (TUIOS_SOCKET
 set) there is no notification command, so nothing is announced and the
 noticed file is neither read nor written.
+
+After the panes (not when herdr gives no agent list), at most once per 10 minutes, it also
+starts herdr-lane-sweep from its own folder, which closes the lanes whose branch is merged.
+The sweep runs with no stdin and this script waits for it, because a systemd
+oneshot unit kills a child left running. The wait is capped at 300 s: the sweep runs in its own process group,
+which is killed on timeout. A lane killed before its entry was removed is finished by the next sweep; one killed
+during its prune keeps its worktree until the next `herdr-worktree-prune --apply` in that main checkout.
+The last start is the mtime of ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.stamp;
+the sweep's output replaces ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.log. A sweep that fails or cannot start
+changes neither this script's stdout nor its exit code. Not run under tuios.
 """
+import contextlib
 import datetime
 import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
+import time
 
 PHRASES = ("your usage limit has reset", "press enter to continue")
 VISIBLE_LINES = "15"
 BOTTOM_LINES = 6
 LOGIN_BOTTOM_LINES = 10
+SWEEP_INTERVAL_SECONDS = 600
+SWEEP_TIMEOUT_SECONDS = 300
 # A whole line: plain words, then the hint. Quotes, prompts or other text around
 # the phrase mean a pane is discussing it, not showing it.
 LOGIN_LINE = re.compile(r"^(?:[●⎿]\s*)?[A-Za-z][A-Za-z ]* · Please run /login$")
@@ -182,6 +197,54 @@ def handle_pane(agent, noticed, under_tuios):
     return False
 
 
+def sweep_is_due(stamp_file):
+    """True when the stamp is missing or older than the interval. An unreadable stamp counts as missing."""
+    try:
+        age = time.time() - stamp_file.stat().st_mtime
+    except OSError:
+        return True
+    return age >= SWEEP_INTERVAL_SECONDS
+
+
+def run_lane_sweep():
+    """Run herdr-lane-sweep and wait for it when ten minutes have passed since the last start.
+
+    Its output goes to a log file.
+
+    Fail-open: nothing here changes the wake run's stdout or exit code.
+    """
+    stamp_file = state_dir() / "herdr-lane-sweep.stamp"
+    log_file = state_dir() / "herdr-lane-sweep.log"
+    if not sweep_is_due(stamp_file):
+        return
+    # Stamped before the run, so a failing sweep is retried at the next interval and not at every timer run.
+    try:
+        stamp_file.parent.mkdir(parents=True, exist_ok=True)
+        stamp_file.touch()
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {stamp_file}: {error}", file=sys.stderr)
+        return
+    sweep = pathlib.Path(__file__).resolve().parent / "herdr-lane-sweep"
+    try:
+        with log_file.open("w") as log:
+            try:
+                # Own process group, so a timeout kills the sweep and the git and close children under it.
+                process = subprocess.Popen([str(sweep)], stdin=subprocess.DEVNULL, stdout=log,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    process.wait(timeout=SWEEP_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired as error:
+                    # The leader can exit just as the wait times out, leaving an empty group.
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    log.write(f"herdr-wake-limited: {sweep} killed after {SWEEP_TIMEOUT_SECONDS}s: {error}\n")
+            except (OSError, subprocess.SubprocessError) as error:
+                log.write(f"herdr-wake-limited: could not run {sweep}: {error}\n")
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {log_file}: {error}", file=sys.stderr)
+
+
 def main():
     if len(sys.argv) > 1:
         if sys.argv[1] in ("-h", "--help"):
@@ -202,6 +265,8 @@ def main():
                    if handle_pane(agent, noticed, under_tuios)}
     if not under_tuios and still_stuck != noticed:
         write_noticed(noticed_file, still_stuck)
+    if not under_tuios:
+        run_lane_sweep()
     return 0
 
 

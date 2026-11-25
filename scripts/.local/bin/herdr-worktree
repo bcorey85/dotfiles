@@ -57,6 +57,9 @@
 # lane is then the steps above. `herdr-lane-resume <name>` reopens a lane from its entry.
 # A run without --fork writes no entry.
 #
+# Once the arguments and the repo are checked, each run goes on with herdr-lane-sweep, which closes the lanes whose
+# branch is merged; a failed sweep only warns.
+#
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
 
@@ -165,7 +168,7 @@ if [ -z "$base" ]; then
             || default_branch=""
         if [ -n "$default_branch" ]; then
             base="$default_branch"
-            git fetch --quiet origin "${default_branch#origin/}" \
+            GIT_TERMINAL_PROMPT=0 git fetch --quiet origin "${default_branch#origin/}" \
                 || echo "herdr-worktree: fetch failed; branching off the local $base" >&2
         else
             echo "herdr-worktree: origin/HEAD unset; branching off HEAD (git remote set-head origin --auto fixes it)" >&2
@@ -192,6 +195,8 @@ if [ -n "$fork" ]; then
         | jq -r 'select(.result.pane.agent == "claude") | .result.pane.agent_session.value // empty')
     [ -n "$claude_session" ] || { echo "herdr-worktree: --fork needs a claude pane" >&2; exit 1; }
 fi
+
+"$bin_dir/herdr-lane-sweep" >&2 || echo "herdr-worktree: lane sweep failed; the run goes on" >&2
 
 # An entry left by an earlier lane of this name would keep its brief and report-to, because
 # `lanes.py add` replaces an entry only when its worktree folder is gone and the folder is made next.
@@ -267,8 +272,11 @@ herdr-api workspace focus "$ws" >/dev/null
 # the run: the workspace is already open, so it warns and the fork still starts.
 if [ -n "$fork" ]; then
     reports_to=$(python3 "$session_pane" sender 2>/dev/null | jq -r '.name // empty' 2>/dev/null) || reports_to=""
+    # The commit the lane branch starts from, so herdr-lane-sweep can tell a lane with work of its own from a new one.
+    base_commit=$(git -C "$worktree" rev-parse --verify HEAD 2>/dev/null) || base_commit=""
     if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
-        --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" 2>&1 >/dev/null); then
+        --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" \
+        ${base_commit:+--base-commit "$base_commit"} 2>&1 >/dev/null); then
         lane_file=$(python3 "$lanes_cli" path "$label" 2>/dev/null | jq -r '.file // empty' 2>/dev/null) || lane_file=""
         lane_file_note=""
         [ -z "$lane_file" ] || lane_file_note="; the lane file is $lane_file"

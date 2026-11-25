@@ -8,9 +8,15 @@ TOOLKIT_TOOLS_LIB = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".
 
 def copy_toolkit_tools_lib(root):
     """Copy the library a script sources to <root>/lib, where a copy of the script in <root>/bin finds it."""
+    copy_script_lib_modules(root, TOOLKIT_TOOLS_LIB.name)
+
+
+def copy_script_lib_modules(root, *module_names):
+    """Copy the named scripts/.local/lib modules (for example "lane_list.py") to <root>/lib."""
     lib_dir = pathlib.Path(root) / "lib"
     lib_dir.mkdir(exist_ok=True)
-    shutil.copy(TOOLKIT_TOOLS_LIB, lib_dir / TOOLKIT_TOOLS_LIB.name)
+    for module_name in module_names:
+        shutil.copy(TOOLKIT_TOOLS_LIB.parent / module_name, lib_dir / module_name)
 
 
 def write_stub(path, body):

@@ -1384,6 +1384,17 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertNotIn("notes.py", backup.saved)
         self.assertIn("app.py", backup.saved)
 
+    def test_a_finding_naming_a_file_by_a_trailing_part_gets_that_file_backed_up(self):
+        (self.repo / "lib").mkdir()
+        (self.repo / "lib" / "x.py").write_text("x = 1\n")
+        host = self.ruled_host()
+        listing = ["app.py", "lib/x.py"]
+
+        with mock.patch.object(review_loop_ruling_check.script_utils, "repo_file_paths", return_value=listing):
+            backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], ["x.py:3 wrong name"])
+
+        self.assertIn("lib/x.py", backup.saved)
+
     def test_a_ruling_check_that_cannot_reach_the_judge_keeps_the_unreverted_findings_open(self):
         host = RulingCheckHost()
         host.repo = str(self.repo)
@@ -7278,6 +7289,30 @@ class FixRoundWiringTest(unittest.TestCase):
         lint_repairs = [result for name, result in loop.late_repairs if name == review_loop_pass_names.LINT_FIX_PASS]
         self.assertEqual(len(lint_repairs), 1)
         self.assertEqual(lint_repairs[0].changed, ["app.py"])
+
+    def test_a_lint_repair_after_a_fix_round_is_in_the_diff_and_files_the_next_round_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            fix_result = review_loop_coder.CoderResult("1. fixed", ["fix diff"], ["app.py"])
+            lint_result = review_loop_coder.CoderResult("", ["lint diff"], ["lint_only.py"])
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                if call_name != review_loop_pass_names.LINT_FIX_PASS:
+                    return fix_result
+                loop.note_late_repair(call_name, lint_result)
+                return lint_result
+
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py", "lint_only.py"]), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+            diff_text = pathlib.Path(loop.round_two_fix_diff_path).read_text()
+
+        self.assertIn("lint diff", diff_text)
+        self.assertEqual(loop.dispatches, [("code-reviewer", ["app.py", "lint_only.py"])])
 
     def test_a_repair_before_a_later_review_round_is_dropped_from_late_repairs(self):
         with tempfile.TemporaryDirectory() as tmp:

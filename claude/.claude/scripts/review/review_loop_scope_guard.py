@@ -36,9 +36,7 @@ class PassScope(typing.NamedTuple):
         of its path, with a `/` or a `.` in it, that no other repo file ends with."""
         if path in self.allowed or self.has_own_guard(path):
             return True
-        if script_utils.texts_name_path(self.finding_texts, path, self.root):
-            return True
-        return script_utils.texts_name_path_by_suffix(self.finding_texts, path, self.root, self.repo_files)
+        return script_utils.texts_name_repo_file(self.finding_texts, path, self.root, self.repo_files)
 
 
 def paths_differing_from_head(repo, head, *diff_options):

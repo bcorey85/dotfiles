@@ -110,6 +110,19 @@ class TextsNamePathBySuffixTest(unittest.TestCase):
             with self.subTest(texts=texts, path=path):
                 self.assertEqual(script_utils.texts_name_path_by_suffix(texts, path, "/repo", known), expected)
 
+    def test_texts_name_repo_file_takes_a_full_name_a_dot_slash_name_or_a_unique_trailing_part(self):
+        known = ["lib/x.py", "a/dup.py", "b/dup.py"]
+        cases = [
+            (["- `lib/x.py:1` wrong"], "lib/x.py", True),
+            (["- `./lib/x.py:1` wrong"], "lib/x.py", True),
+            (["- `x.py:1` wrong"], "lib/x.py", True),
+            (["- `dup.py:1` wrong"], "a/dup.py", False),
+            (["- `y.py:1` wrong"], "lib/x.py", False),
+        ]
+        for texts, path, expected in cases:
+            with self.subTest(texts=texts, path=path):
+                self.assertEqual(script_utils.texts_name_repo_file(texts, path, "/repo", known), expected)
+
     def test_a_dot_slash_prefix_reads_as_the_repo_relative_path(self):
         self.assertTrue(script_utils.texts_name_path(["- `./lib/x.py:1` wrong"], "lib/x.py", "/repo"))
         self.assertFalse(script_utils.texts_name_path(["- `../lib/x.py:1` wrong"], "lib/x.py", "/repo"))

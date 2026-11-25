@@ -120,7 +120,8 @@ class RulingCheck:
             raise self.fault_before_pass(
                 findings, f"tool fault: {error} so fix pass {call_name} did not run.") from error
         self.ruling_ask_paths_before = frozenset(self.approval_ask_paths)
-        named = [path for path in listing if script_utils.texts_name_path(issue_texts, path, self.repo)]
+        named = [path for path in listing
+                 if script_utils.texts_name_repo_file(issue_texts, path, self.repo, self.ruling_files_before)]
         backup_dir = self.out / CHECK_FOLDER / call_name / BACKUP_FOLDER
         backup = file_backup.save_files(self.repo, {*paths, *named} - self.coder_held_files(), backup_dir)
         try:

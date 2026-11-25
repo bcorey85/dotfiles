@@ -20,7 +20,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 Every gate, lint, class-closure or stale-prose repair that changed code was kept for the final late-repair read and
 never cleared, so a converged run re-read a lint diff from round one that a later round had already reviewed. The loop
-now empties the list as each review round begins. The lint repair after the last fix pass is still read.
+now empties the list as each review round begins. A lint repair made after a fix pass is put into that round's fix
+diff and its second-round plan, so the next round reads it before the list is emptied. A lint repair after the last
+fix pass of the round budget is still read at the end.
 
 ## Evidence
 

@@ -60,8 +60,6 @@ PATHS_KEY = "paths"
 WANTED_KEY = "wanted"
 WANTED_FIELDS = {"text": str, "change": str, "path": str, "line": int, "title": str}
 WANTED_SHAPE = "{" + ", ".join(WANTED_FIELDS) + "}"
-WANTED_TARGET_PREFIX = "(edit to `"
-WANTED_TARGET_SUFFIX = "`)"
 
 
 def wanted_edit_target(path):

@@ -64,7 +64,7 @@ from shell_command import (
     split_command_steps,
 )
 from shell_directory import path_word
-from shell_quoting import quoted_positions
+from shell_quoting import unquoted_matches
 from shell_statements import shell_code
 from shell_steps import runs_only_after_success, step_surely_ran
 
@@ -401,8 +401,7 @@ def without_systemd_run(segment):
         return segment
 
     # The blanks inside quotes or after a backslash do not end a word, so a quoted option value stays one word.
-    quoted = quoted_positions(segment)
-    word_gaps = [gap for gap in re.finditer("[ \t\r\n]+", segment) if gap.start() not in quoted]
+    word_gaps = unquoted_matches(re.compile("[ \t\r\n]+"), segment)
     if len(word_gaps) < dropped_count:
         return segment
     return segment[word_gaps[dropped_count - 1].end():]

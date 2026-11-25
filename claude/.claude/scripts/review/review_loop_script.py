@@ -683,11 +683,13 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.fixed += unseen(self.fixed, applied)
         self.drop_open([*applied, *reverted_findings])
         self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
+        repairs_before_lint = len(self.late_repairs)
         self.lint_fixed_files(changed)
+        lint_repairs = [lint_result for _name, lint_result in self.late_repairs[repairs_before_lint:]]
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
-            self.plan_second_round(round_fix, result, skipped_findings)
+            self.plan_second_round(round_fix, result, skipped_findings, lint_repairs)
         # A toolkit .md file is code, so only a docs-class fix that changes only .md files skips the re-review.
         docs_only = (bool(applied) and all(item.finding_class == handback.DOCS_CLASS for item in applied)
                      and all(path.endswith(".md") for path in changed))
@@ -732,14 +734,17 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             skipped = any(folded_into(item, finding["finding"]) for item in skipped_findings)
             finding["actioned"] = "skipped_fp" if skipped else "fixed"
 
-    def plan_second_round(self, round_fix, result, skipped_findings):
-        """Writes the round's fix diff for the next reviewers and plans which of them run."""
+    def plan_second_round(self, round_fix, result, skipped_findings, lint_repairs=()):
+        """Writes the round's fix diff for the next reviewers and plans which of them run. The diff and the changed
+        files hold the lint repairs made after the fix pass, which `walk` then drops from `late_repairs`."""
+        diffs = [*result.diffs, *(diff for repair in lint_repairs for diff in repair.diffs)]
+        changed = [*result.changed, *(path for repair in lint_repairs for path in repair.changed)]
         fix_diff_file = self.out / f"round{self.iter_count}-fix.diff"
-        fix_diff_text = "\n\n".join(result.diffs)
+        fix_diff_text = "\n\n".join(diffs)
         fix_diff_file.write_text(fix_diff_text)
         self.round_two_fix_diff_path = str(fix_diff_file)
         self.docs_added = added_ranges(fix_diff_text)
-        self.dispatches = second_round_plan(round_fix, result.changed, skipped_findings, result.diffs)
+        self.dispatches = second_round_plan(round_fix, changed, skipped_findings, diffs)
 
     def fix_first(self, texts):
         """The fix coder on the caller's findings, before any reviewer. Their skips and fixes file no finding row."""
@@ -957,8 +962,8 @@ def walk(loop, check_command, gate_commands):
     before review credit."""
     while loop.iter_count < ROUND_BUDGET and loop.dispatches:
         loop.count_fix_round()
-        # A reviewer reads the files of every repair made before this round, so only a repair after the last read is
-        # left for `read_late_repairs`.
+        # The diff of the last fix round holds the lint repairs made after its fix pass, so only a repair made after
+        # that diff is left for `read_late_repairs`.
         loop.late_repairs = ()
         round_fix, round_nits = loop.review_round()
         if not loop.fix_round(round_fix, round_nits):

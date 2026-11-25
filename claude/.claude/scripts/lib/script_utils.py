@@ -974,6 +974,14 @@ def texts_name_path_by_suffix(finding_texts, path, root, known_paths):
     return False
 
 
+def texts_name_repo_file(finding_texts, path, root, known_paths):
+    """Whether the finding texts name `path`: in full, with a `./` prefix, or by a trailing part of it that no other of
+    `known_paths` ends with."""
+    if texts_name_path(finding_texts, path, root):
+        return True
+    return texts_name_path_by_suffix(finding_texts, path, root, known_paths)
+
+
 def pop_option(arguments, flag):
     """(the arguments without the first `flag` and its value, that value). The value is None when `flag` is not
     given and "" when `flag` is the last word."""

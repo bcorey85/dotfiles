@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,34 @@ class UncommittedHunksTest(unittest.TestCase):
         self.git("commit", "-q", "-m", "sub")
         (sub / "inner.txt").write_text("1\nTWO\n")
         self.assertEqual(uncommitted_hunks.hunk_lines(sub), ["inner.txt:2"])
+
+    def test_raw_entries_sort_into_changed_deleted_and_submodule_paths(self):
+        raw = (":160000 160000 aaa bbb M\0sub\0:100644 100644 aaa bbb M\0a.txt\0"
+               ":100644 100644 aaa bbb R100\0old.txt\0new.txt\0:100644 000000 aaa 000 D\0gone.txt\0"
+               ":100644 100644 aaa bbb C75\0src.txt\0copy.txt\0:160000 000000 aaa 000 D\0oldsub\0")
+
+        changes = uncommitted_hunks.parse_raw_changes(raw)
+
+        self.assertEqual(changes.changed, {"sub", "a.txt", "new.txt", "gone.txt", "copy.txt", "oldsub"})
+        self.assertEqual(changes.submodules, {"sub"}, "a path with mode 160000 is a submodule")
+        self.assertEqual(changes.deleted, {"gone.txt", "oldsub"})
+
+    def test_a_moved_submodule_commit_is_named_changed_with_no_line_run(self):
+        sub_source = self.repo.parent / (self.repo.name + "-sub-source")
+        sub_source.mkdir()
+        self.addCleanup(shutil.rmtree, sub_source, True)
+        subprocess.run(["git", "init", "-q"], cwd=sub_source, env=GIT_ENV, check=True, capture_output=True)
+        (sub_source / "f.txt").write_text("1\n")
+        subprocess.run(["git", "add", "."], cwd=sub_source, env=GIT_ENV, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-q", "-m", "s"], cwd=sub_source, env=GIT_ENV, check=True,
+                       capture_output=True)
+        self.git("-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub_source), "sub")
+        self.git("commit", "-q", "-m", "add sub")
+        (self.repo / "sub" / "f.txt").write_text("2\n")
+        subprocess.run(["git", "commit", "-q", "-am", "move"], cwd=self.repo / "sub", env=GIT_ENV, check=True,
+                       capture_output=True)
+
+        self.assertEqual(uncommitted_hunks.hunk_lines(self.repo), ["sub (changed)"])
 
     def test_stop_lines_is_prefixed_for_a_repo_and_names_the_reason_when_the_packet_has_no_repo(self):
         (self.repo / "new.txt").write_text("n\n")

@@ -94,7 +94,7 @@ def packet_message(outcome):
     if outcome["check_overridden"]:
         fields["check_overridden"] = handback.CHECK_OVERRIDDEN
     for key in ("left_alone", "check_changed", "check_rewrote_edited", "check_created", "tool_fault",
-                "no_code_ruling_broken", "adopted_unapplied", "caller_steps"):
+                "no_code_ruling_broken", "adopted_unapplied", "handback_edits"):
         if outcome.get(key):
             fields[key] = outcome[key]
     return json.dumps(fields, ensure_ascii=False)
@@ -110,7 +110,7 @@ EMPTY_OUTCOME = {
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],
     "unreviewed_fix": False, "scoped_tests": "", "tool_fault": "", "plan_impacts": [],
     "no_code_ruling_broken": [], "check_overridden": False, "adopted_unapplied": [],
-    "caller_steps": [],
+    "handback_edits": [],
 }
 
 

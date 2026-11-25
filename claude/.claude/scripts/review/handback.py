@@ -75,14 +75,14 @@ PACKET_KEYS = ["status", "iter", "spec_iter", "fixed", "skipped_fp", "blockers",
                "left_alone", "unrun_reviewer", "plan_impacts", "no_code_ruling_broken"]
 # Keys only the review-loop script writes; the reviewer agent's packet template leaves them out.
 SCRIPT_PACKET_KEYS = ["plan_impact_cause", "review_round", "held_unfixed", "check_overridden",
-                       "adopted_unapplied", "caller_steps"]
+                       "adopted_unapplied", "handback_edits"]
 # The `check_overridden` value of a run whose full check was the launch's `--test` commands.
 CHECK_OVERRIDDEN = "yes"
 LIST_KEYS = ["fixed", "skipped_fp", "held_unfixed", "blockers", "findings_remaining", "ask", "nit", "files_touched",
              "check_changed", "check_rewrote_edited", "check_created", "blocked_agents", "open_classes", "left_alone",
-             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "caller_steps"]
+             "plan_impacts", "no_code_ruling_broken", "adopted_unapplied", "handback_edits"]
 # The list fields whose every JSON entry is a string.
-STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied", "caller_steps")
+STRING_LIST_KEYS = ("open_classes", "left_alone", "adopted_unapplied", "handback_edits")
 # The list fields whose every entry is a mapping, and the text fields each entry requires.
 ENTRY_TEXT_KEYS = {"fixed": ("finding",), "skipped_fp": ("item",), "held_unfixed": ("item", "reason"),
                    "findings_remaining": ("finding",), "ask": ("question",), "plan_impacts": ("text",),
@@ -626,17 +626,16 @@ def no_code_ruling_lines(packet):
             for broken in packet["no_code_ruling_broken"]]
 
 
-CALLER_STEP_DUTY = ("Caller steps: apply each Caller step's ruled change to the sign-off line it names, then record "
-                    "who ruled and when in the decision log.")
+HANDBACK_EDIT_DUTY = ("Hand-back edits: apply each Hand-back edit's ruled change to the sign-off line it names, "
+                      "then record who ruled and when in the decision log.")
 
 
-def caller_step_lines(packet):
-    """The duty line and one `Caller step:` line per ruled finding on a sign-off line, which no coder edits; [] when
-    there is none."""
-    steps = packet["caller_steps"]
-    if not steps:
+def handback_edit_lines(packet):
+    """The duty line and one `Hand-back edit:` line per entry of `packet["handback_edits"]`; [] when there is none."""
+    edits = packet["handback_edits"]
+    if not edits:
         return []
-    return [CALLER_STEP_DUTY, *(f"Caller step: {step}" for step in steps)]
+    return [HANDBACK_EDIT_DUTY, *(f"Hand-back edit: {edit}" for edit in edits)]
 
 
 def held_unfixed_text(entry):
@@ -664,7 +663,7 @@ def render(packet, skill, sections=()):
                                                                       for entry in packet["held_unfixed"]))
     lines += full_check_lines(packet)
     lines += no_code_ruling_lines(packet)
-    lines += caller_step_lines(packet)
+    lines += handback_edit_lines(packet)
     if packet["tool_fault"]:
         lines.append("Tool fault: " + packet["tool_fault"])
     load_bearing = packet["load_bearing_clean"]

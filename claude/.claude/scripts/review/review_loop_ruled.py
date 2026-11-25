@@ -258,13 +258,13 @@ class RuledFindings:
         # path -> base of each saved approval path that a kept held packet waits on; no ask is filed for it
         self.kept_held_bases = {}
         # the texts of the findings the user accepted, which a fix-first run applies;
-        # one on a sign-off line goes to caller_steps
+        # one on a sign-off line goes to handback_edits
         self.user_ruled = []
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
         self.adopted = {}  # finding text -> the AdoptedRuling of each finding whose plan change a ruling adopted
         self.adopted_unapplied = []  # the ruling text of each adopted finding the loop stopped on as unapplied
-        self.caller_steps = []  # the steps for ruled findings on a sign-off line, which no coder edits
+        self.handback_edits = []  # the hand-back edits for ruled findings on a sign-off line, which no coder edits
         self.session_id = ""  # the session whose store holds the rulings; an applied ruling is recorded there
 
     @property

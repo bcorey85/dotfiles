@@ -1,7 +1,8 @@
 """review_loop_signoffs.py: sign-off lines of a decision log are never edited by a coder. A finding on one, or one
 that objects to a recorded ruling, goes to the packet's asks instead of a coder; a user- or session-ruled one goes to
-the packet's caller steps, which name the file, the line and the ruled text. After each coder pass, a file whose
-sign-off lines changed or vanished is put back and an ask names the entry and the reviewer's objection."""
+the packet's hand-back edits, which name the file, the line and the ruled text, except a session-ruled one on a user's
+sign-off line, which stays an ask. After each coder pass, a file whose sign-off lines changed or vanished is put
+back and an ask names the entry and the reviewer's objection."""
 import pathlib
 import typing
 
@@ -12,11 +13,13 @@ import review_loop_coder
 import signoff_lines
 from finding_record import parse_finding
 from review_loop_held import held_path_in_repo
+from review_loop_prompts import session_ruled_issue, user_ruled_issue
 from review_loop_put_back import put_back_lines
 from review_loop_ruled import CODER_GATE
 
 SIGNOFF_ASK_NOTE = "[sign-off] a recorded ruling that no coder edits; the caller routes it"
-CALLER_STEP_NOTE = "[sign-off] a ruled change to a recorded ruling that no coder edits; the caller applies it. Ruled"
+HANDBACK_EDIT_NOTE = "[sign-off] a ruled change to a recorded ruling that no coder edits; the caller applies it"
+SESSION_ON_USER_LINE_NOTE = "A session ruled this, but the line records the user's sign-off; only the user rules it"
 PUT_BACK_NOTE = "[sign-off] a coder pass changed or removed this recorded ruling; the loop put the file back"
 
 
@@ -67,19 +70,34 @@ def finding_hits_signoff(repo, finding):
     return bool(plan_format.SESSION_RULING_MARK.search(finding.text))
 
 
-def signoff_ask(repo, finding):
-    """The ask item for a finding a coder must not get."""
+def signoff_ask(repo, finding, session_ruled=False):
+    """The ask item for a finding a coder must not get.
+
+    `session_ruled` adds why a session's ruling did not settle it.
+    """
     path = held_path_in_repo(finding.path, repo)
     label = signoff_entry_line(repo, path, finding.line)
-    return parse_finding(f"{label} {SIGNOFF_ASK_NOTE}. Reviewer's objection: {finding.text}")
+    note = f"{SIGNOFF_ASK_NOTE}. {SESSION_ON_USER_LINE_NOTE}." if session_ruled else f"{SIGNOFF_ASK_NOTE}."
+    return parse_finding(f"{label} {note} Reviewer's objection: {finding.text}")
 
 
-def caller_step(repo, finding):
-    """The step handed to the caller for a ruled finding on a sign-off line: the file, the line and the ruled text. The
-    loop never edits the line, so the caller applies the ruled change."""
+def finding_on_user_signoff(repo, finding):
+    """True when the finding's sign-off line records a ruling by the user, which no session ruling stands in for. It
+    fails closed: an unreadable file reads as a user's line, so the finding stays an ask."""
+    path = held_path_in_repo(finding.path, repo)
+    text = hook_input.read_file_text(pathlib.Path(repo) / path, errors="replace")
+    if text is None:
+        return True
+    return signoff_lines.records_user_signoff(text, finding.line, pathlib.PurePath(path).name)
+
+
+def handback_edit(repo, finding, ruled_text):
+    """The edit handed to the caller for a ruled finding on a sign-off line: the file, the line and the ruled text,
+    marked with who ruled and when. The loop never edits the line, so the caller applies the ruled change and records
+    the ruler."""
     path = held_path_in_repo(finding.path, repo)
     label = signoff_entry_line(repo, path, finding.line)
-    return f"{label} {CALLER_STEP_NOTE}: {finding.text}"
+    return f"{label} {HANDBACK_EDIT_NOTE}. Ruled finding: {ruled_text}"
 
 
 class SignoffSnapshot(typing.NamedTuple):
@@ -126,8 +144,8 @@ class SignoffRuns:
     """The LoopRun methods that keep sign-off lines out of a coder's hands."""
 
     def split_signoff_items(self, items):
-        """Returns (kept, signoff): the items a coder may get, and those that hit a sign-off line, whose asks or caller
-        steps are filed here so no later filter drops them."""
+        """Returns (kept, signoff): the items a coder may get, and those that hit a sign-off line, whose asks or
+        hand-back edits are filed here so no later filter drops them."""
         kept, signoff = [], []
         for item in items:
             # An adopted change is the user's own ruling: no ask re-asks it.
@@ -135,17 +153,28 @@ class SignoffRuns:
                 kept.append(item)
                 continue
             signoff.append(item)
-            # A ruled finding is no new question: the caller applies it, so it files no ask and no coder gets it.
-            if item.text in self.ruled_texts:
-                self.add_caller_step(caller_step(self.repo, item))
+            # A ruled finding is no new question: the caller applies it, so it files no ask and no coder gets it. A
+            # session ruling never stands in for the user's sign-off: a session-ruled one on a user's line stays an ask.
+            ruled_text = self.ruled_text_for_handback(item)
+            if ruled_text is not None:
+                self.add_handback_edit(handback_edit(self.repo, item, ruled_text))
                 continue
-            self.add_ask(CODER_GATE, signoff_ask(self.repo, item))
+            self.add_ask(CODER_GATE, signoff_ask(self.repo, item, item.text in self.session_ruled))
         return kept, signoff
 
-    def add_caller_step(self, step):
-        """Files `step` for the packet's caller steps once: a later round that sees the same finding adds no copy."""
-        if step not in self.caller_steps:
-            self.caller_steps.append(step)
+    def ruled_text_for_handback(self, item):
+        """The item's text marked with its ruler when the caller may apply the ruled change, else None: a user-ruled
+        finding, or a session-ruled one on a line the session owns."""
+        if item.text in self.user_ruled:
+            return user_ruled_issue(item.text, self.user_ruled_at)
+        if item.text not in self.session_ruled or finding_on_user_signoff(self.repo, item):
+            return None
+        return session_ruled_issue(item.text, self.session_id)
+
+    def add_handback_edit(self, edit):
+        """Files `edit` for the packet's hand-back edits once: a later round that sees the same finding adds no copy."""
+        if edit not in self.handback_edits:
+            self.handback_edits.append(edit)
 
     def without_put_back(self, call_name, result, put_back, findings):
         """The result with each put-back file's diff recomputed from its text before the pass to its restored text: a

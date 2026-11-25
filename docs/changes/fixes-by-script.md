@@ -16,7 +16,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code-step | 171 | 5 |
 | script/review-fix | 74 | 15 |
 | script/review-loop-script | 73 | 15 |
-| script/handback | 56 | 1 |
+| script/handback | 57 | 2 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
@@ -65,6 +65,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
 | script/review-loop-ruled | 5 | 5 |
+| script/reviewed-tree | 5 | 3 |
 | script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
@@ -78,7 +79,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/loop-transcript | 4 | 1 |
 | script/phase-start | 4 | 2 |
 | script/plan-check | 4 | 4 |
-| script/reviewed-tree | 4 | 2 |
+| script/review-loop-packet | 4 | 1 |
 | script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
 | script/wait-loop-gate | 4 | 1 |
@@ -95,7 +96,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
-| script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
 | script/shell-command-words | 3 | 3 |
@@ -109,6 +109,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
+| script/diff-ranges | 2 | 1 |
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
@@ -159,7 +160,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code-stop-record | 1 | 1 |
 | script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
-| script/diff-ranges | 1 | 0 |
 | script/docker-run-names | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
@@ -170,6 +170,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/gate-replay | 1 | 0 |
 | script/git-commit-calls | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |
+| script/git-raw-diff | 1 | 1 |
 | script/herdr-wake-limited | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/human-turn-lookup | 1 | 1 |
@@ -193,10 +194,13 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-loop-docs-kind | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
 | script/review-loop-partial-fix | 1 | 1 |
+| script/review-loop-prompts | 1 | 1 |
+| script/review-loop-signoffs | 1 | 1 |
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |
 | script/shell-variables | 1 | 1 |
+| script/signoff-lines | 1 | 1 |
 | script/simplify-slices | 1 | 1 |
 | script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
@@ -211,6 +215,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/tests-run | 1 | 1 |
 | script/toml-file | 1 | 0 |
 | script/tool-call-flags | 1 | 1 |
+| script/uncommitted-hunks | 1 | 1 |
 | script/viewer-memory | 1 | 1 |
 | script/warn-skip-hooks | 1 | 0 |
 | script/zshrc | 1 | 1 |

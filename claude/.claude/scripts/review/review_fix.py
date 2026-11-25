@@ -255,7 +255,7 @@ def packet_arguments(argv):
 
 def is_outstanding(packet):
     findings_left = any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
-    return findings_left or bool(packet["caller_steps"]) or bool(handback.held_plan_impacts(packet))
+    return findings_left or bool(packet["handback_edits"]) or bool(handback.held_plan_impacts(packet))
 
 
 def stop_for_parse_failure(error, raw_message):
@@ -605,18 +605,18 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    entries = entry_lines(packet) + uncommitted_hunks.cap_stop_lines(packet, state) + handback.caller_step_lines(packet)
+    lines = entry_lines(packet) + uncommitted_hunks.cap_stop_lines(packet, state) + handback.handback_edit_lines(packet)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
-        entries += rerun_lines
+        lines += rerun_lines
     if rerun_note:
-        entries.append(rerun_note)
+        lines.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
         ask_lines = [jumped_line(state), asks_done_line(packet["ask"], state),
                      *review_asks.numbered_ask_lines(packet["ask"], detail=True)]
-    print_action("stop", instruction, *entries, *ask_lines)
+    print_action("stop", instruction, *lines, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:
         print("AIKIDO REPLIES POSTED:")

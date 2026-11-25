@@ -67,13 +67,21 @@ def step_is_uncapped_test_run(words):
     if not words or HELP_FLAGS.intersection(words):
         return False
 
-    final_words = shell_command.command_after_wrappers(words)
-    if not final_words or os.path.basename(final_words[0]) != "systemd-run":
-        return runs_tests_in(final_words)
-
-    if systemd_run_slice(final_words) in SHARED_SLICE_NAMES:
+    wrapped_words = shell_command.command_after_wrappers(words)
+    names_systemd_run = bool(wrapped_words) and os.path.basename(wrapped_words[0]) == "systemd-run"
+    if names_systemd_run and systemd_run_slice(wrapped_words) in SHARED_SLICE_NAMES:
         return False
-    return runs_tests_in(program_after_systemd_run(final_words))
+    return runs_tests_in(test_program_words(words))
+
+
+def test_program_words(words):
+    """The words of the program a step runs, with wrappers and a `systemd-run` front peeled off."""
+    wrapped_words = shell_command.command_after_wrappers(words)
+    if not wrapped_words:
+        return wrapped_words
+
+    program_words = program_after_systemd_run(wrapped_words)
+    return shell_command.command_after_wrappers(program_words)
 
 
 def runs_tests_in(words):
@@ -94,10 +102,7 @@ def uncapped_test_run(command):
 
 def systemd_run_options_end(words):
     """The index of the first word after the options of a `systemd-run` step."""
-    index = 1
-    while index < len(words) and words[index].startswith("-"):
-        index += 2 if words[index] in SYSTEMD_RUN_VALUE_OPTIONS else 1
-    return index
+    return shell_command.skip_options(words, 1, SYSTEMD_RUN_VALUE_OPTIONS)
 
 
 def program_after_systemd_run(words):
@@ -134,7 +139,7 @@ def step_is_full_suite(words):
     if not words or HELP_FLAGS.intersection(words):
         return False
 
-    final_words = program_after_systemd_run(shell_command.command_after_wrappers(words))
+    final_words = test_program_words(words)
     if not final_words:
         return False
 

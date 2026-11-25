@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The capped form in lib/memory_cap_scope.py gains `--slice=tests.slice` and keeps the 8G cap per run. The gate denies a systemd-run test step that names no slice or another slice, and prints the new form. A new stow package, `systemd`, holds `~/.config/systemd/user/tests.slice` (MemoryMax=12G, MemorySwapMax=0). install/stow creates the user unit folder first, stows the package on every platform but mac, and reloads the user manager. The lane brief shows the new form.
+The capped form in lib/memory_cap_scope.py gains `--slice=tests.slice` and keeps the 8G cap per run. The gate denies a systemd-run test step that names no slice or another slice, and prints the new form. A new stow package, `systemd`, holds `~/.config/systemd/user/tests.slice` (MemoryMax=12G, MemorySwapMax=0). install/stow creates the user unit folder first, stows the package on every platform but mac, and reloads the user manager. The lane brief shows the new form. Both step checks peel a systemd-run wrapper through one helper, test_program_words, and the slice total lives only in the unit file.
 
 ## Evidence
 

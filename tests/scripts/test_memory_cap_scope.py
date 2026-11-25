@@ -32,7 +32,13 @@ CAUGHT = {
     "systemd_run_with_another_slice_word": "systemd-run --user --scope --slice other -p MemoryMax=4G pytest",
     "systemd_run_slice_named_only_after_the_program": "systemd-run --user --scope pytest --slice=tests.slice",
     "timeout_then_uncapped_systemd_run": "timeout 60 systemd-run --user --scope bash tests/run.sh",
+    "uncapped_systemd_run_then_timeout": "systemd-run --user --scope timeout 600 bash tests/run.sh",
+    "another_slice_systemd_run_then_timeout": ("systemd-run --user --scope --slice=other.slice timeout 60 "
+                                               "bash tests/run.sh"),
+    "uncapped_systemd_run_then_env": "systemd-run --user --scope env FOO=1 bash tests/run.sh",
     "last_slice_is_not_shared": "systemd-run --user --scope --slice=tests.slice --slice=other.slice pytest",
+    "systemd_run_unit_value_then_program": "systemd-run --user --scope -u myunit pytest",
+    "systemd_run_setenv_value_then_program": "systemd-run --user --scope -E A=1 bash tests/run.sh",
 }
 SHARED_SLICE_FORMS = ("--slice=tests.slice", "--slice tests.slice", "--slice=tests", "--slice tests")
 PASSED = {
@@ -49,6 +55,12 @@ PASSED = {
                                 "python3 -m unittest"),
     "last_slice_is_shared": "systemd-run --user --scope --slice=other.slice --slice=tests.slice pytest",
     "capped_pytest_under_timeout": "timeout 60 systemd-run --user --scope --slice=tests.slice pytest",
+    "capped_with_unit_value": "systemd-run --user --scope -u myunit --slice=tests.slice pytest",
+    "capped_with_setenv_value": "systemd-run --user --scope -E A=1 --slice=tests.slice pytest",
+    "capped_with_long_unit_value": "systemd-run --user --scope --unit myunit --slice=tests.slice pytest",
+    "capped_with_long_property_value": ("systemd-run --user --scope --property MemoryMax=1G "
+                                        "--slice=tests.slice pytest"),
+    "capped_with_long_setenv_value": "systemd-run --user --scope --setenv A=1 --slice=tests.slice pytest",
     # A dangling --slice is fail-open: systemd-run rejects the command itself, so the gate leaves it alone.
     "systemd_run_dangling_slice_swallows_program": "systemd-run --user --scope --slice pytest",
     "systemd_run_dangling_slice_last_word": "echo pytest && systemd-run --user --scope --slice",
@@ -155,6 +167,8 @@ FULL_SUITES = {
     "unittest_discover": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest discover -s bin -p 'test_*.py'",
     "bare_pytest": f"{memory_cap_scope.CAPPED_PREFIX} pytest",
     "npm_test": f"{memory_cap_scope.CAPPED_PREFIX} npm test",
+    "run_sh_under_timeout": f"{memory_cap_scope.CAPPED_PREFIX} timeout 600 bash tests/run.sh",
+    "run_sh_under_env": f"{memory_cap_scope.CAPPED_PREFIX} env FOO=1 bash tests/run.sh",
 }
 TARGETED_RUNS = {
     "unittest_module": f"{memory_cap_scope.CAPPED_PREFIX} python3 -m unittest test_x",
@@ -162,6 +176,7 @@ TARGETED_RUNS = {
     "pytest_node": f"{memory_cap_scope.CAPPED_PREFIX} pytest tests/test_a.py::test_one",
     "parallel_tests_file": f"{memory_cap_scope.CAPPED_PREFIX} python3 tests/parallel_tests.py test_a.py",
     "pytest_help": "pytest --help",
+    "pytest_file_under_timeout": f"{memory_cap_scope.CAPPED_PREFIX} timeout 60 pytest tests/test_a.py",
 }
 
 

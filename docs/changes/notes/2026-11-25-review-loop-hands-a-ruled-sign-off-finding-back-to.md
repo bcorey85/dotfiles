@@ -23,6 +23,12 @@ line. The coder never sees it, and no `[sign-off]` ask is filed for it. The pack
 carry it as a `Caller step:` line with the file, the line and the ruled text. It does not count toward the round cap.
 The loop still never edits a sign-off line. The owner line in `claude/.claude/scripts/CLAUDE.md` says so.
 
+The cap-reached stop also names the uncommitted change, so the dirty tree it leaves is no longer a bare "stays dirty":
+`review/uncommitted_hunks.py` prints, each behind an `Uncommitted: ` prefix so a caller does not copy one into a
+handoff, one `path:first-last` line per changed run, `path (changed)` for a binary, mode-only or renamed file with no
+line run, `path (deleted)` and `path (untracked)`. A clean tree gives one "no uncommitted change" line; a failed git
+call gives "not read: a git call failed"; a packet whose repo is gone gives "not read" with the reason.
+
 ## Evidence
 
 Judgment: a relayed ruling on a Plan Deviations line came back as a fresh `[sign-off]` ask on each resume, and the run

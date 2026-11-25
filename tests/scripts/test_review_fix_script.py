@@ -551,6 +551,44 @@ class ReviewFixScriptTest(unittest.TestCase):
         instruction, *entries = printed.call_args.args[1:]
         self.assertNotEqual(instruction, review_fix.SCOPED_RERUN)
         self.assertIn(note, entries)
+        self.assertTrue(any(entry.startswith("Uncommitted: not read: ") for entry in entries), entries)
+
+    def test_the_cap_stop_names_the_uncommitted_hunks_and_untracked_files(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("README.md:1-3", output)
+        self.assertIn("src/logs.ts (untracked)", output)
+
+    def test_the_cap_stop_prefixes_the_hunk_lines_so_they_stay_out_of_the_handoff(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Uncommitted: README.md:1-3", output)
+        self.assertIn("Uncommitted: src/logs.ts (untracked)", output)
+        self.assertNotIn("README.md:1-3", self.dispatch_lines(output))
+
+    def test_a_stop_that_is_not_a_cap_names_no_uncommitted_change(self):
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(BLOCKER)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("(untracked)", output)
+        self.assertNotIn("no uncommitted change", output)
+
+    def test_the_cap_stop_with_no_open_class_still_names_the_uncommitted_hunks(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        closed = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, open_classes=[], files_touched=[])
+        code, output = self.packet(closed)
+        self.assertEqual(code, 0, output)
+        self.assertIn("README.md:1-3", output)
+
+    def test_the_cap_stop_on_a_clean_tree_says_there_is_no_uncommitted_change(self):
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("no uncommitted change", output)
 
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
         no_files = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, files_touched=[])

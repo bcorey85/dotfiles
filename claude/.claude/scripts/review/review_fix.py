@@ -129,6 +129,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
+import uncommitted_hunks
 from ask_outcome_words import HELD, RELAY_USAGE, user_only_numbers
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
@@ -612,6 +613,8 @@ def stop_for_status(packet, options, state):
         entries += rerun_lines
     if rerun_note:
         entries.append(rerun_note)
+    if packet["status"] == CAP_REACHED:
+        entries += uncommitted_hunks.stop_lines(state)
     entries += [f"Caller step: {step}" for step in packet["caller_steps"]]
     ask_lines = []
     if packet["ask"]:

@@ -38,10 +38,10 @@ right to keep it; a resume after the phase was ticked is not.
 
 #### Automated Verification
 
-- New test in `tests/scripts/test_phase_start.py`: a start record at commit H0; a commit that ticks Phase 1 in
-  `docs/plans/x/plan.md`; `--resume` prints the new HEAD and the record's head is HEAD. It fails before the change.
-  A second test: a commit that ticks no phase keeps H0 as the printed base.
-- `python3 tests/parallel_tests.py test_phase_start.py` passes.
+- [ ] **Agent-run**: new tests in test_phase_start.py: a start record at commit H0, then a commit that ticks Phase 1
+  in `docs/plans/x/plan.md`; `--resume` prints the new HEAD and the record's head is HEAD (fails before the change). A
+  commit that ticks no phase keeps H0 as the printed base.
+- [ ] **Tests**: `python3 tests/parallel_tests.py test_phase_start.py`
 
 ## Phase 2: review_fix decide accepts a plan folder
 
@@ -55,9 +55,9 @@ calls `read_text()` on the folder.
 
 #### Automated Verification
 
-- New test (in the test file that covers `append_deviation`, else `tests/scripts/test_plan_format.py`): a folder
-  holding `plan.md` gets the `## Plan Deviations` entry in `plan.md`. It fails before the change.
-- `python3 tests/parallel_tests.py <that test file>` passes, and `test_plan_check.py` still passes.
+- [ ] **Agent-run**: a new test in test_plan_format.py beside the append_deviation tests: a folder holding plan.md
+  gets the Plan Deviations entry in plan.md (fails before the change).
+- [ ] **Tests**: `python3 tests/parallel_tests.py test_plan_format.py test_plan_check.py`
 
 ## Phase 3: the phase end runs the change-file check
 
@@ -82,11 +82,10 @@ refused the commit.
 
 #### Automated Verification
 
-- `tests/scripts/test_pre_commit_hook.py` still passes (the hook's refusal is unchanged).
-- New `tests/scripts/test_phase_change_file.py`: a fixture repo with the check installed and an untracked toolkit file
-  exits 1 naming the path; adding an untracked `docs/changes/notes/2026-x.md` exits 0; a repo without the check exits
-  0. It fails before the change (the script does not exist).
-- `python3 tests/parallel_tests.py test_phase_change_file.py test_pre_commit_hook.py` passes.
+- [ ] **Agent-run**: new test_phase_change_file.py: a fixture repo with the check installed and an untracked toolkit
+  file exits 1 naming the path; an added untracked change note under docs/changes/notes exits 0; a repo without the
+  check exits 0 (fails before the change: the script does not exist). test_pre_commit_hook.py passes unchanged.
+- [ ] **Tests**: `python3 tests/parallel_tests.py test_phase_change_file.py test_pre_commit_hook.py`
 
 ## Phase 4: a coder's denied git write does not stop the run
 
@@ -102,4 +101,5 @@ Bug: a fork copied the task's "commit with a pathspec" into its coder's prompt; 
 
 #### Automated Verification
 
-- `python3 tests/parallel_tests.py test_code_skill_text.py` passes; the new test fails before the change.
+- [ ] **Agent-run**: the new skill-text test fails before the change.
+- [ ] **Tests**: `python3 tests/parallel_tests.py test_code_skill_text.py`

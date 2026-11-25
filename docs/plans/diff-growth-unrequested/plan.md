@@ -12,7 +12,7 @@ passes a set share of the branch. Scripts live in `claude/.claude/scripts/`; tes
 
 ## Phase Status
 
-- [ ] Phase 1: concentration.py prints the docs, tests and code split and flags an oversized part (risk: low)
+- [x] Phase 1: concentration.py prints the docs, tests and code split and flags an oversized part (risk: low)
 
 ## Phase 1: concentration.py prints the docs, tests and code split and flags an oversized part
 

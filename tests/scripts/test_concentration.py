@@ -92,6 +92,64 @@ class ConcentrationGateTest(unittest.TestCase):
 
         self.assertIn("branch 10 added lines", done.stdout)
 
+    def split_line(self):
+        done = self.run_gate(self.base)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout.splitlines()[1]
+
+    def test_split_counts_docs_tests_and_code_and_leaves_out_lockfiles_and_binary_files(self):
+        (self.repo / "blob.bin").write_bytes(b"\x00\x01\x02" * 100)
+        self.commit_files({"src/a/one.py": 50, "tests/test_a.py": 30, "README.md": 20, "docs/x.txt": 10,
+                           "docs/test_x.py": 10, "docs/tests/a.py": 5, "package-lock.json": 500})
+
+        self.assertEqual(self.split_line(), "Diff split: docs 30 (24%), tests 45 (36%), code 50 (40%) of 125 added "
+                         "lines. No part over 40%.")
+
+    def test_oversized_parts_are_named_docs_first(self):
+        self.commit_files({"docs/a.md": 150, "tests/test_a.py": 150, "src/a/one.py": 50})
+
+        self.assertEqual(
+            self.split_line(),
+            "Diff split: docs 150 (43%), tests 150 (43%), code 50 (14%) of 350 added lines. "
+            "OVERSIZED: docs 43% (limit 40%): check each new docs file against a plan step, criterion or finding, "
+            "and cut the rest. "
+            "OVERSIZED: tests 43% (limit 40%): check each new tests file against a plan step, criterion or finding, "
+            "and cut the rest.")
+
+    def test_only_the_part_over_the_limit_is_named(self):
+        self.commit_files({"tests/test_a.py": 150, "src/a/one.py": 150})
+
+        line = self.split_line()
+
+        self.assertIn("OVERSIZED: tests 50%", line)
+        self.assertNotIn("OVERSIZED: docs", line)
+
+    def test_a_total_at_the_trigger_can_be_oversized(self):
+        self.commit_files({"docs/a.md": 123, "src/a/one.py": 177})
+
+        self.assertIn("OVERSIZED: docs 41%", self.split_line())
+
+    def test_a_total_just_under_the_trigger_is_not_oversized(self):
+        self.commit_files({"docs/a.md": 123, "src/a/one.py": 176})
+
+        self.assertNotIn("OVERSIZED", self.split_line())
+
+    def test_a_share_exactly_at_the_limit_is_not_oversized(self):
+        self.commit_files({"docs/a.md": 120, "src/a/one.py": 180})
+
+        self.assertTrue(self.split_line().endswith("No part over 40%."))
+
+    def test_a_part_over_the_share_on_a_branch_under_the_trigger_is_not_oversized(self):
+        self.commit_files({"tests/test_a.py": 200, "src/a/one.py": 50})
+
+        self.assertTrue(self.split_line().endswith("No part over 40%."))
+
+    def test_a_branch_with_no_added_lines_shows_zero_shares(self):
+        self.commit_files({"package-lock.json": 5})
+
+        self.assertEqual(self.split_line(), "Diff split: docs 0 (0%), tests 0 (0%), code 0 (0%) of 0 added lines. "
+                         "No part over 40%.")
+
     def test_a_base_that_does_not_exist_stops_with_a_reason(self):
         done = self.run_gate("0" * 40)
 

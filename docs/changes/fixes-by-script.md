@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -109,6 +109,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/calibration-guard | 2 | 0 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |
+| script/concentration | 2 | 1 |
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/fork-write-scope | 2 | 0 |
@@ -159,7 +160,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code-run-names | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
-| script/concentration | 1 | 0 |
 | script/detach | 1 | 0 |
 | script/diff-ranges | 1 | 0 |
 | script/docker-run-names | 1 | 1 |

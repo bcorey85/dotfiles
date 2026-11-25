@@ -230,6 +230,13 @@ def text_similarity(first, second):
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
 
 
+def rounded_percent(part, total):
+    """`part` as a whole percent of `total`, rounded half up; 0 when `total` is 0."""
+    if total == 0:
+        return 0
+    return (100 * part + total // 2) // total
+
+
 def or_list(words):
     """An English list of plain strings: "a", "a or b", "a, b or c". An empty list gives an empty string."""
     if len(words) < 2:

@@ -15,7 +15,8 @@ fork has no Write tool). It returns when the loop asks for reviewers no pair ans
 when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change, or stays
 cap-reached in a lane whose entry names a reports_to session), and otherwise exits 1 with the reason and the
-restart step. A cap-reached packet also gets the `cap reached after N fix round(s)` line. When that packet is clean
+restart step. A cap-reached packet also gets the `cap reached after N fix round(s)` line (before the STOP line
+when one prints). When that packet is clean
 (converged, or capped and read as deferred) or cap-reached, and holds finding asks, it also opens a
 `phase-asks-open` row in the hand-back store and prints the `phase_asks.py rule` line the session runs to rule on
 them. When this session's latest hand-back for the repo still holds plan impacts that no ruling settles
@@ -482,7 +483,8 @@ def cap_reached_stop_line(repo, packet):
     stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
     return (f"STOP ({CAP_REACHED}): {orchestrator} started this lane and rules on this cap-reached review, "
             "not the user. "
-            f"Write the packet's findings_remaining to {stop_file}, then this Ruling line, copied whole: "
+            f"Write the packet's findings_remaining and any finding asks code_wait printed to {stop_file}, "
+            "then this Ruling line, copied whole: "
             f"\"{cap_ruler_line(orchestrator)}\" And end the run there. "
             "Then follow the ruling with /code resume (with the plan's absolute path when the run has a plan file).")
 
@@ -655,10 +657,9 @@ def phase_asks_notice_or_report(repo, run, loaded):
     return None
 
 
-def print_phase_notices(repo, run, code):
-    """Prints the cap summary line, the phase's ask notice and the plan-impact notice after a finished run;
-    returns the run's exit code, or 1 when the asks could not be opened."""
-    loaded = read_phase_packet(repo)
+def print_cap_summary_and_asks(repo, run, loaded):
+    """Prints the cap summary line (a cap-reached packet only) and the phase's ask notice. `loaded` is
+    `read_phase_packet`'s result. False when the asks could not be opened."""
     if loaded is not None:
         _folder, packet = loaded
         if packet["status"] == CAP_REACHED:
@@ -667,9 +668,18 @@ def print_phase_notices(repo, run, code):
                 print(summary_line)
     notice = phase_asks_notice_or_report(repo, run, loaded)
     if notice is None:
-        return 1
+        return False
     if notice:
         print("\n".join(notice))
+    return True
+
+
+def print_phase_notices(repo, run, code):
+    """Prints the cap summary line, the phase's ask notice and the plan-impact notice after a finished run;
+    returns the run's exit code, or 1 when the asks could not be opened."""
+    loaded = read_phase_packet(repo)
+    if not print_cap_summary_and_asks(repo, run, loaded):
+        return 1
     impact_notice = plan_impact_notice(repo)
     if impact_notice:
         print("\n".join(impact_notice))
@@ -722,10 +732,20 @@ def print_held_fault(repo, launched_folder):
 
 
 def print_ended_loop_and_held(repo, run, launched_folder):
-    """Prints the ended loop's output, the held-file lines, then the step line, and returns the exit code. The
-    step line prints last: the /code skill does the step the fork's last line names."""
+    """Prints the ended loop's output, the held-file lines, then the step line, and returns the exit code. When
+    the step line is the cap STOP, the cap summary line and the finding-asks notice print between the held-file
+    lines and the step line; when the asks cannot be opened, their failure step prints last in place of the STOP
+    line and the exit code is 1. The step line prints last: the /code skill does the step the fork's last line
+    names."""
     code, step_line = print_ended_loop(run)
     print_held_fault(repo, launched_folder)
+    if step_line and step_line != run.restart:
+        # The cap STOP line ends the wait, so `follow_run` never reaches `print_phase_notices` for it. The restart
+        # step is no cap stop, so it gets no cap summary.
+        loaded = read_phase_packet(repo)
+        is_cap_reached = loaded is not None and loaded[1]["status"] == CAP_REACHED
+        if is_cap_reached and not print_cap_summary_and_asks(repo, run, loaded):
+            return 1
     if step_line:
         print(step_line)
     return code

@@ -29,13 +29,21 @@ plan's decision log (`03-decisions.md`, or `## Plan Deviations` when the plan ha
 refused lane file (a stderr note naming code_wait), the output is unchanged and the skill's user-facing cap route
 applies.
 
+On that route the `cap reached after N fix round(s)` summary line and the finding-asks notice (the `phase-asks-open`
+row and the `phase_asks.py rule` line) still print, before the STOP line, which stays last. The STOP line tells the
+fork to write the printed finding asks to stop.md with `findings_remaining`. When the asks cannot be opened, their
+failure step prints last in place of the STOP line and the exit code is 1.
+
 The step line (STOP or restart) now always prints last, on its own line, after the `Tool fault:` and held-released
 lines: `print_ended_loop` returns it and `print_ended_loop_and_held` prints it. The restart step used to end the
 no-output and LOOP_GONE line.
 
 `tests/scripts/test_code_wait.py` covers six cap cases (named ruler, no lane entry, empty `reports_to`, invalid packet,
-a clean packet that reads as deferred, refused lane file) and the step-line order tests, which include the cap stop
-line staying last when the scope file lists a held-released path.
+a clean packet that reads as deferred, refused lane file), the step-line order tests, which include the cap stop
+line staying last when the scope file lists a held-released path, and
+`test_the_cap_summary_and_the_asks_notice_print_before_the_cap_stop_line_in_a_lane`,
+`test_a_cap_reached_packet_with_no_review_out_prints_the_restart_step_and_no_cap_summary` and
+`test_asks_that_cannot_be_opened_keep_their_rerun_step_as_the_last_line_in_a_lane`.
 
 ## Evidence
 

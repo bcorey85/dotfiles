@@ -581,7 +581,7 @@ class WaitReviewTest(unittest.TestCase):
         self.assertEqual(lines[-1], code_wait.PHASE_RESTART_STEP)
 
     def capped_review_in_lane(self, reports_to, clean=False, malformed_lane_file=False, invalid_packet=False,
-                              held_released=False):
+                              held_released=False, no_review_out=False):
         """Runs the review wait on a repo whose packet is cap-reached. By default it holds a blocker, so it stays
         cap-reached; `clean` writes a packet with no blocker, no open class and a passed full check of the current
         tree, which reads as deferred. `reports_to` None writes no lane entry; `malformed_lane_file` writes an
@@ -591,7 +591,7 @@ class WaitReviewTest(unittest.TestCase):
         self.capped_phase_dir = phase_dir
         if held_released:
             (phase_dir / code_wait.SCOPE_FILE).write_text('{"held_changed": [], "held_released": ["a.py"]}')
-        fields = {"status": "cap-reached", "iter": 3, "fixed": [], "ask": [],
+        fields = {"status": "cap-reached", "iter": 3, "fix_rounds": 2, "fixed": [], "ask": [],
                   "blockers": ["[critical] data loss"], "class_closure": "n/a - fixed[] empty",
                   "findings_remaining": [{"finding": "[critical] data loss"}]}
         if clean:
@@ -607,7 +607,8 @@ class WaitReviewTest(unittest.TestCase):
         if not invalid_packet:
             # A packet that fails to parse prints no stop line, which would hide the deferred check under test.
             code_wait.handback.load(packet)
-        (phase_dir / "review.out").write_text(packet + "\n")
+        if not no_review_out:
+            (phase_dir / "review.out").write_text(packet + "\n")
         loop_folder = temp_dir(self)
         (phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{loop_folder}\n")
         (loop_folder / code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet + "\n")
@@ -674,10 +675,45 @@ class WaitReviewTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assert_no_stop_line(lines)
 
+    def test_the_cap_summary_and_the_asks_notice_print_before_the_cap_stop_line_in_a_lane(self):
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=["ASKS NOTICE LINE"]):
+            code, lines, _errors = self.capped_review_in_lane("orch-1")
+
+        self.assertEqual(code, 1)
+        self.assertTrue(lines[-1].startswith("STOP (cap-reached)"), lines[-1])
+        self.assertIn("any finding asks code_wait printed", lines[-1])
+        before_stop = lines[:-1]
+        self.assertTrue(any(line.startswith("cap reached after") for line in before_stop), lines)
+        self.assertIn("ASKS NOTICE LINE", before_stop)
+
+    def test_a_cap_reached_packet_with_no_review_out_prints_the_restart_step_and_no_cap_summary(self):
+        with mock.patch.object(code_wait, "phase_asks_notice", return_value=["ASKS NOTICE LINE"]) as notice:
+            code, lines, _errors = self.capped_review_in_lane("orch-1", no_review_out=True)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(lines[-1], code_wait.PHASE_RESTART_STEP)
+        for line in lines:
+            self.assertFalse(line.startswith("cap reached after"), line)
+        notice.assert_not_called()
+
+    def test_asks_that_cannot_be_opened_keep_their_rerun_step_as_the_last_line_in_a_lane(self):
+        failure = OSError("store row damaged")
+        with mock.patch.object(code_wait, "phase_asks_notice", side_effect=failure):
+            code, lines, _errors = self.capped_review_in_lane("orch-1")
+
+        self.assertEqual(code, 1)
+        self.assertTrue(lines[-1].startswith("Run `"), lines[-1])
+        self.assertTrue(lines[-1].endswith("again to open them for ruling."), lines[-1])
+        self.assertTrue(any("could not be opened for ruling" in line for line in lines), lines)
+        for line in lines:
+            self.assertFalse(line.startswith("STOP (cap-reached)"), line)
+
     def test_a_clean_cap_reached_packet_that_reads_as_deferred_prints_no_stop_line_in_a_lane(self):
         code, lines, _errors = self.capped_review_in_lane("orch-1", clean=True)
 
         self.assertEqual(code, 0)
+        # The summary line shows the packet parsed as cap-reached, so the no-stop result comes from the deferred read.
+        self.assertIn("cap reached after 2 fix round(s)", "\n".join(lines))
         self.assert_no_stop_line(lines)
 
     def test_a_refused_lane_file_prints_no_stop_line_and_names_the_refusal_on_stderr(self):

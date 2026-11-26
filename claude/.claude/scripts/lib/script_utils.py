@@ -113,6 +113,25 @@ def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
     fenced = set()
+    for block, _is_closed in _fenced_blocks(lines):
+        fenced.update(block)
+    return fenced
+
+
+def closed_fence_indexes(lines):
+    """Same as `fenced_line_indexes`, but a fence that is never closed is left out: only blocks with a closing fence
+    count."""
+    fenced = set()
+    for block, is_closed in _fenced_blocks(lines):
+        if is_closed:
+            fenced.update(block)
+    return fenced
+
+
+def _fenced_blocks(lines):
+    """Each fenced block as (its line indexes, whether a closing fence ended it), in order."""
+    blocks = []
+    block = []
     opener = None
     for index, line in enumerate(lines):
         is_opening = opener is None
@@ -120,10 +139,14 @@ def fenced_line_indexes(lines):
             opener = _fence_opener(line)
         if opener is None:
             continue
-        fenced.add(index)
+        block.append(index)
         if not is_opening and _closes_fence(line, opener):
+            blocks.append((block, True))
+            block = []
             opener = None
-    return fenced
+    if block:
+        blocks.append((block, False))
+    return blocks
 
 
 def _fence_opener(line):
@@ -691,6 +714,17 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
         detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished
+
+
+def remote_default_branch(folder, error_type):
+    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set.
+    Raises error_type when git fails for any other reason."""
+    argv = ["git", "-C", str(folder), "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+    finished = run_or_raise(argv, error_type, check=True, ok_codes=(0, 1))
+    name = finished.stdout.strip()
+    if finished.returncode != 0 or not name:
+        return None
+    return name
 
 
 def repo_root(cwd, timeout=None):
@@ -1632,6 +1666,11 @@ def append_jsonl(path, row):
         os.write(descriptor, line)
     finally:
         os.close(descriptor)
+
+
+def largest_entries(totals, limit, size):
+    """The `limit` (key, total) pairs of the dict `totals` whose `size(total)` is largest; ties sort by key."""
+    return sorted(totals.items(), key=lambda pair: (-size(pair[1]), pair[0]))[:limit]
 
 
 def can_append(path):

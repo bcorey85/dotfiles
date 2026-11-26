@@ -17,10 +17,12 @@ from stubs import write_stub
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import lane_entries
 import process_group
+import process_table
 import system_resources
 
 LANE_STATUS = pathlib.Path(os.environ.get("LANE_STATUS_SCRIPT", toolkit_paths.TOOLS_DIR / "lane_status.py"))
 VIEWER_CAP = 1024**3
+BASE_COMMIT_DATE = "2099-01-01T00:00:00+00:00"
 # Any real process holds more than this.
 TINY_CAP = 1
 ROOMY_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 99999999 1% /"
@@ -654,6 +656,287 @@ class LaneStatusTest(unittest.TestCase):
 
                 self.assertEqual(finished.returncode, 2)
                 self.assertIn("LANE_STATUS_MIN_SCRATCH_GB", finished.stderr)
+
+    def git(self, folder, *arguments, commit_date=None):
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        if commit_date:
+            env["GIT_COMMITTER_DATE"] = commit_date
+        finished = subprocess.run(["git", "-C", str(folder), *arguments], env=env, capture_output=True, text=True)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return finished.stdout
+
+    def commit_file(self, folder, name, commit_date=None):
+        (pathlib.Path(folder) / name).write_text(name)
+        self.git(folder, "add", name)
+        self.git(folder, "commit", "-m", name, commit_date=commit_date)
+
+    def git_fixture(self):
+        """A bare origin, a main checkout on master with one commit pushed, and a helper to add lane worktrees."""
+        origin = self.root / "origin.git"
+        subprocess.run(["git", "init", "--bare", "-b", "master", str(origin)], check=True, capture_output=True)
+        self.main = self.root / "main"
+        subprocess.run(["git", "clone", str(origin), str(self.main)], check=True, capture_output=True)
+        self.git(self.main, "checkout", "-b", "master")
+        # Dated a day ahead, so no lane in these tests starts after its branch tip and reads as `no commits` by
+        # accident of the clock; test_git_prints_no_commits_... sets the lane start later on purpose.
+        self.commit_file(self.main, "base", commit_date=BASE_COMMIT_DATE)
+        self.git(self.main, "push", "origin", "master")
+
+    def git_lane(self, name, reports_to):
+        worktree = self.root / f"wt-{name}"
+        self.git(self.main, "worktree", "add", "-b", f"branch-{name}", str(worktree), "master")
+        lane_entries.add_entry(name, str(worktree), str(self.main), f"branch-{name}", "brief", reports_to)
+        return worktree
+
+    def test_git_prints_each_lanes_branch_state(self):
+        self.git_fixture()
+        self.git_lane("merged", "boss")
+        ahead_tree = self.git_lane("ahead", "")
+        self.commit_file(ahead_tree, "a1")
+        self.commit_file(ahead_tree, "a2")
+        (ahead_tree / "scratch.txt").write_text("dirty")
+        lane_entries.add_entry("gone", str(self.root / "vanished"), str(self.main), "branch-gone", "brief", "boss")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master")
+        self.git(self.main, "fetch", "origin")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout.splitlines(), [
+            "ahead: branch-ahead, 2 ahead / 1 behind, 1 dirty, reports_to -",
+            "gone: branch-gone, worktree gone, reports_to boss",
+            "merged: branch-merged, merged, 0 dirty, reports_to boss"])
+
+    def fake_table(self, rows):
+        table = self.root / "process-table.json"
+        table.write_text(json.dumps(rows))
+        return {process_table.TABLE_FILE_VARIABLE: str(table)}
+
+    def test_git_prints_no_commits_for_a_lane_whose_branch_tip_is_older_than_its_start(self):
+        self.git_fixture()
+        zero_tree = self.git_lane("zero", "boss")
+        self.stub_agents([self.agent("idle", zero_tree)])
+        lane_file = lane_entries.lane_file("zero")
+        lane = json.loads(lane_file.read_text())
+        lane["started_at"] = "2099-06-01T00:00:00+00:00"
+        lane_file.write_text(json.dumps(lane))
+        table = self.fake_table([])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["zero: branch-zero, no commits, 0 dirty, reports_to boss"], finished.stdout.splitlines())
+
+    def test_git_marks_a_merged_lane_with_an_idle_agent_as_finished_idle_with_its_claude_rss(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "boss")
+        self.stub_agents([self.agent("idle", worktree)])
+        table = self.fake_table([
+            {"pid": 1, "rss_kb": 1024, "command": "claude", "cwd": str(worktree)},
+            {"pid": 2, "rss_kb": 2048, "command": "claude", "cwd": str(worktree / "sub")},
+            {"pid": 3, "rss_kb": 4096, "command": "claude", "cwd": str(self.root / "elsewhere")},
+            {"pid": 4, "rss_kb": 8192, "command": "node", "cwd": str(worktree)}])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS 3.0 MB), reports_to boss"],
+                         finished.stdout.splitlines())
+
+    def test_git_does_not_mark_a_working_agent_or_an_unmerged_lane_finished_idle(self):
+        self.git_fixture()
+        working_tree = self.git_lane("working", "")
+        ahead_tree = self.git_lane("ahead", "")
+        self.commit_file(ahead_tree, "a1")
+        self.stub_agents([self.agent("working", working_tree), self.agent("idle", ahead_tree)])
+        table = self.fake_table([])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["ahead: branch-ahead, 1 ahead / 0 behind, 0 dirty, reports_to -",
+                          "working: branch-working, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+
+    def test_git_does_not_mark_a_merged_lane_with_no_agent_or_a_working_and_an_idle_agent(self):
+        self.git_fixture()
+        self.git_lane("empty", "")
+        mixed_tree = self.git_lane("mixed", "")
+        self.stub_agents([self.agent("idle", mixed_tree), self.agent("working", mixed_tree)])
+
+        finished = self.run_status("--git", **self.fake_table([]))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["empty: branch-empty, merged, 0 dirty, reports_to -",
+                          "mixed: branch-mixed, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+
+    def test_git_prints_lines_without_a_mark_and_the_reason_when_herdr_api_fails(self):
+        self.git_fixture()
+        self.git_lane("done", "")
+        write_stub(self.bin_dir / "herdr-api", "exit 3")
+
+        finished = self.run_status("--git", **self.fake_table([]))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+        self.assertIn("no finished-idle marks", finished.stderr)
+        self.assertIn("exit 3", finished.stderr)
+
+    def test_git_says_unknown_when_the_process_table_holds_no_working_folders(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "")
+        self.stub_agents([self.agent("idle", worktree)])
+        table = self.fake_table([{"pid": 1, "rss_kb": 1024, "command": "claude", "cwd": None}])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS unknown), reports_to -"],
+                         finished.stdout.splitlines())
+
+    def test_git_prints_an_unreadable_table_reason_once_for_several_finished_lanes(self):
+        self.git_fixture()
+        first = self.git_lane("first", "")
+        second = self.git_lane("second", "")
+        self.stub_agents([self.agent("idle", first), self.agent("idle", second)])
+        broken = self.root / "broken-table.json"
+        broken.write_text("{not json")
+
+        finished = self.run_status("--git", **{process_table.TABLE_FILE_VARIABLE: str(broken)})
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(2, finished.stdout.count("Claude RSS unreadable"))
+        self.assertEqual(1, finished.stderr.count(str(broken)))
+
+    def test_git_prints_the_reason_when_the_process_table_cannot_be_read(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "")
+        self.stub_agents([self.agent("done", worktree)])
+        broken = self.root / "broken-table.json"
+        broken.write_text("{not json")
+
+        finished = self.run_status("--git", **{process_table.TABLE_FILE_VARIABLE: str(broken)})
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS unreadable), reports_to -"],
+                         finished.stdout.splitlines())
+        self.assertIn(str(broken), finished.stderr)
+
+    def test_git_prints_the_reason_when_no_default_branch_exists(self):
+        self.git_fixture()
+        worktree = self.git_lane("odd", "")
+        shutil.rmtree(self.main / ".git" / "refs" / "remotes")
+        (self.main / ".git" / "packed-refs").write_text("")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(
+            finished.stdout,
+            "odd: branch-odd, git failed (no origin/HEAD, origin/master or origin/main), reports_to -\n")
+        self.assertTrue(worktree.is_dir())
+
+    def test_git_prints_git_own_reason_when_the_main_checkout_is_gone(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        shutil.rmtree(self.main)
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.+\), reports_to -\n$")
+        self.assertNotIn("no origin/HEAD", finished.stdout)
+
+    def test_git_prints_the_reason_when_the_branch_is_missing(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        self.git(self.main, "update-ref", "-d", "refs/heads/branch-odd")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.*branch-odd.*\), reports_to -\n$")
+        self.assertEqual(finished.stdout.count("\n"), 1, "a multi-line git message must stay on one line")
+
+    def test_git_measures_against_origin_head_when_it_is_set(self):
+        self.git_fixture()
+        lane_tree = self.git_lane("odd", "")
+        self.commit_file(lane_tree, "a1")
+        self.git(self.main, "push", "origin", "master:trunk")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, 1 ahead / 0 behind, 0 dirty, reports_to -\n")
+
+    def test_git_falls_back_to_origin_main_when_origin_master_is_missing(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        self.git(self.main, "push", "origin", "master:main")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "update-ref", "-d", "refs/remotes/origin/master")
+        # A fetch sets origin/HEAD in recent git; this test needs it unset.
+        self.git(self.main, "update-ref", "-d", "--no-deref", "refs/remotes/origin/HEAD")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, merged, 0 dirty, reports_to -\n")
+
+    def test_git_prefers_origin_master_over_origin_main_when_both_exist(self):
+        self.git_fixture()
+        lane_tree = self.git_lane("odd", "")
+        self.commit_file(lane_tree, "a1")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master:main")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "update-ref", "-d", "--no-deref", "refs/remotes/origin/HEAD")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, 1 ahead / 0 behind, 0 dirty, reports_to -\n")
+
+    def test_git_with_another_flag_exits_2_with_usage_on_stderr(self):
+        for arguments in (("--git", "--changes"), ("--git", "extra")):
+            with self.subTest(arguments=arguments):
+                finished = self.run_status(*arguments)
+
+                self.assertEqual(finished.returncode, 2)
+                self.assertEqual(finished.stdout, "")
+                self.assertIn("--git", finished.stderr)
+
+    def test_git_with_no_open_lanes_prints_nothing_and_exits_0(self):
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "")
+
+    def test_git_prints_the_reason_when_status_fails_in_an_existing_worktree(self):
+        self.git_fixture()
+        worktree = self.git_lane("odd", "")
+        (worktree / ".git").write_text("gitdir: /nonexistent/worktree\n")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.*status.* failed: .*\), reports_to -\n$")
+
+    def test_git_with_a_bad_lane_file_exits_2_with_the_message_on_stderr(self):
+        lanes = self.state_home / "herdr-lanes"
+        lanes.mkdir(parents=True)
+        (lanes / "broken.json").write_text("{not json")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 2)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn(f"lane_status: {lanes / 'broken.json'}", finished.stderr)
 
     def test_the_memory_threshold_is_8_gb_when_the_variable_is_unset(self):
         spec = importlib.util.spec_from_file_location("lane_status_under_test", LANE_STATUS)

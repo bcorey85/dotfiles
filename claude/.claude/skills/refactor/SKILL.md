@@ -9,7 +9,7 @@ allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 Specialist agents find; coders fix; `/review` gates. Two finders:
 
 - `smell-reviewer` — **what repeats or sits wrong** (duplication, placement, naming, dead weight, cohesion). Bound: a diff. Modes 3, 4, 6.
-- `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module — never a diff. Mode 7.
+- `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module, or with `--diff` the added lines the prompt lists. Mode 7.
 
 ## Never modify a test to make a refactor pass
 
@@ -82,7 +82,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
 7. **Simplify mode — what could be DELETED if this module were shaped differently.** Fixes are opt-in per finding, never wholesale.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target to its tracked and untracked (not ignored) files, drops test, index, style and generated files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left) — tell the user which slice runs and its modules (`--slice N` for the others).
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target to its tracked and untracked (not ignored) files, drops test, index, style and generated files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left, or with `--diff` when no file of the target has an added line or the base shares no history with HEAD) — tell the user which slice runs and its modules (`--slice N` for the others). When the user asks to simplify only the lines a branch or PR changed, add `--diff BASE`: the prompt then lists each file of the slice that has an added line, with those lines, and bounds findings to them; use the printed prompt as is, never hand-write a bound.
 
    b. **Do NOT read the files yourself.**
 
@@ -92,7 +92,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    e. **Present survivors for the user to choose** (sites, quantified disappearance, enabling change, cost). Nothing found → say so, run `log --mode simplify` (empty-handed, with `target`), and stop. The user picks none → log every finder finding anyway (declined survivors `actioned=none`, triage drops `actioned=skipped_fp`) with `target`, and stop. Empty-handed means the finder returned nothing.
 
-   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only. The `log` call in step 5 carries `--mode simplify` and `target` = the files listed in the printed prompt (the slice that ran).
+   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only. The `log` call in step 5 carries `--mode simplify` and `target` = the files listed in the printed prompt (the slice that ran). `log --mode simplify` prints the branch diff recorded at prep and at log. When it ends in `STOP:` (added lines rose), tell the user the files it names and the before and after counts, and do not call the pass a simplification until they rule.
 
 ## Code to refactor
 

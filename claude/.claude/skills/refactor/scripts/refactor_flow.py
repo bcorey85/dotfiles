@@ -3,15 +3,16 @@
 
   refactor_flow.py branch-prep [--head REF] [--base REF] [--jscpd-timeout SECONDS]
   refactor_flow.py audit-prep <dir> [--jscpd-timeout SECONDS]
-  refactor_flow.py simplify-prep <dir|file...> [--slice N]
+  refactor_flow.py simplify-prep <dir|file...> [--slice N] [--diff BASE]
   refactor_flow.py log --mode branch|targeted|audit|simplify --input FILE.json [--base REF]
   refactor_flow.py handoff --input FILE.json
 
 Every verb prints its report and ends with one `NEXT:` line naming what the
 model still does, or a `STOP:` line with the reason. Each prep verb deletes all but the newest 49
-regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`)
-in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it names a fresh path.
-Otherwise read-only except `log`, which appends rows through the existing writers
+regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`), and their
+`.simplify-stat` sidecars, in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it
+names a fresh path. `simplify-prep` also writes that sidecar (the branch-diff record) beside the fresh
+input when it finds a base. Otherwise read-only except `log`, which appends rows through the existing writers
 (log-escape, log-review-finding); this script never writes a second copy of those rows.
 `log` is idempotent per input file: it keeps a hash of every row a writer accepted, grouped by the
 resolved --input path, under ~/.claude/state/refactor-flow/ and skips a row already written for that
@@ -27,7 +28,6 @@ Exit codes: 0 ok or a clean stop, 1 bad input (nothing was written), 2 a writer 
 import argparse
 import contextlib
 import fcntl
-import functools
 import hashlib
 import json
 import os
@@ -35,13 +35,12 @@ import re
 import subprocess
 import sys
 import tempfile
-import uuid
 from pathlib import Path, PurePosixPath
-from stat import S_ISREG
 from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import change_added_ranges
 import clone_pairs
 import handoff_files
 import numstat
@@ -49,24 +48,33 @@ import plan_format
 import refactor_log_input
 import script_utils
 import shape_clones
-import simplify_slices
+import simplify_flow
 import single_caller_census
 import source_text
 import sweep_markers
+import untracked_listing
+from flow_common import (
+    CLAUDE,
+    MAX_STATE_INPUTS,
+    NoBaseError,
+    NoSharedHistoryError,
+    RefactorFlowError,
+    diff_output,
+    fresh_log_input,
+    git,
+    ls_files,
+    next_line,
+    pick_base,
+    ref_exists,
+    require_repo,
+    target_files,
+    work_tree_merge_base,
+)
 
-CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
 LOG_FINDING = os.environ.get("REFACTOR_LOG_FINDING") or str(CLAUDE / "skills" / "review" / "log-review-finding")
-BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "tools" / "branch-base")
 
-RefactorFlowError = refactor_log_input.RefactorFlowError
 PLAN_STRUCTURE_TAG = refactor_log_input.PLAN_STRUCTURE_TAG
-MAX_SIMPLIFY_FILES = 25
-MAX_STATE_INPUTS = 50
-MAX_LOG_INPUTS = MAX_STATE_INPUTS
-LOG_INPUT_PREFIX = "refactor-flow-"
-LOG_INPUT_HEX_DIGITS = 12
-LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPUT_HEX_DIGITS}}}\.json")
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
                "not a phase diff.")
@@ -74,9 +82,6 @@ SMELL_BOUND_WORK_TREE = ("Your review bound for this run is the whole branch aga
                          "(`git diff {merge_base}`, committed and uncommitted changes) plus the untracked files "
                          "listed above, not a phase diff.")
 UNTRACKED_LABEL = "untracked"
-UNTRACKED_SYMLINK = "symlink"
-UNTRACKED_NOT_A_FILE = "not a file"
-UNTRACKED_BINARY = "binary"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
@@ -97,78 +102,11 @@ BRANCH_NO_PAIRS_TEXT = "jscpd found no clone pair on changed lines"
 BRANCH_CANDIDATES = ("Each pair has a site on a line this branch changed. A new helper that repeats a helper "
                      "elsewhere in the repo is a duplication finding: name the existing one to reuse. "
                      "Apply the anti-churn line before you flag a pair.")
-SIMPLIFY_BOUND = ("Simplify mode: your bound is the whole existing code of `{target}`. Pre-existing shape IS "
-                  "the target.")
-SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped differently: branching a data model "
-                "collapses, indirection with one implementation, configurability nothing configures, guards a "
-                "stronger invariant kills, values with more than one owner. Your oracle and magnitude floor are "
-                "hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).")
-NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
-
-
-class NoSharedHistoryError(RefactorFlowError):
-    """The base and the head have no merge base (orphan branch, shallow clone)."""
-
-
-class NoBaseError(RefactorFlowError):
-    """The branch-base helper found no base; the message is its `STOP:` line."""
-
-
-run = functools.partial(script_utils.run_or_raise, error_type=RefactorFlowError, check=True)
-
-
-def git(*args, check=True):
-    return run(["git", *args], check=check)
-
-
-def require_repo():
-    root = script_utils.repo_root(".")
-    if root is None:
-        raise RefactorFlowError("not inside a git repository")
-    return str(root)
-
-
-def ref_exists(ref):
-    return git("rev-parse", "--verify", "--quiet", ref + "^{commit}", check=False).returncode == 0
-
-
-def pick_base(requested, head=None):
-    """Returns (ref, where the ref came from). The branch-base helper owns the order of candidates."""
-    if requested:
-        if not ref_exists(requested):
-            raise RefactorFlowError(f"--base {requested} is not a commit")
-        return requested, "--base"
-
-    command = ["bash", BRANCH_BASE, *(["--head", head] if head else [])]
-    done = run(command, check=False)
-    if done.returncode == 1 and done.stderr.startswith("STOP:"):
-        raise NoBaseError(done.stderr.strip())
-    if done.returncode != 0:
-        raise RefactorFlowError(f"`{' '.join(command)}` failed: {done.stderr.strip() or done.stdout.strip()}")
-
-    ref, _, source = done.stdout.strip().partition(" ")
-    if not ref or not source:
-        raise RefactorFlowError(f"`{' '.join(command)}` printed {done.stdout.strip()!r}; expected `<ref> <source>`")
-    return ref, source
 
 
 def empty_tree():
     """The empty tree id in this repo's hash algorithm (SHA-1 or SHA-256)."""
     return git("hash-object", "-t", "tree", "/dev/null").stdout.strip()
-
-
-def diff_output(span, *args, pathspecs=()):
-    """Run `git diff` over a span with the flags that make its output parseable under any user config."""
-    limit = ["--", *pathspecs] if pathspecs else []
-    done = git("--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
-               "--no-textconv", "--no-relative", "--no-prefix", *args, span, *limit,
-               check=False)
-    if done.returncode == 0:
-        return done.stdout
-    if "no merge base" in done.stderr:
-        base, _, head = span.partition("...")
-        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head=head))
-    raise RefactorFlowError(f"`git diff {span}` failed: {done.stderr.strip()}")
 
 
 def parse_branch_diff(diff_text):
@@ -222,93 +160,14 @@ def labelled_span_files(span):
     return entries
 
 
-def work_tree_merge_base(base):
-    """The commit the work-tree span starts from: where HEAD left `base`."""
-    done = git("merge-base", base, "HEAD", check=False)
-    if done.returncode == 1 and not done.stderr.strip():
-        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head="HEAD"))
-    if done.returncode != 0:
-        raise RefactorFlowError(f"`git merge-base {base} HEAD` failed: {done.stderr.strip()}")
-    return done.stdout.strip()
-
-
-class UntrackedFile(NamedTuple):
-    path: str
-    added_lines: list  # (line number, text) pairs; empty when kind is set
-    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
-
-
-def untracked_files(root):
-    """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed with its kind and no lines."""
-    names = script_utils.untracked_paths(root)
-    if names is None:
-        raise RefactorFlowError(f"git could not list the untracked files in {root}")
-    return [classify_untracked(root, name) for name in names]
-
-
-def classify_untracked(root, name):
-    """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    full_path = Path(root) / name
-    if full_path.is_symlink():
-        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
-    if not full_path.is_file():
-        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
-    numbered = script_utils.read_text_lines(full_path)
-    if numbered is None:
-        return UntrackedFile(name, [], UNTRACKED_BINARY)
-    return UntrackedFile(name, numbered, "")
-
-
 def untracked_label(entry):
-    return f"{UNTRACKED_LABEL}, {entry.kind}" if entry.kind else UNTRACKED_LABEL
+    if entry.kind == change_added_ranges.UNTRACKED_TEXT:
+        return UNTRACKED_LABEL
+    return f"{UNTRACKED_LABEL}, {entry.kind}"
 
 
 def file_line(path, label):
     return f"- {path} ({label})" if label else f"- {path}"
-
-
-def next_line(text):
-    return f"NEXT: {text}"
-
-
-def prune_log_inputs(folder):
-    """Delete all but the newest files that leave room for one more; the model writes the new path next.
-    A file another session deletes mid-prune is skipped, and so is anything that is not a regular file."""
-    keep = MAX_LOG_INPUTS - 1
-    dated = []
-    for path in folder.glob(f"{LOG_INPUT_PREFIX}*.json"):
-        if not LOG_INPUT_NAME.fullmatch(path.name):
-            continue
-        try:
-            entry = path.lstat()
-        except OSError:
-            continue
-        if S_ISREG(entry.st_mode):
-            dated.append((entry.st_mtime, path))
-    dated.sort()
-    for _, stale in dated[:-keep]:
-        with contextlib.suppress(OSError):
-            stale.unlink()
-
-
-def log_input_folder():
-    """REFACTOR_LOG_INPUT_DIR, else the repo's own git dir, which outlives the system temp folder."""
-    override = os.environ.get("REFACTOR_LOG_INPUT_DIR")
-    if override:
-        return Path(override)
-    folder = script_utils.git_path(".", "refactor-flow")
-    if folder is None:
-        raise RefactorFlowError("git could not give the refactor-flow folder of this repo")
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-def fresh_log_input():
-    """A path no earlier /refactor invocation used; `log` dedupes rows per input path."""
-    folder = log_input_folder()
-    prune_log_inputs(folder)
-    return str(folder / f"{LOG_INPUT_PREFIX}{uuid.uuid4().hex[:LOG_INPUT_HEX_DIGITS]}.json")
 
 
 def span_plans(files):
@@ -387,7 +246,7 @@ def read_branch_span(base, opts_head, root):
         untracked = []
     else:
         diff_ref = work_tree_merge_base(base)
-        untracked = untracked_files(root)
+        untracked = untracked_listing.untracked_files(root, error_type=RefactorFlowError)
 
     files = labelled_span_files(diff_ref)
     files += [(entry.path, untracked_label(entry)) for entry in untracked]
@@ -479,22 +338,6 @@ def _branch_next(base, log_input):
                      "`log` empty-handed and stop.")
 
 
-def ls_files(targets, *flags):
-    """Files under the target paths (relative to the cwd) that `git ls-files` lists for the flags.
-
-    Ignored files are left out.
-    """
-    done = git("--literal-pathspecs", "ls-files", "-z", *flags, "--exclude-standard", "--", *targets, check=False)
-    if done.returncode != 0:
-        raise RefactorFlowError(f"git ls-files failed for {targets}: {done.stderr.strip()}")
-    return [name for name in done.stdout.split("\0") if name]
-
-
-def target_files(target):
-    """Tracked and untracked (not ignored) files under the target paths, relative to the cwd."""
-    return ls_files(target, "--cached", "--others")
-
-
 def audit_prep(opts):
     require_repo()
     target = opts.target
@@ -523,77 +366,13 @@ def audit_prep(opts):
     return 0
 
 
-def _print_complexity_prompt(chosen, label):
-    print("## complexity-reviewer dispatch prompt (pinned; omit `model`; never +fast)")
-    print("Files:")
-    for name in chosen:
-        print(f"- {name}")
-    print(SIMPLIFY_BOUND.format(target=label))
-    print(SIMPLIFY_ASK)
-    print("Add any project constraint you know that makes a shape mandatory (a required layer, a framework "
-          "seam, a public contract).")
-
-
-def simplify_prep(opts):
-    require_repo()
-    targets = opts.target
-    files_by_target = []
-    for target in targets:
-        found = target_files([target])
-        if not found:
-            print(
-                f"STOP: `{target}` holds no tracked or untracked (not ignored) file; "
-                "ask the user for a dir or module."
-            )
-            return 0
-        files_by_target.append((target, found))
-    return _simplify_report(opts, files_by_target)
-
-
-def _simplify_report(opts, files_by_target):
-    label = " ".join(target for target, _files in files_by_target)
-    try:
-        plan = simplify_slices.plan_slices(files_by_target, MAX_SIMPLIFY_FILES)
-    except simplify_slices.SliceError as error:
-        raise RefactorFlowError(f"simplify-prep: {error}") from error
-    dropped_text = simplify_slices.dropped_summary(plan.dropped)
-    slices = plan.slices
-    if not slices:
-        print(f"STOP: `{label}` holds only test, index, style or generated files ({dropped_text} "
-              f"dropped); ask the user for a source dir or module.")
-        return 0
-    if not 1 <= opts.slice <= len(slices):
-        raise RefactorFlowError(f"--slice {opts.slice} out of range 1..{len(slices)}")
-    chosen = slices[opts.slice - 1]
-    log_input = fresh_log_input()
-
-    print(f"## Simplify target `{label}` ({plan.kept} source file(s))")
-    print(f"Dropped as not source: {dropped_text} file(s).")
-    if len(slices) > 1:
-        print(f"Over {MAX_SIMPLIFY_FILES} files: split into {len(slices)} slices along module folders. This run "
-              f"is slice {opts.slice} of {len(slices)} ({len(chosen.files)} files); modules: "
-              f"{', '.join(chosen.modules)}; tell the user which slice runs, "
-              f"re-run with `--slice N` for the others.")
-    print()
-    _print_complexity_prompt(chosen.files, label)
-    print()
-    print(next_line("do NOT read the files; dispatch ONE complexity-reviewer with the prompt above; triage "
-                    "(drop oracle-failures, under-floor, irreducible; `[design-decision]` to the user); present "
-                    "survivors; on chosen fixes follow step 5 with the test audit mandatory; then "
-                    f"write the log input to {log_input} and call `log --mode simplify --input {log_input}` "
-                    "with `target` = the files listed in the prompt. Every finder finding "
-                    "goes in `findings`: survivors the user declined get actioned=none, triage drops get "
-                    "actioned=skipped_fp. Log empty-handed only when the finder returned nothing."))
-    return 0
-
-
 # ----------------------------------------------------------------------- log
 
 def untracked_line_count(live_targets):
     """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
     total = 0
     for name in ls_files(live_targets, "--others"):
-        total += len(classify_untracked(".", name).added_lines)
+        total += len(untracked_listing.classify_untracked(".", name).added_lines)
     return total
 
 
@@ -642,9 +421,8 @@ def render_handoff(root, handoff, modifier):
     return "\n".join(lines)
 
 
-def review_dispatch_next():
-    return next_line("tell the user you are auto-dispatching /review, then Skill-invoke /review with the "
-                     "handoff block above (plus any modifier).")
+REVIEW_DISPATCH_STEP = ("tell the user you are auto-dispatching /review, then Skill-invoke /review with the "
+                        "handoff block above (plus any modifier).")
 
 
 def build_writes(mode, base, validated_log):
@@ -812,11 +590,20 @@ def check_targets_match(mode, validated_log):
 
 def log_next(validated_log, mode):
     if validated_log["handoff"]:
-        return review_dispatch_next()
+        return REVIEW_DISPATCH_STEP
     if mode == "audit":
-        return next_line("done; report the work list to the user. No coders, no /review.")
-    return next_line("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
-                     "added, else done.")
+        return "done; report the work list to the user. No coders, no /review."
+    return ("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
+            "added, else done.")
+
+
+def final_line(comparison, validated_log, mode):
+    """The last line `log` prints. The grown-diff STOP carries the step `log_next` would print, after the user's
+    ruling."""
+    step = log_next(validated_log, mode)
+    if not (comparison and comparison.stop):
+        return next_line(step)
+    return f"{comparison.stop} After they rule: {step}"
 
 
 def pending_rows(root, input_path, writes):
@@ -849,6 +636,10 @@ def log_verb(opts):
 
     check_writer_rows(writes)
 
+    comparison = None
+    if opts.mode == "simplify":
+        comparison = simplify_flow.compare_branch_diff(opts.input, root)
+
     input_path = str(Path(opts.input).resolve())
     pending = pending_rows(root, input_path, writes)
     skipped = len(writes) - len(pending)
@@ -856,6 +647,8 @@ def log_verb(opts):
     counts = count_rows([(script, pairs) for script, pairs, _ in pending])
     print(f"## Logging ({opts.mode}): {counts.escapes} escape row(s), {counts.runs} finder run row, "
           f"{counts.findings} finding row(s); {skipped} already logged, skipped.")
+    if comparison:
+        print("\n".join(comparison.lines))
 
     if validated_log["handoff"]:
         print()
@@ -868,7 +661,7 @@ def log_verb(opts):
         print(f"writer refused: {script} {' '.join(pairs)}\n{error}", file=sys.stderr)
     if refused:
         print(f"writer refused {len(refused)} row(s), tell the user which")
-    print(log_next(validated_log, opts.mode))
+    print(final_line(comparison, validated_log, opts.mode))
     return 2 if refused else 0
 
 
@@ -883,7 +676,7 @@ def handoff_verb(opts):
 
     print(render_handoff(root, handoff, modifier))
     print()
-    print(review_dispatch_next())
+    print(next_line(REVIEW_DISPATCH_STEP))
     return 0
 
 
@@ -900,6 +693,7 @@ def parse_arguments():
     simplify = sub.add_parser("simplify-prep")
     simplify.add_argument("target", nargs="+")
     simplify.add_argument("--slice", type=int, default=1)
+    simplify.add_argument("--diff", metavar="BASE")
     log = sub.add_parser("log", help="append the escape and finder rows of one /refactor run",
                          epilog=refactor_log_input.log_help_epilog(),
                          formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -913,7 +707,7 @@ def parse_arguments():
 
 def main():
     opts = parse_arguments()
-    handlers = {"branch-prep": branch_prep, "audit-prep": audit_prep, "simplify-prep": simplify_prep,
+    handlers = {"branch-prep": branch_prep, "audit-prep": audit_prep, "simplify-prep": simplify_flow.simplify_prep,
                 "log": log_verb, "handoff": handoff_verb}
     try:
         return handlers[opts.verb](opts)

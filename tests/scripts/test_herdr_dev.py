@@ -1,7 +1,7 @@
 """Runs herdr-dev against a stub herdr-api and checks the command typed into the claude pane.
 
 A leading --resume resumes the session itself; the positional form still forks it. --headless leaves out the hunk
-pane; without it the layout splits the claude pane and starts hunk-review-pane.
+pane and the console tab; without it the layout splits the claude pane and starts hunk-review-pane.
 """
 import os
 import pathlib
@@ -134,6 +134,8 @@ esac""")
         self.assertEqual(result.returncode, 0, result.stderr)
         resizes = [call for call in self.layout_calls() if call.startswith("pane resize") and "--amount 0.1 " in call]
         self.assertFalse(resizes, resizes)
+        console_resizes = [call for call in self.layout_calls() if "--amount 0.1667" in call]
+        self.assertFalse(console_resizes, console_resizes)
 
     def test_default_under_tuios_narrows_the_claude_pane_to_forty_percent(self):
         result = self.run_dev(str(self.worktree), "w1", "s1", extra_env={"TUIOS_SOCKET": "/tmp/x"})
@@ -141,12 +143,21 @@ esac""")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("pane resize --direction left --amount 0.1 --pane p2", self.layout_calls())
 
-    def test_headless_keeps_the_console_tab(self):
-        result = self.run_dev("--headless", str(self.worktree), "w1", "s1")
+    def test_default_builds_the_console_tab(self):
+        result = self.run_dev(str(self.worktree), "w1", "s1")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"tab create --workspace w1 --label console --cwd {self.worktree} --no-focus",
                       self.layout_calls())
+
+    def test_headless_builds_no_console_tab(self):
+        result = self.run_dev("--headless", str(self.worktree), "w1", "s1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.layout_calls()
+        self.assertFalse([call for call in calls if call.startswith("tab create")], calls)
+        self.assertFalse([call for call in calls if call.startswith("pane split")], calls)
+        self.assertIn("tab focus t1", calls)
 
     def test_headless_and_resume_combine_in_either_order(self):
         for flags in (("--headless", "--resume"), ("--resume", "--headless")):

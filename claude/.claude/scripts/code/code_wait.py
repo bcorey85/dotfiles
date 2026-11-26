@@ -229,10 +229,10 @@ def read_phase_run(repo):
         run_info = json.loads(run_file.read_text())
     except ValueError as error:
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
-                 f"({error}); delete it and run this wait again")
+                 f"({error}); delete it and run the command again")
     if not isinstance(run_info, dict):
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
-                 f"(found {type(run_info).__name__}); delete it and run this wait again")
+                 f"(found {type(run_info).__name__}); delete it and run the command again")
     return run_info
 
 

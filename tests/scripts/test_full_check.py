@@ -431,6 +431,14 @@ class FullCheckTest(unittest.TestCase):
                          ["full check: passed", f"command: {PASSING_SUITE}", "summary: 3 passed in 0.1s"])
         self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
 
+    def test_a_log_under_a_missing_folder_runs_the_check_and_writes_the_log(self):
+        self.log = self.repo / "missing" / "nested" / "review-gate.log"
+
+        completed = self.check(PASSING_SUITE)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
+
     def test_an_exit_zero_with_no_runner_summary_is_unverified_not_passed(self):
         completed = self.check("echo 496 tests registered")
 

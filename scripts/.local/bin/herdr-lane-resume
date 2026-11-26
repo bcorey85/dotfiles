@@ -25,10 +25,14 @@
 #   entry-less  a name or path with no lane file entry closes too, when an open herdr
 #               workspace sits on that linked worktree path, or on exactly one linked
 #               worktree of that name (under tuios only a path works). Refuses, changing
-#               nothing but the origin/<default> ref, for the main checkout, a detached
-#               HEAD, the default branch, a branch not merged into origin/<default> (a
-#               squash or rebase merge reads as unmerged), several linked worktrees of
-#               that name, uncommitted changes in the worktree, or a working claude agent.
+#               nothing but the origin/<default> ref, for the main checkout, several
+#               linked worktrees of that name, a working claude agent, or any tree that
+#               `herdr-worktree-prune --check <worktree>` would keep (a detached
+#               HEAD, the default branch, a branch merged into neither
+#               origin/<default> nor the main checkout's branch (a squash or rebase
+#               merge reads as unmerged),
+#               uncommitted changes, a submodule, a nested repo, a stash entry,
+#               a lock), or a check that fails; the message carries prune's reason.
 #               Otherwise the same close and prune, minus the entry remove.
 #
 # herdr-dev and herdr-worktree-prune run from this script's own folder.
@@ -233,28 +237,19 @@ match_workspace_name() {
     fail "no lane named $name; known lanes: $names"
 }
 
-# Twin of herdr-worktree-prune check_merged: fetch origin/<default>, then is-ancestor.
-# Stops, changing nothing, unless the branch checked out in worktree $1 is merged into the
-# default branch of main checkout $2.
-branch_is_merged() {
-    local wt="$1" main_checkout="$2" default_ref default branch
-    local ancestor_status=0
+# Stops, changing nothing, unless herdr-worktree-prune --check (run from main checkout $2)
+# says the state of worktree $1 lets the prune remove it. The refusal carries prune's reason.
+prune_check_allows() {
+    local wt="$1" main_checkout="$2" verdict_json verdict code reason
 
-    default_ref=$(git -C "$main_checkout" symbolic-ref --quiet refs/remotes/origin/HEAD) \
-        || fail "$main_checkout has no refs/remotes/origin/HEAD, so the default branch is unknown; nothing changed"
-    default="${default_ref#refs/remotes/origin/}"
-    git -C "$main_checkout" fetch --quiet origin "$default" \
-        || fail "could not fetch origin/$default; nothing changed"
-    branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD) \
-        || fail "$wt has a detached HEAD, so its branch cannot be checked; nothing changed"
-    [ "$branch" != "$default" ] || fail "$wt is on the default branch $default; nothing changed"
-
-    git -C "$wt" merge-base --is-ancestor HEAD "refs/remotes/origin/$default" || ancestor_status=$?
-    case "$ancestor_status" in
-        0) return 0 ;;
-        1) fail "branch $branch is not merged into origin/$default (a squash or rebase merge reads as unmerged); nothing changed" ;;
-        *) fail "could not check whether branch $branch is merged into origin/$default; nothing changed" ;;
-    esac
+    verdict_json=$(cd "$main_checkout" && "$bin_dir/herdr-worktree-prune" --check "$wt") \
+        || fail "herdr-worktree-prune --check $wt failed; nothing changed"
+    verdict=$(jq -r '.verdict' <<<"$verdict_json") \
+        || fail "herdr-worktree-prune --check printed an unexpected shape; nothing changed"
+    [ "$verdict" != "remove" ] || return 0
+    code=$(jq -r '.code' <<<"$verdict_json")
+    reason=$(jq -r '.reason' <<<"$verdict_json")
+    fail "herdr-worktree-prune would keep $wt ($code): $reason; nothing changed"
 }
 
 # Print the pane id of the first working claude agent inside worktree $1, or nothing.
@@ -287,7 +282,7 @@ prune_main_checkout() {
 # Close a merged lane that has no lane file entry: worktree $1 is a linked worktree with an
 # open workspace and no working agent. Same sequence as close_lane minus the entry remove.
 entryless_close() {
-    local wt="$1" close_wait main_checkout name working workspace_ids dirty
+    local wt="$1" close_wait main_checkout name working workspace_ids
 
     close_wait=$(checked_close_wait) || exit 1
     [ -d "$wt" ] || fail "no lane file entry and no folder at $wt"
@@ -306,11 +301,8 @@ entryless_close() {
     [ -z "$working" ] \
         || fail "$wt has a working agent in pane $working; wait for it to finish, then rerun"
 
-    branch_is_merged "$wt" "$main_checkout"
-
-    # herdr-worktree-prune keeps a worktree that is not clean, so refuse before the workspace closes.
-    dirty=$(git -C "$wt" status --porcelain) || fail "could not read git status of $wt; nothing changed"
-    [ -z "$dirty" ] || fail "$wt has uncommitted changes; nothing changed"
+    # The prune keeps what its own rules keep, so refuse before the workspace closes.
+    prune_check_allows "$wt" "$main_checkout"
 
     close_workspaces "$wt" "$workspace_ids" "$close_wait" "nothing was pruned" "the workspaces are already closed and nothing was pruned"
     prune_main_checkout "$main_checkout"

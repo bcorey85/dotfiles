@@ -311,6 +311,27 @@ def record_shared_base(top, head, tree_hash):
     script_utils.write_text_atomically(shared_bases_file(), json.dumps(shared) + "\n")
 
 
+def shared_base_entries(top):
+    """The {"base", "tree"} dicts the shared bases record holds for the repo top level, oldest first."""
+    stored = script_utils.read_json_object(shared_bases_file()).get(str(top))
+    if not isinstance(stored, list):
+        return []
+    return [entry for entry in stored if isinstance(entry, dict)]
+
+
+def latest_reviewed_base(repo_dir):
+    """The `base` of the newest entry in the repo's shared bases record, or None when the repo has no record, repo_dir
+    is in no work tree, or that entry holds no base string."""
+    top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    if top is None:
+        return None
+    entries = shared_base_entries(top)
+    if not entries:
+        return None
+    base = entries[-1].get("base")
+    return base if isinstance(base, str) else None
+
+
 def push_review_state(repo_dir):
     """Whether the HEAD commit of the repo that holds repo_dir is a tree a converged review covered, notes paths left
     out: PUSH_NO_RECORD when no review recorded a base for the repo (or repo_dir is in no work tree), PUSH_REVIEWED
@@ -319,8 +340,7 @@ def push_review_state(repo_dir):
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return PUSH_NO_RECORD
-    stored = script_utils.read_json_object(shared_bases_file()).get(str(top))
-    entries = [entry for entry in stored if isinstance(entry, dict)] if isinstance(stored, list) else []
+    entries = shared_base_entries(top)
     if not entries:
         return PUSH_NO_RECORD
 

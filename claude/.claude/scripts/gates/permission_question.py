@@ -18,7 +18,12 @@ exists) and `own`, `new`, `separate` or `fresh` then `worktree`; `in|into` then 
 that files, opens, creates or raises a ticket, sub-ticket, subtask, issue, sub-issue, pull request or merge request
 (a bare `task` does not count), that names Slack, or that files, opens, creates or raises
 `them|these|those|this|it|each` in/on/to/into Jira, Linear or GitHub (the pronoun comes right after the verb), that
-says `public` or `publicly`, or that names an outside destination after `to`, `on`, `in` or `off` with at most two
+says `public` or `publicly`, that writes to a tracker (`add`, `link`, `edit`, `comment`, `label`, `assign` or
+`transition`, with `s`, `ed` or `ing`, then at most two words, then a ticket, issue, PR, MR, pull request or merge
+request, with the file-name guard, or Jira, GitHub, GitLab or case-sensitive Linear, with the host-name and
+GitHub-product guards below; the ticket or tracker name must end the clause or be followed by `and`, `or`, `from`,
+`to`, `on`, `in`, `for`, `with` or `link from|between`, so `the PR check` or `the ticket number` is a local edit), or
+that names an outside destination after `to`, `on`, `in` or `off` with at most two
 words between (PR, MR, pull request, merge request, issue, ticket, thread, upstream, `#<number>`; Jira, which has its
 own branch that takes a `.com`, `.io` or `.app` suffix as a host name; GitHub, GitLab
 and case-sensitive Linear after `to`, `in` or `off` only, so `look it up on GitHub` stays a local step; GitHub,
@@ -53,6 +58,9 @@ INFINITIVE_LEAD_IN = r"(?<!\btry )(?<!\bstart )(?<!\bbegin )(?<!\bneed )(?<!\bha
 FILE_NAME_AFTER = r"(?![\w-]|[./]\w)"
 # Same, except a `.com`, `.io` or `.app` suffix is a host name, so `github.com` stays a destination.
 HOST_NAME_AFTER = r"(?![\w-]|/\w|\.(?!(?:com|io|app)\b)\w)"
+# GitHub, GitLab or Linear followed by one of these names a product feature or a local file topic, not the tracker.
+NOT_TRACKER_PRODUCT = (r"(?!\s+(?:actions|workflows?|cli|pages|docs|api|copilot|desktop|codespaces|packages|gist|"
+                       r"interpolation)\b)")
 # Up to two words may sit between a destination preposition and the destination name (`on the main PR`).
 WORDS_BEFORE_DESTINATION = r"\s+(?:[\w-]+\s+){0,2}"
 # Only words that say a worktree is new: `the` or `existing` would also match a question about a worktree that exists.
@@ -64,10 +72,15 @@ WORKTREE_GAP = r"(?:(?:an?|new|separate|fresh|lane|git|own|another|\d+|two|three
 WORKTREE_DESTINATION = (r"(?=\s+(?:for|per)\b|\s+in\b(?!\s+(?:the\s+)?tests?\b)"
                         r"|\s+to\s+(?:work|hold|run|try|test|keep|isolate|do|build|fix|land)\b"
                         r"|\s*[?.!,]|\s*$)")
+# What may follow a tracker noun that is the target of a tracker write: the end of the clause, a preposition, or
+# `link from|between`. Any other word makes the noun a modifier (`the PR check`, `the ticket number`) of a local edit.
+TRACKER_NOUN_ENDS = (r"(?=\s*(?:[?.!,;:)]|$)|\s+(?:and|or|from|to|on|in|for|with)\b"
+                     r"|\s+link\s+(?:from|between)\b)")
 OUTWARD_STEP = re.compile(
-    r"\b(?:commit|push|merge|deploy|publish|release|delete|drop|reset|rebase|force|send|e-?mail|post|install|"
+    r"\b(?:(?<!commit )message|commit(?!s?\s+messages?\b)|push|merge|deploy|publish|release|delete|drop|reset|rebase|"
+    r"force|send|e-?mail|post|install|"
     r"upgrade|migrate|void|cancel|refund|revoke|submit|approve|archive|remove|overwrite|wipe|purge|truncate|destroy|"
-    r"reply|replies|notify|message|ping)\w*"
+    r"reply|replies|notify|ping)\w*"
     r"|\b(?:make|create|add|open|start|use|set\s+up|spin\s+up)\s+"
     + WORKTREE_GAP
     + r"worktrees?"
@@ -83,14 +96,16 @@ OUTWARD_STEP = re.compile(
     r"|\bslack" + HOST_NAME_AFTER +
     r"|\b(?:file|open|create|raise)\s+(?:them|these|those|this|it|each)\s+(?:in|on|to|into)\s+(?:jira|linear|github)"
     + HOST_NAME_AFTER +
+    r"|\b(?:add|link|edit|comment|label|assign|transition)(?:s|ed|ing)?\b" + WORDS_BEFORE_DESTINATION +
+    r"(?:(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?|tickets?|issues?)" + FILE_NAME_AFTER + TRACKER_NOUN_ENDS +
+    r"|(?:jira|git(?:hub|lab)|(?-i:Linear))" + HOST_NAME_AFTER + NOT_TRACKER_PRODUCT + TRACKER_NOUN_ENDS + r")"
     r"|\b(?:publicly|public)\b(?![./]\w)"
     r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)" + WORDS_BEFORE_DESTINATION +
     r"(?:PRs?|MRs?|pull\s+requests?|merge\s+requests?|"
     r"issues?|tickets?|threads?|upstream|#\d+)" + FILE_NAME_AFTER +
     r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|on|in|off)" + WORDS_BEFORE_DESTINATION + r"jira" + HOST_NAME_AFTER +
     r"|\b" + INFINITIVE_LEAD_IN + r"(?:to|in|off)" + WORDS_BEFORE_DESTINATION +
-    r"(?:git(?:hub|lab)|(?-i:Linear))" + HOST_NAME_AFTER +
-    r"(?!\s+(?:actions|workflows?|cli|pages|docs|api|copilot|desktop|codespaces|packages|gist|interpolation)\b)",
+    r"(?:git(?:hub|lab)|(?-i:Linear))" + HOST_NAME_AFTER + NOT_TRACKER_PRODUCT,
     re.IGNORECASE)
 # A quoted span counts as a cited question only when its whole inner text is the question.
 OPENING_QUESTION = re.compile(r"\A(?:" + PERMISSION_QUESTION.pattern + r")\Z", re.IGNORECASE)

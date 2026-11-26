@@ -48,11 +48,6 @@ DENY_TEXT = (f"A test run outside a memory cap can take all the memory on this m
              f"`{CAPPED_PREFIX} python3 -m unittest discover | tail -20` or "
              f"`{CAPPED_PREFIX} bash tests/run.sh`. A run that goes past {MEMORY_MAX} is then killed alone and "
              f"your session survives.")
-BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the conversation until it ends. Rerun the same "
-                        f"command with the Bash tool's run_in_background set to true, inside the cap "
-                        f"(`{CAPPED_PREFIX} <test command>`), then go on with other work or end the turn until the "
-                        f"completion notice arrives. A run of one or a few named test files may stay in the "
-                        f"foreground.")
 # systemd appends `.slice` to a slice name that lacks it.
 SHARED_SLICE_NAMES = {TEST_SLICE, TEST_SLICE.removesuffix(".slice")}
 # Every systemd-run option that takes its value as the next word (`systemd-run --help`); the program starts after them.
@@ -77,6 +72,15 @@ def cap_available():
         return False
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     return bool(runtime_dir) and os.path.exists(os.path.join(runtime_dir, "bus"))
+
+
+def background_deny_text():
+    """The deny text for a full suite run in the foreground: it names the memory cap only where cap_available."""
+    cap_clause = f", inside the cap (`{CAPPED_PREFIX} <test command>`)" if cap_available() else ""
+    return (f"A full test suite in the foreground blocks the conversation until it ends. Rerun the same command with "
+            f"the Bash tool's run_in_background set to true{cap_clause}, then go on with other work or end the turn "
+            f"until the completion notice arrives. A run of one or a few named test files may stay in the "
+            f"foreground.")
 
 
 def capped_shell_argv(program, command):
@@ -217,7 +221,8 @@ def is_rewritable_test_run(command):
 
 def systemd_run_options_end(words):
     """The index of the first word after the options of a `systemd-run` step."""
-    return shell_command.skip_options(words, 1, SYSTEMD_RUN_VALUE_OPTIONS)
+    _options, index = shell_command.command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)
+    return index
 
 
 def program_after_systemd_run(words):
@@ -230,14 +235,11 @@ def program_after_systemd_run(words):
 
 def systemd_run_slice(words):
     """The slice a `systemd-run` step names (`--slice=X` or `--slice X`), or None when it names none."""
-    options = words[1:systemd_run_options_end(words)]
-    slice_name = None
-    for position, option in enumerate(options):
-        if option.startswith("--slice="):
-            slice_name = option[len("--slice="):]
-        elif option == "--slice" and position + 1 < len(options):
-            slice_name = options[position + 1]
-    return slice_name
+    options, _index = shell_command.command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)
+    slice_names = list(shell_command.option_values(options, "--slice"))
+    if not slice_names:
+        return None
+    return slice_names[-1]
 
 
 def is_full_unittest_run(words):

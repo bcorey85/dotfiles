@@ -6,21 +6,12 @@ set -euo pipefail
 
 agent_evals_dir="${AGENT_EVALS_DIR:-$HOME/agent-evals}"
 build_changes="$agent_evals_dir/bin/build_changes.py"
-toolkit_pattern='^claude/\.claude/(agents|skills|commands|hooks|scripts)/|^claude/\.claude/CLAUDE\.md$'
-change_file_pattern='^docs/changes/notes/20[^/]*\.md$'
+hooks_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$(git rev-parse --show-toplevel)"
 
 touched_paths="$(git diff --cached --name-only)"
-toolkit_paths="$(grep -E "$toolkit_pattern" <<<"$touched_paths" || true)"
-change_files="$(git diff --cached --name-only --diff-filter=AM | grep -E "$change_file_pattern" || true)"
-
-if [[ -n "$toolkit_paths" && -z "$change_files" ]]; then
-    echo "pre-commit: the staged set changes the toolkit but stages no added or modified docs/changes/notes/20*.md file:" >&2
-    sed 's/^/  /' <<<"$toolkit_paths" >&2
-    echo "File a change file with: python3 ~/agent-evals/bin/build_changes.py new \"<title>\" --by claude-code/<model id>" >&2
-    exit 1
-fi
+git diff --cached --name-status -z --no-renames | "$hooks_dir/change-file-check"
 
 # A staged change to rule text or the skill set can strand an agent-evals rule-meter scenario or skill list entry.
 # Check the staged prose files, not the work tree, so the check sees exactly what the commit holds.
@@ -30,12 +21,61 @@ if grep -qE "$drift_pattern" <<<"$touched_paths"; then
     if [[ ! -f "$drift_check" ]]; then
         echo "pre-commit: note: $drift_check not found; meter scenarios and the skill list were not checked" >&2
     else
-        staged_tree="$(mktemp -d)"
-        trap 'rm -rf "$staged_tree"' EXIT
-        git ls-files -z -- 'claude/.claude/*.md' | git checkout-index -z --stdin --prefix="$staged_tree/"
-        if ! python3 "$drift_check" --toolkit "$staged_tree/claude/.claude"; then
-            echo "pre-commit: the staged toolkit strands the agent-evals entries above; fix them in ~/agent-evals first" >&2
-            exit 1
+        drift_work="$(mktemp -d)"
+        trap 'rm -rf "$drift_work"' EXIT
+        problem_prefix='toolkit_drift: '
+
+        # Export the prose files of the index named by GIT_INDEX_FILE (the staged one when unset) into $1.
+        export_prose_tree() {
+            git ls-files -z -- 'claude/.claude/*.md' | git checkout-index -z --stdin --prefix="$1/"
+        }
+
+        export_prose_tree "$drift_work/staged"
+        staged_status=0
+        python3 "$drift_check" --toolkit "$drift_work/staged/claude/.claude" 2>"$drift_work/staged.err" || staged_status=$?
+
+        if [[ "$staged_status" -ne 0 ]]; then
+            : >"$drift_work/head.problems"
+            # Fail closed: with no HEAD commit, or a HEAD run that passes, no staged problem counts as old.
+            if git rev-parse --verify -q HEAD >/dev/null; then
+                GIT_INDEX_FILE="$drift_work/head.index" git read-tree HEAD
+                GIT_INDEX_FILE="$drift_work/head.index" export_prose_tree "$drift_work/head"
+                head_status=0
+                python3 "$drift_check" --toolkit "$drift_work/head/claude/.claude" 2>"$drift_work/head.err" >/dev/null || head_status=$?
+                if [[ "$head_status" -ne 0 ]]; then
+                    grep -e "^$problem_prefix" "$drift_work/head.err" >"$drift_work/head.problems" || true
+                fi
+            fi
+
+            # A staged line that is not a problem line (a crash) never matches a HEAD problem, so it counts as added.
+            # An empty pattern file is skipped: some BSD greps treat it as matching every line or nothing.
+            if [[ ! -s "$drift_work/head.problems" ]]; then
+                cp "$drift_work/staged.err" "$drift_work/added.err"
+            else
+                grep -vxF -f "$drift_work/head.problems" "$drift_work/staged.err" >"$drift_work/added.err" || true
+            fi
+            # Arithmetic expansion drops the leading spaces that macOS wc -l prints.
+            staged_line_count=$(($(wc -l <"$drift_work/staged.err")))
+            added_line_count=$(($(wc -l <"$drift_work/added.err")))
+
+            # A failing run with no stderr output is a crash, not drift: refuse it.
+            if [[ "$staged_line_count" -eq 0 ]]; then
+                echo "pre-commit: toolkit_drift.py failed with exit $staged_status and printed no problem line" >&2
+                echo "pre-commit: run python3 $drift_check --toolkit claude/.claude by hand to see the failure" >&2
+                exit 1
+            fi
+            if [[ "$added_line_count" -gt 0 ]] && grep -qv -e "^$problem_prefix" "$drift_work/added.err"; then
+                cat "$drift_work/added.err" >&2
+                echo "pre-commit: toolkit_drift.py crashed; its output above is not a list of problem lines" >&2
+                echo "pre-commit: run python3 $drift_check --toolkit claude/.claude by hand to see the failure" >&2
+                exit 1
+            fi
+            if [[ "$added_line_count" -gt 0 ]]; then
+                cat "$drift_work/added.err" >&2
+                echo "pre-commit: the staged toolkit strands the agent-evals entries above; fix them in ~/agent-evals first" >&2
+                exit 1
+            fi
+            echo "pre-commit: note: $staged_line_count toolkit drift line(s) already at HEAD; this commit adds none" >&2
         fi
     fi
 fi

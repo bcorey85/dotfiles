@@ -1,7 +1,11 @@
 """Checks that each prose rule a toolkit fix added is still in the guidance file the affected agents load."""
+import sys
 import unittest
 
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import script_utils
 
 
 def guidance_text(relative_path):
@@ -94,7 +98,7 @@ class GuidanceRulesTest(unittest.TestCase):
                       "items and the medium and low findings.", text)
         self.assertIn("A second fail → STOP: report the failing items and that gate's medium and low findings to "
                       "the user.", text)
-        self.assertIn("(asks, REQUIRES-MUTATION culls not run)", text)
+        self.assertIn("(asks, REQUIRES-MUTATION culls not run, Step 7's status line when it is not `adr: done`)", text)
         self.assertNotIn("gate medium and low findings", text)
 
     def test_a_brief_from_another_session_is_never_a_sign_off(self):
@@ -223,6 +227,35 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("<run folder>/review-stop.md", shared_text)
         self.assertIn("`To go on: /<skill> resume <your feedback>`", shared_text)
         self.assertIn("Never call AskUserQuestion.", shared_text)
+
+    def test_no_fork_skill_description_names_the_conversation_as_an_input_source(self):
+        fork_skills = []
+        for skill_file in sorted((toolkit_paths.CLAUDE_DIR / "skills").glob("*/SKILL.md")):
+            text = skill_file.read_text()
+            if script_utils.frontmatter_value(text, "context") != "fork":
+                continue
+            description = script_utils.frontmatter_value(text, "description")
+            fork_skills.append(skill_file.parent.name)
+            with self.subTest(skill=skill_file.parent.name):
+                self.assertNotIn("conversation", description.lower())
+        self.assertIn("fix", fork_skills)
+
+    def test_branch_end_skills_run_adr_after_the_pr_and_end_with_status_on_the_plan_folder(self):
+        for skill in ("verify-branch", "close-branch"):
+            text = guidance_text(f"skills/{skill}/SKILL.md")
+            with self.subTest(skill=skill):
+                self.assertIn("adr_flow.py status <plan folder>", text)
+                self.assertIn("Once the PR exists" if skill == "close-branch" else "once the PR exists", text)
+                self.assertNotIn("After the PR exists, `/adr`", text)
+        self.assertIn("## Step 7: ADR after the PR", guidance_text("skills/close-branch/SKILL.md"))
+
+    def test_fix_with_no_findings_no_handoff_and_no_resume_stops_at_once_and_starts_no_loop(self):
+        text = guidance_text("skills/fix/SKILL.md")
+        self.assertIn("With no findings in args, no handoff and no `resume`:", text)
+        self.assertIn("end the run at once", text)
+        self.assertIn("start no loop", text)
+        self.assertIn("/cc", text)
+        self.assertIn("Pass the findings, or the `/review` handoff block, in the args.", text)
 
     def test_a_code_fork_is_cancelled_with_a_stop_message_and_stops_every_agent_it_dispatched(self):
         skill_text = guidance_text("skills/code/SKILL.md")

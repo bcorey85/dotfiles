@@ -61,7 +61,7 @@ no prompts, tool input or output, paths or commands.
 
 ```
 /triage → /eng-spec → /clear → /code (per phase: read queue → stage → /commit)
-        → /close-branch → /adr → /commit → PR
+        → /close-branch → /commit → PR → /adr <plan folder> → adr_flow.py status <plan folder>
 ```
 
 Small work skips the spec: `/triage` routes XS–M tickets directly to `/code`.
@@ -125,10 +125,11 @@ that fixes every finding, a gate on the fix diff, then a coder round for the gat
 
 Read the residue queue, stage it, then `/commit`.
 
-### 5. `/adr`, then the PR
+### 5. The PR, then `/adr`
 
-`/adr` collapses the task directory into a decision record. Stage it, `/commit`,
-and open the PR yourself. The ADR ships in the same PR as the code.
+Open the PR yourself. Then `/adr <plan folder>` collapses the task directory
+into a decision record; `/commit` lands it on the open PR's branch. Run
+`adr_flow.py status <plan folder>`: `adr: done` ends the branch.
 
 ### After merge
 

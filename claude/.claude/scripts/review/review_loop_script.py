@@ -97,7 +97,7 @@ from review_loop_closure import (
 )
 from review_loop_coder import CoderCallError, coder_call, coder_fault_notes, without_reverted
 from review_loop_comment_removal import CommentRemovalRuns, snapshot_comments
-from review_loop_docs_kind import change_added_ranges
+from review_loop_docs_kind import review_added_ranges
 from review_loop_final_read import FinalRead
 from review_loop_findings import (
     PLAN_CHANGE_YES,
@@ -115,6 +115,7 @@ from review_loop_findings import (
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_intake import ReviewIntake
 from review_loop_named_tests import NamedTestRuns
+from review_loop_nearest import nearest_functions_text
 from review_loop_partial_fix import PartialFixRuns, coder_failure_blocker
 from review_loop_pass_checks import PassChecks
 from review_loop_pass_names import (
@@ -441,9 +442,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
     def review_request(self, dispatch):
         """The ReviewRequest (role, agent, prompt) of one reviewer of this round."""
         agent, owned = dispatch
+        # Only the first review reads the whole diff; the shape pass runs for that one smell-reviewer dispatch.
+        first_smell = agent == "smell-reviewer" and not self.round_two_fix_diff_path
+        nearest = nearest_functions_text(self.repo, self.review_base, owned) if first_smell else ""
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(ask.text for ask in self.asks), self.brief, self.test_strategy,
-                                 tuple(self.no_code_rulings), self.ruled_out)
+                                 tuple(self.no_code_rulings), self.ruled_out, nearest)
         lens = getattr(owned, "lens", "")
         if lens:
             prompt += "\n" + lens
@@ -566,7 +570,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
         self.round_claimed, self.round_fixes = set(), []
         if self.iter_count == FIRST_ROUND:
-            self.docs_added = change_added_ranges(self.repo, self.review_base)
+            self.docs_added = review_added_ranges(self.repo, self.review_base)
         round_fix, round_nits = [], []
         tree_paths = self.tree_paths()
         for (agent, owned), review in zip(self.dispatches, reviews, strict=True):

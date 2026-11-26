@@ -63,6 +63,14 @@
 # Once the arguments and the repo are checked, each run goes on with herdr-lane-sweep, which closes the lanes whose
 # branch is merged; a failed sweep only warns.
 #
+# Before the branch is made, a run whose caller has a session name (session_pane.py
+# sender) also writes a claim file, one per repo and branch, holding that name, in
+# ${XDG_STATE_HOME:-$HOME/.local/state}/branch-claims/<cksum>.json. A caller with no
+# session name (session_pane.py sender finds no live session name, or fails) makes no
+# claim and is not checked. A different session's request for a claimed branch exits 1
+# with `branch <b> is already claimed by session <owner>`. A claim stops blocking once
+# its branch is gone and it is older than BRANCH_CLAIM_GRACE_MINUTES (2) minutes.
+#
 # Every pane in the new workspace starts in the worktree, so popups that
 # inherit the pane cwd (prefix+d, prefix+g, prefix+space, ...) see it too.
 
@@ -75,6 +83,8 @@ script_dir="$(dirname "$(readlink -f "$0")")"
 . "$script_dir/../lib/toolkit-tools.bash"
 # shellcheck source-path=SCRIPTDIR/../lib source=main-checkout.bash
 . "$script_dir/../lib/main-checkout.bash"
+# shellcheck source-path=SCRIPTDIR/../lib source=branch-claim.bash
+. "$script_dir/../lib/branch-claim.bash"
 
 fail() {
     echo "herdr-worktree: $*" >&2
@@ -208,6 +218,15 @@ fi
 
 "$bin_dir/herdr-lane-sweep" >&2 || echo "herdr-worktree: lane sweep failed; the run goes on" >&2
 
+# Claimed before anything is created, so a second session asking for this branch name fails here.
+# A caller with no session name makes no claim.
+claimant=$(python3 "$session_pane" sender 2>/dev/null | jq -r '.name // empty' 2>/dev/null) || claimant=""
+if [ -n "$claimant" ]; then
+    if ! claim_owner=$(claim_branch "$main_checkout" "$branch" "$claimant"); then
+        fail "branch $branch is already claimed by session $claim_owner"
+    fi
+fi
+
 # An entry left by an earlier lane of this name would keep its brief and report-to, because
 # `lanes.py add` replaces an entry only when its worktree folder is gone and the folder is made next.
 # No entry (exit 1) is the usual case; any other failure is reported by the add below.
@@ -281,11 +300,10 @@ herdr-api workspace focus "$ws" >/dev/null
 # The lane entry lets herdr-lane-resume reopen the lane. A failed write must not stop
 # the run: the workspace is already open, so it warns and the fork still starts.
 if [ -n "$fork" ]; then
-    reports_to=$(python3 "$session_pane" sender 2>/dev/null | jq -r '.name // empty' 2>/dev/null) || reports_to=""
     # The commit the lane branch starts from, so herdr-lane-sweep can tell a lane with work of its own from a new one.
     base_commit=$(git -C "$worktree" rev-parse --verify HEAD 2>/dev/null) || base_commit=""
     if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
-        --main-checkout "$main_checkout" --branch "$branch" --reports-to "$reports_to" \
+        --main-checkout "$main_checkout" --branch "$branch" --reports-to "$claimant" \
         ${base_commit:+--base-commit "$base_commit"} 2>&1 >/dev/null); then
         lane_file=$(python3 "$lanes_cli" path "$label" 2>/dev/null | jq -r '.file // empty' 2>/dev/null) || lane_file=""
         lane_file_note=""

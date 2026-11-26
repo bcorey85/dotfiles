@@ -41,9 +41,9 @@ the workspace, removes the entry and prunes. When it exits non-zero the lane is
 kept, with its stderr as the reason, unless its entry is gone by then: the close
 ran and only the prune after it failed, so the line is `closed <name> (prune:
 <reason>)`.
-A lane merged only into the main checkout's current branch keeps its worktree
-folder and branch until its tip is on origin's default branch;
-`herdr-worktree-prune --apply` then removes it.
+When the main checkout is on a branch other than origin's default, a lane
+merged only into `origin/<that branch>`, not yet into the local branch, keeps
+its worktree folder and branch.
 
 The lane list is read with `$HERDR_LANES_CLI list`, run with the same Python as lane_list.py (default set by
 scripts/.local/lib/toolkit-tools.bash, read through scripts/.local/lib/lane_list.py).

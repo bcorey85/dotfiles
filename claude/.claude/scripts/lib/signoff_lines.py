@@ -171,7 +171,8 @@ SESSION_RULER = re.compile(re.escape(plan_format.SESSION_RULING_OWNER)
                            + r"|[(,]\s*session\b(?!['\u2019])|\bsession\s*\(lane\b|\blane\s+call\b", re.I)
 # A clause that records the user's sign-off: `user sign-off` or `sign-off: <name>` with no session name after it,
 # `user-signed`, `ruled by: user`, `the user ruled|approved|signed`, a ruling `relayed by` on a line that names the
-# user, or `signed off by` anyone but a session. It wins over a session ruler on the same line.
+# user, `signed off by` anyone but a session, or a person's name that signed off or ruled (`PERSON_SIGNOFF`). It
+# wins over a session ruler on the same line.
 NOT_A_SESSION = rf"(?![,:]?\s*{SESSION_NAME})"
 NAMES_THE_USER = r"\buser\b(?!['\u2019])"
 USER_SIGNOFF = re.compile(rf"\buser[\s-]+sign-?\s*off\b{NOT_A_SESSION}|\bsign-?\s*off\s*:{NOT_A_SESSION}\s*\S"
@@ -182,10 +183,16 @@ USER_SIGNOFF = re.compile(rf"\buser[\s-]+sign-?\s*off\b{NOT_A_SESSION}|\bsign-?\
                           re.I)
 
 
+# A capitalized name (`Brandon Corey`) as the subject of `signed off`, `ruled` or `approved`; case-sensitive, so a
+# lowercase session word never matches, and `The`, `This`, `Lane`, `Orchestrating` or `Session` never start the name.
+PERSON_SIGNOFF = re.compile(r"\b(?!(?:The|This|Lane|Orchestrating|Session)\b)[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*"
+                            r"\s+(?:signed\s+off|ruled|approved)\b")
+
+
 def is_session_ruled(line):
     """True when a session is the line's ruler and no clause of the line records the user's sign-off. It fails
     closed: a line with neither reads as the user's."""
-    if USER_SIGNOFF.search(line):
+    if USER_SIGNOFF.search(line) or PERSON_SIGNOFF.search(line):
         return False
     return bool(SESSION_RULER.search(line))
 

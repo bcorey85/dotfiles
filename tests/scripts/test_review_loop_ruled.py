@@ -1186,6 +1186,14 @@ class UserRuledLineTest(unittest.TestCase):
             ("- 2026-11-10: the user ruled to ship it, 2026-11-10, in session agent-evals-5e", True),
         ])
 
+    def test_a_person_who_signed_off_or_ruled_stays_the_ruler_beside_a_session_name(self):
+        self.assert_ruled([
+            ("- 2026-11-10: Brandon Corey signed off, directly to agent-evals-5e, on handing the deny to the work"
+             " machine.", True),
+            ("- 2026-11-10: Brandon Corey ruled to keep the plan, relayed through the lane session.", True),
+            ("- 2026-11-10: Adopt plan change. Ruled by the queue-fixes lane session, not the user.", False),
+        ])
+
     def test_a_ruling_a_session_made_and_another_relayed_stays_the_sessions(self):
         self.assert_ruled([
             ("**Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill lane.",

@@ -14,7 +14,7 @@ When the skill reports no open finding, a coder writes one line of evidence unde
 
 A plan written with the older four closing phases (Refactor pass, Test audit, Verify pass, Recap) runs them as written.
 
-Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
+Nothing after this is a phase. `/adr` runs at branch end, after the PR is open (`/verify-branch` points to it and `/close-branch` runs it once the PR is open; the branch is not finished until `adr_flow.py status <plan folder>` prints `adr: done`).
 
 ## Phase Status line (copy verbatim, renumbering)
 

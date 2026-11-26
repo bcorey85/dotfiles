@@ -71,6 +71,8 @@ The gate FAILS on a red full check, a critical or high finding, a criterion stil
 
 ## Step 6: recap
 
+Run Step 7 first and keep its status line for Open items.
+
 Run, in one response, from the repo root:
 
 ```bash
@@ -98,13 +100,23 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Concentration                 (largest module and branch counts, and the Diff split line)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
-### Open items                    (asks, REQUIRES-MUTATION culls not run)
+### Open items                    (asks, REQUIRES-MUTATION culls not run, Step 7's status line when it is not `adr: done`)
 ### Still unstaged                (from stage.mjs, blast-radius order)
 
-Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
+Next: read the residue → run the smoke checklist → stage → /commit → open the PR → /adr <plan folder> → `adr_flow.py status <plan folder>` (`adr: done` ends the branch).
 ```
 
 Build Criteria changes from the `rg` output only. A sign-off that another session wrote, not the user, is listed as `not the user's sign-off: the criterion stands`. Write `none` only when `rg` printed no line. Any report that says whether a criterion was cut or narrowed, the hand-back included, repeats this section.
+
+## Step 7: ADR after the PR
+
+Run this before the Step 6 print, so its result lands in the recap. Once the PR exists, run `python3 ~/.claude/skills/adr/scripts/adr_flow.py status <plan folder>` first.
+
+- `adr: no PR yet`: skip `/adr`; the recap's Next line leaves the step to the user.
+- `adr: not finished`: run `/adr <plan folder>`, then rerun `status` once. On any line but `adr: done`, put that line under the recap's Open items.
+- `adr: cannot tell: <reason>`: put the line under the recap's Open items.
+
+The branch is not finished until `status` prints `adr: done`.
 
 ## What NOT to do
 

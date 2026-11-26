@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-803 fix notes
+811 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -21,8 +21,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
 | script/full-check | 32 | 8 |
+| script/script-utils | 31 | 9 |
 | script/plan-format | 30 | 10 |
-| script/script-utils | 30 | 8 |
 | script/review-loop | 28 | 11 |
 | script/quality-check-cap | 24 | 6 |
 | script/shell-write-gate | 24 | 4 |
@@ -39,22 +39,25 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-log | 14 | 1 |
 | script/log-review-finding | 12 | 0 |
 | script/refactor-flow | 12 | 4 |
+| script/verify-common | 12 | 2 |
 | script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
 | script/inline-interpreter-hint | 11 | 7 |
 | script/log-escape | 11 | 2 |
 | script/review-launch | 11 | 6 |
-| script/verify-common | 11 | 1 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
 | script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
+| script/lane-status | 8 | 8 |
 | script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
+| script/adr-flow | 6 | 3 |
+| script/check-discovery | 6 | 4 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
 | script/memory-cap-scope | 6 | 6 |
@@ -67,7 +70,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
 | script/herdr-worktree-watch | 5 | 4 |
-| script/lane-status | 5 | 5 |
 | script/loop-transcript | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
 | script/plan-check | 5 | 5 |
@@ -77,7 +79,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
-| script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
 | script/fork-children | 4 | 4 |
@@ -92,7 +93,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
 | script/calibration-guard | 3 | 1 |
-| script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
@@ -106,6 +106,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/shell-command-words | 3 | 3 |
 | script/shell-quoting | 3 | 3 |
 | script/worktree-snapshot | 3 | 0 |
+| skill/stage | 3 | 2 |
 | agent/code-fork | 2 | 0 |
 | agent/code-reviewer | 2 | 1 |
 | agent/test-intent-reviewer | 2 | 0 |
@@ -128,6 +129,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
+| script/memory-sample | 2 | 2 |
 | script/mutation-lock | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
@@ -143,7 +145,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/waiting-review-launch | 2 | 1 |
 | skill/branch-recap | 2 | 0 |
 | skill/close-branch | 2 | 1 |
-| skill/stage | 2 | 1 |
 | skill/test-audit | 2 | 2 |
 | agent/general-purpose | 1 | 1 |
 | agent/mutation-tester | 1 | 0 |
@@ -183,6 +184,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/git-raw-diff | 1 | 1 |
 | script/hook-local-row | 1 | 0 |
 | script/human-turn-lookup | 1 | 1 |
+| script/install-memory-sample | 1 | 1 |
 | script/install-stow | 1 | 0 |
 | script/ledger-hook | 1 | 0 |
 | script/lint | 1 | 1 |
@@ -196,6 +198,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |
 | script/process-group | 1 | 1 |
+| script/process-table | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/refactor-log-input | 1 | 1 |
@@ -234,6 +237,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | shared/review-fork-run | 1 | 1 |
 | shared/review-loop | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
+| skill/adr | 1 | 1 |
 | skill/architect-core | 1 | 1 |
+| skill/fix | 1 | 1 |
 | skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |

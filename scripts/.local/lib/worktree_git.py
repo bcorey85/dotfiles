@@ -155,9 +155,9 @@ class MergeVerdict:
     error: str | None = None
 
 
-def checkout_tip(repo):
-    """The commit of the main checkout's branch now, or None when it cannot be read."""
-    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{repo.checkout_name}^{{commit}}")
+def branch_tip(repo, name):
+    """The commit hash of refs/heads/<name> now, or None."""
+    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{name}^{{commit}}")
     if resolved.returncode != 0:
         return None
     return resolved.stdout.strip()
@@ -177,7 +177,7 @@ def merged_into(repo, commit):
             continue
         if asked.returncode != 0:
             return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
-        if is_checkout and commit == checkout_tip(repo):
+        if is_checkout and commit == branch_tip(repo, name):
             continue
         return MergeVerdict(target=name)
     return MergeVerdict()

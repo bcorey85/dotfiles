@@ -5,7 +5,17 @@ import dataclasses
 import os
 import pathlib
 
-from worktree_git import HEADS_PREFIX, PruneError, Tally, git, list_worktrees, merged_into, not_on_text, show
+from worktree_git import (
+    HEADS_PREFIX,
+    PruneError,
+    Tally,
+    branch_tip,
+    git,
+    list_worktrees,
+    merged_into,
+    not_on_text,
+    show,
+)
 
 # ---- branch deletion (both modes) ----
 
@@ -18,14 +28,6 @@ NO_SUCH_SECTION_TEXT = "no such section"
 class BranchDeletion:
     failure: str | None = None  # why the branch stays; None when it is deleted
     warning: str | None = None  # a problem after a successful delete
-
-
-def branch_tip(repo, name):
-    """The commit hash of refs/heads/<name> now, or None."""
-    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{name}^{{commit}}")
-    if resolved.returncode != 0:
-        return None
-    return resolved.stdout.strip()
 
 
 def ahead_text(repo, name):

@@ -30,20 +30,8 @@ LIMIT_REWRITE = "limit = 1\nlimit = 20\nlimit = three\nlimit = 4\nlimit = 6\n"
 LIMIT_PUT_BACK = "limit = 1\nlimit = 20\nlimit = 3\nlimit = 4\nlimit = 6\n"
 
 
-class FakeQuoteRun(review_loop_criteria_quotes.AcQuoteRuns):
+class FakeQuoteRun(review_loop_criteria_quotes.AcQuoteRuns, loop_tests.FakeCommentRun):
     """A LoopRun stand-in with what `undo_ac_quote_pass` reads: a repo and the asks it files."""
-
-    def __init__(self, repo):
-        self.repo = str(repo)
-        self.asks = []
-        self.rejected_questions = []
-        self.dropped_asks = []
-
-    drop_asks = review_loop_ruled.RuledFindings.drop_asks
-    file_put_back_ask = review_loop_ruled.RuledFindings.file_put_back_ask
-
-    def add_ask(self, gate, finding):
-        self.asks.append(finding)
 
 
 class CriteriaQuoteUnitTest(unittest.TestCase):

@@ -53,6 +53,14 @@ def outside_write_blocker(call_name, repo, paths):
             "them back, so revert them by hand before you push")
 
 
+def take_outside_blocker(call_name, repo):
+    """Pops the outside paths of the pass `call_name` and returns their blocker, "" when the pass has none."""
+    paths = PASS_OUTSIDE_WRITES.pop(call_name, [])
+    if not paths:
+        return ""
+    return outside_write_blocker(call_name, repo, paths)
+
+
 def record_pass_writes(role, repo, out, session):
     """Reads the transcript of the coder call `session` and sets PASS_OUTSIDE_WRITES[role] to its outside writes.
     Fails open, on purpose: a transcript that is missing or unreadable must not stop a run whose pass may be clean,
@@ -86,9 +94,9 @@ def outside_paths_on_stop(call_name, repo):
     try:
         yield
     except RuntimeError as error:
-        paths = PASS_OUTSIDE_WRITES.pop(call_name, [])
-        if paths:
-            error.args = (f"{error} {outside_write_blocker(call_name, repo, paths)}",)
+        blocker = take_outside_blocker(call_name, repo)
+        if blocker:
+            error.args = (f"{error} {blocker}",)
         raise
 
 
@@ -96,9 +104,9 @@ class OutsideWrites:
     def stop_on_outside_writes(self, call_name, findings, result):
         """Raises OutsideWriteError, with the findings kept open, when the pass `call_name` wrote outside the repo.
         The pass's changed files count as touched first."""
-        paths = PASS_OUTSIDE_WRITES.pop(call_name, [])
-        if not paths:
+        blocker = take_outside_blocker(call_name, self.repo)
+        if not blocker:
             return
         self.files_touched.update(result.changed)
         self.keep_unreverted_open(findings, result.reverted)
-        raise OutsideWriteError(outside_write_blocker(call_name, self.repo, paths))
+        raise OutsideWriteError(blocker)

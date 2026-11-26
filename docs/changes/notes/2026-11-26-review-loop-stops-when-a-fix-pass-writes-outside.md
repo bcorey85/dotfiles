@@ -22,6 +22,8 @@ The loop names each coder call's session (`--session-id`) and reads that transcr
 
 `claude/.claude/scripts/CLAUDE.md` names both new owners: `review/review_loop_outside_writes.py` and `review/review_loop_criteria_quotes.py`, with `plan_format.ac_quotes` and `plan_ac_quotes`.
 
+The three sites that turn a pass's outside paths into blocker text (the died-pass blocker, the stop wrapper and the outside-write stop) share `review_loop_outside_writes.take_outside_blocker`.
+
 `loop_transcript.written_paths` and `script_utils.record_tool_calls` read content blocks through one helper, `script_utils.record_blocks`.
 
 ## Evidence

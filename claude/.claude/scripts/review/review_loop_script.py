@@ -605,8 +605,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         signoffs = snapshot_signoffs(self.repo, files_in_scope)
         try:
             scope_guard = review_loop_scope_guard.guard_pass(self.repo, self.out, call_name, allowed,
-                                                             own_guard_test(signoffs), issue_texts)
-            scope_guard.gate_passes = self.stray_gate_passes
+                                                             own_guard_test(signoffs), issue_texts,
+                                                             self.stray_gate_passes)
         except script_utils.GitCallError as error:
             # The pass has not started, so no file changed: keep the findings open and stop with a blocker.
             self.keep_open(findings)

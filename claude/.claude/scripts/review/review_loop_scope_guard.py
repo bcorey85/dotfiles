@@ -67,7 +67,7 @@ class PassStart(typing.NamedTuple):
 class ScopeGuard:
     """The files outside one coder pass's `scope`, and the state of the repo `before` the pass."""
 
-    def __init__(self, role, scope, before, put_back_dir):
+    def __init__(self, role, scope, before, put_back_dir, gate_passes):
         self.repo = scope.root
         self.role = role
         self.scope = scope
@@ -90,14 +90,14 @@ class ScopeGuard:
         self.failed = False
         # The step `undo` ran last, to say what a failure left behind.
         self.current_step = None
-        # The paths whose pass bytes sit in the put-back folder. `gate_passes` (set by the loop) runs the pass's gate
+        # The paths whose pass bytes sit in the put-back folder. `gate_passes` runs the pass's gate
         # and returns True, False, or None when no gate runs. `stray_blocker` is why the loop must stop over the files
         # put back; None when none was put back or each was kept because the fix needs it.
         self.saved_paths = set()
         # The paths the pass deleted: the put-back folder holds no bytes for them, so the gate's "with it" state is the
         # file gone.
         self.deleted_paths = set()
-        self.gate_passes = None
+        self.gate_passes = gate_passes
         self.stray_blocker = None
         # The strays `keep_needed_files` has copied back, so a failure partway names which carry the pass's bytes.
         self.restored_strays = []
@@ -212,7 +212,8 @@ class ScopeGuard:
     def needed_strays(self, strays):
         """The strays the gate needs, judged each alone: the gate runs with every other stray in the pass's state and
         this one put back, and fails only when the fix needs this one. Returns None when a run gave no result. Leaves
-        every stray put back."""
+        every stray put back when it judges two or more and every run gave a result; with one stray it returns it as
+        is, still in the pass's state."""
         if len(strays) == 1:
             return strays
         needed = []
@@ -254,7 +255,7 @@ class ScopeGuard:
         if not strays:
             return
         self.current_step = KEEP_NEEDED_STEP
-        passes_without = self.gate_passes() if self.gate_passes else None
+        passes_without = self.gate_passes()
         if passes_without is None:
             self.stray_blocker = self.stray_blocker_text(strays, "no gate ran to show that the fix needs {it}")
             return
@@ -361,11 +362,11 @@ class ScopeGuard:
                                 "so the change stays: " + ", ".join(uncopied))
 
 
-def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
+def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts, gate_passes):
     """The ScopeGuard of one coder pass. `allowed` are the paths the pass may change, `has_own_guard(path)` says
-    whether another guard of the loop rules on a path, and `finding_texts` are the pass's findings, whose text may
-    name more paths. The repo's files are listed here, before the pass runs, so every later `holds` reads the pre-pass
-    file set. A failed listing raises GitCallError."""
+    whether another guard of the loop rules on a path, `finding_texts` are the pass's findings, whose text may
+    name more paths, and `gate_passes()` runs the pass's gate. The repo's files are listed here, before the pass
+    runs, so every later `holds` reads the pre-pass file set. A failed listing raises GitCallError."""
     root = pathlib.Path(repo)
     repo_files = frozenset(script_utils.repo_file_paths_or_raise(root))
     scope = PassScope(root, frozenset(allowed), has_own_guard, tuple(finding_texts), repo_files)
@@ -378,4 +379,4 @@ def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
     start = PassStart(backup, index_entries, head, dirty_before)
     # The same role runs twice in one loop, and each guard keeps its own bytes in a folder no earlier guard used.
     put_back_dir = script_utils.next_numbered_dir(pass_dir / "put-back")
-    return ScopeGuard(role, scope, start, put_back_dir)
+    return ScopeGuard(role, scope, start, put_back_dir, gate_passes)

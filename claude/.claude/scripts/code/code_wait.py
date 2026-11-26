@@ -12,8 +12,10 @@ printed: a resumed agent's old report is not printed again.
 <report file>` pair names a reviewer the fork dispatched for an open request (see reviewer_dispatch.py): the wait
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
-when a named reviewer finished with no report (exit 1), when a pair names a request that is not open or a round
-another dispatch already filled (the wait writes no report, prints the problem and the dispatch lines, and exits 1),
+when a named reviewer finished with no report (exit 1), when every pair names a report that another agent filled (a
+filled report with no recorded `filled_by` counts as another agent's; the wait writes no report, prints the problem
+and the dispatch lines, and exits 1), when the round manifest cannot record which agent fills a report (the wait
+writes no report for that pair, prints the rerun command on stderr, and exits 1),
 or once the loop ends: it prints the loop's output when the loop left a packet (then exits 1 with a STOP line when
 the packet's status is fix-removed-change, or stays cap-reached in a lane whose entry names a reports_to session),
 and otherwise exits 1 with the reason and the restart step. A cap-reached packet also gets the `cap reached after N
@@ -104,6 +106,10 @@ class StaleDispatchError(Exception):
     def __init__(self, lines):
         super().__init__(lines[0])
         self.lines = lines
+
+
+class FillRecordError(Exception):
+    """The round manifest could not record which agent fills a report; the message names the rerun command."""
 
 
 def agent_transcript(agent_id):
@@ -602,7 +608,7 @@ def reviewer_pairs(run, words):
         pairs.append((checked_agent_id(agent_id), report_file))
     used_problem = ""
     if folder is not None:
-        used_problem = reviewer_dispatch.used_round_problem(folder, pairs)
+        used_problem = reviewer_dispatch.used_round_problem(folder, pairs, run.command)
     if used_problem:
         pending = open_reviewer_requests(run)
         dispatch_lines = reviewer_dispatch_lines(run, pending) if pending else []
@@ -614,6 +620,7 @@ def write_finished_reports(run, pairs):
     """Write the report of each named reviewer that has finished and whose report file holds no text yet, and record
     in the round manifest which agent filled it. Returns the lines that name each finished reviewer with no report."""
     empty = []
+    written = []
     folder = run.loop_folder()
     for agent_id, report_file in pairs:
         if reviewer_dispatch.report_text(report_file).strip():
@@ -626,9 +633,18 @@ def write_finished_reports(run, pairs):
         if not report.strip():
             empty.append(f"- agent {agent_id}; report {report_file}; transcript {transcript}")
             continue
-        script_utils.write_text_atomically(pathlib.Path(report_file), report)
+        # The filler is recorded first: a failure between the two writes leaves the request open, so the same command
+        # picks it up again instead of being refused as another agent's round.
         if folder is not None:
-            reviewer_dispatch.record_filled_by(folder, report_file, agent_id)
+            try:
+                reviewer_dispatch.record_filled_by(folder, report_file, agent_id)
+            except (OSError, reviewer_dispatch.ManifestError) as error:
+                already_written = f" Reports already written: {', '.join(written)}." if written else ""
+                raise FillRecordError(f"could not record that agent {agent_id} fills {report_file}: {error}; "
+                                      f"its report was not written.{already_written} "
+                                      f"Rerun `{run.command}` with the same pairs.") from error
+        script_utils.write_text_atomically(pathlib.Path(report_file), report)
+        written.append(report_file)
     return empty
 
 
@@ -824,6 +840,9 @@ def main(argv):
         return 2
     except StaleDispatchError as error:
         print("\n".join(error.lines))
+        return 1
+    except FillRecordError as error:
+        print(f"code_wait: {error}", file=sys.stderr)
         return 1
 
 

@@ -50,9 +50,10 @@ class ScopeGuardTest(unittest.TestCase):
         review_loop_scope_guard.SCOPE_FAULTS.clear()
         self.addCleanup(review_loop_scope_guard.SCOPE_FAULTS.clear)
 
-    def guard(self, allowed=("app.py",), has_own_guard=lambda _path: False, finding_texts=()):
+    def guard(self, allowed=("app.py",), has_own_guard=lambda _path: False, finding_texts=(),
+              gate_passes=lambda: None):
         return review_loop_scope_guard.guard_pass(self.repo, self.out, "coder1", allowed, has_own_guard,
-                                                  finding_texts)
+                                                  finding_texts, gate_passes)
 
     def text(self, name):
         return (self.repo / name).read_text()
@@ -470,8 +471,7 @@ class ScopeGuardTest(unittest.TestCase):
 
     def test_a_failed_coder_call_puts_the_stray_back_and_runs_no_gate(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        scope_guard = self.guard()
-        scope_guard.gate_passes = lambda: self.fail("the gate ran on a failed pass")
+        scope_guard = self.guard(gate_passes=lambda: self.fail("the gate ran on a failed pass"))
         with self.edit_doc_then(review_loop_coder.ModelCallError("model died")), \
                 self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
@@ -483,8 +483,7 @@ class ScopeGuardTest(unittest.TestCase):
 
     def test_a_pass_guard_failure_puts_the_stray_back_and_runs_no_gate(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        scope_guard = self.guard()
-        scope_guard.gate_passes = lambda: self.fail("the gate ran after the pass guard failed")
+        scope_guard = self.guard(gate_passes=lambda: self.fail("the gate ran after the pass guard failed"))
         pass_guard_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
         with self.edit_doc_then("Fixed 1."), pass_guard_fails, \
                 self.assertRaises(review_loop_coder.CoderCallError) as raised:
@@ -791,7 +790,8 @@ class ScopeGuardTest(unittest.TestCase):
         fresh.mkdir()
         git(fresh, "init", "-q")
         (fresh / "scratch.txt").write_text("mine\n")
-        guard = review_loop_scope_guard.guard_pass(fresh, self.out, "coder1", (), lambda _path: False, ())
+        guard = review_loop_scope_guard.guard_pass(fresh, self.out, "coder1", (), lambda _path: False, (),
+                                                  lambda: None)
         (fresh / "scratch.txt").write_text("theirs\n")
 
         guard.undo()
@@ -810,8 +810,7 @@ class ScopeGuardTest(unittest.TestCase):
             self.gate_states.append(self.doc_state())
             return answers.pop(0)
 
-        guard = self.guard()
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
         guard.undo()
         return guard
@@ -861,7 +860,6 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertIn("no gate ran", guard.stray_blocker)
 
     def test_a_file_the_pass_deleted_is_judged_as_gone_and_never_copied_from_the_put_back_folder(self):
-        guard = self.guard()
         states = []
         answers = [False, True]
 
@@ -869,7 +867,7 @@ class ScopeGuardTest(unittest.TestCase):
             states.append(self.doc_state())
             return answers.pop(0)
 
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / "docs/rule-anchors.md").unlink()
 
         guard.undo()
@@ -881,8 +879,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertFalse((self.repo / "docs/rule-anchors.md").exists())
 
     def test_the_stop_text_for_a_deleted_file_says_the_pass_deleted_it_and_names_no_saved_bytes(self):
-        guard = self.guard()
-        guard.gate_passes = lambda: True
+        guard = self.guard(gate_passes=lambda: True)
         (self.repo / "docs/rule-anchors.md").unlink()
 
         guard.undo()
@@ -892,8 +889,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertNotIn("kept the pass's bytes", guard.stray_blocker)
 
     def test_the_stop_text_for_one_deleted_and_one_edited_stray_names_both_clauses(self):
-        guard = self.guard()
-        guard.gate_passes = lambda: True
+        guard = self.guard(gate_passes=lambda: True)
         (self.repo / "docs/rule-anchors.md").unlink()
         (self.repo / "tests.py").write_text("t = 2\n")
 
@@ -903,8 +899,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertIn("kept the pass's bytes", guard.stray_blocker)
 
     def test_two_stray_files_are_both_named_with_plural_wording(self):
-        guard = self.guard()
-        guard.gate_passes = lambda: True
+        guard = self.guard(gate_passes=lambda: True)
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
         (self.repo / "tests.py").write_text("t = 2\n")
 
@@ -916,7 +911,6 @@ class ScopeGuardTest(unittest.TestCase):
 
     def test_two_strays_are_judged_each_alone_and_only_the_needed_one_stays(self):
         needed, spare = "docs/rule-anchors.md", "tests.py"
-        guard = self.guard()
         states = []
 
         def gate_passes():
@@ -924,7 +918,7 @@ class ScopeGuardTest(unittest.TestCase):
             # Fails without the doc, whatever state the other file is in; passes once the doc has the pass's bytes.
             return self.doc_state() == DOC_REWRITTEN
 
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / needed).write_text(DOC_REWRITTEN)
         (self.repo / spare).write_text("t = 2\n")
 
@@ -941,9 +935,8 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertIn("the gate passes with it put back alone", guard.stray_blocker)
 
     def test_a_kept_file_the_pass_staged_keeps_its_replaced_index_blob_in_the_note(self):
-        guard = self.guard()
         answers = [False, True]
-        guard.gate_passes = lambda: answers.pop(0)
+        guard = self.guard(gate_passes=lambda: answers.pop(0))
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
         git(self.repo, "add", "docs/rule-anchors.md")
         staged_blob = subprocess.run(["git", "rev-parse", ":docs/rule-anchors.md"], cwd=self.repo,
@@ -956,8 +949,7 @@ class ScopeGuardTest(unittest.TestCase):
 
     def two_strays_with_gate(self, gate_passes):
         """Undoes a pass that rewrote two files outside the scope, judged by `gate_passes`."""
-        guard = self.guard()
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
         (self.repo / "tests.py").write_text("t = 2\n")
         return guard
@@ -980,8 +972,7 @@ class ScopeGuardTest(unittest.TestCase):
         (self.repo / "extra.py").write_text("e = 1\n")
         git(self.repo, "add", "extra.py")
         git(self.repo, "commit", "-qm", "extra")
-        guard = self.guard()
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
         (self.repo / "tests.py").write_text("t = 2\n")
         (self.repo / "extra.py").write_text("e = 2\n")
@@ -1042,7 +1033,6 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertNotIn("not put back is in commit", faults)
 
     def test_a_gate_that_raises_while_judging_notes_which_files_were_copied_back(self):
-        guard = self.guard()
         calls = []
 
         def gate_passes():
@@ -1051,7 +1041,7 @@ class ScopeGuardTest(unittest.TestCase):
                 return False
             raise OSError("gate crashed")
 
-        guard.gate_passes = gate_passes
+        guard = self.guard(gate_passes=gate_passes)
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
 
         with self.assertRaises(OSError):
@@ -1063,8 +1053,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertNotIn("not put back is in commit", faults)
 
     def test_an_undo_with_no_judging_puts_files_back_and_runs_no_gate(self):
-        guard = self.guard()
-        guard.gate_passes = lambda: self.fail("the gate ran on a failed pass")
+        guard = self.guard(gate_passes=lambda: self.fail("the gate ran on a failed pass"))
         (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
 
         guard.undo(judge=False)
@@ -1073,8 +1062,7 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertIsNone(guard.stray_blocker)
 
     def test_a_pass_that_changed_nothing_outside_its_scope_runs_no_gate(self):
-        guard = self.guard()
-        guard.gate_passes = lambda: self.fail("the gate ran with nothing put back")
+        guard = self.guard(gate_passes=lambda: self.fail("the gate ran with nothing put back"))
         (self.repo / "app.py").write_text("x = 3\n")
 
         guard.undo()

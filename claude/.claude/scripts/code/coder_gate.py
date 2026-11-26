@@ -628,7 +628,8 @@ def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
 # unnamed_lines: the `not run:`, `command error:` and `setup fault:` lines of the commands that gave no result and
 # that the result line does not already name; empty for none.
 # gave_no_result: True when any command timed out, never started, errored or hit a setup fault, whatever the outcome.
-# ran_nothing: True when every command was skipped (no changed file matched its placeholder), so no test ran.
+# ran_nothing: True when every command was skipped (no changed file matched its placeholder) or no command was
+# given, so no test ran.
 ScopedRun = namedtuple("ScopedRun", ["result", "tails", "real_failures", "summaries",
                                      "unnamed_lines", "gave_no_result", "ran_nothing"], defaults=(False,))
 

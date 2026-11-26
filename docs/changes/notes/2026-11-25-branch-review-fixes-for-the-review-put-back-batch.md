@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-review_loop_comment_removal.py adds the removed lines a finding quotes to the named lines before the block-span check, so one quoted line covers its comment block the way a line match does. reviewer_dispatch.py ends the no-open-round refusal with "rerun the wait with no pairs to get the next round or the packet". code_wait.py's docstring names the exit-1 refusal. review_loop_stray_files.py passes the named-tests budget (540 s) to the scoped run; a timeout reads as no result, so the loop stops.
+review_loop_comment_removal.py adds the removed lines a finding quotes to the named lines before the block-span check, so one quoted line covers its comment block the way a line match does. reviewer_dispatch.py ends the no-open-round refusal with "run `<wait command>` with no pairs to get the next round or the packet". code_wait.py's docstring names the exit-1 refusal. review_loop_stray_files.py passes the named-tests budget (540 s) to the scoped run; a timeout reads as no result, so the loop stops.
 
 ## Evidence
 

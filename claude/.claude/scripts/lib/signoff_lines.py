@@ -105,8 +105,7 @@ def cites_user_ruling(impact_text, log_text, log_names, name=""):
     sign-off entry of `log_text` (`unit_is_user_ruled`). Only lines inside `signoff_scope_indexes` count. A quote
     needs three or more words (`MIN_QUOTE_WORDS`) unless the entry is one line, and the `The ruling:` text counts
     with or without its label. A `The ruling:` entry is judged together with the entry above it (`ruling_units`).
-    `name` is the log's
-    file name, as for `signoff_lines`."""
+    `name` is the log's file name, as for `signoff_lines`."""
     impact = plan_format.normalized_words(impact_text).lower()
     named = [log_name for log_name in log_names if log_name.lower() in impact]
     if not named:

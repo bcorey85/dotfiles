@@ -114,8 +114,7 @@ def unnamed_removals(path, removed, spans, named, quotes):
     quoted_lines = {number for number, text in removed if quoted_by_finding(path, text, quotes)}
     named_lines |= quoted_lines
     return [(number, text) for number, text in removed
-            if not protected_lines.in_span_with(number, spans, named_lines)
-            and number not in quoted_lines]
+            if not protected_lines.in_span_with(number, spans, named_lines)]
 
 
 def without_reworded(removed, entries, current_entries, rewrites):

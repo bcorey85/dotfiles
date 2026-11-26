@@ -204,11 +204,12 @@ def record_filled_by(loop_dir, report_file, agent_id):
                     return
 
 
-def used_round_problem(loop_dir, pairs):
+def used_round_problem(loop_dir, pairs, wait_command):
     """The refusal text when every (agent id, report file) pair of `pairs` names a request whose report another agent
     filled, else "". That is a stale dispatch: a newly dispatched agent for a round already answered. The agent that
     filled the report, run again with the same command, is never refused, on any round. A filled report with no
-    recorded filler counts as filled by another agent. A call that also names a pair that is not stale passes."""
+    recorded filler counts as filled by another agent. A call that also names a pair that is not stale passes.
+    `wait_command` is the wait command the refusal tells the caller to rerun with no pairs."""
     requests = all_requests(loop_dir)
     entry_of = {entry["report_file"]: entry for entry in requests}
     named = [(agent_id, entry_of[report_file]) for agent_id, report_file in pairs if report_file in entry_of]
@@ -227,7 +228,7 @@ def used_round_problem(loop_dir, pairs):
         used_text = f"round {used} is used: its report was filled by another agent"
     else:
         used_text = f"rounds {used} are used: their reports were filled by other agents"
-    next_step = "rerun the wait with no pairs to get the next round or the packet"
+    next_step = f"run `{wait_command}` with no pairs to get the next round or the packet"
     if open_rounds:
         next_step = f"dispatch round {open_rounds[0]}"
     return f"{used_text}; {next_step}"

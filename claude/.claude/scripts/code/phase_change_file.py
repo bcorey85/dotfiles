@@ -4,7 +4,7 @@ Run from the repo root. The check reads the `git diff --name-status -z` stream (
 the work tree's changes against HEAD, and each untracked file as an added one. Its refusal text passes through. A
 repo without the check passes. A file that phase_start.py recorded as dirty before the run, and whose bytes are
 unchanged since, is left out of the stream. Exit 1 when the check refuses, with a last line that names the next step.
-Exit 2 when git fails, the start record does not parse or the check crashes."""
+Exit 2 when git fails, the start record does not parse, the check cannot be started or the check crashes."""
 import pathlib
 import subprocess
 import sys
@@ -69,7 +69,11 @@ def main():
         print("phase_change_file.py: git could not list the work tree's changes", file=sys.stderr)
         return 2
 
-    finished = subprocess.run([str(check)], input=changes, text=True, cwd=repo)
+    try:
+        finished = subprocess.run([str(check)], input=changes, text=True, cwd=repo)
+    except OSError as error:
+        print(f"phase_change_file.py: cannot run {check}: {error}", file=sys.stderr)
+        return 2
     if finished.returncode == 0:
         return 0
 

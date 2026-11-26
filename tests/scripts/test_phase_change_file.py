@@ -220,6 +220,15 @@ class PhaseChangeFileTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertNotIn(NEXT_STEP_LINE, result.stderr)
 
+    def test_a_check_that_cannot_be_run_exits_2_without_a_traceback(self):
+        self.install_check()
+        check = self.repo / ".githooks" / "change-file-check"
+        check.chmod(0o644)
+        result = self.run_script()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("cannot run", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

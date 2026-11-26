@@ -448,7 +448,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         nearest = nearest_functions_text(self.repo, self.review_base, owned) if first_smell else ""
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(ask.text for ask in self.asks), self.brief, self.test_strategy,
-                                 tuple(self.no_code_rulings), self.ruled_out, nearest)
+                                 tuple(self.no_code_rulings), self.ruled_out, nearest, self.review_base)
         lens = getattr(owned, "lens", "")
         if lens:
             prompt += "\n" + lens

@@ -33,6 +33,7 @@ PROMPT_READING_TESTS = (
     "test_mutation_lock.py",
     "test_phase_asks.py",
     "test_refactor_flow.py",
+    "test_review_loop_census.py",
     "test_review_loop_coder.py",
     "test_review_loop_named_tests.py",
     "test_review_loop_nearest.py",

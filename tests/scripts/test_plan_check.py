@@ -112,6 +112,117 @@ class PlanCheckCliTest(unittest.TestCase):
 
         self.assertEqual(json.loads(done.stdout)["owner"], "user")
 
+    def owner_with_brief_text(self, author, brief_text):
+        home, env = self.queue_home(author)
+        (self.folder / "00-ticket.md").write_text(
+            f"# Lane\n\n{brief_text.replace('<home>', str(home))}\n\n## Done when\n\n- Words.\n")
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        return json.loads(done.stdout)
+
+    def test_owner_prints_session_for_a_queue_path_named_in_free_text_in_either_spelling(self):
+        for brief_text in ("Read ~/agent-evals/queue/item.md.", "Read `<home>/agent-evals/queue/item.md` first."):
+            with self.subTest(brief_text):
+                owner = self.owner_with_brief_text("claude-code/x", brief_text)
+
+                self.assertEqual(owner["owner"], "session")
+                self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_stays_user_for_a_human_written_queue_item_named_in_free_text(self):
+        owner = self.owner_with_brief_text("human:brandon", "Read ~/agent-evals/queue/item.md.")
+
+        self.assertEqual(owner["owner"], "user")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_ignores_a_queue_path_in_free_text_whose_file_does_not_exist(self):
+        owner = self.owner_with_brief_text("claude-code/x", "Read ~/agent-evals/queue/missing-item.md.")
+
+        self.assertEqual(owner["owner"], "user")
+        self.assertIsNone(owner["source"])
+
+    def test_owner_skips_only_the_missing_path_when_free_text_names_a_missing_and_an_existing_item(self):
+        owner = self.owner_with_brief_text(
+            "claude-code/x", "Read ~/agent-evals/queue/missing-item.md and ~/agent-evals/queue/item.md.")
+
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_ignores_a_queue_path_in_free_text_that_continues_past_the_md_extension(self):
+        brief_texts = (
+            "Read ~/agent-evals/queue/item.mdx",
+            "Read ~/agent-evals/queue/item.md-old",
+            "Read ~/agent-evals/queue/item.md.orig",
+        )
+        for brief_text in brief_texts:
+            with self.subTest(brief_text):
+                owner = self.owner_with_brief_text("claude-code/x", brief_text)
+
+                self.assertEqual(owner["owner"], "user")
+                self.assertIsNone(owner["source"])
+
+    def test_owner_ignores_a_queue_path_in_free_text_that_has_a_folder_or_word_before_the_tilde(self):
+        brief_texts = (
+            "Read ../~/agent-evals/queue/item.md",
+            "Read .~/agent-evals/queue/item.md",
+            "Read ~~/agent-evals/queue/item.md",
+            "Read a-~/agent-evals/queue/item.md",
+            "Read x~/agent-evals/queue/item.md",
+        )
+        for brief_text in brief_texts:
+            with self.subTest(brief_text):
+                owner = self.owner_with_brief_text("claude-code/x", brief_text)
+
+                self.assertEqual(owner["owner"], "user")
+                self.assertIsNone(owner["source"])
+
+    def test_owner_reads_the_source_line_before_a_queue_path_named_in_free_text(self):
+        home, env = self.queue_home("claude-code/x")
+        (home / "agent-evals" / "queue" / "other.md").write_text(
+            '---\ngenerated: {"by": "human:brandon", "at": "2026-11-01"}\n---\n')
+        (self.folder / "00-ticket.md").write_text(
+            "# Lane\n\nSource: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md.\n\n"
+            "## Done when\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_is_user_with_the_first_human_path_when_free_text_names_several_items(self):
+        home, env = self.queue_home("claude-code/x")
+        (home / "agent-evals" / "queue" / "other.md").write_text(
+            '---\ngenerated: {"by": "human:brandon", "at": "2026-11-01"}\n---\n')
+        (self.folder / "00-ticket.md").write_text(
+            "# Lane\n\nRead ~/agent-evals/queue/item.md and ~/agent-evals/queue/other.md.\n\n"
+            "## Done when\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "user")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/other.md")
+
+    def test_owner_prints_session_for_a_ticket_with_no_criteria_heading_that_names_a_session_item(self):
+        _home, env = self.queue_home("claude-code/x")
+        (self.folder / "00-ticket.md").write_text("# Lane\n\nRead ~/agent-evals/queue/item.md.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "session")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
+
+    def test_owner_prints_the_error_and_fails_for_a_free_text_queue_item_with_no_author(self):
+        home, env = self.queue_home("claude-code/x")
+        (home / "agent-evals" / "queue" / "item.md").write_text("---\ntitle: x\n---\n")
+        (self.folder / "00-ticket.md").write_text("# Lane\n\nRead ~/agent-evals/queue/item.md.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("generated", done.stdout)
+
     def test_owner_with_no_path_or_two_paths_prints_the_usage_and_fails(self):
         for args in (("owner",), ("owner", str(self.plan), str(self.plan))):
             with self.subTest(args):

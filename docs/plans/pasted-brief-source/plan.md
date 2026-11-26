@@ -13,7 +13,7 @@ runs).
 
 ## Phase Status
 
-- [ ] Phase 1: owner reads an existing queue item path named anywhere in the ticket (risk: low)
+- [x] Phase 1: owner reads an existing queue item path named anywhere in the ticket (risk: low)
 
 ## Phase 1: owner reads an existing queue item path named anywhere in the ticket
 

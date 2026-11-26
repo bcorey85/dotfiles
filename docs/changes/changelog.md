@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1214 changes
+1215 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -52,6 +52,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [plan_check owner reads a queue item path named anywhere in a pasted brief](notes/2026-11-25-plan-check-owner-reads-a-queue-path-named-in-a-brief.md) [script/plan-format] A ticket copied from a pasted brief names its queue item as a path in free text, not a Source line. plan_check owner now reads an existing queue path anywhere in the ticket, so a session-written item gives owner session.
 * [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md) [script/review-loop-script] The review loop's ruling check and its scope guard now share one test of whether a finding names a repo file, so a file named by ./ or a unique trailing part is backed up and can be put back.
 * [Full check names its own memory-capped scope unit](notes/2026-11-25-full-check-names-its-own-memory-capped-scope-unit.md) [script/memory-cap-scope, script/check-output, script/full-check] A check command that starts with the capped systemd-run prefix now runs inside the full check's own capped scope, where before both scopes got one unit name and the check never started.
 * [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them.

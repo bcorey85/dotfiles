@@ -820,6 +820,16 @@ def print_finished_state(root, branch, key, task_name):
     return 0
 
 
+def path_was_committed(root, pathspecs):
+    """True when some commit touched one of the pathspecs. Raises RefusedError when git fails, so a git failure never
+    reads as "never committed"."""
+    command = ["git", "log", "-1", "--format=%H", "--", *pathspecs]
+    history = run(command, cwd=root)
+    if history.returncode != 0:
+        raise RefusedError(f"`{' '.join(command)}` failed: {history.stderr.strip()}")
+    return bool(history.stdout.strip())
+
+
 def status_for_unresolved_argument(root, argument, branch):
     """Read `done` only for a committed ticket key's plan folder, or a committed plan folder path that is gone, and
     then only when the committed tree has dropped the folder and holds its ADR.
@@ -830,17 +840,15 @@ def status_for_unresolved_argument(root, argument, branch):
     key = argument_key(argument)
     if key:
         key_pathspecs = [f"docs/plans/{key}", f"docs/plans/{key}-*"]
-        history = run(["git", "log", "-1", "--format=%H", "--", *key_pathspecs], cwd=root)
-        if history.stdout.strip():
+        if path_was_committed(root, key_pathspecs):
             return print_finished_state(root, branch, key, "")
         print(f"adr: cannot tell: {argument} names no task dir and none was ever committed")
         return 1
     names_existing_path = os.path.exists(argument) or os.path.exists(root / argument)
-    if not names_existing_path and task_dir_problem(root, root / argument) is None:
-        history = run(["git", "log", "-1", "--format=%H", "--", str(root / argument)], cwd=root)
-        if history.stdout.strip():
-            task_name = Path(argument).name
-            return print_finished_state(root, branch, ticket_key_for("", task_name, branch_name), task_name)
+    names_gone_plan_folder = not names_existing_path and task_dir_problem(root, root / argument) is None
+    if names_gone_plan_folder and path_was_committed(root, [str(root / argument)]):
+        task_name = Path(argument).name
+        return print_finished_state(root, branch, ticket_key_for("", task_name, branch_name), task_name)
     print(f"adr: cannot tell: {argument} names no task dir under docs/plans")
     return 1
 

@@ -175,8 +175,11 @@ class ChangedPathPartsTest(unittest.TestCase):
     def test_a_non_markdown_file_under_docs_still_widens_the_check_to_every_part(self):
         self.assert_runs_each_part_alone(self.discovered_for(["src/App.tsx", "docs/openapi.yaml"]))
 
+    def test_a_markdown_file_outside_docs_widens_the_check_to_every_part(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["src/App.tsx", "README.md"]))
+
     def test_a_docs_only_change_runs_every_part(self):
-        self.assert_runs_each_part_alone(self.discovered_for(["docs/plans/x/plan.md", "README.md"]))
+        self.assert_runs_each_part_alone(self.discovered_for(["docs/plans/x/plan.md", "docs/x.md"]))
 
     def test_no_changed_paths_given_runs_both_parts(self):
         self.assert_runs_each_part_alone(self.discovered_for(None))

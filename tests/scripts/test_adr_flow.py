@@ -649,6 +649,32 @@ class AdrFlowTest(unittest.TestCase):
             self.assertTrue(result.stderr.startswith("adr-flow:"), f"{verb}: {result.stderr}")
             self.assertNotIn("Traceback", result.stderr, verb)
 
+    def test_status_with_a_failing_git_log_refuses_instead_of_reading_never_committed(self):
+        fake_bin = self.temp_root / "fakebin"
+        fake_bin.mkdir()
+        real_git = shutil.which("git")
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            'for word in "$@"; do\n'
+            '  if [ "$word" = --format=%H ]; then echo boom >&2; exit 128; fi\n'
+            "done\n"
+            f'exec {real_git} "$@"\n'
+        )
+        fake_git.chmod(0o755)
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+        self.make_task_dir()
+        original_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{fake_bin}:{original_path}"
+        self.addCleanup(os.environ.__setitem__, "PATH", original_path)
+
+        result = self.run_flow("status", "LED-55")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(result.stderr.startswith("adr-flow:"), result.stderr)
+        self.assertIn("boom", result.stderr)
+        self.assertNotIn("never committed", result.stdout)
+
     def test_status_with_no_pr_yet_exits_zero_even_with_a_task_dir(self):
         self.make_task_dir()
         self.gh = self.fake_gh(FAKE_GH_EMPTY)

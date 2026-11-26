@@ -6,8 +6,9 @@ a package's lint and type-check scripts, ruff, and the repo's own test command (
 package.json `test` script). Only a repo that names no test command gets a guessed runner: its vitest or jest
 dependency, Django's `manage.py test` or pytest. The steps of one part join with `&&`. With changed paths, only the
 part whose path kind a changed path has runs (the package part owns JS/TS/CSS paths and package.json, the Python part
-.py and Python config paths; an HTML or JSON file counts as both); a Markdown path is skipped; any other changed
-path of neither kind (a non-Markdown file under docs/ too), no changed paths, or Markdown paths only runs every part.
+.py and Python config paths; an HTML or JSON file counts as both); a Markdown path under docs/ is skipped; any
+other changed path of neither kind (a Markdown path outside docs/, a non-Markdown file under docs/), no changed
+paths, or Markdown paths under docs/ only runs every part.
 Several parts run each on its own (lib/check_parts.py) and the run fails when any failed.
 None when the repo's files give no command."""
 import json
@@ -164,9 +165,9 @@ def python_part_commands(repo_dir, guesses_tests, env=None):
 
 def parts_to_run(parts, changed_paths):
     """The CheckParts a change touches. A shared path (a template or a JSON file, read by both kinds of code) counts as
-    both kinds. A Markdown path that is no code kind is skipped. A path of neither kind (root config, lock file, CI, a
-    non-Markdown file under docs/), no changed path, a change of Markdown paths only, or a change that touches no
-    existing part runs every part."""
+    both kinds. A Markdown path under docs/ is skipped. A path of neither kind (root config, lock file, CI, a
+    Markdown path outside docs/, a non-Markdown file under docs/), no changed path, a change of Markdown paths under
+    docs/ only, or a change that touches no existing part runs every part."""
     if not changed_paths:
         return parts
 
@@ -178,7 +179,7 @@ def parts_to_run(parts, changed_paths):
             kinds.add(PACKAGE_PART)
         elif source_paths.is_python_path(path):
             kinds.add(PYTHON_PART)
-        elif path.endswith(notes_paths.NOTES_SUFFIX):
+        elif notes_paths.is_notes_path(path, ()):
             continue
         else:
             return parts

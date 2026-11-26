@@ -1,6 +1,6 @@
-"""The new-side line ranges that a unified diff changes, a test of whether a line falls inside them, and the
-`path:first-last` text of one range. It takes plain diff text with any amount of context and any file
-prefix (`b/path`, or a bare path), and knows no repo or table."""
+"""The new-side line ranges that a unified diff changes, a test of whether a line falls inside them or a span of
+lines touches or is covered by them, and the `path:first-last` text of one range. It takes plain diff text with any
+amount of context and any file prefix (`b/path`, or a bare path), and knows no repo or table."""
 
 import re
 
@@ -104,3 +104,20 @@ def changed_ranges(diff_text, added_only=False):
 def in_ranges(ranges, line, slack=RANGE_SLACK):
     """True when `line` is within `slack` lines of any (first, last) range."""
     return any(first - slack <= line <= last + slack for first, last in ranges)
+
+
+def ranges_touch(ranges, first, last):
+    """True when any (first, last) range shares a line with lines first..last."""
+    return any(start <= last and first <= end for start, end in ranges)
+
+
+def ranges_cover(ranges, first, last):
+    """True when the (first, last) ranges, in any order and overlapping or adjacent, hold every line first..last."""
+    next_line = first
+    for start, end in sorted(ranges):
+        if start > next_line:
+            break
+        next_line = max(next_line, end + 1)
+        if next_line > last:
+            return True
+    return False

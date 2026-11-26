@@ -44,6 +44,36 @@ class ChangeAddedRangesTest(unittest.TestCase):
 
         self.assertEqual({"tracked.py", "new.py"}, set(added))
 
+    def test_relative_reads_diff_paths_from_a_subfolder(self):
+        folder = self.repo / "sub"
+        folder.mkdir()
+        (folder / "inner.py").write_text("a = 1\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "inner")
+        (folder / "inner.py").write_text("a = 1\nb = 2\n")
+        (self.repo / "tracked.py").write_text("a = 1\nb = 2\nc = 3\n")
+
+        plain = change_added_ranges.change_added_ranges(folder)
+        relative = change_added_ranges.change_added_ranges(folder, relative=True)
+
+        self.assertIn("sub/inner.py", plain)
+        self.assertEqual([(2, 2)], relative["inner.py"])
+        self.assertNotIn("sub/inner.py", relative)
+        self.assertIn("tracked.py", plain)
+        self.assertNotIn("tracked.py", relative)
+
+    def test_no_renames_reads_a_renamed_file_as_added_whole(self):
+        (self.repo / "tracked.py").write_text("a = 1\n" * 5)
+        self.git("add", ".")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "five")
+        self.git("mv", "tracked.py", "moved.py")
+
+        with_renames = change_added_ranges.change_added_ranges(self.repo, detect_renames=True)
+        without = change_added_ranges.change_added_ranges(self.repo, no_renames=True)
+
+        self.assertNotIn("moved.py", with_renames)
+        self.assertEqual([(1, 5)], without["moved.py"])
+
     def test_a_repo_with_no_commit_gives_none(self):
         empty = pathlib.Path(self.temp.name) / "empty"
         empty.mkdir()

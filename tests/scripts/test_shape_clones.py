@@ -3,6 +3,7 @@ import importlib.util
 import os
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -16,7 +17,7 @@ SHAPE_CLONES = toolkit_paths.CLAUDE_DIR / "skills" / "refactor" / "scripts" / "s
 module_spec = importlib.util.spec_from_file_location("shape_clones", SHAPE_CLONES)
 shape_clones = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(shape_clones)
-# shape_clones puts the refactor scripts folder on sys.path when it loads.
+sys.path.insert(0, str(SHAPE_CLONES.parent))
 import clone_pairs  # noqa: E402
 import tree_sitter_xml  # noqa: E402
 

@@ -5,6 +5,7 @@ import handback
 import path_summary
 import plan_format
 import script_utils
+import single_caller_census
 from coder_report import ALREADY_APPLIED_MARKER, SKIPPED_MARKER
 
 ISSUE_CHARS = 240
@@ -103,7 +104,7 @@ def review_scope_lines(repo, owned, prior_issues, open_asks):
 
 
 def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_asks=(), brief="", test_strategy="",
-                    no_code_rulings=(), ruled_out=(), nearest_functions=""):
+                    no_code_rulings=(), ruled_out=(), nearest_functions="", census_base=""):
     # The fix diff goes in a file the reviewer reads: inlined, a large diff runs the call past its prompt limit.
     lines = review_scope_lines(repo, owned, prior_issues, open_asks)
     lines.append("Your scope is the owned files listed under Review scope (this round).")
@@ -122,6 +123,8 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
         lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
         if nearest_functions:
             lines.append(nearest_functions)
+    if agent == "smell-reviewer" and not fix_diff_path:
+        lines += single_caller_census.census_report_lines(repo, census_base or "HEAD", set(owned))
     if no_code_rulings:
         lines.append(NO_CODE_REVIEW_RULE)
         lines += [f"  - {script_utils.one_line(text, ISSUE_CHARS)}" for text in no_code_rulings]

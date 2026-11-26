@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1250 changes
+1251 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -17,6 +17,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 * [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md) [script/memory-sample, script/process-table, script/lane-status, script/install-memory-sample] A per-minute memory sample log names the top RSS holders by command and herdr workspace, and lane-status --git marks merged lanes with an idle agent as finished idle with their Claude RSS.
 * [adr runs after the PR and adr_flow status reports a branch not finished](notes/2026-11-25-adr-runs-after-the-pr-and-adr-flow-status-reports.md) [skill/adr, skill/verify-branch, skill/close-branch, skill/branch-recap] adr_flow.py status reports a branch whose PR exists and whose task dir remains as not finished, and the branch-end skills run /adr as a numbered step after the PR.
+* [A census script lists added single-caller forwarders, unread fields and superseded helpers](notes/2026-11-25-smell-reviewer-gets-a-census-of-added-single.md) [script/review-loop, agent/smell-reviewer, skill/refactor] A script lists the forwarders, unread record fields and superseded helpers that a branch adds to Python code, for a reviewer to judge.
 * [lane-status --git prints each lane's branch state](notes/2026-11-25-lane-status-git-prints-each-lane-s-branch-state.md) [script/lane-status, script/script-utils, script/verify-common] lane-status --git prints each open lane's branch, merged or ahead/behind against origin's default branch, dirty file count and reports_to.
 * [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) [agent/code-reviewer, skill/close-branch] The code reviewer marks a new doc file or test module that no plan step, criterion or finding asks for as a fix to delete it, and a doc that repeats a sibling doc or the code; close-branch carries the Diff split line and treats an OVERSIZED part as a finding.
 * [The close pass splits the branch's added lines into docs, tests and code](notes/2026-11-25-the-close-pass-splits-the-branch-s-added-lines.md) [script/concentration, skill/close-branch] The concentration gate also prints the branch's added lines split into docs, tests and code, and flags new doc or test files that hold over 40% of a branch of 300 or more lines.

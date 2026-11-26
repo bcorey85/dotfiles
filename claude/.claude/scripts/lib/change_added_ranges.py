@@ -17,14 +17,21 @@ UNTRACKED_TEXT = ""
 DIFF_ARGS = ("diff", "-U0", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/")
 
 
-def change_added_ranges(repo, base="", detect_renames=False, literal_pathspecs=False, text_only=False):
+def change_added_ranges(repo, base="", detect_renames=False, literal_pathspecs=False, text_only=False,
+                        relative=False, no_renames=False):
     """{path: [(first, last)]} of the lines the work tree adds against `base` (HEAD when empty), from one `git diff`
     and one listing of the untracked files, each of which is added whole (WHOLE_FILE). With `text_only`, an untracked
-    symlink, non-regular entry or file that is not UTF-8 text is left out. None when git cannot answer, as in a repo
-    with no commit. Raises ValueError on a diff `diff_ranges` cannot parse."""
+    symlink, non-regular entry or file that is not UTF-8 text is left out. With `relative`, diff paths are relative
+    to `repo`, as the untracked paths are. `no_renames` turns off git's own rename detection, so a renamed file
+    reads as a whole added file. None when git cannot answer, as in a repo with no commit. Raises ValueError on a
+    diff `diff_ranges` cannot parse."""
     git_flags = ["--literal-pathspecs"] if literal_pathspecs else []
-    rename_flags = ["-M"] if detect_renames else []
-    diff_text = script_utils.git_output(repo, *git_flags, *DIFF_ARGS, *rename_flags, base or "HEAD")
+    option_flags = ["--relative"] if relative else []
+    if detect_renames:
+        option_flags.append("-M")
+    if no_renames:
+        option_flags.append("--no-renames")
+    diff_text = script_utils.git_output(repo, *git_flags, *DIFF_ARGS, *option_flags, base or "HEAD")
     untracked = script_utils.untracked_paths(repo)
     if diff_text is None or untracked is None:
         return None

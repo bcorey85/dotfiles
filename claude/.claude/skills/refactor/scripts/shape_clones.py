@@ -16,9 +16,8 @@ import warnings
 from pathlib import Path
 from typing import NamedTuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
-import clone_pairs
+import changed_lines
 import script_utils
 import sequence_similarity
 import source_paths
@@ -378,19 +377,17 @@ class ChangeRead(NamedTuple):
 
 def read_change(diff_files, untracked, root_dir):
     """The ChangeRead for the work tree at root_dir, or None when git cannot list the repo's files."""
-    changed_lines = clone_pairs.changed_line_sets(diff_files, untracked)
+    changed = changed_lines.changed_line_sets(diff_files, untracked)
     read = read_functions(root_dir)
     if read is None:
         return None
     changed_functions = []
     added_functions = []
     for function in read.shapes:
-        site = clone_pairs.CloneSite(function.path, function.first_line, function.last_line)
-        if not clone_pairs.site_touches(site, changed_lines):
+        if not changed_lines.range_touched(changed, function.path, function.first_line, function.last_line):
             continue
         changed_functions.append(function)
-        function_lines = range(function.first_line, function.last_line + 1)
-        if all(line in changed_lines[function.path] for line in function_lines):
+        if changed_lines.range_added(changed, function.path, function.first_line, function.last_line):
             added_functions.append(function)
     return ChangeRead(read.shapes, changed_functions, added_functions, read.notes)
 

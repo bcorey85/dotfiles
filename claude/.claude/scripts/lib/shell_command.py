@@ -550,7 +550,9 @@ def option_values(options, name):
 
 def command_options(words, value_options):
     """The (option, value) pairs of a command's own options in its words after the command name, and the index of the
-    first word after them; a flag's value is None. An option in `value_options` takes the next word as its value."""
+    first word after them; a flag's value is None. An option in `value_options` takes the next word as its value.
+    A caller that must skip past short clusters such as `-iC dir`, and needs only the index after them,
+    uses skip_options(..., clusters_take_values=True)."""
     options = []
     index = 1
     while index < len(words) and words[index].startswith("-"):

@@ -12,7 +12,7 @@ reads `not_code_phase`). The loop reads `stopped` once its process group exited 
 The repo is `--repo`, else the git top level of the `cwd` of the code-fork transcript's last record, else the current
 folder; with none inside a git checkout the loop reads `no_repo`. Exit 0 with the report; exit 2 for a usage error, a
 missing transcript or an id that is not a code-fork; exit 1 with a `fork_children: could not signal ...` line when
-`process_group.terminate_group` raises OSError (for example, a missing permission).
+`process_group.stop_group` raises OSError (for example, a missing permission).
 
 `fork_children.py hook` reads a PreToolUse event on stdin. It denies, once per code-fork and session, a TaskStop of a
 code-fork that has a live child or an unresolved launch, and names them. Any other call passes. Any error passes and

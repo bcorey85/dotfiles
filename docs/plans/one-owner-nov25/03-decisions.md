@@ -22,3 +22,6 @@
   (Phase 2 step 3 kept them reachable on prune). No behavior change.
 - 2026-11-25, this session (branch-wide review ask): the pre-commit hook copies every staged line as added when the
   HEAD problem file is empty, rather than relying on `grep -f` of an empty file, so a BSD grep cannot fail open.
+- 2026-11-25, ruling by agent-evals-c3-owner: accept the capped /review of the two refactor docstring edits
+  (`fork_children.py`, `shell_command.command_options`) and resume; its one finding (a line over 120 characters) is
+  fixed, and lint and the touched tests pass.

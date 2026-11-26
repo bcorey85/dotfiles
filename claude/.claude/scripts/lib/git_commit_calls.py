@@ -263,6 +263,14 @@ def place_commit_call(git_words, simple_command, current_dir, start_dir, commit_
     return PlacedCall(bool(commit_answer), commit_directory)
 
 
+def commit_read_steps(command, start_dir):
+    """The placed steps of `command` as the commit readers read them: the text with its stored heredoc bodies cut.
+    Raises ValueError when the command cannot be read. git_commit_dirs and the gate's sole-step check both read
+    through this, so a command one parses the other parses too."""
+    stored_cut = shell_statements.strip_stored_heredocs(command)
+    return list(placed_commands(stored_cut, start_dir))
+
+
 def git_commit_dirs(command, start_dir, commit_call):
     """The directory of each `git commit` (or other call that makes a commit:
     `commit_call(words, directory)` says which, answering True,
@@ -280,8 +288,7 @@ def git_commit_dirs(command, start_dir, commit_call):
     unplaced = []
     first_call_words = None
     try:
-        stored_cut = shell_statements.strip_stored_heredocs(command)
-        placed_calls = list(placed_commands(stored_cut, start_dir))
+        placed_calls = commit_read_steps(command, start_dir)
     except ValueError:
         return None
     for placed_call in placed_calls:

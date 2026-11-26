@@ -31,7 +31,7 @@ unquoted body. Every other gate reader (`git_calls`, `memory_cap_scope`, rule 8)
 
 - The allowed test fails on the base tree and passes after.
 - `python3 tests/parallel_tests.py test_git_discipline_gate.py test_shell_command.py` passes.
-- `bash tests/lint.sh` on the two changed .py files passes.
+- `bash tests/lint.sh` on the three changed .py files passes.
 
 ## Plan Deviations
 
@@ -39,3 +39,8 @@ unquoted body. Every other gate reader (`git_calls`, `memory_cap_scope`, rule 8)
   shell, so rule 11 would miss `source /dev/stdin <<EOF`, `xargs sh -c <<EOF`, `while read` loops and
   `{ cat <<EOF; } | bash`, which the base denies. Ruled by the orchestrating lane session (fix/gate-heredoc-body),
   2026-11-26; criteria owner `plan`, AC1 and AC2 unchanged.
+- Write-then-run in one command (`cat > run.sh <<'EOF' ... EOF` then `bash run.sh`, `source run.sh`, `. ./run.sh`)
+  is now allowed by rule 11; the base denied it only because it read every body line, and no session hit it. Accepted
+  as part of the existing limit that a script file's commits are unseen; named in the `check_shared_clone_commit`
+  docstring and the change note's Watch. Ruled by the orchestrating lane session (fix/gate-heredoc-body), 2026-11-26,
+  from the branch-wide review's ask.

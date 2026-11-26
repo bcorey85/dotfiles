@@ -86,7 +86,6 @@ from shell_command import (
     options_before_separator,
     without_flag_values,
 )
-from shell_steps import placed_commands
 
 S =r"[ \t\r\f\v]+"
 COMMIT_OR_PR = re.compile(r"\bgit" + S + r"commit\b|\bgh" + S + r"pr" + S + r"(create|edit)\b", re.I)
@@ -487,8 +486,7 @@ def is_sole_git_command(command, payload_cwd):
     file, or that a script run reads, are not read as steps; a command that stores one, such as `cat > f <<EOF`, is
     still a step, and so is a `git commit -F - <<EOF` body line.
     Called only after git_commit_dirs has read the command, so it parses."""
-    stored_cut = shell_statements.strip_stored_heredocs(command)
-    placed = list(placed_commands(stored_cut, payload_cwd))
+    placed = git_commit_calls.commit_read_steps(command, payload_cwd)
     if len(placed) != 1:
         return False
     only = placed[0]
@@ -515,7 +513,8 @@ def check_shared_clone_commit(command, calls, payload_cwd):
     A command `git_commit_dirs` cannot read as steps is judged only through runner text, all of
     it; when it can, only the `git` words inside the runner's quotes are judged there, so a `(cd ..)` or `pushd`
     step it already read is not judged twice at the hook's cwd. Rule 11 fails open when neither reader finds the
-    commit."""
+    commit. Accepted limit: a commit inside a file the same command writes through a stored heredoc and then runs
+    (`bash run.sh`, `source run.sh`, `. ./run.sh`) is not read, like the commits of any script file."""
     runner_text = shell_command.names_code_runner(shell_statements.shell_code(command))
     sole_step_answers = []
 

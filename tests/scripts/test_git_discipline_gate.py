@@ -1264,9 +1264,10 @@ class SharedCloneCommitTest(GateCaseBase):
         self.assert_shared_allowed("git add a.txt && git commit -m x -- a.txt", shared, shared)
         self.assert_shared_allowed(f"cd {shared} && git commit -m x -- a.txt", other, shared)
 
-    def test_a_heredoc_body_that_only_stores_text_is_no_commit(self):
+    def test_a_heredoc_body_that_is_data_is_no_commit(self):
         shared = self.repo_on("feature")
-        for command in ("cat > f <<'EOF'\ngit commit -m x\nEOF", "cat > f <<EOF\ngit commit -m x\nEOF"):
+        for command in ("cat > f <<'EOF'\ngit commit -m x\nEOF", "cat > f <<EOF\ngit commit -m x\nEOF",
+                        "python3 s.py <<'EOF'\ngit commit -m x\nEOF"):
             with self.subTest(command=command):
                 self.assert_shared_allowed(command, shared, shared)
 
@@ -1275,6 +1276,7 @@ class SharedCloneCommitTest(GateCaseBase):
         for command in ("bash <<EOF\ngit commit -m x\nEOF", "sh <<'EOF'\ngit commit -m x\nEOF",
                         "cat <<'EOF' | bash\ngit commit -m x\nEOF",
                         "cat > f <<EOF\n$(git commit -m z)\nEOF",
+                        "cat > f <<EOF\n`git commit -m z`\nEOF",
                         "cat > f <<'EOF'\ngit commit -m x\nEOF\ngit commit -m y"):
             with self.subTest(command=command):
                 self.assert_shared_denied(command, shared, shared)

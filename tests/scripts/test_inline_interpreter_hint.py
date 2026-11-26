@@ -218,6 +218,17 @@ class InlineInterpreterHintTest(unittest.TestCase):
     def test_the_deny_leads_with_the_route_and_names_the_existing_session_scratchpad(self):
         reason, scratchpad = self.scratchpad_reason(make_folder=True)
         self.assertTrue(reason.startswith(f"Write the code to a script file in {scratchpad} with the Write tool"))
+        self.assertIn("python3 -", reason)
+
+    def test_the_deny_keeps_the_general_words_without_a_transcript_path(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True, transcript_path=None)
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
+
+    def test_the_deny_keeps_the_general_words_for_a_transcript_path_with_no_folder(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True, transcript_path="x.jsonl")
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
 
     def test_the_deny_keeps_the_general_words_when_the_scratchpad_folder_is_missing(self):
         reason, scratchpad = self.scratchpad_reason(make_folder=False)

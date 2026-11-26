@@ -20,7 +20,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 `inline_interpreter_hint.py` builds its deny text with the route first. `hook_input.existing_session_scratchpad`
 returns `<claude code temp root>/<transcript folder>/<session id>/scratchpad` when the payload names one that exists, and
-the route names that folder; with none, the route says "your scratchpad directory".
+the route names that folder; with none, the route says "your scratchpad directory". A missing transcript path or
+session id, or a folder that does not exist, gives the general words.
 
 ## Evidence
 

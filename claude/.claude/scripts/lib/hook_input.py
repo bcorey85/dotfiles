@@ -326,8 +326,6 @@ def existing_session_scratchpad(transcript_path, session_id):
     if not transcript_path or not session_id:
         return None
     slug = os.path.basename(os.path.dirname(transcript_path))
-    if not slug:
-        return None
     scratchpad = os.path.join(claude_code_temp_root(), slug, session_id, "scratchpad")
     if not os.path.isdir(scratchpad):
         return None

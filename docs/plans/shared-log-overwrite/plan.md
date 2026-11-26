@@ -50,7 +50,7 @@ and `settings.json` is unchanged.
 - Phase 1: the subagent transcript comes from `script_utils.agent_transcript_path(hook)`, which reads the event's `agent_transcript_path` first.
 - Phase 1: a crash in the last-writer lookup keeps the deny and names the error in the deny text; only a crash in the read check fails open.
 - Phase 1: the last-writer lookup reads live sessions and their subagents only, not recent ended sessions.
-- Phase 1: with no writer found, the deny says no live Claude session's Write, Edit or Bash edit record was found, and names the kinds of cause it can be (another tool, an editor, a script, or a session that ended).
+- Phase 1: with no writer found, the deny says no live Claude session's Write, Edit or Bash edit record was found, and names the kinds of cause it can be (a Bash command, an editor, a script or an ended session).
 - Phase 1: an @-mentioned file attachment (`attachment.content.file.filePath`) counts as a read.
 
 ## Automated Verification

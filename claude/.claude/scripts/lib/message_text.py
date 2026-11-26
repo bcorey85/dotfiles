@@ -1,7 +1,7 @@
 """Plain-text helpers for gates that read a final message."""
 import re
 
-from script_utils import fenced_line_indexes
+from script_utils import closed_fence_indexes
 
 # A span in double quotes (straight or curly) or backticks on one line.
 QUOTED_SPAN = re.compile(r'"[^"\n]*"|“[^”\n]*”|`[^`\n]*`')
@@ -11,10 +11,10 @@ BLOCKQUOTE_LINE = re.compile(r"^\s*>")
 
 
 def without_draft_blocks(text):
-    """The text with fenced blocks (fence grammar: `script_utils.fenced_line_indexes`) and blockquote lines
-    removed."""
+    """The text with closed fenced blocks (fence grammar: `script_utils.closed_fence_indexes`) and blockquote lines
+    removed. A fence that is never closed stays, with the text after it: a stray fence hides nothing."""
     lines = text.split("\n")
-    fenced = fenced_line_indexes(lines)
+    fenced = closed_fence_indexes(lines)
     kept_lines = []
     for index, line in enumerate(lines):
         if index in fenced or BLOCKQUOTE_LINE.match(line):

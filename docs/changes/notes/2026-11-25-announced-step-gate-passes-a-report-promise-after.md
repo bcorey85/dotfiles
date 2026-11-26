@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-- `gates/announced_step.py`: new `REPORT_STEP` words (bring back, report, rank, summarize, collect, compile, relay, combine). A first-person announcement that names one passes when `user_prompts.turn_launched_background` is true for the turn. Any other first-person step still blocks.
+- `gates/announced_step.py`: new `REPORT_STEP` words (bring back, report, rank, summarize, collect, compile, relay, combine). A first-person announcement passes when the report word is the announced action itself (within one word of the announcement) and `user_prompts.turn_launched_background` is true for the turn. A report word elsewhere in the sentence ("I'll fix the report parser.") or a second step joined by `and` ("I'll push them and report back.") still blocks.
 
 ## Evidence
 

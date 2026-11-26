@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-- `lib/message_text.py`: new `without_draft_blocks(text)` removes fenced blocks (backticks or tildes) and `>` blockquote lines.
+- `lib/message_text.py`: new `without_draft_blocks(text)` removes closed fenced blocks (backticks or tildes) and `>` blockquote lines. An unclosed opening fence hides nothing: the text after it is still read. `lib/script_utils.py` gains `closed_fence_indexes`.
 - `gates/announced_step.py` reads the message through it before the quoted-span pass.
 
 ## Evidence

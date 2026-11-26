@@ -7,9 +7,9 @@ building|moving|reading|editing|adding|testing|picking`, `Next I'll`, `starting 
 `on it now` or `working on it`. The last three are progress forms with no subject; they are no announcement when
 the current turn of the transcript launched background work (a background Bash call (`run_in_background`) or an
 Agent call not set to the foreground, after the last turn start). A first-person sentence passes on the same
-condition when it also holds one of the report words (`bring back`, `report`, `rank`, `summarize`, `collect`,
-`compile`, `relay`, `combine`, with suffixes), anywhere in the sentence; every other first-person sentence is an
-announcement either way.
+condition when its announced action is one of the report words (`bring back`, `report`, `rank`, `summarize`,
+`collect`, `compile`, `relay`, `combine`, with suffixes): the word comes within one word of the announcement, and no
+other step is joined to it by `and`. Every other first-person sentence is an announcement either way.
 
 Fenced blocks and blockquote lines are drafts for the user and are dropped first (`message_text.without_draft_blocks`).
 
@@ -42,11 +42,17 @@ FIRST_PERSON_ANNOUNCEMENT = re.compile(
 PROGRESS_ANNOUNCEMENT = re.compile(
     r"\b(?:starting\s+(?:it|that|this|on\s+it|work)\s+now|on\s+it\s+now|working\s+on\s+it)\b", re.IGNORECASE)
 ANNOUNCEMENT = re.compile(FIRST_PERSON_ANNOUNCEMENT.pattern + "|" + PROGRESS_ANNOUNCEMENT.pattern, re.IGNORECASE)
-# Report words. A first-person sentence that holds one anywhere (verb or noun) passes when the turn launched
-# background work.
+# Report words. A first-person sentence whose announced action is one passes when the turn launched background work.
 REPORT_STEP = re.compile(
     r"\b(?:bring(?:ing)?\s+back|report(?:s|ed|ing)?|rank(?:s|ed|ing)?|summari[sz](?:e[sd]?|ing)|"
     r"collect(?:s|ed|ing)?|compil(?:e[sd]?|ing)|relay(?:s|ed|ing)?|combin(?:e[sd]?|ing))\b", re.IGNORECASE)
+# The report word is the announced action itself: it comes right after the first-person announcement, with at most
+# one word between.
+REPORT_ACTION = re.compile(r"\A\s*(?:\w+\s+)?" + REPORT_STEP.pattern, re.IGNORECASE)
+_OBJECT_WORD = r"(?:the|a|an|their|its|them|these|those|this|that|it)"
+# `and <verb> <object>` where the verb is no report word and no object word: a second step after the report.
+SECOND_STEP = re.compile(r"\band\s+(?!" + _OBJECT_WORD + r"\b)(?!" + REPORT_STEP.pattern + r")\w+\s+" + _OBJECT_WORD
+                         + r"\b", re.IGNORECASE)
 CONDITION = re.compile(r"\b(?:if|once|when|after|until|unless|as\s+soon\s+as)\b", re.IGNORECASE)
 OTHER_ACTOR = re.compile(r"\b(?:you|your|yours)\b", re.IGNORECASE)
 WORK_RUNS = re.compile(r"\b(?:running|background|waiting|wait\s+(?:for|on)|in\s+progress|notif\w*|queued|"
@@ -61,10 +67,19 @@ REASON = ("Your message says you will do, or are doing, a step, but the turn is 
           "Start that step now with a tool call, or say plainly that it has not started and who acts next.")
 
 
+def announces_report(sentence, announcement):
+    """Whether the announced action of a first-person sentence is a report word, with no second step joined by
+    `and`."""
+    after_announcement = sentence[announcement.end():]
+    if not REPORT_ACTION.match(after_announcement):
+        return False
+    return not SECOND_STEP.search(after_announcement)
+
+
 def announced_step(message, transcript_path=None):
     """The first sentence of a final message that announces a step with no condition, no other actor and no running
-    work, or None. A progress-only sentence, or a first-person one that holds a report word (`REPORT_STEP`), passes
-    when the current turn of the transcript launched background work."""
+    work, or None. A progress-only sentence, or a first-person one whose announced action is a report word
+    (`announces_report`), passes when the current turn of the transcript launched background work."""
     unquoted_message = without_quoted_spans(ANNOUNCEMENT, without_draft_blocks(message))
     background_launched = None
     for sentence in SENTENCE_END.split(unquoted_message):
@@ -77,7 +92,8 @@ def announced_step(message, transcript_path=None):
         request = REQUEST_THEN_STEP.search(sentence)
         if request and not FIRST_PERSON.search(sentence[:request.start()]):
             continue
-        if FIRST_PERSON_ANNOUNCEMENT.search(sentence) and not REPORT_STEP.search(sentence):
+        announcement = FIRST_PERSON_ANNOUNCEMENT.search(sentence)
+        if announcement and not announces_report(sentence, announcement):
             return sentence.strip()
         if background_launched is None:
             background_launched = user_prompts.turn_launched_background(transcript_path)

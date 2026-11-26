@@ -25,6 +25,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   - a comment or subshell around the call (`rg foo # note`, `(rg foo)`);
   - a first word that is not plain `rg`;
   - a `$` or backtick outside single quotes that no backslash escapes, a word starting with `~`, or a glob, brace list or `=command` word, including in words glued to quotes.
+- For a one-step command, the printed fix is the raw command text plus ` .`, so its quoting and expansions keep their meaning (`rg "$X"` gives `rg "$X" .`). A compound command keeps the re-quoted fix.
 - A call that would still hang with `.` appended is denied with no fixed command, in any of the forms above: a dangling option (`rg foo -g`, `rg -e`), or no pattern (`rg`, `rg -i`).
 - `lib/shell_expansion.py` gains `has_substitution_or_tilde`, built on the new `literal_positions` in `lib/shell_quoting.py`.
 - The gate is fail-open. A crash is reported on stderr with the gate name.

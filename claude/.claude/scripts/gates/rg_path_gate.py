@@ -164,7 +164,12 @@ def decision(tool_input, command, words):
         return {"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": "allow",
             "updatedInput": {**tool_input, "command": updated}}}
+    # One step: the raw text keeps its quoting and expansions. Re-quoting the parsed words would change the meaning
+    # (`"$X"` would turn into the literal `'$X'`). A raw text that the appended path does not fix (`(rg foo)`) is
+    # re-joined from the parsed words.
     fixed = shlex.join([*words, "."])
+    if is_one_simple_step(command) and hanging_rg(updated) is None:
+        fixed = updated
     reason = REASON_NO_FIX if hanging_rg(fixed) is not None else REASON.format(fixed=fixed)
     return {"hookSpecificOutput": {
         "hookEventName": "PreToolUse", "permissionDecision": "deny",

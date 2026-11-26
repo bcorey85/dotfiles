@@ -61,27 +61,29 @@ class RgPathGateTest(unittest.TestCase):
 
     def test_a_one_step_call_the_permission_rule_does_not_cover_is_denied_with_the_fixed_command(self):
         cases = [
-            ('rg "$X"', "rg '$X' ."),
-            ('rg "${X:=\\$(touch x)}${(e)X}"', "rg '${X:=\\$(touch x)}${(e)X}' ."),
-            ('rg "$(touch x)"', "rg '$(touch x)' ."),
-            ("rg ~foo", "rg '~foo' ."),
-            ("PATH=/x rg foo", "rg foo ."),
-            ("FOO=1 rg foo", "rg foo ."),
+            # A one-step call keeps its raw text, so `$X` and the brace list mean the same in the fixed command.
+            ('rg "$X"', 'rg "$X" .'),
+            ('rg "${X:=\\$(touch x)}${(e)X}"', 'rg "${X:=\\$(touch x)}${(e)X}" .'),
+            ('rg "$(touch x)"', 'rg "$(touch x)" .'),
+            ("rg ~foo", "rg ~foo ."),
+            ("PATH=/x rg foo", "PATH=/x rg foo ."),
+            ("FOO=1 rg foo", "FOO=1 rg foo ."),
             ("/tmp/x/rg foo", "/tmp/x/rg foo ."),
-            ("rg $X", "rg '$X' ."),
+            ("rg $X", "rg $X ."),
             # Single quotes inside double quotes are literal, so the `$` still expands.
-            ("rg \"'$X'\"", "rg ''\"'\"'$X'\"'\"'' ."),
-            ("rg 'a\\'$X", "rg 'a\\$X' ."),
-            ("rg {a,b}", "rg '{a,b}' ."),
+            ("rg \"'$X'\"", "rg \"'$X'\" ."),
+            ("rg 'a\\'$X", "rg 'a\\'$X ."),
+            ("rg {a,b}", "rg {a,b} ."),
+            ("rg foo{a,b}", "rg foo{a,b} ."),
             ("rg =ls", "rg =ls ."),
-            ("rg x*", "rg 'x*' ."),
-            ("rg `id`", "rg '`id`' ."),
-            ('rg "`id`"', "rg '`id`' ."),
+            ("rg x*", "rg x* ."),
+            ("rg `id`", "rg `id` ."),
+            ('rg "`id`"', 'rg "`id`" .'),
             # A quoted part glued to more text is one double-quoted word, so the `$(...)` and backtick inside run.
-            ("rg a\"b '$(touch x)' c\"d", r"""rg 'ab '"'"'$(touch x)'"'"' cd' ."""),
-            ("rg a\"b '`id`' c\"d", r"""rg 'ab '"'"'`id`'"'"' cd' ."""),
+            ("rg a\"b '$(touch x)' c\"d", "rg a\"b '$(touch x)' c\"d ."),
+            ("rg a\"b '`id`' c\"d", "rg a\"b '`id`' c\"d ."),
             # The raw parser cannot read `\"`, so the call is denied, not left to crash the gate.
-            ("rg \"\\\"'$(id)'\"", r"""rg '"'"'"'$(id)'"'"'' ."""),
+            ("rg \"\\\"'$(id)'\"", "rg \"\\\"'$(id)'\" ."),
             ("rg foo 2>&1", "rg foo ."),
             ("rg foo 2>/dev/null", "rg foo ."),
         ]
@@ -109,9 +111,9 @@ class RgPathGateTest(unittest.TestCase):
             ("rg foo &", "rg foo ."),
             ("rg foo\nls", "rg foo ."),
             ("rg foo\nrg bar", "rg foo ."),
-            ("'rg' foo", "rg foo ."),
-            ('"rg" foo', "rg foo ."),
-            ("\\rg foo", "rg foo ."),
+            ("'rg' foo", "'rg' foo ."),
+            ('"rg" foo', '"rg" foo .'),
+            ("\\rg foo", "\\rg foo ."),
             ("rg foo > out.txt", "rg foo ."),
             ("rg foo >> out.txt", "rg foo ."),
         ]

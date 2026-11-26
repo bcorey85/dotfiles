@@ -14,7 +14,8 @@ class WithoutDraftBlocksTest(unittest.TestCase):
         cases = (
             ("backtick fence", "Before\n```\ninside\n```\nAfter", "Before\nAfter"),
             ("tilde fence", "Before\n~~~text\ninside\n~~~\nAfter", "Before\nAfter"),
-            ("unclosed fence runs to the end", "Before\n```\ninside\nmore", "Before"),
+            ("unclosed fence leaves the text after it", "Before\n```\ninside\nmore", "Before\n```\ninside\nmore"),
+            ("closed fence dropped, later unclosed fence kept", "A\n```\nx\n```\nB\n~~~\nC", "A\nB\n~~~\nC"),
             ("longer fence is not closed by a shorter one",
              "Before\n````\ninside\n```\nstill inside\n````\nAfter", "Before\nAfter"),
             ("blockquote lines", "Before\n> quoted\n  > indented quote\nAfter", "Before\nAfter"),

@@ -14,7 +14,8 @@ own clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `
 
 An `is staged` or `are staged` claim with `what`, `whatever` or `whichever` as the word right before it ("checks the
 list against what is staged") reads the index and is no claim; this does not cover `I staged`, `I've staged` or
-`I have staged`, nor `was staged` or `were staged`.
+`I have staged`, nor `was staged` or `were staged`, nor `what` right after `is`, `are`, `was`, `were`, `here's`,
+`that's`, `this's` or `it's` ("here is what is staged: a.py"), which lists the staged files.
 
 Three forms are not claims, judged on the clause up to the claim. A `stay` or `remain` claim whose clause already says
 `staged` describes behavior ("files you staged stay staged"). A claim whose clause holds `say`, `said`, `claim` or
@@ -63,6 +64,10 @@ CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so)\s", re.I)
 REVIEW_DATA_SUBJECT = re.compile(r"\b(?:rows?|records?|diffs?|findings?)\s*$", re.I)
 # "checks the list against what is staged" asks what the index holds; it does not claim anything is in it.
 INDEX_QUESTION_WORD = re.compile(r"\b(?:what|whatever|whichever)\s*$", re.I)
+# "here is what is staged" and "this is what is staged" introduce the list of staged files: a claim, not a check.
+COPULA_BEFORE_QUESTION_WORD = re.compile(
+    r"(?:\b(?:is|are|was|were)|\b(?:here|that|this|it)['\N{RIGHT SINGLE QUOTATION MARK}]s)\s+"
+    r"(?:what|whatever|whichever)\s*$", re.I)
 FILE_WORD = re.compile(r"\bfiles?\b", re.I)
 GIT_INDEX = re.compile(r"\b(?:index|git)\b", re.I)
 # The word on its own, not inside a hyphenated name or a path such as `docs/staged-claim.md`.
@@ -122,7 +127,8 @@ def is_index_claim(sentence, claim):
     if CONDITIONAL.search(clause):
         return False
     if not claim.group("first_person"):
-        if claim.group("copula") and INDEX_QUESTION_WORD.search(clause):
+        asks_what_is_staged = INDEX_QUESTION_WORD.search(clause) and not COPULA_BEFORE_QUESTION_WORD.search(clause)
+        if claim.group("copula") and asks_what_is_staged:
             return False
         reports_other_actor = OTHER_ACTOR.search(clause) or (claim.group("left") and BARE_ACTOR.search(clause))
         if reports_other_actor:

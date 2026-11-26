@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-- `gates/permission_question.py`: a new `OUTWARD_STEP` branch. A tracker verb (add, link, edit, comment, label, assign, transition) followed within two words by Jira, Linear, GitHub, GitLab, or a ticket, issue, PR, MR, pull or merge request counts as outward. The file-name and GitHub-product guards apply.
+- `gates/permission_question.py`: a new `OUTWARD_STEP` branch. A tracker verb (add, link, edit, comment, label, assign, transition) followed within two words by Jira, Linear, GitHub, GitLab, or a ticket, issue, PR, MR, pull or merge request counts as outward, when a clause end, `and`, `or`, a preposition (from, to, on, in, for, with) or `link from|between` follows the noun. A noun used as a modifier ("the ticket number", "the PR check") stays a local step. The file-name and GitHub-product guards apply. `commit message` no longer counts as an outward commit.
 
 ## Evidence
 

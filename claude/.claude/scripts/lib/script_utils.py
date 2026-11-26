@@ -109,6 +109,25 @@ def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
     fenced = set()
+    for block, _is_closed in _fenced_blocks(lines):
+        fenced.update(block)
+    return fenced
+
+
+def closed_fence_indexes(lines):
+    """Same as `fenced_line_indexes`, but a fence that is never closed is left out: only blocks with a closing fence
+    count."""
+    fenced = set()
+    for block, is_closed in _fenced_blocks(lines):
+        if is_closed:
+            fenced.update(block)
+    return fenced
+
+
+def _fenced_blocks(lines):
+    """Each fenced block as (its line indexes, whether a closing fence ended it), in order."""
+    blocks = []
+    block = []
     opener = None
     for index, line in enumerate(lines):
         is_opening = opener is None
@@ -116,10 +135,14 @@ def fenced_line_indexes(lines):
             opener = _fence_opener(line)
         if opener is None:
             continue
-        fenced.add(index)
+        block.append(index)
         if not is_opening and _closes_fence(line, opener):
+            blocks.append((block, True))
+            block = []
             opener = None
-    return fenced
+    if block:
+        blocks.append((block, False))
+    return blocks
 
 
 def _fence_opener(line):

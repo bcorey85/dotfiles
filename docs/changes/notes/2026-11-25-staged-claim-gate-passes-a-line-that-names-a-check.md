@@ -19,6 +19,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 - `gates/staged_claim_gate.py`: an `is staged` or `are staged` claim with `what`, `whatever` or `whichever` right before it is no index claim.
+- A copula before `what` (`Here is what is staged: …`, `This is what is staged`) keeps it a claim.
 - First-person (`what I staged`) and past-tense (`what was staged`) forms still count as claims.
 - A new test pins that a claim naming another worktree's file by path is checked against that worktree's index.
 

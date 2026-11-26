@@ -297,6 +297,11 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_blocked(message)
 
+    def test_a_copula_before_what_is_staged_is_still_a_claim_with_an_empty_index(self):
+        for message in ("Here is what is staged: app.py and lib.py.", "This is what is staged now."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
     def test_a_claim_naming_another_worktree_by_path_passes_when_its_index_holds_the_files(self):
         linked = self.stage_in_linked_tree("a.txt")
         self.assert_passes(f"{linked}/a.txt is staged.")
@@ -731,6 +736,15 @@ class PermissionQuestionTest(unittest.TestCase):
                         "Want me to add a GitHub actions workflow?",
                         "Want me to label the variables?",
                         "Want me to address the reference?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_local_edit_where_the_tracker_noun_is_a_modifier_is_sent_back(self):
+        for message in ("Should I comment out the PR check in run.sh?",
+                        "Should I add the ticket number to the commit message?",
+                        "Want me to add the GitHub link to the README?",
+                        "Should I edit the issue template in docs?",
+                        "Should I link the PR helper into lib?"):
             with self.subTest(message=message):
                 self.assert_sent_back(message)
 

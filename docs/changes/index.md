@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1219 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1225 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [memory_cap_scope reads systemd-run options through shell_command's option walk](notes/2026-11-25-memory-cap-scope-reads-systemd-run-options-through-shell-command-s-option-walk.md).
+Latest change: 2026-11-25, [A resume ignores merged-in ticks and files dirty before the run](notes/2026-11-25-a-resume-ignores-merged-in-ticks-and-files-dirty.md).
 
 ## Top gains
 

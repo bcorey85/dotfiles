@@ -778,7 +778,9 @@ def plan_folder_exclude(plan):
 
 def append_deviation(plan_path, entry):
     """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
-    `## References` (or at the end) when the plan has none."""
+    `## References` (or at the end) when the plan has none. A plan folder stands for the plan file inside it; a folder
+    with no plan file raises PlanFormatError."""
+    plan_path = plan_file_of(plan_path)
     lines = plan_path.read_text().split("\n")
     sections = script_utils.top_level_sections(lines)
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
@@ -1585,6 +1587,36 @@ DECISION_LOG_NAME = "03-decisions.md"
 TICKET_FILE_NAME = "00-ticket.md"
 
 
+PLAN_FILE_NAMES = (SPEC_FILE_NAME, PLAN_ONLY_PLAN_NAME)
+PLAN_GLOB = "*-05-plan.md"
+PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
+
+
+def find_plan_in_dir(task_dir):
+    """The first task-dir file named in `PLAN_FILE_NAMES`, else the single `PLAN_GLOB` match (legacy
+    `<KEY>-05-plan.md` name); None when there is none. Raises PlanFormatError when several `PLAN_GLOB` files match."""
+    for fixed_name in PLAN_FILE_NAMES:
+        fixed = task_dir / fixed_name
+        if fixed.is_file():
+            return fixed
+    matches = sorted(task_dir.glob(PLAN_GLOB))
+    if len(matches) > 1:
+        raise PlanFormatError(f"{task_dir} holds several {PLAN_GLOB}: {', '.join(m.name for m in matches)}")
+    return matches[0] if matches else None
+
+
+def plan_file_of(plan_path):
+    """`plan_path` itself when it is not a folder; else the plan file inside the folder. Raises PlanFormatError naming
+    the expected plan-file names when the folder holds none."""
+    folder = pathlib.Path(plan_path)
+    if not folder.is_dir():
+        return folder
+    plan_file = find_plan_in_dir(folder)
+    if plan_file is None:
+        raise PlanFormatError(f"{folder}: no plan file; expected {PLAN_NAMES_TEXT}")
+    return plan_file
+
+
 def ticket_beside(plan_path):
     """The plan folder's `00-ticket.md`, else its single `*-00-ticket.md`; None when there is none. Raises
     PlanFormatError naming the folder and the files when there are several `*-00-ticket.md` and no exact one, because
@@ -1617,9 +1649,13 @@ def plan_author_criteria_missing(plan_path):
 def plan_criteria_owner(plan_path):
     """`criteria_owner` of the ticket beside the plan. With no ticket beside it, `ticket: None` and the owner is `plan`
     when the plan is an existing file named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author
-    wrote the criteria), else `user`."""
-    ticket_path = ticket_beside(plan_path)
+    wrote the criteria), else `user`. A plan folder stands for the plan file inside it, and its ticket is read even
+    when no plan file exists yet; only a folder with neither raises PlanFormatError."""
+    plan_path = pathlib.Path(plan_path)
+    ticket_anchor = plan_path / SPEC_FILE_NAME if plan_path.is_dir() else plan_path
+    ticket_path = ticket_beside(ticket_anchor)
     if ticket_path is None:
+        plan_path = plan_file_of(plan_path)
         author_wrote = not plan_author_criteria_missing(plan_path)
         owner = CRITERIA_OWNER_PLAN if author_wrote else CRITERIA_OWNER_USER
         return owner_record(None, owner, None)

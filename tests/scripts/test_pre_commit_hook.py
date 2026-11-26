@@ -58,6 +58,22 @@ class PreCommitHookTests(unittest.TestCase):
                 self.assertIn("build_changes.py new", result.stderr)
                 self.assertIn(path, result.stderr)
 
+    def test_a_toolkit_path_git_would_quote_is_refused_naming_the_real_path(self):
+        self.install_checker(0)
+        quoted_paths = [
+            "claude/.claude/skills/tab\tname/SKILL.md",
+            "claude/.claude/skills/café/SKILL.md",
+            "claude/.claude/skills/new\nline/SKILL.md",
+        ]
+        for path in quoted_paths:
+            with self.subTest(path=path):
+                self.git("reset", "-q")
+                self.stage(path)
+                result = self.run_hook()
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(path, result.stderr)
+                self.assertIn("change-file-check: the change set changes the toolkit", result.stderr)
+
     def test_toolkit_path_with_added_change_file_passes(self):
         self.install_checker(0)
         self.stage(TOOLKIT_FILES[0])

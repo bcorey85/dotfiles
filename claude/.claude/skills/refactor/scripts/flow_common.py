@@ -1,6 +1,6 @@
 """What the refactor flow's modes share: the base-error types (RefactorFlowError itself lives in
 `refactor_log_input`), git calls, the base and merge base, the target file
-listing, untracked-file reads and the log-input paths. `refactor_flow` and `simplify_flow` import from here, so
+listing and the log-input paths. `refactor_flow` and `simplify_flow` import from here, so
 neither imports the other."""
 import contextlib
 import functools
@@ -12,7 +12,6 @@ from stat import S_ISREG
 
 import script_utils
 import source_text
-import untracked_listing
 from refactor_log_input import RefactorFlowError
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
@@ -95,14 +94,6 @@ def work_tree_merge_base(base):
     if done.returncode != 0:
         raise RefactorFlowError(f"`git merge-base {base} HEAD` failed: {done.stderr.strip()}")
     return done.stdout.strip()
-
-
-def untracked_files(root):
-    """untracked_listing.untracked_files, with a listing failure raised as RefactorFlowError."""
-    try:
-        return untracked_listing.untracked_files(root)
-    except untracked_listing.UntrackedListError as error:
-        raise RefactorFlowError(str(error)) from error
 
 
 def next_line(text):

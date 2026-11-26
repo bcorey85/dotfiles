@@ -15,12 +15,12 @@ class UntrackedFile(NamedTuple):
     kind: str  # why a file is not read as text (change_added_ranges.UNTRACKED_*); UNTRACKED_TEXT for text
 
 
-def untracked_files(root):
+def untracked_files(root, error_type=UntrackedListError):
     """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed with its kind and no lines. Raises UntrackedListError when git cannot list them."""
+    read as UTF-8 text is listed with its kind and no lines. Raises error_type when git cannot list them."""
     names = script_utils.untracked_paths(root)
     if names is None:
-        raise UntrackedListError(f"git could not list the untracked files in {root}")
+        raise error_type(f"git could not list the untracked files in {root}")
     return [classify_untracked(root, name) for name in names]
 
 

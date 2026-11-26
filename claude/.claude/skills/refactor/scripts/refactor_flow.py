@@ -67,7 +67,6 @@ from flow_common import (
     ref_exists,
     require_repo,
     target_files,
-    untracked_files,
     work_tree_merge_base,
 )
 
@@ -246,7 +245,7 @@ def read_branch_span(base, opts_head, root):
         untracked = []
     else:
         diff_ref = work_tree_merge_base(base)
-        untracked = untracked_files(root)
+        untracked = untracked_listing.untracked_files(root, error_type=RefactorFlowError)
 
     files = labelled_span_files(diff_ref)
     files += [(entry.path, untracked_label(entry)) for entry in untracked]

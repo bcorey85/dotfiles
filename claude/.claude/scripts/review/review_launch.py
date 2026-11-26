@@ -69,9 +69,6 @@ from review_loop_prompt_file import (
 )
 
 STATE_NAME = reviewer_dispatch.LAUNCH_STATE_NAME
-# How long a launch waits for a stopped loop's SIGTERM handler to finish removing its worktrees and children.
-STOP_WAIT_SECONDS = 5
-STOP_POLL_SECONDS = 0.05
 AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 FAST_MODEL = "haiku"
@@ -495,18 +492,6 @@ def loop_repo(launch_file):
     return pathlib.Path(repo).resolve()
 
 
-def wait_for_exit(pid):
-    """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
-    the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
-    deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while process_group.pid_is_alive(pid):
-        if time.monotonic() >= deadline:
-            print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
-                  file=sys.stderr)
-            return
-        time.sleep(STOP_POLL_SECONDS)
-
-
 def is_live_loop_of(loop_dir, pid, repo):
     """True when the launch record in loop_dir names repo and the command line of pid names the loop's agent id (a
     reused pid does not). Raises LaunchError or OSError when the record or `ps` cannot be read."""
@@ -516,14 +501,20 @@ def is_live_loop_of(loop_dir, pid, repo):
 
 
 def stop_loop(loop_dir, pid, repo):
-    """SIGTERMs the process group of the live loop (loop_dir, pid) of repo and waits for it to exit. A failed kill is
-    printed on stderr and the launch goes on."""
+    """SIGTERMs the process group of the live loop (loop_dir, pid) of repo and waits for every process of the group to
+    exit, so the old loop has removed its worktrees and children before the new loop starts. A group still running
+    after the wait, or a failed kill, is printed on stderr and the launch goes on."""
     try:
-        if process_group.terminate_group(pid):
-            print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
-            wait_for_exit(pid)
+        result = process_group.stop_group(pid)
     except OSError as error:
         print(f"review_launch: could not stop the loop in {loop_dir}: {error}", file=sys.stderr)
+        return
+    if result == process_group.GROUP_GONE:
+        return
+    print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
+    if result == process_group.GROUP_STILL_RUNNING:
+        print(f"review_launch: the earlier loop (pid {pid}) is still running after "
+              f"{process_group.STOP_WAIT_SECONDS} s", file=sys.stderr)
 
 
 def loop_skill(launch_file):

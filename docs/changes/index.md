@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1215 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1219 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [inline-interpreter deny names the session scratchpad first](notes/2026-11-25-inline-interpreter-deny-names-the-session.md).
+Latest change: 2026-11-25, [memory_cap_scope reads systemd-run options through shell_command's option walk](notes/2026-11-25-memory-cap-scope-reads-systemd-run-options-through-shell-command-s-option-walk.md).
 
 ## Top gains
 

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1215 changes
+1219 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -52,7 +52,11 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [memory_cap_scope reads systemd-run options through shell_command's option walk](notes/2026-11-25-memory-cap-scope-reads-systemd-run-options-through-shell-command-s-option-walk.md) [script/memory-cap-scope, script/shell-command] shell_command.command_options walks any command's options into (option, value) pairs, git_options is its git form, and memory_cap_scope reads the systemd-run options and slice through it with no loop of its own.
+* [A stopped review loop is waited on through its whole process group](notes/2026-11-25-a-stopped-review-loop-is-waited-on-through-its.md) [script/review-launch, script/fork-children, script/process-group] review_launch waits for the stopped loop's process group to be gone, not only its leader pid, and one stop-wait value of 5 s lives in process_group for review_launch and fork_children.
+* [Lane close refuses exactly when prune's verdict for the tree is keep](notes/2026-11-25-lane-close-refuses-exactly-when-prune-s-verdict.md) [script/herdr-lane-resume, script/herdr-worktree-prune] herdr-lane-resume's entry-less close asks herdr-worktree-prune --check for the tree's verdict and refuses on keep with prune's reason, so a stash, submodule, nested repo or lock now stops a close.
 * [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md) [script/review-loop-script] The review loop's ruling check and its scope guard now share one test of whether a finding names a repo file, so a file named by ./ or a unique trailing part is backed up and can be put back.
+* [The pre-commit drift check refuses only drift the commit adds](notes/2026-11-25-the-pre-commit-drift-check-refuses-only-drift-the.md) [script/pre-commit] The pre-commit hook runs the toolkit drift check on HEAD too and refuses a commit only for problem lines the staged tree adds; drift already at HEAD passes with a note.
 * [test_zshrc stubs atuin so no detached job recreates the temp home](notes/2026-11-25-test-zshrc-stubs-atuin-so-no-detached-job.md) [method/test-suite] The zshrc test puts a no-op atuin on PATH, so atuin's init starts no detached job that recreates the temp home while cleanup removes it, and the full suite stops failing this file under load.
 * [Full check names its own memory-capped scope unit](notes/2026-11-25-full-check-names-its-own-memory-capped-scope-unit.md) [script/memory-cap-scope, script/check-output, script/full-check] A check command that starts with the capped systemd-run prefix now runs inside the full check's own capped scope, where before both scopes got one unit name and the check never started.
 * [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them.

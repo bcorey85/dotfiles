@@ -93,7 +93,7 @@ finish() {
 }
 
 if [ "$#" -eq 0 ]; then
-    runStep "ruff rules" claude/.claude/scripts claude/.claude/skills tests/scripts tests/duplicate_code.py
+    runStep "ruff rules" claude/.claude/scripts claude/.claude/skills scripts/.local/lib tests/scripts tests/duplicate_code.py
     reportComplexity
     runStep "complexity gate" --select C901 "${gatedFiles[@]}"
     finish

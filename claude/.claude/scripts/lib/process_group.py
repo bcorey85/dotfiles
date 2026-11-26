@@ -7,6 +7,12 @@ import subprocess
 import time
 
 PS_TIMEOUT_SECONDS = 10
+# How long a caller waits for a stopped group to exit: long enough for a review loop to remove its worktrees.
+STOP_WAIT_SECONDS = 5
+# The results of stop_group.
+GROUP_GONE = "gone"
+GROUP_STOPPED = "stopped"
+GROUP_STILL_RUNNING = "still_running"
 
 
 class ProcessQueryError(OSError):
@@ -114,3 +120,17 @@ def terminate_group(pid):
     except ProcessLookupError:
         return False
     return True
+
+
+def stop_group(pid):
+    """SIGTERMs the process group of process pid and waits up to STOP_WAIT_SECONDS (read at call time) for every
+    process of the group to exit. Returns GROUP_GONE when no group was signalled, GROUP_STOPPED when
+    the group exited, GROUP_STILL_RUNNING when one process outlived the wait. Raises OSError as terminate_group does."""
+    # The leader's group id is read before the signal: a leader that exits no longer names its group.
+    group = group_id(pid)
+    signalled = terminate_group(pid)
+    if group is None or not signalled:
+        return GROUP_GONE
+    if not wait_until_group_gone(group, STOP_WAIT_SECONDS):
+        return GROUP_STILL_RUNNING
+    return GROUP_STOPPED

@@ -217,7 +217,8 @@ def is_rewritable_test_run(command):
 
 def systemd_run_options_end(words):
     """The index of the first word after the options of a `systemd-run` step."""
-    return shell_command.skip_options(words, 1, SYSTEMD_RUN_VALUE_OPTIONS)
+    _options, index = shell_command.command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)
+    return index
 
 
 def program_after_systemd_run(words):
@@ -230,14 +231,11 @@ def program_after_systemd_run(words):
 
 def systemd_run_slice(words):
     """The slice a `systemd-run` step names (`--slice=X` or `--slice X`), or None when it names none."""
-    options = words[1:systemd_run_options_end(words)]
-    slice_name = None
-    for position, option in enumerate(options):
-        if option.startswith("--slice="):
-            slice_name = option[len("--slice="):]
-        elif option == "--slice" and position + 1 < len(options):
-            slice_name = options[position + 1]
-    return slice_name
+    options, _index = shell_command.command_options(words, SYSTEMD_RUN_VALUE_OPTIONS)
+    slice_names = list(shell_command.option_values(options, "--slice"))
+    if not slice_names:
+        return None
+    return slice_names[-1]
 
 
 def is_full_unittest_run(words):

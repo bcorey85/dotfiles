@@ -156,6 +156,32 @@ class ProcessGroupTest(unittest.TestCase):
             ):
                 process_group.command_line(1)
 
+    def stop_group_with(self, group, signalled, group_exited=True):
+        """Runs stop_group with the group id, the signal and the wait patched; returns the result and the wait mock."""
+        with (
+            unittest.mock.patch.object(process_group, "group_id", return_value=group),
+            unittest.mock.patch.object(process_group, "terminate_group", return_value=signalled),
+            unittest.mock.patch.object(process_group, "STOP_WAIT_SECONDS", 7),
+            unittest.mock.patch.object(process_group, "wait_until_group_gone", return_value=group_exited) as wait,
+        ):
+            return process_group.stop_group(4242), wait
+
+    def test_stop_group_is_gone_when_there_is_no_group_or_no_signal_was_sent(self):
+        for group, signalled in ((None, True), (99, False)):
+            with self.subTest(group=group, signalled=signalled):
+                result, wait = self.stop_group_with(group, signalled)
+                self.assertEqual(result, process_group.GROUP_GONE)
+                wait.assert_not_called()
+
+    def test_stop_group_waits_the_current_stop_wait_and_reports_stopped(self):
+        result, wait = self.stop_group_with(99, True, group_exited=True)
+        self.assertEqual(result, process_group.GROUP_STOPPED)
+        wait.assert_called_once_with(99, 7)
+
+    def test_stop_group_reports_still_running_when_the_group_outlives_the_wait(self):
+        result, _wait = self.stop_group_with(99, True, group_exited=False)
+        self.assertEqual(result, process_group.GROUP_STILL_RUNNING)
+
 
 if __name__ == "__main__":
     unittest.main()

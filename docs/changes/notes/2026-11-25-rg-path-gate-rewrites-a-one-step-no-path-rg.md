@@ -28,6 +28,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 - For a one-step command, the printed fix is the raw command text plus ` .`, so its quoting and expansions keep their meaning (`rg "$X"` gives `rg "$X" .`). A compound command keeps the re-quoted fix.
 - A call that would still hang with `.` appended is denied with no fixed command, in any of the forms above: a dangling option (`rg foo -g`, `rg -e`), or no pattern (`rg`, `rg -i`).
 - `lib/shell_expansion.py` gains `has_substitution_or_tilde`, built on the new `literal_positions` in `lib/shell_quoting.py`.
+- `decision()` works out once whether the raw command plus ` .` is a valid fix, and both the allow and the deny read that one value.
 - The gate is fail-open. A crash is reported on stderr with the gate name.
 
 ## Evidence

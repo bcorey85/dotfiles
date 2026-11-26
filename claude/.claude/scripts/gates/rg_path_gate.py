@@ -160,7 +160,8 @@ def decision(tool_input, command, words):
     when that command would not hang."""
     updated = command.rstrip() + " ."
     # The appended path must make rg's path; a dangling option would take it as its value.
-    if is_one_simple_step(command) and is_plain_rg_call(command.strip()) and hanging_rg(updated) is None:
+    appended_fixes = is_one_simple_step(command) and hanging_rg(updated) is None
+    if appended_fixes and is_plain_rg_call(command.strip()):
         return {"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": "allow",
             "updatedInput": {**tool_input, "command": updated}}}
@@ -168,7 +169,7 @@ def decision(tool_input, command, words):
     # (`"$X"` would turn into the literal `'$X'`). A raw text that the appended path does not fix (`(rg foo)`) is
     # re-joined from the parsed words.
     fixed = shlex.join([*words, "."])
-    if is_one_simple_step(command) and hanging_rg(updated) is None:
+    if appended_fixes:
         fixed = updated
     reason = REASON_NO_FIX if hanging_rg(fixed) is not None else REASON.format(fixed=fixed)
     return {"hookSpecificOutput": {

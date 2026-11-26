@@ -143,7 +143,7 @@ def live_session_transcripts():
         if not isinstance(session_id, str) or not session_id:
             continue
         session_name = session_registry.holder_label(row)
-        for transcript in session_registry.projects_dir().glob(f"*/{session_id}.jsonl"):
+        for transcript in session_registry.session_transcripts(session_id):
             found.append((transcript, session_name))
         subagents_dir = session_registry.session_subagents_dir(session_id)
         if subagents_dir is None:

@@ -170,7 +170,7 @@ def unread_overwrite_denied(payload):
         hook_input.emit_decision("deny", reason)
     except Exception as error:
         sys.stderr.write(f"{GATE_NAME}: the unread-overwrite check crashed, so the Write goes on "
-                         f"({type(error).__name__}: {error})\n")
+                         f"to the code-fork check ({type(error).__name__}: {error})\n")
         return False
     return True
 

@@ -33,4 +33,4 @@ Read the next Write denies for false denies, such as a file the session read thr
 
 ## Back-out
 
-Remove `unread_overwrite_denied` and its call from `gates/fork_write_scope.py`, delete `lib/unread_overwrite.py` and `tests/scripts/test_unread_overwrite.py`, and restore the module docstring of `gates/fork_write_scope.py`.
+Remove `unread_overwrite_denied` and its call from `gates/fork_write_scope.py`, delete `lib/unread_overwrite.py` and `tests/scripts/test_unread_overwrite.py`, and restore the module docstring and the `__main__` comment of `gates/fork_write_scope.py`.

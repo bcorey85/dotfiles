@@ -200,7 +200,7 @@ def transcript_of(agent):
     if not isinstance(session_id, str) or not session_id:
         return None
 
-    found = sorted(session_registry.projects_dir().glob(f"*/{session_id}.jsonl"))
+    found = session_registry.session_transcripts(session_id)
     if not found:
         return None
     return found[0]

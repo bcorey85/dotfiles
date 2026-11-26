@@ -45,20 +45,12 @@ class Repo:
     checkout_name: str | None = None
     checkout_hash: str | None = None
 
-    def extra_target(self):
-        """(name, hash) of the main checkout's branch when its commit differs from the compare hash, else None."""
-        if self.checkout_name is None:
-            return None
-        if self.checkout_hash == self.compare_hash:
-            return None
-        return self.checkout_name, self.checkout_hash
-
     def merge_targets(self):
-        """Every (name, hash) a lane's tip may be merged into: the compare ref, then the extra target."""
+        """Every (name, hash) a lane's tip may be merged into: the compare ref, then the main checkout's branch
+        when it has one whose commit differs from the compare hash."""
         targets = [(self.compare_name, self.compare_hash)]
-        extra = self.extra_target()
-        if extra is not None:
-            targets.append(extra)
+        if self.checkout_name is not None and self.checkout_hash != self.compare_hash:
+            targets.append((self.checkout_name, self.checkout_hash))
         return targets
 
 

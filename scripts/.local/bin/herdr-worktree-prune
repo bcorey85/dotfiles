@@ -14,8 +14,8 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                failed N. A tree whose worktree went but whose branch could not
                be deleted counts as removed and as failed, with the reason.
                Exit 1 when any step failed.
-  --branches   list local branches merged into the compare ref (not into the
-               main checkout's branch) that have no worktree entry (a
+  --branches   list local branches merged into the compare ref (the main
+               checkout's branch is not read) that have no worktree entry (a
                prunable entry counts as one). With --apply, delete each. Never
                the default branch, never a branch that a worktree entry has
                checked out, never the branch of a rebase or bisect in progress
@@ -599,13 +599,8 @@ def start_up():
         raise PruneError(f"cannot read the working directory: {error}") from error
     cwd_real = real(cwd)
     main_tree = list_worktrees(None)[0]
-    checkout_name = None
-    checkout_hash = None
-    if main_tree.branch is not None:
-        checkout_name = main_tree.branch
-        checkout_hash = main_tree.head
     return Repo(main_tree.path, default_branch, f"origin/{default_branch}", resolved.stdout.strip(), cwd_real,
-                checkout_name, checkout_hash)
+                main_tree.branch, main_tree.head)
 
 
 # ---- worktree mode ----

@@ -6,7 +6,7 @@ description: "The prune keep checks now also pass a clean lane worktree whose br
 generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-25T16:00:00-06:00"}
 seq: 5
 kind: "fix"
-components: ["script/herdr-lane-resume"]
+components: ["script/herdr-lane-resume", "script/herdr-worktree-prune"]
 evidence: ["judgment"]
 watches: []
 test: "tests/scripts/test_herdr_worktree_prune.py::CheckedOutBranchMergeTest::test_a_clean_worktree_merged_into_the_checked_out_branch_is_removed_with_its_branch"

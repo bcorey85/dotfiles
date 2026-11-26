@@ -83,6 +83,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/fork-children | 4 | 4 |
 | script/herdr-dev | 4 | 2 |
+| script/herdr-worktree-prune | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/review-loop-packet | 4 | 1 |
 | script/source-paths | 4 | 0 |
@@ -96,7 +97,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
 | script/gate-commands | 3 | 2 |
-| script/herdr-worktree-prune | 3 | 2 |
 | script/hook-input | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
 | script/lanes | 3 | 3 |

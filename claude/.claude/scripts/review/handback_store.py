@@ -88,7 +88,8 @@ RULED_DECISION_KEY = "decision"
 RULED_OWNER_KEY = "ruling_owner"
 RULED_AT_KEY = "ruled_at"
 UNKNOWN_RULING_FIELD = "unknown"
-# One adopted ruling whose change a fix pass applied; `rulings` then leaves it out of `adopted`. Keyed like the ruling:
+# One adopted ruling whose change a fix pass applied, or a settled `decide adopt` needed no fix pass for;
+# `rulings` then leaves it out of `adopted`. Keyed like the ruling:
 # its text, finding text and ruled-at time.
 PLAN_IMPACT_APPLIED = "plan-impact-applied"
 
@@ -131,9 +132,10 @@ def record_relayed_plan_ruling(session_id, repo, ruler, relayed_by, turn_timesta
 
 class Rulings(NamedTuple):
     """What a session already ruled on in one repo. `impacts` are the texts of the plan impacts whose ruling keeps
-    the plan, plus those of the adopted rulings a fix pass already applied, and `finding_texts` the full texts of the
-    accepted findings those rulings came from; a `decide` run with no packet, or whose impact covers no accepted
-    finding, stores no finding text. `adopted` holds the rulings that adopt the plan change."""
+    the plan, plus those of the adopted rulings a fix pass applied or a settled `decide adopt` needed no fix pass
+    for, and `finding_texts` the full texts of the accepted findings those rulings came from; a `decide` run with
+    no packet, or whose impact covers no accepted finding, stores no finding text. `adopted` holds the rulings
+    that adopt the plan change."""
     impacts: list
     finding_texts: list
     adopted: tuple = ()
@@ -155,8 +157,9 @@ def applied_key(ruling):
 
 
 def record_applied_ruling(session_id, ruling, repo):
-    """Records that a fix pass applied the AdoptedRuling `ruling` in `repo` (its top level), so `rulings` no longer
-    hands it to a later fix run. Does nothing without a session id."""
+    """Records that a fix pass applied, or a settled `decide adopt` needed no fix pass for, the AdoptedRuling
+    `ruling` in `repo` (its top level), so `rulings` no longer hands it to a later fix run. Does nothing without a
+    session id."""
     if not session_id:
         return None
     return record(session_id, PLAN_IMPACT_APPLIED, text=ruling.text, repo=repo, ruled_at=ruling.ruled_at,
@@ -187,7 +190,7 @@ def latest_rows_per_text(rows):
 
 def rulings(session_id, repo):
     """The Rulings the PLAN_IMPACT_RULED rows of `repo` hold, in ruling order, the latest row of each impact text only,
-    and no adopted ruling a fix pass already applied. NO_RULINGS without a session id."""
+    and no adopted ruling already applied or settled without a fix pass. NO_RULINGS without a session id."""
     if not session_id:
         return NO_RULINGS
     ruled_rows = [row for row in session_rows(session_id, PLAN_IMPACT_RULED) if row.get("repo") == repo]

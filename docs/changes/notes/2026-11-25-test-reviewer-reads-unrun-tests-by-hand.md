@@ -50,4 +50,5 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Back-out
 
-Revert the lane's commit in dotfiles and agent-evals `02c51437`.
+Revert the lane's commits in dotfiles, and agent-evals `02c51437`, `477c6a97`, `4a415871` and `43798136`. Once
+this branch lands, drop UT01's `toolkit_root` in agent-evals: it points at this lane's worktree.

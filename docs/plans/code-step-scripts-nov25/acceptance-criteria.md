@@ -12,6 +12,5 @@
   command. The run then files the change file and runs the check again. A repo without the check passes. The
   pre-commit hook and the phase-end check read one copy of the path patterns. (Phase 3)
 - **AC5** — The /code skill tells the fork to put no stage or commit step in a coder prompt (a commit the task asks for
-  becomes the phase-end commit subject), and says that a coder's denied git write does not stop the run: it goes on to
-  review with the changes uncommitted. A test of the skill text covers the denied-coder-commit case. (Phase 4)
+  becomes the phase-end commit subject). A test of the skill text covers it. (Phase 4)
 - **AC6** — `bash tests/run.sh` passes.

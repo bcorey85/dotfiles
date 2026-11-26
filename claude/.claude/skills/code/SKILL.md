@@ -87,7 +87,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
    The coder's prompt holds no stage or commit step; a commit the task asks for becomes the phase-end commit subject.
 
-   When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py finish` from the repo root before anything else; on exit 1, do the step its last line names. A coder's report of a denied git write is no STOP: go on to step 4 with the changes uncommitted.
+   When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py finish` from the repo root before anything else; on exit 1, do the step its last line names.
 
 4. **After the coder completes**: put any `PLAN-IMPACT:` block in its report on the phase-end list and go on. Then summarize: what was implemented, issues flagged, follow-up items, and the coder's `WHY:` lines grouped by file as `path:start-end — <note>` (omit when every coder reported `WHY: none`).
 

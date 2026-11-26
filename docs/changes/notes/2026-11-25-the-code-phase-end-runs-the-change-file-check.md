@@ -22,7 +22,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Evidence
 
-`test_phase_change_file.py` pins an untracked and a modified toolkit path (including tab, newline, quote and accented paths) failing with the real path, an added change note passing, a repo without the check passing and a bad status exiting 2. `test_pre_commit_hook.py` pins the hook refusing staged tab, newline and accented toolkit paths.
+`test_phase_change_file.py` pins an untracked and a modified toolkit path (including tab, newline, quote and accented paths) failing with the real path, an added change note passing, a repo without the check passing and a bad status exiting 2. `test_pre_commit_hook.py` pins the hook refusing staged tab, newline and accented toolkit paths. Rule meter for the skill line, scenario CK03 (run as CS03 at agent-evals e7fef959), opus at the competing level, 8 runs per arm: rule on 8/8, rule off 0/8, +100 points.
 
 ## Result
 

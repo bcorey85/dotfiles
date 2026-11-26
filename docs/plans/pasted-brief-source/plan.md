@@ -15,10 +15,16 @@ runs).
 
 - [x] Phase 1: owner reads an existing queue item path named anywhere in the ticket (risk: low)
 
+## Plan Deviations
+
+- Branch review found the Phase 1 text read mentions only with no Source line; mentions now join Source lines so a
+  named `human:` item keeps owner user, as AC2 says (session ruling, agent-evals-74 lane, 2026-11-25).
+
 ## Phase 1: owner reads an existing queue item path named anywhere in the ticket
 
-When the ticket is not a queue item and has no queue `Source:` line, `criteria_owner` looks for queue item paths
-anywhere in its text: `~/agent-evals/queue/<slug>.md` or the same path spelled with the home folder. It keeps only
+When the ticket is not a queue item, `criteria_owner` looks for queue item paths anywhere in its text, besides the
+paths its queue `Source:` lines name: `~/agent-evals/queue/<slug>.md` or the same path spelled with the home folder.
+It reads them together with the `Source:` lines, `Source:` lines first. It keeps only
 paths whose file exists, and takes the owner from those items the way it does for `Source:` lines: `user` when any
 named item has a `human:` author, else `session`, with `source` the first path. A path whose file does not exist is
 ignored, and a ticket that names no existing queue path keeps today's owner (`plan` or `user`). A named item with no

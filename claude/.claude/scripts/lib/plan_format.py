@@ -1578,10 +1578,10 @@ def queue_sources_owner(ticket_path, ticket_name, queue_sources):
 def criteria_owner(ticket_path):
     """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket that is itself a queue item
     (frontmatter `type: "QueueItem"`) takes its own `generated.by` the same way, with `source` None. A ticket with
-    queue `Source:` lines checks every one: it is `user`, with `source` the first line a `human:` author wrote, when
-    any named item has a `human:` `generated.by`, else `session` with `source` the first line. With no queue `Source:`
-    line, an existing queue item path named anywhere in the text counts the same way. Without either, a ticket
-    with no criteria heading is `plan`, and any other ticket is `user`.
+    queue `Source:` lines, or an existing queue item path named anywhere in the text that no `Source:` line names,
+    checks every one, `Source:` lines first: it is `user`, with `source` the first one a `human:` author wrote, when
+    any named item has a `human:` `generated.by`, else `session` with `source` the first one. Without either, a
+    ticket with no criteria heading is `plan`, and any other ticket is `user`.
     A `Source:` line outside the queue folder never changes the owner. Raises PlanFormatError on a queue line the
     item cannot back, a queue item with no readable `generated.by`, and on a ticket the criteria reader cannot parse."""
     ticket_name = str(ticket_path)
@@ -1592,13 +1592,14 @@ def criteria_owner(ticket_path):
         author = queue_text_author(where, "queue item", ticket_text)
         return owner_record(ticket_path, author_owner(author), None)
 
-    queue_sources = queue_source_lines(ticket_text.splitlines())
-    if queue_sources:
-        return queue_sources_owner(ticket_path, ticket_name, queue_sources)
-
-    queue_mentions = queue_path_mentions(ticket_text.splitlines())
-    if queue_mentions:
-        return queue_sources_owner(ticket_path, ticket_name, queue_mentions)
+    ticket_lines = ticket_text.splitlines()
+    queue_sources = queue_source_lines(ticket_lines)
+    source_paths = {source_value.split(" ")[0] for _number, source_value in queue_sources}
+    new_mentions = [(number, value) for number, value in queue_path_mentions(ticket_lines)
+                    if value not in source_paths]
+    named_items = queue_sources + new_mentions
+    if named_items:
+        return queue_sources_owner(ticket_path, ticket_name, named_items)
 
     try:
         ticket_criteria(ticket_text, ticket_name)

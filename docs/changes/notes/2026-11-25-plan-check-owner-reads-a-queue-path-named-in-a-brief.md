@@ -19,9 +19,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 A lane started from a pasted brief names the queue item as `Read ~/agent-evals/queue/<slug>.md`, so the owner read
-`user` and plan cuts went to the user. With no queue `Source:` line, `criteria_owner` now takes every existing queue path
-named in the text (either spelling) and reads the owner as it does for `Source:` lines. A path whose file is missing
-is ignored.
+`user` and plan cuts went to the user. `criteria_owner` now takes every existing queue path named in the text (either
+spelling) beside the `Source:` lines and reads the owner as it does for them: a named `human:` item makes it `user`,
+and an all-session ticket keeps the first `Source:` line as `source`. A path whose file is missing is ignored.
 
 ## Evidence
 

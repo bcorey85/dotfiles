@@ -175,13 +175,27 @@ class PlanCheckCliTest(unittest.TestCase):
                 self.assertEqual(owner["owner"], "user")
                 self.assertIsNone(owner["source"])
 
-    def test_owner_reads_the_source_line_before_a_queue_path_named_in_free_text(self):
+    def test_owner_is_user_when_free_text_names_a_human_item_beside_a_session_source_line(self):
         home, env = self.queue_home("claude-code/x")
         (home / "agent-evals" / "queue" / "other.md").write_text(
             '---\ngenerated: {"by": "human:brandon", "at": "2026-11-01"}\n---\n')
         (self.folder / "00-ticket.md").write_text(
             "# Lane\n\nSource: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md.\n\n"
             "## Done when\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.plan), env=env)
+
+        owner = json.loads(done.stdout)
+        self.assertEqual(owner["owner"], "user")
+        self.assertEqual(owner["source"], "~/agent-evals/queue/other.md")
+
+    def test_owner_is_session_with_the_source_line_when_free_text_names_only_session_items(self):
+        home, env = self.queue_home("claude-code/x")
+        (home / "agent-evals" / "queue" / "other.md").write_text(
+            '---\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n')
+        (self.folder / "00-ticket.md").write_text(
+            "# Lane\n\nSource: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md and "
+            "~/agent-evals/queue/item.md.\n\n## Done when\n\n- Words.\n")
 
         done = self.run_plan_check("owner", str(self.plan), env=env)
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1284 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1286 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [the push deny and a bare review start from one reviewed base](notes/2026-11-26-the-push-deny-and-a-bare-review-start-from-one-base.md).
+Latest change: 2026-11-26, [suite_receipt dirty stops a merge into a checkout that holds changes the merge touches](notes/2026-11-26-suite-receipt-dirty-stops-a-merge-into-a-checkout.md).
 
 ## Top gains
 

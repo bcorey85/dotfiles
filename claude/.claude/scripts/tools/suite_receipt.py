@@ -1,6 +1,7 @@
 """Usage: suite_receipt.py tree <repo>
        suite_receipt.py record <repo> --tree <tree> --exit <code> --scope <scope> --summary <file>
        suite_receipt.py check <repo> <branch> [--base <base>]
+       suite_receipt.py dirty <repo> <branch>
        suite_receipt.py --help
 
 The receipt of each `tests/run.sh` run, so a merge check can skip a suite rerun on a tree that already ran green.
@@ -18,6 +19,14 @@ hashes to <tree>, since the run then did not test one tree, or when <summary> is
   exit 1, `rerun: ...`  <branch> does not fast-forward <base> (trial-merge it and run the suite on the result), or
                         no receipt names its tree, or the latest one on that tree failed
   exit 2                a git call failed or a receipt row is not JSON; the message is on stderr
+
+`dirty` runs right before the merge of <branch> into the checkout <repo> and never merges. It lists the staged and
+unstaged tracked changes of <repo> (deletions included) that the merge would touch, the files <branch> changed since
+its merge base with HEAD:
+  exit 0, `clear: ...`  no such file is dirty; the merge may start
+  exit 3, `dirty: ...`  names the files and the fix: commit them, or wait until they are committed and rerun
+                        the merge line.
+A merge line writes `suite_receipt.py dirty <repo> <branch> && <the merge>`.
 """
 import argparse
 import datetime
@@ -28,10 +37,14 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+import script_utils
+
 RECEIPTS_FILE = "suite-receipts.jsonl"
 EXIT_SKIP = 0
 EXIT_RERUN = 1
 EXIT_FAILED = 2
+EXIT_DIRTY = 3
 
 
 class ReceiptError(Exception):
@@ -144,6 +157,31 @@ def check(repo, branch, base):
                        f"({row['tests']} tests, scope {row['scope']}, {row['ts']}) and it fast-forwards {base}")
 
 
+def dirty_merge_paths(repo, branch):
+    """The tracked paths with staged or unstaged changes in repo that merging `branch` would touch, sorted. The merge
+    touches the paths `branch` changed since its merge base with HEAD."""
+    dirty = script_utils.diff_paths(repo, "HEAD")
+    if dirty is None:
+        raise ReceiptError(f"git diff HEAD failed in {repo}")
+    touched = script_utils.diff_paths(repo, f"HEAD...{branch}")
+    if touched is None:
+        raise ReceiptError(f"git diff HEAD...{branch} failed in {repo}")
+    return sorted(dirty & touched)
+
+
+def dirty_check(repo, branch):
+    """(exit code, message) for whether merging `branch` into the checkout `repo` meets local changes. It merges
+    nothing."""
+    paths = dirty_merge_paths(repo, branch)
+    if not paths:
+        return EXIT_SKIP, f"clear: no staged or unstaged change in {repo} sits on a file the merge of {branch} touches"
+    listed = "\n".join(f"  {path}" for path in paths)
+    return EXIT_DIRTY, (f"dirty: the merge of {branch} would overwrite local changes in {repo}; no merge was started. "
+                        f"Files:\n{listed}\n"
+                        "Fix: commit them (`git commit -m <message> -- <files>`; for a staged deletion name the "
+                        "path), or wait until they are committed and rerun this line.")
+
+
 def parse_command_line(argv):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("-h", "--help", action="store_true")
@@ -160,6 +198,9 @@ def parse_command_line(argv):
     check_verb.add_argument("repo")
     check_verb.add_argument("branch")
     check_verb.add_argument("--base", default="master")
+    dirty_verb = verbs.add_parser("dirty")
+    dirty_verb.add_argument("repo")
+    dirty_verb.add_argument("branch")
     return parser.parse_args(argv)
 
 
@@ -175,7 +216,10 @@ def main(argv):
         if args.verb == "record":
             command_record(args.repo, args.tree, args.exit_code, args.scope, args.summary)
             return 0
-        code, message = check(args.repo, args.branch, args.base)
+        if args.verb == "dirty":
+            code, message = dirty_check(args.repo, args.branch)
+        else:
+            code, message = check(args.repo, args.branch, args.base)
     except ReceiptError as error:
         print(f"suite_receipt: {error}", file=sys.stderr)
         return EXIT_FAILED

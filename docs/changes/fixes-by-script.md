@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-851 fix notes
+853 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -143,6 +143,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/shell-steps | 2 | 2 |
 | script/signoff-lines | 2 | 2 |
 | script/source-text | 2 | 1 |
+| script/suite-receipt | 2 | 2 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/tests-run | 2 | 2 |
 | script/user-prompts | 2 | 2 |
@@ -220,15 +221,16 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-held | 1 | 1 |
 | script/review-loop-partial-fix | 1 | 1 |
 | script/review-loop-prompts | 1 | 1 |
+| script/review-loop-ruled-out | 1 | 1 |
 | script/review-loop-signoffs | 1 | 1 |
 | script/review-loop-stray-files | 1 | 1 |
+| script/review-loop-untracked | 1 | 1 |
 | script/ruling-relay | 1 | 0 |
 | script/shape-clones | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |
-| script/suite-receipt | 1 | 1 |
 | script/system-resources | 1 | 1 |
 | script/telemetry-enabled | 1 | 0 |
 | script/test-edit-telemetry | 1 | 0 |

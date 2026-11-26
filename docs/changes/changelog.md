@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1284 changes
+1286 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [suite_receipt dirty stops a merge into a checkout that holds changes the merge touches](notes/2026-11-26-suite-receipt-dirty-stops-a-merge-into-a-checkout.md) [script/suite-receipt] A pre-merge check names the staged or unstaged files the branch's merge would touch, prints the fix, exits 3 and starts no merge.
 * [Scripts CLAUDE.md names the owner of the dirty-file holder](notes/2026-11-26-scripts-claude-md-names-the-owner-of-the-dirty.md) [rule/scripts-claude-md, script/dirty-writers] The owners list in the toolkit scripts guide now points to the module that names which live session wrote a repo's dirty files, with the cutoff commit it reads, so a later edit reuses it in place of naming a holder by working folder.
 * [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md) [script/memory-sample, script/process-table, script/lane-status, script/install-memory-sample] A per-minute memory sample log names the top RSS holders by command and herdr workspace, and lane-status --git marks merged lanes with an idle agent as finished idle with their Claude RSS.
 * [adr runs after the PR and adr_flow status reports a branch not finished](notes/2026-11-25-adr-runs-after-the-pr-and-adr-flow-status-reports.md) [skill/adr, skill/verify-branch, skill/close-branch, skill/branch-recap] adr_flow.py status reports a branch whose PR exists and whose task dir remains as not finished, and the branch-end skills run /adr as a numbered step after the PR.
@@ -70,6 +71,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [review loop guard leaves a deleted untracked file a finding or the fix coder record names](notes/2026-11-26-review-loop-guard-leaves-a-deleted-untracked-file-a.md) [script/review-loop-untracked, script/review-loop-ruled-out] The untracked-file guard no longer puts back a stray untracked file that a finding of the pass names for deletion or that the fix coder record shows the loop wrote.
 * [the push deny and a bare review start from one reviewed base](notes/2026-11-26-the-push-deny-and-a-bare-review-start-from-one-base.md) [script/git-discipline-gate, script/review-launch] The push gate's unreviewed deny and a bare /review on a clean tree now both name the newest recorded reviewed base that is a strict ancestor of HEAD, so a base equal to HEAD or off the branch is skipped for an older one.
 * [the clean-tree review stop names the fresh review base form](notes/2026-11-26-the-clean-tree-review-stop-names-the-fresh-review.md) [script/review-launch] When a review launch on a clean tree has nothing to review, its stop names a fresh `/review base=<ref>` and says a resume launches nothing.
 * [review launch moves an earlier review-stop.md aside](notes/2026-11-26-review-launch-moves-an-earlier-review-stop-md.md) [script/review-launch, script/code-relay, script/phase-start] A review launch moves an earlier review-stop.md to review-stop.prev.md, so the review fork writes a new file the Write tool accepts.

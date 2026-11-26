@@ -12,12 +12,11 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import human_turn_lookup
-import transcript_time
 from human_turn_lookup import HumanTurnRefusedError
 
 NAME = "relay-session"
 SESSION_ID = "11111111-2222-3333-4444-555555555555"
-ASKED_AT = transcript_time.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
+ASKED_AT = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
 
 
 def user_row(content, origin=None, timestamp="2026-11-15T06:22:12.305Z", **extra):
@@ -263,8 +262,8 @@ class HumanTurnLookupTest(unittest.TestCase):
         self.assertIn("no live session has the id or the name", str(caught.exception))
 
     def test_a_timestamp_with_an_offset_and_one_with_z_read_the_same_moment(self):
-        zulu = transcript_time.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
-        offset = transcript_time.epoch_of_timestamp("2026-11-15T07:22:12.305+01:00")
+        zulu = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
+        offset = human_turn_lookup.epoch_of_timestamp("2026-11-15T07:22:12.305+01:00")
         self.assertEqual(zulu, offset)
 
 

@@ -95,8 +95,7 @@ class UsageError(Exception):
 def agent_transcript(agent_id):
     # The newest transcript of this agent id under any session's subagents folder, or None before it is written.
     transcript_name = script_utils.subagent_transcript_name(agent_id)
-    pattern = f"*/*/{session_registry.SUBAGENTS_DIR_NAME}/{transcript_name}"
-    transcripts = list(session_registry.projects_dir().glob(pattern))
+    transcripts = list(session_registry.projects_dir().glob(f"*/*/subagents/{transcript_name}"))
     if not transcripts:
         return None
     return max(transcripts, key=lambda transcript: transcript.stat().st_mtime)

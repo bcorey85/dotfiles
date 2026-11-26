@@ -253,13 +253,6 @@ class SubagentMetaNameTest(unittest.TestCase):
         self.assertEqual("a1", script_utils.subagent_id_from_meta_name(script_utils.subagent_meta_name("a1")))
 
 
-class SubagentTranscriptNameTest(unittest.TestCase):
-    def test_the_transcript_name_and_its_inverse_agree(self):
-        self.assertEqual("a1", script_utils.subagent_id_from_transcript_name("agent-a1.jsonl"))
-        made_name = script_utils.subagent_transcript_name("a1")
-        self.assertEqual("a1", script_utils.subagent_id_from_transcript_name(made_name))
-
-
 class LastTranscriptRecordTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

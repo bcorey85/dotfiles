@@ -32,8 +32,6 @@ CODE_FORK_AGENT_FILE = CLAUDE_DIR / "agents" / "code-fork.md"
 # that the package must carry too.
 WORK_HOOKS = ("scripts/bash-safety-gate.sh", "scripts/block-credential-read.sh", "scripts/write-edit-safety-gate.sh",
               "scripts/agent-model-guard.sh", "scripts/warn-skip-hooks.sh")
-# The lib modules a copied script_utils.py imports.
-SCRIPT_UTILS_LIB_MODULES = ("script_utils.py", "session_registry.py", "process_group.py")
 # The lib modules a copied coder_gate.py imports.
 CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "shell_directory.py", "shell_quoting.py",
                           "makefile_text.py",

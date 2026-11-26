@@ -37,7 +37,7 @@ and `settings.json` is unchanged.
 
 ## Phase 1: the Write hook refuses an unread overwrite and names the last writer
 
-**Files**: `claude/.claude/scripts/lib/unread_overwrite.py`, `claude/.claude/scripts/lib/script_utils.py`, `claude/.claude/scripts/gates/fork_write_scope.py`
+**Files**: `claude/.claude/scripts/lib/unread_overwrite.py`, `claude/.claude/scripts/lib/transcript_time.py`, `claude/.claude/scripts/lib/human_turn_lookup.py`, `claude/.claude/scripts/gates/fork_write_scope.py`
 **Test**: `tests/scripts/test_unread_overwrite.py`
 
 ## Plan Deviations

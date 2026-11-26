@@ -1,8 +1,6 @@
 """Checks for the unread-overwrite check in fork_write_scope.py: a Write of an existing file the session has not read
 since it last changed is refused, and the last writer is named."""
-import contextlib
 import datetime
-import io
 import json
 import os
 import pathlib
@@ -15,7 +13,6 @@ from unittest import mock
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
-import transcript_time
 import unread_overwrite
 
 HOOK = pathlib.Path(os.environ.get("FORK_WRITE_SCOPE") or toolkit_paths.GATES_DIR / "fork_write_scope.py")
@@ -236,7 +233,6 @@ class UnreadOverwriteTest(unittest.TestCase):
         reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("writer could not be looked up (TranscriptStampError", reason)
         self.assertIn(str(first), reason)
-        self.assertIn("last-writer lookup crashed", result.stderr)
 
     def test_a_read_through_a_symlink_does_not_count_for_the_real_path(self):
         link = self.root / "link.md"
@@ -256,7 +252,7 @@ class UnreadOverwriteTest(unittest.TestCase):
         result = self.run_raw(payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "")
-        self.assertIn("fork-write-scope: the unread-overwrite check could not read", result.stderr)
+        self.assertIn("fork-write-scope: the unread-overwrite check crashed", result.stderr)
         self.assertIn("IsADirectoryError", result.stderr)
 
     def test_a_read_of_a_relative_path_spelling_does_not_count(self):
@@ -326,14 +322,11 @@ class UnreadOverwriteTest(unittest.TestCase):
 
     def test_a_crash_in_the_writer_lookup_keeps_the_deny(self):
         second = self.transcript("second-id", [])
-        stderr = io.StringIO()
         with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.config_dir)}), \
-                mock.patch.object(unread_overwrite, "last_writer", side_effect=RuntimeError("lookup broke")), \
-                contextlib.redirect_stderr(stderr):
+                mock.patch.object(unread_overwrite, "last_writer", side_effect=RuntimeError("lookup broke")):
             reason = unread_overwrite.unread_overwrite_reason(str(self.shared_log),
                                                               {"transcript_path": str(second)})
         self.assertIn("writer could not be looked up (RuntimeError: lookup broke)", reason)
-        self.assertIn("fork-write-scope: the unread-overwrite last-writer lookup crashed", stderr.getvalue())
 
     def test_a_write_stamped_before_the_mtime_is_not_named_as_the_writer(self):
         self.transcript("first-id", [result_line(str(self.shared_log), -10, "write")])
@@ -409,24 +402,8 @@ class UnreadOverwriteTest(unittest.TestCase):
         result = self.run_raw(payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "")
-        self.assertIn("fork-write-scope: the unread-overwrite check could not read", result.stderr)
+        self.assertIn("fork-write-scope: the unread-overwrite check crashed", result.stderr)
         self.assertIn("FileNotFoundError", result.stderr)
-
-
-class EpochOfTimestampTest(unittest.TestCase):
-    def test_a_timestamp_with_no_offset_is_read_as_utc(self):
-        naive = transcript_time.epoch_of_timestamp("2026-11-15T06:22:12.305")
-        zulu = transcript_time.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
-        self.assertEqual(naive, zulu)
-
-    def test_the_fraction_of_a_second_is_kept(self):
-        whole = transcript_time.epoch_of_timestamp("2026-11-15T06:22:12Z")
-        fractional = transcript_time.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
-        self.assertAlmostEqual(fractional - whole, 0.305, places=3)
-
-    def test_text_that_is_not_a_timestamp_raises_value_error(self):
-        with self.assertRaises(ValueError):
-            transcript_time.epoch_of_timestamp("soon")
 
 
 if __name__ == "__main__":

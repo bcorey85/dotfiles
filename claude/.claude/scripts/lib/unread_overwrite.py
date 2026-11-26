@@ -1,7 +1,6 @@
 """unread_overwrite.py: the deny reason for a Write that would replace a file the writing session has not seen in its
-current state. Owner of that check. Standard library, `transcript_time` and `write_gate_name` (both import nothing
-of the toolkit) at import; script_utils and session_registry load only when a subagent transcript or a last-writer
-name is needed.
+current state. Owner of that check. Standard library and `transcript_time` (standard library only) at import;
+script_utils and session_registry load only when a subagent transcript or a last-writer name is needed.
 
 A session has seen the current content when its transcript holds a Read, Write or Edit result of the path, or an
 @-mentioned file attachment of it, stamped at or after the file's mtime. A Bash command's own edit of the path, which
@@ -13,10 +12,8 @@ import mmap
 import os
 import pathlib
 import stat
-import sys
 
 import transcript_time
-from write_gate_name import GATE_NAME
 
 DENY_TEXT = ("unread-overwrite: {file_path} exists and this session has not read it since it last changed "
              "({writer}). Read it first, then Edit it or Write the merged text, so the other writer's content is kept.")
@@ -135,8 +132,9 @@ def writing_transcript(hook):
 
 
 def live_session_transcripts():
-    """The transcript of each live session and of its subagents. Only live sessions are read: a global scan of every
-    transcript is too slow for a hook that runs on every Write."""
+    """(transcript, writer name) for each live session and each of its subagents. Only live sessions are read: a
+    global scan of every transcript is too slow for a hook that runs on every Write. A session is named by its
+    ListAgents name, else its id; a subagent by its agent id and its parent session."""
     import script_utils
     import session_registry
     subagent_name = script_utils.subagent_transcript_name("*")
@@ -145,38 +143,32 @@ def live_session_transcripts():
         session_id = row.get("sessionId")
         if not isinstance(session_id, str) or not session_id:
             continue
-        found.extend(session_registry.session_transcripts(session_id))
+        session_name = session_registry.session_display_name(session_id) or session_id
+        for transcript in session_registry.projects_dir().glob(f"*/{session_id}.jsonl"):
+            found.append((transcript, session_name))
         subagents_dir = session_registry.session_subagents_dir(session_id)
-        if subagents_dir is not None:
-            found.extend(subagents_dir.glob(subagent_name))
+        if subagents_dir is None:
+            continue
+        for transcript in subagents_dir.glob(subagent_name):
+            agent_id = transcript.stem.removeprefix(script_utils.SUBAGENT_NAME_PREFIX)
+            found.append((transcript, f"subagent {agent_id} of {session_name}"))
     return found
 
 
 def candidate_transcripts(mtime):
-    """Every live session and subagent transcript modified at or after `mtime`, newest first. A transcript that
-    vanishes between the listing and the stat is left out: the lookup only names a writer, and must not cancel the
-    deny."""
+    """(transcript, writer name) for every live session and subagent transcript modified at or after `mtime`, newest
+    first. A transcript that vanishes between the listing and the stat is left out: the lookup only names a writer,
+    and must not cancel the deny."""
     found = []
-    for candidate in live_session_transcripts():
+    for candidate, name in live_session_transcripts():
         try:
             modified = candidate.stat().st_mtime
         except FileNotFoundError:
             continue
         if modified >= mtime:
-            found.append((modified, candidate))
+            found.append((modified, candidate, name))
     found.sort(key=lambda entry: entry[0], reverse=True)
-    return [candidate for _, candidate in found]
-
-
-def writer_name(candidate):
-    """A session's ListAgents name, else its id; a subagent is named by its parent session and its agent id."""
-    import script_utils
-    import session_registry
-    if candidate.parent.name != session_registry.SUBAGENTS_DIR_NAME:
-        return session_registry.session_display_name(candidate.stem) or candidate.stem
-    session_id = candidate.parent.parent.name
-    agent_id = script_utils.subagent_id_from_transcript_name(candidate.name)
-    return f"subagent {agent_id} of {session_registry.session_display_name(session_id) or session_id}"
+    return [(candidate, name) for _, candidate, name in found]
 
 
 def last_writer(file_path, mtime, own_transcript):
@@ -184,25 +176,25 @@ def last_writer(file_path, mtime, own_transcript):
     a Bash edit record, of the path at or after `mtime`. NO_SESSION_WRITER when none does."""
     own_resolved = pathlib.Path(own_transcript).resolve() if own_transcript else None
     mtime_ms = milliseconds_of_mtime(mtime)
-    for candidate in candidate_transcripts(mtime):
+    for candidate, name in candidate_transcripts(mtime):
         if candidate.resolve() == own_resolved:
             continue
         try:
             stamp = last_result_stamp(candidate, file_path, {"write"})
         except FileNotFoundError:
             # The transcript vanished between the listing and the read. Any other OSError (a permission error)
-            # reaches writer_description, which reports it on stderr.
+            # reaches writer_description, which names it in the deny.
             continue
         if stamp is None or milliseconds_of_stamp(stamp) < mtime_ms:
             continue
-        return writer_name(candidate)
+        return name
     return NO_SESSION_WRITER
 
 
 def unread_overwrite_reason(file_path, hook):
     """The deny text for a Write of `file_path` by the session or subagent that the hook event `hook` names, else
-    None. None when the target is missing, not a regular file or empty, when no transcript is named or readable, or
-    when the session has seen the current content."""
+    None. None when the target is missing, not a regular file or empty, when no transcript is named, or when the
+    session has seen the current content. Raises OSError when the transcript cannot be read."""
     if not file_path or not hook.get("transcript_path"):
         return None
     try:
@@ -212,13 +204,8 @@ def unread_overwrite_reason(file_path, hook):
     if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size == 0:
         return None
     transcript = writing_transcript(hook)
-    try:
-        seen = last_result_stamp(transcript, file_path, {"read", "write"})
-    except OSError as error:
-        # Fail-open on purpose: an unreadable transcript must not block every Write, but the skipped check is reported.
-        sys.stderr.write(f"{GATE_NAME}: the unread-overwrite check could not read {transcript} "
-                         f"({type(error).__name__}: {error}), so the Write goes on\n")
-        return None
+    # An unreadable transcript raises OSError; the gate fails open on it and names the error on stderr.
+    seen = last_result_stamp(transcript, file_path, {"read", "write"})
     if seen is not None and milliseconds_of_stamp(seen) >= milliseconds_of_mtime(file_stat.st_mtime):
         return None
     writer_text = writer_description(file_path, file_stat.st_mtime, transcript)
@@ -227,12 +214,10 @@ def unread_overwrite_reason(file_path, hook):
 
 def writer_description(file_path, mtime, own_transcript):
     """The deny text's account of the writer. A crash in the lookup keeps the deny: the lookup only names the writer,
-    so this function writes the error to stderr and the deny text says the writer is unknown."""
+    so the deny text says the writer could not be looked up and names the error."""
     try:
         writer = last_writer(file_path, mtime, own_transcript)
     except Exception as error:
-        sys.stderr.write(f"{GATE_NAME}: the unread-overwrite last-writer lookup crashed "
-                         f"({type(error).__name__}: {error})\n")
         return f"writer could not be looked up ({type(error).__name__}: {error})"
     if writer == NO_SESSION_WRITER:
         return NO_SESSION_WRITER

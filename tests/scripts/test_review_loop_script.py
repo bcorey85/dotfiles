@@ -3592,6 +3592,20 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(finding, loop.open_fixes)
         begin_pass.assert_not_called()
 
+    def test_the_pass_guard_reads_only_the_held_files_a_holder_row_proves(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        ruled_out_module = sys.modules["review_loop_ruled_out"]
+        loop.held_files = {"proven.py", "unproven.py"}
+        loop.held_holders = {"proven.py": {"session": "lane-b"}}
+        finding = mock.MagicMock(path="", text="`app.py:2` the limit is wrong")
+
+        with mock.patch.object(ruled_out_module, "begin_pass", side_effect=RuntimeError("stop here")) as begin_pass, \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(RuntimeError):
+            loop.repair("coder1", [finding])
+
+        self.assertEqual(begin_pass.call_args.args[-1], {"proven.py"})
+
     def test_an_undo_failure_after_a_finished_coder_call_is_a_blocker_saying_the_pass_finished(self):
         loop = self.built_loop_for_gate_command("echo ran", False)
         loop_script = sys.modules["review_loop_script"]

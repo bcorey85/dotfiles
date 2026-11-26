@@ -619,8 +619,8 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Ac
             # The pass has not started, so no file changed: keep the findings open and stop with a blocker.
             self.keep_open(findings)
             raise CoderFailedError(coder_failure_blocker(call_name, error, scope_guard_failed=True)) from error
-        guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out, diff_files,
-                                                 issue_texts)
+        guard = review_loop_ruled_out.begin_pass(self.repo, self.out, call_name, self.ruled_out,
+                                                 diff_files, issue_texts, self.coder_held_files())
         try:
             self.snapshot_approval_blobs()
         except plan_format.PlanFormatError:

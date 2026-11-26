@@ -80,15 +80,17 @@ class CallReply(typing.NamedTuple):
     session: str
 
 
-def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
+def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True, held=()):
     """One `claude -p` model step. Returns the result text; see `claude_call_reply`."""
-    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded).text
+    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded, held).text
 
 
-def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
+def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True,
+                      held=()):
     """One `claude -p` model step. Returns a CallReply. A call that fails or prints no JSON reply raises. The
     prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument.
     `deletable` are the untracked files a finding of the pass asks to delete; the call may remove them.
+    `held` are the untracked files another session holds; they stay guarded.
     `guarded=False` is for a call that runs inside a batch whose caller holds one untracked-file guard for all of
     it: concurrent calls cannot tell whose deletion is whose."""
     # The loop names the child's session, so a call that times out or prints no JSON still has a transcript to read.
@@ -112,7 +114,7 @@ def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=Non
         child_pids.append(pid)
         LIVE_CHILDREN.add(pid)
 
-    guard = review_loop_untracked.begin(repo, out, deletable) if guarded else None
+    guard = review_loop_untracked.begin(repo, out, deletable, held) if guarded else None
     try:
         return_code, stdout, stderr = script_utils.run_process(command, repo, stdin=prompt,
                                                                timeout=CALL_TIMEOUT_SECONDS, env=CHILD_ENV,

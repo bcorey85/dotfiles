@@ -132,7 +132,7 @@ def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model="")
     held_before = review_loop_held.digests(repo, held)
     try:
         reply = claude_call_reply(role, prompt, repo, out, agent="coder", model=model or None,
-                                  deletable=pass_guard.deletions)
+                                  deletable=pass_guard.deletions, held=held)
         # Recorded before the empty-report check, so every outcome of a finished call reads its transcript.
         review_loop_outside_writes.record_pass_writes(role, repo, out, reply.session)
         report = reply.text

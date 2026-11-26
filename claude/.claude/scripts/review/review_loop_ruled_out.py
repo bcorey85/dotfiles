@@ -119,20 +119,22 @@ class PassGuard:
                                     "copy, so they are gone: " + ", ".join(lost))
 
 
-def begin_pass(repo, out, role, ruled_out, diff_files, finding_texts):
+def begin_pass(repo, out, role, ruled_out, diff_files, finding_texts, held=()):
     """The PassGuard of one coder pass. `diff_files` are the files of the diff under review; `finding_texts` are the
-    pass's findings, whose text may name a deletion."""
+    pass's findings, whose text may name a deletion. A held or ruled-out file is never a deletion."""
     root = pathlib.Path(repo)
     pass_dir = pathlib.Path(out) / BACKUP_FOLDER / role
     ruled_backup = file_backup.save_files(root, ruled_out, pass_dir / "ruled-out")
     # A finding may name a stray untracked file the diff under review does not list (a plan-folder file, a file
     # outside the review scope), so the untracked files are candidates too.
-    untracked = sorted(review_loop_untracked.untracked_set(root))
-    candidates = list(dict.fromkeys([*diff_files, *untracked]))
-    deletions = [path for path in candidates if path not in ruled_out and names_deletion(finding_texts, path, root)]
+    untracked_files = review_loop_untracked.untracked_set(root)
+    untracked_sorted = sorted(untracked_files)
+    candidates = list(dict.fromkeys([*diff_files, *untracked_sorted]))
+    barred = set(held) | set(ruled_out)
+    deletions = [path for path in candidates if path not in barred and names_deletion(finding_texts, path, root)]
     # The untracked-file guard around the model call puts back and notes an untracked file it covers; this guard
     # backs up only the rest, so one deletion makes one note.
-    covered = review_loop_untracked.guarded_untracked(root, deletions)
+    covered = review_loop_untracked.guarded_untracked(root, untracked_files, held, deletions)
     kept_paths = [path for path in diff_files
                   if path not in ruled_out and path not in deletions and path not in covered]
     backup = file_backup.save_files(root, kept_paths, pass_dir / "diff")

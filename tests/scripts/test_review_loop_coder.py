@@ -82,11 +82,13 @@ class UntrackedDeletionTest(unittest.TestCase):
         return mock.patch.multiple(review_loop_calls.script_utils, run_process=run_process,
                                    preloaded_skills_prompt=lambda _agent: "")
 
-    def call(self, role, action):
-        """Runs coder_call with a stand-in model process that runs `action(repo)`."""
+    def call(self, role, action, finding_texts=(), held=frozenset()):
+        """Runs coder_call with a stand-in model process that runs `action(repo)`, and a pass guard that read
+        `finding_texts`; the diff under review lists no file."""
         with self.fake_model(action):
-            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], [])
-            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard,
+            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], list(finding_texts),
+                                                     held)
+            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(held), guard,
                                                 self.no_op_scope_guard(role))
 
     def coder_model_sent(self, **coder_kwargs):
@@ -164,18 +166,29 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
         self.assertNotIn("dup.py", review_loop_untracked.LOOP_WRITTEN)
 
-    def call_with_findings(self, role, action, finding_texts):
-        """Runs coder_call with a pass guard that read `finding_texts`; the diff under review lists no file."""
-        with self.fake_model(action):
-            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], finding_texts)
-            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard,
-                                                self.no_op_scope_guard(role))
+    def test_a_held_untracked_file_a_finding_names_for_deletion_is_put_back_and_noted(self):
+        (self.repo / "theirs.py").write_text("theirs\n")
+
+        self.call("coder1", lambda repo: (repo / "theirs.py").unlink(),
+                  ["`app.py:1` delete theirs.py"], held={"theirs.py"})
+
+        self.assertEqual((self.repo / "theirs.py").read_text(), "theirs\n")
+        self.assertIn("theirs.py", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_a_held_file_the_fix_coder_record_names_is_put_back_and_noted(self):
+        (self.repo / "theirs.py").write_text("theirs\n")
+        fix_coder_written.add_paths(self.repo, {"theirs.py"})
+
+        self.call("coder1", lambda repo: (repo / "theirs.py").unlink(), [], held={"theirs.py"})
+
+        self.assertEqual((self.repo / "theirs.py").read_text(), "theirs\n")
+        self.assertIn("theirs.py", review_loop_untracked.UNTRACKED_FAULTS[0])
 
     def test_an_untracked_file_a_finding_names_for_deletion_stays_deleted_when_the_diff_lists_no_such_file(self):
         (self.repo / "stray.py").write_text("stray\n")
 
-        self.call_with_findings("coder1", lambda repo: (repo / "stray.py").unlink(),
-                                ["`app.py:1` delete stray.py, nothing calls it"])
+        self.call("coder1", lambda repo: (repo / "stray.py").unlink(),
+                  ["`app.py:1` delete stray.py, nothing calls it"])
 
         self.assertFalse((self.repo / "stray.py").exists())
         self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
@@ -184,8 +197,8 @@ class UntrackedDeletionTest(unittest.TestCase):
         (self.repo / "stray.py").write_text("stray\n")
         (self.repo / "mine.py").write_text("mine\n")
 
-        self.call_with_findings("coder1", lambda repo: (repo / "mine.py").unlink(),
-                                ["`app.py:1` delete stray.py, nothing calls it"])
+        self.call("coder1", lambda repo: (repo / "mine.py").unlink(),
+                  ["`app.py:1` delete stray.py, nothing calls it"])
 
         self.assertEqual((self.repo / "mine.py").read_text(), "mine\n")
         self.assertIn("mine.py", review_loop_untracked.UNTRACKED_FAULTS[0])

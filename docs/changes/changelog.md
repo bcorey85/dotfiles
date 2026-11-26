@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1258 changes
+1259 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Scripts CLAUDE.md names the owner of the dirty-file holder](notes/2026-11-26-scripts-claude-md-names-the-owner-of-the-dirty.md) [rule/scripts-claude-md, script/dirty-writers] The owners list in the toolkit scripts guide now points to the module that names which live session wrote a repo's dirty files, with the cutoff commit it reads, so a later edit reuses it in place of naming a holder by working folder.
 * [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md) [script/memory-sample, script/process-table, script/lane-status, script/install-memory-sample] A per-minute memory sample log names the top RSS holders by command and herdr workspace, and lane-status --git marks merged lanes with an idle agent as finished idle with their Claude RSS.
 * [adr runs after the PR and adr_flow status reports a branch not finished](notes/2026-11-25-adr-runs-after-the-pr-and-adr-flow-status-reports.md) [skill/adr, skill/verify-branch, skill/close-branch, skill/branch-recap] adr_flow.py status reports a branch whose PR exists and whose task dir remains as not finished, and the branch-end skills run /adr as a numbered step after the PR.
 * [A census script lists added single-caller forwarders, unread fields and superseded helpers](notes/2026-11-25-smell-reviewer-gets-a-census-of-added-single.md) [script/review-loop, agent/smell-reviewer, skill/refactor] A script lists the forwarders, unread record fields and superseded helpers that a branch adds to Python code, for a reviewer to judge.

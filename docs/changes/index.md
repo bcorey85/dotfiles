@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1195 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [rg path gate rewrites a one-step no-path rg through updatedInput](notes/2026-11-25-rg-path-gate-rewrites-a-one-step-no-path-rg.md).
+Latest change: 2026-11-25, [Foreground-suite deny names a cap command only where the host runs it](notes/2026-11-25-foreground-suite-deny-names-a-cap-command-only.md).
 
 ## Top gains
 

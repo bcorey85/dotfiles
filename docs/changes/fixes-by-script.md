@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-765 fix notes
+767 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -28,9 +28,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/quality-check-cap | 22 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
+| script/git-discipline-gate | 19 | 8 |
 | script/staged-claim-gate | 19 | 7 |
 | skill/code | 19 | 1 |
-| script/git-discipline-gate | 18 | 7 |
 | script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
@@ -45,9 +45,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
+| script/inline-interpreter-hint | 9 | 5 |
 | script/review-launch | 9 | 4 |
 | script/comment-bloat-gate | 8 | 0 |
-| script/inline-interpreter-hint | 8 | 4 |
 | script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
 | script/check-scope | 7 | 2 |
@@ -65,6 +65,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
 | script/phase-start | 5 | 3 |
+| script/reviewed-tree | 5 | 3 |
 | script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
@@ -78,7 +79,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/loop-transcript | 4 | 1 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-ruled | 4 | 4 |
-| script/reviewed-tree | 4 | 2 |
 | script/rg-path-gate | 4 | 2 |
 | script/session-pane | 4 | 4 |
 | script/source-paths | 4 | 0 |
@@ -96,6 +96,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
+| script/memory-cap-scope | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/shell-command-words | 3 | 3 |
@@ -122,7 +123,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-escape-check | 2 | 1 |
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
-| script/memory-cap-scope | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |

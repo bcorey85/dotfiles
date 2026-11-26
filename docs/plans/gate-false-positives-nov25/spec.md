@@ -18,7 +18,7 @@ Every phase starts with a test that fails on the current tree. Run changed test 
 
 - [x] Phase 1: Stop-hook text checks: background report steps, draft blocks, tracker writes (risk: low)
 - [x] Phase 2: rg path gate rewrites a one-step no-path rg through updatedInput (risk: medium)
-- [ ] Phase 3: push refusal names the review base; background-run text fits the host (risk: low)
+- [x] Phase 3: push refusal names the review base; background-run text fits the host (risk: low)
 - [ ] Phase 4: staged-claim gate passes a check of what is staged (risk: low)
 - [ ] Phase 5: a capped review with a passed full check on the tree earns push credit (risk: medium)
 

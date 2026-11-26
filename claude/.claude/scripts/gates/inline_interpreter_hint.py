@@ -221,7 +221,7 @@ def main():
         elif memory_cap_scope.cap_available() and memory_cap_scope.uncapped_test_run(command):
             emit_deny(memory_cap_scope.DENY_TEXT)
         elif runs_in_foreground(payload) and memory_cap_scope.foreground_full_suite(command):
-            emit_deny(memory_cap_scope.BACKGROUND_DENY_TEXT)
+            emit_deny(memory_cap_scope.background_deny_text())
     except Exception:
         pass
     sys.exit(0)

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1193 changes
+1195 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -42,6 +42,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Foreground-suite deny names a cap command only where the host runs it](notes/2026-11-25-foreground-suite-deny-names-a-cap-command-only.md) [script/memory-cap-scope, script/inline-interpreter-hint] On a host with no systemd scope, such as macOS, the foreground full-suite deny names run_in_background alone, so the approved path it names can run.
+* [Push refusal names the review base](notes/2026-11-25-push-refusal-names-the-review-base-background-run-text.md) [script/git-discipline-gate, script/reviewed-tree] The changed-since-review push deny now names the commit to review from, so /review after a commit no longer stops with no changes.
 * [rg path gate rewrites a one-step no-path rg through updatedInput](notes/2026-11-25-rg-path-gate-rewrites-a-one-step-no-path-rg.md) [script/rg-path-gate] A one-step, plain rg call with no path now runs with the dot path appended, so the session no longer re-sends the fixed command the gate printed.
 * [Permission-question gate counts tracker writes as outward](notes/2026-11-25-permission-question-gate-counts-tracker-writes-as.md) [script/permission-question-gate, script/staged-claim-gate] An ask to add, link, edit, comment on, label, assign or transition a tracker item counts as an outward step, so the Stop gate no longer forces a write to a shared tracker.
 * [Announced-step gate skips drafted text in fences and quotes](notes/2026-11-25-announced-step-gate-skips-drafted-text-in-fences.md) [script/staged-claim-gate] The announced-step check drops fenced blocks and blockquote lines first, so a reply drafted for the user to send no longer reads as the session's own promise.

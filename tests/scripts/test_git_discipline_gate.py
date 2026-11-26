@@ -948,7 +948,12 @@ def load_reviewed_tree():
     return reviewed_tree
 
 
-PUSH_DENIED = "[git-discipline-gate] code changed since the last review: run /review on this branch, then push"
+PUSH_DENIED_WITH_BASE = ("[git-discipline-gate] code changed since the last review: run /review base={base} on this "
+                         "branch, then push")
+
+
+PUSH_DENIED_PLAIN = ("[git-discipline-gate] code changed since the last review: run /review on this branch, "
+                     "then push")
 
 
 class PushReviewedTreeTest(GateCaseBase):
@@ -978,6 +983,10 @@ class PushReviewedTreeTest(GateCaseBase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
 
+    def head(self):
+        found = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, check=True, capture_output=True, text=True)
+        return found.stdout.strip()
+
     def review_then_commit(self):
         self.write("app.py", "print('b')\n")
         self.write("lib/new.py", "x = 1\n")
@@ -998,13 +1007,52 @@ class PushReviewedTreeTest(GateCaseBase):
         self.assert_allowed("git push", cwd=self.repo)
 
     def test_push_is_denied_when_code_changed_after_the_review(self):
+        reviewed_base = self.head()
         self.review_then_commit()
         self.write("app.py", "print('unreviewed')\n")
         self.commit("late edit")
-        reason = self.assert_denied("git push -u origin HEAD", PUSH_DENIED, cwd=self.repo)
-        self.assertEqual(reason, PUSH_DENIED)
-        self.assert_denied(f"git -C {self.repo} push", PUSH_DENIED, cwd=self.tmp)
-        self.assert_denied("gh pr create --fill", PUSH_DENIED, cwd=self.repo)
+        expected = PUSH_DENIED_WITH_BASE.format(base=reviewed_base)
+        reason = self.assert_denied("git push -u origin HEAD", expected, cwd=self.repo)
+        self.assertEqual(reason, expected)
+        self.assert_denied(f"git -C {self.repo} push", expected, cwd=self.tmp)
+        self.assert_denied("gh pr create --fill", expected, cwd=self.repo)
+
+    def repo_top(self):
+        found = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=self.repo, check=True,
+                               capture_output=True, text=True)
+        return found.stdout.strip()
+
+    def write_shared_bases(self, stored):
+        bases_file = self.reviewed_tree.shared_bases_file()
+        bases_file.parent.mkdir(parents=True, exist_ok=True)
+        bases_file.write_text(json.dumps({self.repo_top(): stored}) + "\n")
+
+    def test_push_denial_without_a_base_string_keeps_the_plain_text(self):
+        self.write_shared_bases([{"tree": "x"}])
+        reason = self.assert_denied("git push", PUSH_DENIED_PLAIN, cwd=self.repo)
+        self.assertEqual(reason, PUSH_DENIED_PLAIN)
+        self.assertNotIn("base=", reason)
+
+    def test_latest_reviewed_base_is_none_without_a_record(self):
+        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
+        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.tmp))
+
+    def test_malformed_bases_record_reads_as_no_base(self):
+        for stored in (["junk", {"base": 5, "tree": "x"}], "junk", {"base": "abc"}):
+            with self.subTest(stored=stored):
+                self.write_shared_bases(stored)
+                self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
+                self.reviewed_tree.push_review_state(self.repo)
+
+    def test_latest_reviewed_base_is_the_newest_recorded_base(self):
+        first_base = self.head()
+        self.review_then_commit()
+        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), first_base)
+        self.write("app.py", "print('c')\n")
+        self.commit("more")
+        second_base = self.head()
+        self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
+        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), second_base)
 
     def test_push_passes_when_only_notes_changed_after_the_review(self):
         self.review_then_commit()

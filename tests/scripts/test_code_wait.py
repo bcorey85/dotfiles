@@ -947,16 +947,15 @@ class ReviewerRequestTest(unittest.TestCase):
 
         self.assertEqual(problem, "")
 
-    def test_a_filled_report_with_no_recorded_filler_is_not_refused(self):
-        """Old-report gap: a manifest written before `filled_by` existed names no filler, so a report with text and
-        no recorded filler is not refused as a used round."""
+    def test_a_filled_report_with_no_recorded_filler_is_refused(self):
+        """A manifest written before `filled_by` existed names no filler: its filled report is a used round."""
         pathlib.Path(self.entries[0]["report_file"]).write_text("round one\n")
         code_wait.reviewer_dispatch.write_round(self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "Go.")])
 
         problem = code_wait.reviewer_dispatch.used_round_problem(
             self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"])])
 
-        self.assertEqual(problem, "")
+        self.assertEqual(problem, "round 1 is used: its report was filled by another agent; dispatch round 2")
 
     def test_a_report_another_agent_filled_in_the_last_round_is_refused_with_no_round_open(self):
         self.fill_report(self.entries[0], AGENT_ID)

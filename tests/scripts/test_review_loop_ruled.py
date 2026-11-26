@@ -1130,21 +1130,23 @@ class UserRulingImpactTest(unittest.TestCase):
                 self.assertEqual(len(handback.rule_adopted_plan_impacts(packet)), 1, label)
 
 
-class IsUserRuledLineTest(unittest.TestCase):
-    USER_NAMES = ("Pat", "the user")
+class UserRuledLineTest(unittest.TestCase):
+    """A one-line decision log read through the owner, `signoff_lines.records_user_signoff`: a marker line reads as
+    the user's unless a session is its ruler."""
 
-    def test_a_dated_line_the_user_ruled_is_user_ruled(self):
-        cases = [
+    def assert_ruled(self, cases):
+        for line, expected in cases:
+            with self.subTest(line):
+                ruled = signoff_lines.records_user_signoff(line + "\n", 1, plan_format.DECISION_LOG_NAME)
+                self.assertEqual(ruled, expected, line)
+
+    def test_a_marker_line_no_session_ruled_is_the_users(self):
+        self.assert_ruled([
             ("Ruled by Pat at 2026-11-20 09:30.", True),
             ("Signed off by the user, 2026-11-21, relayed by agent-evals-5e", True),
             ("Ruled by Pat, relayed by session x, 2026-11-20", True),
-            ("Ruling by agent-evals-c3 at 2026-11-22", False),
-            ("Ruled by agent-evals-c3, 2026-11-22", False),
-            ("Ruled by this lane, 2026-11-22", False),
-            ("Ruled by Patricia at 2026-11-20", False),
-            ("Ruled by the session, not the user at 2026-11-20", False),
-            ("Ruled by Pat", False),
-            ("Pat approved it on 2026-11-20", True),
+            ("Ruled by Patricia at 2026-11-20", True),
+            ("Ruled by Pat", True),
             ("**User ruling**: Relayed by agent-evals-c3-owner on 2026-11-23: the user approved the split", True),
             ("- **Owner line** for `review_loop_ruling_check.py` in `claude/.claude/scripts/CLAUDE.md`: not added. The "
              "user ruled out new Owners lines (ruling relayed by agent-evals-c3-owner, 2026-11-24).", True),
@@ -1152,18 +1154,47 @@ class IsUserRuledLineTest(unittest.TestCase):
             ("## Signed off: Ticket #8 and Ticket #10 overridden (Pat, 2026-11-21)", True),
             ("- 2026-11-10: User sign-off, Pat, given directly in session agent-evals-5e, which wrote it.", True),
             ("- AC5 cut: user sign-off, Pat, 2026-11-10, written", True),
-            ("- 2026-11-10: User sign-off, agent-evals-5e, 2026-11-10", False),
-            ("## Signed off: Ticket #8 and Ticket #10 overridden (agent-evals-5e, 2026-11-21)", False),
             ("- The user ruled out new Owners lines, 2026-11-24", True),
             ("Relayed by agent-evals-c3-owner on 2026-11-23: the user approved it", True),
+            ("User ruling: keep the cache", True),
+        ])
+
+    def test_a_line_a_session_ruled_is_not_the_users(self):
+        self.assert_ruled([
+            ("Ruling by agent-evals-c3 at 2026-11-22", False),
+            ("Ruled by agent-evals-c3, 2026-11-22", False),
+            ("Ruled by this lane, 2026-11-22", False),
+            ("Ruled by the session, not the user at 2026-11-20", False),
             ("Ruled by the user's standing rule (session x), 2026-11-20", False),
-            ("agent-evals-c3 noted Pat approved it, 2026-11-20", False),
-            ("User ruling: keep the cache", False),
-            ("Pat approved it", False),
-        ]
-        for line, expected in cases:
-            with self.subTest(line):
-                self.assertEqual(signoff_lines.is_user_ruled_line(line, self.USER_NAMES), expected, line)
+            ("- 2026-11-10: User sign-off, agent-evals-5e, 2026-11-10", False),
+            ("## Signed off: Ticket #8 and Ticket #10 overridden (agent-evals-5e, 2026-11-21)", False),
+            ("Sign-off: lane session, 2026-11-24", False),
+            ("- D3. Lane call: keep the cache per request, ruled 2026-11-24", False),
+            ("- D4. Ruled by the orchestrating session, 2026-11-24", False),
+        ])
+
+    def test_a_line_with_no_marker_is_not_a_ruling(self):
+        self.assert_ruled([("Pat approved it on 2026-11-20", False),
+                           ("agent-evals-c3 noted Pat approved it, 2026-11-20", False),
+                           ("Pat approved it", False)])
+
+    def test_ruled_by_user_or_a_relayed_ruling_reads_as_the_users_beside_a_session_name(self):
+        self.assert_ruled([
+            ("- D5. Keep the quote length. ruled by: user, relayed by agent-evals-c3-owner, 2026-11-26", True),
+            ("- D5. Keep the quote length. Ruled by: user, 2026-11-26 (agent-evals-c3-owner wrote it)", True),
+            ("- D5. Keep the quote length. Ruling from the user, relayed by agent-evals-c3-owner, 2026-11-26", True),
+            ("- 2026-11-10: the user ruled to ship it, 2026-11-10, in session agent-evals-5e", True),
+        ])
+
+    def test_a_ruling_a_session_made_and_another_relayed_stays_the_sessions(self):
+        self.assert_ruled([
+            ("**Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill lane.",
+             False),
+            ("- ruling, 2026-11-22, session (lane dotfiles-gates, criteria owner plan): drop the cache", False),
+            ("- Phase 1 ruling (AC1, owner plan, session, 2026-11-13): keep the phrase list", False),
+            ("Phase 2 ruling (session, 2026-11-17): a resume re-enters step 3", False),
+            ("- the reader constraint reworded; ruled by the code-skill-nov22 lane, 2026-11-22", False),
+        ])
 
 
 class RewordFlagTest(unittest.TestCase):

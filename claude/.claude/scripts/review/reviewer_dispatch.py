@@ -207,8 +207,8 @@ def record_filled_by(loop_dir, report_file, agent_id):
 def used_round_problem(loop_dir, pairs):
     """The refusal text when every (agent id, report file) pair of `pairs` names a request whose report another agent
     filled, else "". That is a stale dispatch: a newly dispatched agent for a round already answered. The agent that
-    filled the report, run again with the same command, is never refused, on any round, and a report with no
-    recorded filler is not refused. A call that also names a pair that is not stale passes."""
+    filled the report, run again with the same command, is never refused, on any round. A filled report with no
+    recorded filler counts as filled by another agent. A call that also names a pair that is not stale passes."""
     requests = all_requests(loop_dir)
     entry_of = {entry["report_file"]: entry for entry in requests}
     named = [(agent_id, entry_of[report_file]) for agent_id, report_file in pairs if report_file in entry_of]
@@ -216,7 +216,7 @@ def used_round_problem(loop_dir, pairs):
         return ""
 
     stale = [entry for agent_id, entry in named
-             if entry.get("filled_by") not in (None, agent_id) and not request_is_open(entry)]
+             if entry.get("filled_by") != agent_id and not request_is_open(entry)]
     if len(stale) != len(named):
         return ""
 

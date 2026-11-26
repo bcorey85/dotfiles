@@ -389,14 +389,12 @@ class RuledFindings:
         plan_path = self.plan_path_on_disk()
         if plan_path is None:
             return False
-        user_names = (plan_format.ruling_owner(self.repo, plan_format.USER_RULING), "the user")
         log_path = plan_path.parent / plan_format.DECISION_LOG_NAME
         if log_path.is_file() and signoff_lines.cites_user_ruling(
-                text, log_path.read_text(), [log_path.name], user_names, log_path.name):
+                text, log_path.read_text(), [log_path.name], log_path.name):
             return True
         return signoff_lines.cites_user_ruling(
-            text, plan_path.read_text(), [plan_path.name, plan_format.DEVIATIONS_HEADING], user_names,
-            plan_path.name)
+            text, plan_path.read_text(), [plan_path.name, plan_format.DEVIATIONS_HEADING], plan_path.name)
 
     def mark_standing_rewords_applied(self, changed):
         """After a coder pass: the reword impacts adopted under a standing ruling count as applied when the pass

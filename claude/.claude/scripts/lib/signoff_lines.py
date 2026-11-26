@@ -6,9 +6,9 @@ import plan_format
 import script_utils
 
 # The `... by` forms of a decision-log line that records who ruled: `Ruled by <who>`, `Rulings by <who>`,
-# `Adopted by`, `decided by`, `cut|reworded|narrowed by`. The ruling text of an entry opens with `The ruling:`
-# (the form `ruling_deviation` writes).
-RULED_BY_FORMS = r"rul(?:ed|ings?)|adopted|decided|cut|reworded|narrowed"
+# `Adopted by`, `decided by`, `cut|reworded|narrowed by`, `relayed by`. The ruling text of an entry opens with
+# `The ruling:` (the form `ruling_deviation` writes).
+RULED_BY_FORMS = r"rul(?:ed|ings?)|adopted|decided|cut|reworded|narrowed|relayed"
 RULED_BY = re.compile(rf"\b(?:{RULED_BY_FORMS})\s+by\b", re.I)
 SIGNED_OFF = re.compile(r"\bsigned\s+off\b", re.I)
 RULING_TEXT_LINE = re.compile(r"^\s*" + re.escape(plan_format.DEVIATION_RULING_PREFIX.strip()), re.I)
@@ -96,64 +96,16 @@ def signoff_lines(text, name=""):
     return [(index + 1, lines[index]) for index in sorted(found & scope_indexes)]
 
 
-# The owner after a `RULED_BY_FORMS` word and `by`, or after `Signed off by`: up to the next `.`, `,`, `:` or `;`. The
-# owner of a user ruling opens with a user name (see `is_user_ruled_line`); any other owner is a session.
-RULED_BY_OWNER = re.compile(rf"\b(?:{RULED_BY_FORMS}|{SIGNED_OFF.pattern})\s+by\s+([^.,:;]+)", re.I)
-RULING_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-USER_RULING_LABEL = re.compile(r"user ruling\b", re.I)
-USER_VERBS = r"(?:ruled|approved|signed off)\b"
-# A heading that closes with its owner and date: `## Signed off: <what> (user, 2026-11-21)`.
-TRAILING_OWNER = re.compile(rf"\(([^(),]+),\s*{RULING_DATE.pattern}\)\s*$")
-BARE_USER_OWNER = "user"
 MIN_QUOTE_WORDS = 3
-# A line that leads into the user's own name: `User sign-off, <name>, <date>` or `user sign-off: <name>`.
-USER_SIGNOFF_OWNER = re.compile(r"\buser\s+sign-off[,:]\s+([^.,:;]+)", re.I)
-# A subject at the start of a sentence: at the line start, or after `.`, `:` or `;` and a space.
-SENTENCE_START = r"(?:^|[.:;]\s+)"
 
 
-def is_user_ruled_line(line, user_names):
-    """True when the line records a dated ruling by the user: its owner after `<form> by` opens with one of
-    `user_names` (what `plan_format.ruling_owner` writes for `--by user`: the git user name or `the user`), it opens
-    with a `User ruling` label, its subject, at the start of a sentence, is one of `user_names` followed by `ruled`,
-    `approved` or `signed off`, it closes with a `(<user name or user>, <date>)` owner, or it holds
-    `User sign-off, <user name>`. Any other owner, such as a session name, is a session."""
-    if not RULING_DATE.search(line):
-        return False
-    words = plan_format.normalized_words(BULLET_LINE.sub("", line)).lower()
-    if USER_RULING_LABEL.match(words):
-        return True
-    names = [re.escape(name.lower()) for name in user_names]
-    if any(re.search(rf"{SENTENCE_START}{name}\s+{USER_VERBS}", words) for name in names):
-        return True
-    trailing = TRAILING_OWNER.search(line)
-    if trailing is not None and is_user_owner(trailing.group(1), user_names):
-        return True
-    signoff = USER_SIGNOFF_OWNER.search(line)
-    if signoff is not None and is_user_owner(signoff.group(1), user_names):
-        return True
-    owner = RULED_BY_OWNER.search(line)
-    if owner is None:
-        return False
-    return is_user_owner(owner.group(1), user_names)
-
-
-def is_user_owner(owner_text, user_names):
-    """True when the owner text opens with one of `user_names` or is the bare word `user`."""
-    owner_words = plan_format.normalized_words(owner_text).lower()
-    if owner_words == BARE_USER_OWNER:
-        return True
-    # `the user's standing rule` is a session ruling: an apostrophe after the name is no word end.
-    return any(re.match(rf"{re.escape(name.lower())}\b(?!['\N{{RIGHT SINGLE QUOTATION MARK}}])", owner_words)
-               for name in user_names)
-
-
-def cites_user_ruling(impact_text, log_text, log_names, user_names, name=""):
+def cites_user_ruling(impact_text, log_text, log_names, name=""):
     """True when `impact_text` names the log (any of `log_names`, case-insensitive) and either quotes, whitespace
     normalized, or points at the number of (`<log name>:<n>` or `<log name> line <n>`) a line of a user-ruled
-    sign-off entry of `log_text`. Only lines inside `signoff_scope_indexes` count. A quote needs three or more words
-    (`MIN_QUOTE_WORDS`) unless the entry is one line, and the `The ruling:` text counts with or without its label.
-    A `The ruling:` entry is judged together with the dated entry above it (`ruling_units`). `name` is the log's
+    sign-off entry of `log_text` (`unit_is_user_ruled`). Only lines inside `signoff_scope_indexes` count. A quote
+    needs three or more words (`MIN_QUOTE_WORDS`) unless the entry is one line, and the `The ruling:` text counts
+    with or without its label. A `The ruling:` entry is judged together with the entry above it (`ruling_units`).
+    `name` is the log's
     file name, as for `signoff_lines`."""
     impact = plan_format.normalized_words(impact_text).lower()
     named = [log_name for log_name in log_names if log_name.lower() in impact]
@@ -163,7 +115,7 @@ def cites_user_ruling(impact_text, log_text, log_names, user_names, name=""):
     scope_indexes = signoff_scope_indexes(name, lines)
     for unit in ruling_units(lines, signoff_entry_ranges(log_text, name)):
         indexes = [index for start, end in unit for index in range(start, end) if index in scope_indexes]
-        if not any(is_user_ruled_line(lines[index], user_names) for index in indexes):
+        if not unit_is_user_ruled(lines, unit, scope_indexes):
             continue
         for index in indexes:
             plain_line = BULLET_LINE.sub("", lines[index])
@@ -178,6 +130,14 @@ def cites_user_ruling(impact_text, log_text, log_names, user_names, name=""):
         if names_a_line_of(impact, named, [index + 1 for index in indexes]):
             return True
     return False
+
+
+def unit_is_user_ruled(lines, unit, scope):
+    """True when a marker line of the unit's entries (`ruler_marker_indexes`) is not session-ruled
+    (`is_session_ruled`). A unit with no marker line is no user ruling: unlike `records_user_signoff`, no other entry
+    of the file stands in for it."""
+    markers = {number for start, _ in unit for number in ruler_marker_indexes(lines, start, scope)}
+    return any(not is_session_ruled(lines[number]) for number in sorted(markers))
 
 
 def ruling_units(lines, ranges):
@@ -202,14 +162,23 @@ def names_a_line_of(impact, log_names, numbers):
     return False
 
 
-# A session is the ruler of a line only through its `by` clause: `Ruled by the session, not the user`, or `by` a
-# (the, this) orchestrating or lane session, or a ruler named `(orchestrating session)`.
+# A session's name: an `agent-evals-*` session, or a (the, this) orchestrating or lane session.
+SESSION_NAME = r"(?:agent-evals-[\w-]+|(?:the\s+|this\s+)?(?:orchestrating|lane)[\s-]+session\b)"
+# A session is the ruler of a line that holds `the session, not the user`, a session name, `by` the or this (named)
+# lane or session, `session` as a listed owner (`(session, <date>)`, `(session <id>)`, `, session,`,
+# `session (lane ...)`), or a `Lane call`.
 SESSION_RULER = re.compile(re.escape(plan_format.SESSION_RULING_OWNER)
-                           + r"|\bby\s+(?:(?:the|this|a)\s+)?(?:orchestrating|lane)[\s-]+session\b"
-                           + r"|\((?:the\s+)?(?:orchestrating|lane)\s+session\)", re.I)
-# A clause that records the user's sign-off: `user sign-off`, `sign-off: <name>`, `user-signed`, or `signed off by`
-# anyone but a session. It wins over a session ruler on the same line.
-USER_SIGNOFF = re.compile(r"\buser[\s-]+sign-?\s*off\b|\bsign-?\s*off\s*:\s*\S|\buser[\s-]+signed\b"
+                           + rf"|{SESSION_NAME}|\bby\s+(?:the|this)\s+(?:[\w-]+\s+)?(?:lane|session)\b"
+                           + r"|[(,]\s*session\b(?!['\u2019])|\bsession\s*\(lane\b|\blane\s+call\b", re.I)
+# A clause that records the user's sign-off: `user sign-off` or `sign-off: <name>` with no session name after it,
+# `user-signed`, `ruled by: user`, `the user ruled|approved|signed`, a ruling `relayed by` on a line that names the
+# user, or `signed off by` anyone but a session. It wins over a session ruler on the same line.
+NOT_A_SESSION = rf"(?![,:]?\s*{SESSION_NAME})"
+NAMES_THE_USER = r"\buser\b(?!['\u2019])"
+USER_SIGNOFF = re.compile(rf"\buser[\s-]+sign-?\s*off\b{NOT_A_SESSION}|\bsign-?\s*off\s*:{NOT_A_SESSION}\s*\S"
+                          rf"|\buser[\s-]+signed\b|\bruled\s+by:?\s+(?:the\s+)?{NAMES_THE_USER}"
+                          rf"|\bthe\s+user\s+(?:ruled|approved|signed)\b"
+                          rf"|{NAMES_THE_USER}.*\brelayed\s+by\b|\brelayed\s+by\b.*{NAMES_THE_USER}"
                           r"|\bsigned\s+off\s+by\s+(?!(?:the\s+|this\s+)?(?:(?:orchestrating|lane)[\s-]+)?session\b)",
                           re.I)
 

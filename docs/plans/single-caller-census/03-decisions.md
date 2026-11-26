@@ -21,3 +21,8 @@
   compares H's def-line blame time with F's. The SKILL.md step sentence is reverted: no SKILL.md prose in this lane,
   and branch-prep prints the census in the prompt the skill already hands on. `report_lines` is renamed to clear the
   duplicate-check clash with `stale_prose.py`; `census_lines` folds into it.
+- Ruling by session feature/single-caller-census at 2026-11-25 (merge review stop): the review of merge 2dc886cc1
+  covers its three conflict resolutions only, and its code reviewer found them clean. The loop's 15 edits to
+  merged-in files are reverted and saved as a patch for their owners. Its asks on `review_launch.py:256` and
+  `announced_step.py:53` go to those files' owners. Its ask to read the census at the review base is rejected per
+  the census_base ruling above.

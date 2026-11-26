@@ -42,7 +42,7 @@ CODER_GATE_LIB_MODULES = ("criteria_verdict.py", "shell_command.py", "shell_dire
                           "gate_env.py", "plan_format.py", "source_text.py", "collision_retry.py",
                           "ask_outcome_words.py", "import_guard.py", "shell_command_words.py", "code_run_names.py",
                           "fork_review.py", "loop_transcript.py", "transcript_time.py", "stop_file_names.py",
-                          "shell_statements.py", "shell_expansion.py", "memory_cap_scope.py")
+                          "shell_statements.py", "shell_expansion.py", "memory_cap_scope.py", "message_text.py")
 
 
 def first_python_that_starts(names):

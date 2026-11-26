@@ -11,7 +11,9 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import file_backup
+import review_loop_calls
 import review_loop_coder
+import review_loop_outside_writes
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_scoped_tests
@@ -49,6 +51,13 @@ class ScopeGuardTest(unittest.TestCase):
         (self.repo / "app.py").write_text("x = 2\n")
         review_loop_scope_guard.SCOPE_FAULTS.clear()
         self.addCleanup(review_loop_scope_guard.SCOPE_FAULTS.clear)
+        review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear()
+        review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear()
+        self.addCleanup(review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear)
+        self.addCleanup(review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear)
+        record_writes = mock.patch.object(review_loop_outside_writes, "record_pass_writes")
+        self.record_writes = record_writes.start()
+        self.addCleanup(record_writes.stop)
 
     def guard(self, allowed=("app.py",), has_own_guard=lambda _path: False, finding_texts=(),
               gate_passes=lambda: None):
@@ -452,7 +461,7 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         undo_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard: restore failed"))
         model_died = review_loop_coder.ModelCallError("model died")
-        model_dies = mock.patch.object(review_loop_coder, "claude_call", side_effect=model_died)
+        model_dies = mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_died)
         with undo_fails, model_dies, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -466,8 +475,8 @@ class ScopeGuardTest(unittest.TestCase):
             (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
             if isinstance(outcome, Exception):
                 raise outcome
-            return outcome
-        return mock.patch.object(review_loop_coder, "claude_call", side_effect=model_call)
+            return review_loop_calls.CallReply(outcome, "")
+        return mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_call)
 
     def test_a_failed_coder_call_puts_the_stray_back_and_runs_no_gate(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
@@ -498,13 +507,46 @@ class ScopeGuardTest(unittest.TestCase):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         scope_guard = self.guard()
         undo_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard: restore failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
 
         self.assertIn("scope guard: restore failed", str(raised.exception))
         self.assertFalse(raised.exception.died)
+
+    def test_an_undo_failure_after_a_finished_pass_still_records_its_outside_writes(self):
+        pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+        scope_guard = self.guard()
+        undo_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard: restore failed"))
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed.", "s-1"))
+        with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError):
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
+                                         scope_guard=scope_guard)
+
+        self.record_writes.assert_called_once_with("coder1", self.repo, self.out, "s-1")
+
+    def test_a_pass_with_no_final_report_is_recorded_once(self):
+        pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+        model_replies_nothing = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                                  return_value=review_loop_calls.CallReply("", "s-1"))
+        with model_replies_nothing, self.assertRaises(review_loop_coder.CoderCallError):
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
+                                         scope_guard=self.guard())
+
+        self.record_writes.assert_called_once_with("coder1", self.repo, self.out, "s-1")
+
+    def test_a_failed_call_records_the_session_its_error_carries(self):
+        pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
+        model_fails = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                        side_effect=review_loop_calls.ModelCallError("x", "s-9"))
+        with model_fails, self.assertRaises(review_loop_coder.CoderCallError):
+            review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
+                                         scope_guard=self.guard())
+
+        self.record_writes.assert_called_once_with("coder1", self.repo, self.out, "s-9")
 
     def test_an_os_error_while_undoing_a_finished_coder_call_is_a_coder_call_error(self):
         (self.repo / "tests.py").write_text("t = 2\n")
@@ -520,10 +562,10 @@ class ScopeGuardTest(unittest.TestCase):
 
         def model_edits_app(*_args, **_kwargs):
             (self.repo / "app.py").write_text("x = 9\n")
-            return "Fixed 1."
+            return review_loop_calls.CallReply("Fixed 1.", "")
 
         disk_full = mock.patch.object(file_backup, "restore_paths", side_effect=scope_backup_disk_full)
-        model_works = mock.patch.object(review_loop_coder, "claude_call", side_effect=model_edits_app)
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_edits_app)
         with disk_full, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -651,7 +693,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         (self.repo / "tests.py").write_text("t = 3\n")
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -669,7 +712,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard(allowed=allowed)
         (self.repo / "tests.py").write_text("t = 3\n")
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError):
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -680,7 +724,8 @@ class ScopeGuardTest(unittest.TestCase):
     def test_a_failed_pass_guard_undo_with_a_working_scope_guard_raises_the_original_error_unjoined(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=self.guard())
@@ -692,7 +737,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         pass_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
         scope_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with pass_fails, scope_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -1222,6 +1268,112 @@ class ScopeGuardLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertIn("coder1 changed files outside the review scope that no finding names; the loop put them back: "
                       "notes.py", packet["tool_fault"])
         self.assertNotIn("notes.py", packet["files_touched"])
+
+    def outside_write_scenario(self, coder_reply):
+        """The scenario of a fix run whose coder reply is `coder_reply`."""
+        return {
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}, {"result": loop_tests.CLEAN_REVIEW},
+                              {"result": loop_tests.CLEAN_REVIEW}],
+            "coder": [coder_reply],
+            "closure": [{"result": loop_tests.CLOSED}],
+        }
+
+    def test_a_fix_pass_write_outside_the_reviewed_repo_stops_with_a_blocker_and_is_left_in_place(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED},
+            "transcript_writes": {str(sibling_file): "tool = 1\n"}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+        self.assertIn("did not put them back", packet["blockers"][0])
+        self.assertEqual(sibling_file.read_text(), "tool = 1\n")
+        self.assertNotIn(str(sibling_file), packet["files_touched"])
+        self.assertIn("app.py", packet["files_touched"])
+        self.assertIn(str(sibling_file), packet["tool_fault"])
+
+    def test_an_earlier_stop_in_a_pass_that_also_wrote_outside_the_repo_still_names_the_outside_path(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED,
+                                                       "notes.py": loop_tests.NOTES_REFLOWED},
+                       "transcript_writes": {str(sibling_file): "tool = 1\n"}}],
+        }, header_extra="later-phase files: notes.py")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("edited files the plan gives to a later phase: notes.py", packet["blockers"][0])
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+
+    def test_a_missing_coder_transcript_notes_a_tool_fault_and_the_run_still_converges(self):
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}, "no_transcript": True}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn("coder1: the outside-write check could not run: no readable transcript", packet["tool_fault"])
+
+    def test_a_died_fix_pass_that_wrote_outside_the_repo_names_the_path_in_its_blocker(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "boom", "exit": 1, "transcript_writes": {str(sibling_file): "tool = 1\n"}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+        self.assertIn("did not put them back", packet["blockers"][0])
+
+    def test_a_fix_pass_that_times_out_with_no_reply_still_names_its_outside_write(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script(self.outside_write_scenario({
+            "no_json": True, "exit": 1, "transcript_writes": {str(sibling_file): "tool = 1\n"}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+
+    def test_a_fix_pass_with_no_final_report_and_an_outside_write_names_the_path_in_its_blocker(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "", "transcript_writes": {str(sibling_file): "tool = 1\n"}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+
+    def test_a_fix_pass_whose_transcript_writes_only_inside_the_repo_converges_with_no_fault(self):
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED},
+            "transcript_writes": {str(self.repo / "app.py"): loop_tests.APP_FIXED}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertNotIn("outside", packet.get("tool_fault", ""))
+
+    def test_a_write_through_a_symlink_into_another_checkout_stops_with_a_blocker_naming_the_resolved_path(self):
+        scratch = self.scratch.resolve()
+        (scratch / "sibling" / "bin").mkdir(parents=True)
+        (scratch / "link").symlink_to(scratch / "sibling")
+        completed = self.run_script(self.outside_write_scenario({
+            "result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED},
+            "transcript_writes": {str(scratch / "link" / "bin" / "tool.py"): "x\n"}}))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        resolved = scratch / "sibling" / "bin" / "tool.py"
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn(str(resolved), packet["blockers"][0])
+        self.assertIn("did not put them back", packet["blockers"][0])
+        self.assertEqual(resolved.read_text(), "x\n")
 
     def test_a_file_an_earlier_round_fixed_is_kept_when_a_later_coder_edits_it_again(self):
         notes_review = loop_tests.FIX_REVIEW.replace("`app.py:2`", "`notes.py:1`")

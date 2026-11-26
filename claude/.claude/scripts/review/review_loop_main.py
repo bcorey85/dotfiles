@@ -23,6 +23,7 @@ import session_registry
 from finding_record import parse_finding
 from review_loop_calls import CALLS, LIVE_CHILDREN, PARENT_SESSION, now
 from review_loop_named_tests import NamedTestRemovedError
+from review_loop_outside_writes import OutsideWriteError
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
@@ -219,7 +220,7 @@ def run_loop(request):
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
     except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError, RulingBrokenError,
-            RulingCheckFaultError, StrayFileError) as error:
+            RulingCheckFaultError, StrayFileError, OutsideWriteError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

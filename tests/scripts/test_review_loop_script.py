@@ -41,6 +41,7 @@ import review_loop_coder
 import review_loop_comment_removal
 import review_loop_findings
 import review_loop_held
+import review_loop_outside_writes
 import review_loop_packet
 import review_loop_pass_names
 import review_loop_plan
@@ -135,7 +136,23 @@ if reply.get("commit_all"):
                    check=True)
 
 usage = {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 2}
-print(json.dumps({"result": reply.get("result", ""), "session_id": "fake-session", "usage": usage}))
+session_id = args[args.index("--session-id") + 1] if "--session-id" in args else f"fake-{key}-{position}"
+config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.environ["HOME"], ".claude")
+transcript_dir = os.path.join(config_dir, "projects", "fake-project")
+os.makedirs(transcript_dir, exist_ok=True)
+transcript_records = []
+for path, text in reply.get("transcript_writes", {}).items():
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        handle.write(text)
+    block = {"type": "tool_use", "name": "Write", "input": {"file_path": path, "content": text}}
+    transcript_records.append(json.dumps({"type": "assistant", "message": {"content": [block]}}))
+if not reply.get("no_transcript"):
+    with open(os.path.join(transcript_dir, session_id + ".jsonl"), "w") as handle:
+        handle.write("".join(record + "\\n" for record in transcript_records))
+
+if not reply.get("no_json"):
+    print(json.dumps({"result": reply.get("result", ""), "session_id": session_id, "usage": usage}))
 sys.exit(reply.get("exit", 0))
 '''
 
@@ -675,6 +692,10 @@ class ReviewLoopHarness:
     def setUp(self):
         review_loop_ruling_check.RULING_CHECK_FAULTS.clear()
         self.addCleanup(review_loop_ruling_check.RULING_CHECK_FAULTS.clear)
+        review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear()
+        review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear()
+        self.addCleanup(review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear)
+        self.addCleanup(review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear)
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         self.scratch = pathlib.Path(scratch.name)
@@ -705,6 +726,7 @@ class ReviewLoopHarness:
             "FAKE_CLAUDE_DIR": str(self.fake_dir),
         }
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
+        self.env.pop("CLAUDE_CONFIG_DIR", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
         # /code starts the loop with its own state folder.
@@ -3539,7 +3561,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop_script = sys.modules["review_loop_script"]
         coder_module = sys.modules["review_loop_coder"]
 
-        with mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+        with mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
+                mock.patch.object(review_loop_outside_writes, "record_pass_writes"), \
                 mock.patch.object(coder_module, "write_fix_diffs", side_effect=RuntimeError("diff write broke")), \
                 self.assertRaises(RuntimeError) as raised:
             loop.repair("coder1", [])
@@ -3578,7 +3602,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         scope_guard.undo.side_effect = RuntimeError("restore failed")
 
         with mock.patch.object(scope_guard_module, "guard_pass", return_value=scope_guard), \
-                mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+                mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
+                mock.patch.object(review_loop_outside_writes, "record_pass_writes"), \
                 mock.patch.object(loop, "issue_text", return_value="issue"), \
                 self.assertRaises(loop_script.CoderFailedError) as raised:
             loop.repair("coder1", [finding])
@@ -7774,6 +7800,7 @@ class FakeCommentRun(review_loop_comment_removal.CommentRemovalRuns):
         self.dropped_asks = []
 
     drop_asks = review_loop_ruled.RuledFindings.drop_asks
+    file_put_back_ask = review_loop_ruled.RuledFindings.file_put_back_ask
 
     def add_ask(self, gate, finding):
         self.asks.append(finding)

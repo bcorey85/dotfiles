@@ -76,6 +76,7 @@ import handback
 import loop_transcript
 import plan_format
 import review_loop_held
+import review_loop_outside_writes
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_untracked
@@ -99,6 +100,7 @@ from review_loop_closure import (
 )
 from review_loop_coder import CoderCallError, CoderResult, coder_call, coder_fault_notes, without_reverted
 from review_loop_comment_removal import CommentRemovalRuns, snapshot_comments
+from review_loop_criteria_quotes import AcQuoteRuns
 from review_loop_docs_kind import review_added_ranges
 from review_loop_final_read import FinalRead
 from review_loop_findings import (
@@ -118,6 +120,7 @@ from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_intake import ReviewIntake
 from review_loop_named_tests import NamedTestRuns
 from review_loop_nearest import nearest_functions_text
+from review_loop_outside_writes import OutsideWrites
 from review_loop_partial_fix import PartialFixRuns, coder_failure_blocker
 from review_loop_pass_checks import PassChecks
 from review_loop_pass_names import (
@@ -133,6 +136,7 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
+from review_loop_put_back import PassSnapshots
 from review_loop_round_audit import RoundAudit
 from review_loop_round_settle import NO_CHANGE_REASON, RoundSettle
 from review_loop_ruled import (
@@ -329,9 +333,9 @@ def log_row_findings(repo, run, row, fix_ranges):
 
 # ---------- the loop ----------
 
-class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle, StrayFiles,
-              full_check_gate.FullCheckSteps):
+class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, AcQuoteRuns, PassChecks, RuledFindings,
+              FinalRead, PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle, StrayFiles,
+              OutsideWrites, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -593,8 +597,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
         which are filed as approval asks (user-only unless `session_rules_approval_path`; a repeat of a rejected
         ask is dropped, not filed), and StrayFileError when the scope guard put back a file outside the pass's scope
-        that the pass's gate does not show the fix needs. A pass that stops on a stray file adds its changed files to
-        files_touched before it raises; on return the caller adds them."""
+        that the pass's gate does not show the fix needs, and OutsideWriteError when the pass's transcript shows a write
+        outside the reviewed repo (the file is left as written). A pass that stops on a stray file or an outside write
+        adds its changed files to files_touched before it raises; on return the caller adds them."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -605,6 +610,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         prompt = self.coder_brief(call_name, findings, nits, files_in_scope, issue_texts, named)
         allowed = self.pass_scope(files_in_scope)
         signoffs = snapshot_signoffs(self.repo, files_in_scope)
+        quotes = self.ac_quote_snapshot(files_in_scope)
         try:
             scope_guard = review_loop_scope_guard.guard_pass(self.repo, self.out, call_name, allowed,
                                                              own_guard_test(signoffs), issue_texts,
@@ -625,6 +631,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.last_pass = "coder"
         self.untested_fix = True
         comments = snapshot_comments(self.repo, files_in_scope)
+        snapshots = PassSnapshots(signoffs, comments, quotes)
         stats_before = len(FIX_DIFF_STATS)
         if restore_named:
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
@@ -634,18 +641,20 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
                 result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
                                      model=self.coder_model, scope_guard=scope_guard)
             except CoderCallError as error:
-                blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
+                blocker = self.failed_pass_blocker(call_name, error, snapshots, findings, nits)
                 raise CoderFailedError(blocker) from error
             self.settle_saved_after_pass(call_name)
-            put_back = self.undo_protected_edits(signoffs, comments, findings)
+            put_back = self.undo_protected_edits(snapshots, findings)
             result = self.without_put_back(call_name, result, put_back, findings)
             self.keep_coder_commit_in_scope()
             self.flag_broken_no_code_rulings(findings, result.changed, nits)
             reverted = self.ask_for_approval_only_edits(result.changed, findings)
             result = without_reverted(result, reverted, stats_before)
-            self.check_pass_result(call_name, result)
-            self.check_rulings_kept(call_name, findings, result, ruling_backup)
-            self.stop_on_stray_files(scope_guard, findings, result)
+            with review_loop_outside_writes.outside_paths_on_stop(call_name, self.repo):
+                self.check_pass_result(call_name, result)
+                self.check_rulings_kept(call_name, findings, result, ruling_backup)
+                self.stop_on_stray_files(scope_guard, findings, result)
+            self.stop_on_outside_writes(call_name, findings, result)
         finally:
             self.discard_ruling_backup(ruling_backup)
 

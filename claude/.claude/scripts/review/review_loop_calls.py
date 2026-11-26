@@ -7,6 +7,8 @@ import json
 import os
 import threading
 import time
+import typing
+import uuid
 
 import full_check_gate
 import review_loop_untracked
@@ -23,7 +25,13 @@ VIA_MAIN = "main"
 
 
 class ModelCallError(RuntimeError):
-    """A model call that failed: a non-zero exit, no JSON reply, or a reply flagged as an error."""
+    """A model call that failed: a non-zero exit, no JSON reply, or a reply flagged as an error. `session` is the
+    child's session id, which the loop chose for the call, or "" for an error raised after the call returned
+    (NoFinalReportError)."""
+
+    def __init__(self, message, session=""):
+        super().__init__(message)
+        self.session = session
 
 
 CALLS = []
@@ -65,13 +73,27 @@ def record_main_dispatch(out, role, agent, wall):
     record_call(out, sequence, record)
 
 
+class CallReply(typing.NamedTuple):
+    """A model call's result text and the session id the loop gave the child."""
+
+    text: str
+    session: str
+
+
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
-    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
+    """One `claude -p` model step. Returns the result text; see `claude_call_reply`."""
+    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded).text
+
+
+def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
+    """One `claude -p` model step. Returns a CallReply. A call that fails or prints no JSON reply raises. The
     prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument.
     `deletable` are the untracked files a finding of the pass asks to delete; the call may remove them.
     `guarded=False` is for a call that runs inside a batch whose caller holds one untracked-file guard for all of
     it: concurrent calls cannot tell whose deletion is whose."""
-    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto",
+    # The loop names the child's session, so a call that times out or prints no JSON still has a transcript to read.
+    session = str(uuid.uuid4())
+    command = ["claude", "-p", "--output-format", "json", "--permission-mode", "auto", "--session-id", session,
                "--name", f"child of {PARENT_SESSION['label']} ({role})"]
     if agent:
         command += ["--agent", agent]
@@ -118,7 +140,6 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, del
         payload = None
     replied = isinstance(payload, dict)
     text = (payload.get("result") or "") if replied else ""
-    session = (payload.get("session_id") or "") if replied else ""
     tokens = token_total(payload)
 
     record = {"n": sequence, "role": role, "agent": agent, "model": model, "session": session, "wall": wall,
@@ -130,5 +151,5 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, del
         said = f" saying \"{script_utils.one_line(text)}\"" if text.strip() else ""
         # A reply with is_error set can come with exit 0, so the exit code alone does not say why the call failed.
         raise ModelCallError(f"the {role} call failed (exit {return_code}, reply flagged as error: {reported_error})"
-                           f"{said}; reply {raw}, stderr {errors}")
-    return text
+                           f"{said}; reply {raw}, stderr {errors}", session)
+    return CallReply(text, session)

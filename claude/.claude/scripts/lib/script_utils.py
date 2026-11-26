@@ -979,6 +979,17 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
+def first_lines_holding(text, needles):
+    """`{needle: first 1-based line of text that holds it}`; a needle the text does not hold is left out."""
+    first_lines = {}
+    for needle in needles:
+        position = text.find(needle)
+        if position < 0:
+            continue
+        first_lines[needle] = text.count("\n", 0, position) + 1
+    return first_lines
+
+
 def write_command_outputs(output_file, command_outputs):
     """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
     section per command, making the file's folder."""
@@ -1259,21 +1270,26 @@ def makes_own_calls(record):
     return record.get("type") in CONVERSATION_RECORD_TYPES
 
 
-def record_tool_calls(record):
-    """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
-    record is None or makes none."""
+def record_blocks(record, block_type):
+    """The content blocks of `block_type` (such as "tool_use" or "tool_result") in a parsed transcript record's
+    message, in order; empty when the record is None or holds none."""
     message = record.get("message") if record else None
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []
+    return [block for block in content if isinstance(block, dict) and block.get("type") == block_type]
 
-    calls = []
-    for block in content:
-        if not isinstance(block, dict) or block.get("type") != "tool_use":
-            continue
-        tool_input = block.get("input")
-        calls.append((block.get("name"), tool_input if isinstance(tool_input, dict) else {}))
-    return calls
+
+def block_input(block):
+    """A tool_use block's input dict, or {} when it has none."""
+    tool_input = block.get("input")
+    return tool_input if isinstance(tool_input, dict) else {}
+
+
+def record_tool_calls(record):
+    """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
+    record is None or makes none."""
+    return [(block.get("name"), block_input(block)) for block in record_blocks(record, "tool_use")]
 
 
 def bash_commands(transcript_path):

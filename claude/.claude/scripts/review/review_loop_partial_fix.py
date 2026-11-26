@@ -17,6 +17,7 @@ Owner of the dead-coder record. Import it; never read or write the record anothe
 import json
 import typing
 
+import review_loop_outside_writes
 import script_utils
 from approval_asks_store import review_fix_file
 from review_fix_names import PARTIAL_FIX_NAME
@@ -214,8 +215,7 @@ class PartialFixRuns:
         """The stop text of a coder pass that died, or that finished while the loop could not undo all of
         it: puts the protected lines back, settles the findings and the files the pass touched, and sets the
         record a pass that carried findings leaves at the end of the run."""
-        signoffs, comments = snapshots
-        put_back = self.undo_protected_edits(signoffs, comments, findings)
+        put_back = self.undo_protected_edits(snapshots, findings)
         changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]
         self.flag_broken_no_code_rulings(findings, changed, nits)
         reverted = self.ask_for_approval_only_edits(changed, findings)
@@ -225,6 +225,9 @@ class PartialFixRuns:
         reverted_findings = self.keep_unreverted_open(findings, reverted)
         kept_error = error.keeping_only(kept)
         blocker = coder_failure_blocker(call_name, kept_error, died=error.died)
+        outside_blocker = review_loop_outside_writes.take_outside_blocker(call_name, self.repo)
+        if outside_blocker:
+            blocker += " " + outside_blocker
         dead = dead_pass_record(self.repo, call_name, findings, reverted_findings, self.saved_record_texts,
                                 self.held_unfixed, kept_error)
         if dead.pending is not None:

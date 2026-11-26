@@ -22,7 +22,7 @@ fix/review-fix-dead-plan-impact and fix/review-loop-delivered-plan-impact are st
 
 ## Phase Status
 
-- [ ] Phase 1: a ruling-only adopt settles and leaves no pending adopted ruling (risk: medium)
+- [x] Phase 1: a ruling-only adopt settles and leaves no pending adopted ruling (risk: medium)
 
 ## Phase 1: a ruling-only adopt settles and leaves no pending adopted ruling
 
@@ -51,3 +51,7 @@ fix/review-fix-dead-plan-impact and fix/review-loop-delivered-plan-impact are st
 - Existing adopt tests (an `ac_change: True` impact still re-dispatches; carried findings still block) pass.
 - `bash tests/lint.sh` on the changed files and `python3 tests/parallel_tests.py test_review_fix_script.py` pass.
 - `bash tests/run.sh` passes.
+
+## Plan Deviations
+
+- 2026-11-26, session ruling (no acceptance criterion changed): a review plan impact observed that needs_only_ruling also settles reviewer-gate impacts held because they cite a user ruling, so no code fix is made for them; the plan's wider predicate (ac_change false and cause plan, any gate) is kept as the Bug text states it.

@@ -1365,6 +1365,66 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("The ruling: keep the coder's edits", plan_file.read_text())
         self.assertIsNone(self.false_clean_reason())
 
+    def assert_ruling_only_adopt_settled(self, output, plan_file, impact):
+        """The adopt printed done with no re-dispatch, logged the ruling, counts the review clean, leaves no pending
+        adopted ruling, and lists the impact among the ruled ones so the next packet does not ask it again."""
+        self.assertIn("ACTION: done", output)
+        self.assertNotIn("redispatch", output)
+        plan_text = plan_file.read_text()
+        self.assertIn("## Plan Deviations", plan_text)
+        self.assertIn("The ruling: the code already holds", plan_text)
+        self.assertIsNone(self.false_clean_reason())
+        repo_key = handback_store.ruled_rows_repo(str(self.repo))
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.store_dir)}):
+            ruled = handback_store.rulings(SESSION, repo_key)
+        self.assertEqual(ruled.adopted, (), "a settled adopt must leave no pending adopted ruling")
+        self.assertEqual(list(ruled.impacts), [impact["text"]])
+
+    def test_decide_adopt_from_the_hand_back_of_a_ruling_only_impact_settles_with_no_pending_ruling(self):
+        impact = {**HELD_IMPACT, "ac_change": False, "applied": False}
+        self.plant_held_hand_back(impact)
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "the code already holds",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assert_ruling_only_adopt_settled(output, plan_file, impact)
+
+    def test_decide_adopt_through_the_packet_of_a_ruling_only_impact_settles_with_no_pending_ruling(self):
+        impact = {**HELD_IMPACT, "ac_change": False, "applied": False}
+        code, output = self.impacts_packet([impact])
+        self.assertEqual(code, 0, output)
+        self.plant_held_hand_back(impact)
+        plan_file = self.session_plan_file()
+
+        code, output = self.run_script(["decide", "adopt", "--by", "session", "--ruling", "the code already holds",
+                                        "--plan", str(plan_file)])
+
+        self.assertEqual(code, 0, output)
+        self.assert_ruling_only_adopt_settled(output, plan_file, impact)
+
+    def test_decide_adopt_of_a_ruling_only_impact_with_carried_findings_does_not_settle(self):
+        carried = [{"disposition": "fix", "finding": "still racy", "file_line": "src/q.ts:7"}]
+        impact = {**HELD_IMPACT, "ac_change": False, "applied": False}
+        self.plant_held_hand_back(impact, findings_remaining=carried)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt, review them too"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIsNotNone(self.false_clean_reason())
+
+    def test_decide_adopt_of_a_ruling_only_impact_with_an_unparsed_cause_does_not_settle(self):
+        impact = {**HELD_IMPACT, "ac_change": False, "applied": False, "cause": "unparsed"}
+        self.plant_held_hand_back(impact)
+
+        code, output = self.run_script(["decide", "adopt", "--by", "user", "--ruling", "adopt it"])
+
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertIsNotNone(self.false_clean_reason())
+
     def test_decide_adopt_from_the_hand_back_of_an_applied_impact_with_carried_findings_does_not_settle(self):
         carried = [{"disposition": "fix", "finding": "still racy", "file_line": "src/q.ts:7"}]
         self.plant_held_hand_back({**HELD_IMPACT, "applied": True}, findings_remaining=carried)

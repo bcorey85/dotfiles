@@ -823,13 +823,20 @@ def current_session_held_impact_hand_back(directory):
     return HeldImpactHandBack(held, packet, handed_back_at)
 
 
+def needs_only_ruling(impact):
+    """True when a held plan impact changes no acceptance criterion and the plan is at fault: adopting it needs the
+    ruling and the Plan Deviations line, and no code change."""
+    return not impact["ac_change"] and impact["cause"] == PLAN_CAUSE
+
+
 def adopt_settles(packet, held):
     """True when an adopt ruling on the held plan impacts needs no re-dispatch: every impact's fix is already in the
-    tree and the packet leaves nothing else open (no blocker, remaining finding or closing note). A packet that is
-    None, or no held impact, never settles."""
+    tree or the impact needs only the ruling, and the packet leaves nothing else open (no blocker, remaining finding
+    or closing note). A packet that is None, or no held impact, never settles."""
     if packet is None or not held:
         return False
-    return all(impact["applied"] for impact in held) and not carried_findings(packet)
+    every_impact_settles = all(impact["applied"] or needs_only_ruling(impact) for impact in held)
+    return every_impact_settles and not carried_findings(packet)
 
 
 def record_clean_review(session_id, committing_session=None):

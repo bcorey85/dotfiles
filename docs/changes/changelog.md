@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1257 changes
+1258 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -62,6 +62,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Adopting a plan impact that needs only a ruling settles the review](notes/2026-11-26-adopting-a-plan-impact-that-needs-only-a-ruling.md) [script/review-fix, script/handback] decide adopt on a held plan impact that changes no acceptance criterion and has plan cause ends done, records the ruling as applied, and the push check counts the review clean, with no re-dispatch.
 * [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md) [script/rule-anchors] `rule-anchors.sh check` run inside a linked dotfiles worktree now reads that worktree's prompt files and docs/rule-anchors.md, so a stale row there is reported.
 * [the full check skips only Markdown under docs and adr_flow status refuses on a failing git log](notes/2026-11-25-the-full-check-skips-only-markdown-under-docs-and.md) [script/check-discovery, script/adr-flow] The discovered full check skips only Markdown under docs/ through the notes_paths owner, and adr_flow status refuses when git log fails instead of reading never committed.
 * [A capped review with a passed full check on the tree earns review credit](notes/2026-11-25-a-capped-review-with-a-passed-full-check-on-the.md) [script/capped-review, script/git-discipline-gate] A cap-reached review with no blocker reads as deferred when a passed full-check receipt covers the tree, so a plans-only fix after it no longer leaves the push blocked.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1257 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1258 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md).
+Latest change: 2026-11-26, [Adopting a plan impact that needs only a ruling settles the review](notes/2026-11-26-adopting-a-plan-impact-that-needs-only-a-ruling.md).
 
 ## Top gains
 

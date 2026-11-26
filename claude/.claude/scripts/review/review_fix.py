@@ -847,19 +847,19 @@ def ruling_logged_line(plan_path):
 
 def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None):
     """`decide` for a run whose packet never went through `packet` (the caller read it through code_wait.py): the
-    held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` records it too when
-    handback.adopt_settles says so (every fix is in the tree, nothing else open). Any other `adopt` has no launch
-    state to re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
+    held plan impacts come from the hand-back store. `keep` records the ruling; `adopt` too when handback.adopt_settles
+    says so, else it logs the deviation and sends the caller back to its own review loop (no launch state)."""
     impact_text = handback.held_plan_impact_text(source.held)
     rows_repo = handback_store.ruled_rows_repo(".")
     row_impacts = adopted_row_impacts(source.held) if source.row_per_text else []
+    settles = decision == plan_format.ADOPT_DECISION and handback.adopt_settles(source.packet, source.held)
     entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed,
-                               row_impacts=row_impacts)
+                               row_impacts=row_impacts, applied=settles)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
         kept_line = ADOPTED_KEEP_LINE if source.row_per_text else "The plan stays as written: nothing is re-dispatched."
         return print_settled(settle_ruling("keep"), logged_line, *entry, kept_line)
-    if handback.adopt_settles(source.packet, source.held):
+    if settles:
         return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)
     return print_action("stop", logged_line, *entry,
                  "No review-fix launch state exists for this run, so `decide adopt` cannot re-dispatch. Run the review "
@@ -874,16 +874,16 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, relayed=None):
     choice = plan_format.DECISION_WORDS[decision]
     ruled_repo = required_packet_repo(state.get("relaunch_args") or [])
     covered = findings_covered_by_impact(state, state["plan_impact"])
-    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered, relayed)
-
     held = state.pop("plan_impact_held", False)
-    adopt_settles = state.pop("plan_impact_adopt_settles", False)
+    adopt_settles = state.pop("plan_impact_adopt_settles", False) and held and decision == plan_format.ADOPT_DECISION
     applied = state.pop("plan_impact_applied", False)
+    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered, relayed,
+                               applied=adopt_settles)
     settled_line = None
     if decision == plan_format.KEEP_DECISION and held:
         settled_line = (APPLIED_KEEP_LINE if applied
                         else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
-    if decision == plan_format.ADOPT_DECISION and held and adopt_settles:
+    if adopt_settles:
         settled_line = APPLIED_ADOPT_LINE
     if settled_line:
         settled_line = settle_stage(state, settled_line)

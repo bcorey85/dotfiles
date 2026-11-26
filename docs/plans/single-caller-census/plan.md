@@ -10,7 +10,8 @@ to it unless they start with `claude/`, `docs/` or `tests/`); tests in `tests/sc
 - In: a new `lib/single_caller_census.py`, `review/review_loop_prompts.py`, the branch-prep path of
   `claude/.claude/skills/refactor/scripts/refactor_flow.py` (`_print_branch_report` only), a new `lib/changed_lines.py`
   with `tests/scripts/test_changed_lines.py`, `claude/.claude/skills/refactor/scripts/clone_pairs.py` and
-  `shape_clones.py`, their tests.
+  `shape_clones.py`, `lib/change_added_ranges.py` and `lib/diff_ranges.py` (the census reads its added lines
+  through them), their tests.
 - Out: `review/review_loop_script.py`, `review/review_loop_packet.py`, the put-back scripts and the simplify section of
   `refactor_flow.py` (other lanes edit them). No SKILL.md or agent prose.
 - Python only. Reference counts come from the standard library `ast` over every Python file git lists in the repo.
@@ -24,12 +25,12 @@ to it unless they start with `claude/`, `docs/` or `tests/`); tests in `tests/sc
 
 ## Phase 1: the census
 
-`lib/single_caller_census.py`, standard library plus `lib/source_text.py`, `lib/changed_lines.py` and
-`lib/script_utils.py`:
+`lib/single_caller_census.py`, standard library plus `lib/change_added_ranges.py` (extended with `relative` and
+`no_renames` options), `lib/diff_ranges.py` (new `ranges_touch` and `ranges_cover`) and `lib/script_utils.py`:
 
-- Added lines: `git diff -U0 --no-prefix <base>` of the work tree (base default `HEAD`), read with
-  `source_text.parse_unified_diff`, plus every line of each untracked file (`script_utils.untracked_paths`). A git
-  failure raises `CensusError` naming the command.
+- Added lines: `change_added_ranges.change_added_ranges(repo, base, text_only=True, relative=True, no_renames=True)`
+  (base default `HEAD`): the work tree's `-U0` diff plus every line of each untracked text file. A git failure or an
+  unparsable diff raises `CensusError`.
 - Index: every `.py` file `script_utils.repo_file_paths_or_raise` lists that exists (a git failure raises
   `CensusError`), parsed with `ast`. A file that does not parse is counted in a note, never skipped silently.
 - References of a name: every `ast.Name` in Load context with that id and every `ast.Attribute` with that attr,
@@ -93,3 +94,12 @@ the census entry.
   PLAN-IMPACT: The AC4 sign-off in docs/plans/single-caller-census/03-decisions.md (last ruling) depends on a cross-lane edit that is still pending: `review_loop_script.py:444` must pass `self.review_base`. Until it does, the census in a `--base` review loop, which covers every branch-level review, reads only uncommitted lines. The line citation in the ruling is correct: line 444 is the `reviewer_prompt` call.
   
   PLAN-IMPACT: docs/plans/single-caller-census/plan.md:46-47 — If the Ask above is accepted, the plan's definition of "Newer" changes from "the newest `git blame` time of H's lines" to the blame time of H's def line.
+
+- 2026-11-26: Keep plan as written. Ruled by the session, not the user at 2026-11-26 00:29.
+
+  The ruling: Run ruling stands: census_base stays at HEAD and review_loop_script.py is out of lane; plan.md:32-34 (the "Added lines" bullet) already reworded to change_added_ranges.
+
+  The disagreement:
+  PLAN-IMPACT: docs/plans/single-caller-census/03-decisions.md, ruling "AC4 holds in the loop's default mode". In that mode the census can never list a superseded-helper entry (Ask above). So AC3/AC4 do not hold end-to-end in the review loop until `census_base` gets the review base or the ordering rule changes.
+  
+  PLAN-IMPACT: docs/plans/single-caller-census/plan.md Phase 1 ("Added lines: `git diff -U0 --no-prefix <base>` … read with `source_text.parse_unified_diff`, plus every line of each untracked file (`script_utils.untracked_paths`)") prescribes the second diff-and-untracked read that the scripts CLAUDE.md owner rule forbids. If the first Fix lands, this sentence needs to say the census reads its added lines through `change_added_ranges` (extended with relative and no-rename options).

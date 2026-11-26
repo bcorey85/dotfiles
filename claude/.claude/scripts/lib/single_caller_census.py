@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """single_caller_census.py: the dead weight a branch adds to Python code, listed for a reviewer to judge.
 
-Three kinds: a function the branch added whose body (docstring aside) is one `return` or one call statement, with
-one caller, a record field the branch
-added that no code reads, and a helper the branch added whose every caller also calls a newer helper with every
-argument it passes the helper. References are counted by name over every Python file git lists, so a census is a
-list of suspects: the reviewer decides. Standard library plus changed_lines, source_text and script_utils, which sit
-in the same folder.
+Three kinds: a function the branch added whose body (docstring aside) is one `return` or one call statement, with one
+caller; a record field the branch added that no code reads; and a helper the branch added whose every caller also
+calls a newer helper with every argument it passes the helper. References are counted by name over every Python file
+git lists, so a census is a list of suspects: the reviewer decides. Standard library plus change_added_ranges,
+diff_ranges and script_utils, which sit in the same folder.
 
     single_caller_census.py [--repo DIR] [--base REF]    prints {"entries": [...], "notes": [...]} as JSON; exit 2
                                                          with the error on stderr when git fails or its output
@@ -21,9 +20,9 @@ import re
 import sys
 from typing import NamedTuple
 
-import changed_lines
+import change_added_ranges
+import diff_ranges
 import script_utils
-import source_text
 
 FORWARDER = "single-caller-forwarder"
 UNREAD_FIELD = "unread-field"
@@ -42,11 +41,6 @@ CENSUS_HEADING = "Single-caller census (dead weight this branch adds; judge each
 
 class CensusError(Exception):
     """A git call the census needs failed, or its output did not parse."""
-
-
-class UntrackedLines(NamedTuple):
-    path: str
-    added_lines: list
 
 
 class Entry(NamedTuple):
@@ -191,7 +185,7 @@ def _build_index(repo, paths):
         # file is read into its own Index, merged only after the visit finishes, so a failed visit leaves no entries.
         file_index = Index()
         try:
-            source = file_path.read_bytes().decode("utf-8")
+            source = file_path.read_bytes().decode("utf-8-sig")
             tree = ast.parse(source)
             _Collector(relative, file_index).visit(tree)
         except (SyntaxError, ValueError, OSError, RecursionError) as error:
@@ -225,37 +219,15 @@ def _git_text(command):
     return f"`git {' '.join(command)}`"
 
 
-def _diff_files(repo, base):
-    """The parsed diff (source_text.FileDiff list) of the work tree against base."""
-    command = (
-        "diff", "-U0", "--no-prefix", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--relative",
-        base,
-    )
-    output = script_utils.git_output(repo, *command)
-    if output is None:
-        raise CensusError(f"{_git_text(command)} failed in {repo}")
-
+def _added_ranges(repo, base):
+    """{path: [(first, last)]} of the lines the work tree adds against base, untracked text files whole."""
     try:
-        return source_text.parse_unified_diff(output)
+        added = change_added_ranges.change_added_ranges(repo, base, text_only=True, relative=True, no_renames=True)
     except ValueError as error:
-        raise CensusError(f"{_git_text(command)} output in {repo} did not parse: {error}") from error
-
-
-def _untracked_entries(repo, untracked):
-    """One UntrackedLines per readable untracked Python file."""
-    entries = []
-    for relative in untracked:
-        if not relative.endswith(PYTHON_SUFFIX):
-            continue
-
-        file_path = pathlib.Path(repo, relative)
-        lines = script_utils.read_text_lines(file_path)
-        if lines is None:
-            continue
-
-        entry = UntrackedLines(relative, lines)
-        entries.append(entry)
-    return entries
+        raise CensusError(f"the diff of {repo} against {base} did not parse: {error}") from error
+    if added is None:
+        raise CensusError(f"`git diff` or `git ls-files --others --exclude-standard` failed in {repo}")
+    return added
 
 
 def _typescript_notes(paths):
@@ -296,9 +268,9 @@ class _BlameTimes:
                     times[final_line] = author_time
         return times
 
-    def newest(self, relative, first, last):
-        """The latest author time among lines first..last; an uncommitted or untracked line is the newest of all.
-        Raises CensusError when blame of a tracked file does not report a line."""
+    def time_of(self, relative, line):
+        """The author time of one line; an uncommitted or untracked line is the newest of all. Raises CensusError
+        when blame of a tracked file does not report the line."""
         if relative in self.untracked:
             return UNCOMMITTED_TIME
 
@@ -306,16 +278,15 @@ class _BlameTimes:
             self.by_path[relative] = self._read(relative)
 
         times = self.by_path[relative]
-        for number in range(first, last + 1):
-            if number not in times:
-                raise CensusError(f"`git blame` of {relative} in {self.repo} did not report line {number}")
-        return max(times[number] for number in range(first, last + 1))
+        if line not in times:
+            raise CensusError(f"`git blame` of {relative} in {self.repo} did not report line {line}")
+        return times[line]
 
 
 def _is_added(definition, added):
     """True when every line of the def, from `def` to its last line, is a line the branch added."""
     node = definition.node
-    return changed_lines.range_added(added, definition.path, node.lineno, node.end_lineno)
+    return diff_ranges.ranges_cover(added.get(definition.path, ()), node.lineno, node.end_lineno)
 
 
 def _body_without_docstring(node):
@@ -380,11 +351,10 @@ def _unread_field_entries(index, added):
         if not _is_record_class(node):
             continue
 
-        lines = added.get(definition.path, set())
         for statement in node.body:
             if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
                 continue
-            if statement.lineno not in lines:
+            if not diff_ranges.ranges_touch(added.get(definition.path, ()), statement.lineno, statement.lineno):
                 continue
 
             field_name = statement.target.id
@@ -403,8 +373,9 @@ def _argument_dumps(call):
     return set(positional + keyword)
 
 
-def _widening_helpers(caller, helper_name, index, touched, times, helper_time):
+def _widening_helpers(caller, definition, index, touched, times):
     """Names of the touched defs, newer than the helper, that `caller` calls with every argument of each helper call."""
+    helper_name = definition.node.name
     helper_sets = [_argument_dumps(call.node) for call in index.calls_in[caller] if call.name == helper_name]
     if not all(helper_sets):
         return set()
@@ -416,9 +387,13 @@ def _widening_helpers(caller, helper_name, index, touched, times, helper_time):
 
         wider_sets[call.name].append(_argument_dumps(call.node))
 
+    if not wider_sets:
+        return set()
+
+    helper_time = times.time_of(definition.path, definition.node.lineno)
     names = set()
     for name, wider_arguments in wider_sets.items():
-        newest = max(times.newest(d.path, d.node.lineno, d.node.lineno) for d in touched[name])
+        newest = max(times.time_of(d.path, d.node.lineno) for d in touched[name])
         if newest <= helper_time:
             continue
 
@@ -430,9 +405,7 @@ def _widening_helpers(caller, helper_name, index, touched, times, helper_time):
 def _superseding_names(definition, sites, index, touched, times):
     """The helper names that every caller of the def also calls, newer and with every argument it passes the def."""
     callers = {site.caller for site in sites}
-    helper_time = times.newest(definition.path, definition.node.lineno, definition.node.lineno)
-    name_sets = [_widening_helpers(caller, definition.node.name, index, touched, times, helper_time)
-                 for caller in callers]
+    name_sets = [_widening_helpers(caller, definition, index, touched, times) for caller in callers]
     return sorted(set.intersection(*name_sets))
 
 
@@ -440,7 +413,7 @@ def _superseded_entries(index, added, times):
     touched = collections.defaultdict(list)
     for definition in index.definitions:
         node = definition.node
-        if changed_lines.range_touched(added, definition.path, node.lineno, node.end_lineno):
+        if diff_ranges.ranges_touch(added.get(definition.path, ()), node.lineno, node.end_lineno):
             touched[node.name].append(definition)
 
     entries = []
@@ -469,13 +442,8 @@ def census(repo, base="HEAD"):
     """The Census of the dead weight the work tree of `repo` adds over `base`.
 
     Raises CensusError when git fails or its output does not parse."""
-    untracked = script_utils.untracked_paths(repo)
-    if untracked is None:
-        raise CensusError(f"`git ls-files --others --exclude-standard` failed in {repo}")
-
-    diff_files = _diff_files(repo, base)
-    untracked_entries = _untracked_entries(repo, untracked)
-    added = changed_lines.changed_line_sets(diff_files, untracked_entries)
+    added = _added_ranges(repo, base)
+    untracked = [path for path, ranges in added.items() if ranges == change_added_ranges.WHOLE_FILE]
     try:
         listed = script_utils.repo_file_paths_or_raise(repo)
     except script_utils.GitCallError as error:
@@ -488,8 +456,8 @@ def census(repo, base="HEAD"):
     entries += _unread_field_entries(index, added)
     entries += _superseded_entries(index, added, times)
     entries.sort(key=lambda entry: (entry.path, entry.line, entry.kind))
-    read_paths = [path for path, numbers in added.items() if numbers]
-    notes = _unparsed_note(index.unparsed) + _typescript_notes(read_paths + untracked)
+    read_paths = [path for path, ranges in added.items() if ranges]
+    notes = _unparsed_note(index.unparsed) + _typescript_notes(read_paths)
     return Census(entries, notes)
 
 

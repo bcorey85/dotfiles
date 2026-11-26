@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -284,6 +285,13 @@ class SingleCallerCensusTest(unittest.TestCase):
         found = [(entry.kind, entry.name) for entry in result.entries]
         self.assertEqual(found, [("unread-field", "Row.unused_field")])
 
+    def test_a_field_used_only_as_a_constructor_keyword_is_still_listed(self):
+        source = RECORD_SOURCES["TypedDict"] + "\n\ndef build():\n    return Row(unused_field=1)\n"
+        base = make_repo(self.directory.name, source, source)
+        result = single_caller_census.census(self.directory.name, base)
+        found = [(entry.kind, entry.name) for entry in result.entries]
+        self.assertEqual(found, [("unread-field", "Row.unused_field")])
+
     def test_calls_in_a_decorator_and_a_default_belong_to_the_enclosing_scope(self):
         source = (
             "def outer():\n    @deco(1)\n    def inner(a=helper(2)):\n        pass\n\n\n"
@@ -356,6 +364,7 @@ def new_helper(value):
 '''
         only_a = both.replace("def caller_b(items):\n    print(old_helper(items))\n    return new_helper(items)\n",
                               "def caller_b(items):\n    return old_helper(items)\n")
+        self.assertNotEqual(only_a, both)
         cases = {"every caller": (both, ["old_helper"]), "one caller only": (only_a, [])}
         for label, (work_source, expected) in cases.items():
             with self.subTest(label), tempfile.TemporaryDirectory() as directory:
@@ -521,6 +530,37 @@ def new_helper(value):
         done = run_cli(self.directory.name, "--base", "no-such-ref")
         self.assertEqual(done.returncode, 2)
         self.assertIn("git diff", done.stderr)
+
+    def test_an_unparseable_diff_raises_a_census_error_naming_the_repo_and_base(self):
+        make_repo(self.directory.name, BRANCH_SOURCE, BRANCH_SOURCE)
+        refuse = mock.patch.object(
+            single_caller_census.change_added_ranges, "change_added_ranges", side_effect=ValueError("bad hunk")
+        )
+        with refuse, self.assertRaises(single_caller_census.CensusError) as caught:
+            single_caller_census.census(self.directory.name, "HEAD")
+        self.assertIn(self.directory.name, str(caught.exception))
+        self.assertIn("HEAD", str(caught.exception))
+
+    def test_an_untracked_binary_file_and_symlink_are_skipped(self):
+        make_repo(self.directory.name, BRANCH_SOURCE, BRANCH_SOURCE)
+        pathlib.Path(self.directory.name, "blob.ts").write_bytes(b"\xff\xfe\x00function lone(value) {}\n")
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        target = pathlib.Path(outside.name, "target.py")
+        target.write_text("def lone(value):\n    return existing(value)\n" + FORWARDER_USE)
+        os.symlink(target, pathlib.Path(self.directory.name, "link.py"))
+        result = single_caller_census.census(self.directory.name, "HEAD")
+        listed = {entry.path for entry in result.entries}
+        self.assertNotIn("link.py", listed)
+        self.assertFalse([note for note in result.notes if "blob.ts" in note])
+
+    def test_a_file_with_a_byte_order_mark_is_read(self):
+        source = "def lone(value):\n    return existing(value)\n" + FORWARDER_USE
+        make_repo(self.directory.name, "x = 1\n", "x = 1\n")
+        pathlib.Path(self.directory.name, "app.py").write_bytes(b"\xef\xbb\xbf" + source.encode("utf-8"))
+        result = single_caller_census.census(self.directory.name, "HEAD")
+        self.assertEqual([entry.name for entry in result.entries], ["lone"])
+        self.assertEqual(result.notes, [])
 
     def test_census_report_lines_keep_only_the_named_paths(self):
         base = make_repo(self.directory.name, BRANCH_SOURCE, WORK_SOURCE)

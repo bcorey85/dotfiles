@@ -323,7 +323,8 @@ def _print_branch_report(span, base, base_source, opts_head, root, jscpd_timeout
         print(single_caller_census.CENSUS_HEADING)
         print("The census reads only the work tree; it was not run for --head.")
     else:
-        print("\n".join(single_caller_census.census_report_lines(root, span.diff_ref)))
+        census_lines = single_caller_census.census_report_lines(root, span.diff_ref)
+        print("\n".join(census_lines))
     print()
     print(_branch_next(base, log_input))
 

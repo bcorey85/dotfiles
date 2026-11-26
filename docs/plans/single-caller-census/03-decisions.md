@@ -26,3 +26,16 @@
   merged-in files are reverted and saved as a patch for their owners. Its asks on `review_launch.py:256` and
   `announced_step.py:53` go to those files' owners. Its ask to read the census at the review base is rejected per
   the census_base ruling above.
+- Ruling by session feature/single-caller-census at 2026-11-26 (lane review stop): the census reads its added lines
+  through the merged-in owner `lib/change_added_ranges.py`, with `relative` and `no_renames` options, and checks spans
+  with `diff_ranges.ranges_touch` and `ranges_cover`; both lib files join the Scope. The three asks stay rejected:
+  census at HEAD (earlier ruling), the line re-cite, and `test_session_registry` coverage (merged-in file).
+- Ruling by session feature/single-caller-census at 2026-11-26 (lane review asks, round 3): the plan deviation's
+  "plan line 30" re-cite is accepted. `diff_ranges.ranges_touch`/`ranges_cover` and `changed_lines.range_touched`/
+  `range_added` both stay: `changed_lines` serves the span diffs `refactor_flow` hands `clone_pairs` and
+  `shape_clones`, which `change_added_ranges` cannot produce; folding them is a follow-up. The
+  `detect_renames`/`no_renames` guard is dropped with its test: no caller passes both.
+- Ruling by session feature/single-caller-census at 2026-11-26 (lane review asks, round 4): the plan deviation now
+  cites plan.md:32-34 (applied by the session). The quoted `+++` name decode in `diff_ranges.py` is rejected and
+  reverted with its test and the `test_uncommitted_change.py` edit: only a reviewer raised it, it changed a merged-in
+  script's output, and it duplicated `source_text._header_path`.

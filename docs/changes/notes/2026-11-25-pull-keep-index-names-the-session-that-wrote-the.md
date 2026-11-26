@@ -25,7 +25,7 @@ transcripts (`session_registry.session_and_subagent_transcripts`, on top of `ses
 exactly one has an Edit, Write, MultiEdit or NotebookEdit call with an absolute path on a dirty path, recorded after
 the HEAD commit time, every other transcript was read, and the pushing session wrote none of them. Otherwise it says
 the owner is unknown and lists the live sessions as candidates, with unread transcripts named apart.
-The route choice is unchanged. `epoch_of_timestamp` moves from `human_turn_lookup` to `script_utils`, so the coder
+The route choice is unchanged. `epoch_of_timestamp` moves from `human_turn_lookup` to `script_utils` (one copy there), so the coder
 gate, which loads `loop_transcript`, does not load `human_turn_lookup` and its imports.
 
 ## Evidence

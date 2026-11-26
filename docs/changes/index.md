@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1194 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1195 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [The code phase end runs the change-file check](notes/2026-11-25-the-code-phase-end-runs-the-change-file-check.md).
+Latest change: 2026-11-25, [A coder's denied git write no longer stops the code run](notes/2026-11-25-a-coder-s-denied-git-write-no-longer-stops-the.md).
 
 ## Top gains
 

@@ -11,7 +11,8 @@ import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("PHASE_CHANGE_FILE_SCRIPT")
                       or toolkit_paths.CODE_DIR / "phase_change_file.py")
-CHECK_SOURCE = toolkit_paths.REPO_ROOT / ".githooks" / "change-file-check"
+START_SCRIPT = SCRIPT.parent / "phase_start.py"
+CHECK_SOURCE =toolkit_paths.REPO_ROOT / ".githooks" / "change-file-check"
 TOOLKIT_FILE = "claude/.claude/scripts/lib/util.py"
 CHANGE_NOTE = "docs/changes/notes/2026-11-25-a-change.md"
 NEXT_STEP_LINE = ("Dispatch a coder to file the change file with that command, "
@@ -114,6 +115,41 @@ class PhaseChangeFileTest(unittest.TestCase):
         self.write(CHANGE_NOTE)
         result = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def record_start(self):
+        """Run phase_start.py in the repo, so start.json records the files dirty now."""
+        scratch = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, scratch, True)
+        environment = {**os.environ, "HOME": str(scratch), "CLAUDE_CONFIG_DIR": str(scratch),
+                       "CLAUDE_CODE_SESSION_ID": "test-session"}
+        subprocess.run([sys.executable, str(START_SCRIPT)], cwd=self.repo, env=environment, check=True,
+                       capture_output=True, text=True)
+
+    def test_a_toolkit_file_dirty_before_the_run_and_unchanged_since_does_not_fail_the_phase(self):
+        self.install_check()
+        self.write(TOOLKIT_FILE)
+        self.record_start()
+        self.write("README.md", "the phase's change\n")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_toolkit_file_dirty_before_the_run_and_edited_since_fails_the_phase(self):
+        self.install_check()
+        self.write(TOOLKIT_FILE)
+        self.record_start()
+        self.write(TOOLKIT_FILE, "edited by the phase\n")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(TOOLKIT_FILE, result.stderr)
+
+    def test_a_start_record_that_does_not_parse_exits_2_naming_the_file(self):
+        self.install_check()
+        record_file = self.repo / ".git" / "code-phase" / "start.json"
+        record_file.parent.mkdir()
+        record_file.write_text("not json")
+        result = self.run_script()
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("start.json", result.stderr)
 
     def test_a_repo_without_the_check_passes(self):
         self.write(TOOLKIT_FILE)

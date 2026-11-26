@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1195 changes
+1196 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A resume ignores merged-in ticks and files dirty before the run](notes/2026-11-25-a-resume-ignores-merged-in-ticks-and-files-dirty.md) [script/code-step] phase_start.py --resume counts only the branch's own commits as a phase tick and names a Phase Status line that does not parse; the phase-end change-file check leaves out files that were dirty before the run and are unchanged.
 * [A coder's denied git write no longer stops the code run](notes/2026-11-25-a-coder-s-denied-git-write-no-longer-stops-the.md) [skill/code] The /code skill keeps stage and commit steps out of a coder's prompt, so no coder makes the git write that the gate denied and the fork stopped on.
 * [The code phase end runs the change-file check](notes/2026-11-25-the-code-phase-end-runs-the-change-file-check.md) [script/code-step, skill/code] A /code phase that changes toolkit paths now fails a change-file check before the Phase Status tick, naming the paths and the build_changes.py new command, instead of printing a commit subject that the pre-commit hook then refuses.
 * [review_fix decide accepts a plan folder](notes/2026-11-25-review-fix-decide-accepts-a-plan-folder.md) [script/review-fix, script/plan-format] `review_fix.py decide --plan <plan folder>` records the Plan Deviations entry in the folder's plan file instead of crashing with IsADirectoryError; a folder with no plan file is a usage error that stores no ruling.

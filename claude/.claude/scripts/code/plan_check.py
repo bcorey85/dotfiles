@@ -7,7 +7,8 @@
                                          plan folder) as JSON (owner, ticket, source, rule); with no ticket beside it,
                                          `plan` when the plan is an existing `plan.md` whose folder holds
                                          acceptance-criteria.md, else `user` (ticket null); exit 1 with the message when
-                                         the ticket cannot be read.
+                                         the ticket cannot be read, or when a plan folder holds neither a ticket
+                                         nor a plan file (`spec.md`, `plan.md` or one `*-05-plan.md`).
 """
 import json
 import os

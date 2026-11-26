@@ -670,6 +670,39 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(self.start_json()["head"], started_from)
         self.assertNotIn("was ticked", done.stderr)
 
+    def test_resume_after_a_merge_that_brings_in_a_ticked_plan_keeps_the_recorded_head(self):
+        started_from = self.phase_start().stdout.strip()
+        git(self.repo, "checkout", "-q", "-b", "side")
+        self.commit_plan("x", "another plan, ticked, on a side branch")
+        git(self.repo, "checkout", "-q", "-")
+        (self.repo / "mine.py").write_text("# the phase's change\n")
+        git(self.repo, "commit", "-q", "-am", "a commit that ticks nothing")
+        git(self.repo, "merge", "-q", "--no-ff", "-m", "merge the side branch", "side")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertNotIn("was ticked", done.stderr)
+
+    def test_resume_keeps_the_record_and_names_a_phase_status_line_that_does_not_parse(self):
+        started_from = self.phase_start().stdout.strip()
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("## Phase Status\n\n- [x] Phase 1: first (risk: low)\n- [x] no phase number here\n")
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-q", "-m", "a plan with a bad status line")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertIn("docs/plans/x/plan.md:4", done.stderr)
+        self.assertIn("Rewrite it as `- [ ] Phase <id>: <title>`", done.stderr)
+        self.assertNotIn("was ticked", done.stderr)
+
     def other_repo_with_recorded_stop(self):
         """A second repo whose run folder holds this session's recorded stop; the home is a temp folder."""
         other = self.repo.parent / "other"

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1195 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1196 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [A coder's denied git write no longer stops the code run](notes/2026-11-25-a-coder-s-denied-git-write-no-longer-stops-the.md).
+Latest change: 2026-11-25, [A resume ignores merged-in ticks and files dirty before the run](notes/2026-11-25-a-resume-ignores-merged-in-ticks-and-files-dirty.md).
 
 ## Top gains
 

@@ -58,7 +58,8 @@ reason is printed:
   - its folder exists, it is not locked, not detached, not bare;
   - its branch is not the default branch and its tip is an ancestor of the
     compare ref or of the branch the main checkout has checked out, when it is
-    on a branch (a squash or rebase merge looks unmerged: check by hand);
+    on a branch (a squash or rebase merge looks unmerged: check by hand); a
+    tip equal to the checkout branch's tip does not count as merged into it;
   - git status is clean (ignored files do not count), no submodule, no nested
     repository at any depth inside an ignored folder;
   - no stash entry was made on its branch (an entry that names no branch counts
@@ -107,6 +108,7 @@ from worktree_git import (
 )
 
 PROC_ROOT = "/proc"
+UNBORN_HEAD = "0" * 40  # what `git worktree list` prints as HEAD for a branch with no commit
 FETCH_TIMEOUT_SECONDS = 120
 HERDR_TIMEOUT_SECONDS = 20
 LSOF_TIMEOUT_SECONDS = 60
@@ -599,8 +601,12 @@ def start_up():
         raise PruneError(f"cannot read the working directory: {error}") from error
     cwd_real = real(cwd)
     main_tree = list_worktrees(None)[0]
+    checkout_name, checkout_hash = main_tree.branch, main_tree.head
+    if checkout_hash == UNBORN_HEAD:
+        # An unborn main branch has no commit to be merged into: treat it like a detached main checkout.
+        checkout_name, checkout_hash = None, None
     return Repo(main_tree.path, default_branch, f"origin/{default_branch}", resolved.stdout.strip(), cwd_real,
-                main_tree.branch, main_tree.head)
+                checkout_name, checkout_hash)
 
 
 # ---- worktree mode ----
@@ -625,6 +631,9 @@ def kept_breakdown(keeps):
 
 def print_plan(repo, world, plan, state):
     print(f"compare ref: {repo.compare_name} ({repo.compare_hash[:8]})")
+    extra_names = [name for name, _ in repo.merge_targets()[1:]]
+    for name in extra_names:
+        print(f"also merged into: {name}")
     state.print_new_notes(world.notes)
     removable = [(tree, tree_size(tree.path)) for tree, keep in plan if keep is None]
     for tree, size in removable:

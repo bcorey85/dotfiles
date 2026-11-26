@@ -155,14 +155,31 @@ class MergeVerdict:
     error: str | None = None
 
 
+def checkout_tip(repo):
+    """The commit of the main checkout's branch now, or None when it cannot be read."""
+    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{repo.checkout_name}^{{commit}}")
+    if resolved.returncode != 0:
+        return None
+    return resolved.stdout.strip()
+
+
 def merged_into(repo, commit):
-    """Whether `commit` is an ancestor of the compare ref or of the main checkout's branch."""
-    for name, target_hash in repo.merge_targets():
-        asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, target_hash)
-        if asked.returncode == 0:
-            return MergeVerdict(target=name)
-        if asked.returncode != 1:
+    """Whether `commit` is an ancestor of the compare ref or of the main checkout's branch.
+
+    The checkout branch is asked by its live ref, not by the hash taken at start-up: the branch can move during a
+    run. A commit equal to the checkout branch's tip does not count as merged into it: a fresh worktree cut from
+    that branch, or a branch it was just made from, holds no work of its own."""
+    for index, (name, target_hash) in enumerate(repo.merge_targets()):
+        is_checkout = index > 0
+        target = f"{HEADS_PREFIX}{name}" if is_checkout else target_hash
+        asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, target)
+        if asked.returncode == 1:
+            continue
+        if asked.returncode != 0:
             return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
+        if is_checkout and commit == checkout_tip(repo):
+            continue
+        return MergeVerdict(target=name)
     return MergeVerdict()
 
 

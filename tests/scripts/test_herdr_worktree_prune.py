@@ -466,6 +466,51 @@ class CheckedOutBranchMergeTest(PruneTestCase):
                 self.assertTrue(deletion.failure.startswith("git merge-base failed"), deletion.failure)
                 self.assertIn("probe", self.lab.branches())
 
+    def test_delete_branch_asks_the_live_checkout_branch_not_the_start_up_hash(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        stale_hash = self.lab.tip("bench-base")
+        self.lab.git(self.lab.main, "branch", "feature/old-lane", stale_hash)
+        self.lab.git(self.lab.main, "reset", "-q", "--hard", "main")
+        module = load_script_module()
+        repo = module.Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"), str(self.lab.main),
+                           "bench-base", stale_hash)
+
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "feature/old-lane")
+
+        self.assertIn("is not on", deletion.failure)
+        self.assertIn("feature/old-lane", self.lab.branches())
+
+    def test_a_tree_at_the_checkout_branch_tip_is_kept_and_its_branch_survives(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        fresh = self.lab.lane("lane-fresh", commits=0)
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(fresh, "feature/lane-fresh", applied, "0 commits not on origin/main")
+        self.assertIn("nor on bench-base", line_of(applied, fresh))
+
+    def test_delete_branch_refuses_a_branch_at_the_checkout_branch_tip(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        self.lab.git(self.lab.main, "branch", "feature/cut-from-bench", "bench-base")
+        repo = load_script_module().Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"),
+                                         str(self.lab.main), "bench-base", self.lab.tip("bench-base"))
+
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "feature/cut-from-bench")
+
+        self.assertIn("is not on", deletion.failure)
+        self.assertIn("feature/cut-from-bench", self.lab.branches())
+
+    def test_the_list_header_names_the_checkout_branch_when_it_is_a_second_target(self):
+        self.working_branch_lab()
+
+        listed = self.lab.prune()
+
+        self.assertTrue(listed.stdout.startswith("compare ref: origin/main ("), listed.stdout)
+        self.assertIn("also merged into: bench-base\n", listed.stdout)
+
     def test_a_dirty_worktree_merged_into_the_checked_out_branch_is_kept(self):
         merged, _unmerged = self.working_branch_lab()
         (merged / "scratch.txt").write_text("dirty\n")

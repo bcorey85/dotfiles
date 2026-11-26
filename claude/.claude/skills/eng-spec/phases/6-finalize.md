@@ -1,7 +1,6 @@
 # Phase 6: Architect finalization and acceptance criteria
 
-15. **Continue each architect via `SendMessage`** — its exploration context is
-    intact. Send `03-decisions.md` **by path only** plus the instruction to produce the full plan per its Output
+15. **Continue each architect via `SendMessage`.** Send `03-decisions.md` **by path only** plus the instruction to produce the full plan per its Output
     Format.
 
     Attempt `SendMessage` first — never assume unreachable. Only on failure, re-dispatch fresh with brief verbatim + `02-research.md` + `03-decisions.md`.
@@ -11,7 +10,7 @@
     status codes). Then finalize `frontend-architect` _with_ that contract, so it
     designs against it, not around it.
 
-16. **Synthesize and save `docs/plans/<slug>/spec.md`.** Read
+16. **Synthesize and save `<task dir>/spec.md`** (`<task dir>` = the task directory phase 1 step 3 opened). Read
     `~/.claude/skills/eng-spec/templates/spec-template.md` and use its format.
 
     - **`DESIGN GAPS` returned by an architect**: resolve each with the user in
@@ -43,7 +42,7 @@
       Single-layer phases only when the work genuinely is.
 
     Write before step 16b, without a save question. After each write run
-    `python3 ~/.claude/scripts/code/plan_check.py check docs/plans/<slug>/spec.md`;
+    `python3 ~/.claude/scripts/code/plan_check.py check <task dir>/spec.md`;
     exit 1: fix each line, rerun. All later checks use this saved spec. Persist every revision to the same file before
     continuing; never leave a repair only in conversation.
 
@@ -51,7 +50,7 @@
 `#### Automated Verification:` commands survive reading. Resolve each with the user before Phase 7.
 
     - **Falsifiability run**: run
-      `python3 ~/.claude/scripts/tools/criteria_dry_run.py docs/plans/<slug>/spec.md`
+      `python3 ~/.claude/scripts/tools/criteria_dry_run.py <task dir>/spec.md`
       once. It runs every Automated Verification command of every phase against
       the pre-implementation tree and prints `CHECK <n> RED|GREEN|BROKEN|ENV|UNPARSED|CLOSING`
       plus `FLAG` lines. Clean RED is good; GREEN, BROKEN, ENV or UNPARSED lets the coder
@@ -99,7 +98,7 @@ these before Phase 7 and resolve every miss with the user like a `DESIGN GAP`.
 
 17. **If the ticket has behavioral criteria**, dispatch **`spec-criteria`**
 with `00-ticket.md`, `03-decisions.md`, the saved `spec.md`, and the task directory.
-It writes `docs/plans/<slug>/acceptance-criteria.md` and returns the damage-path
+It writes `<task dir>/acceptance-criteria.md` and returns the damage-path
 questions it refused to default.
 
     Do not write the list yourself, and do not ask the architect to. Then rerun

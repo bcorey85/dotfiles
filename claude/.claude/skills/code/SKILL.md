@@ -52,7 +52,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
    - The next phase is the one a number after the plan path names, else the first unchecked `- [ ]` entry under `## Phase Status`. Without that section, fall back to `git status` plus per-phase success criteria and tell the user to backfill it.
    - A closing phase (`~/.claude/skills/_shared/closing-phases.md`) runs its named skill in place of steps 3 to 5: invoke that skill with the Skill tool. For the Refactor pass, run the concentration gate first, as `closing-phases.md` says. When the skill reports an open finding, STOP with it. Otherwise dispatch a `coder` to write the evidence lines `closing-phases.md` names, and go on to the Phase Status tick.
-   - Before every phase's coder, confirm `docs/plans/<slug>/acceptance-criteria.md` exists beside the plan and is non-empty. Missing on a task with behavioral criteria → STOP, do not dispatch, report a plan defect to the user; never write the criteria and never dispatch an agent to. Missing on pure config or mechanical work → proceed. Never pass criterion ids into a dispatch prompt. Log a failed check first:
+   - Before every phase's coder, confirm `acceptance-criteria.md` exists beside the plan and is non-empty. Missing on a task with behavioral criteria → STOP, do not dispatch, report a plan defect to the user; never write the criteria and never dispatch an agent to. Missing on pure config or mechanical work → proceed. Never pass criterion ids into a dispatch prompt. Log a failed check first:
 
      ```bash
      bash ~/.claude/scripts/telemetry/log-scan repo=<basename> scan=acceptance-stub \

@@ -6,7 +6,9 @@
    (read it). Required-ticket caller: no key → ask the user; Jira MCP down → say
    so and stop.
 
-2. **Check for an existing spec** — Glob `docs/plans/**/spec.md`. If one
+2. **Check for an existing spec** — Glob `docs/plans/**/spec.md`; with a ticket key, also run
+   `bash ~/.claude/scripts/tools/resolve-task-dir.sh <KEY>`: a folder it prints (exit 0) is the
+   existing task directory. If one
    matches, read it and ask: "Found an existing spec — update it or start fresh?"
 
 3. **Open the task directory** that

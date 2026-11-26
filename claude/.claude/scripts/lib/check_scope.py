@@ -54,6 +54,7 @@ LEAVES_OUT_FLAGS = {
 # The leave-out flags read for every CHECK_RUN_PREFIXES run but `ruff check`.
 NON_RUFF_LEAVE_OUT_FLAG_SETS = [flags for runner, flags in LEAVES_OUT_FLAGS.items() if runner != "ruff"]
 CHECK_RUN_LEAVES_OUT_FLAGS = set().union(*NON_RUFF_LEAVE_OUT_FLAG_SETS)
+PYTEST_MODULE_WORDS = ["-m", "pytest"]
 
 # The command starts of a test or lint run. A simple command that starts with one covers the whole package when no
 # path, test name, changed-files flag or exclude flag follows it. The words "test" and "lint" in a prefix also match
@@ -62,12 +63,12 @@ CHECK_RUN_LEAVES_OUT_FLAGS = set().union(*NON_RUFF_LEAVE_OUT_FLAG_SETS)
 CHECK_RUN_PREFIXES = [
     ["npm", "test"], ["npm", "t"], ["npm", "run", "test"], ["yarn", "test"], ["yarn", "run", "test"],
     ["pnpm", "test"], ["pnpm", "run", "test"], ["bun", "test"], ["npx", "vitest"], ["npx", "jest"],
-    ["vitest"], ["jest"], ["pytest"], ["python", "-m", "pytest"],
+    ["vitest"], ["jest"], ["pytest"], ["python", *PYTEST_MODULE_WORDS],
     ["npm", "run", "lint"], ["yarn", "lint"], ["yarn", "run", "lint"], ["pnpm", "lint"], ["pnpm", "run", "lint"],
     ["npx", "eslint"], ["eslint"], ["ruff", "check"],
 ]
 # These are the only prefixes after which naming a test root folder is no scope.
-PYTEST_RUN_PREFIXES = [["pytest"], ["python", "-m", "pytest"]]
+PYTEST_RUN_PREFIXES = [["pytest"], ["python", *PYTEST_MODULE_WORDS]]
 UNITTEST_PREFIX = ["python", "-m", "unittest"]
 UNITTEST_SELECTION_FLAGS = ("-k", "-p", "--pattern")
 # `unittest discover` options that take the next word as their value, which is not a start directory or pattern.
@@ -691,6 +692,49 @@ def step_runs_tests(words):
 
     return (any(word in TEST_RUNNER_WORDS for word in words) or contains_word_run(words, UNITTEST_MODULE_WORDS)
             or step_runs_test_script(words) or step_runs_test_runner_script(words))
+
+
+def program_runs_tests(words):
+    # True when words[0] itself is the test program: a runner binary, `python -m pytest|unittest`, a python program
+    # running a file named parallel_tests.py, or a script runner whose subcommand is a test word (`npm test`). A
+    # wrapper word first (`sudo pytest`) is False, and so is a program named by a path (`./pytest`): that file is not
+    # known to be the runner.
+    if not words or "/" in words[0]:
+        return False
+
+    program = words[0]
+    if program in TEST_RUNNER_WORDS:
+        return True
+
+    if PYTHON_PROGRAM.fullmatch(program) and words[1:3] in (UNITTEST_MODULE_WORDS, PYTEST_MODULE_WORDS):
+        return True
+
+    if step_runs_test_runner_script(words):
+        return True
+
+    return program in SCRIPT_RUNNERS and test_word_is_subcommand(program, words)
+
+
+def path_program_runs_tests(words):
+    # True when the program word is a path (`./pytest`) whose file name is a test program. The file may not be the
+    # runner, so callers must not rewrite such a step.
+    if not words or "/" not in words[0]:
+        return False
+
+    named_by_file = [os.path.basename(words[0]), *words[1:]]
+    return program_runs_tests(named_by_file)
+
+
+def test_word_is_subcommand(program, words):
+    # True when the test word is the runner's own subcommand (`npm test`, `make test-unit`) or the script named by
+    # `run`/`run-script` of a package runner (`npm run test`). A later word (`npm exec evil test`) names an argument.
+    if len(words) > 1 and TEST_WORD.match(words[1]):
+        return True
+
+    if program in PACKAGE_SCRIPT_RUNNERS and len(words) > 2 and words[1] in ("run", "run-script"):
+        return bool(TEST_WORD.match(words[2]))
+
+    return False
 
 
 def runner_script_arguments(words):

@@ -121,7 +121,7 @@ that repo.
 ### 4. Closing phase — after the last `/code` phase
 
 `/close-branch` runs the whole closing pass once: scripts, four report-only reviewers on the branch diff, one coder
-that fixes every finding, a gate on the fix diff, then the recap sheet.
+that fixes every finding, a gate on the fix diff, then a coder round for the gate's findings, then the recap sheet.
 
 Read the residue queue, stage it, then `/commit`.
 

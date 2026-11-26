@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1198 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1234 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-25, [A capped review with a passed full check on the tree earns review credit](notes/2026-11-25-a-capped-review-with-a-passed-full-check-on-the.md).
 

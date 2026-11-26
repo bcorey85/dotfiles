@@ -22,18 +22,21 @@ CLEAN_FILES_STEP = "clean files"
 
 class PassScope(typing.NamedTuple):
     """What one coder pass may change: the `allowed` paths, the paths `has_own_guard` is true for (another guard of
-    the loop rules on those) and the paths its findings name."""
+    the loop rules on those) and the paths its findings name. `repo_files` is the repo's files before the pass, as
+    a frozenset, for the trailing-part rule."""
 
     root: pathlib.Path
     allowed: frozenset
     has_own_guard: typing.Callable
     finding_texts: tuple
+    repo_files: frozenset
 
     def holds(self, path):
-        """Whether the pass may change `path`."""
+        """Whether the pass may change `path`: a finding names it in full, with a `./` prefix, or by a trailing part
+        of its path, with a `/` or a `.` in it, that no other repo file ends with."""
         if path in self.allowed or self.has_own_guard(path):
             return True
-        return script_utils.texts_name_path(self.finding_texts, path, self.root)
+        return script_utils.texts_name_repo_file(self.finding_texts, path, self.root, self.repo_files)
 
 
 def paths_differing_from_head(repo, head, *diff_options):
@@ -221,9 +224,11 @@ class ScopeGuard:
 def guard_pass(repo, out, role, allowed, has_own_guard, finding_texts):
     """The ScopeGuard of one coder pass. `allowed` are the paths the pass may change, `has_own_guard(path)` says
     whether another guard of the loop rules on a path, and `finding_texts` are the pass's findings, whose text may
-    name more paths."""
+    name more paths. The repo's files are listed here, before the pass runs, so every later `holds` reads the pre-pass
+    file set. A failed listing raises GitCallError."""
     root = pathlib.Path(repo)
-    scope = PassScope(root, frozenset(allowed), has_own_guard, tuple(finding_texts))
+    repo_files = frozenset(script_utils.repo_file_paths_or_raise(root))
+    scope = PassScope(root, frozenset(allowed), has_own_guard, tuple(finding_texts), repo_files)
     dirty = [path for path in worktree_snapshot.status_codes(root, strict=True) if not scope.holds(path)]
     pass_dir = pathlib.Path(out) / BACKUP_FOLDER / role
     index_entries = script_utils.index_entries(root, dirty)

@@ -71,6 +71,35 @@ class PlanCheckCliTest(unittest.TestCase):
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
         self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["session"])
 
+    def test_owner_given_the_plan_folder_reads_the_ticket_inside_it(self):
+        _home, env = self.queue_home("claude-code/x")
+        (self.folder / "00-ticket.md").write_text(
+            "# T-1: Thing\n\nSource: ~/agent-evals/queue/item.md\n\n## Acceptance Criteria\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.folder), env=env)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout)["owner"], "session")
+
+    def test_owner_given_a_folder_with_a_ticket_and_no_plan_file_reads_the_ticket(self):
+        _home, env = self.queue_home("claude-code/x")
+        self.plan.unlink()
+        (self.folder / "00-ticket.md").write_text(
+            "# T-1: Thing\n\nSource: ~/agent-evals/queue/item.md\n\n## Acceptance Criteria\n\n- Words.\n")
+
+        done = self.run_plan_check("owner", str(self.folder), env=env)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(json.loads(done.stdout)["owner"], "session")
+
+    def test_owner_given_a_folder_with_no_ticket_and_no_plan_file_names_the_expected_plan_files_and_fails(self):
+        self.plan.unlink()
+
+        done = self.run_plan_check("owner", str(self.folder))
+
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("spec.md, plan.md or *-05-plan.md", done.stdout)
+
     def queue_home(self, author, home_name="home"):
         home = self.folder / home_name
         queue_dir = home / "agent-evals" / "queue"

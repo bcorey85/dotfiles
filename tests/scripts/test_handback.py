@@ -811,6 +811,10 @@ class RenderTest(HandbackTestBase):
         text = packet_text(CONVERGED_FIELDS, findings_remaining=remaining)
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
+    def test_a_handback_edit_renders_as_a_handback_edit_line(self):
+        packet = handback.load(json_packet(handback_edits=["a/log.md:3 apply the ruled change"]))
+        self.assertIn("Hand-back edit: a/log.md:3 apply the ruled change", handback.render(packet, "review"))
+
     def test_a_code_change_against_a_no_code_ruling_renders_its_ruling_and_file(self):
         broken = {"ruling": "`a/c.py:3` Make no code change.", "file": "a/b.py"}
         packet = handback.load(json_packet(no_code_ruling_broken=[broken]))
@@ -848,6 +852,14 @@ class RenderTest(HandbackTestBase):
         packet, error = handback.stored_packet('{"status": "converged", "iter": ')
         self.assertIsNone(packet)
         self.assertTrue(error)
+
+    def test_a_given_base_the_review_base_replaced_prints_a_review_base_line_and_an_empty_one_prints_none(self):
+        moved = handback.load(json_packet(given_base="master", base_used="abc123"))
+        self.assertIn("Review base: master", handback.render(moved, "review"))
+        self.assertIn("reviewed since abc123", handback.render(moved, "review"))
+
+        unmoved = handback.load(json_packet(given_base="", base_used="abc123"))
+        self.assertNotIn("Review base:", handback.render(unmoved, "review"))
 
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
         packet = handback.load(json_packet(iter=0, class_closure="n/a"))

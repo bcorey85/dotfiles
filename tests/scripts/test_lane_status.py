@@ -149,6 +149,17 @@ class LaneStatusTest(unittest.TestCase):
 
                 self.assertEqual(finished.stdout, f"one: dead ({reason})\n", finished.stderr)
 
+    def test_an_api_error_followed_by_bookkeeping_records_still_reads_as_dead(self):
+        self.add_lane()
+        error_record = {"type": "assistant", "isApiErrorMessage": True,
+                        "message": {"content": [{"type": "text", "text": "API Error: 500 overloaded"}]}}
+        trailing = [{"type": "system", "subtype": "turn_duration"}, {"type": "last-prompt", "lastPrompt": "go"}]
+        self.stub_agents([self.agent_with_transcript("idle", [*BACKGROUND_RUN, error_record, *trailing])])
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.stdout, "one: dead (api error)\n", finished.stderr)
+
     def test_changes_prints_a_state_once_and_working_when_the_lane_recovers(self):
         self.add_lane()
         self.stub_agents([self.agent("idle")])

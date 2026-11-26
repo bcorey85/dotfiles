@@ -1,7 +1,21 @@
-"""Which characters of a shell command sit inside quotes, a comment or after a backslash."""
+"""Which characters of a shell command sit inside quotes, a comment or after a backslash, and `shell_word`: a path as
+one quoted shell word a person can paste."""
 import re
+import shlex
 
 _QUOTE_CHARACTERS = re.compile(r"[\"'\\]")
+
+
+_UNSAFE_IN_DOUBLE_QUOTES = re.compile(r"[\"$`\\!\n]")
+
+
+def shell_word(text):
+    """The text as one shell word a person can paste: in double quotes, or in shell quoting from `shlex.quote`
+    when the text holds a character that double quotes would expand or end on."""
+    text = str(text)
+    if not _UNSAFE_IN_DOUBLE_QUOTES.search(text):
+        return f'"{text}"'
+    return shlex.quote(text)
 
 
 def without_quote_characters(text):

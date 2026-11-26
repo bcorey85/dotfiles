@@ -7,9 +7,9 @@ generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-26T12:59:02-06
 seq: 18
 kind: "fix"
 components: ["script/git-commit-calls", "script/git-discipline-gate"]
-evidence: ["judgment"]
+evidence: ["test"]
 watches: []
-test: "tests/scripts/test_git_discipline_gate.py::SharedCloneCommitTest"
+test: "tests/scripts/test_git_discipline_gate.py::SharedCloneCommitTest::test_a_heredoc_body_that_only_stores_text_is_no_commit"
 asked: ""
 proof: []
 unmeasured: ""
@@ -22,11 +22,11 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Evidence
 
-`SharedCloneCommitTest` gains cases for a stored body (no commit), a body that runs (a commit), a body another command runs (read), and a stored body with an apostrophe (the sole-step read still works).
+`test_a_heredoc_body_that_only_stores_text_is_no_commit` fails on the base (ed873e2a5: both `cat > f` shapes denied) and passes after. `SharedCloneCommitTest` gains cases for a stored body (no commit), a body that runs (a commit), a body another command runs (read), and a stored body with an apostrophe (the sole-step read still works).
 
 ## Result
 
-A command that writes commit-message text or a script with `cat > f <<EOF` no longer trips the shared-clone commit checks.
+The gate's median time on a stored heredoc is 51.0 ms, beside 7.8 ms for a bare `python3 -c pass` (52.4 ms before). A command that writes commit-message text or a script with `cat > f <<EOF` no longer trips the shared-clone commit checks.
 
 ## Watch
 

@@ -15,7 +15,7 @@ The rule for every label: a check that could not run reads ENV; a check that ran
 ## Phase Status
 
 - [x] Phase 1: environment failures read ENV and an "exits 0" search reads RED on no match (risk: medium)
-- [ ] Phase 2: the dry run lists closing-phase checks (risk: low)
+- [x] Phase 2: the dry run lists closing-phase checks (risk: low)
 
 ## Phase 1: environment failures read ENV and an "exits 0" search reads RED on no match
 

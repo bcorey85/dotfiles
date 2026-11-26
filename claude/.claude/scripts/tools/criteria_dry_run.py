@@ -11,6 +11,7 @@ under it for each problem the exit code cannot show:
   variable or a refused connection with no runner summary) carries
   `environment failure: <the output line that shows it>`; an exit 127 that names a missing tool carries
   `environment failure: <tool> not found on PATH; fix: install <tool> or add the pyenv shims to PATH`.
+A closing phase's item prints `CHECK <label> CLOSING <skill> <command or item text>` and is not run; it needs no answer.
 Exit 0 when every command is RED and unflagged; exit 1 otherwise (GREEN, BROKEN, ENV or any flag need an answer before
 the plan is final). `--skip N` leaves out check N (every phase's checks are numbered in one sequence) for a command that
 writes."""
@@ -20,6 +21,7 @@ import pathlib
 import re
 import shlex
 import sys
+from typing import NamedTuple
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "code")]
@@ -41,6 +43,14 @@ COMMAND_BREAKS = {"|", "||", "&&", ";", "&"}
 STATED_IN_COMMAND = re.compile(r"(?:-eq|==?)\s*[\"']?(\d+)\b")
 STATED_IN_ITEM = re.compile(r"\b(?:is|are|=|==|equals?|returns?|prints?|outputs?|shows?|gives?|reports?|expects?|"
                             r"expected)\s+(?:exactly\s+)?(\d+)\b", re.IGNORECASE)
+
+
+class Criterion(NamedTuple):
+    label: str
+    line: str
+    command: str | None
+    code_lines: list
+    closing_skill: str | None
 
 
 def self_matching_pgrep(command):
@@ -148,23 +158,22 @@ def phase_code_lines(lines, section):
 
 
 def criteria_in_plan(lines, repo_dir):
-    """(label, line, command, code_lines) for each Automated Verification item that gets a command, in plan order;
-    label is `<phase>.<n>` with n counting from 1 across the whole plan. Items with no command to run come back with
-    command None. A closing phase's items are left out: its skill checks them from the session's evidence and runs no
-    command, as the plan check reads them."""
+    """A Criterion for each Automated Verification item, in plan order; label is `<phase>.<n>` with n counting from 1
+    across the whole plan. Every closing-phase item is returned, carrying its skill; it is not run, because that skill
+    checks it from the session's evidence. An item in any other phase is returned only when `runs_no_command` is
+    false, and its command is None only when the item names no command that can be parsed."""
     spans, _ = plan_format.phase_spans(lines)
     criteria = []
     for phase_id, section in spans:
-        if plan_format.closing_skill(section["title"]):
-            continue
-
+        skill = plan_format.closing_skill(section["title"])
         section_lines = lines[section["start"]:section["end"]]
         code_lines = phase_code_lines(lines, section)
         for _, line in plan_format.automated_verification_rows(section_lines):
-            if plan_format.runs_no_command(line):
+            label = f"{phase_id}.{len(criteria) + 1}"
+            if not skill and plan_format.runs_no_command(line):
                 continue
             command = plan_verification.verification_command(line, repo_dir)
-            criteria.append((f"{phase_id}.{len(criteria) + 1}", line, command, code_lines))
+            criteria.append(Criterion(label, line, command, code_lines, skill))
     return criteria
 
 
@@ -176,8 +185,11 @@ def dry_run(plan_path, repo_dir, skipped, timeout):
     assignments = gate_env.repo_gate_env(repo_dir, plan_rel)
     gate_environment = {**os.environ, **script_utils.environment_from_assignments(assignments)}
     check_environment = gate_env.check_env(repo_dir, gate_environment)
-    for label, line, command, code_lines in criteria_in_plan(lines, repo_dir):
+    for label, line, command, code_lines, closing_skill in criteria_in_plan(lines, repo_dir):
         item_text = plan_format.automated_item_text(line)
+        if closing_skill:
+            print(f"CHECK {label} CLOSING {closing_skill} {command or item_text[:120]}")
+            continue
         if command is None:
             print(f"CHECK {label} UNPARSED {item_text[:120]}")
             needs_answer = True

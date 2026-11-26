@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1264 changes
+1265 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -63,6 +63,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [The criteria dry run lists closing-phase checks as CLOSING](notes/2026-11-26-the-criteria-dry-run-lists-closing-phase-checks-as.md) [script/criteria-dry-run, skill/eng-spec] criteria_dry_run.py prints `CHECK <label> CLOSING <skill> <command or item text>` for each Automated Verification item of a closing phase and runs none of them, so every phase's checks show in the report; the exit code is unchanged.
 * [A search worded exits 0 reads RED on no match](notes/2026-11-26-a-search-worded-exits-0-reads-red-on-no-match.md) [script/criteria-dry-run, shared/criteria-verdict] An rg, grep or git grep criterion whose text says it exits 0 now reads as a presence check, so no match (exit 1) reads RED, not GREEN; ban wording on the same line still wins.
 * [A missing binary under bash running as sh reads ENV naming the tool](notes/2026-11-26-a-missing-binary-under-bash-running-as-sh-reads.md) [script/criteria-dry-run, shared/check-output] An npm script whose binary is missing prints `sh: line 1: tsc: command not found` at exit 127; the criteria verdict now reads it ENV with the install fix naming tsc, not BROKEN.
 * [The criteria verdict reads an unset variable or refused connection with no runner summary as ENV](notes/2026-11-26-the-criteria-verdict-reads-an-unset-variable-or.md) [script/criteria-dry-run, shared/check-output, shared/criteria-verdict] A failed check whose output holds an unset-variable line or a refused connection, and no runner summary, now reads ENV with an environment-failure flag in the criteria dry run and /code verification, not RED.

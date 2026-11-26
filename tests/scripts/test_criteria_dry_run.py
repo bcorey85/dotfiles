@@ -258,11 +258,12 @@ class SkipTest(unittest.TestCase):
 
 
 class ClosingPhaseTest(unittest.TestCase):
-    def test_a_closing_phase_item_is_left_to_its_skill_like_the_plan_check_leaves_it(self):
+    def test_a_closing_phase_item_is_listed_as_closing_and_not_run(self):
         closing_plan = ("# Plan\n\n## Phase 1: Build\n\n#### Automated Verification:\n\n"
                         "- [ ] `test -e not-built-yet` exits 0\n\n## Phase 2: Refactor pass\n\n"
                         "#### Automated Verification:\n\n"
-                        '- [ ] `CHANGED="$(git diff --name-only)" && test -n "$CHANGED"` exits 0\n')
+                        '- [ ] `CHANGED="$(git diff --name-only)" && test -n "$CHANGED"` exits 0\n'
+                        "- [ ] N/A: nothing to run for this pass\n")
 
         with tempfile.TemporaryDirectory() as temp:
             plan = pathlib.Path(temp) / "plan.md"
@@ -270,8 +271,18 @@ class ClosingPhaseTest(unittest.TestCase):
             finished = subprocess.run([sys.executable, str(SCRIPT), str(plan), "--repo", temp],
                                       capture_output=True, text=True)
 
+        output_lines = finished.stdout.splitlines()
+        command_lines = [line for line in output_lines if line.startswith("CHECK 2.2 ")]
+        self.assertEqual(len(command_lines), 1, finished.stdout)
+        self.assertTrue(command_lines[0].startswith("CHECK 2.2 CLOSING /refactor +deep "), command_lines[0])
+        self.assertIn("git diff --name-only", command_lines[0])
+        self.assertNotIn("rc=", command_lines[0])
+        prose_lines = [line for line in output_lines if line.startswith("CHECK 2.3 ")]
+        self.assertEqual(len(prose_lines), 1, finished.stdout)
+        self.assertTrue(prose_lines[0].startswith("CHECK 2.3 CLOSING /refactor +deep "), prose_lines[0])
+        self.assertIn("N/A", prose_lines[0])
+        self.assertNotIn("rc=", prose_lines[0])
         self.assertNotIn("UNPARSED", finished.stdout)
-        self.assertNotIn("CHANGED", finished.stdout)
         self.assertEqual(finished.returncode, 0, finished.stdout)
 
 

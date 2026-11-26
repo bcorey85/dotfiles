@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1243 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1244 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-25, [the full check skips only Markdown under docs and adr_flow status refuses on a failing git log](notes/2026-11-25-the-full-check-skips-only-markdown-under-docs-and.md).
 

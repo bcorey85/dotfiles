@@ -41,6 +41,17 @@ class Repo:
     compare_name: str
     compare_hash: str
     cwd_real: str
+    # The branch the main checkout has checked out and its commit; None when main is detached or bare.
+    checkout_name: str | None = None
+    checkout_hash: str | None = None
+
+    def merge_targets(self):
+        """Every (name, hash) a lane's tip may be merged into: the compare ref, then the main checkout's branch
+        when it has one whose commit differs from the compare hash."""
+        targets = [(self.compare_name, self.compare_hash)]
+        if self.checkout_name is not None and self.checkout_hash != self.compare_hash:
+            targets.append((self.checkout_name, self.checkout_hash))
+        return targets
 
 
 @dataclasses.dataclass
@@ -135,3 +146,44 @@ def list_worktrees(main_dir):
     if listing.returncode != 0:
         raise PruneError(f"git worktree list failed: {listing.stderr.strip()}")
     return parse_worktrees(listing.stdout)
+
+
+@dataclasses.dataclass
+class MergeVerdict:
+    """`target` names the ref that holds the commit; `error` is a git failure; both None means held by none."""
+    target: str | None = None
+    error: str | None = None
+
+
+def branch_tip(repo, name):
+    """The commit hash of refs/heads/<name> now, or None."""
+    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{name}^{{commit}}")
+    if resolved.returncode != 0:
+        return None
+    return resolved.stdout.strip()
+
+
+def merged_into(repo, commit):
+    """Whether `commit` is an ancestor of the compare ref or of the main checkout's branch.
+
+    The checkout branch is asked by its live ref, not by the hash taken at start-up: the branch can move during a
+    run. A commit equal to the checkout branch's tip does not count as merged into it: a fresh worktree cut from
+    that branch, or a branch it was just made from, holds no work of its own."""
+    for index, (name, target_hash) in enumerate(repo.merge_targets()):
+        is_checkout = index > 0
+        target = f"{HEADS_PREFIX}{name}" if is_checkout else target_hash
+        asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, target)
+        if asked.returncode == 1:
+            continue
+        if asked.returncode != 0:
+            return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
+        if is_checkout and commit == branch_tip(repo, name):
+            continue
+        return MergeVerdict(target=name)
+    return MergeVerdict()
+
+
+def not_on_text(repo):
+    """'origin/main' or 'origin/main nor on bench-base': the refs a commit is missing from."""
+    names = [name for name, _ in repo.merge_targets()]
+    return " nor on ".join(names)

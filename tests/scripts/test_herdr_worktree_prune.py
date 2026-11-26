@@ -388,7 +388,169 @@ class RemovalTest(PruneTestCase):
         self.assertIn("removed 0, freed 0 bytes", applied.stdout)
 
 
+class CheckedOutBranchMergeTest(PruneTestCase):
+    """The main checkout sits on a working branch that origin's default branch does not hold."""
+
+    def working_branch_lab(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        merged = self.lab.lane("lane-a")
+        self.lab.git(self.lab.main, "merge", "-q", "--no-ff", "--no-edit", "feature/lane-a")
+        unmerged = self.lab.lane("lane-b")
+        return merged, unmerged
+
+    def test_a_clean_worktree_merged_into_the_checked_out_branch_is_removed_with_its_branch(self):
+        merged, _unmerged = self.working_branch_lab()
+
+        applied = self.lab.prune("--apply")
+
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertFalse(merged.exists(), applied.stdout)
+        self.assertNotIn("feature/lane-a", self.lab.branches())
+        self.assertIn("removed 1,", applied.stdout)
+
+    def test_an_unmerged_worktree_is_kept_and_names_both_refs(self):
+        _merged, unmerged = self.working_branch_lab()
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(unmerged, "feature/lane-b", applied, "1 commits not on origin/main")
+        self.assertIn("nor on bench-base", line_of(applied, unmerged))
+
+    def test_check_passes_a_tree_merged_into_the_checked_out_branch_and_keeps_an_unmerged_one(self):
+        merged, unmerged = self.working_branch_lab()
+
+        merged_answer = json.loads(self.lab.prune("--check", str(merged)).stdout)
+        unmerged_answer = json.loads(self.lab.prune("--check", str(unmerged)).stdout)
+
+        self.assertEqual(merged_answer["verdict"], "remove", merged_answer)
+        self.assertEqual(unmerged_answer["verdict"], "keep")
+        self.assertIn("nor on bench-base", unmerged_answer["reason"])
+
+    def test_a_tree_on_a_checkout_branch_equal_to_the_compare_ref_still_removes_a_merged_lane(self):
+        merged = self.lab.merged_lane("lane-a")
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "same-as-main")
+        unmerged = self.lab.lane("lane-b")
+
+        applied = self.lab.prune("--apply")
+
+        self.assertFalse(merged.exists(), applied.stdout + applied.stderr)
+        self.assertTrue(unmerged.exists())
+        self.assertNotIn("nor on", line_of(applied, unmerged))
+
+    def test_a_tip_ahead_of_its_upstream_and_held_only_by_the_checked_out_branch_names_that_branch(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        tree = self.lab.lane("lane-a")
+        self.lab.git(tree, "push", "-q", "-u", "origin", "feature/lane-a")
+        self.lab.commit(tree, "after-push.txt")
+        self.lab.git(self.lab.main, "merge", "-q", "--no-ff", "--no-edit", "feature/lane-a")
+
+        listed = self.lab.prune()
+
+        self.assertIn("ahead of its own remote branch, fully on bench-base", line_of(listed, tree))
+
+    def test_a_failing_merge_base_is_cannot_check_for_both_refs_and_blocks_a_branch_delete(self):
+        module = load_script_module()
+        tip = self.lab.tip("main")
+        for compare_hash, checkout_hash in (("0" * 40, None), (tip, "0" * 40)):
+            with self.subTest(compare_hash=compare_hash[:4]):
+                repo = module.Repo(str(self.lab.main), "main", "origin/main", compare_hash, str(self.lab.main),
+                                   "bench-base" if checkout_hash else None, checkout_hash)
+                unmerged = self.lab.git(self.lab.main, "commit-tree", "-m", "x", f"{tip}^{{tree}}").stdout.strip()
+                tree = module.Worktree(path=str(self.lab.main), head=unmerged)
+
+                keep = module.check_merged(repo, None, tree)
+
+                self.assertEqual(keep.code, module.CANNOT_CHECK)
+                self.lab.git(self.lab.main, "branch", "-f", "probe", unmerged)
+                deletion = load_lib_module("worktree_branches").delete_branch(repo, "probe")
+                self.assertTrue(deletion.failure.startswith("git merge-base failed"), deletion.failure)
+                self.assertIn("probe", self.lab.branches())
+
+    def test_delete_branch_asks_the_live_checkout_branch_not_the_start_up_hash(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        stale_hash = self.lab.tip("bench-base")
+        self.lab.git(self.lab.main, "branch", "feature/old-lane", stale_hash)
+        self.lab.git(self.lab.main, "reset", "-q", "--hard", "main")
+        module = load_script_module()
+        repo = module.Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"), str(self.lab.main),
+                           "bench-base", stale_hash)
+
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "feature/old-lane")
+
+        self.assertIn("is not on", deletion.failure)
+        self.assertIn("feature/old-lane", self.lab.branches())
+
+    def test_a_tree_at_the_checkout_branch_tip_is_kept_and_its_branch_survives(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        fresh = self.lab.lane("lane-fresh", commits=0)
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(fresh, "feature/lane-fresh", applied, "0 commits not on origin/main")
+        self.assertIn("nor on bench-base", line_of(applied, fresh))
+
+    def test_delete_branch_refuses_a_branch_at_the_checkout_branch_tip(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        self.lab.git(self.lab.main, "branch", "feature/cut-from-bench", "bench-base")
+        repo = load_script_module().Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"),
+                                         str(self.lab.main), "bench-base", self.lab.tip("bench-base"))
+
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "feature/cut-from-bench")
+
+        self.assertIn("is not on", deletion.failure)
+        self.assertIn("feature/cut-from-bench", self.lab.branches())
+
+    def test_the_list_header_names_the_checkout_branch_when_it_is_a_second_target(self):
+        self.working_branch_lab()
+
+        listed = self.lab.prune()
+
+        self.assertTrue(listed.stdout.startswith("compare ref: origin/main ("), listed.stdout)
+        self.assertIn("also merged into: bench-base\n", listed.stdout)
+
+    def test_a_dirty_worktree_merged_into_the_checked_out_branch_is_kept(self):
+        merged, _unmerged = self.working_branch_lab()
+        (merged / "scratch.txt").write_text("dirty\n")
+
+        applied = self.lab.prune("--apply")
+
+        self.assertTrue(merged.exists())
+        self.assertTrue(line_of(applied, merged).startswith("keep"), line_of(applied, merged))
+        self.assertIn("uncommitted changes", line_of(applied, merged))
+        self.assertIn("feature/lane-a", self.lab.branches())
+
+    def test_a_lane_is_kept_without_a_second_ref_when_the_main_checkout_is_detached(self):
+        _merged, unmerged = self.working_branch_lab()
+        self.lab.git(self.lab.main, "checkout", "-q", "--detach")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(unmerged, "feature/lane-b", applied, "commits not on origin/main")
+        self.assertNotIn("nor on", line_of(applied, unmerged))
+
+    def test_branch_mode_does_not_delete_a_branch_merged_only_into_the_checked_out_branch(self):
+        self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
+        self.lab.commit(self.lab.main, "bench.txt")
+        self.lab.git(self.lab.main, "branch", "feature/behind-bench", "bench-base")
+
+        applied = self.lab.prune("--branches", "--apply")
+
+        self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+        self.assertIn("feature/behind-bench", self.lab.branches())
+
+
 class KeptTreeTest(PruneTestCase):
+    def test_a_keep_on_the_default_branch_checkout_names_only_the_compare_ref(self):
+        tree = self.lab.lane("lane-a", commits=1)
+
+        applied = self.lab.prune("--apply")
+
+        self.assertIn("commits not on origin/main", line_of(applied, tree))
+        self.assertNotIn("nor on", line_of(applied, tree))
+
     def test_a_squash_merged_branch_is_kept_with_its_commit_count(self):
         tree = self.lab.lane("lane-a", commits=1)
         self.lab.git(self.lab.main, "merge", "-q", "--squash", "feature/lane-a")

@@ -22,7 +22,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Evidence
 
-`tests/scripts/test_single_caller_census.py` builds real git repos and checks each kind, its negative cases, untracked files, renames and sha256 repos. `test_review_loop_prompts.py` and `test_refactor_flow.py` check that the smell-reviewer prompt and branch-prep carry the list.
+`tests/scripts/test_single_caller_census.py` builds real git repos and checks each kind, its negative cases, untracked files, renames, sha256 repos and a file too deep to visit. `test_review_loop_prompts.py` and `test_refactor_flow.py` check that the smell-reviewer prompt and branch-prep carry the list.
 
 ## Result
 

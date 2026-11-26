@@ -478,6 +478,19 @@ def new_helper(value):
         self.assertEqual(len([note for note in result.notes if "TypeScript" in note]), 1, result.notes)
         self.assertTrue(any("broken.py" in note and "did not parse" in note for note in result.notes), result.notes)
 
+    def test_a_file_too_deep_to_visit_is_noted_and_the_rest_is_still_read(self):
+        base = make_repo(self.directory.name, BRANCH_SOURCE, BRANCH_SOURCE)
+        deep_chain = " + ".join(['"a"'] * 600)
+        source = f"def lone(value):\n    return existing(value)\n\n\nTOTAL = {deep_chain}\n"
+        write(self.directory.name, "deep.py", source)
+        git(self.directory.name, "add", ".")
+        git(self.directory.name, "commit", "-q", "-m", "deep")
+        result = single_caller_census.census(self.directory.name, base)
+        names = [entry.name for entry in result.entries]
+        self.assertIn("forwarder", names)
+        self.assertNotIn("lone", names, "a half-visited file leaves no entries")
+        self.assertTrue(any("deep.py" in note and "did not parse" in note for note in result.notes), result.notes)
+
     def test_many_typescript_files_make_one_bounded_note(self):
         make_repo(self.directory.name, BRANCH_SOURCE, BRANCH_SOURCE)
         for number in range(20):

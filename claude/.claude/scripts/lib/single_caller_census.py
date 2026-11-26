@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """single_caller_census.py: the dead weight a branch adds to Python code, listed for a reviewer to judge.
 
-Three kinds: a function the branch added that only forwards a call and has one caller, a record field the branch
+Three kinds: a function the branch added whose body (docstring aside) is one `return` or one call statement, with
+one caller, a record field the branch
 added that no code reads, and a helper the branch added whose every caller also calls a newer helper with every
 argument it passes the helper. References are counted by name over every Python file git lists, so a census is a
 list of suspects: the reviewer decides. Standard library plus changed_lines, source_text and script_utils, which sit
@@ -186,15 +187,31 @@ def _build_index(repo, paths):
         if not file_path.is_file():
             continue
 
+        # A deeply nested expression overflows the visitor's recursion, so the visit sits inside the try too. The
+        # file is read into its own Index, merged only after the visit finishes, so a failed visit leaves no entries.
+        file_index = Index()
         try:
             source = file_path.read_bytes().decode("utf-8")
             tree = ast.parse(source)
-        except (SyntaxError, ValueError, OSError) as error:
+            _Collector(relative, file_index).visit(tree)
+        except (SyntaxError, ValueError, OSError, RecursionError) as error:
             index.unparsed.append(f"{relative}: {error}")
             continue
 
-        _Collector(relative, index).visit(tree)
+        _merge_index(index, file_index)
     return index
+
+
+def _merge_index(index, file_index):
+    """Add everything one file's Index holds to the whole-repo Index."""
+    for name, references in file_index.references.items():
+        index.references[name].extend(references)
+    for caller, calls in file_index.calls_in.items():
+        index.calls_in[caller].extend(calls)
+    index.definitions.extend(file_index.definitions)
+    index.classes.extend(file_index.classes)
+    index.read_attributes |= file_index.read_attributes
+    index.strings |= file_index.strings
 
 
 def _unparsed_note(unparsed):

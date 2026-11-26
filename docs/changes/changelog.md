@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1246 changes
+1247 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -83,6 +83,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [test_zshrc stubs atuin so no detached job recreates the temp home](notes/2026-11-25-test-zshrc-stubs-atuin-so-no-detached-job.md) [method/test-suite] The zshrc test puts a no-op atuin on PATH, so atuin's init starts no detached job that recreates the temp home while cleanup removes it, and the full suite stops failing this file under load.
 * [stage run counts an already-staged deletion as staged](notes/2026-11-25-stage-run-counts-an-already-staged-deletion-as.md) [skill/stage] stage --run no longer aborts when a SAFE deletion was already staged with git rm; it counts it as staged and stages the rest.
 * [phase_start resume after a ticked phase starts a new record at HEAD](notes/2026-11-25-phase-start-resume-after-a-ticked-phase-starts-a.md) [script/phase-start, skill/code] `phase_start.py --resume` after a commit that ticked a phase in a plan's Phase Status prints HEAD as the base and writes a new start record, so the next phase no longer reviews against the previous phase's start.
+* [Lanes open with no console tab: herdr-dev --headless skips the three shells](notes/2026-11-25-lanes-open-with-no-console-tab-herdr-dev-headless.md) [script/herdr-dev] A lane started by herdr-worktree --fork or herdr-lane-resume opens with its claude pane alone: herdr-dev --headless no longer builds the console tab of three idle shells.
 * [Full check names its own memory-capped scope unit](notes/2026-11-25-full-check-names-its-own-memory-capped-scope-unit.md) [script/memory-cap-scope, script/check-output, script/full-check] A check command that starts with the capped systemd-run prefix now runs inside the full check's own capped scope, where before both scopes got one unit name and the check never started.
 * [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them.
 * [Announced-step gate passes a report promise after a background launch](notes/2026-11-25-announced-step-gate-passes-a-report-promise-after.md) [script/staged-claim-gate] The Stop hook's announced-step check lets a first-person promise to report on background work (bring back, report, rank, summarize) end the turn when that turn launched the work.

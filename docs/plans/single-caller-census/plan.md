@@ -97,7 +97,7 @@ the census entry.
 
 - 2026-11-26: Keep plan as written. Ruled by the session, not the user at 2026-11-26 00:29.
 
-  The ruling: Run ruling stands: census_base stays at HEAD and review_loop_script.py is out of lane; plan.md:32-34 (the "Added lines" bullet) already reworded to change_added_ranges.
+  The ruling: Run ruling stands: census_base stays at HEAD and review_loop_script.py is out of lane; plan.md:31-33 (the "Added lines" bullet) already reworded to change_added_ranges.
 
   The disagreement:
   PLAN-IMPACT: docs/plans/single-caller-census/03-decisions.md, ruling "AC4 holds in the loop's default mode". In that mode the census can never list a superseded-helper entry (Ask above). So AC3/AC4 do not hold end-to-end in the review loop until `census_base` gets the review base or the ordering rule changes.

@@ -36,6 +36,6 @@
   `shape_clones`, which `change_added_ranges` cannot produce; folding them is a follow-up. The
   `detect_renames`/`no_renames` guard is dropped with its test: no caller passes both.
 - Ruling by session feature/single-caller-census at 2026-11-26 (lane review asks, round 4): the plan deviation now
-  cites plan.md:32-34 (applied by the session). The quoted `+++` name decode in `diff_ranges.py` is rejected and
+  cites plan.md:31-33 (applied by the session). The quoted `+++` name decode in `diff_ranges.py` is rejected and
   reverted with its test and the `test_uncommitted_change.py` edit: only a reviewer raised it, it changed a merged-in
   script's output, and it duplicated `source_text._header_path`.

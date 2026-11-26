@@ -14,7 +14,8 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                failed N. A tree whose worktree went but whose branch could not
                be deleted counts as removed and as failed, with the reason.
                Exit 1 when any step failed.
-  --branches   list merged local branches that have no worktree entry (a
+  --branches   list local branches merged into the compare ref (not into the
+               main checkout's branch) that have no worktree entry (a
                prunable entry counts as one). With --apply, delete each. Never
                the default branch, never a branch that a worktree entry has
                checked out, never the branch of a rebase or bisect in progress
@@ -35,15 +36,18 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                extra arguments exits 2 with the usage.
 
 A branch is deleted with `git update-ref -d refs/heads/<name> <tip>` on the tip
-just checked as an ancestor of the compare ref, never forced: git refuses when
+just checked as an ancestor of the compare ref or of the branch the main
+checkout has checked out, never forced: git refuses when
 the tip moved in between. Then its `branch.<name>` config section is removed.
 A branch whose tip is ahead of its own upstream is still deleted when the
-compare ref holds it; its list line says so.
+compare ref or the main checkout's branch holds it; its list line says so.
 
 Run it from the main checkout or any linked worktree of a repo. Every mode
 first runs `git fetch --quiet origin <default branch>` (list mode too: it
 updates only the remote-tracking ref origin/<default branch>) and compares with
-that ref. They stop, remove nothing and exit 1 when there is no git repo, no
+that ref. Worktree mode, --check and the delete check also accept the branch
+the main checkout has checked out; --branches lists compare-merged branches
+only. They stop, remove nothing and exit 1 when there is no git repo, no
 origin remote, no refs/remotes/origin/HEAD (`git remote set-head origin
 --auto`) or origin cannot be fetched.
 
@@ -53,7 +57,8 @@ reason is printed:
     runs from, not one that holds the working directory;
   - its folder exists, it is not locked, not detached, not bare;
   - its branch is not the default branch and its tip is an ancestor of the
-    compare ref (a squash or rebase merge looks unmerged: check by hand);
+    compare ref or of the branch the main checkout has checked out, when it is
+    on a branch (a squash or rebase merge looks unmerged: check by hand);
   - git status is clean (ignored files do not count), no submodule, no nested
     repository at any depth inside an ignored folder;
   - no stash entry was made on its branch (an entry that names no branch counts
@@ -94,6 +99,8 @@ from worktree_git import (
     git,
     inside,
     list_worktrees,
+    merged_into,
+    not_on_text,
     real,
     run,
     show,
@@ -460,14 +467,15 @@ def check_lane_open(repo, world, tree):
 
 
 def check_merged(repo, world, tree):
-    asked = git(repo.main_path, "merge-base", "--is-ancestor", tree.head, repo.compare_hash)
-    if asked.returncode == 0:
+    verdict = merged_into(repo, tree.head)
+    if verdict.target is not None:
         return None
-    if asked.returncode != 1:
-        return Keep(CANNOT_CHECK, f"git merge-base failed: {asked.stderr.strip()}")
-    counted = git(repo.main_path, "rev-list", "--count", f"{repo.compare_hash}..{tree.head}")
+    if verdict.error is not None:
+        return Keep(CANNOT_CHECK, verdict.error)
+    target_hashes = [target_hash for _, target_hash in repo.merge_targets()]
+    counted = git(repo.main_path, "rev-list", "--count", tree.head, "--not", *target_hashes)
     count = counted.stdout.strip() if counted.returncode == 0 else "an unknown number of"
-    return Keep(NOT_MERGED, f"{count} commits not on {repo.compare_name}; a squash or rebase merge looks "
+    return Keep(NOT_MERGED, f"{count} commits not on {not_on_text(repo)}; a squash or rebase merge looks "
                             "the same, check by hand")
 
 
@@ -590,8 +598,14 @@ def start_up():
     except OSError as error:
         raise PruneError(f"cannot read the working directory: {error}") from error
     cwd_real = real(cwd)
-    main_path = list_worktrees(None)[0].path
-    return Repo(main_path, default_branch, f"origin/{default_branch}", resolved.stdout.strip(), cwd_real)
+    main_tree = list_worktrees(None)[0]
+    checkout_name = None
+    checkout_hash = None
+    if main_tree.branch is not None:
+        checkout_name = main_tree.branch
+        checkout_hash = main_tree.head
+    return Repo(main_tree.path, default_branch, f"origin/{default_branch}", resolved.stdout.strip(), cwd_real,
+                checkout_name, checkout_hash)
 
 
 # ---- worktree mode ----

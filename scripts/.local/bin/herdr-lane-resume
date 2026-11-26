@@ -28,8 +28,8 @@
 #               nothing but the origin/<default> ref, for the main checkout, several
 #               linked worktrees of that name, a working claude agent, or any tree that
 #               `herdr-worktree-prune --check <worktree>` would keep (a detached
-#               HEAD, the default branch, a branch not merged into
-#               origin/<default> (a squash or rebase merge reads as unmerged),
+#               HEAD, the default branch, a branch merged into neither
+#               origin/<default> nor the main checkout's branch (a squash or rebase merge reads as unmerged),
 #               uncommitted changes, a submodule, a nested repo, a stash entry,
 #               a lock), or a check that fails; the message carries prune's reason.
 #               Otherwise the same close and prune, minus the entry remove.

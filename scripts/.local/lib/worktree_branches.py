@@ -5,7 +5,7 @@ import dataclasses
 import os
 import pathlib
 
-from worktree_git import HEADS_PREFIX, PruneError, Tally, git, list_worktrees, show
+from worktree_git import HEADS_PREFIX, PruneError, Tally, git, list_worktrees, merged_into, not_on_text, show
 
 # ---- branch deletion (both modes) ----
 
@@ -41,7 +41,10 @@ def ahead_text(repo, name):
     held = git(repo.main_path, "merge-base", "--is-ancestor", tip, upstream.stdout.strip())
     if held.returncode != 1:
         return ""
-    return f"  ahead of its own remote branch, fully on {repo.compare_name}"
+    verdict = merged_into(repo, tip)
+    if verdict.target is None:
+        return ""
+    return f"  ahead of its own remote branch, fully on {verdict.target}"
 
 
 def remove_branch_config(repo, name):
@@ -56,18 +59,19 @@ def remove_branch_config(repo, name):
 
 
 def delete_branch(repo, name):
-    """Delete refs/heads/<name> with `git update-ref -d` on the tip just proven an ancestor of the compare hash.
+    """Delete refs/heads/<name> with `git update-ref -d` on the tip just proven an ancestor of the compare hash
+    or of the main checkout's branch.
 
     Git refuses the delete when the tip moved after the check. Never `branch -D`, never a delete without the old
     value. Only that one ref is named, so `fix/a` never touches `fix/a-b`."""
     tip = branch_tip(repo, name)
     if tip is None:
         return BranchDeletion(failure="the branch ref cannot be read (already gone?)")
-    held = git(repo.main_path, "merge-base", "--is-ancestor", tip, repo.compare_hash)
-    if held.returncode == 1:
-        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {repo.compare_name}")
-    if held.returncode != 0:
-        return BranchDeletion(failure=f"git merge-base failed: {held.stderr.strip()}")
+    verdict = merged_into(repo, tip)
+    if verdict.error is not None:
+        return BranchDeletion(failure=verdict.error)
+    if verdict.target is None:
+        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {not_on_text(repo)}")
     deleted = git(repo.main_path, "update-ref", "-d", f"{HEADS_PREFIX}{name}", tip)
     if deleted.returncode != 0:
         return BranchDeletion(failure="git update-ref -d refused (the tip moved or the ref is locked): "

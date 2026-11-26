@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-794 fix notes
+795 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -64,6 +64,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
+| script/herdr-lane-resume | 5 | 5 |
 | script/herdr-worktree-watch | 5 | 4 |
 | script/lane-status | 5 | 5 |
 | script/loop-transcript | 5 | 2 |
@@ -82,7 +83,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/bash-safety-gate | 4 | 0 |
 | script/fork-children | 4 | 4 |
 | script/herdr-dev | 4 | 2 |
-| script/herdr-lane-resume | 4 | 4 |
 | script/log-scan | 4 | 0 |
 | script/review-loop-packet | 4 | 1 |
 | script/source-paths | 4 | 0 |

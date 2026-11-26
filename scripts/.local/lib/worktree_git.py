@@ -41,6 +41,25 @@ class Repo:
     compare_name: str
     compare_hash: str
     cwd_real: str
+    # The branch the main checkout has checked out and its commit; None when main is detached or bare.
+    checkout_name: str | None = None
+    checkout_hash: str | None = None
+
+    def extra_target(self):
+        """(name, hash) of the main checkout's branch when its commit differs from the compare hash, else None."""
+        if self.checkout_name is None:
+            return None
+        if self.checkout_hash == self.compare_hash:
+            return None
+        return self.checkout_name, self.checkout_hash
+
+    def merge_targets(self):
+        """Every (name, hash) a lane's tip may be merged into: the compare ref, then the extra target."""
+        targets = [(self.compare_name, self.compare_hash)]
+        extra = self.extra_target()
+        if extra is not None:
+            targets.append(extra)
+        return targets
 
 
 @dataclasses.dataclass
@@ -135,3 +154,27 @@ def list_worktrees(main_dir):
     if listing.returncode != 0:
         raise PruneError(f"git worktree list failed: {listing.stderr.strip()}")
     return parse_worktrees(listing.stdout)
+
+
+@dataclasses.dataclass
+class MergeVerdict:
+    """`target` names the ref that holds the commit; `error` is a git failure; both None means held by none."""
+    target: str | None = None
+    error: str | None = None
+
+
+def merged_into(repo, commit):
+    """Whether `commit` is an ancestor of the compare ref or of the main checkout's branch."""
+    for name, target_hash in repo.merge_targets():
+        asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, target_hash)
+        if asked.returncode == 0:
+            return MergeVerdict(target=name)
+        if asked.returncode != 1:
+            return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
+    return MergeVerdict()
+
+
+def not_on_text(repo):
+    """'origin/main' or 'origin/main nor on bench-base': the refs a commit is missing from."""
+    names = [name for name, _ in repo.merge_targets()]
+    return " nor on ".join(names)

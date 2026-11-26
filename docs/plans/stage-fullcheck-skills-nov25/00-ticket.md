@@ -135,3 +135,28 @@ verify-branch's Clean route ends with "After the PR exists, /adr" and close-bran
 ## Done when
 - The branch-end route makes /adr a numbered step that runs once the PR exists (or prints a blocking reminder until the ADR is committed and the task dir gone).
 - A branch whose PR exists and whose task dir still exists is reported as not finished.
+
+---
+
+# Machine froze with no OOM kill and no record of which process held the memory
+
+Source: ~/agent-evals/queue/machine-froze-with-no-oom-kill-and-no-record-of.md
+
+---
+type: "QueueItem"
+title: "Machine froze with no OOM kill and no record of which process held the memory"
+description: "A memory sample log lets the next freeze name its holder, and closing finished lanes frees the idle Claude panes that herdr restores"
+generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T20:35:50-06:00"}
+kind: "chore"
+status: "running"
+rank: 2120
+blocked_by: []
+source: "claude/.claude/scripts/tools/lane_status.py"
+components: ["script/lane-status"]
+---
+
+## Context
+2026-11-24 20:25 the machine froze and was reset. The previous boot's kernel log has no global OOM kill: only four deliberate 64 MB cgroup kills from a test. Swap was 3 GB, so the box thrashed instead of killing. The only test running was one capped 8G scope. Nothing recorded which processes held memory. Three minutes after reboot, herdr had restored 21 workspaces and 22 Claude processes already held 7.5 GB, most of them in finished, idle lanes. The fixed hunk viewer cap landed on master that morning, but viewers started earlier ran the old code.
+
+## Done when
+A user timer samples the top memory holders (RSS by command and herdr workspace) every minute into a rotating file, and lane-status names finished idle lanes with their Claude RSS. A test feeds a fake process table and checks both outputs. What it lets the toolkit delete: nothing.

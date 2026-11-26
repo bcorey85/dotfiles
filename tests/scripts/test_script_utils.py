@@ -37,6 +37,20 @@ class IsIntTest(unittest.TestCase):
                 self.assertIs(script_utils.is_int(value), expected)
 
 
+class LargestEntriesTest(unittest.TestCase):
+    def test_keeps_the_largest_totals_and_sorts_ties_by_key(self):
+        totals = {"b": 5, "a": 5, "c": 9, "d": 1}
+
+        self.assertEqual([("c", 9), ("a", 5)], script_utils.largest_entries(totals, 2, size=lambda total: total))
+
+    def test_size_reads_the_sort_value_out_of_a_compound_total(self):
+        totals = {"x": (1, "p"), "y": (7, "q")}
+
+        top = script_utils.largest_entries(totals, 1, size=lambda total: total[0])
+
+        self.assertEqual([("y", (7, "q"))], top)
+
+
 class PathIsUnderTest(unittest.TestCase):
     def test_a_path_is_under_its_prefix_or_equal_to_it_but_not_under_a_sibling_that_shares_the_start(self):
         self.assertTrue(script_utils.path_is_under("task", "task"))
@@ -593,6 +607,38 @@ class GitOutputTest(unittest.TestCase):
         listing = script_utils.git_output(self.repo, "ls-files", "--others", "-z")
 
         self.assertEqual(name + b"\0", os.fsencode(listing))
+
+
+class RemoteDefaultBranchTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+    def test_origin_head_set_to_trunk_gives_origin_trunk(self):
+        subprocess.run(["git", "-C", str(self.repo), "symbolic-ref", "refs/remotes/origin/HEAD",
+                        "refs/remotes/origin/trunk"], check=True)
+
+        self.assertEqual("origin/trunk", script_utils.remote_default_branch(self.repo, RuntimeError))
+
+    def test_origin_head_not_set_gives_none(self):
+        self.assertIsNone(script_utils.remote_default_branch(self.repo, RuntimeError))
+
+    def test_a_folder_outside_any_repo_raises_the_passed_error_type(self):
+        # A folder that does not exist cannot sit inside an enclosing repo, whatever TMPDIR is.
+        missing = self.repo / "missing"
+
+        with self.assertRaises(KeyError):
+            script_utils.remote_default_branch(missing, KeyError)
+
+    def test_origin_head_holding_a_detached_ref_gives_none(self):
+        head = subprocess.run(["git", "-C", str(self.repo), "hash-object", "-w", "--stdin"], input="x",
+                              capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(self.repo), "update-ref", "--no-deref", "refs/remotes/origin/HEAD", head],
+                       check=True)
+
+        self.assertIsNone(script_utils.remote_default_branch(self.repo, RuntimeError))
 
 
 class RepoFilePathsTest(unittest.TestCase):

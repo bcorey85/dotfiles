@@ -663,6 +663,17 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
     return finished
 
 
+def remote_default_branch(folder, error_type):
+    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set.
+    Raises error_type when git fails for any other reason."""
+    argv = ["git", "-C", str(folder), "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+    finished = run_or_raise(argv, error_type, check=True, ok_codes=(0, 1))
+    name = finished.stdout.strip()
+    if finished.returncode != 0 or not name:
+        return None
+    return name
+
+
 def repo_root(cwd, timeout=None):
     """The top level of the git work tree that holds cwd, or None outside one."""
     top = git_output(cwd, "rev-parse", "--show-toplevel", timeout=timeout)
@@ -1532,6 +1543,11 @@ def append_jsonl(path, row):
         os.write(descriptor, line)
     finally:
         os.close(descriptor)
+
+
+def largest_entries(totals, limit, size):
+    """The `limit` (key, total) pairs of the dict `totals` whose `size(total)` is largest; ties sort by key."""
+    return sorted(totals.items(), key=lambda pair: (-size(pair[1]), pair[0]))[:limit]
 
 
 def can_append(path):

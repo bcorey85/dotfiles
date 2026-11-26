@@ -10,3 +10,5 @@
 - **AC8** — The branch-end route of /verify-branch and /close-branch makes /adr a numbered step that runs once the PR exists. (Phase 5)
 - **AC9** — A branch whose PR exists and whose task dir still exists is reported as not finished by `adr_flow.py status`. (Phase 5)
 - **AC10** — `bash tests/run.sh` passes.
+- **AC11** — A user timer samples the top memory holders (RSS by command and herdr workspace) every minute into a rotating file; a test feeds a fake process table and checks the sample. (Phase 6)
+- **AC12** — `lane-status` names finished idle lanes with their Claude RSS; a test feeds a fake process table and checks it. (Phase 6)

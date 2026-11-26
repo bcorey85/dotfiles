@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-762 fix notes
+767 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -22,7 +22,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/coder-gate | 32 | 9 |
 | script/full-check | 30 | 6 |
 | script/plan-format | 28 | 8 |
-| script/script-utils | 27 | 5 |
+| script/script-utils | 28 | 6 |
 | script/review-loop | 24 | 7 |
 | script/shell-write-gate | 24 | 4 |
 | script/quality-check-cap | 22 | 4 |
@@ -38,10 +38,10 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 4 |
 | script/log-review-finding | 12 | 0 |
+| script/verify-common | 12 | 2 |
 | script/criteria-dry-run | 11 | 4 |
 | script/log-escape | 11 | 2 |
 | script/refactor-flow | 11 | 3 |
-| script/verify-common | 11 | 1 |
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
@@ -63,6 +63,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
+| script/lane-status | 5 | 5 |
 | script/open-child-gate | 5 | 0 |
 | script/phase-start | 5 | 3 |
 | script/run-sh | 5 | 1 |
@@ -72,6 +73,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
+| script/check-discovery | 4 | 2 |
 | script/herdr-dev | 4 | 2 |
 | script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
@@ -85,7 +87,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | skill/eng-spec | 4 | 0 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
-| script/check-discovery | 3 | 1 |
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
@@ -93,7 +94,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/gate-commands | 3 | 2 |
 | script/herdr-lane-resume | 3 | 3 |
 | script/hunk-review-pane | 3 | 3 |
-| script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
@@ -175,10 +175,12 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-wake-limited | 1 | 0 |
 | script/hook-local-row | 1 | 0 |
 | script/human-turn-lookup | 1 | 1 |
+| script/install-memory-sample | 1 | 1 |
 | script/install-stow | 1 | 0 |
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
+| script/memory-sample | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |
@@ -186,6 +188,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |
 | script/pre-commit | 1 | 1 |
+| script/process-table | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/reply-json | 1 | 0 |
@@ -219,7 +222,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | shared/review-fork-run | 1 | 1 |
 | shared/review-loop | 1 | 1 |
 | shared/reviewer-calibration | 1 | 0 |
+| skill/adr | 1 | 1 |
 | skill/architect-core | 1 | 1 |
 | skill/close-branch | 1 | 0 |
+| skill/fix | 1 | 1 |
 | skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |

@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1190 changes
+1195 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md) [script/memory-sample, script/process-table, script/lane-status, script/install-memory-sample] A per-minute memory sample log names the top RSS holders by command and herdr workspace, and lane-status --git marks merged lanes with an idle agent as finished idle with their Claude RSS.
+* [adr runs after the PR and adr_flow status reports a branch not finished](notes/2026-11-25-adr-runs-after-the-pr-and-adr-flow-status-reports.md) [skill/adr, skill/verify-branch, skill/close-branch, skill/branch-recap] adr_flow.py status reports a branch whose PR exists and whose task dir remains as not finished, and the branch-end skills run /adr as a numbered step after the PR.
+* [lane-status --git prints each lane's branch state](notes/2026-11-25-lane-status-git-prints-each-lane-s-branch-state.md) [script/lane-status, script/script-utils, script/verify-common] lane-status --git prints each open lane's branch, merged or ahead/behind against origin's default branch, dirty file count and reports_to.
 * [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.
 * [a merge that adds a script links it from ~/.local/bin](notes/2026-11-24-a-merge-that-adds-a-script-links-it-from-local-bin.md) [script/post-merge] A post-merge hook restows the scripts package when a merge in the stowed main checkout leaves a script unlinked.
 * [herdr-lane-resume --close closes a merged lane that has no lane file entry](notes/2026-11-24-herdr-lane-resume-close-closes-a-merged-lane-that.md) [script/herdr-lane-resume] herdr-lane-resume --close takes a lane name or a worktree path and closes a merged lane with no lane file entry, refusing an unmerged, detached, main-checkout, ambiguous or working lane.
@@ -42,6 +45,8 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [the fix skill takes its findings from its args and stops without them](notes/2026-11-25-the-fix-skill-takes-its-findings-from-its-args-and.md) [skill/fix] The fix skill, a fork that never sees the conversation, takes its findings from its args and stops at once with one line when it has none.
+* [the discovered full check skips doc paths when it picks parts](notes/2026-11-25-the-discovered-full-check-skips-doc-paths-when-it.md) [script/check-discovery] A plan doc beside frontend files no longer starts every part of the discovered full check; a docs-only diff still runs every part.
 * [stage run counts an already-staged deletion as staged](notes/2026-11-25-stage-run-counts-an-already-staged-deletion-as.md) [skill/stage] stage --run no longer aborts when a SAFE deletion was already staged with git rm; it counts it as staged and stages the rest.
 * [Commit gate denies a whole-tree pathspec in a shared clone](notes/2026-11-25-commit-gate-denies-a-whole-tree-pathspec-in-a.md) [script/git-discipline-gate] The shared-clone commit rule treats a pathspec that names the whole tree as a bare commit, so a session cannot sweep its peers' staged files in with `-- .` or `-- :/`.
 * [Review loop merges a re-raised finding and its ask](notes/2026-11-24-review-loop-merges-a-re-raised-finding-and-its-ask.md) [shared/review-loop] A run records one finding and one ask when a later round raises the same file, line and class again.

@@ -21,10 +21,11 @@ Fix five queued toolkit defects. Each script phase starts with a test that fails
 ## Phase Status
 
 - [x] Phase 1: stage --run counts an already-staged deletion as staged (risk: low)
-- [ ] Phase 2: doc paths do not widen the full check to every part (risk: low)
-- [ ] Phase 3: lane-status --git prints each lane's branch state (risk: low)
-- [ ] Phase 4: a fork skill takes its findings from its args (risk: low)
-- [ ] Phase 5: /adr is a run step at branch end, and a PR with a task dir left reads as not finished (risk: low)
+- [x] Phase 2: doc paths do not widen the full check to every part (risk: low)
+- [x] Phase 3: lane-status --git prints each lane's branch state (risk: low)
+- [x] Phase 4: a fork skill takes its findings from its args (risk: low)
+- [x] Phase 5: /adr is a run step at branch end, and a PR with a task dir left reads as not finished (risk: low)
+- [x] Phase 6: a memory sample log, and lane-status names finished idle lanes with their Claude RSS (risk: medium)
 
 ## Phase 1: stage --run counts an already-staged deletion as staged
 
@@ -116,6 +117,36 @@ Size: about 70 lines of code and 90 of test.
 - [ ] **ADR flow tests**: `python3 tests/parallel_tests.py test_adr_flow.py`
 
 Size: about 35 lines of code and 50 of test.
+
+## Plan Deviations
+
+- Phase 2 step 1: the doc-path skip sits after the shared, package and Python kind checks, not before them, so code files under a docs/ folder keep their kind; session ruled accepted, 2026-11-25. No acceptance criterion changes.
+
+## Phase 6: a memory sample log, and lane-status names finished idle lanes with their Claude RSS
+
+Added by agent-evals-c3-owner's ruling of 2026-11-25 (queue item machine-froze-with-no-oom-kill-and-no-record-of).
+
+1. New `claude/.claude/scripts/tools/memory_sample.py`: reads the process table (pid, RSS, command name, and the
+   `HERDR_WORKSPACE_ID` from each process's environment where readable), and appends one JSON line per run to a
+   rotating file under the toolkit state folder (`script_utils.state_file_path`): a timestamp, `MemAvailable`
+   (`system_resources`), and the top 15 holders as RSS summed by command name and by herdr workspace. Rotate when
+   the file passes 5 MB: keep one `.1` copy. The process table reader takes a fake table from a file named by an
+   environment variable, for tests. Linux reads `/proc`; macOS reads `ps -axo pid=,rss=,comm=` with no workspace.
+2. New `install/memory-sample`: a systemd user timer (Linux) or LaunchAgent (macOS) that runs it every minute,
+   on the `install/herdr-wake-limited` pattern; added to `./setup` beside it and listed in the repo CLAUDE.md
+   install list (the line goes to the orchestrator; a lane never edits CLAUDE.md).
+3. `lane_status.py`: a lane whose branch is merged (Phase 3's state) and whose Claude agent is idle or done is a
+   finished idle lane. `lane-status --git` marks it `finished idle` with the summed RSS of the Claude processes
+   whose working folder is inside the lane worktree, read through the same process table reader.
+4. Test first: `tests/scripts/test_memory_sample.py` feeds a fake process table and checks the sampled line (top
+   holders by command and by workspace) and the rotation; `tests/scripts/test_lane_status.py` feeds a fake table and
+   a merged idle lane and checks the `finished idle` mark and its RSS.
+
+#### Automated Verification
+
+- [ ] **Memory sample and lane status tests**: `python3 tests/parallel_tests.py test_memory_sample.py test_lane_status.py`
+
+Size: about 120 lines of code, 40 of installer and 110 of test.
 
 ## Final
 

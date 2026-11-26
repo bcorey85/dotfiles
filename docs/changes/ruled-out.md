@@ -7,12 +7,14 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-128 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+129 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 156 further findings are left out of this page.
 
 ## Rejected
 
+* 2026-11-26 [The coder's why-comment line does not cut unkept comments, so it is deleted](../../../agent-evals/findings/2026-11-26-the-coder-s-why-comment-line-adds-unkept-comments.md) - REMOVE: With the coder-core why-comment line a Sonnet coder writes 62 comment lines the gate would block over 12 runs; without it, 51, so the line comes out. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-22 [Deleting four rules the coder and reviewer already follow cuts 198 words per load with no behavior loss](../../../agent-evals/findings/2026-11-22-deleting-four-rules-the-coder-and-reviewer-already.md) - REMOVE: Four coder and reviewer rules score 8 of 8 with the rule and 8 of 8 without, so deleting them cuts about 198 words from each load and the agents behave the same. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-17 [Reuse line in architect plan steps, coder build: no hand-written sums in either arm](../../../agent-evals/findings/2026-10-17-reuse-line-in-architect-plan-steps-coder-build-no.md) - REMOVE: Reuse lines in architect plan steps changed no code: no coder hand-wrote the money sum with or without them (six payments-phase plans, one Sonnet coder each), and the rule adds 20% Opus architect output. [watch: no watch]

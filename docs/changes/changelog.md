@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1290 changes
+1291 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -69,6 +69,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Removed
 
+* [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md) [skill/coder-core] The coder-core line that asked for why-comments is deleted: the per-edit comment gate blocks those comments, and without the line the coder wrote 51 unkept comment lines in 12 runs against 62 with it.
 * [review fork review-stop.md read-first line withdrawn](notes/2026-11-26-review-fork-review-stop-md-read-first-line.md) [skill/review] The review-fork-run.md line that read an existing review-stop.md before the Write is withdrawn; no skill line ships for it.
 
 ### Fixed
@@ -1489,6 +1490,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md) - No intake number reads comment kinds the coder writes; the comment gate blocks them per edit. The opencode code-reviewer keeps its why-comment lines: opencode runs no Claude hooks, so those lines are its only guard.
 * [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) - No intake metric counts the unasked docs or test modules a review cuts.
 * [Lane rules live in one toolkit file every lane brief points at](notes/2026-11-23-lane-rules-live-in-one-toolkit-file-every-lane.md) - The run-through line ran on one TypeScript fixture; a second fixture is still owed. The reporting, ruling, toolkit-edit, memory-cap and final-report sections restate rules from orchestration.md, the global CLAUDE.md and the agent-evals CLAUDE.md, so they were not metered. No intake number reads lane stalls, since lanes run on this machine only.
 * [Mutation tester calls a mutant that does not load INDETERMINATE, never killed](notes/2026-11-23-mutation-tester-calls-a-mutant-that-does-not-load.md) - No intake number reads mutation-tester verdicts, so no edit watch can read this change at work. Stacks with no run: every stack except Django (pytest) and TypeScript (vitest).

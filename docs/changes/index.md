@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1290 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1291 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [plan-reading folds into /code and adr-template moves into the adr skill folder](notes/2026-11-26-plan-reading-folds-into-code-and-adr-template.md).
+Latest change: 2026-11-26, [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md).
 
 ## Top gains
 

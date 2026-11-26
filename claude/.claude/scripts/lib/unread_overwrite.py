@@ -17,11 +17,10 @@ import transcript_time
 
 DENY_TEXT = ("unread-overwrite: {file_path} exists and this session has not read it since it last changed "
              "({writer}). Read it first, then Edit it or Write the merged text, so the other writer's content is kept.")
-# A Claude Write or Edit result, or a Bash edit record, names a writer; a change by a process outside any live session
-# leaves none.
-NO_SESSION_WRITER = ("no live Claude session's Write, Edit or Bash edit of it was found, so it was changed by "
-                     "a process outside any live Claude session, such as an editor, a script run outside Claude "
-                     "or a session that has ended")
+# A Claude Write or Edit result, or a Bash edit record, names a writer; a Bash redirect, an editor, a script or an ended
+# session leaves none.
+NO_SESSION_WRITER = ("no live Claude session's Write, Edit or Bash edit record of it was found; a Bash command "
+                     "(this session's included), an editor, a script or an ended session changed it")
 
 
 class TranscriptStampError(ValueError):
@@ -76,7 +75,7 @@ def result_stamp(line_object, file_path, kinds, transcript):
         return transcript_time.epoch_of_timestamp(stamp_text)
     except (ValueError, AttributeError) as error:
         raise TranscriptStampError(f"{transcript}: a result of {file_path} has an unreadable timestamp {stamp_text!r}; "
-                         f"expected an ISO 8601 string such as 2026-11-15T06:22:12.305Z") from error
+                                   f"expected an ISO 8601 string such as 2026-11-15T06:22:12.305Z") from error
 
 
 def milliseconds_of_mtime(mtime):
@@ -143,7 +142,7 @@ def live_session_transcripts():
         session_id = row.get("sessionId")
         if not isinstance(session_id, str) or not session_id:
             continue
-        session_name = session_registry.session_display_name(session_id) or session_id
+        session_name = session_registry.holder_label(row)
         for transcript in session_registry.projects_dir().glob(f"*/{session_id}.jsonl"):
             found.append((transcript, session_name))
         subagents_dir = session_registry.session_subagents_dir(session_id)
@@ -194,7 +193,8 @@ def last_writer(file_path, mtime, own_transcript):
 def unread_overwrite_reason(file_path, hook):
     """The deny text for a Write of `file_path` by the session or subagent that the hook event `hook` names, else
     None. None when the target is missing, not a regular file or empty, when no transcript is named, or when the
-    session has seen the current content. Raises OSError when the transcript cannot be read."""
+    session has seen the current content. Raises OSError when the transcript cannot be read, and TranscriptStampError
+    when a result line of the path has no readable timestamp."""
     if not file_path or not hook.get("transcript_path"):
         return None
     try:

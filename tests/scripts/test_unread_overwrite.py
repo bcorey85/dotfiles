@@ -101,8 +101,11 @@ class UnreadOverwriteTest(unittest.TestCase):
     def test_a_file_no_live_session_wrote_says_so(self):
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
-        self.assertIn("no live Claude session's Write, Edit or Bash edit of it was found", reason)
-        self.assertIn("a process outside any live Claude session", reason)
+        self.assertIn("no live Claude session's Write, Edit or Bash edit record of it was found", reason)
+        self.assertIn(
+            "a Bash command (this session's included), an editor, a script or an ended session changed it",
+            reason,
+        )
 
     def test_a_write_with_no_transcript_path_passes_silently(self):
         payload = {"tool_name": "Write", "tool_input": {"file_path": str(self.shared_log), "content": "x"}}
@@ -130,7 +133,7 @@ class UnreadOverwriteTest(unittest.TestCase):
         self.transcript("first-id", [self.attachment_line(10)])
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
-        self.assertIn("no live Claude session's Write, Edit or Bash edit of it was found", reason)
+        self.assertIn("no live Claude session's Write, Edit or Bash edit record of it was found", reason)
         self.assertNotIn("first-id", reason)
 
     def test_an_attachment_that_is_not_a_file_read_counts_as_nothing(self):
@@ -188,9 +191,11 @@ class UnreadOverwriteTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "")
 
-    def bash_edit_line(self, file_path, offset_seconds):
-        """A user line as Claude Code records a Bash command that changed `file_path`."""
-        tool_result = {"stdout": "", "bashEditDiff": {"files": [{"filePath": file_path, "hunks": []}]}}
+    def bash_edit_line(self, file_path, offset_seconds, other_files=()):
+        """A user line as Claude Code records a Bash command that changed `file_path` and any `other_files`, which
+        come first in the list."""
+        edited = [{"filePath": other, "hunks": []} for other in other_files] + [{"filePath": file_path, "hunks": []}]
+        tool_result = {"stdout": "", "bashEditDiff": {"files": edited}}
         return json.dumps({"type": "user", "timestamp": stamp(offset_seconds), "toolUseResult": tool_result},
                           separators=(",", ":"))
 
@@ -203,6 +208,17 @@ class UnreadOverwriteTest(unittest.TestCase):
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
         self.assertIn("first-id", reason)
+
+    def test_a_bash_edit_of_several_files_counts_for_a_file_that_is_not_the_first(self):
+        line = self.bash_edit_line(str(self.shared_log), 30, other_files=["/some/other.md"])
+        second = self.transcript("second-id", [line])
+        self.assertIsNone(self.run_hook(self.shared_log, second))
+
+    def test_another_sessions_bash_edit_of_several_files_names_that_session(self):
+        line = self.bash_edit_line(str(self.shared_log), 10, other_files=["/some/other.md"])
+        self.transcript("first-id", [line])
+        second = self.transcript("second-id", [])
+        self.assertIn("first-id", self.run_hook(self.shared_log, second))
 
     def test_a_result_with_an_unreadable_timestamp_is_reported_not_skipped(self):
         path = str(self.shared_log)
@@ -317,7 +333,7 @@ class UnreadOverwriteTest(unittest.TestCase):
         self.transcript("gone-id", [result_line(str(self.shared_log), 10, "write")], live=False)
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
-        self.assertIn("no live Claude session's Write, Edit or Bash edit of it was found", reason)
+        self.assertIn("no live Claude session's Write, Edit or Bash edit record of it was found", reason)
         self.assertNotIn("gone-id", reason)
 
     def test_a_crash_in_the_writer_lookup_keeps_the_deny(self):
@@ -332,7 +348,7 @@ class UnreadOverwriteTest(unittest.TestCase):
         self.transcript("first-id", [result_line(str(self.shared_log), -10, "write")])
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
-        self.assertIn("no live Claude session's Write, Edit or Bash edit of it was found", reason)
+        self.assertIn("no live Claude session's Write, Edit or Bash edit record of it was found", reason)
         self.assertNotIn("first-id", reason)
 
     def test_a_write_stamped_at_the_mtime_is_named_as_the_writer(self):
@@ -363,7 +379,7 @@ class UnreadOverwriteTest(unittest.TestCase):
         self.transcript("first-id", [result_line(str(self.shared_log), 10, "read")])
         second = self.transcript("second-id", [])
         reason = self.run_hook(self.shared_log, second)
-        self.assertIn("no live Claude session's Write, Edit or Bash edit of it was found", reason)
+        self.assertIn("no live Claude session's Write, Edit or Bash edit record of it was found", reason)
 
     def test_a_non_ascii_path_read_at_the_mtime_lets_the_write_through(self):
         target = self.root / "é.md"
@@ -375,11 +391,21 @@ class UnreadOverwriteTest(unittest.TestCase):
 
     def test_a_result_in_the_same_millisecond_as_the_mtime_counts_as_seen(self):
         os.utime(self.shared_log, (FILE_MTIME + 0.1236, FILE_MTIME + 0.1236))
-        line = json.dumps({"type": "user", "timestamp": stamp(0.123),
-                           "toolUseResult": {"type": "update", "filePath": str(self.shared_log)}},
-                          separators=(",", ":"))
+        line = result_line(str(self.shared_log), 0.123, "write")
         second = self.transcript("second-id", [line])
         self.assertIsNone(self.run_hook(self.shared_log, second))
+
+    def test_a_fractional_mtime_is_floored_to_the_stamp_millisecond(self):
+        os.utime(self.shared_log, (FILE_MTIME + 0.0006, FILE_MTIME + 0.0006))
+        for offset, refused in ((0, False), (-0.001, True)):
+            with self.subTest(offset=offset):
+                line = result_line(str(self.shared_log), offset, "write")
+                transcript = self.transcript(f"floor-{refused}-id", [line])
+                reason = self.run_hook(self.shared_log, transcript)
+                if refused:
+                    self.assertIsNotNone(reason, "a result a millisecond before the mtime must be refused")
+                else:
+                    self.assertIsNone(reason, "a result in the mtime's millisecond must count as seen")
 
     def test_a_crash_in_the_check_lets_the_write_through_and_names_the_gate(self):
         payload = {"tool_name": "Write", "tool_input": {"file_path": str(self.shared_log), "content": "x"},

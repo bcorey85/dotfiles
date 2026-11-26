@@ -406,8 +406,8 @@ def diff_base(repo, base_commit):
     try:
         return merge_free_base.merge_free_base(repo, base_commit)
     except merge_free_base.MergeConflictError as error:
-        sys.exit(f"code_review_start: {error}. Resolve or revert merge {error.merge}, or pass a --base after it, "
-                 "then run this step again.")
+        sys.exit(f"code_review_start: {str(error).rstrip('.')}. Resolve or revert merge {error.merge}, "
+                 "or pass a --base after it, then run this step again.")
     except merge_free_base.MergeBaseGitError as error:
         sys.exit(f"code_review_start: the review base could not be built: {error}")
 

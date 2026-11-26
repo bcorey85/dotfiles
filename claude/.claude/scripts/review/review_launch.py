@@ -28,6 +28,7 @@ import code_wait
 import handback_hook
 import handback_store
 import hook_input
+import merge_free_base
 import plan_format
 import process_group
 import resume_review_gate
@@ -104,7 +105,8 @@ def launch_parser():
     parser.add_argument("--session-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): a session ruled on finding N of the findings file, counted "
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
-    parser.add_argument("--base", help="review every change since this ref, commits included")
+    parser.add_argument("--base", help="review every change since this ref, commits included, leaving out "
+                        "what later merge commits brought in")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root. A file "
                              f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")
@@ -184,7 +186,13 @@ def resolved_base(repo, base):
     commit = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
     if not commit:
         raise LaunchError(f"--base {base} names no commit in {repo}")
-    return commit.strip()
+    try:
+        return merge_free_base.merge_free_base(repo, commit.strip())
+    except merge_free_base.MergeConflictError as error:
+        raise LaunchError(f"--base {base}: {str(error).rstrip('.')}. Resolve or revert merge {error.merge}, or "
+                          "pass a --base that comes after it. Nothing was launched.") from error
+    except merge_free_base.MergeBaseGitError as error:
+        raise LaunchError(f"--base {base}: {str(error).rstrip('.')}. Nothing was launched.") from error
 
 
 def is_session_brief(full):
@@ -608,6 +616,9 @@ def command_launch(argv, loop_script):
         if changed:
             raise LaunchError(f"every changed file {since} was given to --ruled-out, so the review scope is empty and "
                               "no reviewer would read anything. Nothing was launched.")
+        if base:
+            raise LaunchError(f"the branch in {repo} has no changes of its own {since}, so the review scope is "
+                              "empty and no reviewer would read anything. Nothing was launched.")
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
                           "reviewer would read anything. Nothing was launched. To review committed work, launch "
                           "with --base <ref>.")

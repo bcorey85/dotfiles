@@ -138,7 +138,7 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertIn("relayed already", result.stderr)
-        self.assertIn("Skill result word for word", result.stderr)
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
 
     def test_a_rewritten_stop_relays_again(self):
         self.write_stop(STOP)
@@ -200,6 +200,8 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertFalse((self.run_folder / "relayed").exists())
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
+        self.assertNotIn("Say the Skill result word for word as your whole reply", result.stderr)
 
     def test_a_review_stop_newer_than_the_moved_aside_stop_relays_normally(self):
         self.write_stop(STOP)
@@ -219,6 +221,7 @@ class RelayTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("no stop file", result.stderr)
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
 
 
 class ReviewedTreeRelayTest(unittest.TestCase):

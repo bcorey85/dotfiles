@@ -9,8 +9,11 @@ the newer one between USER TEXT markers. When stop.prev.md (the stop.md that pha
 both stop files, the run wrote no new stop: it exits 1 and writes nothing, unless that stop is a bounced stop.md stop
 not yet relayed (below).
 A stop with a `To go on:` line waits on the user: the rule says to make no other tool call. A stop without one is a
-finished run: the rule says to go on with the skill that invoked it. The relayed stop's name and mtime go in
-<run folder>/relayed, so a second relay of the same stop exits 1 and says to relay the Skill result instead.
+finished run: the rule says to go on with the invoking skill's next step when a skill the main session is running
+invoked it, otherwise to make no other tool call. The relayed stop's name and mtime go in
+<run folder>/relayed, so a second relay of the same stop exits 1.
+Every exit 1 where the run wrote no new stop (no stop file, only a moved-aside stop.prev.md, a stop relayed
+already) prints NO_STOP_RULE on stderr.
 A relayed stop.md stop is also recorded for the session (lib/code_stop_record.py, with its `To go on:` line), and
 that line gets the repo top after its first `resume` word unless the word right after `resume` is an absolute path.
 A stop that waits on the user, in a tree whose source changed after the session's clean review (and no commit since),
@@ -49,7 +52,10 @@ RE_REVIEW_FEEDBACK = ("Re-run the review round on the current tree: files change
 RE_REVIEW_RULE = ("Do not say the stop. Run the command on the stop's `To go on:` line below with this feedback, "
                   f"then relay again.\nFeedback: {RE_REVIEW_FEEDBACK}\n")
 UNREVIEWED_NOTE = "The tree changed after the converged review; this stop is unreviewed."
-FALLBACK = "Say the Skill result word for word as your whole reply, and make no other tool call."
+NO_STOP_RULE = ("Relay the Skill result in place of a stop. When the Skill result has a `To go on:` line, it waits "
+                "on the user: say it word for word as your whole reply and make no other tool call. Otherwise the "
+                "run is finished: when a skill you are running invoked this one, go on with that skill's next step; "
+                "otherwise say the Skill result word for word and make no other tool call.")
 
 
 def newest_stop(folder):
@@ -148,18 +154,18 @@ def relay(repo):
     folder = code_wait.phase_dir(repo)
     stop = newest_stop(folder)
     if stop is None:
-        return 1, f"code_relay: no stop file in {folder}. {FALLBACK}"
+        return 1, f"code_relay: no stop file in {folder}. {NO_STOP_RULE}"
     if stop.name == PREVIOUS_STOP_FILE:
         bounced_stamp = f"{STOP_FILE} {stop.stat().st_mtime_ns}"
         if is_stamped(folder / BOUNCED_FILE, bounced_stamp) and not is_stamped(folder / RELAYED_FILE, bounced_stamp):
             return relay_bounced_stop(repo, folder, stop, bounced_stamp)
         return 1, (f"code_relay: {stop} is the stop phase_start moved aside, so this run wrote no new stop. "
-                   f"{FALLBACK}")
+                   f"{NO_STOP_RULE}")
 
     stamp = f"{stop.name} {stop.stat().st_mtime_ns}"
     relayed = folder / RELAYED_FILE
     if is_stamped(relayed, stamp):
-        return 1, f"code_relay: {stop} was relayed already, so this run wrote no new stop. {FALLBACK}"
+        return 1, f"code_relay: {stop} was relayed already, so this run wrote no new stop. {NO_STOP_RULE}"
 
     text = stop.read_text().strip()
     top = script_utils.repo_root(repo) if stop.name == STOP_FILE else None

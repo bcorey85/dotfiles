@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-836 fix notes
+837 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -83,6 +83,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | (no component) | 4 | 0 |
 | script/agent-model-guard | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
+| script/code-relay | 4 | 2 |
 | script/fork-children | 4 | 4 |
 | script/herdr-worktree-prune | 4 | 3 |
 | script/log-scan | 4 | 0 |
@@ -95,7 +96,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | rule/orchestration | 3 | 0 |
 | script/calibration-guard | 3 | 1 |
 | script/code | 3 | 0 |
-| script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 0 |
 | script/gate-commands | 3 | 0 |
 | script/hook-input | 3 | 2 |

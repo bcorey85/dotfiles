@@ -49,7 +49,7 @@ The implementation-plan artifact contract. Producer `/eng-spec`; consumers `/cod
 
 ## Reading a plan
 
-Rule and mechanics: `plan-reading.md`.
+Rule and mechanics: the `## Reading a plan` section of `~/.claude/skills/code/SKILL.md`.
 
 ## Template
 

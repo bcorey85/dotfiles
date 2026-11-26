@@ -20,7 +20,7 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 | Oracle                 | **the ticket's ACs, always** + every phase's criteria               |
 | ---------------------- | ------------------------------------------------------------------- |
-| Plan reading           | the whole plan — you are `plan-reading.md`'s exempt consumer        |
+| Plan reading           | the whole plan — you are exempt from `/code`'s phase-scoped read |
 | Automated Verification | **you run each command** and record pass/fail with real output      |
 | Manual Verification    | **you execute** what a terminal can drive; everything else is human |
 | Write access           | `Manual Verification` checkbox lines ONLY                           |

@@ -44,7 +44,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
 1. **Modifiers**: `+fast` → pass `model: "haiku"`.
 
-2. **Plan file or pasted plan**: `rg -n '^## ' <plan>` lists every section; the plan is multi-phase when more than one `## Phase N:` section exists. Read it phase-scoped per `~/.claude/skills/_shared/plan-reading.md`. `lane=eng-spec` when step 0 resolved the task input, `lane=code` otherwise; pass it to `code_review_start.py`.
+2. **Plan file or pasted plan**: `rg -n '^## ' <plan>` lists every section; the plan is multi-phase when more than one `## Phase N:` section exists. Read it phase-scoped per `## Reading a plan` below. `lane=eng-spec` when step 0 resolved the task input, `lane=code` otherwise; pass it to `code_review_start.py`.
 
    Before the first phase, run `python3 ~/.claude/scripts/code/coder_gate.py clear` to drop a gate a crashed run left behind.
 
@@ -112,6 +112,25 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
      List each ruling (the question, accepted or rejected, one-line reason) under `Asks decided` in the phase-complete block. Then proceed to the phase gates.
 
 6. **Multi-phase plans**: after `converged` or `deferred`, settle the phase-end plan impacts, then run the phase-boundary decision (step 2). Print every block with its placeholders resolved.
+
+## Reading a plan
+
+Single-phase work reads shared sections + own phase; skips sibling sections.
+
+**THREE contiguous ranges, not ten sections** — shared sections sit BEFORE Phase 0, cross-cutting AFTER the last phase:
+
+1. **Line 1 → end of `## Phase 0: Contracts`** — Overview through contracts. (No Phase 0 → line 1 → first `## Phase` heading.)
+2. **Your own `## Phase N:` section.**
+3. **`## Testing Strategy` → EOF** — also carries `Plan Deviations` and
+   `References`.
+
+**Mechanics**: `rg -n '^## ' <plan>` gives every section line number (and answers multi-phase) in one call. Subtract adjacents for the three ranges, `Read` with `offset`/`limit`. Whole-file-read-plus-mental-skip saves nothing.
+
+Sibling internals are, by construction, not your input — Phase 0 IS the coordination surface.
+
+**Depending on sibling internals is a finding, not a license to widen.** Missing Phase-0 contract or non-vertical slices — coders report `PLAN-IMPACT`, others surface it. Silent workarounds hide the authoring gap.
+
+**Whole-plan consumers exempt** (`plan-verifier` branch scope, `/test-audit`, any cross-phase auditor).
 
 ## Task
 

@@ -54,7 +54,7 @@ import plan_format
 import script_utils
 
 RESOLVE_SCRIPT = os.environ.get("ADR_RESOLVE_SCRIPT") or str(CLAUDE_DIR / "scripts" / "tools" / "resolve-task-dir.sh")
-TEMPLATE_PATH = os.environ.get("ADR_TEMPLATE") or str(CLAUDE_DIR / "skills" / "_shared" / "adr-template.md")
+TEMPLATE_PATH = os.environ.get("ADR_TEMPLATE") or str(CLAUDE_DIR / "skills" / "adr" / "adr-template.md")
 GH_COMMAND = os.environ.get("ADR_GH") or "gh"
 
 # Task-dir grammar, from every task dir under ~/dev: LED-0-telemetry-contract,

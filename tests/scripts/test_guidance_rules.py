@@ -162,6 +162,14 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("test-intent-reviewer.md", step_five)
         self.assertNotIn("Deleting pre-existing tests", text)
 
+    def test_the_code_skill_carries_the_phase_scoped_plan_read_its_step_two_names(self):
+        text = guidance_text("skills/code/SKILL.md")
+        reading_section = text.split("## Reading a plan", 1)[1].split("## Task", 1)[0]
+        self.assertIn("Read it phase-scoped per `## Reading a plan` below.", text)
+        self.assertIn("**THREE contiguous ranges, not ten sections**", reading_section)
+        self.assertIn("**Whole-plan consumers exempt**", reading_section)
+        self.assertFalse((toolkit_paths.CLAUDE_DIR / "skills/_shared/plan-reading.md").exists())
+
     def test_test_audit_carries_its_finding_log_lane_and_scope(self):
         text = guidance_text("skills/test-audit/SKILL.md")
         self.assertIn("gate=test-intent-reviewer lane=test-audit", text)

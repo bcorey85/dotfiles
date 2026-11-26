@@ -328,9 +328,9 @@ class ReviewLaunchTest(unittest.TestCase):
         second_pid = reviewer_dispatch.loop_pid(second_dir)
         self.assertTrue(process_is_running(second_pid), "the new loop was stopped")
 
-    def merged_branch(self):
-        """The repo's branch commits its own file, then merges a side branch that adds another file. Returns the
-        commit the branch started from."""
+    def merged_branch(self, own_commit=True):
+        """The repo's branch commits its own file (unless own_commit is False), then merges a side branch that adds
+        another file. Returns the commit the branch started from."""
         start = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
                                check=True).stdout.strip()
         self.git(self.repo, "checkout", "-q", "-b", "side")
@@ -338,9 +338,10 @@ class ReviewLaunchTest(unittest.TestCase):
         self.git(self.repo, "add", "side.txt")
         self.git(self.repo, "commit", "-q", "-m", "side change")
         self.git(self.repo, "checkout", "-q", "-")
-        (self.repo / "own.txt").write_text("own\n")
-        self.git(self.repo, "add", "own.txt")
-        self.git(self.repo, "commit", "-q", "-m", "own change")
+        if own_commit:
+            (self.repo / "own.txt").write_text("own\n")
+            self.git(self.repo, "add", "own.txt")
+            self.git(self.repo, "commit", "-q", "-m", "own change")
         self.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
         return start
 
@@ -358,14 +359,7 @@ class ReviewLaunchTest(unittest.TestCase):
         self.assertNotIn("side.txt", changed)
 
     def test_a_launch_base_whose_only_later_change_is_a_merge_stops_with_an_empty_scope(self):
-        start = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
-                               check=True).stdout.strip()
-        self.git(self.repo, "checkout", "-q", "-b", "side")
-        (self.repo / "side.txt").write_text("side\n")
-        self.git(self.repo, "add", "side.txt")
-        self.git(self.repo, "commit", "-q", "-m", "side change")
-        self.git(self.repo, "checkout", "-q", "-")
-        self.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        start = self.merged_branch(own_commit=False)
 
         done = self.run_launch("--base", start, edit_readme=False)
 

@@ -240,14 +240,6 @@ def work_tree_merge_base(base):
     return done.stdout.strip()
 
 
-def untracked_files(root):
-    """untracked_listing.untracked_files, with a git failure raised as RefactorFlowError."""
-    try:
-        return untracked_listing.untracked_files(root)
-    except untracked_listing.UntrackedListError as error:
-        raise RefactorFlowError(str(error)) from error
-
-
 def untracked_label(entry):
     return f"{UNTRACKED_LABEL}, {entry.kind}" if entry.kind else UNTRACKED_LABEL
 
@@ -375,7 +367,10 @@ def read_branch_span(base, opts_head, root):
         untracked = []
     else:
         diff_ref = work_tree_merge_base(base)
-        untracked = untracked_files(root)
+        try:
+            untracked = untracked_listing.untracked_files(root)
+        except untracked_listing.UntrackedListError as error:
+            raise RefactorFlowError(str(error)) from error
 
     files = labelled_span_files(diff_ref)
     files += [(entry.path, untracked_label(entry)) for entry in untracked]

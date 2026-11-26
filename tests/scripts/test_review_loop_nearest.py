@@ -68,8 +68,7 @@ class NearestFunctionsPromptTests(unittest.TestCase):
         self.root = Path(temp_dir.name)
         self.git("init", "-q")
         self.write("lib/finders.py", SHARED_HELPER_PY)
-        self.git("add", ".")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "base")
+        self.commit_all("base")
 
     def git(self, *args):
         subprocess.run(["git", *args], cwd=self.root, check=True)
@@ -101,12 +100,11 @@ class NearestFunctionsPromptTests(unittest.TestCase):
         self.write("plan/nodes.py", PRIVATE_HELPER_PY)
         self.write("plan/other.py", PRIVATE_HELPER_PY.replace("_node_from_plan", "_other_from_plan"))
 
-        request = review_loop_script.LoopRun.review_request(
-            make_review_run(self.root), ("smell-reviewer", ["plan/nodes.py"]))
+        prompt = self.prompt_of("smell-reviewer")
 
-        self.assertIn("_node_from_plan", request.prompt)
+        self.assertIn("_node_from_plan", prompt)
         # The unowned helper may still show as a neighbour (indented); it must not head an entry of its own.
-        self.assertNotIn("\n- plan/other.py", request.prompt)
+        self.assertNotIn("\n- plan/other.py", prompt)
 
     def test_a_later_round_does_not_run_the_shape_pass(self):
         self.write("plan/nodes.py", PRIVATE_HELPER_PY)

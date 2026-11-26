@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The review loop's first smell review gets the nearest-other-functions catalog that /refactor branch-prep already builds, limited to the files the smell reviewer owns. `shape_clones.catalog_shapes` is a catalog-only step (changed and added functions, then listings, uncataloged count and notes) that `branch_shapes` also uses, so the review loop never runs the pair search. One renderer (`shape_clones.catalog_lines`, which takes the heading) and one diff argument list (`lib/source_text.py` `DIFF_COMMAND_ARGS`) serve both callers. The untracked-file listing moved from `refactor_flow` to `lib/untracked_listing.py`, so the new `review/review_loop_nearest.py` imports only lib modules and `shape_clones`. A repo whose files git cannot list gives a skipped result, and the block reads as not read.
+The review loop's first smell review gets the nearest-other-functions catalog that /refactor branch-prep already builds, limited to the files the smell reviewer owns. `shape_clones.catalog_shapes` is a catalog-only step (changed and added functions, then listings, uncataloged count and notes) that `branch_shapes` also uses, so the review loop never runs the pair search. One renderer (`shape_clones.catalog_lines`, which takes the heading) and one diff argument list (`lib/source_text.py` `DIFF_COMMAND_ARGS`) serve both callers. The untracked-file listing moved from `refactor_flow` to `lib/untracked_listing.py`, with no wrapper left behind, so the new `review/review_loop_nearest.py` imports only lib modules and `shape_clones`. A repo whose files git cannot list gives a skipped result, and the block reads as not read.
 
 ## Evidence
 
@@ -26,7 +26,7 @@ A branch added private bracket-matching and split helpers while a shared module 
 
 ## Result
 
-A replay of a diff that adds a private helper resembling an exported one, under a different name and return shape, puts the pair in the smell-reviewer prompt. Before the change, the prompt named no candidate. Full suite: 6675 tests, 0 failed.
+A replay of a diff that adds a private helper resembling an exported one, under a different name and return shape, puts the pair in the smell-reviewer prompt. Before the change, the prompt named no candidate. Full suite: 6677 tests, 0 failed.
 
 ## Watch
 

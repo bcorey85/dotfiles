@@ -35,6 +35,11 @@ def projects_dir():
     return pathlib.Path.home() / ".claude" / "projects"
 
 
+def session_transcripts(session_id):
+    """Every `<session_id>.jsonl` transcript under any project folder, sorted by path."""
+    return sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
+
+
 def session_subagents_dir(session_id):
     """The `subagents` folder of a session's transcripts (first match under any project), None when it has none."""
     for folder in projects_dir().glob(f"*/{session_id}/subagents"):

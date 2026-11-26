@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Close every finished lane, so its claude and hunk panes stop holding memory.
+
+Usage: herdr-lane-sweep [-h|--help]
+
+A lane is a worktree that `herdr-worktree --fork` started, with one entry under
+${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/. herdr-worktree runs this
+sweep on every run, once its arguments and repo are checked, and herdr-wake-limited
+starts it at most once every 10 minutes. It prints one line per lane on stdout:
+`closed <name>` or `kept <name>: <reason>`.
+
+Each lane is decided in this order:
+  1. its worktree folder is gone: closed (the entry is stale);
+  2. the caller's current directory is inside the worktree: kept as "caller
+     runs inside it";
+  3. its main checkout is gone: kept;
+  4. its worktree's HEAD is not refs/heads/<branch> (detached, or on another
+     branch): kept as "worktree is not on <branch>";
+  5. the branch ref is missing in the main checkout: kept;
+  6. `git status --porcelain=v1 --untracked-files=normal` prints anything in
+     the worktree: kept;
+  7. the entry holds no base_commit (the commit the branch started from):
+     kept as "no base commit recorded". The lane is kept as "no commit since
+     base <short id>" when the branch tip is the base commit, and as "base
+     <short id> is not in the history of <branch>" when the base commit is not
+     an ancestor of the tip. Otherwise the lane is closed when the tip is an
+     ancestor of origin/<b> for some b in: origin's default branch
+     (refs/remotes/origin/HEAD) and the main checkout's current branch (when that is a branch and origin
+     has it); any other lane not merged is kept as "unmerged commits".
+     Limits of the base commit test: a lane rebased onto a newer master loses
+     its base commit from its history, so it stays open as "base <short id> is
+     not in the history of <branch>" even once merged; a lane with no work that
+     fast-forwarded onto master has a tip past its base, so it closes once that
+     tip is in origin.
+Each such b is fetched once per main checkout per run (`git fetch --quiet
+origin <b>`); a failed fetch keeps that checkout's lanes, with the reason.
+
+A lane is closed by `herdr-lane-resume --close <name>`, run from this script's
+own folder. That command refuses a lane whose claude agent is working, closes
+the workspace, removes the entry and prunes. When it exits non-zero the lane is
+kept, with its stderr as the reason, unless its entry is gone by then: the close
+ran and only the prune after it failed, so the line is `closed <name> (prune:
+<reason>)`.
+A lane merged only into the main checkout's current branch keeps its worktree
+folder and branch until its tip is on origin's default branch;
+`herdr-worktree-prune --apply` then removes it.
+
+The lane list is read with `$HERDR_LANES_CLI list`, run with the same Python as lane_list.py (default set by
+scripts/.local/lib/toolkit-tools.bash, read through scripts/.local/lib/lane_list.py).
+The whole run stops deciding lanes after 60 s (HERDR_LANE_SWEEP_DEADLINE_SECONDS
+overrides): each git call is capped by the time left, and a lane not decided by
+then is kept as "sweep deadline".
+Exit 0 when every lane was decided, closed or kept. Exit 1 when the lane list
+cannot be read or an argument is unknown.
+"""
+import os
+import pathlib
+import subprocess
+import sys
+import time
+
+BIN_DIR = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(BIN_DIR.parent / "lib"))
+import lane_list  # noqa: E402
+from first_output_line import first_output_line  # noqa: E402
+from quiet_git import run_quiet_git  # noqa: E402
+
+COMMAND_TIMEOUT_SECONDS = 120
+DEADLINE_SECONDS = float(os.environ.get("HERDR_LANE_SWEEP_DEADLINE_SECONDS", "60"))
+DEADLINE_REASON = "sweep deadline"
+
+# Monotonic time at which the run stops deciding lanes; set by main.
+sweep_deadline = float("inf")
+
+
+def seconds_left():
+    return sweep_deadline - time.monotonic()
+
+
+class SweepError(Exception):
+    """A step that keeps its lanes; the message is the reason printed on each kept line."""
+
+
+def run_git(folder, *args):
+    """Return the finished git process run in `folder`; a git that cannot start raises SweepError."""
+    left = seconds_left()
+    if left <= 0:
+        raise SweepError(DEADLINE_REASON)
+    try:
+        # Git prints file and branch names as raw bytes; replace the non-UTF-8 ones rather than crash the sweep.
+        return run_quiet_git(folder, *args, timeout=min(COMMAND_TIMEOUT_SECONDS, left), errors="replace")
+    except subprocess.TimeoutExpired as error:
+        if seconds_left() <= 0:
+            raise SweepError(DEADLINE_REASON) from error
+        raise SweepError(f"git {args[0]} did not run: {error}") from error
+    except (OSError, subprocess.SubprocessError) as error:
+        raise SweepError(f"git {args[0]} did not run: {error}") from error
+
+
+def origin_branch_names(main_checkout):
+    """The branch names (default branch first, then the current branch) that a lane may be merged into."""
+    names = []
+    default = run_git(main_checkout, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD")
+    if default.returncode == 0:
+        names.append(default.stdout.strip().removeprefix("origin/"))
+
+    current = run_git(main_checkout, "symbolic-ref", "--quiet", "--short", "HEAD")
+    current_name = current.stdout.strip()
+    if current.returncode != 0 or current_name in names:
+        return names
+
+    on_origin = run_git(main_checkout, "ls-remote", "--exit-code", "--heads", "origin",
+                         f"refs/heads/{current_name}")
+    # Exit 2 means origin answered and has no such branch; any other failure is a failed fetch of that name.
+    if on_origin.returncode == 2:
+        return names
+    names.append(current_name)
+    return names
+
+
+def fetch_compare_refs(main_checkout):
+    """Fetch each branch a lane may be merged into, and return the refs to compare with.
+
+    Raises SweepError when there is nothing to compare with or a fetch fails.
+    """
+    names = origin_branch_names(main_checkout)
+    if not names:
+        raise SweepError("no origin default branch (git remote set-head origin --auto) and no origin copy of the "
+                         "current branch")
+    refs = []
+    for name in names:
+        fetched = run_git(main_checkout, "fetch", "--quiet", "origin", name)
+        if fetched.returncode != 0:
+            raise SweepError(f"fetch of origin/{name} failed: {first_output_line(fetched.stderr)}")
+        refs.append(f"refs/remotes/origin/{name}")
+    return refs
+
+
+class CompareRefs:
+    """The refs to compare with, fetched at most once per main checkout in a run."""
+
+    def __init__(self):
+        self.results = {}
+
+    def for_checkout(self, main_checkout):
+        """The refs for `main_checkout`; raises the SweepError of the first attempt on every later call."""
+        if main_checkout not in self.results:
+            try:
+                self.results[main_checkout] = fetch_compare_refs(main_checkout)
+            except SweepError as error:
+                self.results[main_checkout] = error
+        result = self.results[main_checkout]
+        if isinstance(result, SweepError):
+            raise result
+        return result
+
+
+def base_in_history(main_checkout, tip, base_commit):
+    """True when `base_commit` is in the history of `tip`."""
+    based = run_git(main_checkout, "merge-base", "--is-ancestor", base_commit, tip)
+    if based.returncode == 0:
+        return True
+    if based.returncode == 1:
+        return False
+    raise SweepError(f"cannot compare {tip} with its base commit: {first_output_line(based.stderr)}")
+
+
+def is_merged(main_checkout, tip, compare_refs):
+    """True when `tip` is in one of `compare_refs`."""
+    for ref in compare_refs:
+        contained = run_git(main_checkout, "merge-base", "--is-ancestor", tip, ref)
+        if contained.returncode == 0:
+            return True
+        if contained.returncode != 1:
+            raise SweepError(f"cannot compare with {ref}: {first_output_line(contained.stderr)}")
+    return False
+
+
+def caller_runs_inside(worktree):
+    """True when the current directory is the worktree or below it, compared as resolved paths."""
+    try:
+        current = pathlib.Path.cwd().resolve()
+    except FileNotFoundError:
+        # A caller whose directory was removed (a prune took its worktree) sits inside no live worktree.
+        return False
+    worktree_path = pathlib.Path(worktree).resolve()
+    return current.is_relative_to(worktree_path)
+
+
+def keep_reason(lane, compare_refs):
+    """None when the lane is finished and may close, else the reason it stays open."""
+    if caller_runs_inside(lane["worktree"]):
+        return "caller runs inside it"
+
+    main_checkout = lane["main_checkout"]
+    if not pathlib.Path(main_checkout).is_dir():
+        return f"main checkout {main_checkout} is gone"
+
+    head_ref = run_git(lane["worktree"], "symbolic-ref", "--quiet", "HEAD")
+    expected_ref = f"refs/heads/{lane['branch']}"
+    if head_ref.stdout.strip() != expected_ref:
+        return f"worktree is not on {lane['branch']}"
+
+    tip_found = run_git(main_checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{lane['branch']}^{{commit}}")
+    if tip_found.returncode != 0:
+        return f"branch {lane['branch']} is missing in {main_checkout}"
+    tip = tip_found.stdout.strip()
+
+    status = run_git(lane["worktree"], "status", "--porcelain=v1", "--untracked-files=normal")
+    if status.returncode != 0:
+        return f"git status failed: {first_output_line(status.stderr)}"
+    if status.stdout.strip():
+        return "uncommitted changes"
+
+    base_commit = lane.get("base_commit")
+    if base_commit is None:
+        return "no base commit recorded"
+
+    if tip == base_commit:
+        return f"no commit since base {base_commit[:12]}"
+    if not base_in_history(main_checkout, tip, base_commit):
+        return f"base {base_commit[:12]} is not in the history of {lane['branch']}"
+    refs = compare_refs.for_checkout(main_checkout)
+    merged = is_merged(main_checkout, tip, refs)
+    return None if merged else "unmerged commits"
+
+
+def lane_entry_exists(name):
+    """True when the lane list still holds `name`; an unreadable list counts as still there."""
+    try:
+        entries = lane_list.read_lane_entries(COMMAND_TIMEOUT_SECONDS)
+    except lane_list.LaneListError:
+        return True
+    return any(entry.get("name") == name for entry in entries)
+
+
+def close_lane(name):
+    """Run `herdr-lane-resume --close`; return ("closed", note or None) or ("kept", reason)."""
+    command = [str(BIN_DIR / "herdr-lane-resume"), "--close", name]
+    # No timeout: the close waits for agents and prunes, each step bounded by the callee; a kill would orphan the prune.
+    try:
+        finished = subprocess.run(command, capture_output=True, text=True, errors="replace")
+    except (OSError, subprocess.SubprocessError) as error:
+        return "kept", f"herdr-lane-resume did not run: {error}"
+    if finished.returncode == 0:
+        return "closed", None
+    detail = "; ".join(line.strip() for line in finished.stderr.strip().splitlines())
+    detail = detail or f"herdr-lane-resume exited {finished.returncode}"
+    # The close removes the entry before it prunes, so a gone entry means only the prune failed.
+    if not lane_entry_exists(name):
+        return "closed", f"prune: {detail}"
+    return "kept", detail
+
+
+def sweep_lane(lane, compare_refs):
+    """The output line for one lane, after closing it when it is finished."""
+    name = lane["name"]
+    reason = None
+    if pathlib.Path(lane["worktree"]).is_dir():
+        try:
+            reason = keep_reason(lane, compare_refs)
+        except SweepError as error:
+            reason = str(error)
+    if reason is not None:
+        return f"kept {name}: {reason}"
+    if seconds_left() <= 0:
+        return f"kept {name}: {DEADLINE_REASON}"
+    outcome, detail = close_lane(name)
+    if outcome == "closed" and detail is None:
+        return f"closed {name}"
+    if outcome == "closed":
+        return f"closed {name} ({detail})"
+    return f"kept {name}: {detail}"
+
+
+def main(argv):
+    if argv[1:] in (["-h"], ["--help"]):
+        print(__doc__.strip())
+        return 0
+    if len(argv) > 1:
+        print(f"herdr-lane-sweep: unknown argument: {argv[1]}", file=sys.stderr)
+        return 1
+    try:
+        lanes = lane_list.read_lane_entries(COMMAND_TIMEOUT_SECONDS)
+    except lane_list.LaneListError as error:
+        print(f"herdr-lane-sweep: {error}", file=sys.stderr)
+        return 1
+    global sweep_deadline
+    sweep_deadline = time.monotonic() + DEADLINE_SECONDS
+    compare_refs = CompareRefs()
+    for lane in lanes:
+        print(sweep_lane(lane, compare_refs), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

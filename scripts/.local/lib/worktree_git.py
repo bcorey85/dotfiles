@@ -5,6 +5,8 @@ import dataclasses
 import os
 import subprocess
 
+from quiet_git import run_quiet_git
+
 HEADS_PREFIX = "refs/heads/"
 
 
@@ -60,11 +62,11 @@ def run(args, cwd=None, timeout=None, env=None):
 
 def git(directory, *args, timeout=None):
     """Run git in `directory` (the working directory when None) without prompts or optional index writes."""
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GIT_OPTIONAL_LOCKS"] = "0"
-    command = ["git"] if directory is None else ["git", "-C", directory]
-    return run([*command, *args], timeout=timeout, env=env)
+    try:
+        done = run_quiet_git(directory, *args, timeout=timeout, errors="surrogateescape")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return Result(127, "", f"git: {error}")
+    return Result(done.returncode, done.stdout, done.stderr)
 
 
 def real(path):

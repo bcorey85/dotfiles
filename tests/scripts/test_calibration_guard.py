@@ -78,9 +78,8 @@ class CalibrationGuardTest(unittest.TestCase):
             "Then verify the file is back to what you expect and remove the lock:\n"
             "  rm \"<LOCK>\"\n"
             "\n"
-            "Do not commit until this is resolved. Do not run /calibrate or dispatch\n"
-            "mutation-tester until this lock is gone — both refuse to seed on top of an\n"
-            "unrestored seed.\n"))
+            "Do not commit until this is resolved. Do not dispatch mutation-tester until\n"
+            "this lock is gone — it refuses to seed on top of an unrestored seed.\n"))
 
     def test_mutation_kind_changes_the_headline(self):
         _, text = run_hook(json.dumps({"kind": "mutation-test"}))
@@ -180,6 +179,14 @@ class LiveLockTest(unittest.TestCase):
         _, text = run_hook(owned_lock(owner_pid=dead_pid()))
         self.assertIn("UNRESTORED MUTATION SEED", text)
         self.assertIn('  cp "/state/backups/a.ts.bak" "/work/tree-b/src/a.ts"\n', text)
+
+    def test_paths_with_shell_characters_are_printed_as_one_shell_word_each(self):
+        lock = json.loads(owned_lock(owner_pid=dead_pid()))
+        lock["file"] = "src/it's $(x).ts"
+        lock["backup_path"] = "/state/backups/a $(y).ts"
+        _, text = run_hook(json.dumps(lock))
+        self.assertIn(
+            "  cp '/state/backups/a $(y).ts' '/work/tree-b/src/it'\"'\"'s $(x).ts'\n", text)
 
     def test_lock_older_than_the_timeout_is_stale_even_with_a_live_owner(self):
         _, text = run_hook(owned_lock(owner_pid=os.getpid(), age_seconds=2 * 60 * 60))

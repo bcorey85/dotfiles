@@ -30,6 +30,7 @@ from review_loop_prompt_file import (
     BASE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
+    GIVEN_BASE_KEY,
     HELD_FILES_KEY,
     NO_REVIEW_KEY,
     REVIEWER_MODEL_KEY,
@@ -150,6 +151,7 @@ def build_loop(request):
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.coder_model = header.get(CODER_MODEL_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
+    loop.given_base = header.get(GIVEN_BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)
     loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)

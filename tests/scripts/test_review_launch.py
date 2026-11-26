@@ -86,6 +86,10 @@ class ReviewLaunchTest(unittest.TestCase):
     def git(self, repo, *args):
         subprocess.run(["git", *args], cwd=repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
 
+    def head_sha(self):
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
     def loop_dirs(self, repo):
         loop_root = repo / ".git" / "review-script" / reviewer_dispatch.LOOP_FOLDER
         return sorted(loop_root.iterdir()) if loop_root.is_dir() else []
@@ -188,6 +192,78 @@ class ReviewLaunchTest(unittest.TestCase):
         relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
         self.assertEqual([relaunch[index + 1] for index, word in enumerate(relaunch) if word == "--ruled-out"],
                          ["a.py", "sub/b.py"])
+
+    def test_a_base_branch_that_moved_ahead_is_replaced_by_the_merge_base_in_the_prompt(self):
+        fork_point = self.head_sha()
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+        self.git(self.repo, "checkout", "-q", "master")
+        (self.repo / "master_only.py").write_text("moved\n")
+        self.git(self.repo, "add", "master_only.py")
+        self.git(self.repo, "commit", "-q", "-m", "master moved")
+        self.git(self.repo, "checkout", "-q", "feature")
+
+        self.launch("--base", "master")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {fork_point}$")
+        self.assertRegex(prompt_file.read_text(), r"(?m)^given-base: master$")
+
+    def test_an_ancestor_base_ref_writes_no_given_base_line(self):
+        master_commit = self.head_sha()
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+
+        self.launch("--base", "master")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {master_commit}$")
+        self.assertNotIn("given-base", prompt_file.read_text())
+
+    def test_an_ancestor_sha_base_is_used_as_given_with_no_given_base_line(self):
+        fork_point = self.head_sha()
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+
+        self.launch("--base", fork_point)
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {fork_point}$")
+        self.assertNotIn("given-base", prompt_file.read_text())
+
+    def test_a_git_failure_while_resolving_the_base_becomes_a_launch_error_naming_the_flag(self):
+        failure = review_launch.merge_free_base.MergeBaseGitError("git exploded")
+
+        with (
+            mock.patch.object(review_launch.merge_free_base, "resolve_base", side_effect=failure),
+            self.assertRaises(review_launch.LaunchError) as raised,
+        ):
+            review_launch.resolved_base(self.repo.resolve(), "HEAD")
+
+        self.assertEqual(str(raised.exception), "--base HEAD: git exploded")
+
+    def test_a_base_with_no_merge_base_stops_the_launch_with_the_recovery_command(self):
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "--orphan", "unrelated")
+        (self.repo / "other.py").write_text("other\n")
+        self.git(self.repo, "add", "other.py")
+        self.git(self.repo, "commit", "-q", "-m", "unrelated")
+        self.git(self.repo, "checkout", "-q", "master")
+
+        done = self.run_launch("--base", "unrelated")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("no merge base", done.stdout + done.stderr)
+        self.assertIn("git merge-base HEAD unrelated", done.stdout + done.stderr)
+        self.assertEqual(self.loop_dirs(self.repo), [])
 
     def test_a_launch_with_no_ruled_out_file_writes_no_ruled_out_line(self):
         self.launch()

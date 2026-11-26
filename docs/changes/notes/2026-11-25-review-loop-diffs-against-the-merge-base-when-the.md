@@ -1,0 +1,44 @@
+---
+type: "Change"
+change_type: "fixed"
+title: "Review loop diffs against the merge base when the given base has moved ahead"
+description: "A review launched with a base ref whose tip has moved past the branch now diffs against the merge base, so reviewers see only the branch's own changes instead of master's new commits as reverts."
+generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-25T03:17:41-06:00"}
+seq: 1
+kind: "fix"
+components: ["script/review-loop", "script/code-review-start"]
+evidence: ["session report"]
+watches: []
+test: "tests/scripts/test_merge_free_base.py::ResolveBaseTest::test_a_base_ahead_of_the_merge_base_resolves_to_the_merge_base"
+asked: ""
+proof: []
+unmeasured: ""
+impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
+---
+
+## Change
+
+`lib/merge_free_base.py` gains `resolve_base`, which returns a `BaseResolution`. A base that is not an ancestor of
+HEAD is replaced by `git merge-base HEAD <base>`. A base with no merge base stops the launch with the reason and the
+recovery command. `code_review_start.py` calls it before the merged-commit fold; `review_launch.py` calls it when it
+resolves `--base`. The review packet carries `given_base` only when the review base differs from the commit the given
+base names (moved to the merge base, or folded over merges), and the hand-back prints a line naming both bases.
+
+## Evidence
+
+Session report: a review launched with `--base origin/master` after master moved showed master's unmerged commits as
+reverts. Reviewers flagged a deleted test the branch never deleted, and one fix coder re-applied a master commit by hand.
+
+## Result
+
+The moved-base and no-merge-base tests fail before the change and pass after it; the ancestor-base tests guard that
+an unmoved base writes no given-base line. A base ref ahead of the merge base yields a
+diff of the branch's own changes only.
+
+## Watch
+
+None: a fix with a failing-before test.
+
+## Back-out
+
+Revert the commit; the loop again diffs against the given base's tip.

@@ -80,11 +80,23 @@ import sys
 # The shared modules sit in scripts/.local/lib; resolve() follows a stow symlink back to the repo.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
 
+import lane_list
 from worktree_branches import (
-    ahead_text, delete_branch, prune_branches,
+    ahead_text,
+    delete_branch,
+    prune_branches,
 )
 from worktree_git import (
-    PruneError, Repo, Tally, Worktree, git, inside, list_worktrees, real, run, show,
+    PruneError,
+    Repo,
+    Tally,
+    Worktree,
+    git,
+    inside,
+    list_worktrees,
+    real,
+    run,
+    show,
 )
 
 PROC_ROOT = "/proc"
@@ -354,10 +366,6 @@ def read_herdr(state):
 
 # ---- lanes ----
 
-def lanes_cli_path():
-    return os.environ.get("HERDR_LANES_CLI") or os.path.expanduser("~/.claude/scripts/tools/lanes.py")
-
-
 @dataclasses.dataclass
 class LaneRead:
     worktrees: list[tuple[str, str]] | None
@@ -366,13 +374,12 @@ class LaneRead:
 
 def read_lanes():
     """The open lanes as (name, worktree) pairs from `lanes.py list`, or None with the reason."""
-    asked = run([sys.executable, lanes_cli_path(), "list"], timeout=HERDR_TIMEOUT_SECONDS)
-    if asked.returncode != 0:
-        return LaneRead(None, f"lanes list failed: {asked.stderr.strip() or asked.returncode}")
     try:
-        entries = json.loads(asked.stdout)["lanes"]
+        entries = lane_list.read_lane_entries(HERDR_TIMEOUT_SECONDS)
         return LaneRead([(entry["name"], entry["worktree"]) for entry in entries])
-    except (ValueError, KeyError, TypeError) as error:
+    except lane_list.LaneListError as error:
+        return LaneRead(None, str(error))
+    except (KeyError, TypeError) as error:
         return LaneRead(None, f"lanes list has an unexpected answer: {error!r}")
 
 

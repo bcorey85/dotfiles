@@ -7,29 +7,29 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-789 fix notes
+795 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 174 | 8 |
+| script/code-step | 176 | 10 |
 | script/review-loop-script | 78 | 20 |
-| script/review-fix | 76 | 17 |
+| script/review-fix | 77 | 18 |
 | script/handback | 58 | 3 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
 | script/full-check | 32 | 8 |
 | script/script-utils | 30 | 8 |
-| script/plan-format | 28 | 8 |
+| script/plan-format | 29 | 9 |
 | script/review-loop | 28 | 11 |
 | script/quality-check-cap | 24 | 6 |
 | script/shell-write-gate | 24 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
+| skill/code | 20 | 2 |
 | script/shell-command | 19 | 8 |
-| skill/code | 19 | 1 |
 | script/git-discipline-gate | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
@@ -58,6 +58,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
+| script/phase-start | 6 | 4 |
 | script/pipe-shell-check | 6 | 0 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
@@ -68,7 +69,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/loop-transcript | 5 | 2 |
 | script/memory-cap-scope | 5 | 5 |
 | script/open-child-gate | 5 | 0 |
-| script/phase-start | 5 | 3 |
+| script/plan-check | 5 | 5 |
 | script/review-loop-ruled | 5 | 5 |
 | script/reviewed-tree | 5 | 3 |
 | script/run-sh | 5 | 1 |
@@ -83,7 +84,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-dev | 4 | 2 |
 | script/herdr-lane-resume | 4 | 4 |
 | script/log-scan | 4 | 0 |
-| script/plan-check | 4 | 4 |
 | script/review-loop-packet | 4 | 1 |
 | script/source-paths | 4 | 0 |
 | script/wait-loop-gate | 4 | 1 |

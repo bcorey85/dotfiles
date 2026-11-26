@@ -6,21 +6,12 @@ set -euo pipefail
 
 agent_evals_dir="${AGENT_EVALS_DIR:-$HOME/agent-evals}"
 build_changes="$agent_evals_dir/bin/build_changes.py"
-toolkit_pattern='^claude/\.claude/(agents|skills|commands|hooks|scripts)/|^claude/\.claude/CLAUDE\.md$'
-change_file_pattern='^docs/changes/notes/20[^/]*\.md$'
+hooks_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$(git rev-parse --show-toplevel)"
 
 touched_paths="$(git diff --cached --name-only)"
-toolkit_paths="$(grep -E "$toolkit_pattern" <<<"$touched_paths" || true)"
-change_files="$(git diff --cached --name-only --diff-filter=AM | grep -E "$change_file_pattern" || true)"
-
-if [[ -n "$toolkit_paths" && -z "$change_files" ]]; then
-    echo "pre-commit: the staged set changes the toolkit but stages no added or modified docs/changes/notes/20*.md file:" >&2
-    sed 's/^/  /' <<<"$toolkit_paths" >&2
-    echo "File a change file with: python3 ~/agent-evals/bin/build_changes.py new \"<title>\" --by claude-code/<model id>" >&2
-    exit 1
-fi
+git diff --cached --name-status -z --no-renames | "$hooks_dir/change-file-check"
 
 # A staged change to rule text or the skill set can strand an agent-evals rule-meter scenario or skill list entry.
 # Check the staged prose files, not the work tree, so the check sees exactly what the commit holds.

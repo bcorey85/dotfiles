@@ -2,10 +2,11 @@
 """Run the live review loop script for /code.
 
     python3 ~/.claude/scripts/code/code_review_start.py <lane> <plan> <phase> <handoff file>
-        --base <phase start sha> [--coder-model <model>] [--dry-run | --detach]
+        --base <phase start sha> [--coder-model <model>] [--ci-gate <CI run>] [--dry-run | --detach]
 
 `--coder-model` runs the loop's fix coder on that model: the prompt gets a `coder-model:` line, and a detached run
-keeps the option for its child.
+keeps the option for its child. `--ci-gate` names the CI run the caller ruled to be the test gate: the prompt gets a
+`ci-gate:` line, the loop runs no local full check, and a detached run keeps the option for its child.
 
 The base may be the start record's head (the base `phase_start.py --resume` prints), an ancestor of it (a
 merge-base), or the current HEAD when the record's head is an ancestor of it. A --base that is no ancestor of HEAD is
@@ -74,6 +75,7 @@ from code_wait import (
 )
 from review_loop_prompt_file import (
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     GIVEN_BASE_KEY,
     HELD_BY_KEY,
@@ -397,7 +399,10 @@ class ReviewScope(NamedTuple):
 
 
 SCOPE_FILE_FLAG = "--scope-file"
+# Each flag below, when absent, reads as "": the coder runs on its agent's own model (--coder-model),
+# and the loop runs the local full check (--ci-gate).
 CODER_MODEL_FLAG = "--coder-model"
+CI_GATE_FLAG = "--ci-gate"
 
 
 def read_scope(scope_file):
@@ -452,12 +457,12 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",
-                  held_changed=(), held_targeted=(), given_base=None):
+                  held_changed=(), held_targeted=(), given_base=None, ci_run=""):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
     lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it; the
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
     base too, so a phase the user committed before a resume is still reviewed. A `coder_model` adds the line that
-    runs the fix coder on it."""
+    runs the fix coder on it. A `ci_run` adds the line that makes the loop run no local full check."""
     header = ["mode: review-first", "caller: code", f"lane: {lane}", f"{REPO_KEY}: {repo}"]
     if review_base is not None:
         header.append(f"{BASE_KEY}: {review_base}")
@@ -480,6 +485,8 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
         header.append(f"{HELD_TARGETED_KEY}: {LIST_SEPARATOR.join(held_targeted)}")
     if coder_model:
         header.append(f"{CODER_MODEL_KEY}: {coder_model}")
+    if ci_run:
+        header.append(f"{CI_GATE_KEY}: {ci_run}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
     assignments = gate_env.repo_gate_env(repo, plan_or_none(plan))
@@ -595,14 +602,15 @@ def base_option(argv):
     return argv[argv.index("--base") + 1]
 
 
-def coder_model_option(argv):
-    """The model `--coder-model` names, or "" when the option is absent (the coder runs on its agent's own)."""
-    if CODER_MODEL_FLAG not in argv:
+def option_value(argv, flag):
+    """The value `flag` names, or "" when the flag is absent. A flag with no value, or one that starts with `-`,
+    exits with the usage."""
+    _rest, value = script_utils.pop_option(argv, flag)
+    if value is None:
         return ""
-    value_index = argv.index(CODER_MODEL_FLAG) + 1
-    if value_index >= len(argv):
+    if not value or value.startswith("-"):
         sys.exit(__doc__)
-    return argv[value_index]
+    return value
 
 
 def run_scope(argv, repo, base, coder_handoff, plan, phase):
@@ -625,8 +633,10 @@ def main(argv):
     coder_handoff = handoff_path.read_text()
     scope = run_scope(argv, repo, base, coder_handoff, plan, phase)
     handoff = scope.handoff
+    coder_model = option_value(argv, CODER_MODEL_FLAG)
+    ci_run = option_value(argv, CI_GATE_FLAG)
     prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base,
-                           coder_model_option(argv), scope.held_changed, scope.held_targeted, scope.given_base)
+                           coder_model, scope.held_changed, scope.held_targeted, scope.given_base, ci_run)
     if "--dry-run" in argv:
         print(prompt)
         for note in scope.notes:

@@ -26,7 +26,7 @@ still judges.
       same text are two runs.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
                        [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--plan <path>] [--file <path>]...
-                       [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
+                       [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--ci-gate <run>] [--fast|--deep]
                        [--iter N] [--fix-rounds N] [--post-cap-passes <kinds>] [--lane <lane>]
                        [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch

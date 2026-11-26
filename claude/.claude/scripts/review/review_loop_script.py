@@ -7,14 +7,16 @@
 The prompt file (review_loop_prompt_file.py holds its header keys) is header lines, a blank line, then the handoff
 block. A `findings:` line makes the run fix-first: the fix coder applies the caller's findings before any reviewer, and
 `no-review: yes` then plans no reviewer. `base:` reviews every change since that commit, `files:` only the named files,
-`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one, and `iter:` counts
-the rounds an earlier run already used.
+`reviewer-model:` runs each reviewer on that model, `coder-model:` runs the fix coder on one,
+`ci-gate:` makes the caller's CI run the test gate (no local full check runs; lint still does),
+and `iter:` counts the rounds an earlier run already used.
 The script walks a fixed graph: scope, first-round reviewers (code, plus smell and test reviewers on a large
 diff), disposition routing, one fix coder, re-review by every reviewer that filed a fix and owns a changed file
 (the smell reviewer only past the size bar), the two-round cap, the full-check execution gate, the class-closure
 check, telemetry rows, and the hand-back packet.
 The full check runs through full_check.py and writes the full-check receipt. It runs the check
-full_check.resolved_check gives; it runs none in a repo with none. On a launch with `--gates-every-run` whose session's
+full_check.resolved_check gives; it runs none in a repo with none or under a `ci-gate:` header.
+On a launch with `--gates-every-run` whose session's
 last hand-back for the repo stopped as `setup-fault`, held an environment-gap full check, or was itself an
 overridden run, the `--gate-command` test commands (stale-prose excluded) are the full check, each on its own;
 when it passes they do not run again as a gate.
@@ -25,7 +27,7 @@ full_check_gate.CHECK_TIMEOUT_SECONDS is killed with its process
 group, and a check whose step stops on a missing path is a check-command error. A check that fails on a missing
 module the repo declares as a dependency, or that exits 127 on a shell line that names a missing program, is an
 environment gap. None is a failure: the packet's `full_check` says
-`not run (CI)`, `not run (no check found; ...)`, `not run (timeout)`,
+`not run (CI)`, `not run (CI gate: <run>)`, `not run (no check found; ...)`, `not run (timeout)`,
 `not run (check-command error: ...)`, `not run (environment gap: ...)` or, when the phase's Expected red lines
 leave out the whole check, `not run (expected red until Phase <id>[, <id>...])`. An exit 0 with no runner summary, or
 that ran no test, is no failure either: it says `unverified (exit 0, no test result shown)`. So is a failure that the

@@ -26,6 +26,7 @@ Read `~/.claude/skills/_shared/review-fork-run.md` whole first and follow it. **
    - a brief file in the session scratchpad, with or without a handoff block: `--file <path>` (read as a brief for every reviewer)
    - `plan=<path>`: `--plan <path>`
    - each file the user ruled out of scope: `--ruled-out <path>`
+   - the caller ruled that a CI run is the test gate (`ci-gate=<run>`): `--ci-gate <run>`
    - `+fast`: `--fast`; `+deep`: `--deep`; `iter=N`: `--iter N`
    - `--repo <absolute path>` when the work lives outside your cwd's repo
 

@@ -7,20 +7,20 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-816 fix notes
+817 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 176 | 10 |
-| script/review-loop-script | 78 | 20 |
-| script/review-fix | 77 | 18 |
+| script/code-step | 177 | 11 |
+| script/review-loop-script | 79 | 21 |
+| script/review-fix | 78 | 19 |
 | script/handback | 58 | 3 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
+| script/full-check | 33 | 9 |
 | script/coder-gate | 32 | 9 |
-| script/full-check | 32 | 8 |
 | script/script-utils | 31 | 9 |
 | script/plan-format | 30 | 10 |
 | script/review-loop | 29 | 12 |
@@ -34,18 +34,18 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/shell-command | 19 | 8 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
-| script/code-review-start | 15 | 7 |
+| script/code-review-start | 16 | 8 |
 | script/code-wait | 14 | 5 |
 | script/verify-log | 14 | 1 |
 | script/refactor-flow | 13 | 5 |
 | script/log-review-finding | 12 | 0 |
+| script/review-launch | 12 | 7 |
 | script/verify-common | 12 | 2 |
 | script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
 | script/herdr-worktree | 11 | 5 |
 | script/inline-interpreter-hint | 11 | 7 |
 | script/log-escape | 11 | 2 |
-| script/review-launch | 11 | 6 |
 | script/review-asks | 10 | 4 |
 | script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
@@ -58,6 +58,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
 | script/check-discovery | 6 | 4 |
+| script/full-check-gate | 6 | 5 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
 | script/memory-cap-scope | 6 | 6 |
@@ -68,7 +69,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
-| script/full-check-gate | 5 | 4 |
 | script/herdr-dev | 5 | 3 |
 | script/herdr-lane-resume | 5 | 5 |
 | script/herdr-worktree-watch | 5 | 4 |

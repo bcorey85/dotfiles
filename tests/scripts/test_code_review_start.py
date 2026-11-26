@@ -718,6 +718,54 @@ class CodeReviewStartTest(unittest.TestCase):
         printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
         self.assertIn("coder-model: haiku", printed)
 
+    def test_a_ci_gate_option_writes_the_ci_gate_header_line(self):
+        done = self.start("--ci-gate", "run-42", "--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0]
+        self.assertIn("ci-gate: run-42", header.splitlines())
+
+    def test_no_ci_gate_option_writes_no_ci_gate_line(self):
+        done = self.start("--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0]
+        self.assertNotIn("ci-gate:", header)
+
+    def test_a_coder_model_option_whose_value_is_another_option_stops_with_the_usage(self):
+        done = self.start("--coder-model", "--detach")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--coder-model", done.stderr)
+        self.assertNotIn("coder-model:", done.stdout)
+
+    def test_a_ci_gate_option_with_no_value_stops_with_the_usage(self):
+        done = self.start("--dry-run", "--ci-gate")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--ci-gate", done.stderr)
+        self.assertNotIn("ci-gate:", done.stdout)
+
+    def test_a_ci_gate_option_whose_value_is_another_option_stops_with_the_usage(self):
+        done = self.start("--ci-gate", "--detach")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--ci-gate", done.stderr)
+        self.assertNotIn("ci-gate:", done.stdout)
+
+    def test_a_detached_run_keeps_the_ci_gate_for_its_child(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        environment = {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"}
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess:
+            fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
+            self.run_main(code_review_start, ["--ci-gate", "run-42", "--detach"], environment)
+        child_command = fake_subprocess.Popen.call_args.args[0]
+
+        printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
+        self.assertIn("ci-gate: run-42", printed)
+
     def test_a_run_with_no_session_id_stops_before_it_starts(self):
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
 

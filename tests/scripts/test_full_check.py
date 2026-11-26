@@ -558,6 +558,36 @@ class FullCheckTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
 
+    def test_a_caller_ci_run_replaces_the_declared_check_and_runs_no_command(self):
+        self.declare_check(f"touch {self.repo}/ran")
+
+        result, _tail, _details = full_check.run(self.repo, f"touch {self.repo}/ran", self.log, 120, receipt=False,
+                                                 ci_run="https://ci.example/runs/42")
+
+        self.assertEqual(result, full_check.caller_ci_result("https://ci.example/runs/42"))
+        self.assertTrue(result.startswith(full_check.NOT_RUN_CALLER_CI_PREFIX))
+        self.assertIn("https://ci.example/runs/42", result)
+        self.assertFalse((self.repo / "ran").exists())
+        self.assertFalse(full_check.is_failure(result))
+
+    def test_a_caller_ci_run_writes_a_satisfied_finished_receipt_row(self):
+        subprocess.run(["git", "-C", str(self.repo), "init", "-q"], check=True)
+        self.declare_check(f"touch {self.repo}/ran")
+
+        full_check.run(self.repo, f"touch {self.repo}/ran", self.log, 120, ci_run="run-7")
+
+        self.assertFalse((self.repo / "ran").exists())
+
+        started, rows = full_check_receipt.latest_run(self.repo)
+        self.assertIsNone(started["command"])
+        steps = [row for row in rows if row.get("kind") == full_check_receipt.STEP]
+        self.assertEqual(steps, [])
+        finished = [row for row in rows if row.get("kind") == full_check_receipt.FINISHED]
+        self.assertEqual(len(finished), 1)
+        self.assertTrue(finished[0]["satisfied"])
+        self.assertTrue(finished[0]["ci"])
+        self.assertEqual(finished[0]["result"], full_check.caller_ci_result("run-7"))
+
     def test_a_repo_that_declares_no_check_runs_nothing(self):
         completed = self.check(None, claude_md="# Repo\n")
 

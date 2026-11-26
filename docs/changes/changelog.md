@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1193 changes
+1194 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -28,6 +28,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Scope put-back keeps earlier fixes and needed files](notes/2026-11-25-scope-put-back-keeps-earlier-fixes-and-needed.md) [script/review-loop] The review loop keeps a file a fix pass changed outside its scope when the pass's gate needs it, and stops naming the file and the folder of its bytes for any other.
 * [Every round finding reaches a coder or an ask; a used round is refused](notes/2026-11-25-every-round-finding-reaches-a-coder-or-an-ask-a.md) [script/review-loop, script/code-wait] The review loop sends every fix finding of a round to a coder brief or an ask before the next round, and the main session's review call refuses a dispatch whose every report another agent already filled.
 * [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md) [script/review-loop, script/code-step, script/gate] The branch close pass fixes the review findings: an unreadable resume record is denied with its recovery, a put-back pass drops every approval ask it filed, and the asks block has one builder.
 * [A code resume that changed source gets a review before its stop](notes/2026-11-25-a-code-resume-that-changed-source-gets-a-review.md) [skill/code, script/code-step, script/gate] A /code resume that changed source and writes stop.md with no review loop started in the run is denied once, and the deny names the changed files.

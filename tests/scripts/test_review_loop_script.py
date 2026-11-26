@@ -4230,6 +4230,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             tool.write_text(recorder)
             tool.chmod(0o755)
         self.commit_files({"pyproject.toml": "[tool.ruff]\nline-length = 100\n", "notes.md": "# notes\n"})
+        # notes.md is part of the change under review, so the coder's edit to it is inside the pass's scope.
+        (self.repo / "notes.md").write_text("# notes\nchanged\n")
         check = f"{FAILS_ONLY_WITH_THE_DIFF}grep -q '# formatted' app.py || {{ echo 'FAIL: unformatted'; exit 1; }}"
 
         completed = self.run_script({

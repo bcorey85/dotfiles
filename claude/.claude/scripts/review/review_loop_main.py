@@ -65,6 +65,7 @@ from review_loop_script import (
     walk,
     write_telemetry,
 )
+from review_loop_stray_files import StrayFileError
 
 
 class LoopRequest(typing.NamedTuple):
@@ -213,7 +214,7 @@ def run_loop(request):
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
     except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError, RulingBrokenError,
-            RulingCheckFaultError) as error:
+            RulingCheckFaultError, StrayFileError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

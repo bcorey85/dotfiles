@@ -143,6 +143,7 @@ from review_loop_ruled import (
 from review_loop_ruling_check import RulingCheck
 from review_loop_scoped_tests import ScopedTestRuns, test_commands_of
 from review_loop_signoffs import SignoffRuns, snapshot_signoffs
+from review_loop_stray_files import StrayFiles
 from review_user_ruled import reasked_findings
 
 SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
@@ -326,7 +327,7 @@ def log_row_findings(repo, run, row, fix_ranges):
 # ---------- the loop ----------
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle,
+              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle, StrayFiles,
               full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
@@ -582,7 +583,10 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         ruling (the pass is put back), and RulingCheckFaultError when the ruling check cannot judge the pass (the
         pass stays in the tree) or git cannot list the repo files or read their index entries before the pass (the
         pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
-        which are filed as user-only asks (a repeat of a rejected ask is dropped, not filed)."""
+        which are filed as user-only asks (a repeat of a rejected ask is dropped, not filed), and StrayFileError when
+        the scope guard put back a file outside the pass's scope that the pass's gate does not show the fix needs.
+        A pass that stops on a stray file adds its changed files to files_touched before it raises; on return the
+        caller adds them."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -596,6 +600,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         try:
             scope_guard = review_loop_scope_guard.guard_pass(self.repo, self.out, call_name, allowed,
                                                              own_guard_test(signoffs), issue_texts)
+            scope_guard.gate_passes = self.stray_gate_passes
         except script_utils.GitCallError as error:
             # The pass has not started, so no file changed: keep the findings open and stop with a blocker.
             self.keep_open(findings)
@@ -632,6 +637,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
             result = without_reverted(result, reverted, stats_before)
             self.check_pass_result(call_name, result)
             self.check_rulings_kept(call_name, findings, result, ruling_backup)
+            self.stop_on_stray_files(scope_guard, findings, result)
         finally:
             self.discard_ruling_backup(ruling_backup)
 
@@ -807,10 +813,11 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         stale-prose check is no test: its hits go to the coder."""
         prose_commands = [command for command in gate_commands if coder_gate.is_stale_prose_check(command)]
         derived = not gate_commands
-        test_commands = self.derive_scoped_tests() if derived else test_commands_of(gate_commands)
+        test_commands = self.phase_test_commands(gate_commands)
         # On a loop that gates every run the gate commands are the user's named tests: an unrun one must not pass.
         run = {"stop_when_unrun": self.gates_every_run, "report_counts": derived}
         if derived and not test_commands:
+            self.scoped_tests = "not run (no test command derives for the changed files)"
             return
         if not self.run_test_commands(test_commands, **run):
             return

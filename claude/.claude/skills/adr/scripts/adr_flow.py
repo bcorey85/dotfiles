@@ -2,6 +2,7 @@
 """Fixed steps of the /adr skill in one call each.
 
   adr_flow.py prep [<path-or-ticket>]
+  adr_flow.py status [<path-or-ticket>]
   adr_flow.py check <adr-path>
   adr_flow.py finish <adr-path> [--task-dir <absolute-task-dir>] [--draft-is-current] [--keep-task-dir]
 
@@ -10,6 +11,14 @@ the ticket url, the absolute task dir, each source path with its line count,
 then the template. It never prints a source body: read the sources with Read.
 A standalone `keep` word in the argument is a trigger: prep drops it before
 resolving and adds --keep-task-dir to the finish command it prints.
+status: exit 1 with `adr: not finished` when a PR exists and the task dir
+remains or several task dirs match, or with `adr: cannot tell` (gh failed,
+detached HEAD, no task dir resolved on a branch with no ticket key, not a task
+dir, a ticket key or an argument that names no task dir that was ever
+committed); `adr: no PR yet` exits 0, and `adr: done` exits 0 when no task dir
+remains: a legacy plan, an old-style docs/eng-specs dir, or a ticket key whose
+plan folder was committed and then deleted. With no argument on a ticket-key
+branch, the key from the branch name goes through the same history check.
 check: required sections filled, no `[placeholder]`, header bullets, section
 line caps. finish: check, then delete the task dir only when it is exactly one
 slug under the repo docs/plans dir, holds only plan files, and has nothing
@@ -23,7 +32,7 @@ every task dir check and the delete, and prints the kept task dir path. Both
 flags together are accepted; --keep-task-dir wins.
 
 Env overrides (tests): ADR_RESOLVE_SCRIPT, ADR_TEMPLATE, ADR_GH.
-Exit: 0 ok, 1 usage / not a repo / check failed, 2 refused delete.
+Exit: 0 ok, 1 usage / not a repo / check failed / status not finished or cannot tell, 2 refused delete.
 """
 
 import json
@@ -110,9 +119,9 @@ def run(command, cwd=None, timeout=30):
 
 def default_branches(root):
     names = set(DEFAULT_BRANCHES)
-    origin_head = run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd=root)
-    if origin_head.returncode == 0:
-        names.add(origin_head.stdout.strip().removeprefix("origin/"))
+    origin_head = script_utils.remote_default_branch(root, RefusedError)
+    if origin_head:
+        names.add(origin_head.removeprefix("origin/"))
     return names
 
 
@@ -180,7 +189,12 @@ def ticket_url(task_dir):
     return None
 
 
-def detect_pr(root, branch):
+class GhReadError(Exception):
+    pass
+
+
+def detect_pr(root, branch, fail_on_gh_error=False):
+    """The PR url, or PENDING_PR. With fail_on_gh_error, a gh failure raises GhReadError instead of reading as no PR."""
     if not branch or branch in default_branches(root):
         return PENDING_PR
     view = run([GH_COMMAND, "pr", "view", "--json", "url", "-q", ".url"], cwd=root, timeout=20)
@@ -193,6 +207,8 @@ def detect_pr(root, branch):
         timeout=20,
     )
     if listing.returncode != 0:
+        if fail_on_gh_error:
+            raise GhReadError(f"gh failed ({listing.stderr.strip() or 'exit ' + str(listing.returncode)})")
         return PENDING_PR
     pull_requests = json.loads(listing.stdout or "[]")
     if pull_requests and str(pull_requests[0].get("url", "")).startswith("http"):
@@ -217,6 +233,25 @@ def task_dir_problem(root, task_dir):
     if not TASK_SLUG_PATTERN.match(given.name):
         return f"{given}: slug `{given.name}` does not match the task-dir grammar {TASK_SLUG_PATTERN.pattern}"
     return None
+
+
+def classify_task_dir(root, kind, resolved_lines):
+    """Return (kind, task_path, problem) for a resolve-task-dir result.
+
+    A task-dir result under docs/eng-specs becomes `old-style-dir`; a task-dir result anywhere else that is
+    not one slug under docs/plans keeps its kind and carries the problem text.
+    """
+    if kind not in ("task-dir", "legacy-plan"):
+        return kind, None, None
+    task_path = root / resolved_lines[0]
+    if kind == "legacy-plan":
+        return kind, task_path, None
+    problem = task_dir_problem(root, task_path)
+    if problem is None:
+        return kind, task_path, None
+    if Path(os.path.abspath(task_path)).parent == root / "docs" / "eng-specs":
+        return "old-style-dir", task_path, None
+    return kind, task_path, problem
 
 
 def report_header(root, branch, key):
@@ -248,13 +283,10 @@ def prep(raw_argument):
 
     branch = script_utils.current_branch(root) or ""
     kind, resolved_lines, resolve_error = resolve_task_dir(root, argument)
-    task_path = root / resolved_lines[0] if kind in ("task-dir", "legacy-plan") else None
-    task_problem = task_dir_problem(root, task_path) if kind == "task-dir" else None
+    kind, task_path, task_problem = classify_task_dir(root, kind, resolved_lines)
     if task_problem:
-        if Path(os.path.abspath(task_path)).parent != root / "docs" / "eng-specs":
-            print(f"not a task dir: {task_problem}", file=sys.stderr)
-            return 1
-        kind = "old-style-dir"
+        print(f"not a task dir: {task_problem}", file=sys.stderr)
+        return 1
     task_name = task_path.name.removesuffix(".md") if task_path else ""
     key = ticket_key_for(argument, task_name, branch.removeprefix("feature/"))
     report_lines = report_header(root, branch, key)
@@ -724,17 +756,98 @@ def finish(adr_path, task_dir_argument, draft_is_current, keep_task_dir):
     return 0
 
 
+def status_for_unresolved_argument(root, argument):
+    """Read `done` only for a committed ticket key's plan folder, or a committed plan folder path that is gone.
+
+    Anything else is a wrong argument.
+    """
+    key = argument_key(argument)
+    if key:
+        key_pathspecs = [f"docs/plans/{key}", f"docs/plans/{key}-*"]
+        history = run(["git", "log", "-1", "--format=%H", "--", *key_pathspecs], cwd=root)
+        if history.stdout.strip():
+            print("adr: done")
+            return 0
+        print(f"adr: cannot tell: {argument} names no task dir and none was ever committed")
+        return 1
+    names_existing_path = os.path.exists(argument) or os.path.exists(root / argument)
+    if not names_existing_path and task_dir_problem(root, root / argument) is None:
+        history = run(["git", "log", "-1", "--format=%H", "--", str(root / argument)], cwd=root)
+        if history.stdout.strip():
+            print("adr: done")
+            return 0
+    print(f"adr: cannot tell: {argument} names no task dir under docs/plans")
+    return 1
+
+
+def status(argument):
+    root = script_utils.repo_root(None)
+    if root is None:
+        print("adr-flow: not inside a git repository", file=sys.stderr)
+        return 1
+
+    branch = script_utils.current_branch(root) or ""
+    if not branch:
+        print("adr: cannot tell: detached HEAD; check out the PR branch")
+        return 1
+    try:
+        pr = detect_pr(root, branch, fail_on_gh_error=True)
+    except GhReadError as error:
+        print(f"adr: cannot tell: {error}")
+        return 1
+    if pr == PENDING_PR:
+        print("adr: no PR yet")
+        return 0
+
+    kind, resolved_lines, _ = resolve_task_dir(root, argument)
+    if kind == "ambiguous":
+        print(f"adr: not finished: PR {pr} exists and several task dirs match; rerun status with one path")
+        return 1
+    if kind == "none" and not argument:
+        key_slug = split_key_slug(branch.removeprefix("feature/"))
+        if key_slug:
+            return status_for_unresolved_argument(root, key_slug[0])
+        print(f"adr: cannot tell: no task dir resolved for {branch}; rerun status with the task dir path")
+        return 1
+    if kind == "none":
+        return status_for_unresolved_argument(root, argument)
+    kind, task_path, task_problem = classify_task_dir(root, kind, resolved_lines)
+    if kind != "task-dir":
+        print("adr: done")
+        return 0
+    if task_problem:
+        print(f"adr: cannot tell: not a task dir: {task_problem}")
+        return 1
+
+    print(f"adr: not finished: PR {pr} exists and task dir {task_path} remains; run /adr")
+    return 1
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("prep", "check", "finish"):
+    if len(argv) < 2 or argv[1] not in ("prep", "status", "check", "finish"):
         print(__doc__, file=sys.stderr)
         return 1
 
     verb, rest = argv[1], argv[2:]
+    if verb == "status":
+        if len(rest) > 1:
+            print("adr-flow: status takes one optional argument; quote it", file=sys.stderr)
+            return 1
+        try:
+            return status(rest[0] if rest else "")
+        except RefusedError as refusal:
+            print(f"adr-flow: {refusal}", file=sys.stderr)
+            return 1
+
     if verb == "prep":
         if len(rest) > 1:
             print("adr-flow: prep takes one optional argument; quote it", file=sys.stderr)
             return 1
-        return prep(rest[0] if rest else "")
+        try:
+            return prep(rest[0] if rest else "")
+        except RefusedError as refusal:
+            print(f"adr-flow: {refusal}", file=sys.stderr)
+            return 1
 
     if verb == "check":
         if len(rest) != 1:

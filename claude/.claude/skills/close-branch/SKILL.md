@@ -99,10 +99,20 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run)
 ### Still unstaged                (from stage.mjs, blast-radius order)
 
-Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
+Next: read the residue → run the smoke checklist → stage → /commit → open the PR → /adr <plan folder> → `adr_flow.py status <plan folder>` (`adr: done` ends the branch).
 ```
 
 Build Criteria changes from the `rg` output only. A sign-off that another session wrote, not the user, is listed as `not the user's sign-off: the criterion stands`. Write `none` only when `rg` printed no line. Any report that says whether a criterion was cut or narrowed, the hand-back included, repeats this section.
+
+## Step 7: ADR after the PR
+
+Once the PR exists, run `python3 ~/.claude/skills/adr/scripts/adr_flow.py status <plan folder>` first.
+
+- `adr: no PR yet`: end the run and leave the step to the user through the recap's Next line.
+- `adr: not finished`: run `/adr <plan folder>`, then rerun `status` once. On any line but `adr: done`, end the run and put that line under the recap's Open items.
+- `adr: cannot tell: <reason>`: end the run and put the line under the recap's Open items.
+
+The branch is not finished until `status` prints `adr: done`.
 
 ## What NOT to do
 

@@ -98,7 +98,7 @@ class GuidanceRulesTest(unittest.TestCase):
                       "items and the medium and low findings.", text)
         self.assertIn("A second fail → STOP: report the failing items and that gate's medium and low findings to "
                       "the user.", text)
-        self.assertIn("(asks, REQUIRES-MUTATION culls not run)", text)
+        self.assertIn("(asks, REQUIRES-MUTATION culls not run, Step 7's status line when it is not `adr: done`)", text)
         self.assertNotIn("gate medium and low findings", text)
 
     def test_a_brief_from_another_session_is_never_a_sign_off(self):

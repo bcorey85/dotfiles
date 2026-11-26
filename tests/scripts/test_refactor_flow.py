@@ -347,16 +347,27 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.finding_rows()[0]["diff_loc"], "2")
 
-    def test_the_log_input_example_in_the_skill_logs_on_the_first_call(self):
-        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
-        example_match = re.search(r"```json\n(.*?)```", skill_text, re.S)
-        self.assertIsNotNone(example_match, "the skill shows no JSON log input example")
-        skill_example = json.loads(example_match.group(1))
+    def test_the_log_template_in_log_help_logs_on_the_first_call(self):
+        flow = load_script_module()
+        help_done = self.flow("log", "--help")
+        self.assertEqual(help_done.returncode, 0, help_done.stderr)
+        after_start = help_done.stdout.split(flow.refactor_log_input.TEMPLATE_START + "\n", 1)[1]
+        template_text = after_start.split("\n" + flow.refactor_log_input.TEMPLATE_END, 1)[0]
+        template = json.loads(template_text)
         self.pushed_feature_branch({"src/orders.py": "x = 1\n"})
 
-        done = self.log("branch", skill_example)
+        done = self.log("branch", template)
 
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        row_kinds = sorted(row["kind"] for row in self.finding_rows())
+        self.assertEqual(row_kinds, ["finding", "run"])
+
+    def test_the_log_grammar_lives_in_refactor_log_input(self):
+        flow = load_script_module()
+        self.assertIs(flow.RefactorFlowError, flow.refactor_log_input.RefactorFlowError)
+
+    def test_refactor_flow_is_at_most_1000_lines(self):
+        self.assertLessEqual(len(SCRIPT.read_text().splitlines()), 1000)
 
     def test_branch_prep_with_no_base_passes_the_helper_stop_line_through(self):
         self.git("branch", "-m", "main", "work")
@@ -1295,6 +1306,30 @@ class RefactorFlowTest(unittest.TestCase):
         skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "close-branch" / "SKILL.md").read_text()
         self.assertIn("refactor_flow.py log", skill_text)
         self.assertIn("--mode branch", skill_text)
+
+    def test_close_branch_step_five_points_to_log_help(self):
+        skill_text = (toolkit_paths.CLAUDE_DIR / "skills" / "close-branch" / "SKILL.md").read_text()
+        self.assertIn("log --help", skill_text)
+        self.assertNotIn("refactor/SKILL.md` Step 5", skill_text)
+
+    def test_the_refactor_skill_holds_no_log_json_template(self):
+        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
+        self.assertIsNone(re.search(r"^\s*`{3}json", skill_text, re.MULTILINE))
+        self.assertNotIn("JSON as in step 5", skill_text)
+        self.assertIn("refactor_flow.py log --help", skill_text)
+
+    def test_the_refactor_skill_keeps_the_step_five_judgment_sentences_and_no_key_list(self):
+        skill_text = (SCRIPT.parent.parent / "SKILL.md").read_text()
+        for sentence in ("One entry per smell, not per file.",
+                         "Never `escape` mechanical-sweep matches or legacy targets",
+                         "a label from `escape-ratchet.md`; not `unknown`"):
+            self.assertIn(sentence, skill_text)
+        self.assertNotIn("{class, disposition", skill_text)
+        self.assertIn("**Log and hand off", skill_text)
+        self.assertIn("**Auto-dispatch review**", skill_text)
+        step_five = skill_text.split("**Log and hand off", 1)[1].split("**Auto-dispatch review**", 1)[0]
+        for key_text in ('"finder"', '"result"', "`finder`", "`result`"):
+            self.assertNotIn(key_text, step_five)
 
     def test_simplify_prep_small_target_has_no_split_and_prompt_has_oracle(self):
         self.write("mod/a.py", "x = 1\n")

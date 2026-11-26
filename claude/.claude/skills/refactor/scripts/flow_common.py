@@ -1,4 +1,5 @@
-"""What the refactor flow's modes share: the error types, git calls, the base and merge base, the target file
+"""What the refactor flow's modes share: the base-error types (RefactorFlowError itself lives in
+`refactor_log_input`), git calls, the base and merge base, the target file
 listing, untracked-file reads and the log-input paths. `refactor_flow` and `simplify_flow` import from here, so
 neither imports the other."""
 import contextlib
@@ -12,6 +13,7 @@ from typing import NamedTuple
 
 import change_added_ranges
 import script_utils
+from refactor_log_input import RefactorFlowError
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "tools" / "branch-base")
@@ -25,10 +27,6 @@ LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPU
 LOG_INPUT_SIDECAR_SUFFIX = ".simplify-stat"
 
 NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
-
-
-class RefactorFlowError(Exception):
-    """Bad input: print it, write nothing, exit 1."""
 
 
 class NoSharedHistoryError(RefactorFlowError):

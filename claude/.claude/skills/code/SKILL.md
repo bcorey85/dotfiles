@@ -69,7 +69,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
        branch=<branch> note="<the command, and what the ban protects>"
      ```
 
-   - After the review loop returns `converged` or `deferred` and Automated Verification is green, dispatch a `coder` to change the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...` and nothing else, and wait for it.
+   - After the review loop returns `converged` or `deferred` and Automated Verification is green, run `python3 ~/.claude/scripts/code/phase_change_file.py` from the repo root (on exit 1, do the step its last line names), then dispatch a `coder` to change the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...` and nothing else, and wait for it.
    - **Phase-boundary decision**, first match wins, then Read `~/.claude/skills/code/phase-end-block.md` and print the matching block:
      1. Last phase → STOP, block C.
      2. Phase 1, any risk tier → STOP, block B.
@@ -84,6 +84,8 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
 
    Before the dispatch, run `python3 ~/.claude/scripts/code/phase_start.py --new-run` from the repo root for the first phase of a fresh run that is not a resume, `python3 ~/.claude/scripts/code/phase_start.py --resume` for a resume that goes on with the phase that stopped (its Phase Status line still unchecked), and `python3 ~/.claude/scripts/code/phase_start.py` for every other phase start, a resume that starts the next phase after a phase-complete stop included; keep the sha it prints as the phase base. Then, from the repo root, run `python3 ~/.claude/scripts/code/gate_commands.py <plan> <N>` (`-` as `<plan>` and `1` as `<N>` with no plan file) and set the hand-back gate with its lines: `python3 ~/.claude/scripts/code/coder_gate.py set <command>...`, each output line one quoted shell command. With no output lines, skip `set`.
    Then run `python3 ~/.claude/scripts/code/coder_packet.py <plan> <N>` and put its whole output in the coder's prompt, below the phase line. For a gated phase whose release the task text holds, add `--gate-evidence "<who>, <when>: <what was released, in your own words>"` to that command: the packet then opens with the evidence, and the coder does not ask for the release again. With no plan file (a plain task or a pasted plan), skip `coder_packet.py` and put the task text in the coder's prompt in place of the phase line. Wait for the coder.
+
+   The coder's prompt holds no stage or commit step; a commit the task asks for becomes the phase-end commit subject.
 
    When the coder hands back, run `python3 ~/.claude/scripts/code/coder_gate.py finish` from the repo root before anything else; on exit 1, do the step its last line names.
 

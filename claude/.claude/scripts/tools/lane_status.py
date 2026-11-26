@@ -11,7 +11,7 @@ Lines, one per problem:
                                    subagents that have not reported back
   <name>: dead (no agent)          no claude agent runs inside the lane's worktree (workspace closed, killed)
   <name>: dead (worktree gone)     the lane file's worktree folder is missing
-  <name>: dead (login expired)     the agent's transcript ends on an API error that asks for a login
+  <name>: dead (login expired)     the agent's transcript ends on a login error
   <name>: dead (api error)         the agent's transcript ends on any other API error
   memory: <N.N> GB available, under <T> GB
   memory: cannot read              memory could not be read on this system
@@ -23,7 +23,8 @@ Lines, one per problem:
 
 --changes prints only the lines that changed since the last --changes run (a viewer line counts as changed only
 when its pane or pid does, not its size), and `<name>: working` for a lane that was reported before and now
-works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`.
+works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`; a relative
+`XDG_STATE_HOME` is ignored.
 
 Environment: LANE_STATUS_MIN_MEMORY_GB (8), LANE_STATUS_MIN_SCRATCH_GB (1), LANE_STATUS_SCRATCH_CAP_GB (4). The
 viewer cap is read from `hunk-review-pane --viewers`, which takes it from HUNK_REVIEW_MEMORY_MAX (1G).
@@ -37,13 +38,13 @@ import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+import api_error_stop
 import herdr_agents
 import hook_input
 import lane_entries
 import loop_transcript
 import process_group
 import script_utils
-import session_registry
 import system_resources
 
 EXIT_PROBLEMS = 1
@@ -55,8 +56,6 @@ DEFAULT_THRESHOLDS_GB = {
     "LANE_STATUS_MIN_SCRATCH_GB": 1,
     "LANE_STATUS_SCRATCH_CAP_GB": 4,
 }
-# Words in an API error record that mean the session lost its login and will not go on until someone logs in.
-LOGIN_WORDS = ("/login", "401", "authentication", "oauth token")
 VIEWER_PROGRAM = "hunk"
 VIEWER_LAUNCHER = "hunk-review-pane"
 VIEWER_KEY_PREFIX = "viewer:"
@@ -193,31 +192,6 @@ def viewer_report():
     return report
 
 
-def transcript_of(agent):
-    """The transcript path of the agent's session, or None when herdr names no session or no transcript matches."""
-    agent_session = agent.get("agent_session")
-    session_id = agent_session.get("value") if isinstance(agent_session, dict) else None
-    if not isinstance(session_id, str) or not session_id:
-        return None
-
-    found = sorted(session_registry.projects_dir().glob(f"*/{session_id}.jsonl"))
-    if not found:
-        return None
-    return found[0]
-
-
-def api_error_reason(transcript):
-    """`login expired` or `api error` when the transcript ends on an API error record, else None."""
-    record = script_utils.last_transcript_record(transcript)
-    if record is None or record.get("isApiErrorMessage") is not True:
-        return None
-
-    text = json.dumps(record.get("message") or {}).lower()
-    if any(word in text for word in LOGIN_WORDS):
-        return "login expired"
-    return "api error"
-
-
 def open_background_jobs(transcript):
     """The count of background shells and subagents the transcript launched that have not reported back."""
     try:
@@ -232,13 +206,13 @@ def idle_line(name, agent):
     """The line for a lane whose agent is not working: dead on an API error, waiting on open background work, or
     the plain status."""
     status = agent.get("agent_status") or "unknown"
-    transcript = transcript_of(agent)
+    transcript = herdr_agents.herdr_agent_transcript(agent)
     if transcript is None:
         return f"{name}: {status}"
 
-    reason = api_error_reason(transcript)
-    if reason is not None:
-        return f"{name}: dead ({reason})"
+    error_record = script_utils.last_api_error(transcript)
+    if error_record is not None:
+        return f"{name}: dead ({api_error_stop.error_reason(error_record)})"
 
     jobs = open_background_jobs(transcript)
     if jobs:

@@ -1,6 +1,6 @@
 ---
 name: close-branch
-description: The one closing phase. Scripts first, then four report-only reviewers in parallel on the whole branch diff, one coder that fixes every finding, a report-only gate on the fix diff alone, then the recap sheet. Use for "close the branch", "/close-branch", and the plan's Close pass. Hands back a read queue; the staging of semantic files, the commit and the PR stay the user's.
+description: The one closing phase. Scripts first, then four report-only reviewers in parallel on the whole branch diff, one coder that fixes every finding, a report-only gate on the fix diff, then a coder round for the gate's findings, then the recap sheet. Use for "close the branch", "/close-branch", and the plan's Close pass. Hands back a read queue; the staging of semantic files, the commit and the PR stay the user's.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
@@ -24,13 +24,13 @@ python3 ~/.claude/scripts/code/concentration.py <base>
 python3 ~/.claude/scripts/review/full_check.py "$(git rev-parse --show-toplevel)" --log <scratchpad>/close-full-check.log --base <base>
 ```
 
-`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts for the recap; no module is simplified here. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
+`concentration.py` counts commits only, so commit the last feature phase first. Keep both concentration counts and the `Diff split:` line for the recap; no module is simplified here. Each `OVERSIZED:` part is a finding for Step 3. When the full check prints `not run (no check found`, run once instead the one command that runs every lint, type check and test, as the repo's README or Makefile names it (such as `make check`), output to the same log. A failing check is a finding for Step 3, with its failing lines. Step 4 reruns whichever check ran here.
 
 ## Step 2: four reviewers in parallel
 
 Send all four `Agent` calls in ONE message. Omit `model` on each. Each reports and does not edit.
 
-1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes.
+1. `code-reviewer` — the review prompt verify-prep printed, verbatim, with its uncommitted and untracked notes, then the plan path and the `acceptance-criteria.md` path beside it.
 2. `smell-reviewer` — the finder prompt `branch-prep` printed, verbatim. Every finding carries `file:line`, and duplication names the sibling's `file:line`. A cast or `?? default` papering a fixable wide type is a finding.
 3. `test-intent-reviewer` — `scope: cull`, the branch diff (`git diff <base>` plus the untracked files verify-prep listed), the spec path, and the `acceptance-criteria.md` path beside the plan.
 4. `plan-verifier` — the payload verify-prep printed, exactly. Nothing else in the prompt.
@@ -45,6 +45,7 @@ Merge the four reports and your own findings into one list, deduplicated by file
 - every test-intent cull and WEAK finding. A `REQUIRES-MUTATION` cull is not acted on: list it under open items in the recap, marked `not run`;
 - every criterion the plan-verifier marked partial, missing, or MISSING, and every failed automated check, each as "write or fix the covering test" or "build the missing behavior";
 - every failing full-check line from Step 1.
+- each `OVERSIZED:` part from Step 1, as "check each new <part> file against a plan step, criterion or finding, and cut the rest", with the plan and criteria paths.
 
 An `ask` takes its proposed change, unless that change cuts or changes a ticket AC: that ask goes to the user, not to the coder, logged with disposition `ask` and actioned `ask`.
 
@@ -57,15 +58,16 @@ The fix diff is the `diff_command` that `python3 ~/.claude/skills/close-branch/s
 - the check from Step 1 again;
 - ONE `code-reviewer` (omit `model`) with this prompt: "Report-only gate. Review ONLY the fix diff: `<diff_command>`, which lists these files: <files>. The fixes answered these findings: <the Step 3 list, one line each>. For each finding, say whether the diff fixes it. Report every new defect the diff introduces, with file, line and severity (critical, high, medium, low). For each criterion in this list, name the test that now covers it, or say MISSING: <the criteria from Step 3>."
 
-The gate FAILS on a red full check, a critical or high finding, a criterion still MISSING, or a Step 3 finding the diff left unfixed without showing it wrong. Medium and low findings do not fail it: they go under open items in the recap.
+The gate FAILS on a red full check, a critical or high finding, a criterion still MISSING, or a Step 3 finding the diff left unfixed without showing it wrong. Medium and low findings do not fail it and never go to open items.
 
-On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` (the index stays as the user left it), dispatch `coder` ONCE with only the failing items, and run Step 4 once more on the new fix diff. A second fail → STOP: report the failing items to the user.
+- On a pass with medium or low findings, dispatch `coder` ONCE with them, then run the check from Step 1 again; on a red check, STOP and report the failing lines to the user; on green, go to Step 5.
+- On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` (the index stays as the user left it), dispatch `coder` ONCE with the failing items and the medium and low findings, and run Step 4 once more on the new fix diff. On that rerun, the gate prompt's findings list is the items that coder got: the failing items and the medium and low findings. A second fail → STOP: report the failing items and that gate's medium and low findings to the user.
 
 ## Step 5: log
 
 1. Rerun `verify-prep`. Log every finding from Steps 2 to 4 with `~/.claude/scripts/review/verify-log review --result <PASS|PASS WITH WARNINGS|NEEDS CHANGES> --rows <file>`, in the row shape `~/.claude/skills/verify-branch/SKILL.md` Step 1 gives (`actioned` `fixed`, `skipped_fp`, or `ask`). Rerun `verify-prep`; it must report the review as ran.
 2. Log the plan-verifier's verdicts with `verify-log --rows <file>`, as `~/.claude/skills/verify-branch/SKILL.md` Step 3 says, with each criterion the gate showed covered moved to `done` and its covering test as the evidence. On gaps, follow that file's Routing for gaps; on asks open, its Routing for asks.
-3. Log the smell-reviewer's run: write its findings to the input path `branch-prep` printed, in the input shape of `~/.claude/skills/refactor/SKILL.md` Step 5, with no `handoff` key; read `~/.claude/skills/_shared/escape-ratchet.md` for each escape's `miss_reason` and `guards`; then run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode branch --base <base> --input <that path>`. Skip the `NEXT:` line `log` prints and go on to Step 6.
+3. Log the smell-reviewer's run: write its findings to the input path `branch-prep` printed, in the shape `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --help` prints, with no `handoff` key; read `~/.claude/skills/_shared/escape-ratchet.md` for each escape's `miss_reason` and `guards`; then run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode branch --base <base> --input <that path>`. Skip the `NEXT:` line `log` prints and go on to Step 6.
 
 ## Step 6: recap
 
@@ -93,10 +95,10 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Change map                    (from git diff --stat)
 ### Close pass                    (findings by reviewer: fixed / shown wrong / ask; gate result and rounds)
 ### Criteria changes              (each sign-off line rg printed: the criterion, what changed, who signed, when)
-### Concentration                 (largest module and branch counts)
+### Concentration                 (largest module and branch counts, and the Diff split line)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
-### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run)
+### Open items                    (asks, REQUIRES-MUTATION culls not run)
 ### Still unstaged                (from stage.mjs, blast-radius order)
 
 Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.

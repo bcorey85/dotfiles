@@ -125,6 +125,14 @@ def load_script_module():
     return module
 
 
+def load_lib_module(name):
+    """A shared module from the lib folder beside the script under test."""
+    lib_folder = str(HERDR_WORKTREE_PRUNE.resolve().parent.parent / "lib")
+    if lib_folder not in sys.path:
+        sys.path.insert(0, lib_folder)
+    return importlib.import_module(name)
+
+
 class Lab:
     """A main checkout, its bare origin, and helpers that make lane worktrees."""
 
@@ -988,7 +996,7 @@ class InProgressBranchTest(PruneTestCase):
         self.lab.git(tree, "bisect", "start", "HEAD", self.lab.root_commit())
         module = load_script_module()
 
-        taken = module.checked_out_branches(module.list_worktrees(str(self.lab.main)))
+        taken = load_lib_module("worktree_branches").checked_out_branches(module.list_worktrees(str(self.lab.main)))
 
         self.assertIn("rebase or bisect", taken["feature/lane-a"])
         self.assertIn(str(tree), taken["feature/lane-a"])
@@ -1001,7 +1009,7 @@ class InProgressBranchTest(PruneTestCase):
         git_dir = self.lab.git(tree, "rev-parse", "--absolute-git-dir").stdout.strip()
         pathlib.Path(git_dir, "BISECT_START").write_text(self.lab.tip("feature/lane-a") + "\n")
 
-        taken = module.checked_out_branches(module.list_worktrees(str(self.lab.main)))
+        taken = load_lib_module("worktree_branches").checked_out_branches(module.list_worktrees(str(self.lab.main)))
 
         self.assertNotIn("feature/lane-a", taken)
 
@@ -1104,8 +1112,8 @@ class BranchDeletionTest(PruneTestCase):
         tally = module.Tally()
 
         with contextlib.redirect_stdout(io.StringIO()):
-            module.delete_one_branch(repo, "main", tally)
-            module.delete_one_branch(repo, "feature/lane-a", tally)
+            load_lib_module("worktree_branches").delete_one_branch(repo, "main", tally)
+            load_lib_module("worktree_branches").delete_one_branch(repo, "feature/lane-a", tally)
 
         self.assertEqual((tally.kept, tally.removed, tally.failed), (2, 0, 0))
         self.assertEqual(self.lab.branches(), {"main", "scratch", "feature/lane-a"})
@@ -1233,6 +1241,69 @@ class FailureTest(PruneTestCase):
         self.assertNotIn("Update the local main", applied.stdout)
 
 
+class CheckVerbTest(PruneTestCase):
+    def check(self, tree):
+        finished = self.lab.prune("--check", str(tree))
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return json.loads(finished.stdout)
+
+    def test_the_verdict_matches_list_mode_for_merged_dirty_unmerged_and_squash_merged_trees(self):
+        clean = self.lab.merged_lane("lane-clean")
+        dirty = self.lab.merged_lane("lane-dirty")
+        (dirty / "scratch.txt").write_text("not committed\n")
+        unmerged = self.lab.lane("lane-unmerged")
+        squashed = self.lab.lane("lane-squash")
+        self.lab.git(self.lab.main, "merge", "-q", "--squash", "feature/lane-squash")
+        self.lab.git(self.lab.main, "commit", "-q", "-m", "squash")
+        self.lab.git(self.lab.main, "push", "-q", "origin", "main")
+        listed = self.lab.prune()
+        expected = {clean: ("remove", None, None), dirty: ("keep", "uncommitted changes", "uncommitted changes"),
+                    unmerged: ("keep", "not merged", "commits not on origin/main"),
+                    squashed: ("keep", "not merged", "commits not on origin/main")}
+
+        for tree, (verdict, code, reason_part) in expected.items():
+            with self.subTest(tree.name):
+                answer = self.check(tree)
+
+                self.assertEqual((answer["verdict"], answer["code"]), (verdict, code))
+                self.assertEqual(answer["path"], str(tree))
+                self.assertEqual(answer["branch"], f"feature/{tree.name}")
+                line = line_of(listed, tree)
+                self.assertTrue(line.startswith(verdict), line)
+                if verdict == "keep":
+                    self.assertIn(reason_part, answer["reason"])
+                    self.assertTrue(line.endswith(answer["reason"]), line)
+                else:
+                    self.assertIsNone(answer["reason"])
+
+    def test_a_workspace_agent_or_open_lane_on_a_merged_clean_tree_does_not_keep_it(self):
+        tree = self.lab.merged_lane("lane-a")
+        self.lab.set_workspaces([{"label": "lane-a", "worktree": {"checkout_path": str(tree)}}])
+        self.lab.set_agents([{"cwd": str(tree)}])
+        self.lab.open_lane("lane-a", tree)
+        self.hold_cwd(tree)
+
+        answer = self.check(tree)
+
+        self.assertEqual(answer["verdict"], "remove")
+        self.assertTrue(line_of(self.lab.prune(), tree).startswith("keep"))
+
+    def test_a_path_that_is_not_a_worktree_exits_1_with_the_message(self):
+        finished = self.lab.prune("--check", str(self.root / "nowhere"))
+
+        self.assertEqual(finished.returncode, 1)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn("is not a worktree of this repository", finished.stderr)
+
+    def test_check_without_exactly_one_path_prints_usage_and_exits_2(self):
+        for arguments in (("--check",), ("--check", "a", "b")):
+            with self.subTest(arguments):
+                finished = self.lab.prune(*arguments)
+
+                self.assertEqual(finished.returncode, 2)
+                self.assertIn("usage: herdr-worktree-prune", finished.stderr)
+
+
 class UsageTest(PruneTestCase):
     def test_help_prints_the_usage_block_and_says_list_mode_fetches(self):
         finished = self.lab.prune("--help")
@@ -1278,7 +1349,7 @@ class ParserTest(unittest.TestCase):
                    "worktree /x/line\nbreak\0HEAD 2\0detached\0locked why not\0\0"
                    "worktree /x/gone\0HEAD 3\0branch refs/heads/g\0prunable gitdir file\0\0")
 
-        found = self.module.parse_worktrees(listing)
+        found = load_lib_module("worktree_git").parse_worktrees(listing)
 
         self.assertEqual([tree.path for tree in found], ["/x/a b", "/x/line\nbreak", "/x/gone"])
         self.assertEqual(found[0].branch, "f/a")
@@ -1288,7 +1359,7 @@ class ParserTest(unittest.TestCase):
 
     def test_an_unknown_porcelain_field_stops_loudly(self):
         with self.assertRaises(self.module.PruneError):
-            self.module.parse_worktrees("worktree /x\0HEAD 1\0surprise yes\0\0")
+            load_lib_module("worktree_git").parse_worktrees("worktree /x\0HEAD 1\0surprise yes\0\0")
 
     def test_sizes_above_a_tebibyte_print_in_tib(self):
         cases = {512: "512 B", 2048: "2.0 KiB", 3 * 1024 ** 3: "3.0 GiB", 1500 * 1024 ** 3: "1.5 TiB",

@@ -2,7 +2,7 @@
 
 The guard decision every `log-escape` call carries. Read before logging.
 
-Consumers: `/escape`, `/cc`, `/fix`, `/refactor`, `/verify-branch`, `/commit`, `/pr-comments`, `/close-branch`, `/eng-spec` (plan review); the scripts `scripts/telemetry/log-escape`, `scripts/review/verify-log` and `skills/refactor/scripts/refactor_flow.py` cite it in their messages.
+Consumers: `/escape`, `/cc`, `/fix`, `/refactor`, `/verify-branch`, `/commit`, `/pr-comments`, `/close-branch`, `/eng-spec` (plan review); the scripts `scripts/telemetry/log-escape`, `scripts/review/verify-log` and `skills/refactor/scripts/refactor_log_input.py` cite it in their messages.
 
 ## The decision
 

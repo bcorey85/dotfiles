@@ -6,7 +6,8 @@
 In `--reviewers main` mode the review loop writes each reviewer's prompt to a file and the round's manifest to
 <loop dir>/reviewer-requests/round-<n>.json ({"round", "requests": [{"round", "role", "agent",
 "prompt_file", "report_file"}]}), then waits until every report file holds text. The main session dispatches each
-agent, writes each report verbatim to its report file, and runs `wait` again.
+agent, writes each report verbatim to its report file, and runs `wait` again. `code_wait.py review` records the agent
+id that filled a request's report in that request's `filled_by` key of the manifest.
 
 `wait` returns at the next step: it prints `ACTION: dispatch-reviewer`, a `round <n>:` heading per round and one
 `- round <n>: <role>; agent ...` line per request that has no report yet, or, once the loop process (pid in
@@ -24,6 +25,7 @@ from typing import NamedTuple
 
 SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(SCRIPTS_DIR / "lib"), str(SCRIPTS_DIR / "review")]
+import file_lock
 import script_utils
 from age_text import age_text
 from process_group import pid_is_alive
@@ -34,6 +36,7 @@ REQUESTS_FOLDER = "reviewer-requests"
 PID_FILE = "loop.pid"
 PACKET_FILE = "packet.txt"
 POLL_SECONDS = 2.0
+LOCK_TIMEOUT_SECONDS = 10
 DISPATCH_ACTION = "dispatch-reviewer"
 WAIT_COMMAND = "python3 ~/.claude/scripts/review/reviewer_dispatch.py wait"
 # The reviewer agents have no Write tool, so the prompt asks for no file.
@@ -124,13 +127,21 @@ def request_round(loop_dir, round_number, requests, timeout, poll=POLL_SECONDS, 
         time.sleep(poll)
 
 
-def read_manifest(manifest_path):
-    """One manifest's request list. Raises ManifestError on a file that is not the manifest form."""
+def load_manifest(manifest_path):
+    """One manifest file as written. Raises ManifestError on a file that is not JSON."""
     try:
-        manifest = json.loads(manifest_path.read_text())
+        return json.loads(manifest_path.read_text())
     except json.JSONDecodeError as error:
         raise ManifestError(f"{manifest_path}: not JSON ({error}); expected {{\"round\", \"requests\"}}") from error
 
+
+def read_manifest(manifest_path):
+    """One manifest's request list. Raises ManifestError on a file that is not the manifest form."""
+    return checked_requests(manifest_path, load_manifest(manifest_path))
+
+
+def checked_requests(manifest_path, manifest):
+    """The request list of an already loaded manifest, with the form check of `read_manifest`."""
     requests = manifest.get("requests") if isinstance(manifest, dict) else None
     if not isinstance(requests, list):
         raise ManifestError(f"{manifest_path}: no \"requests\" list; expected {{\"round\", \"requests\"}}")
@@ -152,20 +163,75 @@ def manifest_round(manifest_path):
     return int(number)
 
 
-def all_requests(loop_dir):
-    """Every request of every round."""
+def manifest_paths(loop_dir):
+    """Every round manifest file, in round order. Raises ManifestError on a file name that holds no round."""
     folder = requests_dir(loop_dir)
     if not folder.is_dir():
         return []
+    return sorted(folder.glob("round-*.json"), key=manifest_round)
+
+
+def all_requests(loop_dir):
+    """Every request of every round."""
     requests = []
-    for manifest_path in sorted(folder.glob("round-*.json"), key=manifest_round):
+    for manifest_path in manifest_paths(loop_dir):
         requests += read_manifest(manifest_path)
     return requests
 
 
+def request_is_open(entry):
+    """True when the request's report file holds no text yet."""
+    return not report_text(entry["report_file"]).strip()
+
+
 def pending_requests(loop_dir):
     """Every request of every round whose report file holds no text yet."""
-    return [entry for entry in all_requests(loop_dir) if not report_text(entry["report_file"]).strip()]
+    return [entry for entry in all_requests(loop_dir) if request_is_open(entry)]
+
+
+def record_filled_by(loop_dir, report_file, agent_id):
+    """Records in the round manifest that `agent_id` filled the request whose report file is `report_file`."""
+    for manifest_path in manifest_paths(loop_dir):
+        # Parallel `review` calls (one per reviewer of a round) each rewrite the same manifest: the lock keeps one
+        # call from dropping the other's `filled_by`.
+        with file_lock.hold_exclusive(manifest_path.with_suffix(".lock"), LOCK_TIMEOUT_SECONDS):
+            manifest = load_manifest(manifest_path)
+            checked_requests(manifest_path, manifest)  # the same form check as all_requests, before any write
+            for entry in manifest["requests"]:
+                if entry["report_file"] == report_file:
+                    entry["filled_by"] = agent_id
+                    script_utils.write_text_atomically(manifest_path, json.dumps(manifest, indent=2) + "\n")
+                    return
+
+
+def used_round_problem(loop_dir, pairs, wait_command):
+    """The refusal text when every (agent id, report file) pair of `pairs` names a request whose report another agent
+    filled, else "". That is a stale dispatch: a newly dispatched agent for a round already answered. The agent that
+    filled the report, run again with the same command, is never refused, on any round. A filled report with no
+    recorded filler counts as filled by another agent. A call that also names a pair that is not stale passes.
+    `wait_command` is the wait command the refusal tells the caller to rerun with no pairs."""
+    requests = all_requests(loop_dir)
+    entry_of = {entry["report_file"]: entry for entry in requests}
+    named = [(agent_id, entry_of[report_file]) for agent_id, report_file in pairs if report_file in entry_of]
+    if not named:
+        return ""
+
+    stale = [entry for agent_id, entry in named
+             if entry.get("filled_by") != agent_id and not request_is_open(entry)]
+    if len(stale) != len(named):
+        return ""
+
+    open_rounds = sorted({entry["round"] for entry in requests if request_is_open(entry)})
+    used_rounds = sorted({entry["round"] for entry in stale})
+    used = ", ".join(str(number) for number in used_rounds)
+    if len(used_rounds) == 1:
+        used_text = f"round {used} is used: its report was filled by another agent"
+    else:
+        used_text = f"rounds {used} are used: their reports were filled by other agents"
+    next_step = f"run `{wait_command}` with no pairs to get the next round or the packet"
+    if open_rounds:
+        next_step = f"dispatch round {open_rounds[0]}"
+    return f"{used_text}; {next_step}"
 
 
 def request_lines(pending, report_writer_note):

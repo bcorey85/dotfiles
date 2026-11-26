@@ -4299,6 +4299,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             tool.write_text(recorder)
             tool.chmod(0o755)
         self.commit_files({"pyproject.toml": "[tool.ruff]\nline-length = 100\n", "notes.md": "# notes\n"})
+        # notes.md is part of the change under review, so the coder's edit to it is inside the pass's scope.
+        (self.repo / "notes.md").write_text("# notes\nchanged\n")
         check = f"{FAILS_ONLY_WITH_THE_DIFF}grep -q '# formatted' app.py || {{ echo 'FAIL: unformatted'; exit 1; }}"
 
         completed = self.run_script({
@@ -8129,6 +8131,153 @@ class CommentRemovalUnitTest(unittest.TestCase):
         self.run_.undo_comment_pass(snapshot, [])
 
         self.assertEqual(target.read_bytes(), b"s = '\xe9'\n# note\ny = 3\n")
+
+    def test_a_finding_that_quotes_a_comment_whose_line_moved_keeps_it_removed_with_no_ask(self):
+        before = "a = 1\n" * 13 + "#  moved   note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("moved", (self.repo / "a.py").read_text())
+
+    def test_a_quote_of_one_line_of_a_two_line_comment_block_keeps_the_whole_block_removed(self):
+        lines = ["a = 1\n"] * 13
+        before = "".join(lines) + "# Retry twice because the API flakes\n# and back off between tries.\nb = 2\n"
+        after = "".join(lines) + "b = 2\n"
+        findings = [finding_record.parse_finding(
+            "a.py:10 [bug] the comment `# Retry twice because the API flakes` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("back off", (self.repo / "a.py").read_text())
+
+    def test_a_quote_split_across_a_line_break_in_the_finding_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment \"# moved\n   note\" is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_double_quoted_span_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding('a.py:10 [bug] the comment "# moved note" is stale')]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_without_marker_names_a_comment_whose_text_starts_with_a_star(self):
+        before = "a = 1\n" * 13 + "# *important*\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `*important*` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_of_a_bare_marker_does_not_name_a_removed_empty_comment(self):
+        before = "a = 1\n" * 13 + "#\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the line `#` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("#\n", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_merged_findings_second_part_names_the_comment_in_its_own_file(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        first = finding_record.parse_finding("other.py:3 [bug] unrelated")
+        second = finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")
+        merged = finding_record.combine([first, second])
+
+        put_back = self.pass_over("a.py", before, after, findings=[merged])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_finding_that_names_the_file_but_quotes_nothing_of_the_comment_still_puts_it_back_and_asks(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] something unrelated")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_apostrophes_in_a_finding_do_not_make_a_quote_that_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        text = "a.py:10 [bug] it doesn't check the loop bound, and the caller's guard is gone"
+        findings = [finding_record.parse_finding(text)]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_in_a_finding_of_another_file_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n"
+        after = "a = 1\n" * 13 + "b = 2\n"
+        findings = [finding_record.parse_finding("other.py:10 [bug] the comment `# moved note` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_word_inside_a_longer_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# end\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the `endpoint` returns None")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# end", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_of_a_longer_comment_does_not_name_a_shorter_removed_comment(self):
+        before = "a = 1\n" * 13 + "# TODO\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# TODO: drop after v2` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# TODO", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_an_unquoted_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] fix the off-by-one in the loop")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_finding_that_quotes_a_block_comment_line_whose_line_moved_keeps_it_removed(self):
+        before = "a = 1;\n" * 13 + "/* moved note */\nb = 2;\n" + "c = 3;\n" * 10
+        after = "a = 1;\n" * 13 + "b = 2;\n" + "c = 3;\n" * 10
+        findings = [finding_record.parse_finding("a.ts:10 [bug] the comment `moved note` is stale")]
+
+        put_back = self.pass_over("a.ts", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
 
     def test_a_skipped_held_file_keeps_its_removed_comment_and_files_no_ask(self):
         target = self.repo / "held.py"

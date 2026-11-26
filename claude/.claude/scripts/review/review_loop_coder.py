@@ -133,8 +133,9 @@ def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model="")
             # A coder that exits 0 with no final report left its findings unverified, as a crash does.
             raise NoFinalReportError(f"the {role} call ended with no final report")
     except ModelCallError as error:
+        # A failed pass raises CoderFailedError, which never reads a stray-file verdict, so the guard only puts back.
         undo_failure, after = settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before,
-                                          head_before)
+                                          head_before, judge=False)
         changed = changed_paths(before, after)
         diffs = pass_diffs(repo, changed, before, after, head_before)
         if undo_failure is not None:
@@ -155,41 +156,42 @@ def pass_diffs(repo, changed, before, after, head_before):
     return {path: "\n".join(path_diff(repo, path, before, after, head_before)) for path in changed}
 
 
-def settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before, head_before):
+def settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before, head_before, judge=True):
     """After a coder call: undoes the pass with the two guards, records the files the loop wrote, and reads the tree.
     Returns (undo failure or None, the tree texts after the call). `held_before` and `head_before` are the held
-    digests and the head commit taken before the call."""
-    undo_failure = failed_undo(pass_guard, scope_guard)
+    digests and the head commit taken before the call. `judge` false only puts files back, with no gate run."""
+    undo_failure = failed_undo(pass_guard, scope_guard, judge)
     review_loop_untracked.record_loop_written(repo, held, untracked)
     after = after_call(role, repo, held, held_before, head_before)
     return undo_failure, after
 
 
-def failed_undo(pass_guard, scope_guard):
+def failed_undo(pass_guard, scope_guard, judge=True):
     """The error a guard raised while undoing the pass of a coder call, or None when both undid it; the caller reads
     the tree and turns a failure into a CoderCallError, so `repair` can catch it."""
     try:
-        undo_pass(pass_guard, scope_guard)
+        undo_pass(pass_guard, scope_guard, judge)
     except UNDO_ERRORS as undo_error:
         return undo_error
     return None
 
 
-def undo_pass(pass_guard, scope_guard):
+def undo_pass(pass_guard, scope_guard, judge=True):
     """Undoes what the pass may not keep: the ruled-out files and unnamed deletions, then the files out of scope."""
     try:
         pass_guard.undo()
     except UNDO_ERRORS as pass_error:
         undo_scope_after_failure(pass_error, scope_guard)
         raise
-    scope_guard.undo()
+    scope_guard.undo(judge)
 
 
 def undo_scope_after_failure(pass_error, scope_guard):
     """Runs the scope guard's undo after the pass guard failed, so the out-of-scope files are not left unrestored and
-    unnoted. Raises one joined error when that undo fails too; returns when it works, and the caller re-raises."""
+    unnoted. The tree is half undone and the pass ends in a failure, so the files are only put back, with no gate run.
+    Raises one joined error when that undo fails too; returns when it works, and the caller re-raises."""
     try:
-        scope_guard.undo()
+        scope_guard.undo(judge=False)
     except UNDO_ERRORS as scope_error:
         raise GuardUndoError(f"{pass_error}; {scope_error}") from scope_error
 

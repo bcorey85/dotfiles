@@ -91,6 +91,52 @@ class NamesPathTest(unittest.TestCase):
                 self.assertTrue(script_utils.names_path("app.py", text, as_token=True))
 
 
+class PathCharsTest(unittest.TestCase):
+    def test_a_path_with_a_dollar_or_plus_is_read_whole_with_its_line(self):
+        cases = [
+            ("see `src/routes/$postId.test.tsx:12` here", ("src/routes/$postId.test.tsx", 12)),
+            ("src/routes/+page.svelte:3 is wrong", ("src/routes/+page.svelte", 3)),
+            ("src/routes/plain.ts:7 is wrong", ("src/routes/plain.ts", 7)),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                locations = script_utils.locations_named(text)
+
+                self.assertEqual([(location[0], location[1]) for location in locations], [expected])
+
+
+class PathPatternsTest(unittest.TestCase):
+    def test_bare_dot_slash_and_alone_patterns_read_a_dollar_or_plus_path_whole(self):
+        bare = script_utils.BARE_PATH.findall("see src/routes/$id.tsx and src/routes/+page.svelte here")
+        self.assertEqual(bare, ["src/routes/$id.tsx", "src/routes/+page.svelte"])
+        dot_slash = script_utils.DOT_SLASH_PATH.search("run ./bin/$tool and more")
+        self.assertEqual(dot_slash.group(0), "./bin/$tool")
+        for location in ("src/routes/$id.tsx:12", "src/routes/+page.svelte:3"):
+            with self.subTest(location=location):
+                self.assertIsNotNone(script_utils.LOCATION_ALONE.fullmatch(location))
+
+
+class NamesPathSigilTest(unittest.TestCase):
+    def test_a_file_at_the_end_of_a_dollar_or_plus_name_is_not_named(self):
+        cases = [
+            ("id.ts", "see $id.ts here", True, False),
+            ("id.ts", "see $id.ts here", False, False),
+            ("page.svelte", "see +page.svelte:3", True, False),
+            ("$id.ts", "see $id.ts here", True, True),
+            ("id.ts", "see id.ts here", True, True),
+            ("app.ts", "see @app.ts here", True, False),
+            ("app.ts", "see @app.ts here", False, False),
+            ("app.ts", "see app.ts$ here", True, False),
+            ("app.ts", "see app.ts+ here", True, False),
+            ("app.ts", "see app.ts@ here", True, False),
+            ("app.ts", "see app.ts$ here", False, False),
+            ("app.ts", "see app.ts+ here", False, False),
+        ]
+        for path, text, as_token, expected in cases:
+            with self.subTest(path=path, text=text, as_token=as_token):
+                self.assertEqual(script_utils.names_path(path, text, as_token=as_token), expected)
+
+
 class TextsNamePathTest(unittest.TestCase):
     def test_a_path_under_the_root_counts_as_the_repo_relative_path_and_only_as_a_whole_token(self):
         cases = [

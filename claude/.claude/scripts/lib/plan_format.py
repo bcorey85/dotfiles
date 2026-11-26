@@ -36,7 +36,8 @@ from ask_outcome_words import RELAY_USAGE
 # ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so most readers take a bare name only from
 # a `**File**:` entry or when the repo holds it (named_paths). The one reader that takes every backticked name is
 # expected_red.section_paths (own-path exclusion).
-PATH_IN_BACKTICKS = re.compile(r"`([\w.@+-]+(?:/[\w.@\[\]()+-]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
+PATH_IN_BACKTICKS = re.compile(
+    rf"`([{script_utils.PATH_CHARS}]+(?:/[{script_utils.PATH_CHARS}\[\]()]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
 TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
@@ -66,7 +67,7 @@ SESSION_RULING_OWNER = "the session, not the user"
 # plan holds, so it is no plan change; `PLAN-IMPACT: no index on ...` still is one.
 LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
 PLAN_CHANGE_MARK = re.compile(
-    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
+    rf"(?:(?:`?{script_utils.PATH_TEXT}:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
     r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 # `none` with its closing marks and separators, then except/but/beyond and the rest of the line: the answer

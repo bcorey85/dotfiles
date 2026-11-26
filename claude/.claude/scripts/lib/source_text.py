@@ -402,6 +402,18 @@ def comment_line_numbers(lines, style):
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
 
 
+COMMENT_MARKER = re.compile(r"^\s*(?:#+|//+|/\*+|\*+/?)\s*")
+COMMENT_CLOSER = re.compile(r"\s*\*+/\s*$")
+
+
+def comment_body(line):
+    """The comment `line` without its leading `#`, `//`, `/*` or `*` marker and its trailing `*/`, whitespace runs
+    collapsed to one space."""
+    without_marker = COMMENT_MARKER.sub("", line, count=1)
+    without_closer = COMMENT_CLOSER.sub("", without_marker, count=1)
+    return re.sub(r"\s+", " ", without_closer).strip()
+
+
 def file_comment_entries(path, text):
     """The (line number, stripped text) entries of the real comment lines of the file `path` with text `text`: string
     and docstring lines are not comments. No entries for a file whose suffix has no comment style."""

@@ -19,6 +19,7 @@ import owner_lines
 import plan_format
 import review_loop_ruled_out
 import script_utils
+import signoff_lines
 import standing_rulings
 from approval_asks_store import (
     UNKNOWN_BASE,
@@ -357,8 +358,9 @@ class RuledFindings:
 
     def route_plan_items(self, agent, items):
         """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
-        acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
-        nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
+        acceptance criterion is adopted by rule and fixed like any finding, unless it cites a sign-off line the user
+        ruled (see cites_user_ruling), which is held for a ruling; one that changes a criterion, or says nothing, is
+        held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
         ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above. A reword of a
         criterion is a plain fix too, adopted and applied, when the loop's plan holds a standing ruling that covers
         rewords."""
@@ -372,12 +374,27 @@ class RuledFindings:
             reword = standing_rulings.impact_rewords_criterion(item.text)
             under_standing_ruling = (reword
                                      and self.standing_ruling_covering(standing_rulings.COVERS_REWORDS) is not None)
-            adopted = not ac_change or under_standing_ruling
+            # A no-criterion impact whose plan side is a user ruling would record the reverse of it as code-wins.
+            cites_ruling = not ac_change and self.cites_user_ruling(item.text)
+            adopted = (not ac_change and not cites_ruling) or under_standing_ruling
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
                                      "cause": plan_format.PLAN_CAUSE, "adopted": adopted,
                                      "applied": False, "reword": reword})
-            (ruling_held if ac_change and not under_standing_ruling else to_coder).append(item)
+            (ruling_held if not adopted else to_coder).append(item)
         return to_coder, ruling_held
+
+    def cites_user_ruling(self, text):
+        """Whether the plan impact `text` cites a sign-off line the user ruled, in the decision log beside the loop's
+        plan or in the plan's `## Plan Deviations` (see signoff_lines.cites_user_ruling). False with no plan on disk."""
+        plan_path = self.plan_path_on_disk()
+        if plan_path is None:
+            return False
+        log_path = plan_path.parent / plan_format.DECISION_LOG_NAME
+        if log_path.is_file() and signoff_lines.cites_user_ruling(
+                text, log_path.read_text(), [log_path.name], log_path.name):
+            return True
+        return signoff_lines.cites_user_ruling(
+            text, plan_path.read_text(), [plan_path.name, plan_format.DEVIATIONS_HEADING], plan_path.name)
 
     def mark_standing_rewords_applied(self, changed):
         """After a coder pass: the reword impacts adopted under a standing ruling count as applied when the pass
@@ -412,14 +429,18 @@ class RuledFindings:
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
-        or a cause that does not parse, is never adopted. `changed` holds the files the coder's edits changed. Returns
-        True when the impact is held for a ruling. An impact that a ruling or a finding the user or a session ruled
-        on settles is recorded as adopted and settled: it is never printed, logs no deviation, and is not held."""
+        or a cause that does not parse, is never adopted; nor is a plan-cause impact that changes no criterion but
+        cites a sign-off line the user ruled (see cites_user_ruling): it is held for a ruling. `changed` holds the
+        files the coder's edits changed. Returns True when the impact is held for a ruling. An impact that a ruling
+        or a finding the user or a session ruled on settles is recorded as adopted and settled: it is never printed,
+        logs no deviation, and is not held."""
         text = coder_report.plan_impact_block(report) or report.strip()
         cause = plan_format.stopping_plan_impact_cause([text], cause_required=True)
         ac_change = plan_format.changes_acceptance_criteria(text)
         settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
-        adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
+        adopted = settled
+        if not settled and not ac_change and cause == plan_format.PLAN_CAUSE:
+            adopted = not self.cites_user_ruling(text)
         self.record_plan_impact({"text": text, "gate": CODER_GATE, "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled,
                                  "reword": standing_rulings.impact_rewords_criterion(text)})

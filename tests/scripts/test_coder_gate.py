@@ -940,6 +940,18 @@ class RunCommandsTests(unittest.TestCase):
                 for command in no_result_commands:
                     self.assertEqual(1, shown.count(command), f"{message}: {command} in {shown!r}")
 
+    def test_a_scoped_run_ran_nothing_only_when_every_command_was_skipped(self):
+        log_path = self.repo / "scoped-tests.log"
+        cases = [
+            ("every command waits on a changed file", ["echo {files}", "echo {tests}"], True),
+            ("one command runs", ["echo {files}", "echo ran"], False),
+        ]
+        for message, commands, expected in cases:
+            with self.subTest(message):
+                run = self.gate.scoped_run(str(self.repo), commands, (), log_path)
+
+                self.assertEqual(expected, run.ran_nothing, message)
+
     def test_a_scoped_test_that_names_a_missing_path_is_a_command_error_with_the_log(self):
         log_path = self.repo / "scoped-tests.log"
         message = "ERROR: file or directory not found: missing/test_x.py"

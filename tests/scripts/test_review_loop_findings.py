@@ -679,6 +679,25 @@ class FindingLocationTest(unittest.TestCase):
         self.assertEqual(finding.line, 0)
         self.assertFalse(absent)
 
+    def test_a_path_with_a_dollar_or_plus_parses_whole_and_its_file_is_kept_by_the_intake(self):
+        cases = [
+            ("src/routes/$postId.test.tsx", 12),
+            ("src/routes/+page.svelte", 3),
+        ]
+        with tempfile.TemporaryDirectory() as repo:
+            for path, line in cases:
+                with self.subTest(path=path):
+                    file = pathlib.Path(repo) / path
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_text("x\n")
+                    text = f"`{path}:{line}` [bug] the handler is wrong"
+                    review = review_loop_findings.parse_review(f"## Fix\n- {text}\n\n## Ask\nNone\n\n## Nit\nNone\n")
+
+                    kept, absent = review_loop_findings.absent_file_split(repo, [], review)
+
+                    self.assertEqual([(item.path, item.line) for item in kept["fix"]], [(path, line)])
+                    self.assertEqual(absent, [])
+
     def test_a_bare_path_of_a_file_the_finding_asks_for_is_not_absent(self):
         with tempfile.TemporaryDirectory() as repo:
             text = "[test-gap] tests/scripts/test_new.py (new test needed; source lib/new.py:73) — no test"

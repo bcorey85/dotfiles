@@ -65,7 +65,7 @@ class UntrackedDeletionTest(unittest.TestCase):
 
     def no_op_scope_guard(self, role="coder1"):
         """A scope guard that owns no path: every path counts as ruled on by another guard."""
-        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, ())
+        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, (), lambda: None)
 
     def fake_model(self, action):
         """Patches the model process with a stand-in that runs `action(repo)` and replies `done`."""

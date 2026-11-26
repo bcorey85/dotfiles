@@ -31,6 +31,8 @@ import review_loop_script
 import review_loop_signoffs
 import review_user_ruled
 import ruled_change_text
+import script_utils
+import signoff_lines
 from approval_ask_chain import accepted_approval_ask_text
 from finding_record import parse_finding
 from no_code_notes import NO_CODE_NOTES
@@ -920,6 +922,287 @@ class ApprovalAskResumeTest(unittest.TestCase):
         resumed.resume_approval_asks([])
 
         self.assertEqual([ask.path for ask in resumed.asks], ["CLAUDE.md", "AGENTS.md"])
+
+
+class UserRulingImpactTest(unittest.TestCase):
+    RULING_LINE = "- D5. Keep the cache per request. Ruled by Pat at 2026-11-20 09:30."
+    SESSION_LINE = "- D6. Use a lock file. Ruled by the session, not the user at 2026-11-20 09:40."
+    REPORT = ("PLAN-IMPACT:\n  assumed: {assumed}\n  found: the code keeps one cache\n"
+              "  acceptance_criteria: none\n  cause: plan")
+
+    def plan_host(self, decisions="", plan_text="# Plan\n"):
+        """A Host whose plan folder holds the given plan text and decision log."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        plan_folder = pathlib.Path(folder.name) / "docs"
+        plan_folder.mkdir()
+        (plan_folder / "plan.md").write_text(plan_text)
+        (plan_folder / plan_format.DECISION_LOG_NAME).write_text(decisions)
+        host = Host()
+        host.repo = folder.name
+        host.plan = "docs/plan.md"
+        return host
+
+    def routed(self, assumed, decisions="", plan_text="# Plan\n"):
+        """(to_coder, held, packet) of one reviewer impact, in a plan folder with the given decision log."""
+        host = self.plan_host(decisions, plan_text)
+        item = types.SimpleNamespace(text=self.REPORT.format(assumed=assumed))
+        with mock.patch.object(script_utils, "git_output", return_value="Pat"):
+            to_coder, held = host.route_plan_items("code-reviewer", [item])
+        return to_coder, held, {"plan_impacts": host.plan_impacts}
+
+    def test_an_impact_quoting_a_user_ruled_line_is_held_and_prints_no_deviation(self):
+        assumed = f"03-decisions.md says: {self.RULING_LINE}"
+
+        to_coder, held, packet = self.routed(assumed, self.RULING_LINE + "\n")
+
+        self.assertEqual((to_coder, len(held)), ([], 1))
+        self.assertEqual(handback.rule_adopted_plan_impacts(packet), [])
+        self.assertEqual(len(handback.held_plan_impacts(packet)), 1)
+
+    def test_an_impact_pointing_at_the_line_number_is_held(self):
+        decisions = "# Decisions\n" + self.RULING_LINE + "\n"
+        for assumed in ("see 03-decisions.md:2", "see 03-decisions.md line 2"):
+            with self.subTest(assumed):
+                _, held, _ = self.routed(assumed, decisions)
+
+                self.assertEqual(len(held), 1, assumed)
+
+    def test_an_impact_quoting_a_line_signed_off_by_the_user_is_held(self):
+        line = "Signed off by the user, 2026-11-21, relayed by agent-evals-5e"
+
+        _, held, _ = self.routed(f"03-decisions.md says: {line}", line + "\n")
+
+        self.assertEqual(len(held), 1)
+
+    def test_a_quote_without_markdown_marks_matches_a_marked_log_line(self):
+        log_line = "- **D5.** Keep the cache. Ruled by Pat at 2026-11-20"
+
+        _, held, _ = self.routed("03-decisions.md says: D5. Keep the cache. Ruled by Pat at 2026-11-20",
+                                 log_line + "\n")
+
+        self.assertEqual(len(held), 1)
+
+    def test_a_quote_with_marks_matches_a_plain_log_line(self):
+        _, held, _ = self.routed("03-decisions.md says: **D5.** Keep the cache. Ruled by Pat at 2026-11-20",
+                                 "- D5. Keep the cache. Ruled by Pat at 2026-11-20\n")
+
+        self.assertEqual(len(held), 1)
+
+    def test_an_impact_quoting_a_user_ruled_plan_deviations_line_is_held(self):
+        plan_text = f"# Plan\n\n## Plan Deviations\n\n{self.RULING_LINE}\n{self.SESSION_LINE}\n"
+        cases = {"user line": (f"plan.md says: {self.RULING_LINE}", 1),
+                 "session line": (f"plan.md says: {self.SESSION_LINE}", 0),
+                 "pointer to the user line": ("see plan.md:5", 1),
+                 "pointer with the word line": ("see plan.md line 5", 1),
+                 "pointer to the session line": ("see plan.md:6", 0)}
+        for label, (assumed, held_count) in cases.items():
+            with self.subTest(label):
+                _, held, _ = self.routed(assumed, plan_text=plan_text)
+
+                self.assertEqual(len(held), held_count, label)
+
+    def test_a_user_ruled_line_above_plan_deviations_holds_nothing(self):
+        plan_text = f"# Plan\n\n{self.RULING_LINE}\n\n## Plan Deviations\n\n- none\n"
+
+        to_coder, held, _ = self.routed(f"plan.md says: {self.RULING_LINE}", plan_text=plan_text)
+
+        self.assertEqual((len(to_coder), held), (1, []))
+
+    def test_an_indented_user_ruled_entry_under_the_deviations_heading_is_held(self):
+        plan_text = "# P\n\n## Plan Deviations\n  Ruled by Pat, 2026-11-21: keep it\n  as written here.\n"
+
+        _, held, _ = self.routed("plan.md says: keep it as written here.", plan_text=plan_text)
+
+        self.assertEqual(len(held), 1)
+
+    def test_an_impact_quoting_the_ruling_text_of_a_written_deviation_is_held(self):
+        entry = plan_format.ruling_deviation(
+            1, "Keep the cache", "Pat", "2026-11-20 09:30", "Keep the cache per request, never shared.", "x")
+        plan_text = "# Plan\n\n## Plan Deviations\n\n" + "\n".join(entry) + "\n"
+        cases = {"ruling text": "plan.md says: Keep the cache per request, never shared.",
+                 "ruling line": "plan.md says: The ruling: Keep the cache per request, never shared.",
+                 "pointer to the ruling line": "see plan.md:7"}
+        for label, assumed in cases.items():
+            with self.subTest(label):
+                _, held, _ = self.routed(assumed, plan_text=plan_text)
+
+                self.assertEqual(len(held), 1, label)
+
+    def test_a_pointer_to_the_blank_line_of_a_written_deviation_is_adopted(self):
+        entry = plan_format.ruling_deviation(
+            1, "Keep the cache", "Pat", "2026-11-20 09:30", "Keep the cache per request, never shared.", "x")
+        plan_text = "# Plan\n\n## Plan Deviations\n\n" + "\n".join(entry) + "\n"
+
+        _, held, _ = self.routed("see plan.md:6", plan_text=plan_text)
+
+        self.assertEqual(held, [])
+
+    def test_an_impact_quoting_the_ruling_text_of_a_session_written_deviation_is_adopted(self):
+        entry = plan_format.ruling_deviation(
+            1, "Use a lock file", "agent-evals-c3", "2026-11-20 09:40", "Use a lock file, never shared.", "x")
+        plan_text = "# Plan\n\n## Plan Deviations\n\n" + "\n".join(entry) + "\n"
+
+        _, held, _ = self.routed("plan.md says: Use a lock file, never shared.", plan_text=plan_text)
+
+        self.assertEqual(held, [])
+
+    def test_a_short_nested_line_of_a_user_ruled_entry_is_no_quote(self):
+        decisions = "# Decisions\n- D5. Keep the cache per request. Ruled by Pat at 2026-11-20\n  - AC3\n"
+
+        to_coder, held, _ = self.routed("03-decisions.md is silent; AC3 holds", decisions)
+
+        self.assertEqual((len(to_coder), held), (1, []))
+
+    def test_an_impact_with_no_plan_on_disk_is_adopted(self):
+        for label, plan in {"no plan set": "", "plan file missing": "docs/missing.md"}.items():
+            with self.subTest(label):
+                host = Host()
+                host.plan = plan
+                item = types.SimpleNamespace(
+                    text=self.REPORT.format(assumed=f"03-decisions.md says: {self.RULING_LINE}"))
+
+                to_coder, held = host.route_plan_items("code-reviewer", [item])
+
+                self.assertEqual((len(to_coder), held), (1, []), label)
+                self.assertTrue(host.plan_impacts[0]["adopted"], label)
+
+    def test_a_quote_or_pointer_matches_any_line_of_a_user_ruled_entry(self):
+        decisions = ("# Decisions\n- D5. Keep the cache per request.\n  It must not leak across calls.\n"
+                     "  Ruled by Pat at 2026-11-20 09:30.\n")
+        cases = {"quote of the first line": "03-decisions.md says: D5. Keep the cache per request.",
+                 "quote of a middle line": "03-decisions.md says: It must not leak across calls.",
+                 "pointer to the first line": "see 03-decisions.md:2",
+                 "pointer to a middle line": "see 03-decisions.md:3"}
+        for label, assumed in cases.items():
+            with self.subTest(label):
+                _, held, _ = self.routed(assumed, decisions)
+
+                self.assertEqual(len(held), 1, label)
+
+    def test_a_quote_of_a_line_of_a_session_ruled_entry_is_adopted(self):
+        decisions = "# Decisions\n- D6. Use a lock file.\n  Ruled by the session at 2026-11-20 09:40.\n"
+
+        to_coder, held, _ = self.routed("03-decisions.md says: D6. Use a lock file.", decisions)
+
+        self.assertEqual((len(to_coder), held), (1, []))
+
+    def coder_impact(self, report):
+        """(held, host) after a coder reports `report` in a plan folder whose log holds both ruled lines."""
+        host = self.plan_host(self.RULING_LINE + "\n" + self.SESSION_LINE + "\n")
+        with mock.patch.object(script_utils, "git_output", return_value="Pat"):
+            held = host.record_coder_plan_impact(report, [])
+        return held, host
+
+    def test_a_coder_impact_quoting_a_user_ruled_line_is_held(self):
+        held, host = self.coder_impact(self.REPORT.format(assumed=f"03-decisions.md says: {self.RULING_LINE}"))
+
+        self.assertTrue(held)
+        self.assertFalse(host.plan_impacts[0]["adopted"])
+
+    def test_a_coder_impact_quoting_a_session_ruled_line_is_adopted(self):
+        held, host = self.coder_impact(self.REPORT.format(assumed=f"03-decisions.md says: {self.SESSION_LINE}"))
+
+        self.assertFalse(held)
+        self.assertTrue(host.plan_impacts[0]["adopted"])
+
+    def test_a_coder_impact_changing_a_criterion_is_not_adopted(self):
+        report = self.REPORT.format(assumed="the cache per request").replace(
+            "acceptance_criteria: none", "acceptance_criteria: AC1")
+
+        _, host = self.coder_impact(report)
+
+        self.assertFalse(host.plan_impacts[0]["adopted"])
+
+    def test_impacts_citing_no_user_ruling_are_adopted_by_rule(self):
+        decisions = "# Decisions\n" + self.RULING_LINE + "\n" + self.SESSION_LINE + "\n"
+        cases = {"cites no log": "the cache is per request",
+                 "names the log, quotes no line": "03-decisions.md is silent here",
+                 "quotes a session-ruled line": f"03-decisions.md says: {self.SESSION_LINE}",
+                 "points at another line": "see 03-decisions.md:1",
+                 "points past the line number": "see 03-decisions.md:22",
+                 "points at the session-ruled line": "see 03-decisions.md:3"}
+        for label, assumed in cases.items():
+            with self.subTest(label):
+                to_coder, held, packet = self.routed(assumed, decisions)
+
+                self.assertEqual((len(to_coder), held), (1, []), label)
+                self.assertEqual(len(handback.rule_adopted_plan_impacts(packet)), 1, label)
+
+
+class UserRuledLineTest(unittest.TestCase):
+    """A one-line decision log read through the owner, `signoff_lines.records_user_signoff`: a marker line reads as
+    the user's unless a session is its ruler."""
+
+    def assert_ruled(self, cases):
+        for line, expected in cases:
+            with self.subTest(line):
+                ruled = signoff_lines.records_user_signoff(line + "\n", 1, plan_format.DECISION_LOG_NAME)
+                self.assertEqual(ruled, expected, line)
+
+    def test_a_marker_line_no_session_ruled_is_the_users(self):
+        self.assert_ruled([
+            ("Ruled by Pat at 2026-11-20 09:30.", True),
+            ("Signed off by the user, 2026-11-21, relayed by agent-evals-5e", True),
+            ("Ruled by Pat, relayed by session x, 2026-11-20", True),
+            ("Ruled by Patricia at 2026-11-20", True),
+            ("Ruled by Pat", True),
+            ("**User ruling**: Relayed by agent-evals-c3-owner on 2026-11-23: the user approved the split", True),
+            ("- **Owner line** for `review_loop_ruling_check.py` in `claude/.claude/scripts/CLAUDE.md`: not added. The "
+             "user ruled out new Owners lines (ruling relayed by agent-evals-c3-owner, 2026-11-24).", True),
+            ("## Signed off: Ticket #8 and Ticket #10 overridden (user, 2026-11-21)", True),
+            ("## Signed off: Ticket #8 and Ticket #10 overridden (Pat, 2026-11-21)", True),
+            ("- 2026-11-10: User sign-off, Pat, given directly in session agent-evals-5e, which wrote it.", True),
+            ("- AC5 cut: user sign-off, Pat, 2026-11-10, written", True),
+            ("- The user ruled out new Owners lines, 2026-11-24", True),
+            ("Relayed by agent-evals-c3-owner on 2026-11-23: the user approved it", True),
+            ("User ruling: keep the cache", True),
+        ])
+
+    def test_a_line_a_session_ruled_is_not_the_users(self):
+        self.assert_ruled([
+            ("Ruling by agent-evals-c3 at 2026-11-22", False),
+            ("Ruled by agent-evals-c3, 2026-11-22", False),
+            ("Ruled by this lane, 2026-11-22", False),
+            ("Ruled by the session, not the user at 2026-11-20", False),
+            ("Ruled by the user's standing rule (session x), 2026-11-20", False),
+            ("- 2026-11-10: User sign-off, agent-evals-5e, 2026-11-10", False),
+            ("## Signed off: Ticket #8 and Ticket #10 overridden (agent-evals-5e, 2026-11-21)", False),
+            ("Sign-off: lane session, 2026-11-24", False),
+            ("- D3. Lane call: keep the cache per request, ruled 2026-11-24", False),
+            ("- D4. Ruled by the orchestrating session, 2026-11-24", False),
+        ])
+
+    def test_a_line_with_no_marker_is_not_a_ruling(self):
+        self.assert_ruled([("Pat approved it on 2026-11-20", False),
+                           ("agent-evals-c3 noted Pat approved it, 2026-11-20", False),
+                           ("Pat approved it", False)])
+
+    def test_ruled_by_user_or_a_relayed_ruling_reads_as_the_users_beside_a_session_name(self):
+        self.assert_ruled([
+            ("- D5. Keep the quote length. ruled by: user, relayed by agent-evals-c3-owner, 2026-11-26", True),
+            ("- D5. Keep the quote length. Ruled by: user, 2026-11-26 (agent-evals-c3-owner wrote it)", True),
+            ("- D5. Keep the quote length. Ruling from the user, relayed by agent-evals-c3-owner, 2026-11-26", True),
+            ("- 2026-11-10: the user ruled to ship it, 2026-11-10, in session agent-evals-5e", True),
+        ])
+
+    def test_a_person_who_signed_off_or_ruled_stays_the_ruler_beside_a_session_name(self):
+        self.assert_ruled([
+            ("- 2026-11-10: Brandon Corey signed off, directly to agent-evals-5e, on handing the deny to the work"
+             " machine.", True),
+            ("- 2026-11-10: Brandon Corey ruled to keep the plan, relayed through the lane session.", True),
+            ("- 2026-11-10: Adopt plan change. Ruled by the queue-fixes lane session, not the user.", False),
+        ])
+
+    def test_a_ruling_a_session_made_and_another_relayed_stays_the_sessions(self):
+        self.assert_ruled([
+            ("**Reasoning**: orchestrating session agent-evals-c3 ruled, 2026-11-22, relayed by the code-skill lane.",
+             False),
+            ("- ruling, 2026-11-22, session (lane dotfiles-gates, criteria owner plan): drop the cache", False),
+            ("- Phase 1 ruling (AC1, owner plan, session, 2026-11-13): keep the phrase list", False),
+            ("Phase 2 ruling (session, 2026-11-17): a resume re-enters step 3", False),
+            ("- the reader constraint reworded; ruled by the code-skill-nov22 lane, 2026-11-22", False),
+        ])
 
 
 class RewordFlagTest(unittest.TestCase):

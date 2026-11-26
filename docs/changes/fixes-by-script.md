@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-819 fix notes
+825 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -21,9 +21,9 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 33 | 5 |
 | script/coder-gate | 32 | 5 |
-| script/script-utils | 31 | 8 |
-| script/plan-format | 30 | 6 |
-| script/review-loop | 30 | 13 |
+| script/review-loop | 32 | 15 |
+| script/script-utils | 32 | 9 |
+| script/plan-format | 31 | 7 |
 | script/quality-check-cap | 24 | 5 |
 | script/shell-write-gate | 24 | 4 |
 | script/pull-keep-index | 21 | 9 |
@@ -35,7 +35,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/verify-prep | 18 | 3 |
 | skill/review | 17 | 0 |
 | script/code-review-start | 16 | 8 |
-| script/code-wait | 14 | 4 |
+| script/code-wait | 16 | 6 |
 | script/verify-log | 14 | 1 |
 | script/refactor-flow | 13 | 4 |
 | script/log-review-finding | 12 | 0 |
@@ -52,9 +52,9 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/lane-status | 8 | 8 |
 | script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 1 |
+| script/reviewer-dispatch | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
-| script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
 | script/check-discovery | 6 | 3 |
@@ -65,6 +65,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/parallel-tests | 6 | 1 |
 | script/phase-start | 6 | 4 |
 | script/pipe-shell-check | 6 | 0 |
+| script/review-loop-ruled | 6 | 5 |
 | script/reviewed-tree | 6 | 4 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
@@ -75,7 +76,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/loop-transcript | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
 | script/plan-check | 5 | 5 |
-| script/review-loop-ruled | 5 | 4 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/shell-statements | 5 | 4 |
@@ -102,6 +102,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
+| script/review-loop-comment-removal | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/shell-command-words | 3 | 3 |
 | script/shell-quoting | 3 | 3 |
@@ -139,6 +140,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/rule-anchors | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/shell-steps | 2 | 2 |
+| script/signoff-lines | 2 | 2 |
+| script/source-text | 2 | 1 |
 | script/sweep-scratchpads | 2 | 0 |
 | script/tests-run | 2 | 2 |
 | script/user-prompts | 2 | 2 |
@@ -206,19 +209,17 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/reply-json | 1 | 0 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 0 |
-| script/review-loop-comment-removal | 1 | 1 |
 | script/review-loop-docs-kind | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
 | script/review-loop-partial-fix | 1 | 1 |
 | script/review-loop-prompts | 1 | 1 |
 | script/review-loop-signoffs | 1 | 1 |
+| script/review-loop-stray-files | 1 | 1 |
 | script/ruling-relay | 1 | 0 |
 | script/session-registry | 1 | 1 |
 | script/shape-clones | 1 | 1 |
 | script/shell-variables | 1 | 1 |
-| script/signoff-lines | 1 | 1 |
 | script/simplify-slices | 1 | 0 |
-| script/source-text | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |
 | script/suite-receipt | 1 | 1 |

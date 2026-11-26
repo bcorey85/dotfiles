@@ -76,6 +76,7 @@ import handback
 import loop_transcript
 import plan_format
 import review_loop_held
+import review_loop_outside_writes
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_untracked
@@ -649,9 +650,10 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Ac
             self.flag_broken_no_code_rulings(findings, result.changed, nits)
             reverted = self.ask_for_approval_only_edits(result.changed, findings)
             result = without_reverted(result, reverted, stats_before)
-            self.check_pass_result(call_name, result)
-            self.check_rulings_kept(call_name, findings, result, ruling_backup)
-            self.stop_on_stray_files(scope_guard, findings, result)
+            with review_loop_outside_writes.outside_paths_on_stop(call_name, self.repo):
+                self.check_pass_result(call_name, result)
+                self.check_rulings_kept(call_name, findings, result, ruling_backup)
+                self.stop_on_stray_files(scope_guard, findings, result)
             self.stop_on_outside_writes(call_name, findings, result)
         finally:
             self.discard_ruling_backup(ruling_backup)

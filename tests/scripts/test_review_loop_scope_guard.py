@@ -1290,6 +1290,21 @@ class ScopeGuardLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py", packet["files_touched"])
         self.assertIn(str(sibling_file), packet["tool_fault"])
 
+    def test_an_earlier_stop_in_a_pass_that_also_wrote_outside_the_repo_still_names_the_outside_path(self):
+        sibling_file = self.scratch.resolve() / "other-checkout" / "bin" / "tool.py"
+        completed = self.run_script({
+            "code-reviewer": [{"result": loop_tests.FIX_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED,
+                                                       "notes.py": loop_tests.NOTES_REFLOWED},
+                       "transcript_writes": {str(sibling_file): "tool = 1\n"}}],
+        }, header_extra="later-phase files: notes.py")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("edited files the plan gives to a later phase: notes.py", packet["blockers"][0])
+        self.assertIn(str(sibling_file), packet["blockers"][0])
+
     def test_a_missing_coder_transcript_notes_a_tool_fault_and_the_run_still_converges(self):
         completed = self.run_script(self.outside_write_scenario({
             "result": "Fixed 1.", "edits": {"app.py": loop_tests.APP_FIXED}, "no_transcript": True}))

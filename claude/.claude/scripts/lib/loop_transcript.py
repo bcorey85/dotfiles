@@ -413,20 +413,58 @@ def agent_finished(transcript_path):
 WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def written_paths(transcript_path, since=None):
+def written_paths(transcript_path, since=None, succeeded_only=False):
     """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls.
     With `since` (epoch seconds), only calls whose record `timestamp` is later count; a record with no parsable
-    timestamp counts for none."""
-    paths = set()
+    timestamp counts for none. With `succeeded_only`, a call whose tool_result has `is_error` true is left out; a
+    call with no result counts, since one cut off mid-write may have written."""
+    paths_by_call = {}
+    refused_ids = set()
     with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
         for line in transcript:
-            found = call_paths(line)
-            if not found:
-                continue
+            refused_ids.update(refused_call_ids(line))
             if since is not None and not recorded_after(line, since):
                 continue
-            paths.update(found)
+            for call_id, found in call_paths_by_id(line):
+                paths_by_call.setdefault(call_id, set()).update(found)
+    paths = set()
+    for call_id, found in paths_by_call.items():
+        if succeeded_only and call_id in refused_ids:
+            continue
+        paths.update(found)
     return paths
+
+
+def refused_call_ids(line):
+    """The tool_use ids whose tool_result blocks on this transcript line have `is_error` true."""
+    record = script_utils.transcript_record(line) if '"tool_result"' in line else None
+    message = record.get("message") if record else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return []
+    return [block.get("tool_use_id") for block in content
+            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error")]
+
+
+def call_paths_by_id(line):
+    """The (tool_use id, file paths) of each Write, Edit, MultiEdit and NotebookEdit call on one transcript line
+    that names a path. A call with no id gets a key of its own."""
+    record = script_utils.transcript_record(line) if '"tool_use"' in line else None
+    message = record.get("message") if record else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, list):
+        return []
+    calls = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        if block.get("name") not in WRITE_TOOL_NAMES:
+            continue
+        tool_input = block.get("input")
+        found = input_paths(tool_input if isinstance(tool_input, dict) else {})
+        if found:
+            calls.append((block.get("id") or object(), found))
+    return calls
 
 
 def recorded_after(line, since):
@@ -440,16 +478,6 @@ def recorded_after(line, since):
     except ValueError:
         return False
     return epoch > since
-
-
-def call_paths(line):
-    """The file paths the Write, Edit, MultiEdit and NotebookEdit calls of one transcript line name."""
-    paths = []
-    for name, tool_input in script_utils.tool_use_calls(line):
-        if name not in WRITE_TOOL_NAMES:
-            continue
-        paths.extend(input_paths(tool_input))
-    return paths
 
 
 def input_paths(tool_input):

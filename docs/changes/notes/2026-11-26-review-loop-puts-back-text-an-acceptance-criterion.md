@@ -21,8 +21,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 Before each fix pass the loop reads the spans the plan's acceptance criteria and its ticket quote, and notes the
 files in scope that hold one. After the pass, a lost span's lines go back in place, the pass's other edits stay, and
 one ask per span names the criterion, the file and the text. An accepted ask lets the change stand; a rejected one
-keeps the put-back with no new ask. A malformed criteria file turns the guard off for the run with a `tool_fault`
-note naming the file.
+keeps the put-back with no new ask. A malformed criteria file turns the guard off for each pass that reads it
+(the file is read again before every pass), with one `tool_fault` note per distinct error naming the file.
 
 Q1: with no plan on disk the guard does not run; criterion text in the brief alone is not read.
 

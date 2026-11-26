@@ -5,6 +5,7 @@ NotebookEdit calls named, and stops the run in a blocker that names each path. N
 
 Owner of which written paths count as outside the repo. Import it; never classify a written path another way.
 The host has files_touched and keep_unreverted_open, and holds repo."""
+import contextlib
 import pathlib
 
 import hook_input
@@ -62,7 +63,7 @@ def record_pass_writes(role, repo, out, session):
         OUTSIDE_WRITE_FAULTS.append(unreadable_note(role, session))
         return
     try:
-        written = loop_transcript.written_paths(transcript)
+        written = loop_transcript.written_paths(transcript, succeeded_only=True)
     except OSError:
         OUTSIDE_WRITE_FAULTS.append(unreadable_note(role, session))
         return
@@ -76,6 +77,19 @@ def unreadable_note(role, session):
     """The tool_fault note of a pass whose transcript could not be read."""
     return (f"{role}: the outside-write check could not run: no readable transcript for session {session!r} "
             f"under {session_registry.projects_dir()}")
+
+
+@contextlib.contextmanager
+def outside_paths_on_stop(call_name, repo):
+    """Around the checks that run before the outside-write stop: when one stops the run, the outside paths of the
+    pass `call_name` join its message, so the blocker still names them. The error keeps its type."""
+    try:
+        yield
+    except RuntimeError as error:
+        paths = PASS_OUTSIDE_WRITES.pop(call_name, [])
+        if paths:
+            error.args = (f"{error} {outside_write_blocker(call_name, repo, paths)}",)
+        raise
 
 
 class OutsideWrites:

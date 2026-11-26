@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The loop names each coder call's session (`--session-id`) and reads that transcript for the files the pass wrote with Write, Edit, MultiEdit and NotebookEdit. A path that resolves outside the reviewed repo, and outside the temp and scratch folders, ends the run in a `critical-blocker` that names each resolved path (a symlink reads as its target). Nothing is put back. A pass that died, timed out or returned no final report is read the same way, so its blocker names the paths too. A missing or unreadable transcript leaves a `tool_fault` note and does not stop the run.
+The loop names each coder call's session (`--session-id`) and reads that transcript for the files the pass wrote with Write, Edit, MultiEdit and NotebookEdit (a write that succeeded: a refused call counts for nothing). A path that resolves outside the reviewed repo, and outside the temp and scratch folders, ends the run in a `critical-blocker` that names each resolved path (a symlink reads as its target). Nothing is put back. A pass that died, timed out or returned no final report is read the same way, so its blocker names the paths too. A missing or unreadable transcript leaves a `tool_fault` note and does not stop the run.
 
 `claude/.claude/scripts/CLAUDE.md` names both new owners: `review/review_loop_outside_writes.py` and `review/review_loop_criteria_quotes.py`, with `plan_format.ac_quotes` and `plan_ac_quotes`.
 

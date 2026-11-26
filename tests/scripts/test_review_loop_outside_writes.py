@@ -154,6 +154,38 @@ class OutsideWritesTest(unittest.TestCase):
         self.assertEqual(outside.PASS_OUTSIDE_WRITES, {"coder1": []})
         self.assertEqual(outside.OUTSIDE_WRITE_FAULTS, [])
 
+    def test_a_refused_outside_write_records_nothing(self):
+        projects = self.base / "config" / "projects" / "p"
+        projects.mkdir(parents=True)
+        other = self.base / "other" / "tool.py"
+        use = {"type": "tool_use", "id": "t1", "name": "Write", "input": {"file_path": str(other)}}
+        refusal = {"type": "tool_result", "tool_use_id": "t1", "content": "denied", "is_error": True}
+        records = [{"type": "assistant", "message": {"content": [use]}},
+                   {"type": "user", "message": {"content": [refusal]}}]
+        (projects / "s-4.jsonl").write_text("".join(json.dumps(record) + "\n" for record in records))
+
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.base / "config")}):
+            outside.record_pass_writes("coder1", self.repo, self.out, "s-4")
+
+        self.assertEqual(outside.PASS_OUTSIDE_WRITES, {"coder1": []})
+        self.assertEqual(outside.OUTSIDE_WRITE_FAULTS, [])
+
+    def test_a_stop_error_gets_the_outside_paths_appended_and_keeps_its_type(self):
+        outside.PASS_OUTSIDE_WRITES["coder1"] = ["/x/tool.py"]
+
+        with self.assertRaises(RuntimeError) as raised, outside.outside_paths_on_stop("coder1", self.repo):
+            raise RuntimeError("stray files left")
+
+        self.assertIn("stray files left", str(raised.exception))
+        self.assertIn("/x/tool.py", str(raised.exception))
+        self.assertNotIn("coder1", outside.PASS_OUTSIDE_WRITES)
+
+    def test_a_stop_error_with_no_outside_paths_passes_through_unchanged(self):
+        with self.assertRaises(RuntimeError) as raised, outside.outside_paths_on_stop("coder1", self.repo):
+            raise RuntimeError("stray files left")
+
+        self.assertEqual(str(raised.exception), "stray files left")
+
 
 if __name__ == "__main__":
     unittest.main()

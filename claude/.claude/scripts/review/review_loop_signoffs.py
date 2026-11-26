@@ -198,10 +198,7 @@ class SignoffRuns:
         return any(entry.unchanged or finding.line in entry.lost_numbers for entry in put_back if entry.path == path)
 
     def not_put_back(self, items):
-        """The items the sign-off, comment or criterion-quote put-back did not restore.
-
-        A restored finding is not fixed.
-        """
+        """The items the put-back did not restore; a restored finding is not fixed."""
         return [item for item in items if item not in self.put_back_findings]
 
     def undo_signoff_pass(self, snapshot, findings, skip):

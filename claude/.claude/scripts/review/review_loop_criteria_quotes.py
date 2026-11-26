@@ -3,7 +3,7 @@ pass the loop records each file's text and the quoted spans in it, with the labe
 span. After the pass, a span that is gone is put back where its line stands (the pass's other edits stay), and one ask
 names the criterion, the file and the text. An accepted ask lets the removal stand; a rejected one keeps the
 put-back and files no ask. With no plan on disk the guard does nothing; a criteria file that does not parse turns it
-off for the run with a note for the packet's tool_fault."""
+off for each pass that reads it, with one note per distinct error for the packet's tool_fault."""
 import dataclasses
 import pathlib
 import typing
@@ -19,7 +19,7 @@ AC_QUOTE_ASK_NOTE = ("[criterion] a fix pass removed text that a criterion quote
                      "accepted ask removes it; the loop put it back")
 
 AC_QUOTE_FAULTS = []
-"""Notes for the packet's tool_fault: the guard was off for the run, with the reason."""
+"""Notes for the packet's tool_fault: the guard was off for a pass, with the reason; one note per distinct error."""
 
 
 class AcQuoteSnapshot(typing.NamedTuple):
@@ -51,7 +51,8 @@ class AcQuoteRuns:
     def ac_quote_snapshot(self, files_in_scope):
         """An AcQuoteSnapshot of the files in scope (outside the plan's folder, not held) that hold a quoted span of
         the plan's criteria. With no plan on disk it is EMPTY_AC_QUOTES. A criteria file that does not parse turns
-        the guard off for the run: a note naming the file goes to AC_QUOTE_FAULTS and the snapshot is empty."""
+        the guard off for this pass (the file is read again before the next): a note naming the file goes to
+        AC_QUOTE_FAULTS, once per distinct error, and the snapshot is empty."""
         plan_path = self.plan_path_on_disk()
         if plan_path is None:
             return EMPTY_AC_QUOTES

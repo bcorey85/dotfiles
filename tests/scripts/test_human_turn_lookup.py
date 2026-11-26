@@ -12,11 +12,12 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import human_turn_lookup
+import script_utils
 from human_turn_lookup import HumanTurnRefusedError
 
 NAME = "relay-session"
 SESSION_ID = "11111111-2222-3333-4444-555555555555"
-ASKED_AT = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
+ASKED_AT = script_utils.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
 
 
 def user_row(content, origin=None, timestamp="2026-11-15T06:22:12.305Z", **extra):
@@ -51,6 +52,13 @@ class HumanTurnLookupTest(unittest.TestCase):
         folder_path = self.home / "projects" / folder
         folder_path.mkdir(parents=True, exist_ok=True)
         (folder_path / f"{session_id}.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+
+    def test_a_transcript_under_two_projects_is_refused_as_several(self):
+        self.transcript([user_row("hi", HUMAN)])
+        self.transcript([user_row("hi", HUMAN)], folder="-other-project")
+        with self.assertRaises(HumanTurnRefusedError) as raised:
+            human_turn_lookup.transcript_of_session(SESSION_ID)
+        self.assertIn("2 transcripts named", str(raised.exception))
 
     def verified(self, after=ASKED_AT):
         _, turn = human_turn_lookup.verified_human_turn(NAME, after)
@@ -260,11 +268,6 @@ class HumanTurnLookupTest(unittest.TestCase):
         with self.assertRaises(HumanTurnRefusedError) as caught:
             human_turn_lookup.verified_human_turn(SESSION_ID, ASKED_AT)
         self.assertIn("no live session has the id or the name", str(caught.exception))
-
-    def test_a_timestamp_with_an_offset_and_one_with_z_read_the_same_moment(self):
-        zulu = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
-        offset = human_turn_lookup.epoch_of_timestamp("2026-11-15T07:22:12.305+01:00")
-        self.assertEqual(zulu, offset)
 
 
 if __name__ == "__main__":

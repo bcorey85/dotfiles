@@ -25,7 +25,7 @@ handoff:
 
 ## Who writes `files` for `/code`
 
-`/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), less the held files (with a session other than the run's live in the repo at a phase start, every file dirty at the run start per `phase_start.py`'s start record; with one live only at review, those files whose bytes are unchanged; in either case any untracked file no recorded coder of the run wrote and no earlier or current phase section names; a file the plan gives to an earlier phase is never held), and less the files under the plan's folder, keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
+`/code` writes only the `why` entries; `code_review_start.py` replaces `files` with the paths git shows changed since the phase base (tracked changes plus untracked files), less the held files (a holder is recorded at a phase start when exactly one session other than the run's is shown to have written a dirty file; then every file dirty at the run start per `phase_start.py`'s start record is held; with no recorded holder, only the unchanged files that the one proven writer wrote; with a recorded holder or such a proven writer, any untracked file no recorded coder of the run wrote and no earlier or current phase section names; a file the plan gives to an earlier phase is never held), and less the files under the plan's folder, keeping each entry's `why`. Never list a changed file, an export or a line number from memory.
 
 ## Who writes `files` for `/fix` and `/refactor`
 

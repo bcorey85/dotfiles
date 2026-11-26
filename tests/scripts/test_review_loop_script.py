@@ -255,9 +255,12 @@ class SplitHeldFindingsTest(unittest.TestCase):
 class ImplicitHoldersTest(unittest.TestCase):
     OTHER: typing.ClassVar[dict] = {"pid": 77, "sessionId": "other-id", "name": "lane-b", "cwd": "/repo"}
 
-    def holders(self, live_row, only_files=("app.py",), known=None):
-        with mock.patch.object(review_loop_held.session_registry, "other_live_session_in",
-                               return_value=live_row) as lookup:
+    def holders(self, live_row, only_files=("app.py",), known=None, written=("theirs.py",)):
+        found = None
+        if live_row is not None:
+            found = review_loop_held.dirty_writers.HolderPaths(live_row, list(written))
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=found) as lookup:
             result = review_loop_held.implicit_holders(
                 "/repo", {"theirs.py", "named.py"}, known or {"named.py": {}}, list(only_files), "own-id")
         return result, lookup
@@ -265,11 +268,18 @@ class ImplicitHoldersTest(unittest.TestCase):
     def test_a_dirty_file_outside_the_file_scope_is_held_by_the_live_other_session(self):
         result, lookup = self.holders(self.OTHER)
 
-        lookup.assert_called_once_with("/repo", "own-id")
+        lookup.assert_called_once_with("/repo", ["theirs.py"], "own-id")
         self.assertEqual(result, {"theirs.py": review_loop_held.holder_row(
             "theirs.py", "lane-b", "dirty, outside the run's --file scope")})
 
-    def test_with_no_live_other_session_nothing_is_held(self):
+    def test_only_the_files_the_proven_writer_wrote_are_held(self):
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=review_loop_held.dirty_writers.HolderPaths(self.OTHER, ["a.py"])):
+            result = review_loop_held.implicit_holders("/repo", {"a.py", "b.py"}, {}, ["app.py"], "own-id")
+
+        self.assertEqual(list(result), ["a.py"])
+
+    def test_with_no_proven_writer_nothing_is_held(self):
         result, _lookup = self.holders(None)
 
         self.assertEqual(result, {})

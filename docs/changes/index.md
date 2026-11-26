@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1192 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [pull_keep_index names the session that wrote the dirty files](notes/2026-11-25-pull-keep-index-names-the-session-that-wrote-the.md).
+Latest change: 2026-11-26, [Phase start and the review loop name a holder by its writes, not its folder](notes/2026-11-26-phase-start-and-the-review-loop-name-a-holder-by.md).
 
 ## Top gains
 

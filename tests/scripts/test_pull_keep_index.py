@@ -12,6 +12,7 @@ import unittest
 import unittest.mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import transcript_lines
 from toolkit_paths import LIB_DIR, TOOLS_DIR
 
 SCRIPT = pathlib.Path(os.environ.get("PULL_KEEP_INDEX_SCRIPT") or TOOLS_DIR / "pull_keep_index.py")
@@ -19,7 +20,7 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAM
            "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 REF = "refs/pull-keep-index/20260101T000000Z-abc12345"
 # A write record counts only when it is later than the HEAD commit, which the tests make at the current time.
-AFTER_HEAD = "2099-01-01T00:00:00Z"
+AFTER_HEAD = transcript_lines.AFTER_HEAD
 BEFORE_HEAD = "2000-01-01T00:00:00Z"
 
 
@@ -59,17 +60,13 @@ class PullKeepIndexTest(unittest.TestCase):
         """A transcript under the config dir's projects folder with one Edit call per path in `edited`, each record
         stamped `timestamp`; with `subagent`, the transcript of a subagent of the session, and the session's main
         transcript holds no call."""
-        lines = []
-        for edited_path in edited:
-            block = {"type": "tool_use", "id": "t", "name": "Edit", "input": {"file_path": str(edited_path)}}
-            record = {"type": "assistant", "timestamp": timestamp, "message": {"content": [block]}}
-            lines.append(json.dumps(record))
+        text = transcript_lines.edit_lines(edited, timestamp)
         project = self.config_dir / "projects" / "p"
         if subagent:
             self.write(project, f"{session_id}.jsonl", "")
-            self.write(project / session_id / "subagents", "agent-a1.jsonl", "\n".join(lines) + "\n")
+            self.write(project / session_id / "subagents", "agent-a1.jsonl", text)
             return
-        self.write(project, f"{session_id}.jsonl", "\n".join(lines) + "\n")
+        self.write(project, f"{session_id}.jsonl", text)
 
     def git(self, folder, *arguments):
         env = {**os.environ, **GIT_ENV}

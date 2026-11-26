@@ -74,8 +74,8 @@ import tempfile
 from typing import NamedTuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import dirty_writers
 import file_lock
-import loop_transcript
 import script_utils
 import session_registry
 
@@ -685,48 +685,6 @@ def fetch_incoming(repo, target, upstream_tip):
     return Incoming(branch, fetched.commit)
 
 
-def wrote_a_dirty_path(repo, transcripts, dirty, since):
-    """Whether one of the transcripts holds a write call on one of the dirty paths (relative to `repo`) recorded
-    after `since` (epoch seconds): True or False, or None when a transcript cannot be read. A call with a relative
-    path is no evidence, because the folder it ran in is not recorded."""
-    repo_path = pathlib.Path(repo).resolve()
-    dirty_paths = set(dirty)
-    for transcript in transcripts:
-        try:
-            written = loop_transcript.written_paths(transcript, since=since)
-        except OSError as error:
-            sys.stderr.write(f"pull_keep_index: could not read the transcript {transcript}: {error}\n")
-            return None
-        for written_path in written:
-            if not os.path.isabs(written_path):
-                continue
-            if script_utils.repo_relative(repo_path, written_path) in dirty_paths:
-                return True
-    return False
-
-
-def own_session_may_have_written(repo, dirty, since):
-    """Whether this session (CLAUDE_CODE_SESSION_ID) wrote a dirty path, or has a transcript that could not be read.
-    A session with no transcript is no evidence."""
-    own_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not own_id:
-        return False
-    transcripts = session_registry.session_transcripts(own_id)
-    if not transcripts:
-        return False
-    wrote = wrote_a_dirty_path(repo, transcripts, dirty, since)
-    return wrote is not False
-
-
-def other_session_wrote(repo, row, dirty, since):
-    """`wrote_a_dirty_path` for another live session's transcripts; None when it has no transcript or one cannot be
-    read."""
-    transcripts = session_registry.session_transcripts(row.get("sessionId"))
-    if not transcripts:
-        return None
-    return wrote_a_dirty_path(repo, transcripts, dirty, since)
-
-
 def holder_clause(repo, others, dirty):
     """Who holds the dirty files, as the opening clause of a refusal: the one live session whose transcripts show a
     write to a dirty path after the HEAD commit, when every other session's transcripts were read and this session
@@ -737,15 +695,13 @@ def holder_clause(repo, others, dirty):
             f"pull_keep_index: could not read the HEAD commit time (git log -1 --format=%ct) in {repo}; "
             "nothing pulled or set aside"
         )
-    own_wrote = own_session_may_have_written(repo, dirty, since)
-    verdicts = [(row, other_session_wrote(repo, row, dirty, since)) for row in others]
-    writers = [row for row, wrote in verdicts if wrote]
-    unread = [session_registry.holder_label(row) for row, wrote in verdicts if wrote is None]
-    if len(writers) == 1 and not unread and not own_wrote:
-        return f"{session_registry.holder_label(writers[0])} also works in {repo} and wrote a dirty file"
+    verdict = dirty_writers.dirty_writers(repo, others, dirty, since, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    sole = verdict.sole_writer()
+    if sole is not None:
+        return f"{session_registry.holder_label(sole)} also works in {repo} and wrote a dirty file"
     candidates = ", ".join(session_registry.holder_label(row) for row in others)
-    unread_text = f" (transcript not read: {', '.join(unread)})" if unread else ""
-    own_text = "this session also wrote a dirty file; " if own_wrote else ""
+    unread_text = f" (transcript not read: {', '.join(verdict.unread)})" if verdict.unread else ""
+    own_text = "this session also wrote a dirty file; " if verdict.own_wrote else ""
     return (f"the owner of the dirty files is unknown; {own_text}the live sessions in {repo} are the candidates: "
             f"{candidates}{unread_text}")
 

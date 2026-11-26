@@ -18,6 +18,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+import changed_lines
 import clone_pairs
 import script_utils
 import sequence_similarity
@@ -364,7 +365,7 @@ def catalog_listings(added_functions, functions, branch_added_keys):
 def branch_shapes(diff_files, untracked, root_dir):
     """The ShapeResult for the work tree at root_dir: pairs for each function that overlaps a changed line, and the
     catalog neighbours of each function whose every line the branch added."""
-    changed = clone_pairs.changed_line_sets(diff_files, untracked)
+    changed = changed_lines.changed_line_sets(diff_files, untracked)
     functions, notes = read_functions(root_dir)
     changed_functions = []
     added_functions = []
@@ -373,8 +374,7 @@ def branch_shapes(diff_files, untracked, root_dir):
         if not clone_pairs.site_touches(site, changed):
             continue
         changed_functions.append(function)
-        function_lines = range(function.first_line, function.last_line + 1)
-        if all(line in changed[function.path] for line in function_lines):
+        if changed_lines.range_added(changed, function.path, function.first_line, function.last_line):
             added_functions.append(function)
 
     pairs = find_pairs(changed_functions, functions)

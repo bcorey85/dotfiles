@@ -17,7 +17,7 @@ to it unless they start with `claude/`, `docs/` or `tests/`); tests in `tests/sc
 
 ## Phase Status
 
-- [ ] Phase 1: `lib/single_caller_census.py` lists the three kinds, with a CLI that prints JSON (risk: medium)
+- [x] Phase 1: `lib/single_caller_census.py` lists the three kinds, with a CLI that prints JSON (risk: medium)
 - [ ] Phase 2: the smell-reviewer prompt of the review loop and of branch-prep carries the list (risk: low)
 
 ## Phase 1: the census
@@ -41,7 +41,8 @@ to it unless they start with `claude/`, `docs/` or `tests/`); tests in `tests/sc
 - Kind `superseded-helper`: an added def F with at least one call site, where each function that calls F also calls
   another branch-touched def H, newer than F, with every argument of the F call among the H call's arguments
   (compared by `ast.dump`). Newer: the newest `git blame` time of H's lines is later than the blame time of F's def
-  line; an uncommitted line is newest. The entry names F, H and the callers; the smell-reviewer judges whether H's
+  line; an uncommitted line is newest. Each F call must pass at least one argument (with no argument nothing ties the
+  newer call to the old one). The entry names F, H and the callers; the smell-reviewer judges whether H's
   output is the same.
 - `census(repo, base="HEAD")` returns a `Census` (entries, notes). Each entry: kind, path, line, name, detail.
   `census_lines(result, paths=None)` gives the prompt lines, filtered to `paths` when given.

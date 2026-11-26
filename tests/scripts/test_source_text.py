@@ -102,9 +102,56 @@ class CommentLineNumbersTest(unittest.TestCase):
     def test_hash_style_ignores_triple_quotes(self):
         self.assertEqual({2}, source_text.comment_line_numbers(['"""', "# c", '"""'], "hash"))
 
+    def test_dash_style_takes_lines_that_start_with_two_dashes(self):
+        self.assertEqual({1, 3}, source_text.comment_line_numbers(["-- a", "    *", "  -- b", ";"], "dash"))
+
+    def test_sql_and_lua_are_dash_and_qml_is_slash(self):
+        styles = {"a.sql": "dash", "a.lua": "dash", "a.qml": "slash"}
+        for name, style in styles.items():
+            with self.subTest(name=name):
+                self.assertEqual(style, source_text.comment_style_of(name))
+
+    def test_a_trailing_dash_comment_is_split_off(self):
+        self.assertEqual(("select 1 ", "-- one"), source_text.split_trailing_comment("select 1 -- one", "dash"))
+
     def test_unknown_style_raises(self):
         with self.assertRaises(ValueError):
             source_text.comment_line_numbers([], "lisp")
+
+
+class ContiguousRunsTest(unittest.TestCase):
+    def test_runs_of_consecutive_numbers_are_paired_first_to_last(self):
+        self.assertEqual(source_text.contiguous_runs({7, 1, 2, 3, 9, 8, 12}), [(1, 3), (7, 9), (12, 12)])
+
+    def test_a_generator_with_duplicates_is_sorted_and_deduplicated(self):
+        self.assertEqual(source_text.contiguous_runs(iter([3, 2, 2, 1])), [(1, 3)])
+
+    def test_no_numbers_give_no_runs(self):
+        self.assertEqual(source_text.contiguous_runs(set()), [])
+
+
+class PythonNameIsPublicTest(unittest.TestCase):
+    def test_python_name_is_public(self):
+        for name, expected in (("run", True), ("_run", False), ("__init__", True), ("__private", False)):
+            with self.subTest(name=name):
+                self.assertEqual(source_text.python_name_is_public(name), expected)
+
+
+class LineNumbersOfTextTest(unittest.TestCase):
+    def test_every_occurrence_is_numbered(self):
+        self.assertEqual({1, 2, 4, 5}, source_text.line_numbers_of_text("a\nb\nc\na\nb\n", "a\nb"))
+
+    def test_a_missing_text_gives_none(self):
+        self.assertIsNone(source_text.line_numbers_of_text("a\nb\n", "zzz"))
+
+
+class TripleQuoteCloseLineTest(unittest.TestCase):
+    def test_close_line_of_a_one_line_and_a_multi_line_docstring(self):
+        self.assertEqual(1, source_text.triple_quote_close_line(['"""One."""', "x = 1"], 1))
+        self.assertEqual(3, source_text.triple_quote_close_line(['"""Open', "more", 'end"""', "x = 1"], 1))
+
+    def test_a_quote_inside_a_literal_or_after_a_hash_does_not_open_a_docstring(self):
+        self.assertEqual(1, source_text.triple_quote_close_line(["\"\"\"a\"\"\" + '\"\"\"'", "x"], 1))
 
 
 class StringDataLineNumbersTest(unittest.TestCase):

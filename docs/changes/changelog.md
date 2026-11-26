@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1289 changes
+1290 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Changed
 
 * [plan-reading folds into /code and adr-template moves into the adr skill folder](notes/2026-11-26-plan-reading-folds-into-code-and-adr-template.md) [skill/code, skill/adr, agent/plan-verifier, shared/plan-format] The phase-scoped plan-reading rule moves word for word into a /code section, and the ADR template moves from _shared into skills/adr, so no _shared file has a single loader.
+* [Comment hook allows only kept kinds of comment on each edit](notes/2026-11-26-comment-hook-allows-only-kept-kinds-of-comment-on.md) [script/comment-bloat-gate] The comment-bloat-gate blocks each comment line an edit adds unless it is a license header, a lint or format suppression or tool directive, a comment block on an exported or public symbol, or a line with a URL; the whole-file density cap is gone.
 * [skills name the plan files beside the plan, not under docs/plans](notes/2026-11-26-skills-name-the-plan-files-beside-the-plan-not.md) [skill/eng-spec, skill/code, skill/coder-core, skill/plan-format] eng-spec phases 6 and 7 write and check the spec in the task directory phase 1 opened, eng-spec phase 1 also finds an existing git-dir task directory by ticket key, and /code, coder-core and the plan format name the criteria file as the one beside the plan.
 * [verify-branch writes a fetched ticket to the path verify-prep names](notes/2026-11-26-verify-branch-writes-a-fetched-ticket-to-the-path.md) [skill/verify-branch] verify-branch's exit-4 row writes the fetched ticket to the path verify-prep's message names, in the git dir, not the tmpfs scratchpad.
 * [eng-spec opens the task directory the resolver names](notes/2026-11-26-eng-spec-opens-the-task-directory-the-resolver.md) [skill/eng-spec] eng-spec phase 1 opens the task directory that resolve-task-dir.sh --home prints, so a repo with no docs/plans gets a plan folder in its git dir.

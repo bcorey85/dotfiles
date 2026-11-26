@@ -16,6 +16,7 @@ from shell_statements import (
     blank_script_run_quotes,
     clean,
     decode_ansi_c,
+    heredoc_body_line_numbers,
     is_arithmetic_span,
     open_statement_word_pair,
     opens_shell_heredoc,
@@ -184,6 +185,20 @@ class OpensShellHeredocTest(unittest.TestCase):
         command = "git commit -m \"$(cat <<'EOF'\nSupports 5\" screens\nEOF\n)\""
 
         self.assertEqual("git commit -m \"$(cat <<'EOF'\n)\"", strip_heredocs(command))
+
+
+class HeredocBodyLineNumbersTest(unittest.TestCase):
+    def test_body_and_terminator_lines_are_numbered_from_one(self):
+        cases = {
+            "one body": ("cat <<EOF\nbody\nEOF\necho x", {2, 3}),
+            "two markers on one line": ("cat <<A <<B\na\nA\nb\nB\necho x", {2, 3, 4, 5}),
+            "a body fed to a shell": ("bash <<EOF\necho x\nEOF\n", {2, 3}),
+            "no terminator": ("cat <<EOF\nbody\n", set()),
+            "no heredoc": ("echo x\necho y", set()),
+        }
+        for name, (script, expected) in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(expected, heredoc_body_line_numbers(script))
 
 
 class StripHeredocsTest(unittest.TestCase):

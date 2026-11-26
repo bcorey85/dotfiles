@@ -371,6 +371,28 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def committed_text(file_path, timeout=None):
+    """The text of the file at HEAD, without trailing newlines, or "" when HEAD does not hold it: the file is
+    outside a git work tree, is untracked, or the repo has no commit yet. None when git failed, so the file may be
+    committed and its old text is unknown."""
+    if not inside_git_work_tree(file_path, timeout):
+        return ""
+    real_path = os.path.realpath(file_path)
+    folder = os.path.dirname(real_path)
+    name = os.path.basename(real_path)
+    text = git_output(folder, "show", f"HEAD:./{name}", timeout=timeout)
+    if text is not None:
+        return text
+    listed = git_output(folder, "ls-tree", "--name-only", "HEAD", "--", name, timeout=timeout)
+    if listed == "":
+        return ""
+    has_git_dir = git_output(folder, "rev-parse", "--git-dir", timeout=timeout) is not None
+    has_head = git_output(folder, "rev-parse", "--verify", "--quiet", "HEAD", timeout=timeout) is not None
+    if has_git_dir and not has_head:
+        return ""
+    return None
+
+
 def diff_paths(directory, *diff_arguments, timeout=None):
     """The set of paths `git diff --name-only <diff_arguments>` names in `directory`, or None after a git failure.
     Renames stay off so a rename shows both its old and new path."""

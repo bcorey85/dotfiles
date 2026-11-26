@@ -1,4 +1,9 @@
-"""Checks for comment_bloat_gate.py, the PostToolUse hook that blocks workflow-marker leaks and comment bloat."""
+"""Checks for comment_bloat_gate.py, the PostToolUse hook.
+
+It blocks workflow-marker leaks and comment lines that are not a kept kind.
+"""
+import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -6,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -16,8 +22,6 @@ SCRIPT = SCRIPTS_DIR / "comment_bloat_gate.py"
 MARKER_LINE = "# see dev/agent-ledger-LED-7/docs/" + "plans/LED-7-watch-metrics/spec.md"
 
 PHASE_WORD = "Pha" + "se"
-
-FILLER = "\n".join(f"value_{index} = {index}" for index in range(40)) + "\n"
 
 
 class CommentBloatGateTest(unittest.TestCase):
@@ -58,13 +62,13 @@ class CommentBloatGateTest(unittest.TestCase):
         }
         return self.run_hook(json.dumps(payload), env)
 
-    def edit_replacing(self, path, old_text, new_text):
+    def edit_replacing(self, path, old_text, new_text, env=None):
         payload = {
             "hook_event_name": "PostToolUse",
             "tool_name": "Edit",
             "tool_input": {"file_path": path, "old_string": old_text, "new_string": new_text},
         }
-        return self.run_hook(json.dumps(payload))
+        return self.run_hook(json.dumps(payload), env)
 
     def assert_blocked(self, finished):
         self.assertEqual(finished.returncode, 2, finished.stderr)
@@ -76,9 +80,26 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assertEqual(finished.stdout, "")
         self.assertEqual(finished.stderr, "")
 
+    def assert_no_marker(self, finished):
+        """For a marker case: a plain comment sample is blocked by the kept-kind rule, a code sample passes, and a
+        marker never blocks either."""
+        self.assertNotIn("marker", finished.stderr)
+        self.assertNotIn("private-workflow", finished.stderr)
+        if finished.returncode == 0:
+            self.assertEqual(finished.stderr, "")
+            return
+        self.assertEqual(finished.returncode, 2, finished.stderr)
+        self.assertIn("are not a kept kind", finished.stderr)
+
+    def assert_fails_open(self, finished):
+        self.assertEqual(finished.returncode, 0)
+        self.assertEqual(finished.stdout, "")
+        self.assertTrue(finished.stderr.startswith("comment-bloat-gate: skipped after JSONDecodeError"),
+                        finished.stderr)
+
     def test_invalid_json_and_missing_fields_pass(self):
-        self.assert_allowed(self.run_hook("not json"))
-        self.assert_allowed(self.run_hook(""))
+        self.assert_fails_open(self.run_hook("not json"))
+        self.assert_fails_open(self.run_hook(""))
         self.assert_allowed(self.run_hook(json.dumps({"tool_input": {}})))
         self.assert_allowed(self.run_hook(json.dumps({"tool_input": {"file_path": "/nonexistent/a.py"}})))
 
@@ -190,7 +211,7 @@ class CommentBloatGateTest(unittest.TestCase):
             for sample in domain_samples:
                 with self.subTest(checkout=checkout, sample=sample):
                     path = self.source(f"{checkout}/bin/work_plan_impacts.py", "x = 1\n" + sample + "\n")
-                    self.assert_allowed(self.edit(path, sample))
+                    self.assert_no_marker(self.edit(path, sample))
 
         path = self.source("agent-evals/bin/work_plan_impacts.py", "x = 1\n# phase 3 cleanup\n")
         self.assert_blocked(self.edit(path, "# phase 3 cleanup"))
@@ -217,7 +238,7 @@ class CommentBloatGateTest(unittest.TestCase):
         for sample in samples:
             with self.subTest(sample=sample):
                 path = self.source("a.py", "x = 1\n" + sample + "\n")
-                self.assert_allowed(self.edit(path, sample))
+                self.assert_no_marker(self.edit(path, sample))
 
     def test_marker_text_inside_a_string_literal_passes_but_a_comment_after_it_blocks(self):
         fixture = f'plan = "## {PHASE_WORD} 1: Build\\n## {PHASE_WORD} 2: Refactor"'
@@ -349,7 +370,7 @@ class CommentBloatGateTest(unittest.TestCase):
 
     def test_uppercase_markers_are_case_sensitive(self):
         path = self.source("a.py", "x = 1\n# ac4 done\n# d4: x\n# pd3\n")
-        self.assert_allowed(self.edit(path, "# ac4 done\n# d4: x\n# pd3"))
+        self.assert_no_marker(self.edit(path, "# ac4 done\n# d4: x\n# pd3"))
 
     def test_marker_already_in_file_but_not_in_edit_passes(self):
         path = self.source("a.py", "# phase 2\nx = 1\n")
@@ -386,62 +407,543 @@ class CommentBloatGateTest(unittest.TestCase):
         path = self.source("a.py", "# phase 2\n")
         self.assert_blocked(self.edit(path, "# phase 2", env={"CLAUDE_SKIP_HOOKS": "1"}))
 
-    def test_density_over_cap_blocks(self):
-        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
-        path = self.source("a.py", FILLER + comments)
-        stderr = self.assert_blocked(self.edit(path, comments))
-        self.assertEqual(stderr, "comment-bloat-gate: a.py is 27% comments (15/55 non-blank lines), cap ~20%. "
-                                 "Delete the comments this edit added, or rename/split so they are unnecessary; "
-                                 "a comment the task requires stays, named in the hand-back. Never add code to "
-                                 "lower the ratio.\n")
+    def written(self, name, content):
+        """Write the file, then report the same text as a Write: every line of it is added."""
+        path = self.source(name, content)
+        return self.edit(path, content, tool="Write")
 
-    def test_rewording_an_existing_comment_in_an_over_cap_file_passes(self):
-        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
-        path = self.source("a.py", FILLER + comments)
-        self.assert_allowed(self.edit_replacing(path, "# note 3", "# a clearer note 3"))
+    def test_a_plain_explaining_comment_blocks_and_the_deny_names_the_line(self):
+        content = "x = 1\n# x counts the retries\n_y = 2\n"
+        stderr = self.assert_blocked(self.written("a.py", content))
+        self.assertIn("2: # x counts the retries", stderr)
+        self.assertIn("Delete each one, or turn it into a name", stderr)
 
-    def test_an_edit_that_adds_a_comment_line_in_an_over_cap_file_blocks(self):
-        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
-        path = self.source("a.py", FILLER + comments)
-        self.assert_blocked(self.edit_replacing(path, "# note 3", "# note 3\n# one more line"))
+    def test_only_the_added_comment_line_is_charged(self):
+        path = self.source("a.py", "# old note\nx = 1\n# new note\n")
+        self.assert_allowed(self.edit(path, "x = 1"))
+        self.assert_allowed(self.edit_replacing(path, "# new note", "# new note"))
+        stderr = self.assert_blocked(self.edit_replacing(path, "x = 1", "x = 1\n# new note"))
+        self.assertIn("3: # new note", stderr)
+        self.assertNotIn("1: # old note", stderr)
 
-    def test_density_at_threshold_passes(self):
-        comments = "\n".join(f"# note {index}" for index in range(10)) + "\n"
-        path = self.source("a.py", FILLER + comments)
-        self.assert_allowed(self.edit(path, comments))
+    def test_a_write_charges_only_lines_the_committed_file_lacks(self):
+        path = self.source("a.py", "x = 1\n# stays\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "base"], check=True)
+        content = "x = 1\n# stays\ny = 2\n# fresh\n"
+        pathlib.Path(path).write_text(content)
+        stderr = self.assert_blocked(self.edit(path, content, tool="Write"))
+        self.assertIn("4: # fresh", stderr)
+        self.assertNotIn("# stays", stderr)
 
-    def test_density_needs_thirty_non_blank_lines(self):
-        content = "\n".join(f"# note {index}" for index in range(20)) + "\n"
-        path = self.source("a.py", content)
-        self.assert_allowed(self.edit(path, content))
+    def test_license_header_kinds_pass(self):
+        headers = {
+            "a.py": "#!/usr/bin/env python3\n# SPDX-License-Identifier: MIT\nx = 1\n",
+            "b.ts": "// Copyright 2026 Example Corp\nexport const x = 1;\n",
+            "c.go": "/*\n * Licensed under the Apache License, Version 2.0.\n * Unless required.\n */\npackage a\n",
+            "d.sh": "#!/bin/sh\n# This file is released under the MIT License.\n# Do what you want.\nx=1\n",
+        }
+        for name, content in headers.items():
+            with self.subTest(name=name):
+                self.assert_allowed(self.written(name, content))
 
-    def test_density_ignores_edit_without_comments(self):
-        comments = "\n".join(f"# note {index}" for index in range(15)) + "\n"
-        path = self.source("a.py", FILLER + comments)
-        self.assert_allowed(self.edit(path, "value_1 = 1"))
+    def test_a_license_word_outside_the_leading_block_does_not_keep_the_comment(self):
+        self.assert_blocked(self.written("a.py", "x = 1\n# License is checked here\n"))
+
+    def test_lint_and_format_suppressions_pass(self):
+        suppressions = {
+            "a.ts": [
+                "// eslint-disable-next-line no-console", "// prettier-ignore", "// @ts-ignore",
+                "// @ts-expect-error legacy", "// @ts-nocheck", "//nolint:errcheck",
+                "// biome-ignore lint/style: ok", "// NOLINT(runtime/int)", "/* istanbul ignore next */",
+                "// c8 ignore next",
+            ],
+            "a.py": ["# noqa: E501", "# type: ignore", "# pylint: disable=unused-import", "# fmt: off", "# fmt: on"],
+            "a.rb": ["# rubocop:disable Style/Foo"],
+            "a.sh": ["# shellcheck disable=SC2086"],
+            "a.yaml": ["# yamllint disable-line rule:line-length"],
+        }
+        for name, samples in suppressions.items():
+            for suppression in samples:
+                with self.subTest(name=name, suppression=suppression):
+                    self.assert_allowed(self.written(name, "x = 1\n" + suppression + "\ny = 2\n"))
+        for name in suppressions:
+            with self.subTest(name=name, plain=True):
+                leader = "//" if name.endswith(".ts") else "#"
+                self.assert_blocked(self.written(name, f"x = 1\n{leader} plain\n_y = 2\n"))
+
+    def test_tool_directives_pass(self):
+        directives = {
+            "a.go": ["//go:generate stringer -type=X", "// +build linux", "//go:build linux"],
+            "a.ts": ["/// <reference types=\"node\" />", "// @ts-check", "/** @type {import('x').Y} */",
+                     "/** @typedef {number} N */"],
+            "a.c": ["// clang-format off", "// clang-format on"],
+            "a.swift": ["// swiftlint:disable force_cast", "// swiftlint:enable force_cast"],
+            "a.py": ["# mypy: ignore-errors", "# pyright: basic", "# pragma: no cover",
+                     "# -*- coding: utf-8 -*-"],
+        }
+        for name, samples in directives.items():
+            for directive in samples:
+                with self.subTest(name=name, directive=directive):
+                    self.assert_allowed(self.written(name, "x = 1\n" + directive + "\ny = 2\n"))
+
+    def test_a_one_line_jsdoc_that_is_not_a_type_tag_is_charged(self):
+        self.assert_blocked(self.written("a.ts", "const a = 1;\n/** explains a */\nconst b = 2;\n"))
+
+    def test_sql_and_lua_star_semicolon_and_length_lines_are_code(self):
+        self.assert_allowed(self.written("q.sql", "SELECT\n    *\nFROM users\n;\n"))
+        self.assert_allowed(self.written("q.lua", "local n = f\n  #t\n"))
+
+    def test_a_dash_comment_in_sql_or_lua_is_charged(self):
+        self.assert_blocked(self.written("q.sql", "SELECT 1\n-- note\n"))
+        self.assert_blocked(self.written("q.lua", "local x = 1\n-- note\n"))
+
+    def test_a_heredoc_body_line_in_a_shell_file_is_data(self):
+        self.assert_allowed(self.written("s.sh", "cat > conf <<CONF\n# setting for foo\nfoo=1\nCONF\n"))
+        self.assert_blocked(self.written("s.sh", "cat > conf <<CONF\nfoo=1\nCONF\n# note after it\n"))
+
+    def test_a_go_package_doc_is_kept(self):
+        self.assert_allowed(self.written("a.go", "// Package a does a thing.\npackage a\n"))
+        self.assert_blocked(self.written("b.go", "package b\n\n// helper note\nvar x = 1\n"))
+
+    def test_a_leading_rust_module_doc_run_is_kept(self):
+        self.assert_allowed(self.written("a.rs", "//! Crate docs.\n//! More docs.\n\nfn f() {}\n"))
+        self.assert_blocked(self.written("b.rs", "fn f() {}\n\n//! not leading\n"))
+        self.assert_blocked(self.written("c.rs", "// plain\n//! docs\nfn f() {}\n"))
+
+    def test_a_write_charges_only_lines_missing_from_the_file_before_the_write(self):
+        path = self.source("a.py", "x = 1\n# user note\n# new note\n")
+        payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": path, "content": "x = 1\n# user note\n# new note\n"},
+            "tool_response": {"originalFile": "x = 1\n# user note\n"},
+        }
+        stderr = self.assert_blocked(self.run_hook(json.dumps(payload)))
+        self.assertIn("3: # new note", stderr)
+        self.assertNotIn("# user note", stderr)
+
+    def test_a_comment_that_only_names_a_linter_is_not_a_suppression(self):
+        self.assert_blocked(self.written("a.rs", "fn f() {\n    // clippy complains here\n}\n"))
+        self.assert_blocked(self.written("b.kt", "fun f() {\n    // @Suppress is used here\n}\n"))
+
+    def test_an_edit_charges_only_comment_lines_inside_the_new_text(self):
+        old_file = "function helper() {\n  /*\n   *\n   */\n  return 1;\n}\n"
+        path = self.source("a.js", old_file + "export function f() {}\n")
+        new_text = "/**\n *\n * Reads.\n */\nexport function f() {}"
+        pathlib.Path(path).write_text(old_file + new_text + "\n")
+        self.assert_allowed(self.edit_replacing(path, "export function f() {}", new_text))
+
+    def test_an_edit_charges_a_bare_hash_line_when_an_older_one_has_the_same_text(self):
+        old_file = "def a():\n    #\n    x = 1\n\n\n"
+        new_text = "def b():\n    #\n    y = 2"
+        path = self.source("a.py", old_file + "def b():\n    y = 2\n")
+        pathlib.Path(path).write_text(old_file + new_text + "\n")
+        stderr = self.assert_blocked(self.edit_replacing(path, "def b():\n    y = 2", new_text))
+        self.assertIn("7: #", stderr)
+
+    def test_an_edit_whose_text_also_sits_earlier_in_the_file_charges_the_added_line(self):
+        block = "    # reset state\n    x = 1"
+        path = self.source("a.py", "def _a():\n" + block + "\n\n\ndef _b():\n    y = 2\n")
+        pathlib.Path(path).write_text("def _a():\n" + block + "\n\n\ndef _b():\n" + block + "\n")
+        stderr = self.assert_blocked(self.edit_replacing(path, "    y = 2", block))
+        self.assertIn("7: # reset state", stderr)
+
+    def test_a_replace_all_edit_charges_every_occurrence(self):
+        path = self.source("a.py", "def _a():\n    x = 1\n\n\ndef _b():\n    x = 1\n")
+        pathlib.Path(path).write_text("def _a():\n    # note\n    x = 1\n\n\ndef _b():\n    # note\n    x = 1\n")
+        payload = {"hook_event_name": "PostToolUse", "tool_name": "Edit", "tool_input": {
+            "file_path": path, "old_string": "    x = 1", "new_string": "    # note\n    x = 1", "replace_all": True}}
+        stderr = self.assert_blocked(self.run_hook(json.dumps(payload)))
+        self.assertIn("2: # note", stderr)
+        self.assertIn("7: # note", stderr)
+
+    def test_an_edit_whose_new_text_is_not_in_the_file_falls_back_to_the_text_match(self):
+        path = self.source("a.py", "x = 1\n# plain comment\n")
+        stderr = self.assert_blocked(self.edit_replacing(path, "x = 1", "x = 1\n# plain comment\nmissing"))
+        self.assertIn("2: # plain comment", stderr)
+
+    def test_an_old_comment_with_the_same_text_as_a_new_one_is_not_charged(self):
+        path = self.source("a.py", "def _a():\n    # reset state\n    x = 1\n\n\ndef _b():\n    y = 2\n")
+        pathlib.Path(path).write_text(
+            "def _a():\n    # reset state\n    x = 1\n\n\ndef _b():\n    # reset state\n    y = 2\n")
+        stderr = self.assert_blocked(
+            self.edit_replacing(path, "def _b():\n    y = 2", "def _b():\n    # reset state\n    y = 2")
+        )
+        self.assertIn("7: # reset state", stderr)
+        self.assertNotIn("2: # reset state", stderr)
+
+    def test_an_edit_that_moves_a_committed_comment_is_not_charged(self):
+        path = self.source("a.py", "x = 1\n# stays\ny = 2\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "base"], check=True)
+        pathlib.Path(path).write_text("x = 1\ny = 2\n# stays\n")
+        self.assert_allowed(self.edit_replacing(path, "y = 2", "y = 2\n# stays"))
+
+    def test_a_hash_comment_under_a_public_docstring_is_charged(self):
+        content = 'def f():\n    """Doc."""\n    # inner note\n    return 1\n'
+        stderr = self.assert_blocked(self.written("a.py", content))
+        self.assertIn("3: # inner note", stderr)
+        self.assertNotIn("Doc.", stderr)
+
+    def test_a_multi_line_public_docstring_keeps_only_its_quoted_lines(self):
+        content = 'def f():\n    """Doc\n    more."""\n    # note\n    return 1\n'
+        stderr = self.assert_blocked(self.written("m.py", content))
+        self.assertIn("4: # note", stderr)
+        self.assertNotIn("more.", stderr)
+
+    def test_a_public_python_constant_keeps_its_comment_and_a_private_one_does_not(self):
+        self.assert_allowed(self.written("c1.py", "# Max retries.\nMAX_RETRIES = 3\n"))
+        self.assert_allowed(self.written("c2.py", "# Max retries.\nMAX_RETRIES: int = 3\n"))
+        self.assert_blocked(self.written("c3.py", "# Max retries.\n_MAX_RETRIES = 3\n"))
+        self.assert_blocked(self.written("c4.py", "# note\nCONSTANT == 3\n"))
+        self.assert_blocked(self.written("c5.py", "# note\nX == y\n"))
+        self.assert_blocked(self.written("c6.py", "def f():\n    # note\n    LIMIT = 3\n    return LIMIT\n"))
+
+    def test_members_of_an_exported_ts_class_or_interface_keep_their_comments(self):
+        exported_class = "export class C {\n  // Send one request.\n  send(): void {}\n}\n"
+        self.assert_allowed(self.written("a.ts", exported_class))
+        exported_interface = "export interface O {\n  // Timeout in ms.\n  timeout: number;\n}\n"
+        self.assert_allowed(self.written("b.ts", exported_interface))
+        private_member = "export class C {\n  // Secret.\n  private x = 1;\n}\n"
+        self.assert_blocked(self.written("c.ts", private_member))
+        hash_member = "export class C {\n  // Secret.\n  #x = 1;\n}\n"
+        self.assert_blocked(self.written("d.ts", hash_member))
+        protected_member = "export class C {\n  // Secret.\n  protected y = 1;\n}\n"
+        self.assert_blocked(self.written("f.ts", protected_member))
+        modified_private = "export class C {\n  // Secret.\n  static private z = 1;\n}\n"
+        self.assert_blocked(self.written("i.ts", modified_private))
+        unexported = "class C {\n  // Send.\n  send(): void {}\n}\n"
+        self.assert_blocked(self.written("e.ts", unexported))
+
+    def test_commonjs_exports_keep_their_comments(self):
+        self.assert_allowed(self.written("a.cjs", "/** Adds two. */\nmodule.exports.add = () => 1;\n"))
+        self.assert_allowed(self.written("b.js", "// Subtracts.\nexports.sub = () => 1;\n"))
+
+    def test_a_kotlin_local_at_indent_four_in_a_function_does_not_keep_a_comment(self):
+        self.assert_blocked(self.written("l.kt", "fun main() {\n    // compute the total\n    val total = 1\n}\n"))
+
+    def test_a_kotlin_member_of_a_public_class_keeps_its_comment(self):
+        self.assert_allowed(self.written("k.kt", "class A {\n    // Reads.\n    fun load() {}\n}\n"))
+
+    def test_a_kotlin_member_of_a_class_with_a_multi_line_constructor_keeps_its_comment(self):
+        content = "data class Foo(\n    val a: Int,\n) {\n    // Doc of bar.\n    fun bar() {}\n}\n"
+        self.assert_allowed(self.written("d.kt", content))
+
+    def test_a_kotlin_annotated_function_keeps_its_comment(self):
+        self.assert_allowed(self.written("n.kt", "// Reads.\n@JvmStatic fun f() {}\n"))
+
+    def test_a_kotlin_member_of_a_private_or_internal_owner_or_a_protected_member_does_not_keep_a_comment(self):
+        cases = {
+            "p.kt": "private class A {\n    // Reads.\n    fun load() {}\n}\n",
+            "i.kt": "internal object O {\n    // Reads.\n    fun load() {}\n}\n",
+            "q.kt": "class A {\n    // Reads.\n    protected fun load() {}\n}\n",
+        }
+        for name, content in cases.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written(name, content))
+
+    def test_a_ts_member_of_a_multi_line_class_header_keeps_its_comment(self):
+        content = "export class A<\n  T,\n> {\n  // Doc of run.\n  run() {}\n}\n"
+        self.assert_allowed(self.written("g.ts", content))
+
+    def test_a_member_of_an_exported_declare_class_keeps_its_comment(self):
+        content = "export declare class A {\n  // Doc of run.\n  run(): void;\n}\n"
+        self.assert_allowed(self.written("h.ts", content))
+
+    def test_a_kotlin_declaration_indented_past_member_level_does_not_keep_a_comment(self):
+        self.assert_blocked(self.written("a.kt", "private fun f() {\n    // narrate\n        val x = 1\n}\n"))
+
+    def test_a_go_struct_field_keeps_its_doc_comment(self):
+        content = "package a\n\ntype T struct {\n\t// Name is the name.\n\tName string\n}\n"
+        self.assert_allowed(self.written("a.go", content))
+
+    def test_members_of_grouped_or_enum_like_public_declarations_keep_their_comments(self):
+        samples = {
+            "a.go": "package a\n\nconst (\n\t// Max is the limit.\n\tMax = 3\n)\n",
+            "b.go": "package a\n\nvar (\n\t// Name is the name.\n\tName = \"x\"\n)\n",
+            "a.ts": "export enum E {\n  // First one.\n  A,\n}\n",
+            "b.ts": "export type T = {\n  // Name of it.\n  name: string;\n}\n",
+            "c.ts": "export namespace N {\n  // Helper.\n  export const x = 1;\n}\n",
+            "a.rs": "pub enum E {\n    // First one.\n    A,\n}\n",
+            "b.rs": "pub trait T {\n    // Runs it.\n    fn run(&self);\n}\n",
+            "a.py": "class C:\n    # Upper bound.\n    LIMIT = 3\n",
+        }
+        for name, content in samples.items():
+            with self.subTest(name=name):
+                self.assert_allowed(self.written(name, content))
+
+    def test_an_unexported_line_in_an_exported_ts_namespace_does_not_keep_a_comment(self):
+        content = "export namespace N {\n  // Helper.\n  const y = 1;\n}\n"
+        self.assert_blocked(self.written("n.ts", content))
+
+    def test_a_python_class_constant_after_a_comment_or_a_multi_line_string_reads_its_class(self):
+        path = self.source("a.py", "class C:\n    x = 1\n# aside\n    # Upper bound.\n    LIMIT = 3\n")
+        self.assert_allowed(self.edit_replacing(path, "    LIMIT = 3", "    # Upper bound.\n    LIMIT = 3"))
+        string_owner = 'class C:\n    t = """\nend\n"""\n    # Upper bound.\n    LIMIT = 3\n'
+        self.assert_allowed(self.written("b.py", string_owner))
+        private_owner = 'class _C:\n    t = """\nend\n"""\n    # Upper bound.\n    LIMIT = 3\n'
+        self.assert_blocked(self.written("c.py", private_owner))
+
+    def test_a_python_attribute_of_a_private_class_does_not_keep_a_comment(self):
+        self.assert_blocked(self.written("d.py", "class _C:\n    # Upper bound.\n    LIMIT = 3\n"))
+
+    def test_a_go_capitalised_line_in_a_function_body_does_not_keep_a_comment(self):
+        bodies = {
+            "call": "func f() {\n\t// call the helper now\n\tDoThing()\n}\n",
+            "assignment": "func f() {\n\t// set result\n\tResult := 1\n}\n",
+            "loop": "func run() {\n\t// loop over the items and process each\n\tProcess(items)\n}\n",
+        }
+        for name, body in bodies.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written("a.go", "package a\n\n" + body))
+
+    def test_a_rust_pub_crate_item_does_not_keep_a_comment(self):
+        self.assert_blocked(self.written("a.rs", "// internal\npub(crate) fn f() {}\n"))
+
+    def test_the_marker_check_still_runs_on_a_code_file_under_docs(self):
+        path = self.source("docs/a.py", "x = 1\n" + MARKER_LINE + "\n")
+        stderr = self.assert_blocked(self.edit(path, "x = 1\n" + MARKER_LINE, tool="Write"))
+        self.assertIn("private-workflow marker", stderr)
+
+    def test_a_write_in_a_repo_with_no_commit_charges_a_plain_comment(self):
+        path = self.source("fresh.py", "x = 1\n# plain comment\n")
+        stderr = self.assert_blocked(self.edit(path, "x = 1\n# plain comment\n", tool="Write"))
+        self.assertIn("2: # plain comment", stderr)
+
+    def test_a_line_with_a_url_passes(self):
+        self.assert_allowed(self.written("a.py", "x = 1\n# see https://example.com/spec for the format\n"))
+        self.assert_allowed(self.written("a.go", "x := 1\n// http://example.com/rfc\n"))
+
+    def test_doc_comments_on_public_symbols_pass(self):
+        public = {
+            "a.py": 'import os\n\n\ndef load(path):\n    """Read the file."""\n    return os.path.exists(path)\n',
+            "b.py": '"""The module does one thing."""\nimport os\n',
+            "c.py": 'class Loader:\n    """Reads files."""\n\n    def read(self):\n        """Read it."""\n',
+            "d.py": "x = 1\n\n# Read the file.\ndef load():\n    pass\n",
+            "e.ts": "const a = 1;\n/**\n * Reads the file.\n */\nexport function load() {}\n",
+            "f.go": "package a\n\n// Load reads the file.\nfunc Load() {}\n",
+            "g.rs": "// Reads the file.\npub fn load() {}\n",
+            "h.java": "class A {\n    /** Reads the file. */\n    public void load() {}\n}\n",
+            "i.kt": "// Reads the file.\nfun load() {}\n",
+            "j.swift": "// Reads the file.\npublic func load() {}\n",
+            "k.php": "<?php\n// Reads the file.\npublic function load() {}\n",
+            "l.rb": "x = 1\n# Reads the file.\ndef load\nend\n",
+            "m.h": "int a;\n// Reads the file.\nint load(void);\n",
+            "n.py": "x = 1\n\n# Reads the file.\n@cache\ndef load():\n    pass\n",
+        }
+        for name, content in public.items():
+            with self.subTest(name=name):
+                self.assert_allowed(self.written(name, content))
+
+    def test_doc_comments_on_private_symbols_block(self):
+        private = {
+            "a.py": "x = 1\n\n# Reads the file.\ndef _load():\n    pass\n",
+            "b.py": "def run():\n    x = 1\n    def _inner():\n        \"\"\"Inner.\"\"\"\n",
+            "c.ts": "// Reads the file.\nfunction load() {}\n",
+            "d.go": "package a\n\n// reads the file.\nfunc load() {}\n",
+            "e.rs": "// Reads the file.\nfn load() {}\n",
+            "f.java": "class A {\n    // Reads the file.\n    private void load() {}\n}\n",
+            "g.kt": "// Reads the file.\nprivate fun load() {}\n",
+            "h.swift": "// Reads the file.\nfunc load() {}\n",
+            "i.php": "<?php\n// Reads the file.\nprivate function load() {}\n",
+            "j.rb": "x = 1\n# Reads the file.\nx = 2\n",
+            "k.h": "int a;\n// Reads the file.\nstatic int load(void);\n",
+            "l.c": "int a;\n// Reads the file.\nint load(void) { return 1; }\n",
+            "m.py": "x = 1\n# Reads the file.\n\ndef load():\n    pass\n",
+        }
+        for name, content in private.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written(name, content))
+
+    def test_languages_without_a_public_marker_never_keep_a_doc_comment(self):
+        docs = {
+            "a.sh": "x=1\n# Reads the file.\nload() { :; }\n",
+            "b.lua": "x = 1\n-- Reads the file.\nfunction load() end\n",
+            "c.sql": "select 1;\n-- Reads the file.\ncreate view v as select 1;\n",
+            "d.yml": "a: 1\n# Reads the file.\nb: 2\n",
+            "e.qml": "Item {\n    // Reads the file.\n    function load() {}\n}\n",
+        }
+        for name, content in docs.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written(name, content))
+
+    def test_a_comment_in_a_file_under_a_docs_folder_passes(self):
+        self.assert_allowed(self.written("docs/guide/example.py", "x = 1\n# explains the thing\n"))
+        self.assert_allowed(self.written("docs/example.ts", "// explains the thing\nconst a = 1;\n"))
+        self.assert_blocked(self.written("src/docsy/example.py", "x = 1\n# explains the thing\n"))
+
+    def test_comment_detection_per_language_family(self):
+        comments = {
+            "a.sh": "x=1\n# explains\n",
+            "a.yaml": "a: 1\n# explains\n",
+            "a.rb": "x = 1\n# explains\n",
+            "a.js": "const a = 1;\n// explains\n",
+            "a.go": "x := 1\n// explains\n",
+            "a.c": "int x;\n// explains\n",
+            "a.lua": "x = 1\n-- explains\n",
+            "a.sql": "select 1;\n-- explains\n",
+            "a.qml": "Item {\n    // explains\n}\n",
+            "b.qml": "Item {\n    /* explains\n       the item */\n}\n",
+            "b.ts": "const a = 1;\n/*\n   explains without a star\n*/\n",
+            "a.py": 'x = 1\n"""\nexplains in a stray string\n"""\n',
+        }
+        for name, content in comments.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written(name, content))
+
+    def test_code_that_is_not_a_comment_passes(self):
+        code = {
+            "a.py": 'x = 1  # trailing\nprint(2 *\n      3)\nsql = """\nselect 1\n"""\nargs = f(*args, **kw)\n',
+            "a.ts": "const a = 1; // trailing\nconst b = f(x\n  * 2);\nconst s = `\n// in a template\n`;\n",
+            "a.json": '{\n  "a": "# not a comment",\n  "b": 1\n}\n',
+        }
+        for name, content in code.items():
+            with self.subTest(name=name):
+                self.assert_allowed(self.written(name, content))
 
     def test_bare_delimiters_are_not_charged(self):
-        docstrings = '"""\n' * 20
-        path = self.source("a.py", FILLER + docstrings)
-        self.assert_allowed(self.edit(path, '"""'))
-        path = self.source("b.ts", FILLER + "/**\n*/\n" * 10)
-        self.assert_allowed(self.edit(path, "/**\n */"))
+        self.assert_allowed(self.written("a.ts", "const a = 1;\n/**\n */\nexport const b = 2;\n"))
+        self.assert_allowed(self.written("a.py", 'x = 1\n"""\n"""\n'))
 
-    def test_jsdoc_continuation_counts_but_star_args_do_not(self):
-        stars = "\n".join(f" * line {index}" for index in range(15)) + "\n"
-        path = self.source("a.ts", FILLER + stars)
-        self.assert_blocked(self.edit(path, stars))
-        code = "\n".join(f"*args{index}" for index in range(15)) + "\n"
-        path = self.source("b.ts", FILLER + code)
-        self.assert_allowed(self.edit(path, code))
+    def test_a_lone_shebang_is_not_charged_but_a_plain_comment_after_it_is(self):
+        self.assert_allowed(self.written("a.py", "#!/usr/bin/env python3\nx = 1\n"))
+        self.assert_allowed(self.written("b.sh", "#!/bin/sh\nx=1\n"))
+        stderr = self.assert_blocked(self.written("c.py", "#!/usr/bin/env python3\n# explains\n_x = 1\n"))
+        self.assertIn("2: # explains", stderr)
+        self.assertNotIn("1: #!", stderr)
 
-    def test_comment_leaders_all_count(self):
-        leaders = ["//", "#", "--", ";", "<!--", "/*"]
-        for leader in leaders:
-            with self.subTest(leader=leader):
-                comments = "\n".join(f"{leader} note {index}" for index in range(15)) + "\n"
-                path = self.source("a.py", FILLER + comments)
-                self.assert_blocked(self.edit(path, comments))
+    def test_public_symbol_rows_pass(self):
+        public = {
+            "a.go": "package a\n\n// A is a type.\ntype A struct{}\n",
+            "b.go": "package a\n\n// B is a var.\nvar B = 1\n",
+            "c.go": "package a\n\n// C is a const.\nconst C = 1\n",
+            "d.go": "package a\n\n// Load reads.\nfunc (r *T) Load() {}\n",
+            "f.java": "// Reads.\n@Named(\"x\")\npublic void load() {}\n",
+            "g.swift": "// Reads.\nopen class A {}\n",
+            "h.kt": "// Reads.\nclass A\n",
+            "i.php": "<?php\n// Reads.\nabstract class A {}\n",
+            "j.rb": "# Reads.\nmodule M\nend\n",
+            "k.rb": "x = 1\n# Reads.\ndef self.load\nend\n",
+            "l.hpp": "int a;\n// Reads.\nint load();\n",
+            "m.js": "const a = 1;\n// Reads.\nexport const b = 2;\n",
+            "n.tsx": "const a = 1;\n// Reads.\nexport default function A() {}\n",
+            "o.py": "class Loader:\n    # Builds it.\n    def __init__(self):\n        pass\n",
+            "p.py": 'class Loader:\n    def __call__(self):\n        """Call it."""\n',
+            "q.py": 'class Loader(\n    Base,\n):\n    """Reads."""\n',
+            "r.py": "class Loader:\n    x = 1\n\n    # Reads.\n    def read(self):\n        pass\n",
+            "s.mjs": "const a = 1;\n// Reads.\nexport { a };\n",
+            "t.py": 'class Loader(\n    Base,\n):\n    def read(self):\n        """Read it."""\n',
+            "u.py": 'class Loader:\n    x = """\nraw\n"""\n\n    def read(self):\n        """Read it."""\n',
+            "v.py": 'class Pub:\n    x = """\ntext\n"""\n    # Reads.\n    def m(self):\n        pass\n',
+            "w.java": "// Reads.\n@Override public void load() {}\n",
+        }
+        for name, content in public.items():
+            with self.subTest(name=name):
+                self.assert_allowed(self.written(name, content))
+
+    def test_comments_above_body_lines_and_nested_or_hidden_python_symbols_block(self):
+        private = {
+            "a.java": 'class A {\n    // explain\n    String s = "public";\n}\n',
+            "b.swift": "func f() {\n    // read before close\n    let h = open(path)\n}\n",
+            "c.h": "static inline int f(void) {\n    // explain\n    return 1;\n}\n",
+            "d.py": "def _run():\n    # helper\n    def helper():\n        pass\n",
+            "e.py": "class _Hidden:\n    # Reads.\n    def read(self):\n        pass\n",
+            "f.py": 'def run():\n    def inner():\n        """Inner."""\n',
+            "g.py": 'class _Hidden:\n    def read(self):\n        """Read it."""\n',
+            "h.py": "class Loader:\n    def run(self):\n        # Helper.\n        def inner():\n            pass\n",
+            "j.py": 'def pub():\n    if x:\n        """not a docstring"""\n',
+            "i.py": (
+                "class Loader:\n    def _helper(self):\n        pass\n\n"
+                "    # Reads.\n    def _read(self):\n        pass\n"
+            ),
+        }
+        for name, content in private.items():
+            with self.subTest(name=name):
+                self.assert_blocked(self.written(name, content))
+
+    def test_a_docstring_whose_header_is_out_of_reach_or_not_a_def_blocks(self):
+        far_header = "def load(\n" + "    a,\n" * 14 + '):\n    """Doc."""\n'
+        self.assert_blocked(self.written("a.py", far_header))
+        self.assert_blocked(self.written("b.py", 'x = 1\nif x:\n    """Doc."""\n'))
+
+    def test_a_re_indented_comment_is_not_new(self):
+        path = self.source("a.py", "if y:\n    # note\n    x = 1\n")
+        self.assert_allowed(self.edit_replacing(path, "# note\nx = 1", "    # note\n    x = 1"))
+
+    def test_an_ancestor_folder_named_docs_does_not_exempt_the_repo(self):
+        repo = pathlib.Path(self.tmp.name) / "docs" / "myrepo"
+        repo.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        source = repo / "src" / "a.py"
+        source.parent.mkdir()
+        content = "x = 1\n# explains\n"
+        source.write_text(content)
+        self.assert_blocked(self.edit(str(source), content, tool="Write"))
+        under_docs = repo / "docs" / "b.py"
+        under_docs.parent.mkdir()
+        under_docs.write_text(content)
+        self.assert_allowed(self.edit(str(under_docs), content, tool="Write"))
+
+    def test_a_write_through_a_symlink_reads_the_committed_target(self):
+        path = self.source("real.py", "x = 1\n# stays\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "real.py"], check=True)
+        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "base"], check=True)
+        link = pathlib.Path(self.tmp.name) / "link.py"
+        link.symlink_to(path)
+        self.assert_allowed(self.edit(str(link), "x = 1\n# stays\n", tool="Write"))
+
+    def test_a_write_outside_a_work_tree_is_silent(self):
+        path = self.scratch_source("out.py", "x = 1\n# plain\n")
+        self.assert_allowed(self.edit(path, "x = 1\n# plain\n", tool="Write"))
+
+    def test_a_write_over_a_staged_new_file_is_checked(self):
+        path = self.source("n.py", "x = 1\n# plain comment\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "n.py"], check=True)
+        stderr = self.assert_blocked(self.edit(path, "x = 1\n# plain comment\n", tool="Write"))
+        self.assertIn("2: # plain comment", stderr)
+
+    def test_a_write_skips_the_comment_check_when_git_cannot_say_what_the_file_held(self):
+        path = self.source("a.py", "x = 1\n# stays\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
+        finished = self.edit(path, "x = 1\n# stays\n", tool="Write", env={"PATH": self.tmp.name})
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("comment check skipped for a.py", finished.stderr)
+
+    def test_an_edit_skips_the_comment_check_when_git_cannot_say_what_the_file_held(self):
+        path = self.source("a.py", "x = 1\n# stays\n")
+        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
+        finished = self.edit_replacing(path, "x = 1", "x = 1\n# stays", env={"PATH": self.tmp.name})
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("comment check skipped for a.py", finished.stderr)
+
+    def test_a_write_with_no_comment_line_runs_no_git_and_stays_silent(self):
+        path = self.source("a.py", "x = 1\n")
+        finished = self.edit(path, "x = 1\n", tool="Write", env={"PATH": self.tmp.name})
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stderr, "")
+
+    def test_an_edit_whose_only_comment_is_in_old_string_runs_no_git_and_stays_silent(self):
+        path = self.source("a.py", "x = 1\n# stays\ny = 2\n")
+        finished = self.edit_replacing(path, "x = 1\n# stays", "x = 1\n# stays\ny = 2",
+                                       env={"PATH": self.tmp.name})
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stderr, "")
+
+    def test_a_crash_is_reported_on_stderr_with_the_gate_name_and_the_edit_goes_on(self):
+        spec = importlib.util.spec_from_file_location("comment_bloat_gate_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        captured = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+        with mock.patch.object(gate, "check", side_effect=ValueError("boom")), \
+                mock.patch.object(sys, "stderr", captured):
+            code = gate.main()
+        captured.flush()
+        self.assertEqual(code, 0)
+        self.assertEqual(captured.buffer.getvalue().decode(), "comment-bloat-gate: skipped after ValueError: boom\n")
 
 
 if __name__ == "__main__":

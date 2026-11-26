@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1211 changes
+1212 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -33,6 +33,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [Test-reviewer reads unrun tests by hand](notes/2026-11-25-test-reviewer-reads-unrun-tests-by-hand.md) [script/review-loop-prompts, agent/test-reviewer] When a repo's full suite runs only in CI, the review loop adds a by-hand pass to the test-reviewer's prompt: equality asserts with mismatched types, state shared across subtests or test methods, and expected values the setup never makes true. The agent file does not grow.
 * [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md) [script/review-loop, script/code-step, script/gate] The branch close pass fixes the review findings: an unreadable resume record is denied with its recovery, a put-back pass drops every approval ask it filed, and the asks block has one builder.
 * [Lock write and LockView fields move into calibration_lock](notes/2026-11-25-lock-write-and-lockview-fields-move-into.md) [script/mutation-lock, script/calibration-lock, script/script-utils] `calibration_lock.py` now owns the lock write as well as the read: `mutation_lock.py` calls `write_lock` instead of building the fields itself, `LockView` carries `raw_file`, `pre_hash` and `run_id`, and `positive_int` lives in `script_utils`.
 * [A code resume that changed source gets a review before its stop](notes/2026-11-25-a-code-resume-that-changed-source-gets-a-review.md) [skill/code, script/code-step, script/gate] A /code resume that changed source and writes stop.md with no review loop started in the run is denied once, and the deny names the changed files.

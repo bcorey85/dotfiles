@@ -1,6 +1,7 @@
 """review_loop_prompts.py: the prompts the scripted review loop sends its reviewers and its coders."""
 import json
 
+import full_check
 import handback
 import path_summary
 import plan_format
@@ -64,6 +65,12 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
                   "it names none. One of: " + " ".join(f"[{name}]" for name in handback.CLASSES) + ".")
 
 
+UNRUN_TESTS_RULE = ("The full suite runs only in CI, so a new test may never have run locally. Read each new test "
+                    "by hand and file a fix for: (1) an equality assert whose two sides have different types, "
+                    "such as a str against a UUID object; (2) a fixture or state shared across subtests or test "
+                    "methods; (3) an expected value the test's setup never makes true, such as an update test "
+                    "whose setup misses a NULL filter.")
+
 NO_CODE_REVIEW_RULE = ("These findings were ruled no code change. File a [plan-drift] finding for any code the fix "
                        "diff adds for one of them:")
 
@@ -115,6 +122,8 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
                      "the owned files under Review scope (this round)): " + fix_diff_path)
     if agent == "test-reviewer":
         lines.append("Source under test: the diff's non-test files.")
+        if full_check.full_suite_runs_in_ci(repo):
+            lines.append(UNRUN_TESTS_RULE)
         if test_strategy:
             lines.append("The plan's test strategy binds every phase. File a fix for each changed source the diff "
                          "leaves without the tests it asks for:\n" + test_strategy)

@@ -3,7 +3,7 @@
 # docs/rule-anchors.md so every block has a recorded reason to exist.
 #
 #   rule-anchors.sh list <file>...   hash, file, heading: one line per block
-#   rule-anchors.sh check            every file the sidecar names, against the sidecar
+#   rule-anchors.sh check  every file the sidecar names, against the sidecar (in the dotfiles checkout holding the cwd, else the script's own)
 #
 # A block is a heading line plus the text under it, up to the next heading outside a
 # code fence. Whitespace runs collapse to one space before hashing, so a formatter's

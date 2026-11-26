@@ -20,6 +20,14 @@ def awk_reads_heading_intervals():
     return probe.returncode == 0
 
 
+def write_stale_sidecar_fixture(root):
+    """Writes a rules.md and a sidecar whose only row holds a hash no block has."""
+    (root / "claude" / ".claude" / "rules.md").write_text("# Rule\n\nbody text\n")
+    (root / "docs").mkdir()
+    (root / "docs" / "rule-anchors.md").write_text(
+        "| hash | file | section | reason |\n| 00000000 | rules.md | # Rule | stale row |\n")
+
+
 @unittest.skipUnless(awk_reads_heading_intervals(), "this awk has no regex interval support")
 class RuleAnchorsTest(unittest.TestCase):
     def test_every_prompt_block_has_a_current_row(self):
@@ -39,10 +47,7 @@ class RuleAnchorsTest(unittest.TestCase):
             checkout_script = checkout / "claude" / ".claude" / "scripts" / "tools" / "rule-anchors.sh"
             checkout_script.parent.mkdir(parents=True)
             shutil.copy(RULE_ANCHORS, checkout_script)
-            (checkout / "claude" / ".claude" / "rules.md").write_text("# Rule\n\nbody text\n")
-            (checkout / "docs").mkdir()
-            (checkout / "docs" / "rule-anchors.md").write_text(
-                "| hash | file | section | reason |\n| 00000000 | rules.md | # Rule | stale row |\n")
+            write_stale_sidecar_fixture(checkout)
             subprocess.run(["git", "init", "-q", str(checkout)], check=True)
 
             env = {key: value for key, value in os.environ.items() if key != "RULE_ANCHORS"}
@@ -61,10 +66,7 @@ class RuleAnchorsTest(unittest.TestCase):
             installed_script = installed / "claude" / ".claude" / "scripts" / "tools" / "rule-anchors.sh"
             installed_script.parent.mkdir(parents=True)
             shutil.copy(RULE_ANCHORS, installed_script)
-            (installed / "claude" / ".claude" / "rules.md").write_text("# Rule\n\nbody text\n")
-            (installed / "docs").mkdir()
-            (installed / "docs" / "rule-anchors.md").write_text(
-                "| hash | file | section | reason |\n| 00000000 | rules.md | # Rule | stale row |\n")
+            write_stale_sidecar_fixture(installed)
 
             unrelated = temp_path / "unrelated"
             unrelated.mkdir()

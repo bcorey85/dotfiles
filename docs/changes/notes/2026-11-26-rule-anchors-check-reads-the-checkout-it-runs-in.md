@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`rule-anchors.sh` finds its `.claude` folder from its own symlinked location, the main checkout. When the cwd is inside a dotfiles checkout (its `git rev-parse --show-toplevel` holds `claude/.claude/scripts/tools/rule-anchors.sh`), the script now uses that checkout's `claude/.claude` and `docs/rule-anchors.md`. The `RULE_ANCHORS` override, and the behavior outside a git repo or in a repo that is not a dotfiles checkout, are unchanged.
+`rule-anchors.sh` finds its `.claude` folder from its own symlinked location, the main checkout. When the cwd is inside a dotfiles checkout (its `git rev-parse --show-toplevel` holds `claude/.claude/scripts/tools/rule-anchors.sh`), the script now uses that checkout's `claude/.claude` and `docs/rule-anchors.md`. `RULE_ANCHORS` still overrides only the sidecar path; the prompt files are read from the cwd's checkout when it is a dotfiles checkout. The behavior outside a git repo or in a repo that is not a dotfiles checkout is unchanged. `claude-doctor` runs the check from its own tree, so the doctor keeps reading one tree.
 
 ## Evidence
 

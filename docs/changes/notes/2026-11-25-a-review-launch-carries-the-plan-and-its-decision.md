@@ -20,7 +20,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 `review_launch.py` takes `--plan <path>`. With no flag it reads the plan from the repo's code-phase record when that file
 is in the repo, and writes `plan: <repo-relative path>` into the prompt header. A `--plan` that is no file in the repo
-stops the launch. `reviewer_brief` lets the reviewer open the plan folder's `03-decisions.md` and says a question a
+stops the launch; a recorded plan that is no file in the repo is skipped. `reviewer_brief` lets the reviewer open the plan folder's `03-decisions.md` and says a question a
 recorded ruling answers is not an ask. The /review skill maps `plan=<path>` to `--plan`.
 
 ## Evidence

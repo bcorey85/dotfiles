@@ -10,7 +10,9 @@ an approval-only file), which only the user rules under the global acceptance-cr
 ## Scope
 
 - In: `review/full_check.py`, `review/review_launch.py`, `review/review_loop_prompt_file.py`,
-  `gates/inline_interpreter_hint.py`, `skills/review/SKILL.md` (one flag line), and the tests of each.
+  `gates/inline_interpreter_hint.py`, `skills/review/SKILL.md` (one flag line), `lib/hook_input.py`,
+  `review/reviewer_dispatch.py`, `review/review_loop_main.py`, `code/code_wait.py`, `review/review_fix.py`,
+  `code/code_review_start.py`, and the tests of each.
 - Out: `review/review_fix_asks.py` and the asks-done verb; `bash-safety-gate.sh` (generated); every CLAUDE.md,
   `orchestration.md` and `settings.json`.
 
@@ -47,7 +49,7 @@ filed three asks that repeated them.
 
 #### Automated Verification
 
-- [ ] **Launch plan header and brief**: a code-phase record's plan reaches the header; a 03-decisions.md file reaches the brief - `python3 tests/parallel_tests.py test_review_launch.py test_review_loop_prompt_file.py`
+- [x] **Launch plan header and brief**: a code-phase record's plan reaches the header; a 03-decisions.md file reaches the brief - `python3 tests/parallel_tests.py test_review_launch.py test_review_loop_prompt_file.py`
 
 ## Phase 3: the inline-interpreter deny names the session's scratchpad file first
 

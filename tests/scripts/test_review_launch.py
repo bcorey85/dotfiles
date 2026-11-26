@@ -273,6 +273,7 @@ class ReviewLaunchTest(unittest.TestCase):
 
         loop_dir = self.loop_dirs(self.repo)[-1]
         relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertEqual(relaunch[:2], ["--repo", str(self.repo.resolve())])
         self.assertNotIn("--plan", relaunch)
 
     def test_a_plan_flag_reaches_the_header_and_the_relaunch_args_as_a_repo_relative_path(self):

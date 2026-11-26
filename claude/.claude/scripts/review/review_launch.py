@@ -261,16 +261,21 @@ def launch_plan(repo, given):
     the repo, else the launch stops. With no `given`, the plan of the code-phase record when that file exists in the
     repo."""
     if given:
-        relative = script_utils.repo_relative(repo, given)
-        if relative is None or not (repo / relative).is_file():
+        relative = repo_file_relative(repo, given)
+        if relative is None:
             raise LaunchError(f"--plan {given} is not a file inside the repo {repo}")
         return relative
     recorded = code_wait.read_phase_run(repo).get(phase_asks.PLAN_KEY)
     if not recorded:
         return ""
-    relative = script_utils.repo_relative(repo, recorded)
+    return repo_file_relative(repo, recorded) or ""
+
+
+def repo_file_relative(repo, given):
+    """`given` relative to the repo root when it names a file inside the repo, else None."""
+    relative = script_utils.repo_relative(repo, given)
     if relative is None or not (repo / relative).is_file():
-        return ""
+        return None
     return relative
 
 
@@ -656,7 +661,6 @@ def command_launch(argv, loop_script):
                               "reviewer would read anything. Nothing was launched. Name a file with --file to "
                               "review it.")
         if changed:
-            # Plan documents mixed in: they are outside the scope too, so name both exclusions.
             outside_plan = f" outside the plan folder {plan_format.plan_folder(plan)}" if scoped != changed else ""
             raise LaunchError(f"every changed file {since}{outside_plan} was given to --ruled-out, so the review scope "
                               "is empty and no reviewer would read anything. Nothing was launched.")

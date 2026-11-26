@@ -233,8 +233,8 @@ def _read_hunk_body(lines, start, hunk, position):
     return index
 
 
-# The flags that make `git diff` output parseable under any user config.
-DIFF_FLAGS = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff",
+# The global options and the `diff` subcommand with the flags that make its output parseable under any user config.
+DIFF_COMMAND_ARGS = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff",
               "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
               "--no-prefix")
 

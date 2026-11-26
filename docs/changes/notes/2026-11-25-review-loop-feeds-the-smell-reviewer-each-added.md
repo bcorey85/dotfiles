@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The review loop's first smell review gets the nearest-other-functions catalog that /refactor branch-prep already builds, limited to the files the smell reviewer owns. One renderer (`shape_clones.catalog_lines`) and one diff flag list (`lib/source_text.py` `DIFF_FLAGS`) serve both callers. The new `review/review_loop_nearest.py` builds the block. A repo whose files git cannot list now reads as not read (`ShapeResult.repo_unread`), not partly read.
+The review loop's first smell review gets the nearest-other-functions catalog that /refactor branch-prep already builds, limited to the files the smell reviewer owns. `shape_clones.catalog_shapes` is a catalog-only step (changed and added functions, then listings, uncataloged count and notes) that `branch_shapes` also uses, so the review loop never runs the pair search. One renderer (`shape_clones.catalog_lines`, which takes the heading) and one diff argument list (`lib/source_text.py` `DIFF_COMMAND_ARGS`) serve both callers. The untracked-file listing moved from `refactor_flow` to `lib/untracked_listing.py`, so the new `review/review_loop_nearest.py` imports only lib modules and `shape_clones`. A repo whose files git cannot list gives a skipped result, and the block reads as not read.
 
 ## Evidence
 
@@ -34,4 +34,4 @@ None. No intake number reads the smell reviewer's prior-art catches per round.
 
 ## Back-out
 
-Revert the branch commit. The refactor branch-prep output is unchanged in content.
+Revert the branch commit.

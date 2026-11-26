@@ -149,11 +149,11 @@ class NearestFunctionsPromptTests(unittest.TestCase):
 
         self.assertTrue(text.startswith("Nearest other functions: not read"), text)
 
-    def test_a_refactor_flow_error_gives_its_message_as_a_note(self):
+    def test_an_untracked_listing_error_gives_its_message_as_a_note(self):
         def fail(_repo):
-            raise review_loop_nearest.refactor_flow.RefactorFlowError("boom")
+            raise review_loop_nearest.untracked_listing.UntrackedListError("boom")
 
-        with mock.patch.object(review_loop_nearest.refactor_flow, "untracked_files", fail):
+        with mock.patch.object(review_loop_nearest.untracked_listing, "untracked_files", fail):
             text = review_loop_nearest.nearest_functions_text(self.root, "", ["plan/nodes.py"])
 
         self.assertEqual(review_loop_nearest.skipped_note("boom"), text)

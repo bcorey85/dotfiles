@@ -61,6 +61,7 @@ import shape_clones
 import simplify_slices
 import source_text
 import sweep_markers
+import untracked_listing
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
@@ -81,9 +82,6 @@ SMELL_BOUND_WORK_TREE = ("Your review bound for this run is the whole branch aga
                          "(`git diff {merge_base}`, committed and uncommitted changes) plus the untracked files "
                          "listed above, not a phase diff.")
 UNTRACKED_LABEL = "untracked"
-UNTRACKED_SYMLINK = "symlink"
-UNTRACKED_NOT_A_FILE = "not a file"
-UNTRACKED_BINARY = "binary"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
@@ -170,9 +168,9 @@ def empty_tree():
 
 
 def diff_output(span, *args, pathspecs=()):
-    """Run `git diff` over a span with source_text.DIFF_FLAGS."""
+    """Run `git diff` over a span with source_text.DIFF_COMMAND_ARGS."""
     limit = ["--", *pathspecs] if pathspecs else []
-    done = git(*source_text.DIFF_FLAGS, *args, span, *limit, check=False)
+    done = git(*source_text.DIFF_COMMAND_ARGS, *args, span, *limit, check=False)
     if done.returncode == 0:
         return done.stdout
     if "no merge base" in done.stderr:
@@ -242,32 +240,12 @@ def work_tree_merge_base(base):
     return done.stdout.strip()
 
 
-class UntrackedFile(NamedTuple):
-    path: str
-    added_lines: list  # (line number, text) pairs; empty when kind is set
-    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
-
-
 def untracked_files(root):
-    """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed with its kind and no lines."""
-    names = script_utils.untracked_paths(root)
-    if names is None:
-        raise RefactorFlowError(f"git could not list the untracked files in {root}")
-    return [classify_untracked(root, name) for name in names]
-
-
-def classify_untracked(root, name):
-    """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    full_path = Path(root) / name
-    if full_path.is_symlink():
-        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
-    if not full_path.is_file():
-        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
-    numbered = script_utils.read_text_lines(full_path)
-    if numbered is None:
-        return UntrackedFile(name, [], UNTRACKED_BINARY)
-    return UntrackedFile(name, numbered, "")
+    """untracked_listing.untracked_files, with a git failure raised as RefactorFlowError."""
+    try:
+        return untracked_listing.untracked_files(root)
+    except untracked_listing.UntrackedListError as error:
+        raise RefactorFlowError(str(error)) from error
 
 
 def untracked_label(entry):
@@ -747,7 +725,7 @@ def untracked_line_count(live_targets):
     """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
     total = 0
     for name in ls_files(live_targets, "--others"):
-        total += len(classify_untracked(".", name).added_lines)
+        total += len(untracked_listing.classify_untracked(".", name).added_lines)
     return total
 
 

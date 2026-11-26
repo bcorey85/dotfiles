@@ -41,6 +41,12 @@ def names_whole_tree(words):
     return any(WHOLE_TREE_PATHSPEC.fullmatch(path) for path in paths)
 
 
+def sweeps_whole_index(arguments):
+    """True when these `git commit` arguments carry `-a`/`--all` or `-i`/`--include`."""
+    words = without_flag_values(arguments, takes_value=commit_takes_next_word)
+    return any(option_sweeps_index(option) for option in options_before_separator(words))
+
+
 def is_bare_commit(arguments):
     """True when a `git commit` with these arguments commits whatever the index holds: no `-- <path>` and no
     `--pathspec-from-file`, or `-a`/`--all`, `-i`/`--include`. An exact `--amend` is never bare (rule 2 judges
@@ -54,7 +60,7 @@ def is_bare_commit(arguments):
         return False
     if "--amend" in options or is_dry_run:
         return False
-    if any(option_sweeps_index(option) for option in options):
+    if sweeps_whole_index(arguments):
         return True
     if any(is_pathspec_from_file(option) for option in options):
         return False

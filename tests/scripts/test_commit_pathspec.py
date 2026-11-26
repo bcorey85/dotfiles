@@ -83,6 +83,17 @@ class IsBareCommitTest(unittest.TestCase):
                 self.assertFalse(commit_pathspec.is_bare_commit(arguments), arguments)
 
 
+class SweepsWholeIndexTest(unittest.TestCase):
+    def test_sweeping_options_are_found_and_values_and_separator_words_are_not(self):
+        cases = (
+            (["-a"], True), (["--all"], True), (["-i"], True), (["--include"], True), (["-ai"], True),
+            (["-m", "-a"], False), (["--", "-a"], False), (["--no-edit"], False),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(expected, commit_pathspec.sweeps_whole_index(arguments))
+
+
 class SharedClonesTest(unittest.TestCase):
     def test_default_list_expands_home(self):
         home = pathlib.Path(os.environ.get("TMPDIR", "/tmp")).resolve()

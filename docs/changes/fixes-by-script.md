@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-836 fix notes
+837 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -20,15 +20,15 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-commit-gate | 46 | 4 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 34 | 6 |
+| script/script-utils | 33 | 10 |
 | script/coder-gate | 32 | 5 |
 | script/review-loop | 32 | 15 |
-| script/script-utils | 32 | 9 |
 | script/plan-format | 31 | 7 |
 | script/quality-check-cap | 24 | 5 |
 | script/shell-write-gate | 24 | 4 |
 | script/pull-keep-index | 22 | 10 |
+| script/git-discipline-gate | 21 | 10 |
 | agent/review-loop | 20 | 0 |
-| script/git-discipline-gate | 20 | 9 |
 | script/staged-claim-gate | 20 | 7 |
 | skill/code | 20 | 2 |
 | script/shell-command | 19 | 7 |
@@ -175,6 +175,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/code-run-names | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
+| script/commit-pathspec | 1 | 1 |
 | script/detach | 1 | 0 |
 | script/dirty-writers | 1 | 1 |
 | script/docker-run-names | 1 | 1 |
@@ -197,6 +198,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
 | script/merge-built-page | 1 | 0 |
+| script/merge-in-progress | 1 | 1 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |
 | script/permission-question-gate | 1 | 1 |

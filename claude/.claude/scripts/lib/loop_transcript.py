@@ -10,7 +10,6 @@ import re
 import shlex
 
 import full_check_receipt
-import human_turn_lookup
 import script_utils
 import shell_command
 
@@ -437,7 +436,7 @@ def recorded_after(line, since):
     if not isinstance(timestamp, str):
         return False
     try:
-        epoch = human_turn_lookup.epoch_of_timestamp(timestamp)
+        epoch = script_utils.epoch_of_timestamp(timestamp)
     except ValueError:
         return False
     return epoch > since

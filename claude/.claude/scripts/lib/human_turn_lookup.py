@@ -9,11 +9,10 @@ compact summaries are never a user turn.
 `verified_human_turn` returns the relaying session and the turn's time, never its words, or raises
 HumanTurnRefusedError naming the failed lookup. Standard library, `script_utils`, `session_registry` and
 `user_prompts` only."""
-from datetime import datetime, timezone
 from typing import NamedTuple
 
 import user_prompts
-from script_utils import transcript_record
+from script_utils import epoch_of_timestamp, transcript_record
 from session_registry import live_session_rows, projects_dir, row_for_session_id, sessions_dir
 
 HUMAN_ORIGIN = {"kind": "human"}
@@ -66,15 +65,6 @@ def transcript_of_session(session_id):
         raise HumanTurnRefusedError(f"{len(found)} transcripts named {session_id}.jsonl under {projects_dir()}: "
                                     f"{', '.join(str(transcript) for transcript in found)}")
     return found[0]
-
-
-def epoch_of_timestamp(timestamp):
-    """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`. Raises ValueError for any other."""
-    # Python 3.10's fromisoformat does not read a trailing Z.
-    moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.timestamp()
 
 
 def human_text(row):

@@ -3,11 +3,12 @@
 A live session has one `<pid>.json` row in the sessions folder (fields `name`, `sessionId`, `pid`);
 `row_for_name` and `row_for_session_id` find one live row. The sessions and projects folders
 are under `$CLAUDE_CONFIG_DIR` when it is set, else under the home config folder. Standard library and
-`process_group` only."""
+`process_group` and `script_utils` only (neither imports any other toolkit module at load time)."""
 import json
 import os
 import pathlib
 
+import script_utils
 from process_group import pid_is_alive
 
 
@@ -109,6 +110,18 @@ def session_transcript(session_id):
     if not found:
         return None
     return found[0]
+
+
+def session_transcripts(session_id):
+    """The transcript of a session and the transcripts of its subagents (coder dispatches edit through them); empty
+    when the session has no main transcript."""
+    transcript = session_transcript(session_id)
+    if transcript is None:
+        return []
+    subagent_pattern = pathlib.Path(script_utils.subagent_transcript_path(str(transcript), "*"))
+    subagent_matches = subagent_pattern.parent.glob(subagent_pattern.name)
+    subagent_transcripts = sorted(subagent_matches)
+    return [transcript, *subagent_transcripts]
 
 
 def holder_label(row):

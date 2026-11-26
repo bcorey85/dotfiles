@@ -16,6 +16,7 @@ import sys
 import time
 import uuid
 from collections import namedtuple
+from datetime import datetime, timezone
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -1664,3 +1665,12 @@ def items_missing_by_key(items, others, key):
     """The items whose `key` no item of `others` has."""
     other_keys = {key(other) for other in others}
     return {item for item in items if key(item) not in other_keys}
+
+
+def epoch_of_timestamp(timestamp):
+    """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`. Raises ValueError for any other."""
+    # Python 3.10's fromisoformat does not read a trailing Z.
+    moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.timestamp()

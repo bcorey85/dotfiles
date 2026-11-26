@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1270 changes
+1274 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -41,6 +41,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [skills name the plan files beside the plan, not under docs/plans](notes/2026-11-26-skills-name-the-plan-files-beside-the-plan-not.md) [skill/eng-spec, skill/code, skill/coder-core, skill/plan-format] eng-spec phases 6 and 7 write and check the spec in the task directory phase 1 opened, eng-spec phase 1 also finds an existing git-dir task directory by ticket key, and /code, coder-core and the plan format name the criteria file as the one beside the plan.
+* [verify-branch writes a fetched ticket to the path verify-prep names](notes/2026-11-26-verify-branch-writes-a-fetched-ticket-to-the-path.md) [skill/verify-branch] verify-branch's exit-4 row writes the fetched ticket to the path verify-prep's message names, in the git dir, not the tmpfs scratchpad.
+* [eng-spec opens the task directory the resolver names](notes/2026-11-26-eng-spec-opens-the-task-directory-the-resolver.md) [skill/eng-spec] eng-spec phase 1 opens the task directory that resolve-task-dir.sh --home prints, so a repo with no docs/plans gets a plan folder in its git dir.
 * [Scope put-back keeps earlier fixes and needed files](notes/2026-11-25-scope-put-back-keeps-earlier-fixes-and-needed.md) [script/review-loop] The review loop keeps a file a fix pass changed outside its scope when the pass's gate needs it, and stops naming the file and the folder of its bytes for any other.
 * [Every round finding reaches a coder or an ask; a used round is refused](notes/2026-11-25-every-round-finding-reaches-a-coder-or-an-ask-a.md) [script/review-loop, script/code-wait] The review loop sends every fix finding of a round to a coder brief or an ask before the next round, and the main session's review call refuses a dispatch whose every report another agent already filled.
 * [inline-interpreter deny names the session scratchpad first](notes/2026-11-25-inline-interpreter-deny-names-the-session.md) [script/inline-interpreter-hint, script/hook-input] The inline-interpreter deny text opens with the route to a script file and names the session's scratchpad folder when it exists; otherwise it keeps the general words.
@@ -67,6 +70,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [a plan folder for a repo with no docs/plans lives in the git dir](notes/2026-11-26-a-plan-folder-for-a-repo-with-no-docs-plans-lives.md) [script/resolve-task-dir, script/verify-prep] resolve-task-dir.sh gains a git-dir plan root, <git dir>/claude-plans/, with a --home verb that names it when the repo has no docs/plans, and verify-prep finds a plan there and names a ticket path there in place of the tmpfs scratchpad.
 * [The criteria dry run lists closing-phase checks as CLOSING](notes/2026-11-26-the-criteria-dry-run-lists-closing-phase-checks-as.md) [script/criteria-dry-run, skill/eng-spec] criteria_dry_run.py prints `CHECK <label> CLOSING <skill> <command or item text>` for each Automated Verification item of a closing phase and runs none of them, so every phase's checks show in the report; the exit code is unchanged.
 * [full_check default limit is 1800 s](notes/2026-11-26-full-check-default-limit-is-1800-s.md) [script/full-check] full_check.py's default limit rises from 540 s to 1800 s, so a branch-end check of the dotfiles suite (about 870 s) passes and writes its receipt.
 * [A search worded exits 0 reads RED on no match](notes/2026-11-26-a-search-worded-exits-0-reads-red-on-no-match.md) [script/criteria-dry-run, shared/criteria-verdict] An rg, grep or git grep criterion whose text says it exits 0 now reads as a presence check, so no match (exit 1) reads RED, not GREEN; ban wording on the same line still wins.

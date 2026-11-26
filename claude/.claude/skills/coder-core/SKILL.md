@@ -63,7 +63,7 @@ Before you write a test, search the suite for tests that call the same function,
 
 When a rule's cases are already tested at one layer, test each other entry point that applies the rule with one wiring test. Put inputs that take the same code branch in one table-driven test, with a message for each case.
 
-The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
+The plan's acceptance criteria (`acceptance-criteria.md` beside the plan) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 
 The private workflow never reaches committed code: branch, PR, and issue numbers, phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, agent provenance, the user's name, and sign-offs (who and when) are banned from every file you write, including comments and filenames. Write the reason standalone.
 

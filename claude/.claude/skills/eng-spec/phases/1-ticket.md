@@ -6,10 +6,13 @@
    (read it). Required-ticket caller: no key → ask the user; Jira MCP down → say
    so and stop.
 
-2. **Check for an existing spec** — Glob `docs/plans/**/spec.md`. If one
+2. **Check for an existing spec** — Glob `docs/plans/**/spec.md`; with a ticket key, also run
+   `bash ~/.claude/scripts/tools/resolve-task-dir.sh <KEY>`: a folder it prints (exit 0) is the
+   existing task directory. If one
    matches, read it and ask: "Found an existing spec — update it or start fresh?"
 
-3. **Open the task directory** `docs/plans/<slug>/`. **A Jira key always goes in
+3. **Open the task directory** that
+   `bash ~/.claude/scripts/tools/resolve-task-dir.sh --home <slug>` prints. **A Jira key always goes in
    the slug** (`RB-512`, `RB-512-invoice-export`). With no key, kebab-case the
    **area** touched plus the date, never the change (`invoice-export-0808`, not
    `fix-slow-invoice-export`). `Write` the ticket **verbatim** to

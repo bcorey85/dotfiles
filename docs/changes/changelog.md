@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1226 changes
+1227 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -59,6 +59,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [The code phase end runs the change-file check](notes/2026-11-25-the-code-phase-end-runs-the-change-file-check.md) [script/code-step, skill/code] A /code phase that changes toolkit paths now fails a change-file check before the Phase Status tick, naming the paths and the build_changes.py new command, instead of printing a commit subject that the pre-commit hook then refuses.
 * [A stopped review loop is waited on through its whole process group](notes/2026-11-25-a-stopped-review-loop-is-waited-on-through-its.md) [script/review-launch, script/fork-children, script/process-group] review_launch waits for the stopped loop's process group to be gone, not only its leader pid, and one stop-wait value of 5 s lives in process_group for review_launch and fork_children.
 * [review_fix decide accepts a plan folder](notes/2026-11-25-review-fix-decide-accepts-a-plan-folder.md) [script/review-fix, script/plan-format] `review_fix.py decide --plan <plan folder>` records the Plan Deviations entry in the folder's plan file instead of crashing with IsADirectoryError; a folder with no plan file is a usage error that stores no ruling.
+* [plan_check owner reads a queue item path named anywhere in a pasted brief](notes/2026-11-25-plan-check-owner-reads-a-queue-path-named-in-a-brief.md) [script/plan-format] A ticket copied from a pasted brief names its queue item as a path in free text, not a Source line. plan_check owner now reads an existing queue path anywhere in the ticket, so a session-written item gives owner session.
 * [Lane close refuses exactly when prune's verdict for the tree is keep](notes/2026-11-25-lane-close-refuses-exactly-when-prune-s-verdict.md) [script/herdr-lane-resume, script/herdr-worktree-prune] herdr-lane-resume's entry-less close asks herdr-worktree-prune --check for the tree's verdict and refuses on keep with prune's reason, so a stash, submodule, nested repo or lock now stops a close.
 * [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md) [script/review-loop-script] The review loop's ruling check and its scope guard now share one test of whether a finding names a repo file, so a file named by ./ or a unique trailing part is backed up and can be put back.
 * [The pre-commit drift check refuses only drift the commit adds](notes/2026-11-25-the-pre-commit-drift-check-refuses-only-drift-the.md) [script/pre-commit] The pre-commit hook runs the toolkit drift check on HEAD too and refuses a commit only for problem lines the staged tree adds; drift already at HEAD passes with a note.

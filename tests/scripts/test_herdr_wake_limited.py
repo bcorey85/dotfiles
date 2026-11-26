@@ -11,22 +11,29 @@ Also covers login-expired notices and the noticed-state file:
 - resume prompts: one per error record to a pane whose transcript ends on a cleared usage-limit or server
   error (records written after the error are skipped), none for a login error or a pane at a screen prompt,
   and the resumed file (last answered uuid and resume count per session) kept, pruned and left alone under
-  tuios; at most three resumes in a row per session, then one `gave up` line.
+  tuios; at most three resumes in a row per session, then one `gave up` line;
+- the lane sweep: started at most once per ten minutes, and in the same run as a resume prompt.
 """
 import datetime
 import importlib.machinery
+import importlib.util
 import json
 import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import types
 import unittest
 from unittest import mock
 
+import toolkit_paths
 from stubs import write_stub
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import process_group
 
 # A usage-limit reset an hour ago: past its margin, inside the resume age cap.
 RESET_AN_HOUR_AGO = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) - 3600
@@ -502,6 +509,150 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertEqual(len(self.notifications()), 1)
         self.assertIn(str(blocker / "herdr-wake-limited.noticed"), finished.stderr)
 
+    def stub_sweep(self, body="exit 0"):
+        """A herdr-lane-sweep beside the script that appends a line to the returned file on each call."""
+        sweep_calls = self.root / "sweep-calls"
+        write_stub(self.bin_dir / "herdr-lane-sweep", f"echo called >> {sweep_calls}\n{body}")
+        return sweep_calls
+
+    def sweep_log(self):
+        return (self.root / "xdg-state" / "herdr-lane-sweep.log").read_text()
+
+    def sweep_calls(self, sweep_calls):
+        return sweep_calls.read_text().splitlines() if sweep_calls.exists() else []
+
+    def test_the_lane_sweep_runs_on_the_first_call_not_within_ten_minutes_and_again_once_the_stamp_is_old(self):
+        sweep_calls = self.stub_sweep("echo swept")
+        stamp = self.root / "xdg-state" / "herdr-lane-sweep.stamp"
+        self.set_panes({})
+
+        first = self.run_wake()
+        second = self.run_wake()
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 1)
+        self.assertEqual(first.stdout, "")
+        self.assertEqual(self.sweep_log(), "swept\n")
+
+        recent = time.time() - 9 * 60
+        os.utime(stamp, (recent, recent))
+        self.run_wake()
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 1)
+
+        old = time.time() - 11 * 60
+        os.utime(stamp, (old, old))
+        self.run_wake()
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 2)
+
+    def test_the_wake_run_waits_for_the_lane_sweep_to_finish(self):
+        self.stub_sweep("sleep 1; echo finished >> " + str(self.root / "sweep-done"))
+        self.set_panes({})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertTrue((self.root / "sweep-done").exists(), "the wake run returned before the sweep finished")
+
+    def test_a_hung_lane_sweep_and_its_children_are_killed_at_the_cap_and_the_kill_is_logged(self):
+        child_pid_file = self.root / "child-pid"
+        self.stub_sweep(f"sleep 60 &\necho $! > {child_pid_file}\nsleep 60")
+        loader = importlib.machinery.SourceFileLoader("herdr_wake_limited_under_test",
+                                                      str(self.bin_dir / "herdr-wake-limited"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        wake = importlib.util.module_from_spec(spec)
+        loader.exec_module(wake)
+        wake.SWEEP_TIMEOUT_SECONDS = 1
+
+        started = time.monotonic()
+        with mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.root / "xdg-state")}):
+            wake.run_lane_sweep()
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 10, "the wake run did not return after the cap")
+        self.assertIn("killed after 1s", self.sweep_log())
+        child_pid = int(child_pid_file.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and process_group.pid_is_alive(child_pid):
+            time.sleep(0.1)
+        self.assertFalse(process_group.pid_is_alive(child_pid), "the sweep's child survived the kill")
+
+    def test_an_unwritable_sweep_stamp_is_named_and_the_wake_run_is_unchanged(self):
+        sweep_calls = self.stub_sweep()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})
+        stamp = self.root / "xdg-state" / "herdr-lane-sweep.stamp"
+        stamp.parent.mkdir(parents=True)
+        # A dangling link: touching it tries to create a file in a folder that does not exist.
+        stamp.symlink_to(self.root / "no-such-dir" / "x")
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "woke wS:p1 /work/a\n")
+        self.assertIn("could not write", finished.stderr)
+        self.assertEqual(self.sweep_calls(sweep_calls), [])
+
+    def test_an_unwritable_sweep_log_is_named_and_the_wake_run_is_unchanged(self):
+        sweep_calls = self.stub_sweep()
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})
+        (self.root / "xdg-state" / "herdr-lane-sweep.log").mkdir(parents=True)
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "woke wS:p1 /work/a\n")
+        self.assertIn("herdr-lane-sweep.log", finished.stderr)
+        self.assertEqual(self.sweep_calls(sweep_calls), [])
+
+    def test_a_failing_lane_sweep_leaves_the_wake_run_and_its_exit_code_as_before(self):
+        sweep_calls = self.stub_sweep("echo sweep-broke >&2; exit 3")
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), ["wS:p1 enter"])
+        self.assertEqual(finished.stdout, "woke wS:p1 /work/a\n")
+        self.assertEqual(finished.stderr, "")
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 1)
+        self.assertIn("sweep-broke", self.sweep_log())
+
+        self.run_wake()
+        self.assertEqual(
+            len(self.sweep_calls(sweep_calls)), 1, "a failed sweep is stamped, so it waits for the interval"
+        )
+
+    def test_a_missing_lane_sweep_is_logged_and_the_wake_run_is_unchanged(self):
+        self.set_panes({"wS:p1": {"cwd": "/work/a", "text": RESET_PROMPT}})
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sent_keys(), ["wS:p1 enter"])
+        self.assertEqual(finished.stderr, "")
+        self.assertEqual(finished.stdout, "woke wS:p1 /work/a\n")
+        self.assertIn("could not run", self.sweep_log())
+
+    def test_no_lane_sweep_runs_under_tuios(self):
+        sweep_calls = self.stub_sweep()
+        self.set_panes({})
+
+        finished = self.run_wake(tuios=True)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sweep_calls(sweep_calls), [])
+        self.assertFalse((self.root / "xdg-state" / "herdr-lane-sweep.stamp").exists())
+
+    def test_no_lane_sweep_runs_when_herdr_gives_no_agent_list(self):
+        sweep_calls = self.stub_sweep()
+        (self.state_dir / "no-answer").write_text("")
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(self.sweep_calls(sweep_calls), [])
+        self.assertFalse((self.root / "xdg-state" / "herdr-lane-sweep.stamp").exists())
+
     # Resume prompts for panes whose transcript ends on an API error.
 
     def prompts(self):
@@ -554,6 +705,18 @@ class HerdrWakeLimitedTest(unittest.TestCase):
         self.assertRegex(self.prompts()[0], r"^wS:p1 Your last turn stopped on an API error .*Go on with the task")
         self.assertIn("resumed wS:p1 /work/a", first.stdout)
         self.assertEqual(self.sent_keys(), [])
+
+    def test_one_run_sends_the_resume_prompt_and_also_starts_the_lane_sweep(self):
+        sweep_calls = self.stub_sweep()
+        self.write_transcript("s-1", self.api_error("e-1", "rate_limit", apiErrorStatus=429,
+                                                    quotaLimits={"resetsAt": RESET_AN_HOUR_AGO}))
+        self.set_panes(self.stopped_pane())
+
+        finished = self.run_wake()
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(len(self.prompts()), 1)
+        self.assertEqual(len(self.sweep_calls(sweep_calls)), 1)
 
     def test_a_reset_in_rate_limit_info_is_read(self):
         self.write_transcript("s-1", self.api_error(

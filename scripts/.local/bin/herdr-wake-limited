@@ -49,12 +49,25 @@ prompt. The transcript is found and read through the toolkit's
 `lib/herdr_agents.py`, `lib/api_error_stop.py` and `lib/script_utils.py`, found from this script's
 real path. Under tuios nothing is resumed and the resumed
 file is neither read nor written.
+
+After the panes (not when herdr gives no agent list), at most once per 10 minutes, it also
+starts herdr-lane-sweep from the folder of the path it was started by (the stowed link),
+which closes the lanes whose branch is merged.
+The sweep runs with no stdin and this script waits for it, because a systemd
+oneshot unit kills a child left running. The wait is capped at 300 s: the sweep runs in its own process group,
+which is killed on timeout. A lane killed before its entry was removed is finished by the next sweep; one killed
+during its prune keeps its worktree until the next `herdr-worktree-prune --apply` in that main checkout.
+The last start is the mtime of ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.stamp;
+the sweep's output replaces ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.log. A sweep that fails or cannot start
+changes neither this script's stdout nor its exit code. Not run under tuios.
 """
+import contextlib
 import datetime
 import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -70,6 +83,8 @@ PHRASES = ("your usage limit has reset", "press enter to continue")
 VISIBLE_LINES = "15"
 BOTTOM_LINES = 6
 LOGIN_BOTTOM_LINES = 10
+SWEEP_INTERVAL_SECONDS = 600
+SWEEP_TIMEOUT_SECONDS = 300
 RESUME_PROMPT = ("Your last turn stopped on an API error that has now cleared. "
                  "Go on with the task from where it stopped.")
 # A whole line: plain words, then the hint. Quotes, prompts or other text around
@@ -262,6 +277,55 @@ def handle_pane(agent, noticed, under_tuios, screen_handled):
     return False
 
 
+def sweep_is_due(stamp_file):
+    """True when the stamp is missing or older than the interval. An unreadable stamp counts as missing."""
+    try:
+        age = time.time() - stamp_file.stat().st_mtime
+    except OSError:
+        return True
+    return age >= SWEEP_INTERVAL_SECONDS
+
+
+def run_lane_sweep():
+    """Run herdr-lane-sweep and wait for it when ten minutes have passed since the last start.
+
+    Its output goes to a log file.
+
+    Fail-open: nothing here changes the wake run's stdout or exit code.
+    """
+    stamp_file = script_utils.xdg_state_home() / "herdr-lane-sweep.stamp"
+    log_file = script_utils.xdg_state_home() / "herdr-lane-sweep.log"
+    if not sweep_is_due(stamp_file):
+        return
+    # Stamped before the run, so a failing sweep is retried at the next interval and not at every timer run.
+    try:
+        stamp_file.parent.mkdir(parents=True, exist_ok=True)
+        stamp_file.touch()
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {stamp_file}: {error}", file=sys.stderr)
+        return
+    # Beside the link that started this run (~/.local/bin under stow), not beside its resolved target.
+    sweep = pathlib.Path(__file__).parent / "herdr-lane-sweep"
+    try:
+        with log_file.open("w") as log:
+            try:
+                # Own process group, so a timeout kills the sweep and the git and close children under it.
+                process = subprocess.Popen([str(sweep)], stdin=subprocess.DEVNULL, stdout=log,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    process.wait(timeout=SWEEP_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired as error:
+                    # The leader can exit just as the wait times out, leaving an empty group.
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    log.write(f"herdr-wake-limited: {sweep} killed after {SWEEP_TIMEOUT_SECONDS}s: {error}\n")
+            except (OSError, subprocess.SubprocessError) as error:
+                log.write(f"herdr-wake-limited: could not run {sweep}: {error}\n")
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {log_file}: {error}", file=sys.stderr)
+
+
 def resume_stopped_pane(agent, resumed, legacy_uuids, now, may_prompt):
     """Prompt a pane whose transcript ends on a cleared API error, at most MAX_CONSECUTIVE_RESUMES times in a row.
     Returns the session's entry to keep in the resumed file, `{"uuid": <last answered error>, "count": <resumes in a
@@ -354,6 +418,7 @@ def main():
             still_resumed.setdefault(session_id, entry)
     if still_resumed != resumed or legacy_uuids:
         write_json_state(resumed_file, still_resumed)
+    run_lane_sweep()
     return 0
 
 

@@ -1898,5 +1898,66 @@ class CommitsSinceTest(unittest.TestCase):
             self.assertIsNone(script_utils.commits_since(self.repo, "abc123"))
 
 
+class CommittedTextTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.repo = pathlib.Path(self.temp.name).resolve() / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+
+    def commit_file(self, name, text):
+        (self.repo / name).write_text(text)
+        identity = ["-c", "user.name=t", "-c", "user.email=t@t"]
+        subprocess.run(["git", "-C", str(self.repo), "add", name], check=True)
+        subprocess.run(["git", "-C", str(self.repo), *identity, "commit", "-q", "-m", "c"], check=True)
+
+    def test_a_file_outside_a_work_tree_has_no_committed_text(self):
+        with tempfile.TemporaryDirectory() as outside:
+            stray = pathlib.Path(outside) / "a.py"
+            stray.write_text("x = 1\n")
+
+            self.assertEqual("", script_utils.committed_text(str(stray)))
+
+    def test_a_committed_file_gives_its_text_at_head(self):
+        self.commit_file("a.py", "x = 1\n# note\n")
+        (self.repo / "a.py").write_text("changed\n")
+
+        self.assertEqual("x = 1\n# note", script_utils.committed_text(str(self.repo / "a.py")))
+
+    def test_a_committed_empty_file_gives_empty_text_not_none(self):
+        self.commit_file("empty.py", "")
+
+        self.assertEqual("", script_utils.committed_text(str(self.repo / "empty.py")))
+
+    def test_an_untracked_file_has_no_committed_text(self):
+        self.commit_file("a.py", "x = 1\n")
+        (self.repo / "new.py").write_text("y = 2\n")
+
+        self.assertEqual("", script_utils.committed_text(str(self.repo / "new.py")))
+
+    def test_a_repo_with_no_commit_has_no_committed_text(self):
+        (self.repo / "new.py").write_text("y = 2\n")
+
+        self.assertEqual("", script_utils.committed_text(str(self.repo / "new.py")))
+
+    def test_a_git_failure_gives_none(self):
+        self.commit_file("a.py", "x = 1\n")
+        with unittest.mock.patch.object(script_utils, "git_output", return_value=None), \
+                unittest.mock.patch.object(script_utils, "inside_git_work_tree", return_value=True):
+            self.assertIsNone(script_utils.committed_text(str(self.repo / "a.py")))
+
+    def test_a_failed_show_of_a_listed_file_gives_none(self):
+        self.commit_file("a.py", "x = 1\n")
+        answers = {"show": None, "ls-tree": "a.py", "rev-parse": ".git"}
+
+        def answer(folder, *arguments, **options):
+            return answers[arguments[0]]
+
+        with unittest.mock.patch.object(script_utils, "git_output", side_effect=answer), \
+                unittest.mock.patch.object(script_utils, "inside_git_work_tree", return_value=True):
+            self.assertIsNone(script_utils.committed_text(str(self.repo / "a.py")))
+
+
 if __name__ == "__main__":
     unittest.main()

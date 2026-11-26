@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1287 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1288 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [memory-cap hook caps a test run with leading env assignments](notes/2026-11-26-memory-cap-hook-caps-a-test-run-with-leading-env.md).
+Latest change: 2026-11-26, [Comment hook allows only kept kinds of comment on each edit](notes/2026-11-26-comment-hook-allows-only-kept-kinds-of-comment-on.md).
 
 ## Top gains
 

@@ -107,6 +107,41 @@ class CommentLineNumbersTest(unittest.TestCase):
             source_text.comment_line_numbers([], "lisp")
 
 
+class ContiguousRunsTest(unittest.TestCase):
+    def test_runs_of_consecutive_numbers_are_paired_first_to_last(self):
+        self.assertEqual(source_text.contiguous_runs({7, 1, 2, 3, 9, 8, 12}), [(1, 3), (7, 9), (12, 12)])
+
+    def test_a_generator_with_duplicates_is_sorted_and_deduplicated(self):
+        self.assertEqual(source_text.contiguous_runs(iter([3, 2, 2, 1])), [(1, 3)])
+
+    def test_no_numbers_give_no_runs(self):
+        self.assertEqual(source_text.contiguous_runs(set()), [])
+
+
+class PythonNameIsPublicTest(unittest.TestCase):
+    def test_python_name_is_public(self):
+        for name, expected in (("run", True), ("_run", False), ("__init__", True), ("__private", False)):
+            with self.subTest(name=name):
+                self.assertEqual(source_text.python_name_is_public(name), expected)
+
+
+class LineNumbersOfTextTest(unittest.TestCase):
+    def test_every_occurrence_is_numbered(self):
+        self.assertEqual({1, 2, 4, 5}, source_text.line_numbers_of_text("a\nb\nc\na\nb\n", "a\nb"))
+
+    def test_a_missing_text_gives_none(self):
+        self.assertIsNone(source_text.line_numbers_of_text("a\nb\n", "zzz"))
+
+
+class TripleQuoteCloseLineTest(unittest.TestCase):
+    def test_close_line_of_a_one_line_and_a_multi_line_docstring(self):
+        self.assertEqual(1, source_text.triple_quote_close_line(['"""One."""', "x = 1"], 1))
+        self.assertEqual(3, source_text.triple_quote_close_line(['"""Open', "more", 'end"""', "x = 1"], 1))
+
+    def test_a_quote_inside_a_literal_or_after_a_hash_does_not_open_a_docstring(self):
+        self.assertEqual(1, source_text.triple_quote_close_line(["\"\"\"a\"\"\" + '\"\"\"'", "x"], 1))
+
+
 class StringDataLineNumbersTest(unittest.TestCase):
     def test_lines_after_an_assigned_triple_quote_are_data_but_a_docstring_is_not(self):
         lines = ['def f():', '    """Doc.', "    more", '    """', '    y = """', "data", '"""', "z = 1"]

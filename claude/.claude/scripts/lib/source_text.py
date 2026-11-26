@@ -402,6 +402,47 @@ def comment_line_numbers(lines, style):
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
 
 
+def contiguous_runs(numbers):
+    """The (first, last) pairs of the runs of consecutive integers in `numbers`, in ascending order. Fed the numbers
+    of the comment lines of a file, it gives the comment blocks."""
+    runs = []
+    for number in sorted(set(numbers)):
+        if runs and runs[-1][1] == number - 1:
+            runs[-1] = (runs[-1][0], number)
+        else:
+            runs.append((number, number))
+    return runs
+
+
+def line_numbers_of_text(file_text, text):
+    """The 1-based numbers of the lines that every occurrence of `text` occupies in `file_text`, or None when it does
+    not occur."""
+    numbers = set()
+    start = file_text.find(text)
+    while start >= 0:
+        first = file_text.count("\n", 0, start) + 1
+        numbers.update(range(first, first + text.count("\n") + 1))
+        start = file_text.find(text, start + max(len(text), 1))
+    return numbers or None
+
+
+def triple_quote_close_line(lines, first):
+    """The 1-based number of the line that closes the triple-quoted string that line `first` leaves open, or `first`
+    when that line closes it itself. A later line closes it by the same odd-count rule as the comment scan."""
+    opened = _opened_triple_quote(lines[first - 1], lines[first - 1].strip())
+    if opened.quote is None:
+        return first
+    for number in range(first + 1, len(lines) + 1):
+        if lines[number - 1].count(opened.quote) % 2 == 1:
+            return number
+    return len(lines)
+
+
+def python_name_is_public(name):
+    """True for a name with no leading underscore, and for a dunder."""
+    return not name.startswith("_") or (name.startswith("__") and name.endswith("__"))
+
+
 COMMENT_MARKER = re.compile(r"^\s*(?:#+|//+|/\*+|\*+/?)\s*")
 COMMENT_CLOSER = re.compile(r"\s*\*+/\s*$")
 

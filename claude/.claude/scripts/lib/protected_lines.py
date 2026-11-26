@@ -7,6 +7,7 @@ import difflib
 import typing
 
 import script_utils
+import source_text
 
 # A changed line counts as the rewrite of a protected line when it is at least this much like it.
 REWRITE_RATIO = 0.6
@@ -124,13 +125,7 @@ def rewritten_stretches(before_text, after_text):
 
 def consecutive_runs(entries):
     """The (first, last) line numbers of each run of consecutive lines in the (number, text) `entries`."""
-    runs = []
-    for number, _text in entries:
-        if runs and runs[-1][1] == number - 1:
-            runs[-1] = (runs[-1][0], number)
-            continue
-        runs.append((number, number))
-    return runs
+    return source_text.contiguous_runs(number for number, _text in entries)
 
 
 def consecutive_entry_runs(entries):

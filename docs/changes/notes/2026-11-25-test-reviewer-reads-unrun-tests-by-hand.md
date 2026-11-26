@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "changed"
 title: "Test-reviewer reads unrun tests by hand"
-description: "When a repo's full suite runs only in CI, the review loop adds a by-hand pass to the test-reviewer's prompt: equality asserts with mismatched types, state shared across subtests or test methods, and expected values the setup never makes true. The agent file does not grow."
+description: "When a repo's full suite runs only in CI, the review loop adds a by-hand pass to the test-reviewer's prompt: equality asserts with mismatched types, state that one subtest or test method changes and a later one reads, and expected values the setup never makes true. The agent file does not grow."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-25T19:25:54-06:00"}
 seq: 5
 kind: "fix"
@@ -40,7 +40,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   always does too, so on this small plant the line shows no clear gain. It stays: it costs nothing outside CI-only
   repos, and the queue item's miss came on a large diff.
 - The on-arm runs used an earlier opening sentence ("The tests never ran locally."); review reworded it to "The full
-  suite runs only in CI, so a new test may never have run locally." The three checks are word for word the same.
+  suite runs only in CI, so a new test may never have run locally." Branch review then narrowed check (2) to state
+  that one subtest or test method changes and a later one reads, so a read-only `setUpTestData` fixture draws no
+  fix. The seeded fault (an entry changed across subtests) still matches; the meter did not rerun on the new text.
 
 ## Watch
 

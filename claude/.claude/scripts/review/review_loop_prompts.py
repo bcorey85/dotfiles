@@ -68,7 +68,7 @@ CLASS_TAG_RULE = ("Tag each Fix, Ask and Nit item with its class in brackets, ri
 UNRUN_TESTS_RULE = ("The full suite runs only in CI, so a new test may never have run locally. Read each new test "
                     "by hand and file a fix for: (1) an equality assert whose two sides have different types, "
                     "such as a str against a UUID object; (2) a fixture or state shared across subtests or test "
-                    "methods; (3) an expected value the test's setup never makes true, such as an update test "
+                    "methods that one of them changes and a later one reads; (3) an expected value the test's setup never makes true, such as an update test "
                     "whose setup misses a NULL filter.")
 
 NO_CODE_REVIEW_RULE = ("These findings were ruled no code change. File a [plan-drift] finding for any code the fix "

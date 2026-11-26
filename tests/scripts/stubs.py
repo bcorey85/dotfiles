@@ -4,7 +4,7 @@ import shutil
 import subprocess
 
 SCRIPT_LIB_DIR = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ".local" / "lib"
-SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash")
+SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash", "branch-claim.bash")
 
 
 def copy_sourced_libs(root):

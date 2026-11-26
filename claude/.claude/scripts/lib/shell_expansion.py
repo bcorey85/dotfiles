@@ -1,5 +1,6 @@
-"""What zsh expands in a raw command word: glob characters, glob qualifiers, brace lists and a leading
-`=command`. Also the redirect target words of a command text."""
+"""What zsh expands in a raw command word: glob characters, glob qualifiers, brace lists, a leading
+`=command`, unescaped `$` and backtick substitutions outside single quotes, and a leading `~`. Also the redirect target
+words of a command text."""
 import re
 
 from code_text import SPC
@@ -9,7 +10,7 @@ from shell_command import (
     substitution_bounds,
     without_substitution_bodies,
 )
-from shell_quoting import quoted_positions, unquoted_matches
+from shell_quoting import literal_positions, quoted_positions, unquoted_matches
 
 # A glob character zsh expands in a word. A brace list is read apart: only one with a comma or a sequence expands.
 _GLOB_CHARACTER = re.compile(r"[*?\[]")
@@ -37,6 +38,15 @@ def unquoted_expanding_word(word):
     if _expands_equals(without_bodies):
         return True
     return _has_brace_list(without_bodies)
+
+
+def has_substitution_or_tilde(word):
+    """True when the raw word has a `$` or backtick outside single quotes and not backslash-escaped, or starts with a
+    `~`. A `$` inside double quotes still expands."""
+    if word.startswith("~"):
+        return True
+    literal = literal_positions(word)
+    return any(letter in "$`" and index not in literal for index, letter in enumerate(word))
 
 
 def _expands_equals(word):

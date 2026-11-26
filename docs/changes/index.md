@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1227 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1235 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [A resume ignores merged-in ticks and files dirty before the run](notes/2026-11-25-a-resume-ignores-merged-in-ticks-and-files-dirty.md).
+Latest change: 2026-11-25, [A capped review with a passed full check on the tree earns review credit](notes/2026-11-25-a-capped-review-with-a-passed-full-check-on-the.md).
 
 ## Top gains
 

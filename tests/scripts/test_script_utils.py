@@ -268,6 +268,12 @@ class FencedLineIndexesTest(unittest.TestCase):
         lines = ["- step", "    ```sh", "    # comment", "    ```", "# h"]
         self.assertEqual({1, 2, 3}, script_utils.fenced_line_indexes(lines))
 
+    def test_closed_fence_indexes_leave_out_an_unclosed_fence(self):
+        self.assertEqual(set(), script_utils.closed_fence_indexes(["# a", "```", "# b"]))
+        lines = ["```", "x", "```", "# a", "~~~", "# b"]
+        self.assertEqual({0, 1, 2}, script_utils.closed_fence_indexes(lines))
+        self.assertEqual({0, 1, 2, 4, 5}, script_utils.fenced_line_indexes(lines))
+
     def test_text_with_no_fence_has_no_fenced_lines(self):
         self.assertEqual(set(), script_utils.fenced_line_indexes(["# a", "b `code` c"]))
 

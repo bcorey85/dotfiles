@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from shell_command import split_command_steps
 from shell_quoting import (
     join_line_continuations,
+    literal_positions,
     quoted_positions,
     shell_word,
     strip_comments,
@@ -171,6 +172,18 @@ class JoinLineContinuationsTest(unittest.TestCase):
         }
         for text, expected in cases.items():
             self.assertEqual(expected, join_line_continuations(text), repr(text))
+
+
+class LiteralPositionsTest(unittest.TestCase):
+    def test_single_quoted_and_backslash_escaped_characters_are_literal_but_double_quoted_are_not(self):
+        cases = {
+            "'$a'": {1, 2},
+            "\\$a": {1},
+            '"$a"': set(),
+            "$a": set(),
+        }
+        for text, expected in cases.items():
+            self.assertEqual(expected, literal_positions(text), text)
 
 
 if __name__ == "__main__":

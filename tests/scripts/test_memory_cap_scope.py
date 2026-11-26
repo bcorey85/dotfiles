@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import uuid
 
 import toolkit_paths
@@ -339,7 +340,9 @@ class HookTest(unittest.TestCase):
         result = run_hook_with_scope(hook_input("python3 -m unittest discover"))
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], memory_cap_scope.BACKGROUND_DENY_TEXT)
+        with unittest.mock.patch.object(memory_cap_scope, "cap_available", return_value=True):
+            expected = memory_cap_scope.background_deny_text()
+        self.assertEqual(decision["permissionDecisionReason"], expected)
 
     def test_a_machine_with_no_scope_passes_the_call(self):
         result = subprocess.run(["/usr/bin/env", "-i", "PATH=/nonexistent", sys.executable, str(HOOK)],
@@ -389,6 +392,28 @@ def hook_input(command, background=None, **extra):
 def run_hook_payload(payload):
     return subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload), capture_output=True, text=True,
                           timeout=30)
+
+
+class BackgroundDenyTextTest(unittest.TestCase):
+    def test_text_names_the_cap_only_where_a_scope_runs(self):
+        with unittest.mock.patch.object(memory_cap_scope, "cap_available", return_value=True):
+            capped = memory_cap_scope.background_deny_text()
+        with unittest.mock.patch.object(memory_cap_scope, "cap_available", return_value=False):
+            uncapped = memory_cap_scope.background_deny_text()
+        self.assertIn(memory_cap_scope.CAPPED_PREFIX, capped)
+        self.assertIn("run_in_background", capped)
+        self.assertIn("run_in_background", uncapped)
+        self.assertNotIn("systemd-run", uncapped)
+        self.assertIn("completion notice", uncapped)
+
+    def test_the_hook_names_run_in_background_alone_on_a_host_with_no_scope(self):
+        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "bash tests/run.sh"}})
+        result = subprocess.run(["/usr/bin/env", "-i", "PATH=/nonexistent", sys.executable, str(HOOK)], input=payload,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("run_in_background", reason)
+        self.assertNotIn("systemd-run", reason)
 
 
 class ForegroundFullSuiteTest(unittest.TestCase):

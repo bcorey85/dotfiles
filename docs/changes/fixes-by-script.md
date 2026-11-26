@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-795 fix notes
+803 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -27,13 +27,13 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/quality-check-cap | 24 | 6 |
 | script/shell-write-gate | 24 | 4 |
 | agent/review-loop | 20 | 0 |
+| script/git-discipline-gate | 20 | 9 |
 | script/pull-keep-index | 20 | 9 |
+| script/staged-claim-gate | 20 | 8 |
 | skill/code | 20 | 2 |
 | script/shell-command | 19 | 8 |
-| script/git-discipline-gate | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
-| script/staged-claim-gate | 16 | 4 |
 | script/code-review-start | 15 | 7 |
 | script/code-wait | 14 | 5 |
 | script/verify-log | 14 | 1 |
@@ -41,11 +41,11 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/refactor-flow | 12 | 4 |
 | script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
+| script/inline-interpreter-hint | 11 | 7 |
 | script/log-escape | 11 | 2 |
 | script/review-launch | 11 | 6 |
 | script/verify-common | 11 | 1 |
 | script/herdr-worktree | 10 | 4 |
-| script/inline-interpreter-hint | 10 | 6 |
 | script/review-asks | 10 | 4 |
 | script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
@@ -57,9 +57,11 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
+| script/memory-cap-scope | 6 | 6 |
 | script/parallel-tests | 6 | 1 |
 | script/phase-start | 6 | 4 |
 | script/pipe-shell-check | 6 | 0 |
+| script/reviewed-tree | 6 | 4 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
@@ -67,11 +69,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-worktree-watch | 5 | 4 |
 | script/lane-status | 5 | 5 |
 | script/loop-transcript | 5 | 2 |
-| script/memory-cap-scope | 5 | 5 |
 | script/open-child-gate | 5 | 0 |
 | script/plan-check | 5 | 5 |
 | script/review-loop-ruled | 5 | 5 |
-| script/reviewed-tree | 5 | 3 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/shell-statements | 5 | 5 |
@@ -85,6 +85,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-lane-resume | 4 | 4 |
 | script/log-scan | 4 | 0 |
 | script/review-loop-packet | 4 | 1 |
+| script/rg-path-gate | 4 | 2 |
 | script/source-paths | 4 | 0 |
 | script/wait-loop-gate | 4 | 1 |
 | skill/eng-spec | 4 | 0 |
@@ -102,7 +103,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/review-scope | 3 | 0 |
-| script/rg-path-gate | 3 | 1 |
 | script/shell-command-words | 3 | 3 |
 | script/shell-quoting | 3 | 3 |
 | script/worktree-snapshot | 3 | 0 |
@@ -163,6 +163,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/ask-outcome-words | 1 | 1 |
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
+| script/capped-review | 1 | 1 |
 | script/clone-pairs | 1 | 1 |
 | script/code-phase-start | 1 | 1 |
 | script/code-run-names | 1 | 1 |
@@ -190,6 +191,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |
+| script/permission-question-gate | 1 | 1 |
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |

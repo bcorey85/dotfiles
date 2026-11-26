@@ -48,11 +48,6 @@ DENY_TEXT = (f"A test run outside a memory cap can take all the memory on this m
              f"`{CAPPED_PREFIX} python3 -m unittest discover | tail -20` or "
              f"`{CAPPED_PREFIX} bash tests/run.sh`. A run that goes past {MEMORY_MAX} is then killed alone and "
              f"your session survives.")
-BACKGROUND_DENY_TEXT = (f"A full test suite in the foreground blocks the conversation until it ends. Rerun the same "
-                        f"command with the Bash tool's run_in_background set to true, inside the cap "
-                        f"(`{CAPPED_PREFIX} <test command>`), then go on with other work or end the turn until the "
-                        f"completion notice arrives. A run of one or a few named test files may stay in the "
-                        f"foreground.")
 # systemd appends `.slice` to a slice name that lacks it.
 SHARED_SLICE_NAMES = {TEST_SLICE, TEST_SLICE.removesuffix(".slice")}
 # Every systemd-run option that takes its value as the next word (`systemd-run --help`); the program starts after them.
@@ -77,6 +72,15 @@ def cap_available():
         return False
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
     return bool(runtime_dir) and os.path.exists(os.path.join(runtime_dir, "bus"))
+
+
+def background_deny_text():
+    """The deny text for a full suite run in the foreground: it names the memory cap only where cap_available."""
+    cap_clause = f", inside the cap (`{CAPPED_PREFIX} <test command>`)" if cap_available() else ""
+    return (f"A full test suite in the foreground blocks the conversation until it ends. Rerun the same command with "
+            f"the Bash tool's run_in_background set to true{cap_clause}, then go on with other work or end the turn "
+            f"until the completion notice arrives. A run of one or a few named test files may stay in the "
+            f"foreground.")
 
 
 def capped_shell_argv(program, command):

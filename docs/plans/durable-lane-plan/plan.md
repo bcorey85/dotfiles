@@ -17,7 +17,7 @@ file to the repo's tracked tree, and the shared resolver finds it. Source:
 ## Phase Status
 
 - [x] Phase 1: the resolver finds and names the git-dir plan folder; verify-prep's exit 4 names it (risk: medium)
-- [ ] Phase 2: eng-spec opens the task directory the resolver names (risk: low)
+- [x] Phase 2: eng-spec opens the task directory the resolver names (risk: low)
 - [ ] Phase 3: verify-branch's exit-4 row writes the ticket to the path verify-prep names (risk: low)
 
 ## Phase 1: the resolver finds and names the git-dir plan folder; verify-prep's exit 4 names it

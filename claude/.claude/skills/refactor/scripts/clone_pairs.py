@@ -107,13 +107,10 @@ def run_jscpd(target, timeout, min_tokens=AUDIT_MIN_TOKENS, cwd=None):
         return read_pairs(Path(work_dir) / REPORT_NAME, prefix)
 
 
-def site_touches(site, changed):
-    return range_touched(changed, site.path, site.first_line, site.last_line)
-
-
 def pairs_on_changed_lines(pairs, changed):
     """The pairs with at least one site on a changed line. A pair whose sites all sit in unchanged lines is old debt."""
-    return [pair for pair in pairs if any(site_touches(site, changed) for site in pair.sites)]
+    return [pair for pair in pairs
+            if any(range_touched(changed, site.path, site.first_line, site.last_line) for site in pair.sites)]
 
 
 def branch_pairs(diff_files, untracked, root, timeout):

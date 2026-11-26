@@ -16,10 +16,8 @@ import warnings
 from pathlib import Path
 from typing import NamedTuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 import changed_lines
-import clone_pairs
 import script_utils
 import sequence_similarity
 import source_paths
@@ -370,8 +368,7 @@ def branch_shapes(diff_files, untracked, root_dir):
     changed_functions = []
     added_functions = []
     for function in functions:
-        site = clone_pairs.CloneSite(function.path, function.first_line, function.last_line)
-        if not clone_pairs.site_touches(site, changed):
+        if not changed_lines.range_touched(changed, function.path, function.first_line, function.last_line):
             continue
         changed_functions.append(function)
         if changed_lines.range_added(changed, function.path, function.first_line, function.last_line):

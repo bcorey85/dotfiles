@@ -499,7 +499,9 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
 
     collision_retry.wait_out_collision()
     retry_timeout = min(COMMAND_TIMEOUT_SECONDS, retry_seconds)
-    code, stdout, stderr = script_utils.run_process(popen_command, repo_root, env=environment, timeout=retry_timeout)
+    # A fresh argv: each capped run names a scope unit of its own, and the first run's unit stays loaded when it failed.
+    retry_command, _ = memory_cap_scope.shell_popen_args(command)
+    code, stdout, stderr = script_utils.run_process(retry_command, repo_root, env=environment, timeout=retry_timeout)
     return code, stdout + stderr, retry_timeout
 
 
@@ -626,8 +628,10 @@ def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
 # unnamed_lines: the `not run:`, `command error:` and `setup fault:` lines of the commands that gave no result and
 # that the result line does not already name; empty for none.
 # gave_no_result: True when any command timed out, never started, errored or hit a setup fault, whatever the outcome.
+# ran_nothing: True when every command was skipped (no changed file matched its placeholder) or no command was
+# given, so no test ran.
 ScopedRun = namedtuple("ScopedRun", ["result", "tails", "real_failures", "summaries",
-                                     "unnamed_lines", "gave_no_result"])
+                                     "unnamed_lines", "gave_no_result", "ran_nothing"], defaults=(False,))
 
 
 def unnamed_result_lines(outcome, unrun, sorted_failures):
@@ -648,7 +652,7 @@ def scoped_run(repo_root, commands, gate_assignments, log_path, budget_seconds=N
     # The ScopedRun of the scoped commands. real_failures holds the (command, outcome, output) of each real failure the
     # tails quote: empty unless the result is a failure. A budget_seconds bounds the whole run, as run_commands does.
     if not commands:
-        return ScopedRun("not run (no scoped test commands)", [], [], [], [], False)
+        return ScopedRun("not run (no scoped test commands)", [], [], [], [], False, True)
 
     gate ={"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_assignments)}
@@ -665,7 +669,8 @@ def scoped_run(repo_root, commands, gate_assignments, log_path, budget_seconds=N
                            sorted_failures.setup_faults, timed_out, not_started)
     unnamed_lines = unnamed_result_lines(outcome, unrun, sorted_failures)
     gave_no_result = bool(unrun or sorted_failures.command_errors or sorted_failures.setup_faults)
-    return ScopedRun(result, tails, real_failures, summaries, unnamed_lines, gave_no_result)
+    ran_nothing = len(skipped) == len(commands)
+    return ScopedRun(result, tails, real_failures, summaries, unnamed_lines, gave_no_result, ran_nothing)
 
 
 def scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_started=()):

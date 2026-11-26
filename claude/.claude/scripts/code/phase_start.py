@@ -7,11 +7,16 @@ or the kept record's head under --resume).
 Run from the repo root before the phase's coder dispatch. Writes <git dir>/code-phase/start.json, once per call:
 {"head": <sha>, "dirty": {<path>: <sha-256 of its bytes, or null when gone>}, "holder": {"session", "cwd"} | null,
 "sessions": [<session id>, ...], "started_at": <epoch seconds> | null, "own": [<path>]}. `dirty` lists every file
-dirty or untracked now; `holder` is the live session other than the run's that works in the repo now; `sessions` are
-the run's session ids (a kept record adds the current session id); `own` lists the files earlier phases of the run
-named in their hand-offs. code_review_start.py reads it: with a holder recorded, every file dirty here is held for
-the whole phase, and one whose bytes changed is named as a tool fault; with no holder, a file dirty here that holds
-the same bytes at review time is held while another live session works in the repo.
+dirty or untracked now; `holder` is the one live session other than the run's whose transcripts show a write to a
+dirty file after the HEAD commit (after the recorded head, for a kept record), leaving out paths the run's own
+session wrote (none when no single writer is proven; a kept record looks only over holdable files, those whose
+bytes are unchanged and not in `own`);
+`sessions` are the run's session ids (a kept record adds the current session id); `own` lists the files earlier
+phases of the run named in their hand-offs. code_review_start.py reads it: with a holder recorded, every file dirty
+here is held for the whole phase, and one whose bytes changed is named as a tool fault; with no holder, only the
+same-bytes files that the one proven writer wrote are held: exactly one other live session is shown by its
+transcripts to have written a start-dirty file whose bytes are unchanged and that the run does not own
+(lib/dirty_writers.py).
 The record is of the run's start, not of each phase: `--new-run` replaces it. Without the flag an existing record
 whose head is the current HEAD is kept, so the files an earlier phase of the run left dirty stay the run's own; a file
 dirty now that the record lacks, and that no earlier phase's hand-off names, is added to it (another session's edit
@@ -19,8 +24,12 @@ first seen at a later phase start). A missing record, or one for another HEAD, i
 HEAD sha, except under --resume (below).
 `--resume` is for a run that went on after a stop, where the user may have committed the phase since: when the
 kept record's head is an ancestor of HEAD, the record is kept, with the same additions as a same-HEAD start (later
-dirty files, handed-off files as own), and its head is printed as the phase base. With no record, or a head that is
-not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
+dirty files, handed-off files as own), and its head is printed as the phase base. When a commit since that head ticked
+a phase in the `## Phase Status` of a `.md` file (done at HEAD, not done at the kept head), the phase was finished: a
+stderr line names the file and the phase number, a new record is written at HEAD, and HEAD is printed. Only the
+branch's own commits count (lib/merge_free_base.py leaves out what a merge brought in). A changed file whose Phase
+Status does not parse is named on stderr with its line and the expected form, and the record is kept. With no record,
+or a head that is not an ancestor, it prints HEAD as without the flag and says so on stderr. `--resume` also writes
 <run folder>/resume.json (resume_review_gate.record_resume), which the code-fork's stop.md Write reads; a start
 without `--resume` removes it.
 `--new-run` first checks the lane file of the worktree it runs in (lib/lane_entries.py): when the lane's `reports_to`
@@ -47,9 +56,12 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "code")]
 
 import code_stop_record
 import code_wait
+import dirty_writers
 import fix_coder_written
 import handoff_files
 import lane_entries
+import merge_free_base
+import plan_format
 import resume_review_gate
 import script_utils
 import session_registry
@@ -68,19 +80,30 @@ RECORD_SHAPE = ('{"head": <sha>, "dirty": {<path>: <hash>}, "holder": {"session"
                 '"sessions": [<session id>], "started_at": <epoch seconds> | null, "own": [<path>]}')
 
 
-def current_holder(repo, own_session_id):
-    """{"session", "cwd"} of the live session other than `own_session_id` that works in the repo now; None when there
-    is none or the run's own session id is unknown."""
-    if not own_session_id:
+def current_holder(repo, own_session_id, dirty, commit="HEAD"):
+    """{"session", "cwd"} of the one live session other than `own_session_id` that wrote one of the `dirty` paths of the
+    repo after the commit `commit` (HEAD for a new run, the recorded head for a kept record;
+    lib/dirty_writers.py), not counting a path that the own session wrote; None when none is proven, the run's own
+    session id is unknown or a transcript could not be read.
+    Fails open: an unproven holder is no holder."""
+    found = current_holder_with_paths(repo, own_session_id, dirty, commit)
+    if found is None:
         return None
-    row = session_registry.other_live_session_in(repo, own_session_id)
-    if row is None:
+    return {"session": found["session"], "cwd": found["cwd"]}
+
+
+def current_holder_with_paths(repo, own_session_id, dirty, commit="HEAD"):
+    """`current_holder`'s {"session", "cwd"} plus "paths": the dirty paths that session wrote after `commit`. None
+    when no holder is proven. The start record stores `current_holder`, never this."""
+    found = dirty_writers.holder_with_paths(repo, dirty, own_session_id, commit)
+    if found is None:
         return None
-    return {"session": session_registry.holder_label(row), "cwd": row["cwd"]}
+    return {"session": session_registry.holder_label(found.row), "cwd": found.row["cwd"], "paths": found.paths}
 
 
 def start_record(repo, own_session_id=""):
-    """The start record of the repo now: head, dirty, holder, sessions and started_at."""
+    """The start record of the repo now: head, dirty, holder (None; main looks it up for a new run), sessions and
+    started_at."""
     head = script_utils.head_commit(repo)
     if head is None:
         raise StartRecordError(f"{repo} has no HEAD commit, so the phase has no base")
@@ -88,7 +111,7 @@ def start_record(repo, own_session_id=""):
     root = pathlib.Path(repo)
     codes = worktree_snapshot.status_codes(root)
     dirty = {path: worktree_snapshot.file_hash(root, path) for path in sorted(codes)}
-    return {"head": head, "dirty": dirty, "holder": current_holder(repo, own_session_id),
+    return {"head": head, "dirty": dirty, "holder": None,
             "sessions": [own_session_id] if own_session_id else [], "started_at": time.time(), "own": []}
 
 
@@ -191,14 +214,73 @@ def move_aside(folder, name, previous_name):
         print(f"phase_start: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
 
 
+def done_phase_numbers(repo, commit, markdown_path):
+    """(the numbers of the phases marked done in the `## Phase Status` of `markdown_path` at `commit`, the failures of
+    plan_format.phase_status_entries for that section). A file missing at that commit has no phases."""
+    text = script_utils.git_output(repo, "show", f"{commit}:{markdown_path}")
+    if text is None:
+        return set(), []
+    entries, failures = plan_format.phase_status_entries(text.splitlines(), lambda title: None)
+    return {entry["number"] for entry in entries if entry["done"]}, failures
+
+
+def own_tick_base(repo, kept_head):
+    """The commit to compare against: `kept_head` with the branches merged in since folded in, so only this branch's
+    own commits can tick a phase. A merge that cannot be folded in is reported on stderr and `kept_head` is used."""
+    try:
+        return merge_free_base.merge_free_base(repo, kept_head)
+    except (merge_free_base.MergeConflictError, merge_free_base.MergeBaseGitError) as error:
+        print(f"phase_start: merged-in commits were not left out of the tick check: {error}", file=sys.stderr)
+        return kept_head
+
+
+def changed_status_files(repo, base):
+    """The `.md` files that gained or lost a `- [x]` line between `base` and HEAD; [] when none or git fails."""
+    changed = script_utils.git_output(repo, "diff", "--name-only", "-G^[-*][[:space:]]+\\[[xX]\\]", base, "HEAD",
+                                      "--", "*.md")
+    if not changed:
+        return []
+    return changed.splitlines()
+
+
+def ticked_since(repo, kept_head):
+    """(path, phase number) of the first phase that is done at HEAD and was not done at the merge-free base of
+    `kept_head`, in a `.md` file the branch's own commits changed; None when no phase was ticked. A changed file whose
+    Phase Status does not parse is named on stderr with its line and the expected form, and gives None (the record is
+    kept, never reset on a partial parse)."""
+    base = own_tick_base(repo, kept_head)
+    first_tick = None
+    parse_failed = False
+    for markdown_path in changed_status_files(repo, base):
+        done_before, failures_before = done_phase_numbers(repo, base, markdown_path)
+        done_now, failures_now = done_phase_numbers(repo, "HEAD", markdown_path)
+        for failure in failures_before + failures_now:
+            parse_failed = True
+            print(f"phase_start: {markdown_path}:{failure['line']}: {failure['detail']}", file=sys.stderr)
+        newly_done = sorted(done_now - done_before)
+        if newly_done and first_tick is None:
+            first_tick = markdown_path, newly_done[0]
+    if parse_failed:
+        return None
+    return first_tick
+
+
 def resume_base(repo, kept):
-    """The phase base of a resume: the kept record's head when it is an ancestor of HEAD, else None."""
+    """The phase base of a resume: the kept record's head when it is an ancestor of HEAD and no phase was ticked since;
+    else None."""
     if kept is None:
         print("phase_start: no start record to resume from; the phase base is HEAD.", file=sys.stderr)
         return None
     if not script_utils.is_ancestor(repo, kept["head"], "HEAD"):
         print(f"phase_start: the start record's head {kept['head']} is not an ancestor of HEAD; the phase base is "
               "HEAD.", file=sys.stderr)
+        return None
+
+    ticked = ticked_since(repo, kept["head"])
+    if ticked is not None:
+        markdown_path, number = ticked
+        print(f"phase_start: phase {number} of {markdown_path} was ticked since the start record; starting a new "
+              "record at HEAD", file=sys.stderr)
         return None
     return kept["head"]
 
@@ -223,13 +305,24 @@ def other_run_refusal(run_folder):
             f"{recorded['runFolder']}. Resume that run from its repo: {resume_line}")
 
 
-def kept_record(kept, fresh, own_session_id):
-    """The kept record of the run's start with this call's additions: this session's id when missing, and the holder
-    seen now when the kept record has none. head, dirty and started_at stay as recorded."""
+def holdable_dirty_files(repo, record, own_files):
+    """The sorted start-dirty paths of `record` that the no-holder fallback can hold: not in `own_files`, and with
+    bytes unchanged since the record."""
+    candidates = script_utils.without_paths(sorted(record["dirty"]), own_files)
+    return script_utils.without_paths(candidates, changed_dirty_files(repo, record))
+
+
+def kept_record(repo, kept, own_session_id):
+    """`kept` (the record with the later dirty files already added) with this call's additions: this session's id when
+    missing, and the holder seen now when the record has none. The holder is looked for over
+    `holdable_dirty_files(repo, kept, kept["own"])`. head, dirty and started_at stay as recorded."""
     sessions = list(kept["sessions"])
     if own_session_id and own_session_id not in sessions:
         sessions.append(own_session_id)
-    holder = kept["holder"] or fresh["holder"]
+    holder = kept["holder"]
+    if not holder:
+        holdable = holdable_dirty_files(repo, kept, kept["own"])
+        holder = current_holder(repo, own_session_id, holdable, kept["head"])
     return {**kept, "holder": holder, "sessions": sessions}
 
 
@@ -334,18 +427,21 @@ def main():
     if "--resume" in sys.argv[1:]:
         base = resume_base(repo, kept)
         if base is not None:
-            write_record(repo, with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off))
+            merged = with_later_dirty_files(kept, record, handed_off)
+            write_record(repo, kept_record(repo, merged, own_session_id))
             record_resume_or_exit(run_folder, repo)
             print(base)
             return 0
     same_run = "--new-run" not in sys.argv[1:] and kept is not None and kept["head"] == record["head"]
     if same_run:
-        record = with_later_dirty_files(kept_record(kept, record, own_session_id), record, handed_off)
+        merged = with_later_dirty_files(kept, record, handed_off)
+        record = kept_record(repo, merged, own_session_id)
         if record == kept:
             print(record["head"])
             return 0
     else:
         fix_coder_written.clear(repo)
+        record["holder"] = current_holder(repo, own_session_id, sorted(record["dirty"]))
 
     write_record(repo, record)
     if "--resume" in sys.argv[1:]:

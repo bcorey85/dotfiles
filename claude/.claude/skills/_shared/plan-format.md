@@ -94,9 +94,9 @@ Header links: whichever upstream artifacts exist. Do not invent links.
 
 <!-- Omit when the ticket has no behavioral criteria. Written by user + main thread after final, BEFORE any coder — never later, never by the satisfying agent. -->
 
-The criteria live in `docs/plans/<slug>/acceptance-criteria.md` as prose with stable ids, written by Phase 7.5. Name the file here and nothing more — never restate the criteria, never copy their ids into code.
+The criteria live in `acceptance-criteria.md` beside the plan as prose with stable ids, written by Phase 7.5. Name the file here and nothing more — never restate the criteria, never copy their ids into code.
 
-- **Criteria file**: `docs/plans/<slug>/acceptance-criteria.md`
+- **Criteria file**: `acceptance-criteria.md` beside the plan
 
 A test covers a criterion by its behavior, never by a marker: it asserts at the public boundary a user or caller reaches, never an internal function. **No mocks inside such a test.**
 

@@ -57,7 +57,8 @@ def skip_ruled_out(items, ruled_out, skipped_fp, repo):
 
 def names_deletion(finding_texts, path, root):
     """Whether one of the finding texts asks to delete, remove, move or rename `path`: such a word, then the path as a
-    whole token, or the path followed by "is/should be/can be deleted/removed". A path under `root` counts as `path`."""
+    whole token, or the path followed by "is/should be/can be deleted/removed". A path under `root` counts as `path`,
+    and so does `./path`."""
     escaped = re.escape(path)
     token_start, token_end = script_utils.PATH_TOKEN_START, script_utils.PATH_TOKEN_END
     as_object = rf"{DELETION_WORD}\s+(?:the\s+)?(?:file\s+)?`?{token_start}{escaped}`?{token_end}"

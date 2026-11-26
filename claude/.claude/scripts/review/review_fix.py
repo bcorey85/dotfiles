@@ -25,8 +25,8 @@ still judges.
       effect: posted replies, logged escapes and hunk-notes are kept in the state. Two dispatches that return the
       same text are two runs.
   review_fix.py launch [--repo <abs path>] [--fix <findings file> [--no-review] [--also-fix <findings file>]
-                       [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--file <path>]...
-                       [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--fast|--deep]
+                       [--user-ruled <N>]... [--session-ruled <N>]...] [--base <ref>] [--plan <path>] [--file <path>]...
+                       [--ruled-out <path>]... [--handoff <file>] [--test <cmd>]... [--ci-gate <run>] [--fast|--deep]
                        [--iter N] [--fix-rounds N] [--post-cap-passes <kinds>] [--lane <lane>]
                        [--detach]
                                          start the scripted review loop as a detached process (review_launch.py; `launch
@@ -133,6 +133,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
+import uncommitted_hunks
 from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
@@ -259,7 +260,7 @@ def packet_arguments(argv):
 
 def is_outstanding(packet):
     findings_left = any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
-    return findings_left or bool(handback.held_plan_impacts(packet))
+    return findings_left or bool(packet["handback_edits"]) or bool(handback.held_plan_impacts(packet))
 
 
 def stop_for_parse_failure(error, raw_message):
@@ -591,21 +592,22 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    entries = entry_lines(packet)
+    lines = entry_lines(packet)
     summary_line = cap_summary_line(packet) if packet["status"] == CAP_REACHED else None
     if summary_line:
-        entries.insert(0, summary_line)
+        lines.insert(0, summary_line)
+    lines += uncommitted_hunks.cap_stop_lines(packet, state) + handback.handback_edit_lines(packet)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
-        entries += rerun_lines
+        lines += rerun_lines
     if rerun_note:
-        entries.append(rerun_note)
+        lines.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
         done = review_asks.asks_done_lines(packet["ask"], state)
         ask_lines = [jumped_line(state), done.guidance, done.done_line, *done.numbered_lines]
-    print_action("stop", instruction, *entries, *ask_lines)
+    print_action("stop", instruction, *lines, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:
         print("AIKIDO REPLIES POSTED:")
@@ -713,6 +715,8 @@ def model_duties(packet, options):
         if options.source == "conversation" and not options.escapes:
             duties.append("if a fixed finding was a defect in code /review already passed, run "
                           "`review_fix.py escape --escape ...` (class, severity, gate_missed, guard)")
+    if packet["handback_edits"]:
+        duties.append(handback.HANDBACK_EDIT_APPLY)
     duties.append("write the closing line to the user; add nothing the block already says")
     return "; ".join(duties) + "."
 
@@ -782,8 +786,13 @@ def command_decide(argv):
                          f"Usage: `{plan_format.DECIDE_USAGE}`. "
                          f"{plan_format.DECIDE_BY_NOTE}")
     plan_path = pathlib.Path(options.plan) if options.plan else None
-    if plan_path is not None and not plan_path.exists():
-        raise UsageError(f"--plan {options.plan} does not exist")
+    if plan_path is not None:
+        if not plan_path.exists():
+            raise UsageError(f"--plan {options.plan} does not exist")
+        try:
+            plan_path = plan_format.plan_file_of(plan_path)
+        except plan_format.PlanFormatError as error:
+            raise UsageError(str(error)) from error
     if options.by == plan_format.SESSION_RULING:
         refuse_session_ruling(options.decision, options.plan)
     if not options.ruling.strip():
@@ -838,19 +847,19 @@ def ruling_logged_line(plan_path):
 
 def decide_from_hand_back(source, decision, by, ruling, plan_path, relayed=None):
     """`decide` for a run whose packet never went through `packet` (the caller read it through code_wait.py): the
-    held plan impacts come from the hand-back store. `keep` records the ruling. `adopt` records it too when
-    handback.adopt_settles says so (every fix is in the tree, nothing else open). Any other `adopt` has no launch
-    state to re-dispatch from, so it logs the deviation and sends the caller back to its own review loop."""
+    held plan impacts come from the hand-back store. `keep` records the ruling; `adopt` too when handback.adopt_settles
+    says so, else it logs the deviation and sends the caller back to its own review loop (no launch state)."""
     impact_text = handback.held_plan_impact_text(source.held)
     rows_repo = handback_store.ruled_rows_repo(".")
     row_impacts = adopted_row_impacts(source.held) if source.row_per_text else []
+    settles = decision == plan_format.ADOPT_DECISION and handback.adopt_settles(source.packet, source.held)
     entry = write_ruling_entry(decision, by, ruling, plan_path, impact_text, rows_repo, relayed=relayed,
-                               row_impacts=row_impacts)
+                               row_impacts=row_impacts, applied=settles)
     logged_line = ruling_logged_line(plan_path)
     if decision == "keep":
         kept_line = ADOPTED_KEEP_LINE if source.row_per_text else "The plan stays as written: nothing is re-dispatched."
         return print_settled(settle_ruling("keep"), logged_line, *entry, kept_line)
-    if handback.adopt_settles(source.packet, source.held):
+    if settles:
         return print_settled(settle_ruling("adopt"), logged_line, *entry, APPLIED_ADOPT_LINE)
     return print_action("stop", logged_line, *entry,
                  "No review-fix launch state exists for this run, so `decide adopt` cannot re-dispatch. Run the review "
@@ -865,16 +874,16 @@ def record_plan_ruling(state, decision, by, ruling, plan_path, relayed=None):
     choice = plan_format.DECISION_WORDS[decision]
     ruled_repo = required_packet_repo(state.get("relaunch_args") or [])
     covered = findings_covered_by_impact(state, state["plan_impact"])
-    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered, relayed)
-
     held = state.pop("plan_impact_held", False)
-    adopt_settles = state.pop("plan_impact_adopt_settles", False)
+    adopt_settles = state.pop("plan_impact_adopt_settles", False) and held and decision == plan_format.ADOPT_DECISION
     applied = state.pop("plan_impact_applied", False)
+    entry = write_ruling_entry(decision, by, ruling, plan_path, state["plan_impact"], ruled_repo, covered, relayed,
+                               applied=adopt_settles)
     settled_line = None
     if decision == plan_format.KEEP_DECISION and held:
         settled_line = (APPLIED_KEEP_LINE if applied
                         else "The plan stays as written: the held fix is not applied and nothing is re-dispatched.")
-    if decision == plan_format.ADOPT_DECISION and held and adopt_settles:
+    if adopt_settles:
         settled_line = APPLIED_ADOPT_LINE
     if settled_line:
         settled_line = settle_stage(state, settled_line)

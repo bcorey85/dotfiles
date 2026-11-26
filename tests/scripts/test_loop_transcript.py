@@ -134,6 +134,30 @@ class WrittenPathsTest(unittest.TestCase):
 
         self.assertEqual(written, {"/r/a.py", "/r/b.py", "/r/g.py", "/r/c.ipynb", "/r/d.ipynb"})
 
+    def test_since_keeps_only_writes_whose_record_timestamp_is_later_and_drops_unparsable_ones(self):
+        rows = [
+            ("/r/before.py", "2026-01-01T00:00:00.000Z"),
+            ("/r/after.py", "2026-01-01T00:00:20.500Z"),
+            ("/r/offset.py", "2026-01-01T02:00:30+02:00"),
+            ("/r/missing.py", None),
+            ("/r/garbled.py", "yesterday"),
+            ("/r/number.py", 1767225620),
+        ]
+        since = 1767225610  # 2026-01-01T00:00:10Z
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = os.path.join(folder, "session.jsonl")
+            with open(transcript, "w", encoding="utf-8") as fh:
+                for edited, timestamp in rows:
+                    block = {"type": "tool_use", "name": "Edit", "input": {"file_path": edited}}
+                    record = {"message": {"content": [block]}}
+                    if timestamp is not None:
+                        record["timestamp"] = timestamp
+                    fh.write(json.dumps(record) + "\n")
+
+            written = loop_transcript.written_paths(transcript, since=since)
+
+        self.assertEqual(written, {"/r/after.py", "/r/offset.py"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,9 +24,12 @@ class ZshrcLsAliasTest(unittest.TestCase):
         for folder in (self.home / "run", zdotdir, stub_dir):
             folder.mkdir(parents=True)
         (zdotdir / ".zshrc").symlink_to(ZSHRC)
-        keychain = stub_dir / "keychain"
-        keychain.write_text("#!/bin/sh\nexit 0\n")
-        keychain.chmod(0o755)
+        # atuin's init starts a detached job that recreates $HOME/.atuin during
+        # cleanup, which makes rmtree fail; a no-op stub starts no job.
+        for stub_name in ("keychain", "atuin"):
+            stub = stub_dir / stub_name
+            stub.write_text("#!/bin/sh\nexit 0\n")
+            stub.chmod(0o755)
         self.env = {
             "HOME": str(self.home),
             "ZDOTDIR": str(zdotdir),

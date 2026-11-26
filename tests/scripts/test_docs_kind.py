@@ -93,7 +93,7 @@ class ChangeAddedRangesTest(ScratchRepoCase):
         self.commit({"kept.py": FILE_BEFORE})
         (self.repo / "kept.py").write_text(FILE_EDITED)
 
-        added = review_loop_docs_kind.change_added_ranges(self.repo)
+        added = review_loop_docs_kind.review_added_ranges(self.repo)
 
         self.assertEqual(added, {"kept.py": [(2, 2), (5, 5)]})
 
@@ -103,7 +103,7 @@ class ChangeAddedRangesTest(ScratchRepoCase):
         (self.repo / "staged.py").write_text("a\nb\nc\n")
         self.git("add", "staged.py")
 
-        added = review_loop_docs_kind.change_added_ranges(self.repo)
+        added = review_loop_docs_kind.review_added_ranges(self.repo)
 
         self.assertTrue(diff_ranges.in_ranges(added["untracked.py"], 2, slack=0))
         self.assertEqual(added["staged.py"], [(1, 3)])
@@ -114,7 +114,7 @@ class ChangeAddedRangesTest(ScratchRepoCase):
         (self.repo / "new_name.py").write_text(FILE_BEFORE * 5 + "tail\n")
         self.git("add", "new_name.py")
 
-        added = review_loop_docs_kind.change_added_ranges(self.repo)
+        added = review_loop_docs_kind.review_added_ranges(self.repo)
 
         self.assertEqual(added, {"new_name.py": [(21, 21)]})
 
@@ -124,14 +124,14 @@ class ChangeAddedRangesTest(ScratchRepoCase):
         self.commit({"kept.py": FILE_BEFORE + "five\n"}, "branch work")
         (self.repo / "kept.py").write_text(FILE_BEFORE + "five\nsix\n")
 
-        added = review_loop_docs_kind.change_added_ranges(self.repo, base)
+        added = review_loop_docs_kind.review_added_ranges(self.repo, base)
 
         self.assertEqual(added, {"kept.py": [(5, 6)]})
 
     def test_a_repo_with_no_commit_gives_none(self):
         (self.repo / "kept.py").write_text(FILE_BEFORE)
 
-        self.assertIsNone(review_loop_docs_kind.change_added_ranges(self.repo))
+        self.assertIsNone(review_loop_docs_kind.review_added_ranges(self.repo))
 
 
 class DocsKindTest(ScratchRepoCase):
@@ -139,7 +139,7 @@ class DocsKindTest(ScratchRepoCase):
         super().setUp()
         self.commit({"kept.py": FILE_BEFORE})
         (self.repo / "kept.py").write_text(FILE_EDITED)
-        self.added = review_loop_docs_kind.change_added_ranges(self.repo)
+        self.added = review_loop_docs_kind.review_added_ranges(self.repo)
 
     def kind(self, finding_text):
         return review_loop_docs_kind.docs_kind(self.repo, self.added, parse_finding(finding_text))

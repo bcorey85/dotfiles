@@ -2,7 +2,7 @@
 """lane_status.py: print what needs attention: low memory, low or crowded scratch space, each live diff viewer over its
 memory cap, and each open lane whose claude agent is not working.
 
-Usage: lane_status.py [--changes]
+Usage: lane_status.py [--changes | --git]
 
 Lines, one per problem:
   <name>: <status>                 the lane's agent has a status other than working and no open background work
@@ -11,7 +11,7 @@ Lines, one per problem:
                                    subagents that have not reported back
   <name>: dead (no agent)          no claude agent runs inside the lane's worktree (workspace closed, killed)
   <name>: dead (worktree gone)     the lane file's worktree folder is missing
-  <name>: dead (login expired)     the agent's transcript ends on an API error that asks for a login
+  <name>: dead (login expired)     the agent's transcript ends on a login error
   <name>: dead (api error)         the agent's transcript ends on any other API error
   memory: <N.N> GB available, under <T> GB
   memory: cannot read              memory could not be read on this system
@@ -23,12 +23,28 @@ Lines, one per problem:
 
 --changes prints only the lines that changed since the last --changes run (a viewer line counts as changed only
 when its pane or pid does, not its size), and `<name>: working` for a lane that was reported before and now
-works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`.
+works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`; a relative
+`XDG_STATE_HOME` is ignored.
+
+--git prints only the open lanes, one line each, and exits 0, or 2 on a bad lane file (the message is on stderr):
+  <name>: <branch>, merged|no commits|<N> ahead / <M> behind, <K> dirty, reports_to <session or ->
+                                   `no commits`: the branch holds nothing new and its tip commit is older than the
+                                   lane's started_at, so the lane never committed (it is never `merged`)
+  <name>: <branch>, merged, <K> dirty, finished idle (Claude RSS <size>), reports_to <session or ->
+                                   a merged lane whose claude agent is idle or done; the size is the summed RSS of the
+                                   claude processes whose working folder is inside the worktree (`unreadable` when
+                                   the process table cannot be read, `unknown` where it holds no working folders)
+  <name>: <branch>, worktree gone, reports_to <session or ->
+  <name>: <branch>, git failed (<reason>), reports_to <session or ->
+The state is against origin/HEAD of the lane's main checkout, else origin/master, else origin/main; the dirty count
+is the `git status --porcelain` line count of the lane's worktree.
 
 Environment: LANE_STATUS_MIN_MEMORY_GB (8), LANE_STATUS_MIN_SCRATCH_GB (1), LANE_STATUS_SCRATCH_CAP_GB (4). The
 viewer cap is read from `hunk-review-pane --viewers`, which takes it from HUNK_REVIEW_MEMORY_MAX (1G).
-Exit 0 with nothing printed, 1 when something is printed, 2 on a bad lane file, a bad threshold, or a failed
-herdr-api, df or du call (the message is on stderr)."""
+Exit, default and --changes modes: 0 with nothing printed, 1 when something is printed, 2 on a bad lane file, a bad
+threshold, or a failed herdr-api, df or du call (the message is on stderr)."""
+import datetime
+import functools
 import json
 import math
 import os
@@ -37,26 +53,28 @@ import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
+import api_error_stop
 import herdr_agents
 import hook_input
 import lane_entries
 import loop_transcript
 import process_group
+import process_table
 import script_utils
-import session_registry
 import system_resources
 
 EXIT_PROBLEMS = 1
 EXIT_FAILED = 2
 WORKING_STATUS = "working"
+FINISHED_STATUSES = ("idle", "done")
+CLAUDE_COMMAND = "claude"
 CHANGES_FLAG = "--changes"
+GIT_FLAG = "--git"
 DEFAULT_THRESHOLDS_GB = {
     "LANE_STATUS_MIN_MEMORY_GB": 8,
     "LANE_STATUS_MIN_SCRATCH_GB": 1,
     "LANE_STATUS_SCRATCH_CAP_GB": 4,
 }
-# Words in an API error record that mean the session lost its login and will not go on until someone logs in.
-LOGIN_WORDS = ("/login", "401", "authentication", "oauth token")
 VIEWER_PROGRAM = "hunk"
 VIEWER_LAUNCHER = "hunk-review-pane"
 VIEWER_KEY_PREFIX = "viewer:"
@@ -67,6 +85,10 @@ SCRATCH_KEY = "scratch:"
 
 class StatusError(Exception):
     """Something this tool needs could not be read; the message names it."""
+
+
+class GitStateError(Exception):
+    """A git call for a lane's branch state failed or git could not run; the message says why."""
 
 
 class ViewerReadError(Exception):
@@ -193,31 +215,6 @@ def viewer_report():
     return report
 
 
-def transcript_of(agent):
-    """The transcript path of the agent's session, or None when herdr names no session or no transcript matches."""
-    agent_session = agent.get("agent_session")
-    session_id = agent_session.get("value") if isinstance(agent_session, dict) else None
-    if not isinstance(session_id, str) or not session_id:
-        return None
-
-    found = session_registry.session_transcripts(session_id)
-    if not found:
-        return None
-    return found[0]
-
-
-def api_error_reason(transcript):
-    """`login expired` or `api error` when the transcript ends on an API error record, else None."""
-    record = script_utils.last_transcript_record(transcript)
-    if record is None or record.get("isApiErrorMessage") is not True:
-        return None
-
-    text = json.dumps(record.get("message") or {}).lower()
-    if any(word in text for word in LOGIN_WORDS):
-        return "login expired"
-    return "api error"
-
-
 def open_background_jobs(transcript):
     """The count of background shells and subagents the transcript launched that have not reported back."""
     try:
@@ -232,13 +229,13 @@ def idle_line(name, agent):
     """The line for a lane whose agent is not working: dead on an API error, waiting on open background work, or
     the plain status."""
     status = agent.get("agent_status") or "unknown"
-    transcript = transcript_of(agent)
+    transcript = herdr_agents.herdr_agent_transcript(agent)
     if transcript is None:
         return f"{name}: {status}"
 
-    reason = api_error_reason(transcript)
-    if reason is not None:
-        return f"{name}: dead ({reason})"
+    error_record = script_utils.last_api_error(transcript)
+    if error_record is not None:
+        return f"{name}: dead ({api_error_stop.error_reason(error_record)})"
 
     jobs = open_background_jobs(transcript)
     if jobs:
@@ -272,6 +269,120 @@ def read_lanes():
         return lane_entries.all_entries()
     except lane_entries.LaneFileError as error:
         raise StatusError(str(error)) from error
+
+
+def git_or_raise(folder, *arguments):
+    """The stripped stdout of `git -C folder <arguments>`. Raises GitStateError with git's own message. Git takes no
+    optional locks, so a lane agent's `git add` or `git commit` never meets this poll's index.lock."""
+    argv = ["git", "--no-optional-locks", "-C", str(folder), *arguments]
+    finished = script_utils.run_or_raise(argv, GitStateError, check=True)
+    return finished.stdout.strip()
+
+
+@functools.cache
+def default_branch_ref(main_checkout):
+    """`origin/HEAD` as `origin/<name>` when set, else `origin/master`, else `origin/main`; read once per main
+    checkout. Raises GitStateError when git fails, and when none of the three exists."""
+    head = script_utils.remote_default_branch(main_checkout, GitStateError)
+    if head:
+        return head
+
+    for candidate in ("origin/master", "origin/main"):
+        argv = ["git", "-C", str(main_checkout), "rev-parse", "--verify", "--quiet", candidate]
+        found = script_utils.run_or_raise(argv, GitStateError, check=True, ok_codes=(0, 1))
+        if found.returncode == 0:
+            return candidate
+    raise GitStateError("no origin/HEAD, origin/master or origin/main")
+
+
+def merge_state(lane):
+    """`N ahead / M behind` when the lane's branch holds commits origin's default branch lacks. Otherwise `no commits`
+    when the branch tip is older than the lane's started_at (the lane never committed), else `merged`."""
+    base = default_branch_ref(lane["main_checkout"])
+    counts = git_or_raise(lane["main_checkout"], "rev-list", "--left-right", "--count", f"{base}...{lane['branch']}")
+    behind, ahead = (int(count) for count in counts.split())
+    if ahead != 0:
+        return f"{ahead} ahead / {behind} behind"
+
+    tip_time = int(git_or_raise(lane["main_checkout"], "log", "-1", "--format=%ct", lane["branch"]))
+    started_at = datetime.datetime.fromisoformat(lane["started_at"]).timestamp()
+    if tip_time < started_at:
+        return "no commits"
+    return "merged"
+
+
+def dirty_count(worktree):
+    """The number of `git status --porcelain` lines of the worktree."""
+    status = git_or_raise(worktree, "status", "--porcelain")
+    return len(status.splitlines())
+
+
+class ProcessRows:
+    """The process table, read on the first `get` and kept for the run. A read that fails prints its reason to
+    stderr once and then reads as None."""
+
+    def __init__(self):
+        self.read_done = False
+        self.rows = None
+
+    def get(self):
+        if self.read_done:
+            return self.rows
+        self.read_done = True
+        try:
+            self.rows = process_table.read_table()
+        except process_table.ProcessTableError as error:
+            print(f"lane_status: {error}", file=sys.stderr)
+        return self.rows
+
+
+def claude_rss_text(worktree, process_rows):
+    """The summed RSS of the claude processes working inside `worktree`, as text; `unreadable` when the process
+    table cannot be read (the reason went to stderr), `unknown` when it holds no working folders (macOS)."""
+    rows = process_rows.get()
+    if rows is None:
+        return "unreadable"
+    if all(row.cwd is None for row in rows):
+        return "unknown"
+
+    real_worktree = os.path.realpath(worktree)
+    total = 0
+    for row in rows:
+        if row.command != CLAUDE_COMMAND or row.cwd is None:
+            continue
+        if script_utils.path_is_under(os.path.realpath(row.cwd), real_worktree):
+            total += row.rss_bytes
+    return system_resources.size_text(total)
+
+
+def finished_idle_text(lane, state, agents, process_rows):
+    """`, finished idle (Claude RSS <size>)` for a merged lane whose claude agents are all idle or done, else ``."""
+    if state != "merged":
+        return ""
+    inside = herdr_agents.agents_in(lane["worktree"], agents)
+    if not inside:
+        return ""
+    if any(agent.get("agent_status") not in FINISHED_STATUSES for agent in inside):
+        return ""
+    return f", finished idle (Claude RSS {claude_rss_text(lane['worktree'], process_rows)})"
+
+
+def lane_git_line(lane, agents, process_rows):
+    """One line for an open lane: name, branch, merge state, dirty count, the finished-idle mark and reports_to; the
+    reason in place of the state and count when the worktree is gone or a git call fails."""
+    reports_to = lane["reports_to"] or "-"
+    head = f"{lane['name']}: {lane['branch']}"
+    if not os.path.isdir(lane["worktree"]):
+        return f"{head}, worktree gone, reports_to {reports_to}"
+
+    try:
+        state = merge_state(lane)
+        dirty = dirty_count(lane["worktree"])
+    except GitStateError as error:
+        reason = str(error).replace("\n", " ")
+        return f"{head}, git failed ({reason}), reports_to {reports_to}"
+    finished = finished_idle_text(lane, state, agents, process_rows)
+    return f"{head}, {state}, {dirty} dirty{finished}, reports_to {reports_to}"
 
 
 def seen_file():
@@ -345,11 +456,38 @@ def current_report():
     return report
 
 
+def git_mode_agents():
+    """The claude agents, or [] with the reason on stderr when herdr cannot be asked: --git still prints each lane's
+    git state, without a finished-idle mark."""
+    try:
+        return herdr_agents.claude_agents()
+    except herdr_agents.PaneCallError as error:
+        print(f"lane_status: no finished-idle marks: {error}", file=sys.stderr)
+        return []
+
+
+def print_git_lines():
+    try:
+        lanes = read_lanes()
+    except StatusError as error:
+        print(f"lane_status: {error}", file=sys.stderr)
+        return EXIT_FAILED
+    agents = git_mode_agents() if lanes else []
+    process_rows = ProcessRows()
+    lines = [lane_git_line(lane, agents, process_rows) for lane in lanes]
+    for line in lines:
+        print(line)
+    return 0
+
+
 def main(argv):
     arguments = argv[1:]
-    if arguments not in ([], [CHANGES_FLAG]):
+    if arguments not in ([], [CHANGES_FLAG], [GIT_FLAG]):
         print(__doc__, file=sys.stderr)
         return EXIT_FAILED
+
+    if arguments == [GIT_FLAG]:
+        return print_git_lines()
 
     try:
         report = current_report()

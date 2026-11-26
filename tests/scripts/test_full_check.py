@@ -431,6 +431,14 @@ class FullCheckTest(unittest.TestCase):
                          ["full check: passed", f"command: {PASSING_SUITE}", "summary: 3 passed in 0.1s"])
         self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
 
+    def test_a_log_under_a_missing_folder_runs_the_check_and_writes_the_log(self):
+        self.log = self.repo / "missing" / "nested" / "review-gate.log"
+
+        completed = self.check(PASSING_SUITE)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.log.read_text(), "3 passed in 0.1s\n")
+
     def test_an_exit_zero_with_no_runner_summary_is_unverified_not_passed(self):
         completed = self.check("echo 496 tests registered")
 
@@ -549,6 +557,36 @@ class FullCheckTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.splitlines()[0], "full check: not run (CI)")
+
+    def test_a_caller_ci_run_replaces_the_declared_check_and_runs_no_command(self):
+        self.declare_check(f"touch {self.repo}/ran")
+
+        result, _tail, _details = full_check.run(self.repo, f"touch {self.repo}/ran", self.log, 120, receipt=False,
+                                                 ci_run="https://ci.example/runs/42")
+
+        self.assertEqual(result, full_check.caller_ci_result("https://ci.example/runs/42"))
+        self.assertTrue(result.startswith(full_check.NOT_RUN_CALLER_CI_PREFIX))
+        self.assertIn("https://ci.example/runs/42", result)
+        self.assertFalse((self.repo / "ran").exists())
+        self.assertFalse(full_check.is_failure(result))
+
+    def test_a_caller_ci_run_writes_a_satisfied_finished_receipt_row(self):
+        subprocess.run(["git", "-C", str(self.repo), "init", "-q"], check=True)
+        self.declare_check(f"touch {self.repo}/ran")
+
+        full_check.run(self.repo, f"touch {self.repo}/ran", self.log, 120, ci_run="run-7")
+
+        self.assertFalse((self.repo / "ran").exists())
+
+        started, rows = full_check_receipt.latest_run(self.repo)
+        self.assertIsNone(started["command"])
+        steps = [row for row in rows if row.get("kind") == full_check_receipt.STEP]
+        self.assertEqual(steps, [])
+        finished = [row for row in rows if row.get("kind") == full_check_receipt.FINISHED]
+        self.assertEqual(len(finished), 1)
+        self.assertTrue(finished[0]["satisfied"])
+        self.assertTrue(finished[0]["ci"])
+        self.assertEqual(finished[0]["result"], full_check.caller_ci_result("run-7"))
 
     def test_a_repo_that_declares_no_check_runs_nothing(self):
         completed = self.check(None, claude_md="# Repo\n")
@@ -1333,6 +1371,28 @@ class CappedLiveRunTest(unittest.TestCase):
         time.sleep(0.5)
         self.assertFalse(process_group.pid_is_alive(sleeper))
         self.assertFalse(process_group.pid_is_alive(started[0]))
+
+
+# A normal full run of the dotfiles suite takes about 870 s wall.
+DOTFILES_SUITE_WALL_SECONDS = 870
+
+
+class DefaultLimitTest(unittest.TestCase):
+    def test_a_run_with_no_timeout_gets_a_limit_above_a_normal_dotfiles_suite_run(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        repo = pathlib.Path(scratch.name)
+        (repo / "CLAUDE.md").write_text(f"Quality check: `{PASSING_SUITE}`\n")
+        log = repo / "full-check.log"
+
+        with mock.patch.object(full_check, "run", return_value=("passed", "", {"tree": None})) as run, \
+                mock.patch.object(full_check, "print_result"):
+            exit_code = full_check.main([str(repo), "--log", str(log)])
+
+        self.assertEqual(exit_code, 0)
+        limit = run.call_args.args[3]
+        self.assertEqual(limit, full_check.DEFAULT_TIMEOUT_SECONDS)
+        self.assertGreaterEqual(limit, 2 * DOTFILES_SUITE_WALL_SECONDS)
 
 
 if __name__ == "__main__":

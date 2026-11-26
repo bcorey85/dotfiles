@@ -12,6 +12,7 @@ import shlex
 import full_check_receipt
 import script_utils
 import shell_command
+import transcript_time
 
 FINDING_ID_HEX_LEN = 16
 FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
@@ -413,13 +414,33 @@ def agent_finished(transcript_path):
 WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def written_paths(transcript_path):
-    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls."""
+def written_paths(transcript_path, since=None):
+    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls.
+    With `since` (epoch seconds), only calls whose record `timestamp` is later count; a record with no parsable
+    timestamp counts for none."""
     paths = set()
     with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
         for line in transcript:
-            paths.update(call_paths(line))
+            found = call_paths(line)
+            if not found:
+                continue
+            if since is not None and not recorded_after(line, since):
+                continue
+            paths.update(found)
     return paths
+
+
+def recorded_after(line, since):
+    """Whether the transcript record on this line has an ISO 8601 `timestamp` later than `since` (epoch seconds)."""
+    record = script_utils.transcript_record(line)
+    timestamp = record.get("timestamp") if record else None
+    if not isinstance(timestamp, str):
+        return False
+    try:
+        epoch = transcript_time.epoch_of_timestamp(timestamp)
+    except ValueError:
+        return False
+    return epoch > since
 
 
 def call_paths(line):

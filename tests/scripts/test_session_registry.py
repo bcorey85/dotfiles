@@ -60,10 +60,41 @@ class SessionRegistryTest(unittest.TestCase):
             repo = pathlib.Path(folder).resolve()
             (repo / "sub").mkdir()
             self.register_in("own", str(repo), "1.json")
-            self.assertIsNone(session_registry.other_live_session_in(repo, "own"))
+            self.assertEqual([], session_registry.other_live_sessions_in(repo, "own"))
             self.register_in("other", str(repo / "sub"), "2.json")
-            found = session_registry.other_live_session_in(repo, "own")
-            self.assertEqual("other", found["sessionId"])
+            found = session_registry.other_live_sessions_in(repo, "own")
+            self.assertEqual(["other"], [row["sessionId"] for row in found])
+
+    def test_every_other_live_session_inside_the_folder_is_found_in_registry_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            self.register_in("own", str(repo), "1.json")
+            self.register_in("first", str(repo), "2.json")
+            self.register_in("second", str(repo / "sub"), "3.json")
+            self.register_in("elsewhere", str(repo.parent), "4.json")
+            found = session_registry.other_live_sessions_in(repo, "own")
+            self.assertEqual(["first", "second"], [row["sessionId"] for row in found])
+
+    def test_a_session_transcript_is_found_under_any_project_and_a_missing_one_is_none(self):
+        (self.home / "projects" / "proj").mkdir(parents=True)
+        transcript = self.home / "projects" / "proj" / "sid.jsonl"
+        transcript.write_text("")
+        self.assertEqual(transcript, session_registry.session_transcript("sid"))
+        self.assertIsNone(session_registry.session_transcript("none"))
+        self.assertIsNone(session_registry.session_transcript(None))
+
+    def test_a_session_transcript_in_several_projects_is_the_first_in_sorted_order(self):
+        for project in ("b", "a"):
+            (self.home / "projects" / project).mkdir(parents=True)
+            (self.home / "projects" / project / "sid.jsonl").write_text("")
+        self.assertEqual(self.home / "projects" / "a" / "sid.jsonl", session_registry.session_transcript("sid"))
+
+    def test_every_transcript_match_of_a_session_is_returned_sorted(self):
+        for project in ("b", "a"):
+            (self.home / "projects" / project).mkdir(parents=True)
+            (self.home / "projects" / project / "sid.jsonl").write_text("")
+        expected = [self.home / "projects" / "a" / "sid.jsonl", self.home / "projects" / "b" / "sid.jsonl"]
+        self.assertEqual(expected, session_registry.session_transcripts("sid"))
 
     def test_a_session_outside_the_folder_a_dead_one_and_a_row_with_no_cwd_are_no_match(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -72,7 +103,7 @@ class SessionRegistryTest(unittest.TestCase):
             self.register_in("dead", str(repo), "2.json", pid=10**30)
             (self.home / "sessions" / "3.json").write_text(
                 json.dumps({"pid": os.getpid(), "sessionId": "no-cwd", "name": "x"}))
-            self.assertIsNone(session_registry.other_live_session_in(repo, "own"))
+            self.assertEqual([], session_registry.other_live_sessions_in(repo, "own"))
 
     def test_a_row_is_found_by_name_only_while_its_pid_is_alive(self):
         self.register("lane-dead", "sid-dead", 10**30, "1.json")

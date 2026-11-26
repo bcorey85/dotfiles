@@ -29,6 +29,7 @@ sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import coder_report
 import file_backup
 import finding_record
+import full_check_gate
 import handback
 import handback_store
 import plan_format
@@ -41,6 +42,7 @@ import review_loop_comment_removal
 import review_loop_findings
 import review_loop_held
 import review_loop_packet
+import review_loop_pass_names
 import review_loop_plan
 import review_loop_post_cap
 import review_loop_prompts
@@ -255,9 +257,12 @@ class SplitHeldFindingsTest(unittest.TestCase):
 class ImplicitHoldersTest(unittest.TestCase):
     OTHER: typing.ClassVar[dict] = {"pid": 77, "sessionId": "other-id", "name": "lane-b", "cwd": "/repo"}
 
-    def holders(self, live_row, only_files=("app.py",), known=None):
-        with mock.patch.object(review_loop_held.session_registry, "other_live_session_in",
-                               return_value=live_row) as lookup:
+    def holders(self, live_row, only_files=("app.py",), known=None, written=("theirs.py",)):
+        found = None
+        if live_row is not None:
+            found = review_loop_held.dirty_writers.HolderPaths(live_row, list(written))
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=found) as lookup:
             result = review_loop_held.implicit_holders(
                 "/repo", {"theirs.py", "named.py"}, known or {"named.py": {}}, list(only_files), "own-id")
         return result, lookup
@@ -265,11 +270,18 @@ class ImplicitHoldersTest(unittest.TestCase):
     def test_a_dirty_file_outside_the_file_scope_is_held_by_the_live_other_session(self):
         result, lookup = self.holders(self.OTHER)
 
-        lookup.assert_called_once_with("/repo", "own-id")
+        lookup.assert_called_once_with("/repo", ["theirs.py"], "own-id")
         self.assertEqual(result, {"theirs.py": review_loop_held.holder_row(
             "theirs.py", "lane-b", "dirty, outside the run's --file scope")})
 
-    def test_with_no_live_other_session_nothing_is_held(self):
+    def test_only_the_files_the_proven_writer_wrote_are_held(self):
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=review_loop_held.dirty_writers.HolderPaths(self.OTHER, ["a.py"])):
+            result = review_loop_held.implicit_holders("/repo", {"a.py", "b.py"}, {}, ["app.py"], "own-id")
+
+        self.assertEqual(list(result), ["a.py"])
+
+    def test_with_no_proven_writer_nothing_is_held(self):
         result, _lookup = self.holders(None)
 
         self.assertEqual(result, {})
@@ -308,7 +320,7 @@ class RulingCheckHost(review_loop_ruling_check.RulingCheck):
     open_fixes: typing.ClassVar[list] = ["on-claude-md"]
     # Tuples, so a test that does not set them cannot share a mutable default.
     no_code_broken = ()
-    user_only_paths = ()
+    approval_ask_paths = ()
 
     def __init__(self):
         self.files_touched = set()
@@ -1382,6 +1394,17 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertNotIn("notes.py", backup.saved)
         self.assertIn("app.py", backup.saved)
 
+    def test_a_finding_naming_a_file_by_a_trailing_part_gets_that_file_backed_up(self):
+        (self.repo / "lib").mkdir()
+        (self.repo / "lib" / "x.py").write_text("x = 1\n")
+        host = self.ruled_host()
+        listing = ["app.py", "lib/x.py"]
+
+        with mock.patch.object(review_loop_ruling_check.script_utils, "repo_file_paths", return_value=listing):
+            backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], ["x.py:3 wrong name"])
+
+        self.assertIn("lib/x.py", backup.saved)
+
     def test_a_ruling_check_that_cannot_reach_the_judge_keeps_the_unreverted_findings_open(self):
         host = RulingCheckHost()
         host.repo = str(self.repo)
@@ -1449,23 +1472,23 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
     def test_a_put_back_pass_drops_the_approval_ask_and_no_code_entry_it_filed_for_a_restored_path(self):
         host = self.ruled_host()
         host.no_code_broken = [{"ruling": "earlier", "file": "old.py"}]
-        host.user_only_paths = ["old_approval.md"]
+        host.approval_ask_paths = ["old_approval.md"]
         wanted_ask = finding_record.parse_finding("`app.py:1` [other] A fix coder wants to edit `app.py`: earlier ask")
         host.user_only_asks = [finding_record.parse_finding("`old_approval.md:1` [other] earlier ask"), wanted_ask]
         host.asks = list(host.user_only_asks)
         host.ask_gates = {}
-        host.user_only_bases = {"old_approval.md": "b0"}
+        host.approval_ask_bases = {"old_approval.md": "b0"}
         saved = []
-        host.save_approval_paths = lambda: saved.append(list(host.user_only_paths))
+        host.save_approval_paths = lambda: saved.append(list(host.approval_ask_paths))
         backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
         ask = finding_record.parse_finding(review_loop_ruled.approval_ask_text("app.py"))
         host.no_code_broken.append({"ruling": "r", "file": "app.py"})
         host.no_code_broken.append({"ruling": "r", "file": "kept_edit.py"})
-        host.user_only_paths.append("app.py")
+        host.approval_ask_paths.append("app.py")
         host.user_only_asks.append(ask)
         host.asks.append(ask)
         host.ask_gates[ask] = "coder"
-        host.user_only_bases["app.py"] = "b1"
+        host.approval_ask_bases["app.py"] = "b1"
         (self.repo / "app.py").write_text("changed by the pass\n")
         result = types.SimpleNamespace(changed=["app.py"], reverted=[])
         against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
@@ -1474,31 +1497,31 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             host.put_back_pass("fix-1", ["finding"], result, backup, against)
 
         self.assertEqual([entry["file"] for entry in host.no_code_broken], ["old.py", "kept_edit.py"])
-        self.assertEqual(host.user_only_paths, ["old_approval.md"])
+        self.assertEqual(host.approval_ask_paths, ["old_approval.md"])
         self.assertEqual([item.path for item in host.asks], ["old_approval.md", "app.py"])
         self.assertIn(wanted_ask, host.user_only_asks, "a wanted-change ask on the same path at line 1 survives")
         self.assertNotIn(ask, host.user_only_asks)
-        self.assertNotIn("app.py", host.user_only_bases)
+        self.assertNotIn("app.py", host.approval_ask_bases)
         self.assertEqual(saved, [["old_approval.md"]])
 
     def test_a_put_back_pass_drops_an_approval_ask_it_filed_for_a_path_it_did_not_restore(self):
         host = self.ruled_host()
         host.no_code_broken = []
-        host.user_only_paths = []
+        host.approval_ask_paths = []
         host.user_only_asks = []
         host.asks = []
         host.ask_gates = {}
-        host.user_only_bases = {}
+        host.approval_ask_bases = {}
         saved = []
-        host.save_approval_paths = lambda: saved.append(list(host.user_only_paths))
+        host.save_approval_paths = lambda: saved.append(list(host.approval_ask_paths))
         backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
         for filed_path in ("CLAUDE.md", "app.py"):
             ask = finding_record.parse_finding(review_loop_ruled.approval_ask_text(filed_path))
-            host.user_only_paths.append(filed_path)
+            host.approval_ask_paths.append(filed_path)
             host.user_only_asks.append(ask)
             host.asks.append(ask)
             host.ask_gates[ask] = "coder"
-            host.user_only_bases[filed_path] = "b1"
+            host.approval_ask_bases[filed_path] = "b1"
         (self.repo / "app.py").write_text("changed by the pass\n")
         result = types.SimpleNamespace(changed=["app.py"], reverted=["CLAUDE.md"])
         against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
@@ -1506,10 +1529,10 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
             host.put_back_pass("fix-1", ["finding"], result, backup, against)
 
-        self.assertEqual(host.user_only_paths, [], "the reverted CLAUDE.md ask goes with the put-back pass")
+        self.assertEqual(host.approval_ask_paths, [], "the reverted CLAUDE.md ask goes with the put-back pass")
         self.assertEqual(host.user_only_asks, [])
         self.assertEqual(host.asks, [])
-        self.assertEqual(host.user_only_bases, {})
+        self.assertEqual(host.approval_ask_bases, {})
 
     def test_a_put_back_pass_leaves_the_index_entry_of_a_path_the_backup_could_not_save(self):
         host = self.ruled_host()
@@ -1833,6 +1856,36 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(len(reviews), 1)
         self.assertIn(f"Review every change since {base}", reviews[0]["prompt"])
         self.assertIn("app.py", reviews[0]["prompt"])
+
+    def test_the_packet_names_the_base_as_given_and_the_base_used(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\ngiven-base: master\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["given_base"], packet["base_used"]), ("master", base))
+
+    def test_the_packet_of_a_run_with_no_given_base_line_carries_no_given_base(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["given_base"], "")
+        self.assertEqual(packet["base_used"], base)
+
+    def test_the_packet_of_a_run_with_no_base_line_carries_neither_base(self):
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertFalse(packet.get("base_used"))
+        self.assertFalse(packet.get("given_base"))
 
     def test_a_fix_the_coder_commits_on_a_clean_tree_counts_as_fixed_and_is_reviewed(self):
         base = git(self.repo, "rev-parse", "HEAD")
@@ -2303,7 +2356,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(
             packet["class_closure"],
             "the class repair fixed none of the class members the closure check found open"
-            "; filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "; filed as an approval ask unless it repeats one the session rejected, their fix was an approval-only "
             "edit the loop reverted: " + member)
 
     def test_a_class_repair_that_changes_other_files_but_reverts_every_member_claims_no_fix(self):
@@ -2321,7 +2374,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].startswith("the class repair fixed none of the class members"),
                         packet["class_closure"])
-        self.assertIn("filed as a user-only ask unless it repeats one the session rejected, their fix was an "
+        self.assertIn("filed as an approval ask unless it repeats one the session rejected, their fix was an "
                       "approval-only edit the loop reverted: " + member, packet["class_closure"])
         self.assertNotIn("fixed these class members", packet["class_closure"])
 
@@ -2355,7 +2408,7 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _row, packet = self.stored_packet()
         self.assertEqual(packet["open_classes"], [], "the reverted member is a user-only ask, not an open class")
         self.assertTrue(packet["class_closure"].endswith(
-            "filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+            "filed as an approval ask unless it repeats one the session rejected, their fix was an approval-only "
             "edit the loop reverted: " + reverted_member),
             packet["class_closure"])
         fixed_lines = [item["file_line"] for item in packet["fixed"]]
@@ -2903,6 +2956,20 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop, _check_command = loop_main.build_loop(request)
         return loop
 
+    def test_a_ci_gate_header_line_sets_the_loop_ci_run(self):
+        loop_main, request = self.gate_command_request("echo scoped", False, header_extra="ci-gate: run-42\n")
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "run-42")
+
+    def test_no_ci_gate_header_line_leaves_the_loop_ci_run_empty(self):
+        loop_main, request = self.gate_command_request("echo scoped", False)
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "")
+
     def test_the_loop_brief_names_the_plan_lines_of_the_phase(self):
         plan = self.repo / "docs" / "plans" / "p" / "spec.md"
         plan.parent.mkdir(parents=True)
@@ -3161,6 +3228,18 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual((packet["full_check"], packet["full_check_command"]), ("passed", "make check"))
         self.assertEqual("", packet["tool_fault"])
+
+    def test_a_ci_gate_header_runs_no_local_check_and_the_packet_names_the_ci_run(self):
+        marker = self.repo / "ran"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, header_extra="ci-gate: run-42\n",
+                                    quality_check=f"touch {marker}")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertFalse(marker.exists(), "the Quality check command must not run under a ci-gate header")
+        self.assertEqual(packet["full_check"], "not run (CI gate: run-42)")
+        self.assertEqual(packet["full_check_command"], "")
 
     def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole_in_its_issues_file(self):
         script = self.scratch / "stale_prose.py"
@@ -4230,6 +4309,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             tool.write_text(recorder)
             tool.chmod(0o755)
         self.commit_files({"pyproject.toml": "[tool.ruff]\nline-length = 100\n", "notes.md": "# notes\n"})
+        # notes.md is part of the change under review, so the coder's edit to it is inside the pass's scope.
+        (self.repo / "notes.md").write_text("# notes\nchanged\n")
         check = f"{FAILS_ONLY_WITH_THE_DIFF}grep -q '# formatted' app.py || {{ echo 'FAIL: unformatted'; exit 1; }}"
 
         completed = self.run_script({
@@ -6735,9 +6816,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         cap_line = next(line for line in printed.splitlines() if line.startswith("cap reached"))
         self.assertNotRegex(cap_line, r"\b([3-9]|\d{2,})\b")
         self.assertGreater(packet["iter"], 2)
-        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['iter']}\b")
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['iter']}\b")
         self.assertGreater(packet["review_round"], 2)
-        self.assertNotRegex(printed, rf"(?<![\w.:]){packet['review_round']}\b")
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['review_round']}\b")
 
     def review_fix_packet_output(self):
         """What `review_fix.py packet` prints for the packet the run stored."""
@@ -7176,8 +7257,161 @@ SIGNOFF_FINDING_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n
                           "## Ask\nNone\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
 
 
+class FixRoundWiringTest(unittest.TestCase):
+    def loop(self, tmp):
+        loop_script = load_script_module()
+        return loop_script.LoopRun(tmp, pathlib.Path(tmp), "", (), {"fixed": [], "files_touched": set()})
+
+    def test_a_review_round_fix_pass_lints_the_files_it_changed_before_the_next_round(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted, \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        linted.assert_called_once_with(["app.py"])
+
+    def test_a_fix_first_pass_lints_the_files_it_changed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted:
+                loop.fix_first(["`app.py:1` rename the value"])
+
+        linted.assert_called_once_with(["app.py"])
+
+    def test_a_fix_first_pass_that_stops_on_an_unapplied_finding_runs_no_lint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "stop_on_unapplied", return_value=True), \
+                    mock.patch.object(loop, "lint_fixed_files") as linted:
+                loop.fix_first(["`app.py:1` rename the value"])
+
+        linted.assert_not_called()
+
+    def test_the_lint_repair_runs_after_the_prior_issues_are_built(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            loop.put_back_findings = [finding]
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+
+            calls = []
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                calls.append(call_name)
+                if call_name == review_loop_pass_names.LINT_FIX_PASS:
+                    loop.put_back_findings = []
+                return result
+
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        self.assertIn(review_loop_pass_names.LINT_FIX_PASS, calls)
+        self.assertEqual(["partial"], [entry["status"] for entry in loop.prior_issues])
+
+    def test_the_after_fix_pass_lint_repair_records_no_skip_on_a_real_loop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            result = review_loop_coder.CoderResult("", [], [])
+            with mock.patch.object(loop, "repair", return_value=result), \
+                    mock.patch.object(loop, "mark_repaired") as marked, \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.lint_fixed_files(["app.py"])
+
+        self.assertEqual(marked.call_args.kwargs, {"records_skip": False})
+
+    def test_a_lint_repair_after_a_fix_round_stays_in_late_repairs_for_the_late_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                loop.check_pass_result(call_name, result)
+                return result
+
+            loop.later_phase_files = set()
+            loop.change = mock.Mock(added={}, removal=mock.Mock(return_value=({}, 0)))
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py"]), \
+                    mock.patch.object(loop, "plan_second_round"), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+
+        lint_repairs = [result for name, result in loop.late_repairs if name == review_loop_pass_names.LINT_FIX_PASS]
+        self.assertEqual(len(lint_repairs), 1)
+        self.assertEqual(lint_repairs[0].changed, ["app.py"])
+
+    def test_a_lint_repair_after_a_fix_round_is_in_the_diff_and_files_the_next_round_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            fix_result = review_loop_coder.CoderResult("1. fixed", ["fix diff"], ["app.py"])
+            lint_result = review_loop_coder.CoderResult("", ["lint diff"], ["lint_only.py"])
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                if call_name != review_loop_pass_names.LINT_FIX_PASS:
+                    return fix_result
+                loop.note_late_repair(call_name, lint_result)
+                return lint_result
+
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py", "lint_only.py"]), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+            diff_text = pathlib.Path(loop.round_two_fix_diff_path).read_text()
+
+        self.assertIn("lint diff", diff_text)
+        self.assertEqual(loop.dispatches, [("code-reviewer", ["app.py", "lint_only.py"])])
+
+    def test_a_repair_before_a_later_review_round_is_dropped_from_late_repairs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            loop.dispatches = [("code-reviewer", ["app.py"])]
+            result = review_loop_coder.CoderResult("1. fixed", ["diff"], ["app.py"])
+            seen_at_review = []
+            fix_rounds = []
+
+            def review_round():
+                seen_at_review.append(loop.late_repairs)
+                return [], []
+
+            def fix_round(_fixes, _nits):
+                fix_rounds.append(1)
+                loop.note_late_repair(review_loop_pass_names.LINT_FIX_PASS, result)
+                return len(fix_rounds) < 2
+
+            loop_script = load_script_module()
+            with mock.patch.object(loop, "review_round", side_effect=review_round), \
+                    mock.patch.object(loop, "fix_round", side_effect=fix_round), \
+                    mock.patch.object(loop, "read_late_repairs"), \
+                    mock.patch.object(loop, "apply_pending_cap"):
+                loop_script.walk(loop, "", ())
+
+        self.assertEqual(seen_at_review, [(), ()])
+        self.assertEqual(len(loop.late_repairs), 1)
+
+
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
-    """A coder never edits a sign-off line of a decision log; the loop asks the caller instead."""
+    """A coder never edits a sign-off line of a decision log; the loop asks the caller, or hands a ruled change back."""
 
     def setUp(self):
         super().setUp()
@@ -7204,6 +7438,93 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py:2", issues)
         self.assertNotIn(DECISIONS_PATH, issues)
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+
+    RULED_FINDING = f"{DECISIONS_PATH}:3 [plan-drift] Proposed change: reword the ruling"
+    REWORDED = DECISIONS_TEXT.replace("Keep plan as written.", "Keep the plan, reworded.")
+
+    def run_fix_first(self, header_tail):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps([self.RULED_FINDING]))
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": {DECISIONS_PATH: self.REWORDED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 3,
+            "closure": [{"result": CLOSED}],
+        }
+        header = f"mode: fix-first\nfindings: {findings_file}\n" + header_tail
+        completed = self.run_script(scenario, header_extra=header)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def coder_calls(self):
+        return [call for call in self.fake_calls() if call["key"] == "coder"]
+
+    USER_SIGNED_TEXT = DECISIONS_TEXT.replace("Ruled by the session, not the user at 2026-11-11 03:17.",
+                                              "Ruled by Brandon Corey at 2026-11-11 03:17.")
+
+    def test_a_finding_on_an_unreadable_file_reads_as_a_user_sign_off_line(self):
+        finding = finding_record.parse_finding(self.RULED_FINDING)
+        self.assertEqual(finding.line, 3)
+        (self.repo / DECISIONS_PATH).unlink()
+
+        self.assertTrue(review_loop_signoffs.finding_on_user_signoff(str(self.repo), finding))
+
+    def assert_handed_back_to_the_caller(self, ruling, ruler_mark):
+        packet = self.run_fix_first(ruling)
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(packet["handback_edits"], [
+            f"{DECISIONS_PATH}:3 {review_loop_signoffs.HANDBACK_EDIT_NOTE}. Ruled finding: {ruler_mark} "
+            f"{self.RULED_FINDING}"])
+
+    def test_a_session_ruled_finding_on_a_session_owned_sign_off_line_is_handed_back_with_the_session(self):
+        self.assert_handed_back_to_the_caller("session-ruled: 1\n", f"[ruled by session {SESSION}]")
+
+    def test_a_user_ruled_finding_on_a_sign_off_line_is_handed_back_with_the_user_and_time(self):
+        self.assert_handed_back_to_the_caller("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n",
+                                              "[accepted by the user, ruled 2026-11-13 11:32:00Z]")
+
+    def test_a_session_ruled_finding_on_a_user_sign_off_line_is_filed_as_an_ask_and_no_hand_back_edit(self):
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertIn(review_loop_signoffs.SESSION_ON_USER_LINE_NOTE, json.dumps(packet["ask"]))
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), self.USER_SIGNED_TEXT)
+
+    def test_a_user_ruled_finding_on_a_user_sign_off_line_is_handed_back(self):
+        self.assertNotEqual(self.USER_SIGNED_TEXT, DECISIONS_TEXT)
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["handback_edits"]), 1)
+        edit = packet["handback_edits"][0]
+        self.assertIn("[accepted by the user, ruled 2026-11-13 11:32:00Z]", edit)
+        self.assertIn(review_loop_signoffs.HANDBACK_EDIT_NOTE, edit)
+        self.assertNotIn("[ruled by session", edit)
+
+    def test_a_ruled_finding_handed_back_stays_open_for_no_round_and_the_run_converges(self):
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_the_same_finding_with_no_ruling_is_filed_as_an_ask_and_no_handback_edit(self):
+        packet = self.run_fix_first("")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
 
     def test_lost_lines_counts_repeated_identical_sign_off_lines(self):
         before = [(3, "Ruled by the session."), (5, "Ruled by the session.")]
@@ -7820,6 +8141,153 @@ class CommentRemovalUnitTest(unittest.TestCase):
         self.run_.undo_comment_pass(snapshot, [])
 
         self.assertEqual(target.read_bytes(), b"s = '\xe9'\n# note\ny = 3\n")
+
+    def test_a_finding_that_quotes_a_comment_whose_line_moved_keeps_it_removed_with_no_ask(self):
+        before = "a = 1\n" * 13 + "#  moved   note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("moved", (self.repo / "a.py").read_text())
+
+    def test_a_quote_of_one_line_of_a_two_line_comment_block_keeps_the_whole_block_removed(self):
+        lines = ["a = 1\n"] * 13
+        before = "".join(lines) + "# Retry twice because the API flakes\n# and back off between tries.\nb = 2\n"
+        after = "".join(lines) + "b = 2\n"
+        findings = [finding_record.parse_finding(
+            "a.py:10 [bug] the comment `# Retry twice because the API flakes` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("back off", (self.repo / "a.py").read_text())
+
+    def test_a_quote_split_across_a_line_break_in_the_finding_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment \"# moved\n   note\" is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_double_quoted_span_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding('a.py:10 [bug] the comment "# moved note" is stale')]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_without_marker_names_a_comment_whose_text_starts_with_a_star(self):
+        before = "a = 1\n" * 13 + "# *important*\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `*important*` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_of_a_bare_marker_does_not_name_a_removed_empty_comment(self):
+        before = "a = 1\n" * 13 + "#\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the line `#` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("#\n", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_merged_findings_second_part_names_the_comment_in_its_own_file(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        first = finding_record.parse_finding("other.py:3 [bug] unrelated")
+        second = finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")
+        merged = finding_record.combine([first, second])
+
+        put_back = self.pass_over("a.py", before, after, findings=[merged])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_finding_that_names_the_file_but_quotes_nothing_of_the_comment_still_puts_it_back_and_asks(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] something unrelated")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_apostrophes_in_a_finding_do_not_make_a_quote_that_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        text = "a.py:10 [bug] it doesn't check the loop bound, and the caller's guard is gone"
+        findings = [finding_record.parse_finding(text)]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_in_a_finding_of_another_file_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n"
+        after = "a = 1\n" * 13 + "b = 2\n"
+        findings = [finding_record.parse_finding("other.py:10 [bug] the comment `# moved note` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_word_inside_a_longer_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# end\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the `endpoint` returns None")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# end", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_of_a_longer_comment_does_not_name_a_shorter_removed_comment(self):
+        before = "a = 1\n" * 13 + "# TODO\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# TODO: drop after v2` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# TODO", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_an_unquoted_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] fix the off-by-one in the loop")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_finding_that_quotes_a_block_comment_line_whose_line_moved_keeps_it_removed(self):
+        before = "a = 1;\n" * 13 + "/* moved note */\nb = 2;\n" + "c = 3;\n" * 10
+        after = "a = 1;\n" * 13 + "b = 2;\n" + "c = 3;\n" * 10
+        findings = [finding_record.parse_finding("a.ts:10 [bug] the comment `moved note` is stale")]
+
+        put_back = self.pass_over("a.ts", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
 
     def test_a_skipped_held_file_keeps_its_removed_comment_and_files_no_ask(self):
         target = self.repo / "held.py"

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1275 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [A Write to an existing file the session has not read is refused](notes/2026-11-26-a-write-to-an-existing-file-the-session-has-not-read.md).
+Latest change: 2026-11-26, [skills name the plan files beside the plan, not under docs/plans](notes/2026-11-26-skills-name-the-plan-files-beside-the-plan-not.md).
 
 ## Top gains
 

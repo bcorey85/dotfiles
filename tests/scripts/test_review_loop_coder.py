@@ -65,7 +65,7 @@ class UntrackedDeletionTest(unittest.TestCase):
 
     def no_op_scope_guard(self, role="coder1"):
         """A scope guard that owns no path: every path counts as ruled on by another guard."""
-        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, ())
+        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, (), lambda: None)
 
     def fake_model(self, action):
         """Patches the model process with a stand-in that runs `action(repo)` and replies `done`."""
@@ -378,6 +378,7 @@ class RuledOutLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         for finding_text in cases:
             with self.subTest(finding_text):
                 self.assertTrue(review_loop_ruled_out.names_deletion([finding_text], "lib.py", "/repo"))
+        self.assertTrue(review_loop_ruled_out.names_deletion(["delete ./lib/x.py"], "lib/x.py", "/repo"))
         self.assertFalse(review_loop_ruled_out.names_deletion(["delete lib.py.bak"], "lib.py", "/repo"))
 
     def test_a_ruled_out_file_in_a_removed_folder_is_put_back(self):

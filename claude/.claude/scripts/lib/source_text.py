@@ -233,6 +233,12 @@ def _read_hunk_body(lines, start, hunk, position):
     return index
 
 
+# The global options and the `diff` subcommand with the flags that make its output parseable under any user config.
+DIFF_COMMAND_ARGS = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff",
+              "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+              "--no-prefix")
+
+
 def parse_unified_diff(text):
     """The files of `git diff --no-prefix -U0` output as FileDiff objects, in order. Each Hunk holds the text after
     the second `@@` (git's name of the enclosing function), the removed lines as (old line number, text) and the
@@ -394,6 +400,18 @@ def comment_line_numbers(lines, style):
     if style in ("hash", "hash_triple"):
         return _hash_comment_numbers(lines, style == "hash_triple")
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
+
+
+COMMENT_MARKER = re.compile(r"^\s*(?:#+|//+|/\*+|\*+/?)\s*")
+COMMENT_CLOSER = re.compile(r"\s*\*+/\s*$")
+
+
+def comment_body(line):
+    """The comment `line` without its leading `#`, `//`, `/*` or `*` marker and its trailing `*/`, whitespace runs
+    collapsed to one space."""
+    without_marker = COMMENT_MARKER.sub("", line, count=1)
+    without_closer = COMMENT_CLOSER.sub("", without_marker, count=1)
+    return re.sub(r"\s+", " ", without_closer).strip()
 
 
 def file_comment_entries(path, text):

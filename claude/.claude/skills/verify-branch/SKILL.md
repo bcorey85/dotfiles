@@ -25,7 +25,7 @@ It resolves the task dir, reads the criteria, measures the diff, checks whether 
 | 0    | ready                                                                                                              | follow the printed steps                                                                                                                                                           |
 | 2    | loud failure (no criteria, missing file, no base, empty diff, detached HEAD, unknown option, bad notes-paths list) | report the message to the user; never treat it as a pass                                                                                                                           |
 | 3    | several task dirs                                                                                                  | ask which; rerun with the answer                                                                                                                                                   |
-| 4    | no plan                                                                                                            | ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md`, write its raw fields to `<scratchpad>/<KEY>-ticket.md`, rerun `verify-prep --ticket-file <that path>` |
+| 4    | no plan                                                                                                            | ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md`, write its raw fields to the ticket path the message names, rerun `verify-prep --ticket-file <that path>` |
 
 For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scope, plan or no plan. Never check them yourself in place of the gate.
 
@@ -64,7 +64,7 @@ One row per verdicted item, verbatim, plus one `failed-check` row for each ✗ a
 - **Clean**: the **branch-final smell gate** first. Run a bare `/refactor` now and let it converge, unless you can show one ran since the last code change. Then build the **review packet** from the checklist skeleton `verify-log` printed:
   1. (a) the completeness table; (b) the smoke-test checklist: fill the `steps:` of every line with concrete steps; (c) the diff hotspots it listed ("read these first, skim the rest"); (d) a pointer to agent-verified evidence. Do NOT situate here (`/orient`, on demand).
   2. Before presenting, `hunk-notes` the evidence per `~/.claude/skills/_shared/nvim-jump.md`: each completeness-table `file:line` in table order with `--note "<criterion>: <what the line proves>"`, then each covering test's `file:line` with `--note "<AC id>: <what it asserts>"`.
-  3. Point forward: run the smoke-test checklist, then open the PR yourself. Agents never open PRs. After the PR exists, `/adr`.
+  3. Point forward, in numbered steps: (1) run the smoke-test checklist; (2) agents never open PRs; open the PR yourself; (3) once the PR exists, run `/adr <plan folder>`, then `python3 ~/.claude/skills/adr/scripts/adr_flow.py status <plan folder>`. The branch is not finished until `status` prints `adr: done`.
 - **Asks open**: the review logged an ask on this tree, so the run is not clean. Put each listed ask to the user and record the ruling in the plan's decision log (`03-decisions.md` or `## Plan Deviations`). Then rerun verify-prep and the same command with `--asks-ruled "<who, what, when>"`, or fix the code and review again.
 
 ## What NOT to do

@@ -490,15 +490,31 @@ def code_spans(body):
 
 
 def opens_shell_heredoc(line):
-    # True when a command on the line takes a heredoc and runs a shell interpreter. A line this reading cannot parse
-    # counts as a shell when any of its words names one: its body is kept and read as commands.
+    # True when a command on the line takes a heredoc and it, or a command its pipe feeds (`cat <<EOF | bash`), runs a
+    # shell interpreter. A line this reading cannot parse counts as a shell when any of its words names one: its body
+    # is kept and read as commands.
     try:
         piped_commands = shell_command.parse_piped_commands(shell_quoting.strip_comments(line))
     except ValueError:
         words = re.split(r"[\s|&;()<>]+", line)
         return any(os.path.basename(word.strip("'\"")) in shell_command.SHELL_INTERPRETERS for word in words)
-    return any(shell_command.runs_shell(words) and any(operator == "<<" for operator, _target in redirections)
-               for words, redirections, _piped in piped_commands)
+    for index, (_words, redirections, _piped) in enumerate(piped_commands):
+        if not any(operator == "<<" for operator, _target in redirections):
+            continue
+        if pipeline_runs_shell(piped_commands, index):
+            return True
+    return False
+
+
+def pipeline_runs_shell(piped_commands, start):
+    # True when the command at start, or a later command joined to it by pipes, runs a shell interpreter.
+    for index in range(start, len(piped_commands)):
+        words, _redirections, piped = piped_commands[index]
+        if index > start and not piped:
+            return False
+        if shell_command.runs_shell(words):
+            return True
+    return False
 
 
 def heredoc_openers(text, line_start):

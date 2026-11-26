@@ -3,8 +3,9 @@
 # under tuios).
 #
 # Usage: herdr-dev [--headless] [--resume] [directory] [workspace_id] [claude_session] [start_prompt]
-#   --headless      tab 1 holds the claude pane alone: no hunk pane. Lanes
-#                   (herdr-worktree --fork, herdr-lane-resume) open this way.
+#   --headless      tab 1 holds the claude pane alone: no hunk pane and no
+#                   console tab. Lanes (herdr-worktree --fork,
+#                   herdr-lane-resume) open this way.
 #   --resume        with claude_session, the claude pane resumes that session
 #                   itself (no --fork-session), under the worktree's name
 #                   (herdr-lane-resume).
@@ -32,9 +33,10 @@
 #                    auto-detects the claude process and adopts the pane as a
 #                    managed agent, so it gets tab-bar status and
 #                    `herdr agent read/prompt/wait` for free.
-#   Tab 2 "console"  three equal shells for git / tests / logs. If the project
-#                    has an mprocs config, pane 1 runs the service stack under
-#                    mprocs instead of a bare shell. Config lookup order:
+#   Tab 2 "console"  (skipped by --headless) three equal shells for git /
+#                    tests / logs. If the project has an mprocs config, pane 1
+#                    runs the service stack under mprocs instead of a bare
+#                    shell. Config lookup order:
 #                      1. <project>/mprocs.yaml
 #                      2. ~/.config/mprocs/projects/<basename>.yaml
 #
@@ -109,6 +111,7 @@ tuios_session() {
 
 # Fill the focused, untiled console tab with three equal tiled columns.
 build_tuios_console() {
+    local console_pane="$1"
     local session second_pane
 
     session=$(tuios_session)
@@ -119,7 +122,7 @@ build_tuios_console() {
 
     # BSP leaves 50 | 25 | 25. Narrowing the first column by 1/6 of the width
     # gives 1/3 each, since the right half keeps its 50/50 split.
-    herdr-api pane resize --direction left --amount 0.1667 --pane "$c1" >/dev/null
+    herdr-api pane resize --direction left --amount 0.1667 --pane "$console_pane" >/dev/null
 }
 
 # ── Tab 1 "code": claude (40%) | hunk (60%); --headless: claude alone ───────
@@ -149,7 +152,7 @@ if [ -n "$claude_session" ]; then
 fi
 start_in_fresh_pane "$agent" "$claude_cmd"
 
-# The right pane is a live hunk diff. To go back to nvim, swap the
+# Without --headless, the right pane is a live hunk diff. To go back to nvim, swap the
 # hunk line below for the two commented nvim lines.
 editor=""
 if [ -z "$headless" ]; then
@@ -164,28 +167,35 @@ if [ -n "$editor" ] && [ -n "${TUIOS_SOCKET:-}" ]; then
     herdr-api pane resize --direction left --amount 0.1 --pane "$editor" >/dev/null
 fi
 
-# ── Tab 2 "console": three equal shells ─────────────────────────────────────
-console=$(herdr-api tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
-c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
+# ── Tab 2 "console": three equal shells (--headless: no console tab) ───────
+build_console_tab() {
+    local console c1 c2 console_tab mprocs_cfg
+    console=$(herdr-api tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
+    c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
 
-if [ -n "${TUIOS_SOCKET:-}" ]; then
-    console_tab=$(jq -r '.result.tab.tab_id' <<<"$console")
-    herdr-api tab focus "$console_tab" >/dev/null
-    build_tuios_console
-else
-    # 1/3 then half of the remaining 2/3 => three equal columns.
-    c2=$(split "$c1" 0.3334)
-    split "$c2" 0.5 >/dev/null
-fi
+    if [ -n "${TUIOS_SOCKET:-}" ]; then
+        console_tab=$(jq -r '.result.tab.tab_id' <<<"$console")
+        herdr-api tab focus "$console_tab" >/dev/null
+        build_tuios_console "$c1"
+    else
+        # 1/3 then half of the remaining 2/3 => three equal columns.
+        c2=$(split "$c1" 0.3334)
+        split "$c2" 0.5 >/dev/null
+    fi
 
-mprocs_cfg=""
-if [ -f "$dir/mprocs.yaml" ]; then
-    mprocs_cfg="$dir/mprocs.yaml"
-elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
-    mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
-fi
-if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
-    run "$c1" "mprocs --config \"$mprocs_cfg\""
+    mprocs_cfg=""
+    if [ -f "$dir/mprocs.yaml" ]; then
+        mprocs_cfg="$dir/mprocs.yaml"
+    elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
+        mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
+    fi
+    if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
+        run "$c1" "mprocs --config \"$mprocs_cfg\""
+    fi
+}
+
+if [ -z "$headless" ]; then
+    build_console_tab
 fi
 
 # Land on the editor, or on the claude pane when headless. `pane focus` is

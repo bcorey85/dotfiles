@@ -211,6 +211,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("FOO=1 pytest x")
         self.assert_allowed(self.pre("pytest x"))
 
+    def test_a_memory_capped_run_and_the_plain_run_share_one_key(self):
+        capped_prefix = "systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0"
+        self.post(f"{capped_prefix} pytest tests/x.py")
+        self.assert_denied(self.pre("pytest tests/x.py"))
+        self.edit()
+        self.post("pytest tests/y.py")
+        self.assert_denied(self.pre(f"{capped_prefix} pytest tests/y.py"))
+
     def test_an_env_prefix_inside_a_cd_chain_is_part_of_the_key(self):
         self.post("pytest x")
         self.assert_allowed(self.pre(f"cd {self.work} && FOO=1 pytest x"))
@@ -927,6 +935,26 @@ class QualityCheckCapTest(unittest.TestCase):
         payload["hook_event_name"] = "PostToolUse"
         finished = self.fire_raw(json.dumps(payload))
         self.assertEqual((finished.returncode, finished.stdout), (5, ""))
+
+
+class WithoutSystemdRunTest(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        import quality_check_cap
+        self.module = quality_check_cap
+
+    def test_a_quoted_option_value_is_dropped_with_the_other_options(self):
+        segment = 'systemd-run --user --scope -p "Description=unit tests" pytest -x'
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
+
+    def test_a_single_quoted_option_value_shares_the_plain_key(self):
+        segment = "systemd-run --user --scope -p 'MemoryMax=8G' -p MemorySwapMax=0 pytest"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest")
+
+    def test_unquoted_options_are_dropped(self):
+        segment = "systemd-run --user --scope -p MemoryMax=8G pytest -x"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
 
 
 if __name__ == "__main__":

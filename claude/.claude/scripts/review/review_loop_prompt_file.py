@@ -3,6 +3,8 @@
 The prompt file is header lines (`key: value`), a blank line, then the handoff block. The header keys are lane
 (required), mode, caller, repo, plan, phase, later-phase files, guidance, structure-pass, and:
   base: <commit>            review every change since the commit, commits included
+  given-base: <ref>         the base as given, written only when the base line holds something else: its merge
+                            base with HEAD, or a commit built on the base with merges left out
   files: <path>, <path>     review only these files
   held files: <path>, ...   files another session holds (dirty at the run's start, not the run's own): never
                             reviewed, never edited
@@ -22,6 +24,7 @@ The prompt file is header lines (`key: value`), a blank line, then the handoff b
   no-review: yes            fix-first with no review after the fix
   reviewer-model: <model>   the model every reviewer runs on
   coder-model: <model>      the model the fix coder runs on; with no line the coder runs on its agent's own model
+  ci-gate: <CI run>         the caller's ruling that this CI run is the test gate: no local full check runs
   iter: <n>                 review rounds an earlier run of the same review already used
   fix_rounds: <n>           fix rounds an earlier run of the same review already reported
   post_cap_passes: <kind>, <kind>
@@ -42,6 +45,10 @@ REVIEWERS_HEADLESS = "headless"
 REVIEWERS_MAIN = "main"
 PROMPT_FILE = "prompt.txt"
 BASE_KEY = "base"
+GIVEN_BASE_KEY = "given-base"
+# Prompt header keys. The /code run record's plan key is a separate fact, owned by phase_asks.PLAN_KEY.
+PLAN_KEY = "plan"
+REPO_KEY = "repo"
 FILES_KEY = "files"
 HELD_FILES_KEY = "held files"
 RULED_OUT_FILES_KEY = "ruled-out files"
@@ -56,6 +63,7 @@ SESSION_RULED_HEADER_KEY = "session-ruled"
 NO_REVIEW_KEY = "no-review"
 REVIEWER_MODEL_KEY = "reviewer-model"
 CODER_MODEL_KEY = "coder-model"
+CI_GATE_KEY = "ci-gate"
 ITER_KEY = "iter"
 FIX_ROUNDS_KEY = "fix_rounds"
 POST_CAP_PASSES_KEY = "post_cap_passes"
@@ -230,17 +238,24 @@ def reviewer_brief(header, handoff, repo):
     """The brief every reviewer of the run gets. The plan's folder is left out of the diff command and of the
     untracked files: the plan documents are not the change under review. The brief names the plan lines of the
     phase when `repo` holds the plan, the header has a `phase:` and the plan has a matching section."""
-    plan = header.get("plan", "")
-    lines = [f"{key}: {header[key]}" for key in ("plan", "phase") if header.get(key)]
+    plan = header.get(PLAN_KEY, "")
+    lines = [f"{key}: {header[key]}" for key in (PLAN_KEY, "phase") if header.get(key)]
     plan_folder = plan_format.plan_folder(plan)
     read_line = plan_read_line(repo, plan, header.get("phase"))
     if read_line:
         lines.append(read_line)
     if plan_folder:
         plan_part = "the plan section named here" if read_line else f"`{plan}`"
-        openable = f"{plan_part}, `{plan_format.CRITERIA_FILE_NAME}` and `{plan_format.TICKET_FILE_NAME}`"
+        has_decisions = (pathlib.Path(repo) / plan_folder / plan_format.DECISION_LOG_NAME).is_file()
+        names = [plan_part, f"`{plan_format.CRITERIA_FILE_NAME}`", f"`{plan_format.TICKET_FILE_NAME}`"]
+        if has_decisions:
+            names.append(f"`{plan_format.DECISION_LOG_NAME}`")
+        openable = ", ".join(names[:-1]) + " and " + names[-1]
         lines.append(f"The files under {plan_folder} are plan documents, not the change: do not review them, and "
                      f"open none of them but {openable}.")
+        if has_decisions:
+            lines.append(f"A question that a ruling recorded in `{plan_format.DECISION_LOG_NAME}` or in the plan "
+                         "answers is not an ask: do not file it.")
     if header.get(BASE_KEY):
         base = header[BASE_KEY]
         diff_command = f"git diff {base}"

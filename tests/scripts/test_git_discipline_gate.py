@@ -9,7 +9,14 @@ import tempfile
 import unittest
 import unittest.mock
 
+import receipt_repo
 import toolkit_paths
+from merge_fixtures import git, start_conflicted_merge
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.GATES_DIR))
+
+import git_discipline_gate
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
                       or toolkit_paths.GATES_DIR) / "git_discipline_gate.py"
@@ -948,7 +955,12 @@ def load_reviewed_tree():
     return reviewed_tree
 
 
-PUSH_DENIED = "[git-discipline-gate] code changed since the last review: run /review on this branch, then push"
+PUSH_DENIED_WITH_BASE = ("[git-discipline-gate] code changed since the last review: run /review base={base} on this "
+                         "branch, then push")
+
+
+PUSH_DENIED_PLAIN = ("[git-discipline-gate] code changed since the last review: run /review on this branch, "
+                     "then push")
 
 
 class PushReviewedTreeTest(GateCaseBase):
@@ -978,6 +990,10 @@ class PushReviewedTreeTest(GateCaseBase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
 
+    def head(self):
+        found = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, check=True, capture_output=True, text=True)
+        return found.stdout.strip()
+
     def review_then_commit(self):
         self.write("app.py", "print('b')\n")
         self.write("lib/new.py", "x = 1\n")
@@ -998,13 +1014,84 @@ class PushReviewedTreeTest(GateCaseBase):
         self.assert_allowed("git push", cwd=self.repo)
 
     def test_push_is_denied_when_code_changed_after_the_review(self):
+        reviewed_base = self.head()
         self.review_then_commit()
         self.write("app.py", "print('unreviewed')\n")
         self.commit("late edit")
-        reason = self.assert_denied("git push -u origin HEAD", PUSH_DENIED, cwd=self.repo)
-        self.assertEqual(reason, PUSH_DENIED)
-        self.assert_denied(f"git -C {self.repo} push", PUSH_DENIED, cwd=self.tmp)
-        self.assert_denied("gh pr create --fill", PUSH_DENIED, cwd=self.repo)
+        expected = PUSH_DENIED_WITH_BASE.format(base=reviewed_base)
+        reason = self.assert_denied("git push -u origin HEAD", expected, cwd=self.repo)
+        self.assertEqual(reason, expected)
+        self.assert_denied(f"git -C {self.repo} push", expected, cwd=self.tmp)
+        self.assert_denied("gh pr create --fill", expected, cwd=self.repo)
+
+    def repo_top(self):
+        found = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=self.repo, check=True,
+                               capture_output=True, text=True)
+        return found.stdout.strip()
+
+    def write_shared_bases(self, stored):
+        bases_file = self.reviewed_tree.shared_bases_file()
+        bases_file.parent.mkdir(parents=True, exist_ok=True)
+        bases_file.write_text(json.dumps({self.repo_top(): stored}) + "\n")
+
+    def test_push_denial_without_a_base_string_keeps_the_plain_text(self):
+        self.write_shared_bases([{"tree": "x"}])
+        reason = self.assert_denied("git push", PUSH_DENIED_PLAIN, cwd=self.repo)
+        self.assertEqual(reason, PUSH_DENIED_PLAIN)
+        self.assertNotIn("base=", reason)
+
+    def test_latest_reviewed_base_is_none_without_a_record(self):
+        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
+        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.tmp))
+
+    def test_malformed_bases_record_reads_as_no_base(self):
+        for stored in (["junk", {"base": 5, "tree": "x"}], "junk", {"base": "abc"}):
+            with self.subTest(stored=stored):
+                self.write_shared_bases(stored)
+                self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
+                self.reviewed_tree.push_review_state(self.repo)
+
+    def test_latest_reviewed_base_is_the_newest_recorded_base(self):
+        first_base = self.head()
+        self.review_then_commit()
+        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), first_base)
+        self.write("app.py", "print('c')\n")
+        self.commit("more")
+        second_base = self.head()
+        self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
+        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), second_base)
+
+    def credit_capped_review_of_a_plan_finding(self):
+        """Store a cap-reached hand-back whose only open finding names a plan file, with a valid full-check receipt
+        for the tree, and credit it as the dispatch of this repo."""
+        sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+        import handback
+        import handback_store
+
+        store_patch = unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.tmp / "store")})
+        store_patch.start()
+        self.addCleanup(store_patch.stop)
+        self.write("app.py", "print('capped')\n")
+        receipt_repo.plant_receipt(str(self.repo))
+        capped = {"status": "cap-reached", "iter": 2,
+                  "findings_remaining": [{"finding": "plan wording", "file_line": "docs/plans/p/spec.md:3"}]}
+        handback_store.record("review-session", "dispatch", repo=self.repo_top())
+        handback_store.record_handback("review-session", status="cap-reached", message=json.dumps(capped),
+                                       no_reviewer=False)
+        refusal, _repo = handback.record_clean_review("review-session")
+        self.assertIsNone(refusal)
+
+    def test_push_passes_after_a_plans_only_commit_on_a_capped_review_and_is_denied_after_a_code_commit(self):
+        self.credit_capped_review_of_a_plan_finding()
+        self.commit("capped change")
+        self.write("docs/plans/p/spec.md", "# plan\n")
+        self.commit("plan edit")
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+
+        self.write("app.py", "print('unreviewed')\n")
+        self.commit("late code")
+        self.assert_denied("git push -u origin HEAD", "[git-discipline-gate] code changed since the last review",
+                           cwd=self.repo)
 
     def test_push_passes_when_only_notes_changed_after_the_review(self):
         self.review_then_commit()
@@ -1166,6 +1253,121 @@ class SharedCloneCommitTest(GateCaseBase):
         other = self.repo_on("feature")
         self.assert_shared_allowed("git add a.txt && git commit -m x -- a.txt", shared, shared)
         self.assert_shared_allowed(f"cd {shared} && git commit -m x -- a.txt", other, shared)
+
+    def merging_clone(self):
+        shared = self.repo_on("feature")
+        start_conflicted_merge(shared)
+        return shared
+
+    def merging_clone_with_peer_file(self):
+        """A shared clone mid-merge with peer.txt, a path the merge does not change, staged."""
+        shared = self.merging_clone()
+        (shared / "peer.txt").write_text("peer\n")
+        git(shared, "add", "peer.txt")
+        return shared
+
+    def staged_peer_clone(self):
+        """A second clone with peer.txt staged."""
+        staged = self.repo_on("feature")
+        (staged / "peer.txt").write_text("peer\n")
+        git(staged, "add", "peer.txt")
+        return staged
+
+    def test_a_merge_commit_through_git_c_follows_the_clone_it_names(self):
+        shared = self.merging_clone()
+        other = self.repo_on("feature")
+        self.assert_shared_allowed(f"git -C {shared} commit --no-edit", other, shared)
+
+    def test_a_command_with_no_commit_does_not_parse_for_a_sole_step(self):
+        shared = self.merging_clone()
+        for command in ("git status", "git commit -m x -- a.txt"):
+            with self.subTest(command=command), \
+                    unittest.mock.patch.dict(os.environ, {"CLAUDE_SHARED_CLONES": str(shared)}), \
+                    unittest.mock.patch.object(git_discipline_gate, "is_sole_git_command") as sole_check:
+                git_discipline_gate.check_shared_clone_commit(command, [], str(shared))
+            sole_check.assert_not_called()
+
+    def test_an_all_commit_is_denied_before_a_sole_step_parse(self):
+        shared = self.merging_clone()
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_SHARED_CLONES": str(shared)}), \
+                unittest.mock.patch.object(git_discipline_gate, "is_sole_git_command") as sole_check, \
+                self.assertRaises(git_discipline_gate.DenyError):
+            git_discipline_gate.check_shared_clone_commit("git commit -a --no-edit", [], str(shared))
+        sole_check.assert_not_called()
+
+    def test_a_bare_commit_that_ends_a_merge_passes(self):
+        shared = self.merging_clone()
+        for command in ("git commit --no-edit", 'git commit -m "Merge side"', "git commit -m 'fix $(x)'",
+                        "git commit -m -a", 'git commit -m "-a" --no-edit'):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_merge_commit_redirected_to_another_clone_is_denied(self):
+        merging = self.merging_clone()
+        staged = self.staged_peer_clone()
+        both = f"{merging}{os.pathsep}{staged}"
+        self.assert_shared_denied(f'cd "{staged}" && git commit --no-edit', merging, both)
+
+    def test_a_merge_commit_in_an_unread_folder_is_denied(self):
+        merging = self.merging_clone()
+        staged = self.staged_peer_clone()
+        both = f"{merging}{os.pathsep}{staged}"
+        for command in ("cd ~nobody/x && git commit --no-edit", "cd - && git commit --no-edit",
+                        'git -C "$OTHER" commit --no-edit', "pushd ~nobody && git commit --no-edit"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, merging, both)
+
+    def test_a_merge_with_a_peers_staged_file_is_denied(self):
+        shared = self.merging_clone_with_peer_file()
+        self.assert_shared_denied("git commit --no-edit", shared, shared)
+        self.assert_shared_denied(f"git -C {shared} commit --no-edit", shared, shared)
+
+    def test_a_merge_commit_after_an_earlier_step_is_denied(self):
+        # The hook reads the index before `git add` runs, so a longer command gets no merge exemption.
+        shared = self.merging_clone()
+        (shared / "peer.txt").write_text("peer\n")
+        for command in ("git add -A && git commit --no-edit", "git add peer.txt; git commit --no-edit",
+                        "bash -c 'git add -A && git commit --no-edit'",
+                        'git commit --no-edit -m "$(git add -A)"', "git commit --no-edit -m `git add -A`",
+                        f"GIT_INDEX_FILE={shared}/.git/other git commit --no-edit",
+                        f"cd {shared} && git add -A && git commit --no-edit"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_a_cd_step_does_not_stop_a_merge_commit_passing(self):
+        shared = self.merging_clone()
+        other = self.repo_on("feature")
+        self.assert_shared_allowed(f"cd {shared} && git commit --no-edit", other, shared)
+
+    def test_a_merge_commit_redirected_by_git_env_to_another_clone_is_denied(self):
+        merging = self.merging_clone()
+        staged = self.staged_peer_clone()
+        both = f"{merging}{os.pathsep}{staged}"
+        for command in (f"GIT_DIR={staged}/.git git commit --no-edit",
+                        f"env GIT_DIR={staged}/.git git commit --no-edit",
+                        f"GIT_INDEX_FILE={staged}/.git/index git commit --no-edit"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, merging, both)
+
+    def test_a_merge_commit_named_by_git_dir_is_judged_in_that_clone(self):
+        shared = self.merging_clone()
+        other = self.repo_on("feature")
+        command = f"git --git-dir={shared}/.git commit --no-edit"
+        self.assert_shared_allowed(command, other, shared)
+        (shared / "peer.txt").write_text("peer\n")
+        git(shared, "add", "peer.txt")
+        self.assert_shared_denied(command, other, shared)
+
+    def test_a_bare_commit_with_no_merge_open_is_denied(self):
+        shared = self.repo_on("feature")
+        self.assert_shared_denied("git commit --no-edit", shared, shared)
+
+    def test_an_all_commit_during_a_merge_is_denied(self):
+        shared = self.merging_clone()
+        for command in ("git commit -a --no-edit", "git commit --all --no-edit", "git commit -i --no-edit",
+                        "git commit --include --no-edit", "git commit -ai --no-edit"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
 
     def test_a_commit_inside_a_compound_command_is_denied(self):
         shared = self.repo_on("feature")

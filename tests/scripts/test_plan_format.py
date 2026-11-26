@@ -43,6 +43,23 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class PlanFormatPathCharsTest(unittest.TestCase):
+    def test_plan_regexes_read_dollar_and_plus_paths(self):
+        found = plan_format.PATH_IN_BACKTICKS.findall("edit `src/routes/$id.tsx:12` and `src/routes/+page.svelte:3`")
+        self.assertEqual(found, ["src/routes/$id.tsx", "src/routes/+page.svelte"])
+        for line in ("src/routes/$id.ts:12 [bug] PLAN-IMPACT: x", "`src/routes/+page.svelte:3` PLAN-IMPACT: x"):
+            with self.subTest(line=line):
+                mark = plan_format.PLAN_CHANGE_MARK.match(line)
+                self.assertIsNotNone(mark)
+                self.assertTrue(line[:mark.end()].upper().endswith("PLAN-IMPACT"))
+
+    def test_a_file_entry_on_a_dollar_path_names_that_path(self):
+        plan_lines = ["- **File**: `src/routes/$id.tsx`", "- **Files**: `src/routes/+page.svelte:3`"]
+        section = {"start": 0, "end": len(plan_lines)}
+        paths = plan_format.file_entry_paths(plan_lines, section)
+        self.assertEqual(paths, {"src/routes/$id.tsx", "src/routes/+page.svelte"})
+
+
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
         ask = "plan impact: needs a column"
@@ -1408,6 +1425,22 @@ class PlanFileEditTest(unittest.TestCase):
         self.plan_path.write_text("## Phase 1: a\n\ntext\n")
         plan_format.append_deviation(self.plan_path, ["- note"])
         self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
+
+    def test_a_deviation_for_a_plan_folder_goes_to_the_plan_file_inside_it(self):
+        folder = self.plan_path.parent / "plan-folder"
+        folder.mkdir()
+        plan_file = folder / "plan.md"
+        plan_file.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(folder, ["- folder note"])
+        self.plan_path.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(self.plan_path, ["- folder note"])
+        self.assertEqual(self.plan_path.read_text(), plan_file.read_text())
+
+    def test_a_deviation_for_a_folder_with_no_plan_file_raises_the_plan_error(self):
+        folder = self.plan_path.parent / "empty-folder"
+        folder.mkdir()
+        with self.assertRaisesRegex(plan_format.PlanFormatError, "empty-folder"):
+            plan_format.append_deviation(folder, ["- note"])
 
     def test_a_ruling_entry_names_the_phase_decision_owner_ruling_and_disagreement(self):
         entry = plan_format.ruling_deviation("2", "Adopt plan change", "Pat Signer", "2026-10-25 09:30",

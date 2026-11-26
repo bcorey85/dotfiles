@@ -15,11 +15,13 @@ DEFERRED = "deferred"
 
 def effective_status(packet, repo):
     """A `cap-reached` packet reads as `deferred` when it holds no blocker (no `blockers` entry, no blocker in
-    findings_remaining), no open class and no scoped reviewer that could not run, its full check passed, and that
-    check's tree fingerprint (`full_check_tree`) equals the fingerprint of the work tree at `repo` now. A check older
-    than the last change, one with no fingerprint, or a repo that cannot be fingerprinted keeps `cap-reached`. Any
-    other status is returned as it is."""
+    findings_remaining), no open class and no scoped reviewer that could not run, and a passed full check covers the
+    tree at `repo` now: either a valid full-check receipt whose result is `passed` (lib/full_check_receipt.py, which a
+    commit of notes alone leaves valid), or the packet's passed full check whose tree fingerprint (`full_check_tree`)
+    equals the fingerprint of the work tree now. A check older than the last change, one with no fingerprint, or a
+    repo that cannot be fingerprinted keeps `cap-reached`. Any other status is returned as it is."""
     import full_check
+    import full_check_receipt
 
     if packet["status"] != CAP_REACHED:
         return packet["status"]
@@ -27,7 +29,12 @@ def effective_status(packet, repo):
         return CAP_REACHED
     if packet["open_classes"] or packet["unrun_reviewer"]:
         return CAP_REACHED
-    if packet["full_check"] != full_check.PASSED or not packet["full_check_tree"] or not repo:
+    if not repo:
+        return CAP_REACHED
+    receipt = full_check_receipt.valid_receipt(repo)
+    if receipt is not None and receipt["result"] == full_check.PASSED:
+        return DEFERRED
+    if packet["full_check"] != full_check.PASSED or not packet["full_check_tree"]:
         return CAP_REACHED
 
     found = reviewed_tree.fingerprint(repo)

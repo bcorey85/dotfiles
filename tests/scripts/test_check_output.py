@@ -143,6 +143,25 @@ class CheckOutputTest(unittest.TestCase):
         self.assertEqual(["FAIL  a.test.ts > totals", "AssertionError: expected 1 to be 2",
                           " ❯ a.test.ts:5:3"], check_output.failing_test_errors(output))
 
+    def test_a_failed_unittest_run_that_quotes_a_scope_start_failure_is_not_a_setup_fault(self):
+        output = ("FAIL: test_nested (test_memory_cap_scope.NestedCappedRunTest.test_nested)\n"
+                  "AssertionError: 0 != 1 : Failed to start transient scope unit: Unit run-p1-i2.scope was already "
+                  "loaded or has a fragment file.\n"
+                  "Failed to start transient scope unit: Unit run-p1-i2.scope was already loaded.\n"
+                  "Ran 19 tests in 2.1s\n\nFAILED (failures=1)\n")
+        self.assertFalse(check_output.is_setup_fault(1, output, self.repo, include_missing_modules=False))
+
+    def test_a_failing_test_line_without_a_summary_keeps_a_quoted_cannot_start_line_from_being_a_setup_fault(self):
+        outputs = {
+            "unittest": "FAIL: test_x (m.T)\nCommand not found: uv\n",
+            "pytest": ("FAILED t.py::x - boom\n"
+                       "Failed to start transient scope unit: Unit run-p1-i2.scope was already loaded.\n"),
+        }
+        for name, output in outputs.items():
+            with self.subTest(name):
+                self.assertFalse(check_output.is_setup_fault(1, output, self.repo, include_missing_modules=False),
+                                 f"{name}: a failing-test line means the run started")
+
     def test_failing_test_errors_cut_each_line_at_the_character_limit(self):
         output = "FAILED a - boom\n" + "y" * 1000
         quoted = check_output.failing_test_errors(output)
@@ -153,6 +172,8 @@ class CheckOutputTest(unittest.TestCase):
             "uv": "error: Failed to spawn: `pytest`\n  Caused by: No such file or directory (os error 2)",
             "poetry": "Command not found: pytest",
             "pipenv": "Error: the command pytest could not be found within PATH or Pipfile's [scripts].",
+            "systemd-run": ("Failed to start transient scope unit: Unit run-p123-i456.scope was already loaded or has "
+                            "a fragment file."),
         }
         for case, output in outputs.items():
             with self.subTest(case=case):
@@ -608,6 +629,44 @@ class CheckOutputTest(unittest.TestCase):
 
         self.assertEqual({"AssertionError: boom"}, check_output.failing_block_details(coloured))
         self.assertEqual("FAIL: test_x", check_output.normalized_log_line(coloured[0]))
+
+
+VITEST_ENV_GUARD = (
+    "Error: Refusing to run the test suite — the environment does not look disposable:\n"
+    "  - DATABASE_URL is not set\n\n"
+    " Test Files  1 failed (1)\n      Tests  no tests\n")
+PRISMA_UNSET = "error: Environment variable not found: DATABASE_URL.\n"
+DJANGO_REFUSED = ('django.db.utils.OperationalError: connection to server at "127.0.0.1", port 5432 failed: '
+                  "Connection refused\n")
+SH_TSC_MISSING = "sh: line 1: tsc: command not found\n"
+
+
+class EnvironmentGapTest(unittest.TestCase):
+    def test_a_failed_run_with_no_runner_summary_names_its_environment_gap_line(self):
+        rows = [
+            ("vitest env guard", VITEST_ENV_GUARD, "- DATABASE_URL is not set"),
+            ("prisma unset variable", PRISMA_UNSET, "error: Environment variable not found: DATABASE_URL."),
+            ("django refused connection", DJANGO_REFUSED, DJANGO_REFUSED.strip()),
+            ("node refused connection", "Error: connect ECONNREFUSED 127.0.0.1:5432\n",
+             "Error: connect ECONNREFUSED 127.0.0.1:5432"),
+            ("prisma unreachable", "Can't reach database server at `localhost:5432`\n",
+             "Can't reach database server at `localhost:5432`"),
+        ]
+        for name, output, expected in rows:
+            with self.subTest(name):
+                self.assertEqual(expected, check_output.environment_gap_line(1, output))
+
+    def test_a_code_frame_that_quotes_an_unset_phrase_is_no_environment_gap(self):
+        ruff_frame = '4 |     raise RuntimeError("DATABASE_URL is not set; ...")\n'
+        self.assertIsNone(check_output.environment_gap_line(1, ruff_frame))
+
+    def test_a_run_with_a_runner_summary_or_exit_zero_has_no_environment_gap(self):
+        ran_tests = "  - DATABASE_URL is not set\n Tests  2 failed | 3 passed (5)\n"
+        self.assertIsNone(check_output.environment_gap_line(1, ran_tests))
+        self.assertIsNone(check_output.environment_gap_line(0, PRISMA_UNSET))
+
+    def test_a_not_found_line_from_sh_names_the_missing_program(self):
+        self.assertEqual("tsc", check_output.missing_tool(127, SH_TSC_MISSING))
 
 
 class CheckVerdictTest(unittest.TestCase):

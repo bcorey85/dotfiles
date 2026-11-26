@@ -233,6 +233,12 @@ def _read_hunk_body(lines, start, hunk, position):
     return index
 
 
+# The flags that make `git diff` output parseable under any user config.
+DIFF_FLAGS = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff",
+              "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+              "--no-prefix")
+
+
 def parse_unified_diff(text):
     """The files of `git diff --no-prefix -U0` output as FileDiff objects, in order. Each Hunk holds the text after
     the second `@@` (git's name of the enclosing function), the removed lines as (old line number, text) and the

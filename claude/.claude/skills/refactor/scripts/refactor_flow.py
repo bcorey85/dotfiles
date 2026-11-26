@@ -170,11 +170,9 @@ def empty_tree():
 
 
 def diff_output(span, *args, pathspecs=()):
-    """Run `git diff` over a span with the flags that make its output parseable under any user config."""
+    """Run `git diff` over a span with source_text.DIFF_FLAGS."""
     limit = ["--", *pathspecs] if pathspecs else []
-    done = git("--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
-               "--no-textconv", "--no-relative", "--no-prefix", *args, span, *limit,
-               check=False)
+    done = git(*source_text.DIFF_FLAGS, *args, span, *limit, check=False)
     if done.returncode == 0:
         return done.stdout
     if "no merge base" in done.stderr:

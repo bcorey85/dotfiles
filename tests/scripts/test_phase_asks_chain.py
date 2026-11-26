@@ -62,6 +62,10 @@ class PhaseAsksChainTest(unittest.TestCase):
         self.home.mkdir()
         self.scripts = self.tmp / "claude" / "scripts"
         shutil.copytree(toolkit_paths.SCRIPTS_DIR, self.scripts, ignore=shutil.ignore_patterns("__pycache__"))
+        # review_loop_nearest finds the refactor skill's scripts two folders above the review scripts.
+        shutil.copytree(toolkit_paths.CLAUDE_DIR / "skills" / "refactor" / "scripts",
+                        self.tmp / "claude" / "skills" / "refactor" / "scripts",
+                        ignore=shutil.ignore_patterns("__pycache__"))
         self.plant_loop_stand_in()
         self.ledger_env = fake_ledger.install(self.tmp)
         self.repo = self.tmp / "repo"

@@ -115,6 +115,7 @@ from review_loop_findings import (
 from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_intake import ReviewIntake
 from review_loop_named_tests import NamedTestRuns
+from review_loop_nearest import nearest_functions_text
 from review_loop_partial_fix import PartialFixRuns, coder_failure_blocker
 from review_loop_pass_checks import PassChecks
 from review_loop_pass_names import (
@@ -440,9 +441,12 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
     def review_request(self, dispatch):
         """The ReviewRequest (role, agent, prompt) of one reviewer of this round."""
         agent, owned = dispatch
+        # Only the first review reads the whole diff; the shape pass runs for that one smell-reviewer dispatch.
+        first_smell = agent == "smell-reviewer" and not self.round_two_fix_diff_path
+        nearest = nearest_functions_text(self.repo, self.review_base, owned) if first_smell else ""
         prompt = reviewer_prompt(self.repo, agent, owned, self.prior_issues, self.round_two_fix_diff_path,
                                  tuple(ask.text for ask in self.asks), self.brief, self.test_strategy,
-                                 tuple(self.no_code_rulings), self.ruled_out)
+                                 tuple(self.no_code_rulings), self.ruled_out, nearest)
         lens = getattr(owned, "lens", "")
         if lens:
             prompt += "\n" + lens

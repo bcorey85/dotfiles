@@ -82,7 +82,7 @@ def reverted_clause(reverted_texts):
     none."""
     if not reverted_texts:
         return ""
-    return ("; filed as a user-only ask unless it repeats one the session rejected, their fix was an approval-only "
+    return ("; filed as an approval ask unless it repeats one the session rejected, their fix was an approval-only "
             "edit the loop reverted: "
             + "; ".join(reverted_texts))
 

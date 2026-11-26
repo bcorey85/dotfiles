@@ -124,7 +124,7 @@ def readable_directory(directory):
 def option_path(options, name, directory):
     """The path the last `name` option of git's own options gives, in `--name value` or `--name=value` form, joined to
     `directory`; None when there is none."""
-    values = list(shell_command.git_option_values(options, name))
+    values = list(shell_command.option_values(options, name))
     if not values:
         return None
     return os.path.join(directory, os.path.expanduser(values[-1]))
@@ -176,7 +176,7 @@ def readable_option_words(resolved_words, blanked_words):
 def config_env_pairs(options):
     """{lowercased key: lowercased variable name} for each `--config-env key=VAR` or `--config-env=key=VAR` option."""
     pairs = {}
-    for setting in shell_command.git_option_values(options, "--config-env"):
+    for setting in shell_command.option_values(options, "--config-env"):
         key, _equals, variable = setting.partition("=")
         pairs[key.lower()] = variable.lower()
     return pairs

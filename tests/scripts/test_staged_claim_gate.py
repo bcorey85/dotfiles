@@ -285,6 +285,27 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_check_of_what_is_staged_passes_with_an_empty_index(self):
+        for message in ("It checks the skill list against what is staged.",
+                        "It lists whatever is staged.", "It keeps whichever are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_first_person_or_past_tense_claim_after_what_still_blocks_with_an_empty_index(self):
+        for message in ("Here is what I staged.", "Here is what I've staged.", "Here is what I staged: a.txt.",
+                        "Here is what was staged for you to commit."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_copula_before_what_is_staged_is_still_a_claim_with_an_empty_index(self):
+        for message in ("Here is what is staged: app.py and lib.py.", "This is what is staged now."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_claim_naming_another_worktree_by_path_passes_when_its_index_holds_the_files(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        self.assert_passes(f"{linked}/a.txt is staged.")
+
     def test_a_whether_in_an_earlier_clause_does_not_hide_the_claim(self):
         self.assert_blocked("I checked whether the hash moved, and all files are staged.")
 
@@ -696,6 +717,36 @@ class PermissionQuestionTest(unittest.TestCase):
                         "The reviewer asked twice. Want me to reply on the thread?"):
             with self.subTest(message=message):
                 self.assert_passes(message)
+
+    def test_a_question_about_a_tracker_write_passes_but_a_local_file_edit_is_sent_back(self):
+        for message in ("The two tickets depend on each other. Shall I add a Jira link from A to B?",
+                        "The ticket has no tag yet. Want me to label the ticket?",
+                        "Want me to comment on the PR?",
+                        "Want me to assign the issue to Sam?",
+                        "Want me to transition the Jira ticket?",
+                        "Want me to comment on Linear?",
+                        "Want me to add a label in GitLab?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("Want me to add linear regression?",
+                        "Want me to comment on GitHub cli?",
+                        "Want me to edit GitLab pages?",
+                        "Want me to add the github.py hook?",
+                        "Want me to edit tickets.py?",
+                        "Want me to add a GitHub actions workflow?",
+                        "Want me to label the variables?",
+                        "Want me to address the reference?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_local_edit_where_the_tracker_noun_is_a_modifier_is_sent_back(self):
+        for message in ("Should I comment out the PR check in run.sh?",
+                        "Should I add the ticket number to the commit message?",
+                        "Want me to add the GitHub link to the README?",
+                        "Should I edit the issue template in docs?",
+                        "Should I link the PR helper into lib?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
 
     def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
         for message in ("Want me to move the helper in github.py?",

@@ -59,6 +59,14 @@ class ChangedRangesTest(unittest.TestCase):
         self.assertFalse(diff_ranges.in_ranges([(20, 22)], 22 + slack + 1))
 
 
+class RangesTextTest(unittest.TestCase):
+    def test_single_lines_stand_alone_and_runs_join_with_a_dash(self):
+        self.assertEqual(diff_ranges.ranges_text([(3, 5), (9, 9)]), "3-5, 9")
+
+    def test_no_ranges_is_empty_text(self):
+        self.assertEqual(diff_ranges.ranges_text([]), "")
+
+
 class FixInducedTagTest(unittest.TestCase):
     def setUp(self):
         self.ranges = diff_ranges.changed_ranges(fix_diff())

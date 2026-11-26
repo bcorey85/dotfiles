@@ -711,7 +711,7 @@ def own_session_may_have_written(repo, dirty, since):
     own_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not own_id:
         return False
-    transcripts = session_registry.session_transcripts(own_id)
+    transcripts = session_registry.session_and_subagent_transcripts(own_id)
     if not transcripts:
         return False
     wrote = wrote_a_dirty_path(repo, transcripts, dirty, since)
@@ -721,7 +721,7 @@ def own_session_may_have_written(repo, dirty, since):
 def other_session_wrote(repo, row, dirty, since):
     """`wrote_a_dirty_path` for another live session's transcripts; None when it has no transcript or one cannot be
     read."""
-    transcripts = session_registry.session_transcripts(row.get("sessionId"))
+    transcripts = session_registry.session_and_subagent_transcripts(row.get("sessionId"))
     if not transcripts:
         return None
     return wrote_a_dirty_path(repo, transcripts, dirty, since)

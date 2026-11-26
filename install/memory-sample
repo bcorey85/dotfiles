@@ -1,0 +1,99 @@
+#!/bin/bash
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_info() { echo -e "${YELLOW}→${NC} $1"; }
+
+# memory-sample — runs ~/.claude/scripts/tools/memory_sample.py every minute.
+# Each run appends one JSON line (time, MemAvailable, the top 15 memory holders
+# by command and by herdr workspace) to
+# ${XDG_STATE_HOME:-~/.local/state}/memory-sample/samples.jsonl, rotated at 5 MB
+# to samples.jsonl.1. After a freeze, the last lines show who held the memory.
+#   macOS: LaunchAgent (~/Library/LaunchAgents/com.dotfiles.memory-sample.plist)
+#          with StartInterval 60.
+#   Linux: systemd user timer, OnBootSec + OnUnitActiveSec=1min.
+# Skips (not fails) if python3 or the stowed script is absent — re-run after
+# install/stow.
+
+SCRIPT="$HOME/.claude/scripts/tools/memory_sample.py"
+
+if ! command -v python3 &>/dev/null || [[ ! -f "$SCRIPT" ]]; then
+  print_info "python3 or $SCRIPT missing — skipping (run install/stow, then re-run install/memory-sample)"
+  exit 0
+fi
+
+PYTHON="$(command -v python3)"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+  PLIST="$HOME/Library/LaunchAgents/com.dotfiles.memory-sample.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+  xml_escape() {
+    local text="${1//&/&amp;}"
+    text="${text//</"&lt;"}"
+    printf '%s' "${text//>/"&gt;"}"
+  }
+  PYTHON_XML="$(xml_escape "$PYTHON")"
+  SCRIPT_XML="$(xml_escape "$SCRIPT")"
+
+  cat >"$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dotfiles.memory-sample</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$PYTHON_XML</string>
+    <string>$SCRIPT_XML</string>
+  </array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/memory-sample.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/memory-sample.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+  print_success "LaunchAgent loaded — every minute, logs at ~/Library/Logs/memory-sample.log"
+  print_info "test now with: launchctl start com.dotfiles.memory-sample"
+elif command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null; then
+  UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$UNIT_DIR"
+
+  cat >"$UNIT_DIR/memory-sample.service" <<EOF
+[Unit]
+Description=Append one memory sample (top holders by command and herdr workspace)
+
+[Service]
+Type=oneshot
+ExecStart="$PYTHON" "$SCRIPT"
+EOF
+
+  cat >"$UNIT_DIR/memory-sample.timer" <<EOF
+[Unit]
+Description=Run memory-sample every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable --now memory-sample.timer
+  print_success "systemd user timer enabled — every minute"
+  print_info "test now with: systemctl --user start memory-sample.service"
+else
+  print_info "no launchd or systemd user session (WSL?) — run $SCRIPT from cron"
+  exit 0
+fi

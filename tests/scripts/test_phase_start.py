@@ -597,6 +597,112 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), started_from)
         self.assertEqual(json.loads((self.repo / ".git/code-phase/start.json").read_text())["head"], started_from)
 
+    def commit_plan(self, first_mark, message, second_mark=" "):
+        """Commit a plan file with its phases marked `first_mark` and `second_mark` ("x" ticks one)."""
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text(f"## Phase Status\n\n- [{first_mark}] Phase 1: first (risk: low)\n"
+                             f"- [{second_mark}] Phase 2: second (risk: low)\n\n## Phase 1: first\n")
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-q", "-m", message)
+
+    def test_resume_after_a_commit_that_ticked_a_phase_starts_a_new_record_at_head(self):
+        self.commit_plan(" ", "the plan")
+        self.phase_start()
+        self.commit_plan("x", "phase 1, committed and ticked")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), head)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 1 of docs/plans/x/plan.md was ticked since the start record; starting a new record at "
+                      "HEAD", done.stderr)
+
+    def test_resume_after_a_commit_that_ticked_no_phase_keeps_the_recorded_head(self):
+        self.commit_plan(" ", "the plan")
+        started_from = self.phase_start().stdout.strip()
+        (self.repo / "mine.py").write_text("# the phase's change\n")
+        git(self.repo, "commit", "-q", "-am", "a commit that ticks nothing")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+
+    def test_resume_after_a_commit_that_adds_a_ticked_plan_starts_a_new_record_at_head(self):
+        self.phase_start()
+        self.commit_plan("x", "a plan that is already ticked")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.stdout.strip(), head)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 1 of docs/plans/x/plan.md was ticked", done.stderr)
+
+    def test_resume_after_a_commit_that_ticks_phase_2_with_phase_1_already_done_starts_a_new_record_at_head(self):
+        self.commit_plan("x", "the plan, phase 1 already ticked")
+        self.phase_start()
+        self.commit_plan("x", "phase 2, committed and ticked", second_mark="x")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 2 of docs/plans/x/plan.md was ticked", done.stderr)
+
+    def test_resume_after_a_markdown_edit_that_ticks_nothing_keeps_the_recorded_head(self):
+        self.commit_plan("x", "the plan, phase 1 already ticked")
+        started_from = self.phase_start().stdout.strip()
+        (self.repo / "README.md").write_text("a readme\n")
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.write_text(plan_file.read_text() + "\nA note added to the plan.\n")
+        git(self.repo, "add", "README.md", "docs")
+        git(self.repo, "commit", "-q", "-m", "markdown edits that tick nothing")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertNotIn("was ticked", done.stderr)
+
+    def test_resume_after_a_merge_that_brings_in_a_ticked_plan_keeps_the_recorded_head(self):
+        started_from = self.phase_start().stdout.strip()
+        git(self.repo, "checkout", "-q", "-b", "side")
+        self.commit_plan("x", "another plan, ticked, on a side branch")
+        git(self.repo, "checkout", "-q", "-")
+        (self.repo / "mine.py").write_text("# the phase's change\n")
+        git(self.repo, "commit", "-q", "-am", "a commit that ticks nothing")
+        git(self.repo, "merge", "-q", "--no-ff", "-m", "merge the side branch", "side")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertNotIn("was ticked", done.stderr)
+
+    def test_resume_keeps_the_record_and_names_a_phase_status_line_that_does_not_parse(self):
+        started_from = self.phase_start().stdout.strip()
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("## Phase Status\n\n- [x] Phase 1: first (risk: low)\n- [x] no phase number here\n")
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-q", "-m", "a plan with a bad status line")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertIn("docs/plans/x/plan.md:4", done.stderr)
+        self.assertIn("Rewrite it as `- [ ] Phase <id>: <title>`", done.stderr)
+        self.assertNotIn("was ticked", done.stderr)
+
     def other_repo_with_recorded_stop(self):
         """A second repo whose run folder holds this session's recorded stop; the home is a temp folder."""
         other = self.repo.parent / "other"

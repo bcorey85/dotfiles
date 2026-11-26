@@ -30,8 +30,10 @@ MAX_ERROR_LINE_CHARS = 300
 # Exit codes and runner text that mean the check never ran: the shell found no program or could not run it, uv,
 # poetry or pipenv could not start one, or the package manager found no package manifest where it ran.
 COMMAND_NOT_RUN_CODES = {126, 127}
+# The last form is systemd-run failing to start the memory-capped scope the check runs in.
 RUNNER_CANNOT_START = re.compile(r"Failed to spawn: |Command not found: "
-                                 r"|the command \S+ could not be found within PATH")
+                                 r"|the command \S+ could not be found within PATH"
+                                 r"|Failed to start transient scope unit: ")
 # A shell name, with an optional path.
 SHELL_PROGRAM = r"(?:\S*/)?(?:ba|z|k|da)?sh"
 # A word with no `/` or `:`, which a shell looks up on PATH; a path (`./scripts/foo.sh`) that was not found is a
@@ -201,22 +203,32 @@ def failing_test_lines(output):
     return list(dict.fromkeys(names))[:MAX_FAILING_TEST_LINES]
 
 
+def reports_test_failure(plain):
+    """True when ANSI-free output holds a runner summary that counts failures or a failing-test line."""
+    return bool(SUMMARY_FAILURE.search(plain) or failing_test_lines(plain))
+
+
 def cannot_start_line(code, output):
     """The first output line that shows the tool could not start, or None. A passing run, a run whose runner summary
     reports failures and a run with failing-test lines never read as one: a test's own output may quote the text."""
     plain = strip_ansi(output)
-    if code == 0 or SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
+    if code == 0 or reports_test_failure(plain):
         return None
 
     for line in plain.splitlines():
         stripped = line.strip()
-        # Match the runner text at the line start, after the tool's own `error: ` prefix, so a traceback line such as
-        # `AssertionError: Command not found: uv` does not read as a failure to start.
-        runner_text = re.sub(r"^error: ", "", stripped, flags=re.IGNORECASE)
-        if RUNNER_CANNOT_START.match(runner_text) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
+        if is_runner_cannot_start_line(stripped) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
             return stripped
 
     return None
+
+
+def is_runner_cannot_start_line(stripped):
+    """True when a stripped output line is a runner's cannot-start line. The runner text must open the line, after the
+    tool's own `error: ` prefix, so a traceback line such as `AssertionError: Command not found: uv` does not read as
+    one."""
+    runner_text = re.sub(r"^error: ", "", stripped, flags=re.IGNORECASE)
+    return bool(RUNNER_CANNOT_START.match(runner_text))
 
 
 def missing_tool(code, output):
@@ -469,7 +481,10 @@ def is_setup_fault(code, output, repo_root, include_missing_modules=True):
     if TESTS_FAILED.search(plain):
         return False
 
-    if RUNNER_CANNOT_START.search(plain) or NO_PACKAGE_MANIFEST.search(plain):
+    # A test's own output may quote a cannot-start line: a run that reports a failed test is not one.
+    runner_cannot_start = (not reports_test_failure(plain)
+                           and any(is_runner_cannot_start_line(line.strip()) for line in plain.splitlines()))
+    if runner_cannot_start or NO_PACKAGE_MANIFEST.search(plain):
         return True
 
     if PACKAGE_MANAGER_MISMATCH.search(plain):
@@ -523,7 +538,7 @@ def is_test_db_collision(output):
     if blocks:
         return all(TEST_DB_COLLISION.search(block) for block in blocks)
 
-    if SUMMARY_FAILURE.search(plain) or failing_test_lines(plain):
+    if reports_test_failure(plain):
         return False
 
     return TEST_DB_COLLISION.search(plain) is not None

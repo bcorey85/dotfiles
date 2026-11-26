@@ -156,9 +156,30 @@ class ChangedPathPartsTest(unittest.TestCase):
 
     def test_a_root_config_change_runs_both_parts(self):
         for paths in (["Makefile.local"], ["pnpm-lock.yaml"], [".github/workflows/ci.yml"],
-                      ["src/App.tsx", "docs/notes.md"]):
+                      ["src/App.tsx", "Makefile.local"]):
             with self.subTest(paths=paths):
                 self.assert_runs_each_part_alone(self.discovered_for(paths))
+
+    def test_a_code_file_under_a_docs_folder_keeps_its_kind(self):
+        paths = ["src/docs/Page.tsx", "app/views.py"]
+        self.assert_runs_each_part_alone(self.discovered_for(paths))
+
+    def test_doc_paths_beside_frontend_files_do_not_widen_the_check_to_every_part(self):
+        paths = ["src/App.tsx", "docs/plans/x/plan.md"]
+        self.assertEqual("npm run lint", self.discovered_for(paths))
+
+    def test_doc_paths_beside_python_files_do_not_widen_the_check_to_every_part(self):
+        paths = ["app/views.py", "docs/x.md"]
+        self.assertEqual("python3 -m pytest", self.discovered_for(paths))
+
+    def test_a_non_markdown_file_under_docs_still_widens_the_check_to_every_part(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["src/App.tsx", "docs/openapi.yaml"]))
+
+    def test_a_markdown_file_outside_docs_widens_the_check_to_every_part(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["src/App.tsx", "README.md"]))
+
+    def test_a_docs_only_change_runs_every_part(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["docs/plans/x/plan.md", "docs/x.md"]))
 
     def test_no_changed_paths_given_runs_both_parts(self):
         self.assert_runs_each_part_alone(self.discovered_for(None))

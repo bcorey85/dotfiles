@@ -96,12 +96,16 @@ def packet_message(outcome):
         summary = full_check.summary_text(outcome["full_check"], outcome["full_check_summaries"])
         if summary is not None:
             fields["full_check_summary"] = script_utils.one_line(summary, limit=None)
+    if outcome["base_used"]:
+        fields["base_used"] = outcome["base_used"]
+        if outcome["given_base"]:
+            fields["given_base"] = outcome["given_base"]
     if outcome["scoped_tests"]:
         fields["scoped_tests"] = script_utils.one_line(outcome["scoped_tests"], limit=None)
     if outcome["check_overridden"]:
         fields["check_overridden"] = handback.CHECK_OVERRIDDEN
     for key in ("left_alone", "check_changed", "check_rewrote_edited", "check_created", "tool_fault",
-                "no_code_ruling_broken", "adopted_unapplied", "against_ruling"):
+                "no_code_ruling_broken", "adopted_unapplied", "against_ruling", "handback_edits"):
         if outcome.get(key):
             fields[key] = outcome[key]
     return json.dumps(fields, ensure_ascii=False)
@@ -111,6 +115,7 @@ def packet_message(outcome):
 EMPTY_OUTCOME = {
     "status": "", "iter": 0, "review_round": 0,
     "fix_rounds": 0, "post_cap_passes": [], "fixed": [], "skipped_fp": [], "held_unfixed": [], "blockers": [],
+    "base_used": "", "given_base": "",
     "open_fixes": [], "asks": [], "ask_gates": {}, "user_only_asks": [], "dropped_asks": [], "ask_ids": {},
     "ask_rows": [],
     "class_closure": "", "open_classes": [], "left_alone": [], "full_check": "", "full_check_command": "",
@@ -118,6 +123,7 @@ EMPTY_OUTCOME = {
     "check_changed": [], "check_rewrote_edited": [], "check_created": [], "files_touched": [], "nits": [],
     "unreviewed_fix": False, "scoped_tests": "", "tool_fault": "", "plan_impacts": [],
     "no_code_ruling_broken": [], "check_overridden": False, "adopted_unapplied": [], "against_ruling": [],
+    "handback_edits": [],
 }
 
 

@@ -20,6 +20,10 @@ COMPLEX_FUNCTION = "def classify(value):\n" + "".join(
     f"    if value == {number}:\n        return {number}\n" for number in range(11)) + "    return -1\n"
 
 
+def last_line(output):
+    return [line for line in output.splitlines() if line.strip()][-1]
+
+
 @unittest.skipUnless(shutil.which("ruff"), "ruff is not installed")
 class LintScriptTest(unittest.TestCase):
     def setUp(self):
@@ -30,9 +34,11 @@ class LintScriptTest(unittest.TestCase):
         shutil.copy(LINT_SH, self.tree / "tests" / "lint.sh")
         shutil.copy(RUFF_TOML, self.tree / "ruff.toml")
 
-    def lint(self, *given_files, cwd=None):
+    def lint(self, *given_files, cwd=None, merged_output=False):
+        stderr_target = subprocess.STDOUT if merged_output else subprocess.PIPE
         return subprocess.run(["bash", str(self.tree / "tests" / "lint.sh"), *given_files],
-                              cwd=cwd or self.tree, capture_output=True, text=True, timeout=60)
+                              cwd=cwd or self.tree, stdout=subprocess.PIPE, stderr=stderr_target, text=True,
+                              timeout=60)
 
     def write_complex_function(self, relative_path):
         script = self.tree / relative_path
@@ -105,6 +111,7 @@ class LintScriptTest(unittest.TestCase):
             gated_file.parent.mkdir(parents=True, exist_ok=True)
             gated_file.write_text("")
         (self.tree / "claude" / ".claude" / "skills").mkdir(parents=True)
+        (self.tree / "scripts" / ".local" / "lib").mkdir(parents=True)
         (self.tree / "tests" / "scripts").mkdir()
         (self.tree / "tests" / "duplicate_code.py").write_text("")
 
@@ -125,6 +132,100 @@ class LintScriptTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
         self.assertIn("F401", finished.stdout)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_shared_script_lib(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "scripts" / ".local" / "lib" / "x.py").write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_toolkit_scripts(self):
+        self.prepare_full_lint_tree()
+        unused_import = self.tree / "claude" / ".claude" / "scripts" / "tools" / "x.py"
+        unused_import.parent.mkdir(parents=True, exist_ok=True)
+        unused_import.write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_toolkit_skills(self):
+        self.prepare_full_lint_tree()
+        skill_script = self.tree / "claude" / ".claude" / "skills" / "some_skill" / "scripts" / "x.py"
+        skill_script.parent.mkdir(parents=True)
+        skill_script.write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_duplicate_code_test_helper(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "tests" / "duplicate_code.py").write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def assert_last_line_names_one_ruff_error(self, finished):
+        output = finished.stdout
+        self.assertEqual(finished.returncode, 1, output)
+        self.assertEqual(last_line(output), "lint failed: ruff rules (1 error)", output)
+
+    def test_a_failing_given_files_run_ends_with_a_line_naming_the_failed_step(self):
+        script = self.tree / UNGATED_PATH
+        script.parent.mkdir(parents=True)
+        script.write_text("import os\n")
+
+        finished = self.lint(UNGATED_PATH, merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_a_ruff_run_that_fails_without_an_error_count_says_so_on_the_last_line(self):
+        script = self.tree / UNGATED_PATH
+        script.parent.mkdir(parents=True)
+        script.write_text("x = 1\n")
+        (self.tree / "ruff.toml").write_text("this is [not valid toml\n")
+
+        finished = self.lint(UNGATED_PATH, merged_output=True)
+
+        self.assertEqual(finished.returncode, 1, finished.stdout)
+        self.assertEqual(last_line(finished.stdout), "lint failed: ruff rules (failed, no error count)",
+                         finished.stdout)
+
+    def test_a_complexity_report_that_cannot_run_claims_no_count(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "ruff.toml").write_text("this is [not valid toml\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assertIn("complexity report could not run (ruff exit 2): not a failure", finished.stdout)
+        self.assertNotIn("over the limit", finished.stdout)
+
+    def test_a_failing_full_run_ends_with_a_line_naming_the_failed_step(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "tests" / "scripts" / "unused_import.py").write_text("import os\n")
+        self.write_complex_function(UNGATED_PATH)
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+        # The only summary line is the ruff rules step's own; the complexity report adds none.
+        summary_lines = re.findall(r"^Found \d+ errors?", finished.stdout, re.MULTILINE)
+        self.assertEqual(len(summary_lines), 1, finished.stdout)
+        self.assertIn("complexity report only (1 function over the limit): not a failure", finished.stdout)
+
+    def test_a_failing_run_names_every_failed_step_with_its_error_count(self):
+        self.prepare_full_lint_tree()
+        self.write_complex_function(GATED_PATH)
+        (self.tree / "tests" / "scripts" / "unused_import.py").write_text("import os\nimport sys\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assertEqual(last_line(finished.stdout),
+                         "lint failed: ruff rules (2 errors), complexity gate (1 error)", finished.stdout)
 
 
 if __name__ == "__main__":

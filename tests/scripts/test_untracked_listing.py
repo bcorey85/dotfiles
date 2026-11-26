@@ -29,8 +29,8 @@ class UntrackedListingTest(unittest.TestCase):
 
         self.assertEqual([(1, "a = 1"), (2, "b = 2")], entries["text.py"].added_lines)
         self.assertEqual("", entries["text.py"].kind)
-        self.assertEqual(untracked_listing.UNTRACKED_BINARY, entries["blob.bin"].kind)
-        self.assertEqual(untracked_listing.UNTRACKED_SYMLINK, entries["link.py"].kind)
+        self.assertEqual(untracked_listing.change_added_ranges.UNTRACKED_BINARY, entries["blob.bin"].kind)
+        self.assertEqual(untracked_listing.change_added_ranges.UNTRACKED_SYMLINK, entries["link.py"].kind)
 
     def test_a_git_failure_raises_the_listing_error(self):
         with (mock.patch.object(untracked_listing.script_utils, "untracked_paths", return_value=None),

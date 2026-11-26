@@ -391,7 +391,9 @@ def run_check_command(repo, check_command, log, timeout, env, on_start):
     limit and was killed with its process group. On a machine with a systemd user manager the command runs inside the
     shared capped slice; `systemd-run --scope` execs it in place, so the pid and the process group stay the check's."""
     command, use_shell = memory_cap_scope.shell_popen_args(check_command)
-    with pathlib.Path(log).open("w") as handle:
+    log_path = pathlib.Path(log)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w") as handle:
         process = subprocess.Popen(command, shell=use_shell, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=env, start_new_session=True)
         if on_start:

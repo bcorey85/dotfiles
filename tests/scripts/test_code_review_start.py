@@ -287,6 +287,112 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertIn("phase.py", diff_names)
         self.assertNotIn("integration.py", diff_names)
 
+    def master_and_feature(self):
+        """Commit f.py on master, branch feature off it with phase.py. Returns the fork point."""
+        (self.repo / "f.py").write_text("base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "master")
+        fork_point = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "-b", "feature")
+        (self.repo / "phase.py").write_text("the phase\n")
+        self.git("add", "phase.py")
+        self.git("commit", "-q", "-m", "the phase")
+        (self.repo / "handoff.txt").write_text("  files:\n    - path: x\n      why: the phase\n")
+        return fork_point
+
+    def merge_side_branch_into_feature(self, fork_point):
+        self.git("checkout", "-q", "-b", "side", fork_point)
+        (self.repo / "side.py").write_text("from the side branch\n")
+        self.git("add", "side.py")
+        self.git("commit", "-q", "-m", "side change")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-ff", "-m", "merge side", "side")
+
+    def advance_master(self):
+        self.git("checkout", "-q", "master")
+        (self.repo / "master_only.py").write_text("master moved\n")
+        self.git("add", "master_only.py")
+        self.git("commit", "-q", "-m", "master moved")
+        self.git("checkout", "-q", "feature")
+        return self.git("rev-parse", "master")
+
+    def dry_run_result(self, base):
+        return subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+                               "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+    def dry_run(self, base):
+        done = self.dry_run_result(base)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header, _, handoff = done.stdout.partition("\n\n")
+        return header.splitlines(), handoff
+
+    def test_a_moved_base_with_a_merge_on_the_branch_is_folded_from_the_merge_base(self):
+        fork_point = self.master_and_feature()
+        self.merge_side_branch_into_feature(fork_point)
+        master_tip = self.advance_master()
+
+        header_lines, handoff = self.dry_run("master")
+
+        base_line = next(line for line in header_lines if line.startswith("base: "))
+        review_base = base_line.removeprefix("base: ")
+        self.assertNotIn(review_base, (fork_point, master_tip))
+        self.assertIn("given-base: master", header_lines)
+        base_files = self.git("ls-tree", "-r", "--name-only", review_base).splitlines()
+        self.assertIn("side.py", base_files)
+        self.assertNotIn("master_only.py", base_files)
+        self.assertIn("- path: phase.py", handoff)
+        self.assertNotIn("side.py", handoff)
+
+    def test_an_ancestor_base_with_a_merge_on_the_branch_names_the_typed_base_as_given(self):
+        fork_point = self.master_and_feature()
+        self.merge_side_branch_into_feature(fork_point)
+
+        header_lines, handoff = self.dry_run("master")
+
+        base_line = next(line for line in header_lines if line.startswith("base: "))
+        self.assertNotEqual(base_line, f"base: {fork_point}")
+        self.assertIn("given-base: master", header_lines)
+        self.assertNotIn("side.py", handoff)
+
+    def test_a_base_with_no_merge_base_stops_the_run_with_the_recovery_command(self):
+        (self.repo / "f.py").write_text("base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "master")
+        self.git("checkout", "-q", "--orphan", "unrelated")
+        (self.repo / "other.py").write_text("unrelated\n")
+        self.git("add", "other.py")
+        self.git("commit", "-q", "-m", "unrelated")
+        self.git("checkout", "-q", "master")
+        (self.repo / "handoff.txt").write_text("handoff\n")
+
+        done = self.dry_run_result("unrelated")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("no merge base", done.stderr)
+        self.assertIn("git merge-base HEAD unrelated", done.stderr)
+
+    def test_a_base_branch_that_moved_ahead_is_replaced_by_the_merge_base_and_both_are_named(self):
+        fork_point = self.master_and_feature()
+        self.advance_master()
+
+        header_lines, handoff = self.dry_run("master")
+
+        self.assertIn(f"base: {fork_point}", header_lines)
+        self.assertIn("given-base: master", header_lines)
+        self.assertIn("- path: phase.py", handoff)
+
+    def test_an_ancestor_base_ref_writes_no_given_base_line(self):
+        fork_point = self.master_and_feature()
+
+        header_lines, _ = self.dry_run("master")
+
+        self.assertIn(f"base: {fork_point}", header_lines)
+        self.assertFalse([line for line in header_lines if line.startswith("given-base")])
+
     def test_a_merge_that_cannot_fold_into_the_base_stops_the_run_naming_it(self):
         (self.repo / "f.py").write_text("base\n")
         self.git("add", "-A")

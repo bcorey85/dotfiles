@@ -1,12 +1,8 @@
 """The untracked files of a work tree, each read as numbered text lines or marked with why it is not text."""
-import pathlib
 from typing import NamedTuple
 
+import change_added_ranges
 import script_utils
-
-UNTRACKED_SYMLINK = "symlink"
-UNTRACKED_NOT_A_FILE = "not a file"
-UNTRACKED_BINARY = "binary"
 
 
 class UntrackedListError(Exception):
@@ -15,8 +11,8 @@ class UntrackedListError(Exception):
 
 class UntrackedFile(NamedTuple):
     path: str
-    added_lines: list  # (line number, text) pairs; empty when kind is set
-    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
+    added_lines: list  # (line number, text) pairs; empty unless kind is UNTRACKED_TEXT
+    kind: str  # why a file is not read as text (change_added_ranges.UNTRACKED_*); UNTRACKED_TEXT for text
 
 
 def untracked_files(root):
@@ -30,12 +26,5 @@ def untracked_files(root):
 
 def classify_untracked(root, name):
     """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    full_path = pathlib.Path(root) / name
-    if full_path.is_symlink():
-        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
-    if not full_path.is_file():
-        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
-    numbered = script_utils.read_text_lines(full_path)
-    if numbered is None:
-        return UntrackedFile(name, [], UNTRACKED_BINARY)
-    return UntrackedFile(name, numbered, "")
+    read = change_added_ranges.read_untracked(root, name)
+    return UntrackedFile(name, read.lines, read.kind)

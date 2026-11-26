@@ -2,6 +2,7 @@
 """Remove finished linked git worktrees, and optionally merged local branches.
 
 Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
+       herdr-worktree-prune --check <path>
 
   (no option)  list only: one line per worktree it would remove (path, branch,
                size), one line per kept worktree with the reason, then totals.
@@ -20,15 +21,28 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                in a worktree whose folder exists (such a worktree shows as
                detached).
 
+  --check <path>
+               judge the one worktree at <path> by the conditions of its own
+               state (everything below except the current worktree, open lane,
+               process and herdr conditions, which a lane close clears itself).
+               Prints one JSON object on stdout and exits 0:
+               {"path", "branch", "verdict": "remove"|"keep", "code", "reason"}
+               (code and reason are null on remove). It runs the same start-up
+               fetch, and reads only the worktree list and the stashes. A path
+               that is not a worktree entry of the repo, and any start-up
+               failure, exit 1 with the message on stderr; a check that cannot
+               run is a keep with code `cannot check`. A call with no path or
+               extra arguments exits 2 with the usage.
+
 A branch is deleted with `git update-ref -d refs/heads/<name> <tip>` on the tip
 just checked as an ancestor of the compare ref, never forced: git refuses when
 the tip moved in between. Then its `branch.<name>` config section is removed.
 A branch whose tip is ahead of its own upstream is still deleted when the
 compare ref holds it; its list line says so.
 
-Run it from the main checkout or any linked worktree of a repo. Both modes
-first run `git fetch --quiet origin <default branch>` (list mode too: it
-updates only the remote-tracking ref origin/<default branch>) and compare with
+Run it from the main checkout or any linked worktree of a repo. Every mode
+first runs `git fetch --quiet origin <default branch>` (list mode too: it
+updates only the remote-tracking ref origin/<default branch>) and compares with
 that ref. They stop, remove nothing and exit 1 when there is no git repo, no
 origin remote, no refs/remotes/origin/HEAD (`git remote set-head origin
 --auto`) or origin cannot be fetched.
@@ -61,17 +75,37 @@ import dataclasses
 import json
 import os
 import pathlib
-import subprocess
 import sys
+
+# The shared modules sit in scripts/.local/lib; resolve() follows a stow symlink back to the repo.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
+
+import lane_list
+from worktree_branches import (
+    ahead_text,
+    delete_branch,
+    prune_branches,
+)
+from worktree_git import (
+    PruneError,
+    Repo,
+    Tally,
+    Worktree,
+    git,
+    inside,
+    list_worktrees,
+    real,
+    run,
+    show,
+)
 
 PROC_ROOT = "/proc"
 FETCH_TIMEOUT_SECONDS = 120
 HERDR_TIMEOUT_SECONDS = 20
 LSOF_TIMEOUT_SECONDS = 60
-USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]"
+USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help] | --check <path>"
 SUBMODULE_MODE = "160000"
 REMOTE_HEAD_PREFIX = "refs/remotes/origin/"
-HEADS_PREFIX = "refs/heads/"
 
 # Reason codes: the totals line counts kept trees by these.
 MAIN_CHECKOUT = "main checkout"
@@ -91,30 +125,6 @@ HERDR = "herdr workspace"
 CANNOT_CHECK = "cannot check"
 VANISHED = "no longer a worktree"
 LANE_OPEN = "open lane"
-
-
-class PruneError(Exception):
-    """A failure to read git state. Before the first removal it stops the run with nothing removed and exit 1.
-    Mid-apply it fails only the tree or branch being handled: the run goes on, prints its totals and exits 1."""
-
-
-@dataclasses.dataclass
-class Result:
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-@dataclasses.dataclass
-class Worktree:
-    path: str
-    head: str = ""
-    branch: str | None = None
-    bare: bool = False
-    detached: bool = False
-    locked: bool = False
-    lock_reason: str = ""
-    prunable: bool = False
 
 
 @dataclasses.dataclass
@@ -175,60 +185,8 @@ class RunState:
             print(note, flush=True)
 
 
-@dataclasses.dataclass
-class Repo:
-    main_path: str
-    default_branch: str
-    compare_name: str
-    compare_hash: str
-    cwd_real: str
-
-
-@dataclasses.dataclass
-class Tally:
-    removed: int = 0
-    freed: int = 0
-    kept: int = 0
-    failed: int = 0
-
-
 class HerdrUnavailableError(Exception):
     pass
-
-
-def run(args, cwd=None, timeout=None, env=None):
-    try:
-        done = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True,
-                              errors="surrogateescape", timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return Result(127, "", f"{args[0]}: {error}")
-    return Result(done.returncode, done.stdout, done.stderr)
-
-
-def git(directory, *args, timeout=None):
-    """Run git in `directory` (the working directory when None) without prompts or optional index writes."""
-    env = dict(os.environ)
-    env["GIT_TERMINAL_PROMPT"] = "0"
-    env["GIT_OPTIONAL_LOCKS"] = "0"
-    command = ["git"] if directory is None else ["git", "-C", directory]
-    return run([*command, *args], timeout=timeout, env=env)
-
-
-def real(path):
-    return os.path.realpath(path)
-
-
-def inside(child, parent):
-    """True when `child` is `parent` or lies below it, compared on whole path components."""
-    if child == parent:
-        return True
-    return child.startswith(parent.rstrip(os.sep) + os.sep)
-
-
-def show(path):
-    """The path with control characters escaped, so one path stays one line."""
-    return "".join(char if char.isprintable() else char.encode("unicode_escape").decode("ascii")
-                   for char in path)
 
 
 def human_size(size):
@@ -254,57 +212,6 @@ def tree_size(path):
     if not fields or not fields[0].isdigit():
         return None
     return int(fields[0]) * 1024
-
-
-# ---- git worktree list ----
-
-def worktree_from_fields(fields):
-    first = fields[0]
-    if not first.startswith("worktree "):
-        raise PruneError(f"git worktree list: expected a `worktree <path>` field, got {first!r}")
-    tree = Worktree(path=first[len("worktree "):])
-    for field in fields[1:]:
-        apply_worktree_field(tree, field)
-    return tree
-
-
-def apply_worktree_field(tree, field):
-    key, _, value = field.partition(" ")
-    if key == "HEAD":
-        tree.head = value
-    elif key == "branch":
-        tree.branch = value[len(HEADS_PREFIX):] if value.startswith(HEADS_PREFIX) else value
-    elif key == "bare":
-        tree.bare = True
-    elif key == "detached":
-        tree.detached = True
-    elif key == "locked":
-        tree.locked = True
-        tree.lock_reason = value
-    elif key == "prunable":
-        tree.prunable = True
-    else:
-        raise PruneError(f"git worktree list: unknown field {field!r}; expected HEAD, branch, bare, "
-                         "detached, locked or prunable")
-
-
-def parse_worktrees(listing):
-    """Read `git worktree list --porcelain -z`: NUL-ended fields, an empty field between entries."""
-    worktrees = []
-    for block in listing.split("\0\0"):
-        fields = [field for field in block.split("\0") if field]
-        if fields:
-            worktrees.append(worktree_from_fields(fields))
-    if not worktrees:
-        raise PruneError("git worktree list printed no entries")
-    return worktrees
-
-
-def list_worktrees(main_dir):
-    listing = git(main_dir, "worktree", "list", "--porcelain", "-z")
-    if listing.returncode != 0:
-        raise PruneError(f"git worktree list failed: {listing.stderr.strip()}")
-    return parse_worktrees(listing.stdout)
 
 
 # ---- stash ----
@@ -459,10 +366,6 @@ def read_herdr(state):
 
 # ---- lanes ----
 
-def lanes_cli_path():
-    return os.environ.get("HERDR_LANES_CLI") or os.path.expanduser("~/.claude/scripts/tools/lanes.py")
-
-
 @dataclasses.dataclass
 class LaneRead:
     worktrees: list[tuple[str, str]] | None
@@ -471,13 +374,12 @@ class LaneRead:
 
 def read_lanes():
     """The open lanes as (name, worktree) pairs from `lanes.py list`, or None with the reason."""
-    asked = run([sys.executable, lanes_cli_path(), "list"], timeout=HERDR_TIMEOUT_SECONDS)
-    if asked.returncode != 0:
-        return LaneRead(None, f"lanes list failed: {asked.stderr.strip() or asked.returncode}")
     try:
-        entries = json.loads(asked.stdout)["lanes"]
+        entries = lane_list.read_lane_entries(HERDR_TIMEOUT_SECONDS)
         return LaneRead([(entry["name"], entry["worktree"]) for entry in entries])
-    except (ValueError, KeyError, TypeError) as error:
+    except lane_list.LaneListError as error:
+        return LaneRead(None, str(error))
+    except (KeyError, TypeError) as error:
         return LaneRead(None, f"lanes list has an unexpected answer: {error!r}")
 
 
@@ -651,9 +553,14 @@ CHECKS = (check_main, check_current, check_bare, check_folder, check_locked, che
           check_lane_open, check_merged, check_tree_state, check_stash, check_process, check_herdr)
 
 
-def evaluate(repo, world, tree):
+# Who or what is on a tree right now. A lane close clears these itself by closing the workspace.
+OCCUPANCY_CHECKS = (check_current, check_lane_open, check_process, check_herdr)
+TREE_STATE_CHECKS = tuple(check for check in CHECKS if check not in OCCUPANCY_CHECKS)
+
+
+def evaluate(repo, world, tree, checks=CHECKS):
     """The one place that decides: the Keep for the first failing condition, or None when the tree may go."""
-    for check in CHECKS:
+    for check in checks:
         keep = check(repo, world, tree)
         if keep is not None:
             return keep
@@ -788,180 +695,29 @@ def prune_worktrees(repo, apply):
     return 1 if tally.failed else 0
 
 
-# ---- branch deletion (both modes) ----
+# ---- check mode ----
 
-# `git config --remove-section` exits 128 and prints this when the section is not there.
-NO_SUCH_SECTION_EXIT = 128
-NO_SUCH_SECTION_TEXT = "no such section"
-
-
-@dataclasses.dataclass
-class BranchDeletion:
-    failure: str | None = None  # why the branch stays; None when it is deleted
-    warning: str | None = None  # a problem after a successful delete
+def take_tree_world(repo):
+    """The world for the tree-state checks: the worktree list and the stashes, nothing else is read."""
+    unread = "not read in check mode"
+    return World(list_worktrees(repo.main_path), read_stashes(repo.main_path), None, Herdr(None, None), [],
+                 LaneRead(None, unread))
 
 
-def branch_tip(repo, name):
-    """The commit hash of refs/heads/<name> now, or None."""
-    resolved = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{HEADS_PREFIX}{name}^{{commit}}")
-    if resolved.returncode != 0:
-        return None
-    return resolved.stdout.strip()
-
-
-def ahead_text(repo, name):
-    """Two spaces and a note when the branch has an upstream whose tip does not hold the branch tip, else ''."""
-    tip = branch_tip(repo, name)
-    named = git(repo.main_path, "for-each-ref", "--format=%(upstream)", f"{HEADS_PREFIX}{name}")
-    upstream_ref = named.stdout.strip()
-    if tip is None or named.returncode != 0 or not upstream_ref:
-        return ""
-    upstream = git(repo.main_path, "rev-parse", "--verify", "--quiet", f"{upstream_ref}^{{commit}}")
-    if upstream.returncode != 0:
-        return ""
-    held = git(repo.main_path, "merge-base", "--is-ancestor", tip, upstream.stdout.strip())
-    if held.returncode != 1:
-        return ""
-    return f"  ahead of its own remote branch, fully on {repo.compare_name}"
-
-
-def remove_branch_config(repo, name):
-    """A warning when the `branch.<name>` section could not be removed, else None. A missing section is fine."""
-    removed = git(repo.main_path, "config", "--remove-section", f"branch.{name}")
-    if removed.returncode == 0:
-        return None
-    if removed.returncode == NO_SUCH_SECTION_EXIT and NO_SUCH_SECTION_TEXT in removed.stderr:
-        return None
-    return (f"warning: branch {name} is deleted but its config section stays: git config --remove-section "
-            f"branch.{name} failed: {removed.stderr.strip() or removed.returncode}")
-
-
-def delete_branch(repo, name):
-    """Delete refs/heads/<name> with `git update-ref -d` on the tip just proven an ancestor of the compare hash.
-
-    Git refuses the delete when the tip moved after the check. Never `branch -D`, never a delete without the old
-    value. Only that one ref is named, so `fix/a` never touches `fix/a-b`."""
-    tip = branch_tip(repo, name)
-    if tip is None:
-        return BranchDeletion(failure="the branch ref cannot be read (already gone?)")
-    held = git(repo.main_path, "merge-base", "--is-ancestor", tip, repo.compare_hash)
-    if held.returncode == 1:
-        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {repo.compare_name}")
-    if held.returncode != 0:
-        return BranchDeletion(failure=f"git merge-base failed: {held.stderr.strip()}")
-    deleted = git(repo.main_path, "update-ref", "-d", f"{HEADS_PREFIX}{name}", tip)
-    if deleted.returncode != 0:
-        return BranchDeletion(failure="git update-ref -d refused (the tip moved or the ref is locked): "
-                                      f"{deleted.stderr.strip()}")
-    return BranchDeletion(warning=remove_branch_config(repo, name))
-
-
-# ---- branch mode ----
-
-CHECKED_OUT_REASON = "a worktree has it checked out now"
-# Files in a worktree's git dir that name the branch a rebase or bisect started on.
-REBASE_HEAD_NAME_FILES = (("rebase-merge", "head-name"), ("rebase-apply", "head-name"))
-BISECT_START_FILE = "BISECT_START"
-
-
-def read_git_dir_file(git_dir, parts):
-    """The first line of a file in the git dir, or None when the file is absent. An unreadable file stops the run:
-    without it a branch in use could be deleted."""
-    file = git_dir.joinpath(*parts)
-    if not file.is_file():
-        return None
-    try:
-        text = file.read_text()
-    except OSError as error:
-        raise PruneError(f"cannot read {file}: {error}") from error
-    return text.strip()
-
-
-def branches_in_progress(tree_path):
-    """The branches a rebase or bisect in this worktree started on.
-
-    Such a worktree shows as detached in `git worktree list`. `head-name` holds `refs/heads/<name>`; BISECT_START
-    holds a bare branch name or a commit hash. A hash is kept as it is: it equals no branch name that matters."""
-    asked = git(tree_path, "rev-parse", "--absolute-git-dir")
-    if asked.returncode != 0:
-        raise PruneError(f"git rev-parse --absolute-git-dir failed in {tree_path}: {asked.stderr.strip()}")
-    git_dir = pathlib.Path(asked.stdout.strip())
-    names = []
-    for parts in REBASE_HEAD_NAME_FILES:
-        head_name = read_git_dir_file(git_dir, parts)
-        if head_name and head_name.startswith(HEADS_PREFIX):
-            names.append(head_name[len(HEADS_PREFIX):])
-    bisect_start = read_git_dir_file(git_dir, (BISECT_START_FILE,))
-    if bisect_start:
-        names.append(bisect_start)
-    return names
-
-
-def checked_out_branches(worktrees):
-    """{branch: why it must stay} for every branch a worktree entry holds, or holds in a rebase or bisect."""
-    taken = {}
-    for tree in worktrees:
-        if tree.branch:
-            taken[tree.branch] = CHECKED_OUT_REASON
-    for tree in worktrees:
-        if tree.bare or tree.prunable or not os.path.isdir(tree.path):
+def check_path(repo, path):
+    """Print the JSON verdict of the worktree at `path`, judged on its own state."""
+    world = take_tree_world(repo)
+    path_real = real(path)
+    for tree in world.worktrees:
+        if real(tree.path) != path_real:
             continue
-        for name in branches_in_progress(tree.path):
-            taken.setdefault(name, f"it is in a rebase or bisect in the worktree {show(tree.path)}")
-    return taken
-
-
-def merged_free_branches(repo):
-    listed = git(repo.main_path, "for-each-ref", f"--merged={repo.compare_hash}", "--format=%(refname)", HEADS_PREFIX)
-    if listed.returncode != 0:
-        raise PruneError(f"git for-each-ref failed: {listed.stderr.strip()}")
-    worktrees = list_worktrees(repo.main_path)
-    taken = checked_out_branches(worktrees)
-    names = [line[len(HEADS_PREFIX):] for line in listed.stdout.splitlines() if line.startswith(HEADS_PREFIX)]
-    return sorted(name for name in names if name != repo.default_branch and name not in taken)
-
-
-def delete_one_branch(repo, name, tally):
-    if name == repo.default_branch:
-        print(f"kept    branch {name}: it is the default branch")
-        tally.kept += 1
-        return
-    try:
-        worktrees = list_worktrees(repo.main_path)
-        taken = checked_out_branches(worktrees)
-    except PruneError as error:
-        print(f"failed  branch {name}: the re-check could not read git state: {error}", flush=True)
-        tally.failed += 1
-        return
-    if name in taken:
-        print(f"kept    branch {name}: {taken[name]}")
-        tally.kept += 1
-        return
-    outcome = delete_branch(repo, name)
-    if outcome.failure is not None:
-        print(f"failed  branch {name}: {outcome.failure}", flush=True)
-        tally.failed += 1
-        return
-    print(f"deleted branch {name}")
-    if outcome.warning is not None:
-        print(outcome.warning)
-    tally.removed += 1
-
-
-def prune_branches(repo, apply):
-    print(f"compare ref: {repo.compare_name} ({repo.compare_hash[:8]})")
-    names = merged_free_branches(repo)
-    for name in names:
-        ahead = ahead_text(repo, name)
-        print(f"delete  branch {name}{ahead}")
-    print(f"would delete {len(names)} merged branches without a worktree")
-    if not apply:
+        keep = evaluate(repo, world, tree, TREE_STATE_CHECKS)
+        verdict = {"path": tree.path, "branch": tree.branch, "verdict": "remove", "code": None, "reason": None}
+        if keep is not None:
+            verdict.update({"verdict": "keep", "code": keep.code, "reason": keep.text})
+        print(json.dumps(verdict))
         return 0
-    tally = Tally()
-    for name in names:
-        delete_one_branch(repo, name, tally)
-    print(f"deleted {tally.removed}, kept {tally.kept}, failed {tally.failed}")
-    return 1 if tally.failed else 0
+    raise PruneError(f"{path} is not a worktree of this repository")
 
 
 # ---- command line ----
@@ -970,7 +726,12 @@ def main(argv):
     if "-h" in argv or "--help" in argv:
         print(__doc__.strip())
         return 0
-    unknown = [arg for arg in argv if arg not in ("--apply", "--branches")]
+    checking = argv[:1] == ["--check"]
+    if checking and len(argv) != 2:
+        print("herdr-worktree-prune: --check takes one path", file=sys.stderr)
+        print(USAGE_LINE, file=sys.stderr)
+        return 2
+    unknown = [] if checking else [arg for arg in argv if arg not in ("--apply", "--branches")]
     if unknown:
         print(f"herdr-worktree-prune: unknown argument: {unknown[0]}", file=sys.stderr)
         print(USAGE_LINE, file=sys.stderr)
@@ -979,6 +740,8 @@ def main(argv):
     sys.stderr.reconfigure(errors="backslashreplace")
     try:
         repo = start_up()
+        if checking:
+            return check_path(repo, argv[1])
         if "--branches" in argv:
             return prune_branches(repo, "--apply" in argv)
         return prune_worktrees(repo, "--apply" in argv)

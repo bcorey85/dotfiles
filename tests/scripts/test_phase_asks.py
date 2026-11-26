@@ -52,7 +52,7 @@ def ask(question, finding_id, line):
 
 def user_only_ask(path, finding_id, line):
     """The ask of a coder's edit to the approval-only file `path`, marked for the user alone."""
-    text = f"A fix coder edited `{path}`, which needs the user's approval."
+    text = f"A fix coder edited `{path}`, an approval-only file."
     return {**ask(text, finding_id, line), ask_outcome_words.USER_ONLY_KEY: True}
 
 

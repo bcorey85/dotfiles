@@ -78,6 +78,11 @@ def user_ruled_issue(text, ruled_at):
     return f"[accepted by the user, ruled {ruled_at}] {text}"
 
 
+def session_ruled_issue(text, session_id):
+    """An issue a session ruled on, marked with that session's id, in the same place as `user_ruled_issue`'s mark."""
+    return f"[ruled by session {session_id}] {text}"
+
+
 def review_scope_lines(repo, owned, prior_issues, open_asks):
     lines = [f"Repo root: {repo}", "Review scope (this round):", "  owned files:"]
     for path in owned:

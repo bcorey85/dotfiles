@@ -43,6 +43,12 @@ class CodeSkillTextTest(unittest.TestCase):
         resume_paragraph = next(line for line in text.splitlines() if line.startswith("**Resume.**"))
         self.assertNotIn("…", resume_paragraph)
 
+    def test_a_coder_prompt_holds_no_stage_or_commit_step(self):
+        text = toolkit_paths.CODE_SKILL_FILE.read_text()
+        no_commit_rule = ("The coder's prompt holds no stage or commit step; a commit the task asks for becomes "
+                          "the phase-end commit subject.")
+        self.assertIn(no_commit_rule, text)
+
     def test_the_phase_boundary_step_reads_the_phase_end_file_and_the_skill_holds_no_block(self):
         text = toolkit_paths.CODE_SKILL_FILE.read_text()
         self.assertIn("Read `~/.claude/skills/code/phase-end-block.md` and print the matching block", text)

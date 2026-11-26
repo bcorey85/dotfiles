@@ -193,6 +193,31 @@ class ReviewerBriefTest(unittest.TestCase):
         self.assertIn(f"open none of them but `{PLAN_PATH}`, `acceptance-criteria.md` and `00-ticket.md`.", brief)
         self.assertNotIn("plan section named here", brief)
 
+    def test_a_plan_folder_with_a_decision_log_lets_the_reviewer_open_it_and_says_a_ruling_is_no_ask(self):
+        repo = self.repo_with_plan()
+        (repo / PLAN_PATH).parent.joinpath("03-decisions.md").write_text("# Decisions\n")
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH}, "the handoff", repo)
+
+        self.assertIn("`acceptance-criteria.md`, `00-ticket.md` and `03-decisions.md`.", brief)
+        self.assertIn("A question that a ruling recorded in `03-decisions.md` or in the plan answers is not an ask",
+                      brief)
+
+    def test_a_phase_with_a_decision_log_lists_the_plan_section_and_the_decision_log(self):
+        repo = self.repo_with_plan()
+        (repo / PLAN_PATH).parent.joinpath("03-decisions.md").write_text("# Decisions\n")
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH, "phase": "2"}, "the handoff", repo)
+
+        self.assertIn("open none of them but the plan section named here, `acceptance-criteria.md`, "
+                      "`00-ticket.md` and `03-decisions.md`.", brief)
+
+    def test_a_plan_folder_with_no_decision_log_names_no_ruling_line(self):
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH}, "the handoff", self.repo_with_plan())
+
+        self.assertNotIn("03-decisions.md", brief)
+        self.assertIn("`acceptance-criteria.md` and `00-ticket.md`.", brief)
+
     def test_a_review_with_no_plan_keeps_the_whole_diff(self):
         brief = review_loop_prompt_file.reviewer_brief({"base": "abc1234"}, "the handoff", "/nowhere")
 

@@ -115,6 +115,51 @@ class AnnouncedStepTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_blocks(message, transcript_path=transcript)
 
+    def test_report_step_on_background_work_passes_after_a_launch_and_blocks_without_one(self):
+        messages = ("I'll bring back the ranked list from the three scouts.",
+                    "I will summarize the findings of the agents.",
+                    "I'll collect and compile the results.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_passes(message, transcript_path=self.write_turn())
+                self.assert_blocks(message, transcript_path=self.write_turn(launches=False))
+
+    def test_report_step_with_the_launch_in_an_earlier_turn_blocks(self):
+        transcript = self.write_turn(later_turn=True)
+        self.assert_blocks("I'll bring back the ranked list from the three scouts.", transcript_path=transcript)
+
+    def test_draft_blocks_with_first_person_promises_pass(self):
+        messages = ("Here is the reply to send:\n```\nI am fixing the parser.\n```\nSend it as is.",
+                    "Here is the reply to send:\n~~~text\nI'll fix the parser.\n~~~\nSend it as is.",
+                    "Here is the reply to send:\n> I am fixing the parser.\n> I'll look at it today.\nSend it as is.",
+                    "Draft:\n````\nI am fixing the parser.\n```\nstill inside\n````\nDone.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_stray_opening_fence_does_not_hide_a_later_announcement(self):
+        self.assert_blocks("Draft:\n```\nI am fixing the parser.\nThe fence never closes.")
+
+    def test_a_report_word_that_is_not_the_announced_action_still_blocks_after_a_launch(self):
+        transcript = self.write_turn()
+        for message in ("I'll push them and report back.", "I'm going to fix the report parser."):
+            with self.subTest(message=message):
+                self.assert_blocks(message, transcript_path=transcript)
+
+    def test_a_report_action_joined_to_a_second_verb_blocks_after_a_launch(self):
+        self.assert_blocks("I'll report the results and push them.", transcript_path=self.write_turn())
+
+    def test_fence_line_with_an_info_string_does_not_close_a_draft_block(self):
+        self.assert_passes("Draft:\n```\nI'll x\n```python\nI am fixing the parser.\n```\nDone.")
+
+    def test_report_word_deep_in_a_first_person_sentence_blocks_after_a_launch(self):
+        self.assert_blocks("I'll fix the bug report.", transcript_path=self.write_turn())
+        self.assert_blocks("I'll fix the bug report.", transcript_path=self.write_turn(launches=False))
+
+    def test_promise_outside_a_draft_block_still_blocks(self):
+        self.assert_blocks("Draft:\n```\nI am fixing the parser.\n```\nNext I'll look at the reviewer nits.")
+        self.assert_blocks("Draft:\n> I am fixing the parser.\nNext I'll look at the reviewer nits.")
+
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")
 

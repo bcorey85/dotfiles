@@ -3,7 +3,7 @@ A ruling is free prose, so no grammar reads it: one `ruling-check` model call re
 texts. A pass the judge finds against a ruling has its work tree and index put back (byte for byte for the files
 the backup holds) and the run stops. The put-back restores the work tree and index only: HEAD is not rewound, so a
 commit the coder made during the pass stays in HEAD and the blocker names it. The host class holds repo,
-out, files_touched, user_ruled, session_ruled, adopted, no_code_broken and user_only_paths, and has keep_open,
+out, files_touched, user_ruled, session_ruled, adopted, no_code_broken and approval_ask_paths, and has keep_open,
 issue_text, coder_held_files, ruled_texts, keep_unreverted_open and drop_approval_asks."""
 import functools
 import pathlib
@@ -119,8 +119,9 @@ class RulingCheck:
         except script_utils.GitCallError as error:
             raise self.fault_before_pass(
                 findings, f"tool fault: {error} so fix pass {call_name} did not run.") from error
-        self.ruling_ask_paths_before = frozenset(self.user_only_paths)
-        named = [path for path in listing if script_utils.texts_name_path(issue_texts, path, self.repo)]
+        self.ruling_ask_paths_before = frozenset(self.approval_ask_paths)
+        named = [path for path in listing
+                 if script_utils.texts_name_repo_file(issue_texts, path, self.repo, self.ruling_files_before)]
         backup_dir = self.out / CHECK_FOLDER / call_name / BACKUP_FOLDER
         backup = file_backup.save_files(self.repo, {*paths, *named} - self.coder_held_files(), backup_dir)
         try:
@@ -218,7 +219,7 @@ class RulingCheck:
         kept_broken = list(self.no_code_broken[:self.ruling_no_code_mark])
         added_broken = self.no_code_broken[self.ruling_no_code_mark:]
         self.no_code_broken = kept_broken + [entry for entry in added_broken if entry["file"] not in put_back]
-        filed_paths = [path for path in self.user_only_paths if path not in self.ruling_ask_paths_before]
+        filed_paths = [path for path in self.approval_ask_paths if path not in self.ruling_ask_paths_before]
         self.drop_approval_asks(filed_paths)
 
     def put_back_pass(self, call_name, findings, result, backup, against):

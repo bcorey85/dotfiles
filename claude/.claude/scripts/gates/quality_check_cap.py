@@ -55,13 +55,16 @@ import hook_input
 import reviewed_tree
 import script_utils
 from hook_input import EMPTY_INPUT, JqError, cksum, exit_code_in_error_text, jq_field, jq_get, truthy
+from memory_cap_scope import program_after_systemd_run
 from shell_command import (
     git_subcommand,
     parse_simple_commands,
     redirection_writes_file,
+    segment_words,
     split_command_steps,
 )
 from shell_directory import path_word
+from shell_quoting import unquoted_matches
 from shell_statements import shell_code
 from shell_steps import runs_only_after_success, step_surely_ran
 
@@ -385,6 +388,25 @@ def normalize(segment):
     return segment
 
 
+def without_systemd_run(segment):
+    """The segment with a leading `systemd-run <options>` dropped, so a memory-capped run and the plain run of the
+    same check share one key. Any other segment is returned unchanged."""
+    words = segment_words(segment)
+    if not words:
+        return segment
+
+    program_words = program_after_systemd_run(words)
+    dropped_count = len(words) - len(program_words)
+    if dropped_count == 0 or not program_words:
+        return segment
+
+    # The blanks inside quotes or after a backslash do not end a word, so a quoted option value stays one word.
+    word_gaps = unquoted_matches(re.compile("[ \t\r\n]+"), segment)
+    if len(word_gaps) < dropped_count:
+        return segment
+    return segment[word_gaps[dropped_count - 1].end():]
+
+
 def writes_files(segment):
     """True when the segment is a formatter or fixer that rewrites files, or a git call that rewrites the tree."""
     words = segment.split()
@@ -521,7 +543,7 @@ def run(raw, state):
         segment = re.sub(r"^[({ \t]+", "", segment)
         env_prefix = ""
         while True:
-            unwrapped = WRAPPER.sub("", segment, count=1)
+            unwrapped = without_systemd_run(WRAPPER.sub("", segment, count=1))
             assignment = ASSIGNMENT.match(unwrapped)
             stripped = unwrapped[assignment.end():] if assignment else unwrapped
             if stripped == segment:

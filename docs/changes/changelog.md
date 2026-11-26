@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1244 changes
+1245 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -20,6 +20,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [lane-status --git prints each lane's branch state](notes/2026-11-25-lane-status-git-prints-each-lane-s-branch-state.md) [script/lane-status, script/script-utils, script/verify-common] lane-status --git prints each open lane's branch, merged or ahead/behind against origin's default branch, dirty file count and reports_to.
 * [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) [agent/code-reviewer, skill/close-branch] The code reviewer marks a new doc file or test module that no plan step, criterion or finding asks for as a fix to delete it, and a doc that repeats a sibling doc or the code; close-branch carries the Diff split line and treats an OVERSIZED part as a finding.
 * [The close pass splits the branch's added lines into docs, tests and code](notes/2026-11-25-the-close-pass-splits-the-branch-s-added-lines.md) [script/concentration, skill/close-branch] The concentration gate also prints the branch's added lines split into docs, tests and code, and flags new doc or test files that hold over 40% of a branch of 300 or more lines.
+* [Review loop feeds the smell reviewer each added function's nearest other functions](notes/2026-11-25-review-loop-feeds-the-smell-reviewer-each-added.md) [script/review-loop, agent/smell-reviewer, script/refactor-flow] The review loop's first smell review now gets, for each added function, its nearest other functions in the repo, so a private helper that repeats an exported one under another name reaches the reviewer as a candidate pair.
 * [refactor simplify: report branch diff growth, add --diff bound](notes/2026-11-25-refactor-simplify-report-branch-diff-growth-add.md) [skill/refactor, script/refactor-flow, agent/complexity-reviewer] simplify-prep records the branch diff before the pass and log --mode simplify ends in a STOP naming the files that grew; --diff BASE bounds the complexity-reviewer to the lines the branch added.
 * [herdr-wake-limited resumes a pane stopped on a usage-limit or overload API error](notes/2026-11-24-herdr-wake-limited-resumes-a-pane-stopped-on-a.md) [script/herdr-wake-limited, script/lane-status, script/session-pane, script/script-utils, script/loop-transcript] A herdr Claude pane whose transcript ends on a usage-limit or server API error gets one resume prompt once the reset time has passed, read through a shared API-error reader that lane-status now uses too.
 * [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.

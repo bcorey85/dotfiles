@@ -16,6 +16,7 @@ import flow_common
 import numstat
 import script_utils
 import simplify_slices
+import untracked_listing
 from flow_common import (
     NoBaseError,
     NoSharedHistoryError,
@@ -28,7 +29,6 @@ from flow_common import (
     ref_exists,
     require_repo,
     target_files,
-    untracked_files,
     work_tree_merge_base,
 )
 
@@ -82,7 +82,7 @@ def read_branch_stat(merge_base, root):
     all added. A binary file is left out."""
     numstat_text = diff_output(merge_base, "--numstat", "-z")
     files = numstat.changed_lines_by_path(numstat_text)
-    for entry in untracked_files(root):
+    for entry in untracked_listing.untracked_files(root, error_type=RefactorFlowError):
         if entry.kind == change_added_ranges.UNTRACKED_TEXT:
             files[entry.path] = (len(entry.added_lines), 0)
     return BranchStat(merge_base, files)

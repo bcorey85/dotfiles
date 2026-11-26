@@ -1,6 +1,6 @@
 """What the refactor flow's modes share: the base-error types (RefactorFlowError itself lives in
 `refactor_log_input`), git calls, the base and merge base, the target file
-listing, untracked-file reads and the log-input paths. `refactor_flow` and `simplify_flow` import from here, so
+listing and the log-input paths. `refactor_flow` and `simplify_flow` import from here, so
 neither imports the other."""
 import contextlib
 import functools
@@ -9,10 +9,9 @@ import re
 import uuid
 from pathlib import Path
 from stat import S_ISREG
-from typing import NamedTuple
 
-import change_added_ranges
 import script_utils
+import source_text
 from refactor_log_input import RefactorFlowError
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
@@ -76,11 +75,9 @@ def pick_base(requested, head=None):
 
 
 def diff_output(span, *args, pathspecs=()):
-    """Run `git diff` over a span with the flags that make its output parseable under any user config."""
+    """Run `git diff` over a span with source_text.DIFF_COMMAND_ARGS."""
     limit = ["--", *pathspecs] if pathspecs else []
-    done = git("--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
-               "--no-textconv", "--no-relative", "--no-prefix", *args, span, *limit,
-               check=False)
+    done = git(*source_text.DIFF_COMMAND_ARGS, *args, span, *limit, check=False)
     if done.returncode == 0:
         return done.stdout
     if "no merge base" in done.stderr:
@@ -97,27 +94,6 @@ def work_tree_merge_base(base):
     if done.returncode != 0:
         raise RefactorFlowError(f"`git merge-base {base} HEAD` failed: {done.stderr.strip()}")
     return done.stdout.strip()
-
-
-class UntrackedFile(NamedTuple):
-    path: str
-    added_lines: list  # (line number, text) pairs; empty unless kind is UNTRACKED_TEXT
-    kind: str  # why a file is not read as text (change_added_ranges.UNTRACKED_*); UNTRACKED_TEXT for text
-
-
-def classify_untracked(root, name):
-    """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    read = change_added_ranges.read_untracked(root, name)
-    return UntrackedFile(name, read.lines, read.kind)
-
-
-def untracked_files(root):
-    """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed with its kind and no lines."""
-    names = script_utils.untracked_paths(root)
-    if names is None:
-        raise RefactorFlowError(f"git could not list the untracked files in {root}")
-    return [classify_untracked(root, name) for name in names]
 
 
 def next_line(text):

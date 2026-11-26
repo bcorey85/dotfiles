@@ -51,13 +51,13 @@ import shape_clones
 import simplify_flow
 import source_text
 import sweep_markers
+import untracked_listing
 from flow_common import (
     CLAUDE,
     MAX_STATE_INPUTS,
     NoBaseError,
     NoSharedHistoryError,
     RefactorFlowError,
-    classify_untracked,
     diff_output,
     fresh_log_input,
     git,
@@ -67,7 +67,6 @@ from flow_common import (
     ref_exists,
     require_repo,
     target_files,
-    untracked_files,
     work_tree_merge_base,
 )
 
@@ -246,7 +245,7 @@ def read_branch_span(base, opts_head, root):
         untracked = []
     else:
         diff_ref = work_tree_merge_base(base)
-        untracked = untracked_files(root)
+        untracked = untracked_listing.untracked_files(root, error_type=RefactorFlowError)
 
     files = labelled_span_files(diff_ref)
     files += [(entry.path, untracked_label(entry)) for entry in untracked]
@@ -367,7 +366,7 @@ def untracked_line_count(live_targets):
     """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
     total = 0
     for name in ls_files(live_targets, "--others"):
-        total += len(classify_untracked(".", name).added_lines)
+        total += len(untracked_listing.classify_untracked(".", name).added_lines)
     return total
 
 

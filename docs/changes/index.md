@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1214 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1215 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-25, [inline-interpreter deny names the session scratchpad first](notes/2026-11-25-inline-interpreter-deny-names-the-session.md).
 

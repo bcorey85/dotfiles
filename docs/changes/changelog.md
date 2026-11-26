@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1214 changes
+1215 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -53,6 +53,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [The ruling check backs up a file a finding names by a trailing part](notes/2026-11-25-the-ruling-check-backs-up-a-file-a-finding-names.md) [script/review-loop-script] The review loop's ruling check and its scope guard now share one test of whether a finding names a repo file, so a file named by ./ or a unique trailing part is backed up and can be put back.
+* [test_zshrc stubs atuin so no detached job recreates the temp home](notes/2026-11-25-test-zshrc-stubs-atuin-so-no-detached-job.md) [method/test-suite] The zshrc test puts a no-op atuin on PATH, so atuin's init starts no detached job that recreates the temp home while cleanup removes it, and the full suite stops failing this file under load.
 * [Full check names its own memory-capped scope unit](notes/2026-11-25-full-check-names-its-own-memory-capped-scope-unit.md) [script/memory-cap-scope, script/check-output, script/full-check] A check command that starts with the capped systemd-run prefix now runs inside the full check's own capped scope, where before both scopes got one unit name and the check never started.
 * [close-branch sends gate medium and low findings to the coder](notes/2026-11-25-close-branch-sends-gate-medium-and-low-findings-to.md) [skill/close-branch] The close-branch fix-diff gate sends its medium and low findings to a coder round, never to open items, so Step 4 and Step 5 name the same place for them.
 * [Review loop hands a ruled sign-off finding back to the caller](notes/2026-11-25-review-loop-hands-a-ruled-sign-off-finding-back-to.md) [script/review-loop-script, script/review-loop-ruled, script/review-fix, script/handback, script/review-loop-signoffs, script/review-loop-prompts, script/review-loop-packet, script/uncommitted-hunks, script/diff-ranges, script/signoff-lines, script/uncommitted-change, script/git-raw-diff, script/reviewed-tree] A user-ruled finding, or a session-ruled one on a session-owned line, no longer reaches the coder or comes back as a [sign-off] ask; a session-ruled one on a user's sign-off line stays an ask. The loop hands it back as a hand-back edit naming file, line and ruled text, outside the round cap. The cap-reached stop also names the uncommitted change of the repo.

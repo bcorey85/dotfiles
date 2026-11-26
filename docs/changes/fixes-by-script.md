@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-783 fix notes
+784 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -151,6 +151,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | agent/spec-research | 1 | 0 |
 | agent/test-reviewer | 1 | 0 |
 | method/rg-hidden-sweep | 1 | 1 |
+| method/test-suite | 1 | 1 |
 | rule/frontend-style | 1 | 0 |
 | rule/toolkit-script-rules | 1 | 0 |
 | script/accepted-failures | 1 | 1 |

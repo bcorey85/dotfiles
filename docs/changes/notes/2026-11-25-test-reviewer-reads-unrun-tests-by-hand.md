@@ -12,7 +12,7 @@ watches: []
 test: "tests/scripts/test_review_loop_prompts.py::UnrunTestsRuleTest::test_the_test_reviewer_of_a_ci_only_repo_gets_the_unrun_tests_rule"
 asked: ""
 proof: []
-unmeasured: ""
+unmeasured: "No gain shown: sonnet's test-reviewer flags both seeded faults without the line, on UT01 (11/12) and on the larger UT02 plant (12/12), so the off arm sits at ceiling."
 impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ---
 
@@ -42,7 +42,10 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 - The on-arm runs used an earlier opening sentence ("The tests never ran locally."); review reworded it to "The full
   suite runs only in CI, so a new test may never have run locally." Branch review then narrowed check (2) to state
   that one subtest or test method changes and a later one reads, so a read-only `setUpTestData` fixture draws no
-  fix. The seeded fault (an entry changed across subtests) still matches; the meter did not rerun on the new text.
+  fix. The seeded fault (an entry changed across subtests) still matches.
+- Rule meter UT02, the shipped text on a larger plant (three modules, three test files, about 40 tests, the two faults
+  mid-file), 4 runs per cell, sonnet: on 12/12, off 12/12 at every level, +0 points. The off-arm reports name both
+  faults with the right cause, so the plant is not the gap: the line shows no measured gain.
 
 ## Watch
 
@@ -50,5 +53,6 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Back-out
 
-Revert the lane's commits in dotfiles, and agent-evals `02c51437`, `477c6a97`, `4a415871` and `43798136`. Once
-this branch lands, drop UT01's `toolkit_root` in agent-evals: it points at this lane's worktree.
+Revert the lane's commits in dotfiles, and agent-evals `02c51437`, `477c6a97`, `4a415871`, `43798136`, `82d7f67e`
+and `7a8145c4`. Once this branch lands, drop UT01's and UT02's `toolkit_root` in agent-evals: they point at this
+lane's worktree.

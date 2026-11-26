@@ -77,7 +77,7 @@ file to the repo's tracked tree, and the shared resolver finds it. Source:
 #### Automated Verification
 
 - [ ] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check`
-- [ ] **Full suite**: `bash tests/run.sh`
+- [ ] **Full suite**: `systemd-run --user --scope --quiet --slice=tests.slice -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh`
 
 ## Plan Deviations
 

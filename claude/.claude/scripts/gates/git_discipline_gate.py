@@ -33,7 +33,9 @@
      (docker_run_names.py), denied with the fixed form `--rm --name <ticket>-<purpose>`; `docker compose run` and
      `docker exec` pass
  11. a `git commit` with no `-- <paths>` (or `--pathspec-from-file`), or with -a/--all or -i/--include, in a
-     shared clone (shared_clones.py); --amend passes (rule 2 judges it)
+     shared clone (shared_clones.py); --amend passes (rule 2 judges it), and so does a commit without -a/-i that
+     ends an open merge as the command's only step besides `cd`/`pushd`/`popd` in a folder the gate read, when
+     its staged paths all belong to the merge (merge_in_progress.py)
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -56,6 +58,7 @@ import directory_emptying_deletes
 import docker_run_names
 import git_commit_calls
 import hook_input
+import merge_in_progress
 import reviewed_tree
 import script_utils
 import shared_clones
@@ -83,6 +86,7 @@ from shell_command import (
     options_before_separator,
     without_flag_values,
 )
+from shell_steps import placed_commands
 
 S =r"[ \t\r\f\v]+"
 COMMIT_OR_PR = re.compile(r"\bgit" + S + r"commit\b|\bgh" + S + r"pr" + S + r"(create|edit)\b", re.I)
@@ -423,48 +427,102 @@ def run(raw):
     check_docker_run_names(command, payload_cwd)
 
 
-def bare_commit_in_shared_clone(call, directory):
+def bare_commit_in_shared_clone(call, directory, sole_step=None):
     """True when `call` is a `git commit` that is bare per `commit_pathspec.is_bare_commit` and lands in a shared
-    clone: its `--git-dir` is judged in place of `directory`."""
+    clone: its `--git-dir` is judged in place of `directory`. False for such a commit that ends an open merge
+    (no -a/-i, every staged path belongs to the merge) when `sole_step`, a function called only once the clone is
+    shared and the commit takes no -a/-i, says it is the command's only step besides `cd`/`pushd`/`popd`: an
+    earlier step of a longer command may stage a peer's file after the hook reads the index."""
     if call.subcommand != "commit" or not commit_pathspec.is_bare_commit(call.arguments):
         return False
     git_dir_folder = git_dir_holder(call.git_dir)
-    if git_dir_folder is not None:
-        # The index is $GIT_DIR/index: --work-tree does not choose it.
-        return shared_clones.is_shared_clone(git_dir_folder)
-    return shared_clones.is_shared_clone(directory)
+    # The index is $GIT_DIR/index: --work-tree does not choose it.
+    folder = directory if git_dir_folder is None else git_dir_folder
+    if not shared_clones.is_shared_clone(folder):
+        return False
+    if sole_step is None or commit_pathspec.sweeps_whole_index(call.arguments):
+        return True
+    if not sole_step():
+        return True
+    # Git refuses a pathspec commit during a merge, so a bare one is the only way to end it.
+    return not merge_in_progress.commit_ends_merge(folder)
 
 
-def is_bare_shared_commit(words, directory):
-    """commit_call for git_commit_dirs: True for a bare `git commit` that lands in a shared clone, judging its
-    `--git-dir`, or its `-C` when `git_c_directory` does not follow it, it is absolute or the call is not placed,
-    in place of `directory`. A `~user` `-C` is unread and judged in the hook's cwd."""
+def is_bare_shared_commit(words, directory, sole_step):
+    """commit_call for git_commit_dirs (bound to `sole_step`, a function that says whether the command's only
+    step besides `cd`/`pushd`/`popd` is the git call, by check_shared_clone_commit): True for a bare `git commit`
+    that lands in a shared clone, except one that ends an open merge as the only step besides `cd`/`pushd`/`popd`
+    in a folder the gate read (see bare_commit_in_shared_clone), judging its `--git-dir`, or its `-C` when
+    `git_c_directory` does not follow it, it is absolute or the call is not placed, in place of `directory`. A
+    `~user` `-C` is unread and judged in the hook's cwd."""
     call = git_call(words, directory)
     if call is None:
         return False
-    if (not call.placed or shell_command.git_c_directory(words, directory) is None
-            or shell_command.git_c_is_absolute(words)):
+    c_directory = shell_command.git_c_directory(words, directory)
+    # A commit whose folder the gate did not read (an unread `-C` or `--git-dir` value, an unplaced call) falls back
+    # to the last folder it could read, which is not where the commit lands: it gets no merge exemption. An unread
+    # `cd` is refused by is_sole_git_command.
+    folder_read = call.placed and (c_directory is not None or git_dir_holder(call.git_dir) is not None)
+
+    def exempt_sole_step():
+        return folder_read and sole_step()
+
+    if not call.placed or c_directory is None or shell_command.git_c_is_absolute(words):
         # `directory` is not moved by the `-C` options here (or the shell's folder is unknown, and an absolute
         # `-C` names the same folder from any start), so judge the folder they move to. An unread `-C` value
         # leaves `call.directory` at the last folder the gate could read.
-        return bare_commit_in_shared_clone(call, call.directory)
-    return bare_commit_in_shared_clone(call, directory)
+        return bare_commit_in_shared_clone(call, call.directory, exempt_sole_step)
+    return bare_commit_in_shared_clone(call, directory, exempt_sole_step)
+
+
+def is_sole_git_command(command, payload_cwd):
+    """True when `command` runs exactly one command besides `cd`/`pushd`/`popd` steps, and that command is a plain
+    `git` call: no env assignment or wrapper before it (`GIT_DIR=`, `GIT_INDEX_FILE=`, `env`) and no command or
+    process substitution, so nothing can change the index or the target clone between the hook's read and the
+    commit. A `cd` the gate cannot read is not a sole step: the commit lands in a folder the hook's cwd does not
+    name.
+    Called only after git_commit_dirs has read the command, so it parses."""
+    placed = list(placed_commands(command, payload_cwd))
+    if len(placed) != 1:
+        return False
+    only = placed[0]
+    if only.simple_command != only.words or only.words[0] != "git":
+        return False
+    if only.directory is None:
+        return False
+    has_substitution = bool(shell_command.substitution_bounds(only.step))
+    has_process_substitution = bool(shell_command.process_substitution_bounds(only.step))
+    return not has_substitution and not has_process_substitution
 
 
 def check_shared_clone_commit(command, calls, payload_cwd):
     """Rule 11: a `git commit` that takes the whole index in a shared clone sweeps in the staged files of peer
     sessions. A bare commit whose `--git-dir` or `-C` names a shared clone is denied, as is one inside a code
-    runner (`bash -c '...'`), judged from `calls`. A `GIT_DIR` assignment is judged in the folder the shell stands
-    in; an `env -C`/`sudo -D` wrapper, a call after a `cd` it cannot read and an unread `-C` value (a `~user`
-    one included) are judged in the hook's cwd, or in the folder an absolute `-C` names. A call read from
-    code-runner text is judged in the folder the outer command's `cd` steps, when no `(` comes before a `cd`,
-    move to (the hook's cwd when there are none); a `cd` inside the runner text is not read.
+    runner (`bash -c '...'`), judged from `calls`; the one exception is a commit without -a/-i that is the
+    command's only step besides `cd`/`pushd`/`popd`, lands in a folder the gate read (not the fallback for an
+    unread `cd` or `-C`), and ends an open merge whose staged paths all belong to the merge. A `GIT_DIR` assignment
+    is judged in the folder the shell stands in; an `env -C`/`sudo -D` wrapper, a call after a `cd` it cannot read
+    and an unread `-C` value (a `~user` one included) are judged in the hook's cwd, or in the folder an absolute
+    `-C` names. A call read from code-runner text is judged in the folder the outer command's `cd` steps, when no
+    `(` comes before a `cd`, move to (the hook's cwd when there are none); a `cd` inside the runner text is not
+    read.
     A command `git_commit_dirs` cannot read as steps is judged only through runner text, all of
     it; when it can, only the `git` words inside the runner's quotes are judged there, so a `(cd ..)` or `pushd`
     step it already read is not judged twice at the hook's cwd. Rule 11 fails open when neither reader finds the
     commit."""
-    found = git_commit_calls.git_commit_dirs(command, payload_cwd, is_bare_shared_commit)
     runner_text = shell_command.names_code_runner(shell_statements.shell_code(command))
+    sole_step_answers = []
+
+    def sole_step():
+        # Computed on the first commit that reaches the exemption, so a command with no such commit is not parsed twice.
+        if not sole_step_answers:
+            sole_step_answers.append(not runner_text and is_sole_git_command(command, payload_cwd))
+        return sole_step_answers[0]
+
+    def commit_call(words, directory):
+        return is_bare_shared_commit(words, directory, sole_step)
+
+    found = git_commit_calls.git_commit_dirs(command, payload_cwd, commit_call)
     runner_calls = calls
     if runner_text and found is not None:
         runner_calls = git_calls(command, payload_cwd, quoted_only=True)

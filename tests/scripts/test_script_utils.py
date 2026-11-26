@@ -595,6 +595,47 @@ class GitOutputTest(unittest.TestCase):
         self.assertEqual(name + b"\0", os.fsencode(listing))
 
 
+class DiffPathsTest(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        self.git("init", "-q")
+        (self.repo / "old.txt").write_text("one\ntwo\nthree\nfour\n")
+        self.git("add", "old.txt")
+        self.git("commit", "-q", "-m", "base")
+
+    def git(self, *args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(self.repo), *args],
+                       check=True, capture_output=True)
+
+    def test_only_the_staged_path_comes_back(self):
+        (self.repo / "staged.txt").write_text("s\n")
+        self.git("add", "staged.txt")
+        (self.repo / "old.txt").write_text("changed\n")
+        self.assertEqual({"staged.txt"}, script_utils.diff_paths(self.repo, "--cached"))
+
+    def test_a_staged_rename_names_the_old_and_the_new_path(self):
+        self.git("mv", "old.txt", "new.txt")
+        self.assertEqual({"old.txt", "new.txt"}, script_utils.diff_paths(self.repo, "--cached"))
+
+    def test_an_empty_diff_is_an_empty_set(self):
+        self.assertEqual(set(), script_utils.diff_paths(self.repo, "--cached"))
+
+    def test_a_failure_is_none(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        self.assertIsNone(script_utils.diff_paths(outside.name, "--cached"))
+        self.assertIsNone(script_utils.diff_paths(self.repo, "no-such-revision"))
+
+    def test_names_that_git_would_quote_come_back_as_they_are(self):
+        names = ['a"b.txt', "back\\slash.txt", "tab\there.txt", "new\nline.txt"]
+        for name in names:
+            (self.repo / name).write_text("x\n")
+        self.git("add", "--", *names)
+        self.assertEqual(set(names), script_utils.diff_paths(self.repo, "--cached"))
+
+
 class RepoFilePathsTest(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

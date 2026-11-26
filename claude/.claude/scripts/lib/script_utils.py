@@ -326,6 +326,15 @@ def git_output(cwd, *args, timeout=None):
     return os.fsdecode(finished.stdout).rstrip("\n")
 
 
+def diff_paths(directory, *diff_arguments, timeout=None):
+    """The set of paths `git diff --name-only <diff_arguments>` names in `directory`, or None after a git failure.
+    Renames stay off so a rename shows both its old and new path."""
+    output = git_output(directory, "diff", "--no-renames", "--name-only", "-z", *diff_arguments, timeout=timeout)
+    if output is None:
+        return None
+    return {path for path in output.split("\0") if path}
+
+
 # What main_checkout_dir returns: the folder, and whether it is a bare common dir rather than a checkout folder.
 MainCheckout = namedtuple("MainCheckout", ["folder", "is_bare"])
 

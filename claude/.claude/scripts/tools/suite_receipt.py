@@ -24,9 +24,10 @@ hashes to <tree>, since the run then did not test one tree, or when <summary> is
 unstaged tracked changes of <repo> (deletions included) that the merge would touch, the files <branch> changed since
 its merge base with HEAD:
   exit 0, `clear: ...`  no such file is dirty; the merge may start
-  exit 3, `dirty: ...`  names the files and the fix: commit them, or wait until they are committed and rerun
-                        the merge line.
-A merge line writes `suite_receipt.py dirty <repo> <branch> && <the merge>`.
+  exit 3, `dirty: ...`  lists the files and the fix: commit them if they are yours, else wait until the session
+                        holding them commits or drops them, or merge in a detached worktree; then rerun.
+Run it before a merge into a checkout, and start the merge only on exit 0. Untracked files in <repo> that sit at a
+path <branch> adds count as dirty too.
 """
 import argparse
 import datetime
@@ -158,15 +159,19 @@ def check(repo, branch, base):
 
 
 def dirty_merge_paths(repo, branch):
-    """The tracked paths with staged or unstaged changes in repo that merging `branch` would touch, sorted. The merge
-    touches the paths `branch` changed since its merge base with HEAD."""
+    """The paths in repo that merging `branch` would touch and that hold local changes, sorted: tracked paths with
+    staged or unstaged changes, and untracked files, which git refuses to overwrite when the branch adds a file at
+    that path. The merge touches the paths `branch` changed since its merge base with HEAD."""
     dirty = script_utils.diff_paths(repo, "HEAD")
     if dirty is None:
         raise ReceiptError(f"git diff HEAD failed in {repo}")
     touched = script_utils.diff_paths(repo, f"HEAD...{branch}")
     if touched is None:
         raise ReceiptError(f"git diff HEAD...{branch} failed in {repo}")
-    return sorted(dirty & touched)
+    untracked = script_utils.untracked_paths(repo)
+    if untracked is None:
+        raise ReceiptError(f"git ls-files --others failed in {repo}")
+    return sorted((dirty | set(untracked)) & touched)
 
 
 def dirty_check(repo, branch):
@@ -174,12 +179,14 @@ def dirty_check(repo, branch):
     nothing."""
     paths = dirty_merge_paths(repo, branch)
     if not paths:
-        return EXIT_SKIP, f"clear: no staged or unstaged change in {repo} sits on a file the merge of {branch} touches"
+        return EXIT_SKIP, (f"clear: no staged, unstaged or untracked change in {repo} sits on a file the merge of "
+                           f"{branch} touches")
     listed = "\n".join(f"  {path}" for path in paths)
     return EXIT_DIRTY, (f"dirty: the merge of {branch} would overwrite local changes in {repo}; no merge was started. "
                         f"Files:\n{listed}\n"
-                        "Fix: commit them (`git commit -m <message> -- <files>`; for a staged deletion name the "
-                        "path), or wait until they are committed and rerun this line.")
+                        "Fix: if the changes are yours, commit them; if another session holds them, wait until it "
+                        "commits or drops them; then rerun the merge line. Or merge in a detached worktree of the "
+                        "target branch and push from there, leaving this checkout alone.")
 
 
 def parse_command_line(argv):

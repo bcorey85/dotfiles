@@ -3,6 +3,7 @@ exact tree has a green receipt; any other branch reruns."""
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -171,11 +172,25 @@ class DirtyCheckTest(LaneRepoCase):
         self.assertEqual(EXIT_DIRTY, finished.returncode, finished.stdout + finished.stderr)
         self.assertIn("gate.txt", finished.stdout)
         self.assertIn("page.html", finished.stdout)
-        self.assertIn("Fix: commit them", finished.stdout)
-        self.assertIn("rerun this line", finished.stdout)
+        self.assertIn("if the changes are yours, commit them", finished.stdout)
+        self.assertIn("if another session holds them, wait until it commits or drops them", finished.stdout)
+        self.assertIn("rerun the merge line", finished.stdout)
+        self.assertIn("merge in a detached worktree", finished.stdout)
+        self.assertNotIn("git commit", finished.stdout)
         self.assertEqual(head_before, git(self.repo, "rev-parse", "HEAD"), "a merge started")
         self.assertFalse((self.repo / ".git" / "MERGE_HEAD").exists())
         self.assertEqual("page edited by another session\n", (self.repo / "page.html").read_text())
+
+    def test_an_untracked_file_at_a_path_the_branch_adds_stops_the_merge(self):
+        self.commit("added.txt", "from the lane\n", repo=self.lane)
+        (self.repo / "added.txt").write_text("untracked in the checkout\n")
+        (self.repo / "unrelated.txt").write_text("untracked, not on the lane\n")
+
+        finished = self.run_receipt("dirty", str(self.repo), "lane")
+
+        self.assertEqual(EXIT_DIRTY, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("added.txt", finished.stdout)
+        self.assertNotIn("unrelated.txt", finished.stdout)
 
     def test_a_dirty_file_the_merge_does_not_touch_leaves_the_merge_clear(self):
         self.lane_cuts_gate_and_rebuilds_page()
@@ -185,6 +200,25 @@ class DirtyCheckTest(LaneRepoCase):
 
         self.assertEqual(EXIT_SKIP, finished.returncode, finished.stdout + finished.stderr)
         self.assertIn("clear:", finished.stdout)
+
+    def test_a_failed_untracked_listing_stops_loudly_and_starts_no_merge(self):
+        self.lane_cuts_gate_and_rebuilds_page()
+        shim_dir = self.scratch / "shim"
+        shim_dir.mkdir()
+        shim = shim_dir / "git"
+        shim.write_text('#!/bin/sh\nfor arg in "$@"; do [ "$arg" = ls-files ] && exit 1; done\n'
+                        f'exec {shutil.which("git")} "$@"\n')
+        shim.chmod(0o755)
+        head_before = git(self.repo, "rev-parse", "HEAD")
+
+        finished = subprocess.run([sys.executable, str(SUITE_RECEIPT), "dirty", str(self.repo), "lane"],
+                                  capture_output=True, text=True, timeout=30,
+                                  env={**os.environ, "PATH": f"{shim_dir}{os.pathsep}{os.environ['PATH']}"})
+
+        self.assertEqual(EXIT_FAILED, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("git ls-files --others failed", finished.stderr)
+        self.assertEqual(head_before, git(self.repo, "rev-parse", "HEAD"))
+        self.assertFalse((self.repo / ".git" / "MERGE_HEAD").exists())
 
     def test_a_clean_checkout_leaves_the_merge_clear(self):
         self.lane_cuts_gate_and_rebuilds_page()

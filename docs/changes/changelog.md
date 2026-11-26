@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1190 changes
+1191 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [Review loop honors a caller's CI test-gate ruling](notes/2026-11-25-review-loop-honors-a-caller-s-ci-test-gate-ruling.md) [script/full-check, script/review-loop-script, script/code-step, script/code-review-start, script/review-launch, script/review-fix, script/full-check-gate, skill/review, skill/code] A caller that ruled a CI run is the test gate passes `--ci-gate <run>`: the review loop runs no local full check, lint still runs, and the packet says `not run (CI gate: <run>)`.
 * [a zsh test pins the CLAUDECODE guard on the ls alias](notes/2026-11-24-a-zsh-test-pins-the-claudecode-guard-on-the-ls.md) [script/zshrc] A test runs a real interactive zsh over the zshrc and checks that ls is the system command under CLAUDECODE and an alias otherwise.
 * [a merge that adds a script links it from ~/.local/bin](notes/2026-11-24-a-merge-that-adds-a-script-links-it-from-local-bin.md) [script/post-merge] A post-merge hook restows the scripts package when a merge in the stowed main checkout leaves a script unlinked.
 * [herdr-lane-resume --close closes a merged lane that has no lane file entry](notes/2026-11-24-herdr-lane-resume-close-closes-a-merged-lane-that.md) [script/herdr-lane-resume] herdr-lane-resume --close takes a lane name or a worktree path and closes a merged lane with no lane file entry, refusing an unmerged, detached, main-checkout, ambiguous or working lane.

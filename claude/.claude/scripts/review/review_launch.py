@@ -42,6 +42,7 @@ from review_loop_post_cap import post_cap_kinds
 from review_loop_prompt_file import (
     ADOPTED_HEADER_KEY,
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
     FINDINGS_KEY,
@@ -114,6 +115,9 @@ def launch_parser():
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
                         help="a test command the loop runs on every converged run, before review credit (repeatable)")
+    parser.add_argument("--ci-gate", default="", metavar="RUN",
+                        help="the caller ruled that this CI run is the test gate: the loop runs no local full check "
+                             "and the packet names the run")
     models = parser.add_mutually_exclusive_group()
     models.add_argument("--fast", action="store_true", help=f"run the reviewers and the fix coder on {FAST_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
@@ -274,6 +278,8 @@ def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None
     if options.fast:
         pairs.append((REVIEWER_MODEL_KEY, FAST_MODEL))
         pairs.append((CODER_MODEL_KEY, FAST_MODEL))
+    if options.ci_gate:
+        pairs.append((CI_GATE_KEY, options.ci_gate))
     if options.iter:
         pairs.append((ITER_KEY, str(options.iter)))
     if options.fix_rounds:
@@ -320,8 +326,8 @@ def packet_args(options, launch_file):
 
 def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
     """The flags a later fix run of this review carries: the same repo, range, files, ruled-out files, reviewer
-    model, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--fix-rounds`, `--post-cap-passes`,
-    `--user-ruled`, `--session-ruled` and `--detach` are the caller's to add."""
+    model, CI gate, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--fix-rounds`,
+    `--post-cap-passes`, `--user-ruled`, `--session-ruled` and `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
@@ -333,6 +339,8 @@ def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
         args.append("--fast")
     if options.deep:
         args.append("--deep")
+    if options.ci_gate:
+        args += ["--ci-gate", options.ci_gate]
     for test_command in options.tests:
         args += ["--test", test_command]
     return [*args, "--lane", options.lane, "--handoff", str(handoff_file)]

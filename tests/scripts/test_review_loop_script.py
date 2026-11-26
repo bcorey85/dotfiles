@@ -2903,6 +2903,20 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop, _check_command = loop_main.build_loop(request)
         return loop
 
+    def test_a_ci_gate_header_line_sets_the_loop_ci_run(self):
+        loop_main, request = self.gate_command_request("echo scoped", False, header_extra="ci-gate: run-42\n")
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "run-42")
+
+    def test_no_ci_gate_header_line_leaves_the_loop_ci_run_empty(self):
+        loop_main, request = self.gate_command_request("echo scoped", False)
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "")
+
     def test_the_loop_brief_names_the_plan_lines_of_the_phase(self):
         plan = self.repo / "docs" / "plans" / "p" / "spec.md"
         plan.parent.mkdir(parents=True)
@@ -3161,6 +3175,18 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual((packet["full_check"], packet["full_check_command"]), ("passed", "make check"))
         self.assertEqual("", packet["tool_fault"])
+
+    def test_a_ci_gate_header_runs_no_local_check_and_the_packet_names_the_ci_run(self):
+        marker = self.repo / "ran"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, header_extra="ci-gate: run-42\n",
+                                    quality_check=f"touch {marker}")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertFalse(marker.exists(), "the Quality check command must not run under a ci-gate header")
+        self.assertEqual(packet["full_check"], "not run (CI gate: run-42)")
+        self.assertEqual(packet["full_check_command"], "")
 
     def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole_in_its_issues_file(self):
         script = self.scratch / "stale_prose.py"

@@ -12,8 +12,9 @@ Every row carries the `run_id` of one run and a `kind`:
             text), runs_tests, scope (its lib/check_scope.py scope; a test step with scope "targeted"
             voids the receipt).
   finished  ts, result (full_check's result string), exit (of the whole command), timed_out, ci (the repo leaves its
-            full suite to CI), satisfied (the run met the full check this phase owes: the command exited 0, or there
-            was no command to run; a runner summary that reports failures voids an exit 0),
+            full suite to CI, or a caller ruled a CI run the test gate), satisfied (the run met the full check this
+            phase owes: the command exited 0, there was no command to run, or a caller ruled a CI run the test gate
+            (`not run (CI gate: <run>)`); a runner summary that reports failures voids an exit 0),
             tree (the tree fingerprint after the check and its rewrites: the `tree:` line full_check prints), head (the
             commit HEAD named then; the fingerprint does not cover it), log (the check's log file as an absolute path,
             left out of the fingerprint), notes_base (the commit or empty tree `notes_tree` is taken against),

@@ -577,7 +577,7 @@ class UserRuledHeaderTest(unittest.TestCase):
     def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
                                      iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[1],
-                                     session_ruled=[])
+                                     session_ruled=[], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -587,7 +587,7 @@ class UserRuledHeaderTest(unittest.TestCase):
     def test_session_ruled_numbers_are_written_as_a_header_pair_with_no_ruling_time(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
                                      iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
-                                     session_ruled=[2, 3])
+                                     session_ruled=[2, 3], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -597,7 +597,7 @@ class UserRuledHeaderTest(unittest.TestCase):
     def test_a_launch_with_no_fix_flag_but_findings_to_apply_writes_the_fix_first_mode(self):
         options = argparse.Namespace(fix=None, skill="code", lane="code", no_review=False, fast=False,
                                      iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
-                                     session_ruled=[])
+                                     session_ruled=[], ci_gate="")
 
         with_findings = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.json")))
         without_findings = dict(review_launch.header_pairs(options, "", [], None))
@@ -605,10 +605,51 @@ class UserRuledHeaderTest(unittest.TestCase):
         self.assertEqual(with_findings["mode"], "fix-first")
         self.assertEqual(without_findings["mode"], "review-first")
 
+    def test_a_ci_gate_option_is_written_as_a_header_pair(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="run-42")
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertEqual(pairs["ci-gate"], "run-42")
+
+    def test_the_ci_gate_argument_is_parsed_and_reaches_the_launch_header(self):
+        options = review_launch.launch_arguments(["--ci-gate", "run-42"])
+
+        pairs = dict(review_launch.header_pairs(options, "", [], None))
+
+        self.assertEqual(options.ci_gate, "run-42")
+        self.assertEqual(pairs["ci-gate"], "run-42")
+
+    def test_a_relaunch_keeps_the_ci_gate_when_one_is_set(self):
+        options = argparse.Namespace(base="", fast=False, deep=False, tests=[], lane="code", ci_gate="run-42")
+
+        args = review_launch.relaunch_args(options, pathlib.Path("repo"), [], pathlib.Path("handoff.md"))
+
+        position = args.index("--ci-gate")
+        self.assertEqual(args[position:position + 2], ["--ci-gate", "run-42"])
+
+    def test_a_relaunch_adds_no_ci_gate_flag_when_none_is_set(self):
+        options = argparse.Namespace(base="", fast=False, deep=False, tests=[], lane="code", ci_gate="")
+
+        args = review_launch.relaunch_args(options, pathlib.Path("repo"), [], pathlib.Path("handoff.md"))
+
+        self.assertNotIn("--ci-gate", args, "no gate set must add no flag")
+
+    def test_no_ci_gate_option_writes_no_ci_gate_pair(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="")
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertNotIn("ci-gate", pairs)
+
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
                                      iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
-                                     session_ruled=[])
+                                     session_ruled=[], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 

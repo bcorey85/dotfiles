@@ -7,20 +7,20 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-761 fix notes
+762 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
-| script/code-step | 174 | 8 |
-| script/review-fix | 75 | 16 |
-| script/review-loop-script | 74 | 16 |
+| script/code-step | 175 | 9 |
+| script/review-fix | 76 | 17 |
+| script/review-loop-script | 75 | 17 |
 | script/handback | 57 | 2 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
-| script/full-check | 30 | 6 |
+| script/full-check | 31 | 7 |
 | script/plan-format | 28 | 8 |
 | script/script-utils | 27 | 5 |
 | script/review-loop | 24 | 7 |
@@ -34,7 +34,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
 | script/staged-claim-gate | 16 | 4 |
-| script/code-review-start | 14 | 6 |
+| script/code-review-start | 15 | 7 |
 | script/verify-log | 14 | 1 |
 | script/code-wait | 13 | 4 |
 | script/log-review-finding | 12 | 0 |
@@ -45,7 +45,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 10 | 5 |
 | script/herdr-worktree | 10 | 4 |
 | script/review-asks | 10 | 4 |
-| script/review-launch | 9 | 4 |
+| script/review-launch | 10 | 5 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/inline-interpreter-hint | 8 | 4 |
 | script/phase-asks | 8 | 3 |
@@ -55,6 +55,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-review-metrics | 7 | 0 |
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
+| script/full-check-gate | 6 | 5 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
@@ -62,7 +63,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
-| script/full-check-gate | 5 | 4 |
 | script/open-child-gate | 5 | 0 |
 | script/phase-start | 5 | 3 |
 | script/run-sh | 5 | 1 |

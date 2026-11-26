@@ -28,6 +28,7 @@ from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
 from review_loop_prompt_file import (
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
     HELD_FILES_KEY,
@@ -149,6 +150,7 @@ def build_loop(request):
     loop.gate_commands = list(request.gate_commands)
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.coder_model = header.get(CODER_MODEL_KEY, "")
+    loop.ci_run = header.get(CI_GATE_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)

@@ -36,13 +36,14 @@ LIVE_BASE_TREES = set()
 
 
 def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=FULL_CHECK_LOG, left_out=(),
-                   source=None, base=None):
+                   source=None, base=None, ci_run=""):
     """(the full_check result, the log's last lines with the failing tests above them, the run's details: runner
     summaries and the files the check changed or created). A SIGTERM kills the check's process group with the claude
     calls. `runner` (full_check.run by default) is any function with run's check arguments, such as
     full_check.base_run, whose result this returns as it is. `left_out` (the Expected red entries the command leaves
-    out), `source` (where an overriding command came from) and `base` (the revision the diff that narrows the
-    discovered check is taken against) go to the runner only when they hold some."""
+    out), `source` (where an overriding command came from), `base` (the revision the diff that narrows the
+    discovered check is taken against) and `ci_run` (the caller's CI run that replaces the check) go to the runner
+    only when they hold some."""
     runner = runner or full_check.run
     assignments = script_utils.environment_from_assignments(gate_env)
     check_pids = []
@@ -51,6 +52,8 @@ def run_full_check(repo, out, check_command, gate_env=(), runner=None, log_name=
         options["source"] = source
     if base:
         options["base"] = base
+    if ci_run:
+        options["ci_run"] = ci_run
 
     def check_started(pid):
         check_pids.append(pid)
@@ -83,6 +86,7 @@ class FullCheckSteps:
     def init_full_check_state(self):
         self.full_check = ""
         self.full_check_command = ""
+        self.ci_run = ""  # the caller's CI run that stands in for the local full check; lint still runs
         self.expected_red = []  # the phase's Expected red entries that the check leaves out
         self.plan_on_disk = None  # the plan path and phase id phase_check reads the Expected red lines from
         self.phase = None
@@ -155,10 +159,11 @@ class FullCheckSteps:
         full-check receipt."""
         base = self.review_base or full_check.DEFAULT_DIFF_BASE
         check_command = self.check_command_for_diff(check_command, base)
-        self.full_check_command = check_command or ""
+        self.full_check_command = "" if self.ci_run else (check_command or "")
         source = full_check_receipt.SOURCE_OVERRIDDEN if self.check_overridden else None
         self.full_check, tail, details = run_full_check(self.repo, self.out, check_command, self.gate_env,
-                                                        left_out=self.expected_red, source=source, base=base)
+                                                        left_out=self.expected_red, source=source, base=base,
+                                                        ci_run=self.ci_run)
         if check_command is None and self.expected_red:
             self.untested_fix = True
         elif self.full_check == full_check.PASSED:

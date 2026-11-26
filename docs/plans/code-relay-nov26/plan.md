@@ -14,7 +14,7 @@ Fix two queued /code hand-back defects. Each phase starts with a test that fails
 ## Phase Status
 
 - [x] Phase 1: the relay prints the next step when the run wrote no new stop (risk: low)
-- [ ] Phase 2: a code-fork cannot hand back while a skill fork it launched in the background still runs (risk: medium)
+- [x] Phase 2: a code-fork cannot hand back while a skill fork it launched in the background still runs (risk: medium)
 
 ## Phase 1: the relay prints the next step when the run wrote no new stop
 

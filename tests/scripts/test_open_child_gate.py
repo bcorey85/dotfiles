@@ -138,6 +138,71 @@ class OpenChildGateTest(unittest.TestCase):
 
         self.assert_fork_denied(self.fork_hand_back(records), "a0000000000000002")
 
+    def skill_records(self, forked=True):
+        call = {"type": "tool_use", "id": "toolu_s", "name": "Skill", "input": {"skill": "review"}}
+        text = ('Skill "review" launched (forked execution, running in the background)...' if forked
+                else "Launching skill: review")
+        result = {"type": "tool_result", "tool_use_id": "toolu_s", "content": [{"type": "text", "text": text}]}
+        record = {"type": "user", "message": {"role": "user", "content": [result]}}
+        if forked:
+            record["toolUseResult"] = {"success": True, "commandName": "review", "status": "forked",
+                                       "background": True, "agentId": "a5c0de0000000000f"}
+        return [{"type": "assistant", "message": {"role": "assistant", "content": [call]}}, record]
+
+    def test_code_fork_hand_back_while_its_skill_fork_runs_is_denied(self):
+        self.write_child("a5c0de0000000000f", meta={"agentType": "review"})
+
+        self.assert_fork_denied(self.fork_hand_back(self.skill_records()), "a5c0de0000000000f")
+
+    def test_code_fork_hand_back_passes_after_the_skill_forks_notification(self):
+        records = [*self.skill_records(), notification("toolu_s")]
+
+        proc = self.fork_hand_back(records)
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
+    def assert_skill_fork_passes(self, extra_records):
+        self.write_child("a5c0de0000000000f", meta={"agentType": "review"})
+
+        proc = self.fork_hand_back([*self.skill_records(), *extra_records])
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
+    def test_code_fork_hand_back_passes_after_a_task_notification_keyed_by_agent_id(self):
+        text = "<task-notification>\n<task-id>a5c0de0000000000f</task-id>\n</task-notification>"
+        self.assert_skill_fork_passes([{"type": "user", "message": {"role": "user", "content": text}}])
+
+    def test_code_fork_hand_back_passes_after_the_skill_forks_agent_message(self):
+        text = '<agent-message from="a5c0de0000000000f">done</agent-message>'
+        self.assert_skill_fork_passes([{"type": "user", "message": {"role": "user", "content": text}}])
+
+    def test_code_fork_hand_back_passes_when_the_skill_fork_ended_on_an_api_error(self):
+        child_log = os.path.join(os.path.dirname(self.transcript), "agent-a5c0de0000000000f.jsonl")
+        self.write_child("a5c0de0000000000f", meta={"agentType": "review"})
+        with open(child_log, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"type": "assistant", "isApiErrorMessage": True}) + "\n")
+
+        proc = self.fork_hand_back(self.skill_records())
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
+    def test_code_fork_hand_back_passes_when_the_skill_fork_finished(self):
+        self.write_child("a5c0de0000000000f", meta={"agentType": "review", "finished": True})
+
+        proc = self.fork_hand_back(self.skill_records())
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
+    def test_code_fork_hand_back_passes_after_a_foreground_skill(self):
+        proc = self.fork_hand_back(self.skill_records(forked=False))
+
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(proc.stderr, "")
+
     def test_code_fork_with_no_child_passes(self):
         proc = self.fork_hand_back([])
         self.assertEqual(proc.stdout, "")

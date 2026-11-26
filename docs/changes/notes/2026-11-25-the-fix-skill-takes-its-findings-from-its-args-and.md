@@ -26,7 +26,7 @@ The new guidance tests fail on the old skill text and pass on the new one. The f
 
 ## Result
 
-Rule-meter arms pending.
+Rule meter FX02 (sonnet, 1 run per cell, bare `/fix +fast`): rule on 3/3 ended with one line asking for findings, rule off 1/3. Every off reply also started no loop; the gap is the one-line stop.
 
 ## Watch
 

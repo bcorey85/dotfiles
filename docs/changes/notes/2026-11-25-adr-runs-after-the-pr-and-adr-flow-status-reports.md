@@ -26,7 +26,7 @@ The status test fails on the old tree (no `status` verb) and passes on the new o
 
 ## Result
 
-Rule-meter arms pending.
+Rule meter AD02 (sonnet, 1 run per cell, Clean route with the PR open): rule on 3/3 named /adr then `adr_flow.py status` as a step before calling the branch finished, rule off 0/3.
 
 ## Watch
 

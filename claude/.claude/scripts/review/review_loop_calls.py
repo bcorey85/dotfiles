@@ -80,9 +80,9 @@ class CallReply(typing.NamedTuple):
     session: str
 
 
-def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True, held=()):
+def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
     """One `claude -p` model step. Returns the result text; see `claude_call_reply`."""
-    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded, held).text
+    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded).text
 
 
 def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True,

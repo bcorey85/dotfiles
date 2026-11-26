@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1286 changes
+1287 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -71,6 +71,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [memory-cap hook caps a test run with leading env assignments](notes/2026-11-26-memory-cap-hook-caps-a-test-run-with-leading-env.md) [script/memory-cap-scope, script/inline-interpreter-hint] The memory-cap hook now puts the cap after leading NAME=value words and allows the call, instead of denying it.
 * [review loop guard leaves a deleted untracked file a finding or the fix coder record names](notes/2026-11-26-review-loop-guard-leaves-a-deleted-untracked-file-a.md) [script/review-loop-untracked, script/review-loop-ruled-out] The untracked-file guard no longer puts back a stray untracked file that a finding of the pass names for deletion or that the fix coder record shows the loop wrote.
 * [the push deny and a bare review start from one reviewed base](notes/2026-11-26-the-push-deny-and-a-bare-review-start-from-one-base.md) [script/git-discipline-gate, script/review-launch] The push gate's unreviewed deny and a bare /review on a clean tree now both name the newest recorded reviewed base that is a strict ancestor of HEAD, so a base equal to HEAD or off the branch is skipped for an older one.
 * [the clean-tree review stop names the fresh review base form](notes/2026-11-26-the-clean-tree-review-stop-names-the-fresh-review.md) [script/review-launch] When a review launch on a clean tree has nothing to review, its stop names a fresh `/review base=<ref>` and says a resume launches nothing.

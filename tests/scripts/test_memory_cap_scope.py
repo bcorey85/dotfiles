@@ -148,7 +148,16 @@ NOT_REWRITABLE = {
     "after_cd": "cd x && python3 -m unittest t.py",
     "piped": "python3 -m unittest t.py | tail -5",
     "redirected": "python3 -m unittest t.py > log",
-    "assignment": "FOO=1 python3 -m unittest t.py",
+    "assignment_substitution": "FOO=$(id) python3 -m unittest t.py",
+    "assignment_then_bare_variable": "FOO=1 BAR=$X python3 -m unittest t.py",
+    "assignment_backslash_space": "FOO=a\\ b python3 -m unittest t.py",
+    "assignment_backticks": "FOO=`id` python3 -m unittest t.py",
+    "assignment_sets_path": "PATH=bin python3 -m unittest t.py",
+    "assignment_sets_zsh_path": "path=bin python3 -m unittest t.py",
+    "assignment_then_invalid_name": "FOO=1 1x=y python3 -m unittest t.py",
+    "assignment_tilde_value": "FOO=~/x python3 -m unittest t.py",
+    "assignment_then_env_wrapper": "FOO=1 env python3 -m unittest t.py",
+    "assignment_only_then_semicolon": "FOO=1; python3 -m unittest t.py",
     "substitution": "python3 -m unittest $(ls t*.py)",
     "backticks": "python3 -m unittest `ls t.py`",
     "subshell": "(python3 -m unittest t.py)",
@@ -219,6 +228,12 @@ REWRITABLE = {
     "run_sh_direct": "./tests/run.sh",
     "run_sh_through_sh": "sh tests/run.sh",
     "run_sh_through_zsh": "zsh tests/run.sh",
+    "one_assignment": "FOO=1 python3 -m unittest t.py",
+    "two_assignments": "PYTHONPATH=tests/scripts X=y python3 tests/parallel_tests.py x.py",
+    "assignment_double_quoted_value": 'FOO="a b" python3 -m unittest t.py',
+    "assignment_single_quoted_value": "FOO='a b' python3 -m unittest t.py",
+    "assignment_empty_value": "FOO= python3 -m unittest t.py",
+    "assignment_value_with_equals": "OPTS=a=b python3 -m unittest t.py",
 }
 
 
@@ -249,8 +264,37 @@ class RewritableTest(unittest.TestCase):
     def test_capped_command_puts_the_prefix_first(self):
         self.assertEqual(memory_cap_scope.capped_command("pytest"), f"{memory_cap_scope.CAPPED_PREFIX} pytest")
 
+    def test_leading_assignments_stay_in_front_of_the_prefix(self):
+        command = "PYTHONPATH=tests/scripts X=y python3 tests/parallel_tests.py x.py"
+        self.assertEqual(memory_cap_scope.capped_command(command),
+                         f"PYTHONPATH=tests/scripts X=y {memory_cap_scope.CAPPED_PREFIX} "
+                         "python3 tests/parallel_tests.py x.py")
+
+    def test_a_quoted_assignment_value_stays_whole_in_front_of_the_prefix(self):
+        prefix = memory_cap_scope.CAPPED_PREFIX
+        command = 'FOO="a b" python3 -m unittest t.py'
+        self.assertEqual(memory_cap_scope.capped_command(command), f'FOO="a b" {prefix} python3 -m unittest t.py')
+        self.assertEqual(memory_cap_scope.capped_command("  " + command),
+                         f'FOO="a b" {prefix} python3 -m unittest t.py')
+
 
 class HookTest(unittest.TestCase):
+
+    def test_a_test_step_with_leading_assignments_gets_the_prefix_after_them(self):
+        command = "PYTHONPATH=tests/scripts python3 tests/parallel_tests.py x.py"
+        result = run_hook_with_scope({"tool_name": "Bash", "tool_input": {"command": command}})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        decision = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", decision)
+        self.assertEqual(decision["updatedInput"]["command"],
+                         f"PYTHONPATH=tests/scripts {memory_cap_scope.CAPPED_PREFIX} "
+                         "python3 tests/parallel_tests.py x.py")
+
+    def test_an_already_capped_command_with_an_assignment_gets_no_output(self):
+        command = f"PYTHONPATH=x {memory_cap_scope.CAPPED_PREFIX} python3 tests/parallel_tests.py x.py"
+        result = run_hook_with_scope({"tool_name": "Bash", "tool_input": {"command": command}})
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
     def test_denies_with_the_capped_form_where_a_scope_runs(self):
         payload = {"tool_name": "Bash", "tool_input": {"command": "cd x && pytest -x", "run_in_background": True}}
         result = run_hook_with_scope(payload)

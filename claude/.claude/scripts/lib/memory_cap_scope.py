@@ -11,8 +11,8 @@ cap_available says whether this machine can run the scope: Linux, systemd-run on
 
 is_rewritable_test_run names the one case the hook fixes itself: the whole command is a single plain step that runs
 a test runner or the repo's tests/run.sh, and capped_command puts CAPPED_PREFIX (which carries the shared slice) in
-front of it. The hook denies other uncapped test runs with DENY_TEXT; gates/inline_interpreter_hint.py says which deny
-answers first.
+front of its program, after any leading literal NAME=value words (script_utils.ENV_ASSIGNMENTS). The hook denies
+other uncapped test runs with DENY_TEXT; gates/inline_interpreter_hint.py says which deny answers first.
 
 foreground_full_suite names a command with a full-suite step (tests/run.sh, `unittest discover`, a bare runner),
 capped or not: a main session's tool call must run it with run_in_background so the conversation stays open. A run
@@ -38,6 +38,8 @@ CAPPED_UNIT_PREFIX = "capped"
 # The shell a capped command runs in: the one subprocess's shell=True uses.
 CAPPED_SHELL = "/bin/sh"
 SHELLS = {"bash", "sh", "zsh"}
+# Assigning either name changes where the shell looks up systemd-run: zsh ties lowercase `path` to PATH.
+LOOKUP_PATH_NAMES = {"PATH", "path"}
 RUN_SCRIPT_NAME = "run.sh"
 RUN_SCRIPT = re.compile(r"(^|/)tests/" + re.escape(RUN_SCRIPT_NAME) + "$")
 # A command that holds none of these words runs no test: skip the heavy check_scope import for it.
@@ -164,16 +166,41 @@ def uncapped_test_run(command):
 
 
 def capped_command(command):
-    """The command with the capped prefix in front of it."""
-    return f"{CAPPED_PREFIX} {command}"
+    """The command with the capped prefix in front of its program, after any leading literal NAME=value words."""
+    import script_utils  # pylint: disable=import-outside-toplevel
+
+    stripped = command.lstrip()
+    assignments = script_utils.ENV_ASSIGNMENTS.match(stripped)
+    if assignments is None:
+        return f"{CAPPED_PREFIX} {command}"
+    return f"{assignments.group(0)}{CAPPED_PREFIX} {stripped[assignments.end():]}"
+
+
+def has_only_literal_assignments(command, assignment_count):
+    """True when the command has no leading NAME=value words, or script_utils.ENV_ASSIGNMENTS reads all
+    assignment_count and none sets PATH or zsh's `path` (the shell would look systemd-run up on it).
+
+    The word-count comparison catches a word ENV_ASSIGNMENTS stops before, such as `1x=y`, which the shell would run
+    as the program."""
+    if assignment_count == 0:
+        return True
+    import script_utils  # pylint: disable=import-outside-toplevel
+
+    assignments = script_utils.ENV_ASSIGNMENTS.match(command.lstrip())
+    if assignments is None:
+        return False
+    names = [word.group(1) for word in script_utils.ENV_ASSIGNMENT.finditer(assignments.group(0))]
+    return len(names) == assignment_count and not LOOKUP_PATH_NAMES.intersection(names)
 
 
 def is_rewritable_test_run(command):
     """True when the whole command is one plain simple command whose program word is a test runner, so the capped
     prefix in front of it changes nothing else: no wrapper word (`sudo`, `exec`, `time`, `env`), operator, newline,
-    subshell, brace group, substitution, redirection, heredoc or leading NAME=value word, and no usage flag. A path
-    is accepted only for the repo's own tests/run.sh (`tests/run.sh` or `./tests/run.sh`, alone or after a shell)
-    and tests/parallel_tests.py (`tests/parallel_tests.py` or `./tests/parallel_tests.py`, after a python program):
+    subshell, brace group, substitution, redirection or heredoc, and no usage flag. Leading NAME=value words are
+    accepted when each value is literal (script_utils.ENV_ASSIGNMENTS) and none sets PATH or zsh's `path`;
+    capped_command puts the prefix after them. A path is accepted only for the repo's own tests/run.sh
+    (`tests/run.sh` or `./tests/run.sh`, alone or after a shell) and tests/parallel_tests.py
+    (`tests/parallel_tests.py` or `./tests/parallel_tests.py`, after a python program):
     a program word with any other `/` and a run script or runner script at any other path are False. The caller
     sends the rewritten command back for the normal permission check, so any doubt is False."""
     if not TEST_WORDS.search(command):
@@ -191,8 +218,9 @@ def is_rewritable_test_run(command):
     if len(steps) != 1 or len(parsed_commands) != 1:
         return False
 
-    words, redirections, _piped = parsed_commands[0]
-    if redirections or shell_command.without_assignments(words) != words:
+    all_words, redirections, _piped = parsed_commands[0]
+    words = shell_command.without_assignments(all_words)
+    if redirections or not has_only_literal_assignments(command, len(all_words) - len(words)):
         return False
     if not words or HELP_FLAGS.intersection(words):
         return False

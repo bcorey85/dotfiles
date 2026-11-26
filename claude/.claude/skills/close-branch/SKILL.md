@@ -69,6 +69,8 @@ On a fail, run `python3 ~/.claude/skills/close-branch/scripts/fix_diff.py mark` 
 
 ## Step 6: recap
 
+Run Step 7 first and keep its status line for Open items.
+
 Run, in one response, from the repo root:
 
 ```bash
@@ -96,7 +98,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Concentration                 (largest module and branch counts)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
-### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run)
+### Open items                    (asks, gate medium and low findings, REQUIRES-MUTATION culls not run, Step 7's status line when it is not `adr: done`)
 ### Still unstaged                (from stage.mjs, blast-radius order)
 
 Next: read the residue → run the smoke checklist → stage → /commit → open the PR → /adr <plan folder> → `adr_flow.py status <plan folder>` (`adr: done` ends the branch).
@@ -106,11 +108,11 @@ Build Criteria changes from the `rg` output only. A sign-off that another sessio
 
 ## Step 7: ADR after the PR
 
-Once the PR exists, run `python3 ~/.claude/skills/adr/scripts/adr_flow.py status <plan folder>` first.
+Run this before the Step 6 print, so its result lands in the recap. Once the PR exists, run `python3 ~/.claude/skills/adr/scripts/adr_flow.py status <plan folder>` first.
 
-- `adr: no PR yet`: end the run and leave the step to the user through the recap's Next line.
-- `adr: not finished`: run `/adr <plan folder>`, then rerun `status` once. On any line but `adr: done`, end the run and put that line under the recap's Open items.
-- `adr: cannot tell: <reason>`: end the run and put the line under the recap's Open items.
+- `adr: no PR yet`: skip `/adr`; the recap's Next line leaves the step to the user.
+- `adr: not finished`: run `/adr <plan folder>`, then rerun `status` once. On any line but `adr: done`, put that line under the recap's Open items.
+- `adr: cannot tell: <reason>`: put the line under the recap's Open items.
 
 The branch is not finished until `status` prints `adr: done`.
 

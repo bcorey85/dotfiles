@@ -22,6 +22,7 @@ import system_resources
 
 LANE_STATUS = pathlib.Path(os.environ.get("LANE_STATUS_SCRIPT", toolkit_paths.TOOLS_DIR / "lane_status.py"))
 VIEWER_CAP = 1024**3
+BASE_COMMIT_DATE = "2099-01-01T00:00:00+00:00"
 # Any real process holds more than this.
 TINY_CAP = 1
 ROOMY_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 99999999 1% /"
@@ -645,17 +646,19 @@ class LaneStatusTest(unittest.TestCase):
                 self.assertEqual(finished.returncode, 2)
                 self.assertIn("LANE_STATUS_MIN_SCRATCH_GB", finished.stderr)
 
-    def git(self, folder, *arguments):
+    def git(self, folder, *arguments, commit_date=None):
         env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
                "GIT_COMMITTER_EMAIL": "t@t"}
+        if commit_date:
+            env["GIT_COMMITTER_DATE"] = commit_date
         finished = subprocess.run(["git", "-C", str(folder), *arguments], env=env, capture_output=True, text=True)
         self.assertEqual(finished.returncode, 0, finished.stderr)
         return finished.stdout
 
-    def commit_file(self, folder, name):
+    def commit_file(self, folder, name, commit_date=None):
         (pathlib.Path(folder) / name).write_text(name)
         self.git(folder, "add", name)
-        self.git(folder, "commit", "-m", name)
+        self.git(folder, "commit", "-m", name, commit_date=commit_date)
 
     def git_fixture(self):
         """A bare origin, a main checkout on master with one commit pushed, and a helper to add lane worktrees."""
@@ -664,7 +667,9 @@ class LaneStatusTest(unittest.TestCase):
         self.main = self.root / "main"
         subprocess.run(["git", "clone", str(origin), str(self.main)], check=True, capture_output=True)
         self.git(self.main, "checkout", "-b", "master")
-        self.commit_file(self.main, "base")
+        # Dated a day ahead, so no lane in these tests starts after its branch tip and reads as `no commits` by
+        # accident of the clock; test_git_prints_no_commits_... sets the lane start later on purpose.
+        self.commit_file(self.main, "base", commit_date=BASE_COMMIT_DATE)
         self.git(self.main, "push", "origin", "master")
 
     def git_lane(self, name, reports_to):
@@ -697,6 +702,21 @@ class LaneStatusTest(unittest.TestCase):
         table = self.root / "process-table.json"
         table.write_text(json.dumps(rows))
         return {process_table.TABLE_FILE_VARIABLE: str(table)}
+
+    def test_git_prints_no_commits_for_a_lane_whose_branch_tip_is_older_than_its_start(self):
+        self.git_fixture()
+        zero_tree = self.git_lane("zero", "boss")
+        self.stub_agents([self.agent("idle", zero_tree)])
+        lane_file = lane_entries.lane_file("zero")
+        lane = json.loads(lane_file.read_text())
+        lane["started_at"] = "2099-06-01T00:00:00+00:00"
+        lane_file.write_text(json.dumps(lane))
+        table = self.fake_table([])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["zero: branch-zero, no commits, 0 dirty, reports_to boss"], finished.stdout.splitlines())
 
     def test_git_marks_a_merged_lane_with_an_idle_agent_as_finished_idle_with_its_claude_rss(self):
         self.git_fixture()

@@ -11,6 +11,7 @@ The log is `${XDG_STATE_HOME:-~/.local/state}/memory-sample/samples.jsonl`. A fi
 and a process with no workspace is summed under workspace "". `install/memory-sample` runs it every minute.
 Exit 0, or 1 when the process table cannot be read (the message is on stderr)."""
 import datetime
+import operator
 import os
 import pathlib
 import sys
@@ -42,20 +43,16 @@ def summed(rows, key):
     return totals
 
 
-def kilobytes_of(total):
-    return total[0]
-
-
 def by_command(rows):
     totals = summed(rows, lambda row: row.command)
-    return [{"command": command, "rss_kb": kilobytes, "count": count}
-            for command, (kilobytes, count) in script_utils.largest_entries(totals, TOP_HOLDERS, kilobytes_of)]
+    largest = script_utils.largest_entries(totals, TOP_HOLDERS, operator.itemgetter(0))
+    return [{"command": command, "rss_kb": kilobytes, "count": count} for command, (kilobytes, count) in largest]
 
 
 def by_workspace(rows):
     totals = summed(rows, lambda row: row.workspace or "")
     return [{"workspace": workspace, "rss_kb": kilobytes}
-            for workspace, (kilobytes, _) in script_utils.largest_entries(totals, TOP_HOLDERS, kilobytes_of)]
+            for workspace, (kilobytes, _) in script_utils.largest_entries(totals, TOP_HOLDERS, operator.itemgetter(0))]
 
 
 def sample_line(rows):

@@ -535,8 +535,64 @@ class AdrFlowTest(unittest.TestCase):
             result.stdout,
         )
 
+    def commit_adr(self, name="LED-5-yield-view"):
+        self.write(f"{DECISIONS}/{name}.md", "# adr\n")
+        self.git("add", DECISIONS)
+        self.git("commit", "-q", "-m", "adr")
+
+    def test_status_with_a_task_dir_deleted_but_not_committed_is_not_finished(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr()
+        self.git("rm", "-rq", task_dir)
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+
+    def test_status_with_the_task_dir_deleted_but_no_committed_adr_is_not_finished(self):
+        task_dir = self.make_task_dir()
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+        self.assertIn("docs/decisions/LED-5", result.stdout)
+
+    def test_status_reads_the_upstream_tree_when_the_branch_has_one(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr()
+        self.git("update-ref", "refs/remotes/origin/feature/yield-view", "HEAD")
+        self.git("config", "remote.origin.url", str(self.repo))
+        self.git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        self.git("config", "branch.feature/yield-view.remote", "origin")
+        self.git("config", "branch.feature/yield-view.merge", "refs/heads/feature/yield-view")
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+
+    def test_status_with_a_kept_task_dir_and_a_committed_adr_for_it_is_done(self):
+        self.make_task_dir()
+        self.commit_adr()
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
     def test_status_with_a_pr_and_a_committed_then_deleted_task_dir_is_done(self):
         task_dir = self.make_task_dir()
+        self.commit_adr()
         self.git("rm", "-rq", task_dir)
         self.git("commit", "-q", "-m", "delete plan")
         self.gh = self.fake_gh(FAKE_GH_VIEW)
@@ -652,6 +708,7 @@ class AdrFlowTest(unittest.TestCase):
 
     def test_status_with_a_plan_folder_that_was_deleted_is_done(self):
         task_dir = self.make_task_dir("yield-view")
+        self.commit_adr("yield-view")
         self.git("rm", "-rq", task_dir)
         self.git("commit", "-q", "-m", "delete plan")
         self.gh = self.fake_gh(FAKE_GH_VIEW)
@@ -682,6 +739,7 @@ class AdrFlowTest(unittest.TestCase):
 
     def test_bare_status_on_a_ticket_key_branch_whose_plan_folder_was_deleted_is_done(self):
         task_dir = self.make_task_dir()
+        self.commit_adr("LED-5-foo")
         self.git("rm", "-rq", task_dir)
         self.git("commit", "-q", "-m", "delete plan")
         self.git("checkout", "-q", "-b", "LED-5-foo")

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-767 fix notes
+768 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -56,24 +56,24 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
+| script/lane-status | 6 | 6 |
 | script/ledger-write | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
+| script/adr-flow | 5 | 2 |
+| script/check-discovery | 5 | 3 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/full-check-gate | 5 | 4 |
-| script/lane-status | 5 | 5 |
 | script/open-child-gate | 5 | 0 |
 | script/phase-start | 5 | 3 |
 | script/run-sh | 5 | 1 |
 | script/shell-statements | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
-| script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
-| script/check-discovery | 4 | 2 |
 | script/herdr-dev | 4 | 2 |
 | script/herdr-worktree-watch | 4 | 3 |
 | script/log-scan | 4 | 0 |
@@ -124,6 +124,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/log-review-check | 2 | 0 |
 | script/mcp-ledger | 2 | 1 |
 | script/memory-cap-scope | 2 | 2 |
+| script/memory-sample | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
@@ -180,7 +181,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/ledger-hook | 1 | 0 |
 | script/log-agent-usage | 1 | 0 |
 | script/log-skill-use | 1 | 0 |
-| script/memory-sample | 1 | 1 |
 | script/merge-built-page | 1 | 0 |
 | script/nvim-jump | 1 | 1 |
 | script/owner-lines | 1 | 1 |

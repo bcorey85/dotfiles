@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1195 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1196 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md).
+Latest change: 2026-11-25, [adr_flow status reads the committed tree and lane-status prints no commits for a lane that never committed](notes/2026-11-25-adr-flow-status-reads-the-committed-tree-and-lane.md).
 
 ## Top gains
 

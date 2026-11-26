@@ -12,13 +12,17 @@ then the template. It never prints a source body: read the sources with Read.
 A standalone `keep` word in the argument is a trigger: prep drops it before
 resolving and adds --keep-task-dir to the finish command it prints.
 status: exit 1 with `adr: not finished` when a PR exists and the task dir
-remains or several task dirs match, or with `adr: cannot tell` (gh failed,
-detached HEAD, no task dir resolved on a branch with no ticket key, not a task
-dir, a ticket key or an argument that names no task dir that was ever
-committed); `adr: no PR yet` exits 0, and `adr: done` exits 0 when no task dir
-remains: a legacy plan, an old-style docs/eng-specs dir, or a ticket key whose
-plan folder was committed and then deleted. With no argument on a ticket-key
-branch, the key from the branch name goes through the same history check.
+remains or several task dirs match, or when a task dir deleted from the work
+tree is still in the committed tree or its docs/decisions ADR is not in it (the
+committed tree is the branch's upstream, else HEAD), or with `adr: cannot tell`
+(gh failed, detached HEAD, no task dir resolved on a branch with no ticket key,
+not a task dir, a ticket key or an argument that names no task dir that was
+ever committed); `adr: no PR yet` exits 0, and `adr: done` exits 0 when no task
+dir remains: a legacy plan, an old-style docs/eng-specs dir, or a ticket key
+whose plan folder was committed and then deleted, with its ADR committed. A task
+dir that remains reads `adr: done` when a committed ADR names it or its key
+(--keep-task-dir). With no argument on a ticket-key branch, the key from the
+branch name goes through the same history check.
 check: required sections filled, no `[placeholder]`, header bullets, section
 line caps. finish: check, then delete the task dir only when it is exactly one
 slug under the repo docs/plans dir, holds only plan files, and has nothing
@@ -756,26 +760,87 @@ def finish(adr_path, task_dir_argument, draft_is_current, keep_task_dir):
     return 0
 
 
-def status_for_unresolved_argument(root, argument):
-    """Read `done` only for a committed ticket key's plan folder, or a committed plan folder path that is gone.
+def committed_ref(root, branch):
+    """The tree status reads: the branch's upstream when it has one, else HEAD. The work tree is never read, so a
+    deletion or an ADR that is not committed does not count."""
+    if script_utils.branch_merge_ref(root, branch):
+        return "@{upstream}"
+    return "HEAD"
+
+
+def names_in_tree(root, ref, folder, dirs_only=False):
+    """The entry names directly under `folder` (with a trailing slash) in the tree of `ref`. Raises RefusedError when
+    git fails."""
+    command = ["git", "ls-tree", "--name-only"]
+    if dirs_only:
+        command.append("-d")
+    listing = run([*command, ref, "--", f"{folder}/"], cwd=root)
+    if listing.returncode != 0:
+        raise RefusedError(f"`{' '.join(command)} {ref} -- {folder}/` failed: {listing.stderr.strip()}")
+    return [Path(line).name for line in listing.stdout.splitlines() if line.strip()]
+
+
+def names_this_task(name, key, task_name):
+    """Whether the dir or ADR file stem `name` is for the task dir `task_name`, or for ticket key `key`."""
+    if task_name and name == task_name:
+        return True
+    if not key:
+        return False
+    return name == key or name.startswith(f"{key}-")
+
+
+def adr_in_tree(root, ref, key, task_name, branch):
+    """Whether the tree of `ref` holds an ADR under docs/decisions for the task dir or ticket key."""
+    slug = target_slug(key, task_name, branch)
+    stems = [name.removesuffix(".md") for name in names_in_tree(root, ref, "docs/decisions")]
+    return any(stem == slug or names_this_task(stem, key, task_name) for stem in stems)
+
+
+def unfinished_reason(root, branch, key, task_name):
+    """Why the committed tree does not show the task finished, or None: the task dir is still in it, or the ADR is
+    missing from it. `task_name` is "" for a ticket key, which matches every plan dir of that key."""
+    ref = committed_ref(root, branch)
+    plan_dirs = names_in_tree(root, ref, "docs/plans", dirs_only=True)
+    plan_dir_key = "" if task_name else key
+    remaining = [name for name in plan_dirs if names_this_task(name, plan_dir_key, task_name)]
+    if remaining:
+        return f"task dir docs/plans/{remaining[0]} is still in {ref}; run /adr and commit"
+    if not adr_in_tree(root, ref, key, task_name, branch):
+        slug = target_slug(key, task_name, branch)
+        return f"docs/decisions/{slug}.md is not in {ref}; commit the ADR"
+    return None
+
+
+def print_finished_state(root, branch, key, task_name):
+    reason = unfinished_reason(root, branch, key, task_name)
+    if reason:
+        print(f"adr: not finished: {reason}")
+        return 1
+    print("adr: done")
+    return 0
+
+
+def status_for_unresolved_argument(root, argument, branch):
+    """Read `done` only for a committed ticket key's plan folder, or a committed plan folder path that is gone, and
+    then only when the committed tree has dropped the folder and holds its ADR.
 
     Anything else is a wrong argument.
     """
+    branch_name = branch.removeprefix("feature/")
     key = argument_key(argument)
     if key:
         key_pathspecs = [f"docs/plans/{key}", f"docs/plans/{key}-*"]
         history = run(["git", "log", "-1", "--format=%H", "--", *key_pathspecs], cwd=root)
         if history.stdout.strip():
-            print("adr: done")
-            return 0
+            return print_finished_state(root, branch, key, "")
         print(f"adr: cannot tell: {argument} names no task dir and none was ever committed")
         return 1
     names_existing_path = os.path.exists(argument) or os.path.exists(root / argument)
     if not names_existing_path and task_dir_problem(root, root / argument) is None:
         history = run(["git", "log", "-1", "--format=%H", "--", str(root / argument)], cwd=root)
         if history.stdout.strip():
-            print("adr: done")
-            return 0
+            task_name = Path(argument).name
+            return print_finished_state(root, branch, ticket_key_for("", task_name, branch_name), task_name)
     print(f"adr: cannot tell: {argument} names no task dir under docs/plans")
     return 1
 
@@ -806,11 +871,11 @@ def status(argument):
     if kind == "none" and not argument:
         key_slug = split_key_slug(branch.removeprefix("feature/"))
         if key_slug:
-            return status_for_unresolved_argument(root, key_slug[0])
+            return status_for_unresolved_argument(root, key_slug[0], branch)
         print(f"adr: cannot tell: no task dir resolved for {branch}; rerun status with the task dir path")
         return 1
     if kind == "none":
-        return status_for_unresolved_argument(root, argument)
+        return status_for_unresolved_argument(root, argument, branch)
     kind, task_path, task_problem = classify_task_dir(root, kind, resolved_lines)
     if kind != "task-dir":
         print("adr: done")
@@ -818,6 +883,13 @@ def status(argument):
     if task_problem:
         print(f"adr: cannot tell: not a task dir: {task_problem}")
         return 1
+
+    # A task dir kept on purpose (finish --keep-task-dir) stays, so a committed ADR for it ends the task.
+    key = ticket_key_for(argument, task_path.name, branch.removeprefix("feature/"))
+    ref = committed_ref(root, branch)
+    if adr_in_tree(root, ref, key, task_path.name, branch):
+        print("adr: done")
+        return 0
 
     print(f"adr: not finished: PR {pr} exists and task dir {task_path} remains; run /adr")
     return 1

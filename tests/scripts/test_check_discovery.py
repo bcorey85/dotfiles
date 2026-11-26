@@ -172,6 +172,9 @@ class ChangedPathPartsTest(unittest.TestCase):
         paths = ["app/views.py", "docs/x.md"]
         self.assertEqual("python3 -m pytest", self.discovered_for(paths))
 
+    def test_a_non_markdown_file_under_docs_still_widens_the_check_to_every_part(self):
+        self.assert_runs_each_part_alone(self.discovered_for(["src/App.tsx", "docs/openapi.yaml"]))
+
     def test_a_docs_only_change_runs_every_part(self):
         self.assert_runs_each_part_alone(self.discovered_for(["docs/plans/x/plan.md", "README.md"]))
 

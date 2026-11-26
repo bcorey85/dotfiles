@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1195 changes
+1196 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -45,6 +45,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [adr_flow status reads the committed tree and lane-status prints no commits for a lane that never committed](notes/2026-11-25-adr-flow-status-reads-the-committed-tree-and-lane.md) [script/adr-flow, skill/close-branch, script/lane-status, script/check-discovery, script/memory-sample] adr_flow.py status reports done only from the committed tree, lane-status prints no commits for a lane that never committed, and only Markdown under docs/ is skipped when picking full-check parts.
 * [the fix skill takes its findings from its args and stops without them](notes/2026-11-25-the-fix-skill-takes-its-findings-from-its-args-and.md) [skill/fix] The fix skill, a fork that never sees the conversation, takes its findings from its args and stops at once with one line when it has none.
 * [the discovered full check skips doc paths when it picks parts](notes/2026-11-25-the-discovered-full-check-skips-doc-paths-when-it.md) [script/check-discovery] A plan doc beside frontend files no longer starts every part of the discovered full check; a docs-only diff still runs every part.
 * [stage run counts an already-staged deletion as staged](notes/2026-11-25-stage-run-counts-an-already-staged-deletion-as.md) [skill/stage] stage --run no longer aborts when a SAFE deletion was already staged with git rm; it counts it as staged and stages the rest.

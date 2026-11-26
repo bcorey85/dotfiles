@@ -26,7 +26,9 @@ when its pane or pid does, not its size), and `<name>: working` for a lane that 
 works. It keeps the last run's lines in `${XDG_STATE_HOME:-~/.local/state}/lane-status/seen.json`.
 
 --git prints only the open lanes, one line each, and exits 0, or 2 on a bad lane file (the message is on stderr):
-  <name>: <branch>, merged|<N> ahead / <M> behind, <K> dirty, reports_to <session or ->
+  <name>: <branch>, merged|no commits|<N> ahead / <M> behind, <K> dirty, reports_to <session or ->
+                                   `no commits`: the branch holds nothing new and its tip commit is older than the
+                                   lane's started_at, so the lane never committed (it is never `merged`)
   <name>: <branch>, merged, <K> dirty, finished idle (Claude RSS <size>), reports_to <session or ->
                                    a merged lane whose claude agent is idle or done; the size is the summed RSS of the
                                    claude processes whose working folder is inside the worktree (`unreadable` when
@@ -40,6 +42,8 @@ Environment: LANE_STATUS_MIN_MEMORY_GB (8), LANE_STATUS_MIN_SCRATCH_GB (1), LANE
 viewer cap is read from `hunk-review-pane --viewers`, which takes it from HUNK_REVIEW_MEMORY_MAX (1G).
 Exit, default and --changes modes: 0 with nothing printed, 1 when something is printed, 2 on a bad lane file, a bad
 threshold, or a failed herdr-api, df or du call (the message is on stderr)."""
+import datetime
+import functools
 import json
 import math
 import os
@@ -301,9 +305,10 @@ def git_or_raise(folder, *arguments):
     return finished.stdout.strip()
 
 
+@functools.cache
 def default_branch_ref(main_checkout):
-    """`origin/HEAD` as `origin/<name>` when set, else `origin/master`, else `origin/main`. Raises GitStateError
-    when git fails, and when none of the three exists."""
+    """`origin/HEAD` as `origin/<name>` when set, else `origin/master`, else `origin/main`; read once per main
+    checkout. Raises GitStateError when git fails, and when none of the three exists."""
     head = script_utils.remote_default_branch(main_checkout, GitStateError)
     if head:
         return head
@@ -317,13 +322,19 @@ def default_branch_ref(main_checkout):
 
 
 def merge_state(lane):
-    """`merged` when the lane's branch holds nothing origin's default branch lacks, else `N ahead / M behind`."""
+    """`N ahead / M behind` when the lane's branch holds commits origin's default branch lacks. Otherwise `no commits`
+    when the branch tip is older than the lane's started_at (the lane never committed), else `merged`."""
     base = default_branch_ref(lane["main_checkout"])
     counts = git_or_raise(lane["main_checkout"], "rev-list", "--left-right", "--count", f"{base}...{lane['branch']}")
     behind, ahead = (int(count) for count in counts.split())
-    if ahead == 0:
-        return "merged"
-    return f"{ahead} ahead / {behind} behind"
+    if ahead != 0:
+        return f"{ahead} ahead / {behind} behind"
+
+    tip_time = int(git_or_raise(lane["main_checkout"], "log", "-1", "--format=%ct", lane["branch"]))
+    started_at = datetime.datetime.fromisoformat(lane["started_at"]).timestamp()
+    if tip_time < started_at:
+        return "no commits"
+    return "merged"
 
 
 def dirty_count(worktree):

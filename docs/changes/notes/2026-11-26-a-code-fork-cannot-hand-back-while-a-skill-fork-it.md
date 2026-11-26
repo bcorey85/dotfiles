@@ -6,7 +6,7 @@ description: "The open-child hand-back gate now counts a review, code or fix Ski
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-26T05:40:19-06:00"}
 seq: 8
 kind: "fix"
-components: ["script/open-child-gate"]
+components: ["script/open-child-gate", "script/loop-transcript"]
 evidence: ["tests", "transcript read"]
 watches: []
 test: "tests/scripts/test_open_child_gate.py::OpenChildGateTest::test_code_fork_hand_back_while_its_skill_fork_runs_is_denied"

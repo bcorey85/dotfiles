@@ -331,20 +331,23 @@ class LoopTranscript:
         launch's tool_use_id or by the launched agent's id) or agent message, and whose agent has not ended on an API
         error. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
         return [tool_use_id for tool_use_id, text in self.results.items()
-                if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
-                and self.launched_agent(tool_use_id) not in self.agent_messages
-                and self.launched_agent(tool_use_id) not in self.task_notified_at
-                and not self.agent_died(self.launched_agent(tool_use_id))]
+                if text.lstrip().startswith(ASYNC_LAUNCH)
+                and not self.has_reported_back(tool_use_id, self.launched_agent(tool_use_id))]
 
     def open_skill_forks(self):
         """The agent ids of the background forked runs that Skill calls started and that have not reported back, by
         task notification (keyed by the Skill call's tool_use_id or by the agent id) or agent message, and whose agent
         has not ended on an API error."""
         return [agent_id for tool_use_id, agent_id in self.skill_forks.items()
-                if tool_use_id not in self.notifications
-                and agent_id not in self.agent_messages
-                and agent_id not in self.task_notified_at
-                and not self.agent_died(agent_id)]
+                if not self.has_reported_back(tool_use_id, agent_id)]
+
+    def has_reported_back(self, tool_use_id, agent_id):
+        """True when the launch `tool_use_id` of agent `agent_id` (None when its result names none) has a task
+        notification keyed by either, or an agent message, or the agent ended on an API error."""
+        return (tool_use_id in self.notifications
+                or agent_id in self.agent_messages
+                or agent_id in self.task_notified_at
+                or self.agent_died(agent_id))
 
     def agent_died(self, agent_id):
         """True when the transcript of agent `agent_id`, kept beside this loop's own, ends on an API

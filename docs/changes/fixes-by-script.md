@@ -63,6 +63,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/full-check-gate | 6 | 2 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 0 |
+| script/loop-transcript | 6 | 3 |
 | script/open-child-gate | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
@@ -76,7 +77,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/herdr-dev | 5 | 3 |
 | script/herdr-lane-resume | 5 | 5 |
 | script/herdr-worktree-watch | 5 | 4 |
-| script/loop-transcript | 5 | 2 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/test-run-output | 5 | 0 |

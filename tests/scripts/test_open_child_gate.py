@@ -154,6 +154,15 @@ class OpenChildGateTest(unittest.TestCase):
 
         self.assert_fork_denied(self.fork_hand_back(self.skill_records()), "a5c0de0000000000f")
 
+    def test_code_fork_deny_tells_it_to_write_its_stop_file_again_after_the_wait(self):
+        self.write_child("a5c0de0000000000f", meta={"agentType": "review"})
+
+        proc = self.fork_hand_back(self.skill_records())
+
+        reason = json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("write your stop file again before you hand back", reason)
+        self.assertIn("child run you started", reason)
+
     def test_code_fork_hand_back_passes_after_the_skill_forks_notification(self):
         records = [*self.skill_records(), notification("toolu_s")]
 

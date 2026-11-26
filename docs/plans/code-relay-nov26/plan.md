@@ -73,3 +73,4 @@ status and the caller waits on a grandchild it cannot address.
 ## Plan Deviations
 
 - ruling, 2026-11-26, the orchestrating session (agent-evals lane): a /code fork that dies with no stop and no "To go on:" line matches NO_STOP_RULE's finished branch; plan step 1 dictates the wording, so it stays and the risk is recorded. The /code SKILL.md description gains no third outcome (skill files out of scope; a skill line needs rule-meter runs).
+- ruling, 2026-11-26, the orchestrating session (agent-evals lane), branch review: the gate keeps reading the Skill result's agentId, not the subagent meta's parentAgentId; real meta files show only their finish-time write, so a meta present at launch is unproven. The relay keeps picking the newest stop file; the code-fork deny reason now tells the fork to write its stop again after the wait.

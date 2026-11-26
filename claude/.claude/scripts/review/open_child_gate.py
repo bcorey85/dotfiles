@@ -40,9 +40,10 @@ RESEARCHER_DENY_REASON = (
     "failure that says so; never hand back a caveat on a path that may be partial."
 )
 CODE_FORK_DENY_REASON = (
-    "An agent you dispatched is still running ({children}). Do not hand back and do not end your turn: you stay "
+    "A child run you started is still running ({children}). Do not hand back and do not end your turn: you stay "
     "active. Run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000, "
-    "again while it prints `Still working`, then go on with the step that waits on its report."
+    "again while it prints `Still working`, then go on with the step that waits on its report. After the wait, write "
+    "your stop file again before you hand back: a waited-on /review or /fix run writes a newer stop file of its own."
 )
 
 

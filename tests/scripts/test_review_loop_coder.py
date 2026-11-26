@@ -21,6 +21,7 @@ import review_loop_closure
 import review_loop_coder
 import review_loop_comment_removal
 import review_loop_criteria_quotes
+import review_loop_outside_writes
 import review_loop_partial_fix
 import review_loop_put_back
 import review_loop_ruled_out
@@ -64,6 +65,9 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.addCleanup(review_loop_untracked.UNTRACKED_FAULTS.clear)
         self.addCleanup(review_loop_untracked.LOOP_WRITTEN.clear)
         self.addCleanup(review_loop_calls.CALLS.clear)
+        record_writes = mock.patch.object(review_loop_outside_writes, "record_pass_writes")
+        self.record_writes = record_writes.start()
+        self.addCleanup(record_writes.stop)
 
     def no_op_scope_guard(self, role="coder1"):
         """A scope guard that owns no path: every path counts as ruled on by another guard."""
@@ -108,30 +112,35 @@ class UntrackedDeletionTest(unittest.TestCase):
 
         self.assertTrue(issubclass(review_loop_coder.NoFinalReportError, review_loop_calls.ModelCallError))
 
-    def test_claude_call_reply_returns_the_session_id(self):
-        def replying_process(*_args, **_kwargs):
-            return 0, json.dumps({"result": "done", "session_id": "abc-123"}), ""
+    def test_claude_call_reply_names_the_child_session_and_returns_it(self):
+        commands = []
+
+        def replying_process(command, *_args, **_kwargs):
+            commands.append(command)
+            return 0, json.dumps({"result": "done"}), ""
 
         with mock.patch.multiple(review_loop_calls.script_utils, run_process=replying_process,
                                  preloaded_skills_prompt=lambda _agent: ""):
             reply = review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out, agent="coder")
             text = review_loop_calls.claude_call("coder1", "prompt", self.repo, self.out, agent="coder")
 
-        self.assertEqual(reply, review_loop_calls.CallReply("done", "abc-123"))
+        named = commands[0][commands[0].index("--session-id") + 1]
+        self.assertEqual(reply, review_loop_calls.CallReply("done", named))
         self.assertEqual(text, "done")
 
-    def test_claude_call_reply_session_is_empty_when_the_reply_has_none(self):
-        replies = [{"result": "done"}, {"result": "done", "session_id": None}]
-        for payload in replies:
-            def replying_process(*_args, _payload=payload, **_kwargs):
-                return 0, json.dumps(_payload), ""
+    def test_a_call_with_no_json_reply_raises_an_error_that_carries_the_session(self):
+        commands = []
 
-            with mock.patch.multiple(review_loop_calls.script_utils, run_process=replying_process,
-                                     preloaded_skills_prompt=lambda _agent: ""):
-                reply = review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out,
-                                                            agent="coder")
+        def silent_process(command, *_args, **_kwargs):
+            commands.append(command)
+            return None, "", ""
 
-            self.assertEqual(reply, review_loop_calls.CallReply("done", ""), f"payload {payload}")
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=silent_process,
+                                 preloaded_skills_prompt=lambda _agent: ""), \
+                self.assertRaises(review_loop_calls.ModelCallError) as raised:
+            review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out, agent="coder")
+
+        self.assertEqual(raised.exception.session, commands[0][commands[0].index("--session-id") + 1])
 
     def test_a_coder_failure_that_is_not_a_model_call_error_is_not_swallowed(self):
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])

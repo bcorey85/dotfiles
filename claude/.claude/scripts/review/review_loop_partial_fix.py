@@ -17,6 +17,7 @@ Owner of the dead-coder record. Import it; never read or write the record anothe
 import json
 import typing
 
+import review_loop_outside_writes
 import script_utils
 from approval_asks_store import review_fix_file
 from review_fix_names import PARTIAL_FIX_NAME
@@ -224,6 +225,9 @@ class PartialFixRuns:
         reverted_findings = self.keep_unreverted_open(findings, reverted)
         kept_error = error.keeping_only(kept)
         blocker = coder_failure_blocker(call_name, kept_error, died=error.died)
+        outside = review_loop_outside_writes.PASS_OUTSIDE_WRITES.pop(call_name, [])
+        if outside:
+            blocker += " " + review_loop_outside_writes.outside_write_blocker(call_name, self.repo, outside)
         dead = dead_pass_record(self.repo, call_name, findings, reverted_findings, self.saved_record_texts,
                                 self.held_unfixed, kept_error)
         if dead.pending is not None:

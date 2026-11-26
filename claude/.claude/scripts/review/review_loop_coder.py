@@ -7,6 +7,7 @@ import typing
 
 import review_loop_criteria_quotes
 import review_loop_held
+import review_loop_outside_writes
 import review_loop_ruled_out
 import review_loop_ruling_check
 import review_loop_scope_guard
@@ -22,11 +23,12 @@ DIFF_CONTEXT = 12
 def coder_fault_notes():
     """The notes the loop's model calls left for the packet's tool_fault: untracked files a call removed, held files
     a coder changed, ruled-out files put back, out-of-scope files put back, a failed put-back step, out-of-scope
-    files the loop could not copy, ruling checks that could not judge a pass and a criteria file that turned the
-    AC-quote guard off."""
+    files the loop could not copy, ruling checks that could not judge a pass, a criteria file that turned the
+    AC-quote guard off, and writes outside the reviewed repo or a transcript that could not be read for them."""
     return [*review_loop_untracked.UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS,
             *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS,
-            *review_loop_ruling_check.RULING_CHECK_FAULTS, *review_loop_criteria_quotes.AC_QUOTE_FAULTS]
+            *review_loop_ruling_check.RULING_CHECK_FAULTS, *review_loop_criteria_quotes.AC_QUOTE_FAULTS,
+            *review_loop_outside_writes.OUTSIDE_WRITE_FAULTS]
 
 
 def file_texts(repo, start=None):
@@ -131,11 +133,16 @@ def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model="")
     try:
         reply = claude_call_reply(role, prompt, repo, out, agent="coder", model=model or None,
                                   deletable=pass_guard.deletions)
+        # Recorded before the empty-report check, so every outcome of a finished call reads its transcript.
+        review_loop_outside_writes.record_pass_writes(role, repo, out, reply.session)
         report = reply.text
         if not report.strip():
             # A coder that exits 0 with no final report left its findings unverified, as a crash does.
             raise NoFinalReportError(f"the {role} call ended with no final report")
     except ModelCallError as error:
+        # A call with no final report was recorded in the try; any other failure is recorded here.
+        if not isinstance(error, NoFinalReportError):
+            review_loop_outside_writes.record_pass_writes(role, repo, out, error.session)
         # A failed pass raises CoderFailedError, which never reads a stray-file verdict, so the guard only puts back.
         undo_failure, after = settle_call(role, repo, held, pass_guard, scope_guard, untracked, held_before,
                                           head_before, judge=False)

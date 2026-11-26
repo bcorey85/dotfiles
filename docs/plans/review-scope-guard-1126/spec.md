@@ -15,7 +15,7 @@ The review loop's fix pass gets two more guards. First, when a pass removes text
 
 - [x] Phase 0: Contracts — PassSnapshots, CallReply and claude_call_reply, with no behaviour change (risk: high)
 - [x] Phase 1: Walking skeleton — the AC-quote guard, end to end (risk: low)
-- [ ] Phase 2: The outside-write guard (risk: low)
+- [x] Phase 2: The outside-write guard (risk: low)
 - [ ] Phase 3: Owner lines and the full suite (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
@@ -359,6 +359,9 @@ N/A (scripts only).
 
 - Ruled by the orchestrating lane 2026-11-26: `ac_quote_snapshot` dropped its unused `findings` parameter. No acceptance criterion changes.
 - Ruled by the orchestrating lane 2026-11-26: `NEVER_REPLACE` became `never_replace`. No acceptance criterion changes.
+- Recorded by the review fix pass and accepted by the orchestrating lane 2026-11-26: Phase 2 `scratch_roots` uses `hook_input.temp_roots()` plus `session_temp_roots()` in place of the resolved `tempfile.gettempdir()` and resolved `/tmp`. No acceptance criterion changes.
+- Recorded by the review fix pass and accepted by the orchestrating lane 2026-11-26: Phase 2 `outside_writes` resolves the path, then calls `is_relative_to`, in place of `script_utils.repo_relative`. No acceptance criterion changes.
+- Recorded by the review fix pass and accepted by the orchestrating lane 2026-11-26: `ModelCallError.session` is the loop-chosen `--session-id` of the call, in place of the session "from the reply when one was parsed". No acceptance criterion changes.
 
 ## Testing Strategy
 

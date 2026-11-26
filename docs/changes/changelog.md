@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1258 changes
+1259 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -62,6 +62,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [review loop stops when a fix pass writes outside the reviewed repo](notes/2026-11-26-review-loop-stops-when-a-fix-pass-writes-outside.md) [script/review-loop-script] A review-loop fix pass that writes a file outside the reviewed repo ends the run in a critical-blocker that names each resolved path; the file is left in place.
 * [review loop puts back text an acceptance criterion quotes and files an ask](notes/2026-11-26-review-loop-puts-back-text-an-acceptance-criterion.md) [script/review-loop-script] A review-loop fix pass that removes or rewords text an acceptance criterion quotes has those lines put back, keeps its other edits, and files one ask naming the criterion, the file and the text.
 * [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md) [script/rule-anchors] `rule-anchors.sh check` run inside a linked dotfiles worktree now reads that worktree's prompt files and docs/rule-anchors.md, so a stale row there is reported.
 * [the full check skips only Markdown under docs and adr_flow status refuses on a failing git log](notes/2026-11-25-the-full-check-skips-only-markdown-under-docs-and.md) [script/check-discovery, script/adr-flow] The discovered full check skips only Markdown under docs/ through the notes_paths owner, and adr_flow status refuses when git log fails instead of reading never committed.

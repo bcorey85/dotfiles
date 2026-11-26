@@ -119,6 +119,7 @@ from review_loop_fix_induced import fix_induced_tag, previous_fix_ranges
 from review_loop_intake import ReviewIntake
 from review_loop_named_tests import NamedTestRuns
 from review_loop_nearest import nearest_functions_text
+from review_loop_outside_writes import OutsideWrites
 from review_loop_partial_fix import PartialFixRuns, coder_failure_blocker
 from review_loop_pass_checks import PassChecks
 from review_loop_pass_names import (
@@ -333,7 +334,7 @@ def log_row_findings(repo, run, row, fix_ranges):
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, AcQuoteRuns, PassChecks, RuledFindings,
               FinalRead, PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle, StrayFiles,
-              full_check_gate.FullCheckSteps):
+              OutsideWrites, full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -595,8 +596,9 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Ac
         pass does not run), with the findings kept in open_fixes except those on a reverted approval-only path,
         which are filed as approval asks (user-only unless `session_rules_approval_path`; a repeat of a rejected
         ask is dropped, not filed), and StrayFileError when the scope guard put back a file outside the pass's scope
-        that the pass's gate does not show the fix needs. A pass that stops on a stray file adds its changed files to
-        files_touched before it raises; on return the caller adds them."""
+        that the pass's gate does not show the fix needs, and OutsideWriteError when the pass's transcript shows a write
+        outside the reviewed repo (the file is left as written). A pass that stops on a stray file or an outside write
+        adds its changed files to files_touched before it raises; on return the caller adds them."""
         finding_paths = [review_loop_held.held_path_in_repo(finding.path, self.repo) for finding in findings
                          if finding.path]
         diff_files = self.review_scope()
@@ -650,6 +652,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Ac
             self.check_pass_result(call_name, result)
             self.check_rulings_kept(call_name, findings, result, ruling_backup)
             self.stop_on_stray_files(scope_guard, findings, result)
+            self.stop_on_outside_writes(call_name, findings, result)
         finally:
             self.discard_ruling_backup(ruling_backup)
 

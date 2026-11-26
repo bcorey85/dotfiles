@@ -22,8 +22,9 @@ The shared route's two refusals (diverged branch, overwrite) named the first liv
 the repo, so a pusher could message a session that never touched the dirty files. The refusal now reads every live
 session in the repo (`session_registry.other_live_sessions_in`) and each one's transcript plus its subagents'
 transcripts (`session_registry.session_transcript`, now shared with `lane_status.py`). It names a session only when
-exactly one has an Edit or Write call with an absolute path on a dirty path and every other transcript was read.
-Otherwise it says the owner is unknown and lists the live sessions as candidates, with unread transcripts named apart.
+exactly one has an Edit, Write, MultiEdit or NotebookEdit call with an absolute path on a dirty path, recorded after
+the HEAD commit time, every other transcript was read, and the pushing session wrote none of them. Otherwise it says
+the owner is unknown and lists the live sessions as candidates, with unread transcripts named apart.
 The route choice is unchanged.
 
 ## Evidence
@@ -37,7 +38,8 @@ two writers or an unread transcript give an unknown owner. Full suite 6677 tests
 
 ## Watch
 
-A writer whose cwd is outside the repo is not searched, so its files read as owner unknown, never as a wrong name.
+A writer whose cwd is outside the repo is not searched, so its files read as owner unknown. A wrong name is still
+possible when the real writer changed the file through Bash after another session's logged write since HEAD.
 
 ## Back-out
 

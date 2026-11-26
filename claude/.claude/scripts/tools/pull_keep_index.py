@@ -50,9 +50,12 @@ would leave the tree during the pull. The upstream tip is fetched and, when HEAD
 when it has commits HEAD lacks and HEAD has none of its own, the branch is fast-forwarded in place; when HEAD has
 commits of its own the run exits 1 naming the dirty files, and when the fast-forward would overwrite a dirty file it
 exits 1 naming that file. Either refusal names a live session as the holder only when exactly one live session in the
-repo has an Edit, Write, MultiEdit or NotebookEdit call, with an absolute path, on a dirty path in its transcript or one
-of its subagents' transcripts; with none, several, or a
-transcript that could not be read, it says the owner is unknown and lists the live sessions in the repo as candidates
+repo has a write call (Edit, Write, MultiEdit or NotebookEdit) with an absolute path on a dirty path, recorded after
+the HEAD commit time, in its transcript or one of its subagents' transcripts. A write whose record has no parsable
+timestamp, or a timestamp not after the HEAD commit time, counts for nothing. When this session (CLAUDE_CODE_SESSION_ID)
+has such a write itself, or a transcript that could not be read, no session is named and the refusal adds that this
+session also wrote a dirty file; a session with no transcript is no evidence. With none, several, or a transcript
+that could not be read, the refusal says the owner is unknown and lists the live sessions in the repo as candidates
 (those whose transcript was not read are listed apart), never picking one.
 When every tracked change is a built page and the built-page driver is configured, the run
 takes the solo route even beside another session: a built page is build output, so setting it aside, pulling and
@@ -688,24 +691,29 @@ def session_transcripts(session_id):
     transcript = session_registry.session_transcript(session_id)
     if transcript is None:
         return []
-    transcripts = [transcript]
-    subagents_dir = transcript.with_suffix("") / "subagents"
-    transcripts.extend(sorted(subagents_dir.glob(script_utils.subagent_transcript_name("*"))))
-    return transcripts
+    subagent_pattern = pathlib.Path(script_utils.subagent_transcript_path(str(transcript), "*"))
+    subagent_matches = subagent_pattern.parent.glob(subagent_pattern.name)
+    subagent_transcripts = sorted(subagent_matches)
+    return [transcript, *subagent_transcripts]
 
 
-def wrote_a_dirty_path(repo, row, dirty):
-    """Whether the transcript of a live session, or of one of its subagents, holds a write call on one of the dirty
-    paths (relative to `repo`): True or False, or None when the session has no transcript or one cannot be read. A
-    call with a relative path is no evidence, because the folder it ran in is not recorded."""
-    transcripts = session_transcripts(row.get("sessionId"))
-    if not transcripts:
-        return None
+def head_commit_epoch(repo):
+    """The HEAD commit time in epoch seconds. Exit 1 naming the failed command when it cannot be read."""
+    committed = script_utils.git_output(repo, "log", "-1", "--format=%ct", "HEAD")
+    if not committed or not committed.isdigit():
+        sys.exit(f"pull_keep_index: git log -1 --format=%ct HEAD failed in {repo}; nothing pulled or set aside")
+    return int(committed)
+
+
+def wrote_a_dirty_path(repo, transcripts, dirty, since):
+    """Whether one of the transcripts holds a write call on one of the dirty paths (relative to `repo`) recorded
+    after `since` (epoch seconds): True or False, or None when a transcript cannot be read. A call with a relative
+    path is no evidence, because the folder it ran in is not recorded."""
     repo_path = pathlib.Path(repo).resolve()
     dirty_paths = set(dirty)
     for transcript in transcripts:
         try:
-            written = loop_transcript.written_paths(transcript)
+            written = loop_transcript.written_paths(transcript, since=since)
         except OSError as error:
             sys.stderr.write(f"pull_keep_index: could not read the transcript {transcript}: {error}\n")
             return None
@@ -717,18 +725,43 @@ def wrote_a_dirty_path(repo, row, dirty):
     return False
 
 
+def own_session_may_have_written(repo, dirty, since):
+    """Whether this session (CLAUDE_CODE_SESSION_ID) wrote a dirty path, or has a transcript that could not be read.
+    A session with no transcript is no evidence."""
+    own_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not own_id:
+        return False
+    transcripts = session_transcripts(own_id)
+    if not transcripts:
+        return False
+    wrote = wrote_a_dirty_path(repo, transcripts, dirty, since)
+    return wrote is not False
+
+
+def other_session_wrote(repo, row, dirty, since):
+    """`wrote_a_dirty_path` for another live session's transcripts; None when it has no transcript or one cannot be
+    read."""
+    transcripts = session_transcripts(row.get("sessionId"))
+    if not transcripts:
+        return None
+    return wrote_a_dirty_path(repo, transcripts, dirty, since)
+
+
 def holder_clause(repo, others, dirty):
     """Who holds the dirty files, as the opening clause of a refusal: the one live session whose transcripts show a
-    write to a dirty path, when every other session's transcripts were read; else the owner is unknown and the live
-    sessions in the repo are the candidates."""
-    verdicts = [(row, wrote_a_dirty_path(repo, row, dirty)) for row in others]
+    write to a dirty path after the HEAD commit, when every other session's transcripts were read and this session
+    wrote none; else the owner is unknown and the live sessions in the repo are the candidates."""
+    since = head_commit_epoch(repo)
+    own_wrote = own_session_may_have_written(repo, dirty, since)
+    verdicts = [(row, other_session_wrote(repo, row, dirty, since)) for row in others]
     writers = [row for row, wrote in verdicts if wrote]
     unread = [session_registry.holder_label(row) for row, wrote in verdicts if wrote is None]
-    if len(writers) == 1 and not unread:
+    if len(writers) == 1 and not unread and not own_wrote:
         return f"{session_registry.holder_label(writers[0])} also works in {repo} and wrote a dirty file"
     candidates = ", ".join(session_registry.holder_label(row) for row in others)
     unread_text = f" (transcript not read: {', '.join(unread)})" if unread else ""
-    return (f"the owner of the dirty files is unknown; the live sessions in {repo} are the candidates: "
+    own_text = "this session also wrote a dirty file; " if own_wrote else ""
+    return (f"the owner of the dirty files is unknown; {own_text}the live sessions in {repo} are the candidates: "
             f"{candidates}{unread_text}")
 
 

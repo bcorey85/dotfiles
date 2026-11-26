@@ -18,6 +18,9 @@ SCRIPT = pathlib.Path(os.environ.get("PULL_KEEP_INDEX_SCRIPT") or TOOLS_DIR / "p
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 REF = "refs/pull-keep-index/20260101T000000Z-abc12345"
+# A write record counts only when it is later than the HEAD commit, which the tests make at the current time.
+AFTER_HEAD = "2099-01-01T00:00:00Z"
+BEFORE_HEAD = "2000-01-01T00:00:00Z"
 
 
 class PullKeepIndexTest(unittest.TestCase):
@@ -52,13 +55,15 @@ class PullKeepIndexTest(unittest.TestCase):
             self.write_transcript(session_id, edited)
         (self.config_dir / "sessions" / f"{sleeper.pid}.json").write_text(json.dumps(row))
 
-    def write_transcript(self, session_id, edited, subagent=False):
-        """A transcript under the config dir's projects folder with one Edit call per path in `edited`; with
-        `subagent`, the transcript of a subagent of the session, and the session's main transcript holds no call."""
+    def write_transcript(self, session_id, edited, subagent=False, timestamp=AFTER_HEAD):
+        """A transcript under the config dir's projects folder with one Edit call per path in `edited`, each record
+        stamped `timestamp`; with `subagent`, the transcript of a subagent of the session, and the session's main
+        transcript holds no call."""
         lines = []
         for edited_path in edited:
             block = {"type": "tool_use", "id": "t", "name": "Edit", "input": {"file_path": str(edited_path)}}
-            lines.append(json.dumps({"type": "assistant", "message": {"content": [block]}}))
+            record = {"type": "assistant", "timestamp": timestamp, "message": {"content": [block]}}
+            lines.append(json.dumps(record))
         project = self.config_dir / "projects" / "p"
         if subagent:
             self.write(project, f"{session_id}.jsonl", "")
@@ -1326,6 +1331,49 @@ class PullKeepIndexTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
         self.assertIn("lane-writer also works", finished.stderr)
+
+    def test_a_write_recorded_before_the_head_commit_is_no_evidence_and_leaves_the_owner_unknown(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, "writer-id", "lane-writer")
+        self.write_transcript("writer-id", [self.repo / "bin" / "x"], timestamp=BEFORE_HEAD)
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertNotIn("also works in", finished.stderr)
+
+    def test_a_write_by_the_callers_own_session_leaves_the_owner_unknown_and_says_so(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "bin" / "x"], [self.repo / "elsewhere.py"])
+        self.write_transcript("self-id", [self.repo / "bin" / "x"])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertIn("this session also wrote a dirty file", finished.stderr)
+        self.assertNotIn("also works in", finished.stderr)
+
+    def test_an_own_session_transcript_that_cannot_be_read_leaves_the_owner_unknown(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "bin" / "x"], [self.repo / "elsewhere.py"])
+        (self.config_dir / "projects" / "p" / "self-id.jsonl").mkdir(parents=True)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertIn("this session also wrote a dirty file", finished.stderr)
+
+    def test_an_own_session_with_no_transcript_changes_nothing(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "bin" / "x"], [self.repo / "elsewhere.py"])
+
+        finished = self.run_script()
+
+        self.assertIn("lane-writer also works", finished.stderr)
+        self.assertNotIn("this session also wrote", finished.stderr)
 
     def test_a_relative_path_and_a_path_outside_the_repo_are_no_evidence_of_a_write(self):
         outside = self.tmp / "elsewhere" / "bin" / "x"

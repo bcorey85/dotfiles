@@ -185,7 +185,7 @@ A fix pass that removes text an AC quotes from a file under review has those lin
 - `ac_quote_snapshot(files_in_scope, findings)`:
   - Returns `EMPTY_AC_QUOTES` when `self.plan_path_on_disk()` is None (Q1).
   - Reads `plan_format.outside_plan_folder(files_in_scope, self.plan)` minus held files.
-  - On `PlanFormatError` or `OSError` it builds `f"the AC-quote guard is off for this run: {error}"` (the error text starts with the failing file's path; G4), appends it to `AC_QUOTE_FAULTS` only when not already there, and returns `EMPTY_AC_QUOTES`. Fail-open, stated in a comment.
+  - On `PlanFormatError` or `OSError` it builds `f"the AC-quote guard was off for each pass that read this file: {error}"` (the error text starts with the failing file's path; G4), appends it to `AC_QUOTE_FAULTS` only when not already there, and returns `EMPTY_AC_QUOTES`. Fail-open, stated in a comment.
 - `undo_ac_quote_pass(snapshot, findings, skip=())`, per path in `snapshot.texts`:
   - Skip a path in `skip`, or one that no longer exists.
   - Lost spans are those in the snapshot text and not in the current text; drop a span whose `change` text is in the joined finding text (an accepted ask).

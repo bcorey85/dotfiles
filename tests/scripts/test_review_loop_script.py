@@ -682,6 +682,10 @@ class ReviewLoopHarness:
     def setUp(self):
         review_loop_ruling_check.RULING_CHECK_FAULTS.clear()
         self.addCleanup(review_loop_ruling_check.RULING_CHECK_FAULTS.clear)
+        review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear()
+        review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear()
+        self.addCleanup(review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear)
+        self.addCleanup(review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear)
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         self.scratch = pathlib.Path(scratch.name)

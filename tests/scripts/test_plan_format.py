@@ -1095,6 +1095,24 @@ class AcQuotesTest(unittest.TestCase):
 
         self.assertTrue(str(raised.exception).startswith(f"{criteria_path}:2:"), str(raised.exception))
 
+    def test_plan_ac_quotes_non_utf8_criteria_file_raises_an_error_naming_the_file(self):
+        criteria_path = self.folder / "acceptance-criteria.md"
+        criteria_path.write_bytes(b"- **AC1** \xff\xfe one\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{criteria_path}: not UTF-8"), str(raised.exception))
+
+    def test_plan_ac_quotes_non_utf8_ticket_raises_an_error_naming_the_ticket(self):
+        ticket_path = self.folder / "00-ticket.md"
+        ticket_path.write_bytes(b"## Acceptance Criteria\n\n- one \xff\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{ticket_path}: not UTF-8"), str(raised.exception))
+
     @unittest.skipIf(os.geteuid() == 0, "root reads any file")
     def test_plan_ac_quotes_unreadable_criteria_file_raises_an_oserror_naming_the_file(self):
         criteria_path = self.folder / "acceptance-criteria.md"

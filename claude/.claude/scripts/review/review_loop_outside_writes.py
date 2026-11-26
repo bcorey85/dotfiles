@@ -14,7 +14,7 @@ import session_registry
 
 # The notes of this run's passes, read by coder_fault_notes into the packet's tool_fault.
 OUTSIDE_WRITE_FAULTS = []
-# {pass name: the outside paths its transcript showed}, popped by the stop and by the died-pass blocker.
+# {pass name: the outside paths its transcript showed}, popped by every stop that names the paths.
 PASS_OUTSIDE_WRITES = {}
 
 

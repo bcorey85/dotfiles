@@ -293,6 +293,16 @@ class AcQuoteSnapshotTest(unittest.TestCase):
         self.assertEqual(len(review_loop_criteria_quotes.AC_QUOTE_FAULTS), 1)
         self.assertIn(str(self.repo / "acceptance-criteria.md"), review_loop_criteria_quotes.AC_QUOTE_FAULTS[0])
 
+    def test_a_non_utf8_criteria_file_gives_an_empty_snapshot_and_a_note_naming_the_file(self):
+        self.write_plan("")
+        (self.repo / "acceptance-criteria.md").write_bytes(b"- **AC1** \xff\xfe\n")
+
+        snapshot = SnapshotRun(self.repo, "plan.md").ac_quote_snapshot(["app.py"])
+
+        self.assertEqual(snapshot, review_loop_criteria_quotes.EMPTY_AC_QUOTES)
+        self.assertEqual(len(review_loop_criteria_quotes.AC_QUOTE_FAULTS), 1)
+        self.assertIn(str(self.repo / "acceptance-criteria.md"), review_loop_criteria_quotes.AC_QUOTE_FAULTS[0])
+
     def test_an_unreadable_criteria_file_gives_an_empty_snapshot_and_one_note(self):
         self.write_plan('- **AC1** — the limit stays "limit = 3" in app.py\n')
 
@@ -398,6 +408,16 @@ class CriteriaQuoteLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
     def test_a_malformed_criteria_file_turns_the_guard_off_with_a_tool_fault_note_naming_the_file(self):
         self.with_plan(criteria=self.CRITERIA * 2)
+
+        packet = self.run_loop()
+
+        self.assertEqual((self.repo / "app.py").read_text(), LIMIT_REWRITE)
+        self.assertEqual(packet["status"], "converged")
+        self.assertIn(str(self.repo / "acceptance-criteria.md"), json.dumps(packet["tool_fault"]))
+
+    def test_a_non_utf8_criteria_file_turns_the_guard_off_with_a_tool_fault_note_naming_the_file(self):
+        self.with_plan(criteria=self.CRITERIA)
+        (self.repo / "acceptance-criteria.md").write_bytes(b"- **AC1** \xff\xfe\n")
 
         packet = self.run_loop()
 

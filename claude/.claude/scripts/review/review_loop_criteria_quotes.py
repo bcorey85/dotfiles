@@ -61,7 +61,7 @@ class AcQuoteRuns:
         except (plan_format.PlanFormatError, OSError) as error:
             # Fail-open on purpose: a criteria file the loop cannot read must not stop a review, so the guard is off
             # and the packet says why.
-            note = f"the AC-quote guard is off for this run: {error}"
+            note = f"the AC-quote guard was off for each pass that read this file: {error}"
             if note not in AC_QUOTE_FAULTS:
                 AC_QUOTE_FAULTS.append(note)
             return EMPTY_AC_QUOTES

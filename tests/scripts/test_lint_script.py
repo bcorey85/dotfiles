@@ -133,6 +133,42 @@ class LintScriptTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
         self.assertIn("F401", finished.stdout)
 
+    def test_no_argument_runs_the_ruff_rules_over_the_shared_script_lib(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "scripts" / ".local" / "lib" / "x.py").write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_toolkit_scripts(self):
+        self.prepare_full_lint_tree()
+        unused_import = self.tree / "claude" / ".claude" / "scripts" / "tools" / "x.py"
+        unused_import.parent.mkdir(parents=True, exist_ok=True)
+        unused_import.write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_toolkit_skills(self):
+        self.prepare_full_lint_tree()
+        skill_script = self.tree / "claude" / ".claude" / "skills" / "some_skill" / "scripts" / "x.py"
+        skill_script.parent.mkdir(parents=True)
+        skill_script.write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
+    def test_no_argument_runs_the_ruff_rules_over_the_duplicate_code_test_helper(self):
+        self.prepare_full_lint_tree()
+        (self.tree / "tests" / "duplicate_code.py").write_text("import os\n")
+
+        finished = self.lint(merged_output=True)
+
+        self.assert_last_line_names_one_ruff_error(finished)
+
     def assert_last_line_names_one_ruff_error(self, finished):
         output = finished.stdout
         self.assertEqual(finished.returncode, 1, output)

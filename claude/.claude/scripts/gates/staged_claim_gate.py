@@ -12,6 +12,10 @@ own clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `
 (or plural) as the word just before the claim, in a clause that names no `file`, unless the sentence also names
 `index` or `git`: that is review data, not the index.
 
+An `is staged` or `are staged` claim with `what`, `whatever` or `whichever` as the word right before it ("checks the
+list against what is staged") reads the index and is no claim; this does not cover `I staged`, `I've staged` or
+`I have staged`, nor `was staged` or `were staged`.
+
 Three forms are not claims, judged on the clause up to the claim. A `stay` or `remain` claim whose clause already says
 `staged` describes behavior ("files you staged stay staged"). A claim whose clause holds `say`, `said`, `claim` or
 their inflections as a word of its own reports speech ("a reply that says files are staged"); the speech form does not
@@ -47,7 +51,7 @@ from git_calls import git_calls, joined_directory
 from message_text import without_quoted_spans
 
 STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
-                          r"|(?:is|are|were|was|now|all|been|(?P<left>left))\s+staged"
+                          r"|(?:(?P<copula>is|are)|were|was|now|all|been|(?P<left>left))\s+staged"
                           r"|(?P<lasting>remains?|stays?)\s+staged)\b", re.I)
 NEGATION = re.compile(r"\b(?:not|no|nothing|none|never)\b", re.I)
 COMMITTED = re.compile(r"\bcommitted\b", re.I)
@@ -57,6 +61,8 @@ CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so)\s", re.I)
 # A claim whose subject is review data ("two rows are staged") speaks of a ledger or a diff folder, not the git index.
 # The review noun must stand just before the claim, so "the diff of the file is staged" is still a claim.
 REVIEW_DATA_SUBJECT = re.compile(r"\b(?:rows?|records?|diffs?|findings?)\s*$", re.I)
+# "checks the list against what is staged" asks what the index holds; it does not claim anything is in it.
+INDEX_QUESTION_WORD = re.compile(r"\b(?:what|whatever|whichever)\s*$", re.I)
 FILE_WORD = re.compile(r"\bfiles?\b", re.I)
 GIT_INDEX = re.compile(r"\b(?:index|git)\b", re.I)
 # The word on its own, not inside a hyphenated name or a path such as `docs/staged-claim.md`.
@@ -116,6 +122,8 @@ def is_index_claim(sentence, claim):
     if CONDITIONAL.search(clause):
         return False
     if not claim.group("first_person"):
+        if claim.group("copula") and INDEX_QUESTION_WORD.search(clause):
+            return False
         reports_other_actor = OTHER_ACTOR.search(clause) or (claim.group("left") and BARE_ACTOR.search(clause))
         if reports_other_actor:
             return False

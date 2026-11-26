@@ -285,6 +285,22 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_check_of_what_is_staged_passes_with_an_empty_index(self):
+        for message in ("It checks the skill list against what is staged.",
+                        "It lists whatever is staged.", "It keeps whichever are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_first_person_or_past_tense_claim_after_what_still_blocks_with_an_empty_index(self):
+        for message in ("Here is what I staged.", "Here is what I've staged.", "Here is what I staged: a.txt.",
+                        "Here is what was staged for you to commit."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_claim_naming_another_worktree_by_path_passes_when_its_index_holds_the_files(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        self.assert_passes(f"{linked}/a.txt is staged.")
+
     def test_a_whether_in_an_earlier_clause_does_not_hide_the_claim(self):
         self.assert_blocked("I checked whether the hash moved, and all files are staged.")
 

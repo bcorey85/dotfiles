@@ -18,11 +18,11 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`lib/single_caller_census.py` lists three kinds of dead weight that a branch adds to Python code: a one-statement forwarder with one caller, a record field that nothing reads, and a helper whose every caller also calls a newer helper with every argument it passes the older helper. `lib/changed_lines.py` holds the added-line sets that `clone_pairs.py` and `shape_clones.py` also read.
+`lib/single_caller_census.py` lists three kinds of dead weight that a branch adds to Python code: a one-statement forwarder with one caller, a record field that nothing reads, and a helper whose every caller also calls a newer helper with every argument it passes the older helper. `lib/changed_lines.py` holds the added-line sets that `clone_pairs.py` and `shape_clones.py` also read. The review loop's round-one smell-reviewer prompt carries the census of its owned files under one heading, and `/refactor` branch-prep prints it after the shape-clone candidates.
 
 ## Evidence
 
-`tests/scripts/test_single_caller_census.py` builds real git repos and checks each kind, its negative cases, untracked files, renames and sha256 repos.
+`tests/scripts/test_single_caller_census.py` builds real git repos and checks each kind, its negative cases, untracked files, renames and sha256 repos. `test_review_loop_prompts.py` and `test_refactor_flow.py` check that the smell-reviewer prompt and branch-prep carry the list.
 
 ## Result
 

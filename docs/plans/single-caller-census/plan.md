@@ -18,7 +18,7 @@ to it unless they start with `claude/`, `docs/` or `tests/`); tests in `tests/sc
 ## Phase Status
 
 - [x] Phase 1: `lib/single_caller_census.py` lists the three kinds, with a CLI that prints JSON (risk: medium)
-- [ ] Phase 2: the smell-reviewer prompt of the review loop and of branch-prep carries the list (risk: low)
+- [x] Phase 2: the smell-reviewer prompt of the review loop and of branch-prep carries the list (risk: low)
 
 ## Phase 1: the census
 

@@ -36,6 +36,7 @@ UNCOMMITTED_TIME = float("inf")
 BLAME_HEADER = re.compile(r"^([0-9a-f]{40}|[0-9a-f]{64}) \d+ (\d+)")
 BLAME_TIME_PREFIX = "author-time "
 LISTED_UNPARSED_PATHS = 5
+CENSUS_HEADING = "Single-caller census (dead weight this branch adds; judge each entry):"
 
 
 class CensusError(Exception):
@@ -492,6 +493,17 @@ def census_lines(result, paths=None):
         lines.append(f"{entry.path}:{entry.line} {entry.kind} `{entry.name}`: {entry.detail}")
     lines += [f"note: {note}" for note in result.notes]
     return lines
+
+
+def report_lines(repo, base, paths=None):
+    """The census of the work tree against `base` under CENSUS_HEADING: the entries in `paths` when given, then
+    every census note, or "none". A census that cannot run is said so in one line."""
+    try:
+        result = census(repo, base)
+    except CensusError as error:
+        return [CENSUS_HEADING, f"The census did not run: {error}"]
+    lines = census_lines(result, paths)
+    return [CENSUS_HEADING, *(lines or ["none"])]
 
 
 def main(argv=None):

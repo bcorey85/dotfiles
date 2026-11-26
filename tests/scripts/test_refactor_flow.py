@@ -715,6 +715,32 @@ class RefactorFlowTest(unittest.TestCase):
         self.assertNotIn("loose.py", done.stdout)
         self.assertIn("`git diff main...feature`", done.stdout)
 
+    # ------------------------------------------------- branch-prep census
+    def test_branch_prep_prints_the_single_caller_census(self):
+        source = (
+            "def wrapper(value):\n    return helper(value)\n\n\n"
+            "def helper(value):\n    return value + 1\n\n\n"
+            "print(wrapper(1))\n"
+        )
+        self.branch_with({"mod.py": source})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("\nSingle-caller census (", done.stdout)
+        self.assertNotIn("## Single-caller census", done.stdout)
+        self.assertIn("mod.py:1 single-caller-forwarder `wrapper`", done.stdout)
+
+    def test_branch_prep_says_none_when_the_branch_adds_no_forwarder(self):
+        self.branch_with({"mod.py": "x = 1\n"})
+        done = self.flow("branch-prep")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("judge each entry):\nnone", done.stdout)
+
+    def test_branch_prep_with_head_says_the_census_reads_only_the_work_tree(self):
+        self.branch_with({"mod.py": "x = 1\n"})
+        done = self.flow("branch-prep", "--head", "feature")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("The census reads only the work tree", done.stdout)
+
     # ----------------------------------------------- branch-prep clone pairs
     def clone_stub(self, pairs, exit_code=0):
         """A jscpd stand-in that writes a JSON report of `pairs` (two (name, start, end) sites each) into its

@@ -12,3 +12,7 @@
 - Ruling by session feature/single-caller-census at 2026-11-25: Phase 1 closes at the review cap with the full suite
   green (7049 tests) and lint clean. Left as they are: the untracked symlink skip (no session hit it), the textconv
   blame test gap (the diff side is tested) and the test-helper placement nit.
+- Ruling by session feature/single-caller-census at 2026-11-25: the review loop's call keeps `census_base` at its
+  default (work tree against HEAD). Passing `self.review_base` is a one-line edit at `review_loop_script.py:444`, a
+  file outside this lane; it goes to the orchestrator as a follow-up. AC4 holds in the loop's default mode; a run
+  with `--base` reads the census against HEAD.

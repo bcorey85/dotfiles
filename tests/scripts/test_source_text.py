@@ -102,6 +102,18 @@ class CommentLineNumbersTest(unittest.TestCase):
     def test_hash_style_ignores_triple_quotes(self):
         self.assertEqual({2}, source_text.comment_line_numbers(['"""', "# c", '"""'], "hash"))
 
+    def test_dash_style_takes_lines_that_start_with_two_dashes(self):
+        self.assertEqual({1, 3}, source_text.comment_line_numbers(["-- a", "    *", "  -- b", ";"], "dash"))
+
+    def test_sql_and_lua_are_dash_and_qml_is_slash(self):
+        styles = {"a.sql": "dash", "a.lua": "dash", "a.qml": "slash"}
+        for name, style in styles.items():
+            with self.subTest(name=name):
+                self.assertEqual(style, source_text.comment_style_of(name))
+
+    def test_a_trailing_dash_comment_is_split_off(self):
+        self.assertEqual(("select 1 ", "-- one"), source_text.split_trailing_comment("select 1 -- one", "dash"))
+
     def test_unknown_style_raises(self):
         with self.assertRaises(ValueError):
             source_text.comment_line_numbers([], "lisp")

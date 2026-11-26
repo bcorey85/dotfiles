@@ -132,9 +132,9 @@ def shell_code(command):
     return shell_quoting.join_line_continuations(uncommented)
 
 
-def outside_heredoc_bodies(command, transform):
-    """The command with transform(text) applied to each run of lines that are no heredoc body or terminator line;
-    those lines stay as written, so a quote in a body does not change the quote state of the lines after it."""
+def heredoc_body_line_numbers(text):
+    """The 1-based numbers of the lines of a script that are a heredoc body or the terminator line of one, whether the
+    body is data or code. A heredoc with no terminator line has none."""
     body_lines = set()
 
     def note_bodies(line, lines, index, heredocs):
@@ -143,13 +143,20 @@ def outside_heredoc_bodies(command, transform):
             return None
 
         skipped = sum(len(body) + 1 for body in bodies)
-        body_lines.update(range(index, index + skipped))
+        body_lines.update(range(index + 1, index + skipped + 1))
         return [], skipped
 
-    rewrite_heredoc_lines(command, note_bodies)
+    rewrite_heredoc_lines(text, note_bodies)
+    return body_lines
+
+
+def outside_heredoc_bodies(command, transform):
+    """The command with transform(text) applied to each run of lines that are no heredoc body or terminator line;
+    those lines stay as written, so a quote in a body does not change the quote state of the lines after it."""
+    body_lines = heredoc_body_line_numbers(command)
     pieces = []
     open_lines = []
-    for number, line in enumerate(command.split("\n")):
+    for number, line in enumerate(command.split("\n"), 1):
         if number not in body_lines:
             open_lines.append(line)
             continue

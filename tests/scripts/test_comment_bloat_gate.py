@@ -473,6 +473,57 @@ class CommentBloatGateTest(unittest.TestCase):
                 leader = "//" if name.endswith(".ts") else "#"
                 self.assert_blocked(self.written(name, f"x = 1\n{leader} plain\n_y = 2\n"))
 
+    def test_tool_directives_pass(self):
+        directives = {
+            "a.go": ["//go:generate stringer -type=X", "// +build linux", "//go:build linux"],
+            "a.ts": ["/// <reference types=\"node\" />", "// @ts-check", "/** @type {import('x').Y} */",
+                     "/** @typedef {number} N */"],
+            "a.c": ["// clang-format off", "// clang-format on"],
+            "a.swift": ["// swiftlint:disable force_cast", "// swiftlint:enable force_cast"],
+            "a.py": ["# mypy: ignore-errors", "# pyright: basic", "# pragma: no cover",
+                     "# -*- coding: utf-8 -*-"],
+        }
+        for name, samples in directives.items():
+            for directive in samples:
+                with self.subTest(name=name, directive=directive):
+                    self.assert_allowed(self.written(name, "x = 1\n" + directive + "\ny = 2\n"))
+
+    def test_a_one_line_jsdoc_that_is_not_a_type_tag_is_charged(self):
+        self.assert_blocked(self.written("a.ts", "const a = 1;\n/** explains a */\nconst b = 2;\n"))
+
+    def test_sql_and_lua_star_semicolon_and_length_lines_are_code(self):
+        self.assert_allowed(self.written("q.sql", "SELECT\n    *\nFROM users\n;\n"))
+        self.assert_allowed(self.written("q.lua", "local n = f\n  #t\n"))
+
+    def test_a_dash_comment_in_sql_or_lua_is_charged(self):
+        self.assert_blocked(self.written("q.sql", "SELECT 1\n-- note\n"))
+        self.assert_blocked(self.written("q.lua", "local x = 1\n-- note\n"))
+
+    def test_a_heredoc_body_line_in_a_shell_file_is_data(self):
+        self.assert_allowed(self.written("s.sh", "cat > conf <<CONF\n# setting for foo\nfoo=1\nCONF\n"))
+        self.assert_blocked(self.written("s.sh", "cat > conf <<CONF\nfoo=1\nCONF\n# note after it\n"))
+
+    def test_a_go_package_doc_is_kept(self):
+        self.assert_allowed(self.written("a.go", "// Package a does a thing.\npackage a\n"))
+        self.assert_blocked(self.written("b.go", "package b\n\n// helper note\nvar x = 1\n"))
+
+    def test_a_leading_rust_module_doc_run_is_kept(self):
+        self.assert_allowed(self.written("a.rs", "//! Crate docs.\n//! More docs.\n\nfn f() {}\n"))
+        self.assert_blocked(self.written("b.rs", "fn f() {}\n\n//! not leading\n"))
+        self.assert_blocked(self.written("c.rs", "// plain\n//! docs\nfn f() {}\n"))
+
+    def test_a_write_charges_only_lines_missing_from_the_file_before_the_write(self):
+        path = self.source("a.py", "x = 1\n# user note\n# new note\n")
+        payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": path, "content": "x = 1\n# user note\n# new note\n"},
+            "tool_response": {"originalFile": "x = 1\n# user note\n"},
+        }
+        stderr = self.assert_blocked(self.run_hook(json.dumps(payload)))
+        self.assertIn("3: # new note", stderr)
+        self.assertNotIn("# user note", stderr)
+
     def test_a_comment_that_only_names_a_linter_is_not_a_suppression(self):
         self.assert_blocked(self.written("a.rs", "fn f() {\n    // clippy complains here\n}\n"))
         self.assert_blocked(self.written("b.kt", "fun f() {\n    // @Suppress is used here\n}\n"))

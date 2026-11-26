@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """PostToolUse hook on Write|Edit: block workflow-marker leaks and comment lines that are not a kept kind.
 
-Enforces _shared/code-vocabulary.md deterministically. Reads the edited file from
+Enforces the workflow-marker rule of _shared/code-vocabulary.md deterministically. Reads the edited file from
 disk. A marker counts when its line matches a line of the new text exactly. A comment line counts only when its
-stripped text is also absent from the old text, so a re-indented comment is not new. An added comment line must be a
-license header, a lint or format suppression, a comment block on an exported or public symbol, or a line with a URL.
+stripped text is also absent from the old text (a Write's file before the write, else HEAD), so a re-indented comment
+is not new. The comment check holds each added comment line to the kept kinds: a license header, a lint or format
+suppression or tool directive, a comment block on an exported or public symbol (a Go package doc and a leading run of
+Rust `//!` lines included), or a line with a URL. Heredoc bodies in shell files are data, not comments.
 Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only comment lines inside the
 span new_string occupies in the file are charged (the whole file when new_string is not found in it). Only whole
 comment lines count, never a trailing comment.
@@ -20,6 +22,7 @@ from typing import NamedTuple
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import hook_input
 import script_utils
+import shell_statements
 import source_paths
 import source_text
 from hook_input import emit_stderr
@@ -32,8 +35,8 @@ CODE_FILE = re.compile(
     r"\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|rb|java|kt|swift|php|c|h|cc|cpp|hpp|lua|qml|sh|bash|zsh|yml|yaml|json|sql)$",
     re.M)
 
-# JSDoc continuation `*` needs a space or line end after it: `**unpacking` and `*args` are code.
-COMMENT_LINE = re.compile(r"^" + SPACE + r"*(//|#|\*(" + SPACE + r"|$)|--|;|/\*|\"\"\"|<!--)")
+# Only for a suffix with no comment style (json): the leaders that file could carry.
+COMMENT_LINE = re.compile(r"^" + SPACE + r"*(//|#|/\*)")
 # A bare docstring/JSDoc delimiter is structure, not prose.
 DELIMITER_LINE = re.compile(r"^" + SPACE + r"*(\"\"\"|'''|/\*\*?|\*/)" + SPACE + r"*$")
 
@@ -83,12 +86,19 @@ SUPPRESSION = re.compile(
     r"eslint-(?:disable|enable)|prettier-ignore|noqa|type:\s*ignore|pylint:\s*disable|ts-ignore|ts-expect-error"
     r"|ts-nocheck|nolint|rubocop:\s*disable|shellcheck\s+disable|biome-ignore"
     r"|istanbul\s+ignore|c8\s+ignore|fmt:\s*(?:off|on)\b|yamllint\s+disable", re.I)
+# A tool reads these comments, so deleting one changes what the tool does.
+DIRECTIVE = re.compile(
+    r"^\s*//go:\w+|^\s*// \+build|^\s*///\s*<reference|@ts-check|clang-format\s+(?:off|on)"
+    r"|swiftlint:(?:disable|enable)|mypy:|pyright:|pragma:\s*no\s*cover|-\*-\s*coding[:=]"
+    r"|^\s*/\*\*\s*@(?:type|typedef)\b.*\*/\s*$", re.I)
 URL = re.compile(r"https?://")
 SHEBANG = "#!"
 DECORATOR_LINE = re.compile(r"^\s*(?:@[\w.]+(?:\([^)]*\))?|#\[.*\])\s*$")
 PYTHON_HEADER = re.compile(r"^\s*(?:async\s+def|def|class)\s+(\w+)")
 PYTHON_HEADER_LOOKBACK = 12
 PYTHON_CLASS_HEADER = re.compile(r"^class\s+(\w+)")
+GO_PACKAGE_LINE = re.compile(r"^package\s+\w+")
+RUST_MODULE_DOC_LINE = "//!"
 
 # The line under a comment block decides whether it documents a public symbol, by the rule of the file's suffix. Shell,
 # lua, sql, yaml, json and qml have no public marker, so their comment blocks are never kept; c, cc and cpp files keep
@@ -213,7 +223,7 @@ def marker_rows(file_lines, comments_only=False, file_path=""):
     for number, line in enumerate(file_lines, 1):
         if not NONBLANK.search(line) or number not in code:
             continue
-        is_comment = COMMENT_LINE.match(line) or number in comment_numbers
+        is_comment = number in comment_numbers or (style is None and COMMENT_LINE.match(line))
         if comments_only and not is_comment:
             continue
         raw = code[number]
@@ -238,14 +248,22 @@ def repo_relative_path(file_path, surface):
     return script_utils.repo_relative(top, os.path.realpath(file_path)) or surface
 
 
-def old_text_lines(tool_input, file_path):
-    """The set of lines the edit did not add: the lines of the file at HEAD (none for a file HEAD does not hold, or
-    outside a git work tree), plus an Edit's old_string. None when git failed and the file may be committed, so the
-    old lines are unknown."""
-    committed = committed_lines(file_path)
-    if committed is None or "old_string" not in tool_input:
-        return committed
-    return committed | set(first_present(tool_input, "old_string").split("\n"))
+def old_text_lines(tool_input, file_path, original_file):
+    """The set of lines the edit did not add: the lines of the file before the edit when the tool response carries it
+    (`original_file`, a string), else the lines of the file at HEAD (none for a file HEAD does not hold, or outside a
+    git work tree), plus an Edit's old_string. None when git failed and the file may be committed, so the old lines
+    are unknown."""
+    before = lines_before_edit(file_path, original_file)
+    if before is None or "old_string" not in tool_input:
+        return before
+    return before | set(first_present(tool_input, "old_string").split("\n"))
+
+
+def lines_before_edit(file_path, original_file):
+    """The set of lines of `original_file` when it is a string, else the lines at HEAD (see committed_lines)."""
+    if isinstance(original_file, str):
+        return set(original_file.split("\n"))
+    return committed_lines(file_path)
 
 
 def committed_lines(file_path):
@@ -266,15 +284,17 @@ class CommentLines(NamedTuple):
 
 def comment_lines_of(file_path, file_lines):
     """The comment line numbers of the file and the numbers of the lines inside a multi-line string held as data, or
-    that close one: none of those starts a statement. A suffix with no comment style falls back to COMMENT_LINE, which
-    sees a line that opens with a comment leader; lines of a multi-line string held as data are never comments. A line
-    that opens such a string is no comment, but it can start a statement."""
+    that close one, or inside a shell heredoc: none of those starts a statement. A suffix with no comment style falls
+    back to COMMENT_LINE, which sees a line that opens with a comment leader; lines of a multi-line string held as
+    data are never comments. A line that opens such a string is no comment, but it can start a statement."""
     style = source_text.comment_style_of(file_path)
     if style is None:
         numbers = {number for number, line in enumerate(file_lines, 1) if COMMENT_LINE.match(line)}
         return CommentLines(numbers, set())
     regions = source_text.string_data_regions(file_lines, style)
     data_numbers = regions.numbers | set(regions.closing_tails)
+    if SHELL_FILE.search(file_path):
+        data_numbers |= shell_statements.heredoc_body_line_numbers("\n".join(file_lines))
     numbers = comment_numbers_of(file_lines, style) - data_numbers - set(regions.openings)
     return CommentLines(numbers, data_numbers)
 
@@ -295,16 +315,15 @@ def python_symbol_is_public(file_lines, number, data_numbers):
 def python_owner_class_is_public(file_lines, number, data_numbers):
     """True when the nearest less-indented line above line `number` (1-based) is a public class header. The walk skips
     comments, the lines of a multi-line string (`data_numbers`) and the lines of a bracketed class header."""
-    indent = source_text.indent_of(file_lines[number - 1])
-    for line_number in range(number - 1, 0, -1):
-        line = file_lines[line_number - 1]
-        if not NONBLANK.search(line) or line.lstrip().startswith("#") or line_number in data_numbers:
-            continue
-        if source_text.indent_of(line) >= indent or line.lstrip().startswith((")", "]", "}")):
-            continue
-        owner = PYTHON_CLASS_HEADER.match(line)
-        return owner is not None and source_text.python_name_is_public(owner.group(1))
-    return False
+    def skipped(line_number, line):
+        return (line_number in data_numbers
+                or line.lstrip().startswith(("#", "]", "}")))
+
+    owner_line = owner_line_above(file_lines, number, skipped)
+    if owner_line is None:
+        return False
+    owner = PYTHON_CLASS_HEADER.match(owner_line)
+    return owner is not None and source_text.python_name_is_public(owner.group(1))
 
 
 def python_docstring_is_public(file_lines, comment_numbers, first, data_numbers):
@@ -348,13 +367,16 @@ def go_field_is_exported(file_lines, number):
     return owner is not None and GO_FIELD_OWNER.match(owner) is not None
 
 
-def owner_line_above(file_lines, number):
+def owner_line_above(file_lines, number, skipped=None):
     """The nearest non-blank line above line `number` (1-based) that is less indented than it, or None. A line that
-    starts with `)` or `>` closes a multi-line header, so the walk goes on to the header line."""
+    starts with `)` or `>` closes a multi-line header, so the walk goes on to the header line. `skipped(line_number,
+    line)`, when given, names the lines the walk passes over as well."""
     indent = source_text.indent_of(file_lines[number - 1])
     for line_number in range(number - 1, 0, -1):
         line = file_lines[line_number - 1]
         if not NONBLANK.search(line) or source_text.indent_of(line) >= indent:
+            continue
+        if skipped is not None and skipped(line_number, line):
             continue
         if line.lstrip().startswith((")", ">")):
             continue
@@ -414,6 +436,8 @@ def block_documents_public_symbol(suffix, file_lines, block, data_numbers):
                 or python_constant_is_public(file_lines, symbol_number, data_numbers))
     if suffix == ".go" and go_field_is_exported(file_lines, symbol_number):
         return True
+    if suffix == ".go" and GO_PACKAGE_LINE.match(file_lines[symbol_number - 1]):
+        return True
     if suffix in TS_SUFFIXES and ts_member_is_exported(file_lines, symbol_number):
         return True
     if suffix == ".kt" and kotlin_member_is_public(file_lines, symbol_number):
@@ -443,6 +467,20 @@ def is_license_header(file_lines, block, header):
     return any(LICENSE_WORDS.search(file_lines[number - 1]) for number in range(header[0], header[1] + 1))
 
 
+def rust_module_doc_last_line(file_lines, block, header):
+    """The number of the last line of the run of `//!` lines that opens the file's leading block, or the number of the
+    line before the block when it does not open with one."""
+    first, last = block
+    if block != header:
+        return first - 1
+    kept_last = first - 1
+    for number in range(first, last + 1):
+        if not file_lines[number - 1].lstrip().startswith(RUST_MODULE_DOC_LINE):
+            break
+        kept_last = number
+    return kept_last
+
+
 def kept_through_line(file_path, file_lines, block, header, comment_lines):
     """The number of the last line of `block` kept as a license header or a comment block on a public symbol, or the
     number of the line before the block when no line of it is kept. A public Python docstring keeps only the lines
@@ -451,6 +489,10 @@ def kept_through_line(file_path, file_lines, block, header, comment_lines):
     if is_license_header(file_lines, block, header):
         return last
     suffix = os.path.splitext(file_path)[1]
+    if suffix == ".rs":
+        module_doc_last = rust_module_doc_last_line(file_lines, block, header)
+        if module_doc_last >= first:
+            return module_doc_last
     if block_documents_public_symbol(suffix, file_lines, block, comment_lines.data_numbers):
         return last
     is_public_docstring = suffix == ".py" and python_docstring_is_public(
@@ -465,36 +507,50 @@ def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_num
     order. `edited_numbers`, when given, limits the check to those line numbers."""
     blocks = source_text.contiguous_runs(comment_lines.numbers)
     header = leading_block(file_lines, blocks)
+    charged = charged_comment_numbers(comment_lines, edited_numbers)
     unkept = []
     for block in blocks:
         kept_last = kept_through_line(file_path, file_lines, block, header, comment_lines)
         for number in range(block[0], block[1] + 1):
             line = file_lines[number - 1]
-            if edited_numbers is not None and number not in edited_numbers:
+            if number not in charged:
                 continue
             if line.strip() not in added or not NONBLANK.search(line) or DELIMITER_LINE.match(line):
                 continue
             if number == 1 and line.startswith(SHEBANG):
                 continue
-            if number <= kept_last or SUPPRESSION.search(line) or URL.search(line):
+            if number <= kept_last or SUPPRESSION.search(line) or DIRECTIVE.search(line) or URL.search(line):
                 continue
             unkept.append((number, line.strip()))
     return unkept
 
 
+def stripped_added(added_lines, old_lines):
+    """The stripped text of each line in `added_lines` that no line of `old_lines` has once stripped, blank
+    excluded."""
+    old_stripped = {line.strip() for line in old_lines}
+    added = {line.strip() for line in added_lines} - old_stripped
+    added.discard("")
+    return added
+
+
+def charged_comment_numbers(comment_lines, edited_numbers):
+    """The comment line numbers the check charges: those inside the edited span, or all of them when `edited_numbers`
+    is None."""
+    if edited_numbers is None:
+        return set(comment_lines.numbers)
+    return comment_lines.numbers & edited_numbers
+
+
 def touches_comment_line(tool_input, file_lines, comment_lines, added_lines, edited_numbers):
     """True when some comment line in the edited span (the whole file when `edited_numbers` is None) has stripped text
     in the new text and not in an Edit's old_string. Runs no git, so the gate can stop before it."""
-    candidates = {line.strip() for line in added_lines}
+    old_string_lines = []
     if "old_string" in tool_input:
-        candidates -= {line.strip() for line in first_present(tool_input, "old_string").split("\n")}
-    candidates.discard("")
-    for number in sorted(comment_lines.numbers):
-        if edited_numbers is not None and number not in edited_numbers:
-            continue
-        if file_lines[number - 1].strip() in candidates:
-            return True
-    return False
+        old_string_lines = first_present(tool_input, "old_string").split("\n")
+    candidates = stripped_added(added_lines, old_string_lines)
+    charged = charged_comment_numbers(comment_lines, edited_numbers)
+    return any(file_lines[number - 1].strip() in candidates for number in charged)
 
 
 def block_inside_repo(file_path, reason):
@@ -512,6 +568,8 @@ def check(raw):
     tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
     if not isinstance(tool_input, dict):
         return 0
+    tool_response = payload.get("tool_response")
+    original_file = tool_response.get("originalFile") if isinstance(tool_response, dict) else None
 
     file_path = first_present(tool_input, "file_path")
     if not file_path or not os.path.isfile(file_path):
@@ -540,8 +598,7 @@ def check(raw):
         return block_inside_repo(
             file_path,
             f"comment-bloat-gate: private-workflow marker in an added line ({name}). Zero "
-            "exceptions — drop the pointer; a comment line that remains must be a kept kind (license header, "
-            "suppression, doc block on a public symbol, URL) (_shared/code-vocabulary.md):\n" + "".join(leaks),
+            "exceptions — drop the pointer (_shared/code-vocabulary.md):\n" + "".join(leaks),
         )
 
     edited_numbers = None
@@ -554,12 +611,12 @@ def check(raw):
     if source_paths.is_doc_path(repo_relative_path(file_path, surface)):
         return 0
 
-    old_lines = old_text_lines(tool_input, file_path)
+    old_lines = old_text_lines(tool_input, file_path, original_file)
     if old_lines is None:
         emit_stderr(f"comment-bloat-gate: comment check skipped for {name}: git could not say what the file held "
                     "before this write.\n")
         return 0
-    added_stripped = {line.strip() for line in added_lines} - {line.strip() for line in old_lines}
+    added_stripped = stripped_added(added_lines, old_lines)
     unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers)
     if not unkept:
         return 0
@@ -567,8 +624,8 @@ def check(raw):
     return block_inside_repo(
         file_path,
         f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} are not a kept kind (license header, "
-        "lint or format suppression, comment block on an exported or public symbol, line with a URL). Delete each "
-        "one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
+        "lint or format suppression or tool directive, comment block on an exported or public symbol, line with a "
+        "URL). Delete each one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
     )
 
 

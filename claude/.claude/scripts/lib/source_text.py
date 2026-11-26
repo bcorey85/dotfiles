@@ -25,15 +25,17 @@ OPEN_BACKTICK_SCAN = re.compile(rf"(?P<string>{STRING_PATTERN})|//|/\*|`")
 STRING_OR_COMMENT_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#|//")
 STRING_OR_HASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#")
 STRING_OR_SLASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|//")
+STRING_OR_DASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|--")
 COMMENT_START_OF_STYLE = {"hash": STRING_OR_HASH_START, "hash_triple": STRING_OR_HASH_START,
-                          "slash": STRING_OR_SLASH_START}
-COMMENT_STYLES = ("slash", "hash", "hash_triple")
+                          "slash": STRING_OR_SLASH_START, "dash": STRING_OR_DASH_START}
+COMMENT_STYLES = ("slash", "hash", "hash_triple", "dash")
 COMMENT_STYLE_OF_SUFFIX = {
     ".py": "hash_triple", ".rb": "hash",
     ".sh": "hash", ".bash": "hash", ".zsh": "hash", ".yml": "hash", ".yaml": "hash",
     **dict.fromkeys((
         ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".swift", ".php", ".c", ".h",
-        ".cc", ".cpp", ".hpp"), "slash"),
+        ".cc", ".cpp", ".hpp", ".qml"), "slash"),
+    ".sql": "dash", ".lua": "dash",
 }
 
 
@@ -303,6 +305,10 @@ def _slash_comment_numbers(lines):
     return numbers
 
 
+def _dash_comment_numbers(lines):
+    return {number for number, line in enumerate(lines, 1) if line.strip().startswith("--")}
+
+
 def _hash_comment_numbers(lines, triple_quotes, comments_only=False):
     """The comment line numbers; with `comments_only`, triple-quoted string lines are tracked but not counted."""
     numbers = set()
@@ -380,8 +386,8 @@ def without_string_text(line):
 
 def split_trailing_comment(line, style=None):
     """(code, comment): the line cut at the first comment marker that is not inside a single-line string literal. The
-    marker is `#` for style `hash` or `hash_triple`, `//` for `slash`, and either for no style. The comment keeps its
-    marker; it is empty when the line has none."""
+    marker is `#` for style `hash` or `hash_triple`, `//` for `slash`, `--` for `dash`, and `#` or `//` for no
+    style. The comment keeps its marker; it is empty when the line has none."""
     start = COMMENT_START_OF_STYLE.get(style, STRING_OR_COMMENT_START)
     for found in start.finditer(line):
         if found.group("string") is None:
@@ -391,7 +397,8 @@ def split_trailing_comment(line, style=None):
 
 def comment_line_numbers(lines, style):
     """The 1-based numbers of the lines of a source file that are comment text. `slash`: a line that starts with `//`,
-    and every line of a `/* ... */` block. `hash`: a line that starts with `#`. `hash_triple`: the same, plus every
+    and every line of a `/* ... */` block. `dash`: a line that starts with `--`. `hash`: a line that starts with
+    `#`. `hash_triple`: the same, plus every
     line after the opening line of any triple-quoted string (docstring or assigned string alike, up to and including
     the line that closes it), plus the opening line itself when it starts with the quotes. A comment that follows code
     on the same line is not counted."""
@@ -399,12 +406,13 @@ def comment_line_numbers(lines, style):
         return _slash_comment_numbers(lines)
     if style in ("hash", "hash_triple"):
         return _hash_comment_numbers(lines, style == "hash_triple")
+    if style == "dash":
+        return _dash_comment_numbers(lines)
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
 
 
 def contiguous_runs(numbers):
-    """The (first, last) pairs of the runs of consecutive integers in `numbers`, in ascending order. Fed the numbers
-    of the comment lines of a file, it gives the comment blocks."""
+    """The (first, last) pairs of the runs of consecutive integers in `numbers`, in ascending order."""
     runs = []
     for number in sorted(set(numbers)):
         if runs and runs[-1][1] == number - 1:

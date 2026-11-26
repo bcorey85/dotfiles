@@ -39,15 +39,17 @@ SHELL_PROGRAM = r"(?:\S*/)?(?:ba|z|k|da)?sh"
 # A word with no `/` or `:`, which a shell looks up on PATH; a path (`./scripts/foo.sh`) that was not found is a
 # cannot-start line but names no tool.
 PATH_LOOKUP_NAME = r"[^\s:/]+"
-# A shell's top-level `command not found` line, in the forms of bash, the dry run's `/bin/sh: line N:`, pyenv, zsh and
-# dash, with the program it could not find in a `tool_*` group (empty for a path or a bare `command not found`).
+# A shell's top-level `command not found` line, in the forms of bash, `/bin/sh: line N:` and `sh: line N:`,
+# pyenv, zsh and dash, with the program it could not find in a `tool_*` group (empty for a path or a bare
+# `command not found`).
 # Anchored to the start of a line and limited to shell and shim names, so a test's assertion text that quotes the
-# phrase (`AssertionError: uv: command not found`) does not match. The only `: line N:` form kept is the dry run's own
-# `/bin/sh: line 1: uv: command not found`. A repo script's line (`tests/run.sh: line 40:`, a function it does not
-# define) and `bash: line 1:` (a script that runs `bash -c` prints it too) read as a failing check and name no tool.
+# phrase (`AssertionError: uv: command not found`) does not match. The only `: line N:` forms kept are the dry run's
+# `/bin/sh: line 1: uv: command not found` and the bare `sh: line 1: tsc: command not found` that bash running as `sh`
+# prints (an npm script). A repo script's line (`tests/run.sh: line 40:`, a function it does not define) and
+# `bash: line 1:` (a script that runs `bash -c` prints it too) read as a failing check and name no tool.
 NOT_FOUND_BRANCHES = (
     rf"^{SHELL_PROGRAM}: (?:(?:(?P<tool_shell>{PATH_LOOKUP_NAME})|\S+): )?command not found$",
-    rf"^/bin/sh: line \d+: (?:(?P<tool_sh>{PATH_LOOKUP_NAME})|\S+): command not found$",
+    rf"^(?:/bin/)?sh: line \d+: (?:(?P<tool_sh>{PATH_LOOKUP_NAME})|\S+): command not found$",
     rf"^pyenv: (?:(?P<tool_pyenv>{PATH_LOOKUP_NAME})|\S+): command not found$",
     rf"^zsh: command not found: (?:(?P<tool_zsh>{PATH_LOOKUP_NAME})|\S+)$",
     rf"^(?:/bin/)?sh: \d+: (?:(?P<tool_dash>{PATH_LOOKUP_NAME})|.+): not found",
@@ -61,6 +63,12 @@ SHELL_OR_SHIM_CANNOT_START = re.compile(
         r"|^No version is set for (?:command|shim)"
         r"|^No preset version installed for command"),
     re.IGNORECASE | re.MULTILINE)
+# The lines that show the environment, not the code, stopped a run: an unset variable (`DATABASE_URL is not set`,
+# prisma's `Environment variable not found: DATABASE_URL`) and a refused connection (Postgres, Node, prisma).
+ENVIRONMENT_GAP_LINE = re.compile(
+    r"(?:-\s+)?[A-Z][A-Z0-9_]* is not set\b|(?:error: )?Environment variable not found: [A-Z][A-Z0-9_]*"
+    r"|[\w.]*Error: connection to server at .* failed: Connection refused"
+    r"|(?:\w*Error: )?(?:connect )?ECONNREFUSED\b|(?:Error: (?:P1001: )?)?Can't reach database server")
 NO_PACKAGE_MANIFEST = re.compile(
     r"ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND|Couldn't find a package\.json"
     r"|ENOENT[^\n]*package\.json|package\.json[^\n]*ENOENT", re.I)
@@ -218,6 +226,25 @@ def cannot_start_line(code, output):
     for line in plain.splitlines():
         stripped = line.strip()
         if is_runner_cannot_start_line(stripped) or SHELL_OR_SHIM_CANNOT_START.search(stripped):
+            return stripped
+
+    return None
+
+
+def environment_gap_line(code, output):
+    """The first output line that shows an unset environment variable or a refused connection, for a failed run whose
+    output holds no runner summary, else None. A run with a runner summary ran tests: its failure is the code's."""
+    if code == 0:
+        return None
+
+    plain = strip_ansi(output)
+    if runner_summaries(plain, limit=1):
+        return None
+
+    for line in plain.splitlines():
+        stripped = line.strip()
+        # Anchored to the line start, so a code frame that quotes the phrase (`4 |  raise X("A is not set")`) misses.
+        if ENVIRONMENT_GAP_LINE.match(stripped):
             return stripped
 
     return None

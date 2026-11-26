@@ -7,7 +7,8 @@ under it for each problem the exit code cannot show:
 - a filtered test run that exits 0 while reporting no passed test is RED (the test is not written yet);
 - a `pgrep -f` pattern that matches the shell running the check always finds that shell;
 - a count criterion whose stated number differs from the number the plan's own code blocks give;
-- an ENV verdict (the tool could not start, such as a version manager's missing version) carries
+- an ENV verdict (the tool could not start, such as a version manager's missing version, or an unset environment
+  variable or a refused connection with no runner summary) carries
   `environment failure: <the output line that shows it>`; an exit 127 that names a missing tool carries
   `environment failure: <tool> not found on PATH; fix: install <tool> or add the pyenv shims to PATH`.
 Exit 0 when every command is RED and unflagged; exit 1 otherwise (GREEN, BROKEN, ENV or any flag need an answer before

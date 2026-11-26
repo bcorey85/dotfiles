@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1261 changes
+1264 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -63,6 +63,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A search worded exits 0 reads RED on no match](notes/2026-11-26-a-search-worded-exits-0-reads-red-on-no-match.md) [script/criteria-dry-run, shared/criteria-verdict] An rg, grep or git grep criterion whose text says it exits 0 now reads as a presence check, so no match (exit 1) reads RED, not GREEN; ban wording on the same line still wins.
+* [A missing binary under bash running as sh reads ENV naming the tool](notes/2026-11-26-a-missing-binary-under-bash-running-as-sh-reads.md) [script/criteria-dry-run, shared/check-output] An npm script whose binary is missing prints `sh: line 1: tsc: command not found` at exit 127; the criteria verdict now reads it ENV with the install fix naming tsc, not BROKEN.
+* [The criteria verdict reads an unset variable or refused connection with no runner summary as ENV](notes/2026-11-26-the-criteria-verdict-reads-an-unset-variable-or.md) [script/criteria-dry-run, shared/check-output, shared/criteria-verdict] A failed check whose output holds an unset-variable line or a refused connection, and no runner summary, now reads ENV with an environment-failure flag in the criteria dry run and /code verification, not RED.
 * [The review loop reads the single-caller census against its review base](notes/2026-11-26-the-review-loop-reads-the-single-caller-census.md) [script/review-loop-script, script/phase-change-file] A based review's smell-reviewer prompt now lists census entries for the whole branch, such as a superseded helper an earlier branch commit added; phase_change_file.py exits 2 with a reason when the change-file check cannot run.
 * [Adopting a plan impact that needs only a ruling settles the review](notes/2026-11-26-adopting-a-plan-impact-that-needs-only-a-ruling.md) [script/review-fix, script/handback] decide adopt on a held plan impact that changes no acceptance criterion and has plan cause ends done, records the ruling as applied, and the push check counts the review clean, with no re-dispatch.
 * [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md) [script/rule-anchors] `rule-anchors.sh check` run inside a linked dotfiles worktree now reads that worktree's prompt files and docs/rule-anchors.md, so a stale row there is reported.

@@ -631,6 +631,44 @@ class CheckOutputTest(unittest.TestCase):
         self.assertEqual("FAIL: test_x", check_output.normalized_log_line(coloured[0]))
 
 
+VITEST_ENV_GUARD = (
+    "Error: Refusing to run the test suite — the environment does not look disposable:\n"
+    "  - DATABASE_URL is not set\n\n"
+    " Test Files  1 failed (1)\n      Tests  no tests\n")
+PRISMA_UNSET = "error: Environment variable not found: DATABASE_URL.\n"
+DJANGO_REFUSED = ('django.db.utils.OperationalError: connection to server at "127.0.0.1", port 5432 failed: '
+                  "Connection refused\n")
+SH_TSC_MISSING = "sh: line 1: tsc: command not found\n"
+
+
+class EnvironmentGapTest(unittest.TestCase):
+    def test_a_failed_run_with_no_runner_summary_names_its_environment_gap_line(self):
+        rows = [
+            ("vitest env guard", VITEST_ENV_GUARD, "- DATABASE_URL is not set"),
+            ("prisma unset variable", PRISMA_UNSET, "error: Environment variable not found: DATABASE_URL."),
+            ("django refused connection", DJANGO_REFUSED, DJANGO_REFUSED.strip()),
+            ("node refused connection", "Error: connect ECONNREFUSED 127.0.0.1:5432\n",
+             "Error: connect ECONNREFUSED 127.0.0.1:5432"),
+            ("prisma unreachable", "Can't reach database server at `localhost:5432`\n",
+             "Can't reach database server at `localhost:5432`"),
+        ]
+        for name, output, expected in rows:
+            with self.subTest(name):
+                self.assertEqual(expected, check_output.environment_gap_line(1, output))
+
+    def test_a_code_frame_that_quotes_an_unset_phrase_is_no_environment_gap(self):
+        ruff_frame = '4 |     raise RuntimeError("DATABASE_URL is not set; ...")\n'
+        self.assertIsNone(check_output.environment_gap_line(1, ruff_frame))
+
+    def test_a_run_with_a_runner_summary_or_exit_zero_has_no_environment_gap(self):
+        ran_tests = "  - DATABASE_URL is not set\n Tests  2 failed | 3 passed (5)\n"
+        self.assertIsNone(check_output.environment_gap_line(1, ran_tests))
+        self.assertIsNone(check_output.environment_gap_line(0, PRISMA_UNSET))
+
+    def test_a_not_found_line_from_sh_names_the_missing_program(self):
+        self.assertEqual("tsc", check_output.missing_tool(127, SH_TSC_MISSING))
+
+
 class CheckVerdictTest(unittest.TestCase):
     """check_verdict and the three pass rules that call it read every row the same way."""
 

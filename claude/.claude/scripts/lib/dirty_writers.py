@@ -70,7 +70,7 @@ def own_session_may_have_written(repo, dirty, since, own_session_id):
 def other_session_paths(repo, row, dirty, since):
     """The dirty paths another live session's transcripts hold a write on; None when it has no transcript or one
     cannot be read."""
-    transcripts = session_registry.session_transcripts(row.get("sessionId"))
+    transcripts = session_registry.session_and_subagent_transcripts(row.get("sessionId"))
     if not transcripts:
         return None
     return dirty_paths_written(repo, transcripts, dirty, since)
@@ -94,7 +94,7 @@ def dirty_writers(repo, others, dirty, since, own_session_id):
 def own_written_paths(repo, dirty, since, own_session_id):
     """The dirty paths this session wrote, or None when one of its transcripts cannot be read. No transcript means
     no paths."""
-    transcripts = session_registry.session_transcripts(own_session_id)
+    transcripts = session_registry.session_and_subagent_transcripts(own_session_id)
     if not transcripts:
         return set()
     return dirty_paths_written(repo, transcripts, dirty, since)

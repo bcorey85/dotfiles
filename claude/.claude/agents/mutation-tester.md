@@ -20,21 +20,11 @@ Hand back a tree byte-identical to the tree you were handed.
 Anything missing → say which, and stop. Do not choose a mutation yourself, do not pick a
 target from the diff, and do not "test the general area."
 
-## Step 0 — Preconditions (all five, before touching anything)
-
-```bash
-git rev-parse --show-toplevel && git status --porcelain
-```
+## Step 0 — Preconditions (before touching anything)
 
 - The dispatch does not state a test command → stop and say so. Never infer one from the repo.
-- Not a git repo → stop.
-- **Lock file exists** (`${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/lock.json`, or the old `~/.claude/calibration-lock.json`) → **STOP**. If
-  `python3 ~/.claude/scripts/gates/calibration_guard.py --live --session-pid "$PPID"` exits 0 the lock is live: report its owner and
-  worktree and stop; never restore or delete it. Otherwise a previous
-  `mutation-tester` run mutated a file and never restored it. Report the
-  lock's `file` and `backup_path` and stop. Never mutate on top of an unrestored mutation.
-  Stop either way; never clear someone else's lock.
-- **Target not in the working tree, or not the file named in the dispatch** → stop.
+- The target is not the file named in the dispatch → stop.
+- Run `python3 ~/.claude/scripts/tools/mutation_lock.py check <target>` (`mutation_lock.py --help` lists what it checks). It ends with `STOP:` → stop and report what it printed. Never mutate on top of an unrestored mutation. Never clear someone else's lock.
 
 **Run the suite FIRST, unmutated, and record the result.** Baseline not green → verdict `INDETERMINATE — baseline not green`,
 report which tests were already failing, and **do not apply the mutation**.
@@ -44,21 +34,10 @@ Capture from the baseline run the number of tests that actually **executed**.
 ## Step 1 — Back up, hash, lock
 
 ```bash
-mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups
-cp <target> "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/backups/$(basename <target>).bak
-sha256sum <target> | cut -c1-16          # pre-mutation CONTENT hash
+python3 ~/.claude/scripts/tools/mutation_lock.py lock <target> --class "<one-line description>" --line "<line>" --owner-pid "$PPID"
 ```
 
-Hash the **file's contents**, not `git diff`.
-
-```bash
-jq -n --arg f "<target>" --arg b "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration/backups/$(basename <target>).bak" \
-      --arg h "<pre-mutation hash>" --arg c "mutant: <one-line description>" --arg l "<line>" \
-      --arg w "$(git rev-parse --show-toplevel)" --argjson p "$PPID" \
-      '{ts: (now|todate), kind: "mutation-test", writer: "mutation-tester", file: $f, backup_path: $b,
-        pre_hash: $h, class: $c, line: $l, worktree: $w, owner_pid: $p}' \
-  > "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json
-```
+It ends with `STOP:` → stop and report it; the target and the lock are untouched. It ends with `NEXT: apply the mutation` → keep the `--run-id` value on that line for the Step 4 restore line.
 
 ## Step 2 — Apply the mutation
 
@@ -98,27 +77,18 @@ Run the same test command as the baseline. Then classify, reading these in order
 
 ## Step 4 — Restore, on every path
 
-This runs whether the suite passed, failed, errored, hung, or you decided to abort at Step 2.
+This runs only after `lock` printed `NEXT: apply the mutation`, whether the suite passed, failed, errored, hung, or you decided to abort at Step 2. When `lock` stopped, there is nothing to restore.
 
-**Restore by copying the backup file. Never `git checkout`** — it would also destroy the
-real uncommitted work in that file. **Never `Write`, and never `Edit`.**
-The restore path is a file copy and nothing else:
-
-```bash
-cp <backup_path> <target>                # the only sanctioned restore
-```
-
-Then verify by hash, not by eyeball:
+**Restore by copying the backup file. Never `git checkout`.** **Never `Write`, and never `Edit`.**
+The restore is this one call and nothing else:
 
 ```bash
-sha256sum <target> | cut -c1-16          # must equal pre_hash
+python3 ~/.claude/scripts/tools/mutation_lock.py restore --owner-pid "$PPID" --run-id <run-id>
 ```
 
-- Matches → `rm "${XDG_STATE_HOME:-$HOME/.local/state}/claude-calibration"/lock.json`, and say in your report that the restore
-  was hash-verified. **If a safety gate blocks that removal, you are done: report the verdict, state the block, and print the exact command for your caller to run. Never retry by another mechanism.**
-- **Does not match** → **STOP and say so loudly**, with the target path and the backup path,
-  at the very top of your report. Do not delete the lock. Do not report a verdict as though
-  the run completed normally.
+- Exit 0 → say in your report that the restore was hash-verified.
+- Exit 3 (`RESTORE HASH MISMATCH`) → **STOP and say so loudly**, with the target path and the backup path it printed, at the very top of your report. Do not delete the lock. Do not report a verdict as though the run completed normally.
+- Any other `STOP:` → report the verdict, state the stop, and print the exact command it names, if any, for your caller to run. Never retry by another mechanism.
 
 ## Hard limits
 

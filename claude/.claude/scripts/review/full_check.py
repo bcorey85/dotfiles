@@ -131,6 +131,8 @@ FAILED_EXIT_ZERO = "failed (exit 0, summary reports failures)"
 ENVIRONMENT_GAP_PREFIX = "not run (environment gap: "
 NOT_RUN_CI = "not run (CI)"
 NOT_RUN_TIMEOUT = "not run (timeout)"
+# The caller ruled that a CI run is the test gate: the result names that run.
+NOT_RUN_CALLER_CI_PREFIX = "not run (CI gate: "
 # The check could not run here: no program, a runner that cannot start, no package manifest, no test found, or a
 # package-manager or engine version mismatch.
 SETUP_FAULT = "setup fault"
@@ -142,6 +144,11 @@ TIMEOUT_NOTE = ("the full check ran past its time limit and did not finish, so n
                 "Add a faster command as the line `Quality check (<repo name>): `<command>`` "
                 "to your machine-local CLAUDE.local.md.")
 FAULT_NOTES = {NOT_RUN_NO_CHECK: NO_CHECK_NOTE, NOT_RUN_TIMEOUT: TIMEOUT_NOTE}
+
+
+def caller_ci_result(ci_run):
+    """The result of a run that a caller's ruling replaced with the CI run `ci_run`."""
+    return f"{NOT_RUN_CALLER_CI_PREFIX}{ci_run})"
 
 
 def fault_note(result):
@@ -391,7 +398,9 @@ def run_check_command(repo, check_command, log, timeout, env, on_start):
     limit and was killed with its process group. On a machine with a systemd user manager the command runs inside the
     shared capped slice; `systemd-run --scope` execs it in place, so the pid and the process group stay the check's."""
     command, use_shell = memory_cap_scope.shell_popen_args(check_command)
-    with pathlib.Path(log).open("w") as handle:
+    log_path = pathlib.Path(log)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w") as handle:
         process = subprocess.Popen(command, shell=use_shell, cwd=repo, stdout=handle, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL, env=env, start_new_session=True)
         if on_start:
@@ -437,8 +446,11 @@ def record_changes(details, before, log):
 
 
 def run(repo, check_command, log, timeout, env=None, on_start=None, base=None, left_out=(), receipt=True,
-        source=None):
-    """Run the full check once. Returns (result, the log's last lines, details). The details hold `summaries` (the
+        source=None, ci_run=""):
+    """Run the full check once. With `ci_run` (the caller's ruling that this CI run is the test gate) no command runs:
+    the receipt rows are written as a satisfied CI run and the result is caller_ci_result(ci_run).
+
+    Returns (result, the log's last lines, details). The details hold `summaries` (the
     runner's own summary lines), `changed` (tracked files the command rewrote) and `created` (files it created), all
     lists, both kinds of file left in place. On a lint
     failure the lines are the failing step's lines, not the log's last lines. `on_start`, when given, is called with
@@ -453,12 +465,14 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base=None, l
     `details["tree"]` holds the fingerprint of the tree after the check (None without a receipt, outside a git work
     tree, or when git cannot fingerprint it)."""
     details = {**empty_details(), "tree": None}
-    in_ci = full_suite_runs_in_ci(repo)
+    in_ci = bool(ci_run) or full_suite_runs_in_ci(repo)
     run_id = None
     if receipt:
         # Only the receipt rows read the resolution; a bare run needs no discovery.
         whole = resolved_check(repo, base)
-        run_id = full_check_receipt.write_started_row(repo, whole.command, check_command, left_out,
+        # A CI-gated run starts no command, so the started row names none.
+        started_command = None if ci_run else check_command
+        run_id = full_check_receipt.write_started_row(repo, whole.command, started_command, left_out,
                                                       source=source or whole.source)
 
     def finish(result, tail, exit_code=0, satisfied=False):
@@ -467,6 +481,9 @@ def run(repo, check_command, log, timeout, env=None, on_start=None, base=None, l
             full_check_receipt.write_finished_row(repo, run_id, result, exit_code, result == NOT_RUN_TIMEOUT, in_ci,
                                                   satisfied, details["tree"], log)
         return result, tail, details
+
+    if ci_run:
+        return finish(caller_ci_result(ci_run), "", satisfied=True)
 
     if check_command is None:
         return finish(no_command_result(in_ci, left_out), "", satisfied=True)

@@ -28,10 +28,13 @@ from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
 from review_loop_prompt_file import (
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
+    GIVEN_BASE_KEY,
     HELD_FILES_KEY,
     NO_REVIEW_KEY,
+    PLAN_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
@@ -120,7 +123,7 @@ def build_loop(request):
     header, handoff, repo = request.header, request.handoff, request.repo
     brief = reviewer_brief(header, handoff, repo)
     gate_env = plan_format.gate_env_words_in(handoff)
-    loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get("plan", ""))
+    loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get(PLAN_KEY, ""))
     loop.reviewers = request.reviewers
     loop.later_phase_files = later_phase_files(header)
     loop.guidance = header.get("guidance", "")
@@ -137,7 +140,7 @@ def build_loop(request):
     if loop.check_overridden:
         test_parts = [(f"test-{index}", [command]) for index, command in enumerate(test_commands, 1)]
         found_command = check_parts.join_parts(test_parts)
-    plan = header.get("plan")
+    plan = header.get(PLAN_KEY)
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     loop.plan_on_disk, loop.phase = plan_on_disk, header.get("phase")
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, loop.phase)
@@ -149,7 +152,9 @@ def build_loop(request):
     loop.gate_commands = list(request.gate_commands)
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.coder_model = header.get(CODER_MODEL_KEY, "")
+    loop.ci_run = header.get(CI_GATE_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
+    loop.given_base = header.get(GIVEN_BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)
     loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)

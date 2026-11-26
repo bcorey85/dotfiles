@@ -2,6 +2,8 @@
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
+import argparse
+import datetime
 import difflib
 import json
 import os
@@ -16,7 +18,6 @@ import sys
 import time
 import uuid
 from collections import namedtuple
-from datetime import datetime, timezone
 
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -54,6 +55,8 @@ TIMEOUT_EXIT_CODE = 124
 COMMAND_NOT_FOUND_EXIT_CODE = 127
 REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"
 REPO_NAME_TIMEOUT_SECONDS = 10
+CONVERSATION_RECORD_TYPES = ("user", "assistant")
+TRANSCRIPT_UNREADABLE = "transcript unreadable"
 ENV_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 # A literal value is plain characters or a quoted string with no `$`, backtick, `;`, `&`, `|`, `<`, `>` (and no
 # backslash in a double-quoted one): the shell would run or expand anything else, so it is not a setting that can be
@@ -110,6 +113,25 @@ def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
     fenced = set()
+    for block, _is_closed in _fenced_blocks(lines):
+        fenced.update(block)
+    return fenced
+
+
+def closed_fence_indexes(lines):
+    """Same as `fenced_line_indexes`, but a fence that is never closed is left out: only blocks with a closing fence
+    count."""
+    fenced = set()
+    for block, is_closed in _fenced_blocks(lines):
+        if is_closed:
+            fenced.update(block)
+    return fenced
+
+
+def _fenced_blocks(lines):
+    """Each fenced block as (its line indexes, whether a closing fence ended it), in order."""
+    blocks = []
+    block = []
     opener = None
     for index, line in enumerate(lines):
         is_opening = opener is None
@@ -117,10 +139,14 @@ def fenced_line_indexes(lines):
             opener = _fence_opener(line)
         if opener is None:
             continue
-        fenced.add(index)
+        block.append(index)
         if not is_opening and _closes_fence(line, opener):
+            blocks.append((block, True))
+            block = []
             opener = None
-    return fenced
+    if block:
+        blocks.append((block, False))
+    return blocks
 
 
 def _fence_opener(line):
@@ -151,6 +177,17 @@ def json_type_name(value):
 def is_int(value):
     """Whether a decoded JSON value is an integer; a boolean is not."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def positive_int(text):
+    """An argparse type: the integer in text, which must be above zero."""
+    try:
+        number = int(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from error
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return number
 
 
 def is_string_list(value):
@@ -229,6 +266,13 @@ def text_similarity(first, second):
 
     For two token lists or other sequences, use `sequence_similarity` (bounded edit distance, n-gram overlap)."""
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
+
+
+def rounded_percent(part, total):
+    """`part` as a whole percent of `total`, rounded half up; 0 when `total` is 0."""
+    if total == 0:
+        return 0
+    return (100 * part + total // 2) // total
 
 
 def or_list(words):
@@ -554,6 +598,14 @@ def repo_file_paths(directory):
     return sorted({name for name in listing.split("\0") if name})
 
 
+def repo_file_paths_or_raise(directory):
+    """The paths `repo_file_paths` lists. Raises GitCallError when git fails."""
+    paths = repo_file_paths(directory)
+    if paths is None:
+        raise GitCallError(f"`git ls-files --cached --others --exclude-standard` failed in {directory}")
+    return paths
+
+
 def read_text_lines(path):
     """The file's lines as (line number, text) pairs from 1, or None when it is not UTF-8 text (it holds a NUL or
     bytes that do not decode) or cannot be read. A failed read is returned as None, not raised: the caller treats it
@@ -662,6 +714,17 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
         detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished
+
+
+def remote_default_branch(folder, error_type):
+    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set.
+    Raises error_type when git fails for any other reason."""
+    argv = ["git", "-C", str(folder), "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+    finished = run_or_raise(argv, error_type, check=True, ok_codes=(0, 1))
+    name = finished.stdout.strip()
+    if finished.returncode != 0 or not name:
+        return None
+    return name
 
 
 def repo_root(cwd, timeout=None):
@@ -929,16 +992,50 @@ def names_path(path, text, as_token=False):
     return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
 
 
+CURRENT_FOLDER_PREFIX = re.compile(rf"{PATH_TOKEN_START}\./")
+
+
 def texts_relative_to(finding_texts, root):
-    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    """The finding texts with each `root/` prefix and each leading `./` cut out, so a path under `root` or written
+    `./lib/x.py` reads as its repo-relative path."""
     root_prefix = f"{root}/"
-    return [text.replace(root_prefix, "") for text in finding_texts]
+    return [CURRENT_FOLDER_PREFIX.sub("", text.replace(root_prefix, "")) for text in finding_texts]
 
 
 def texts_name_path(finding_texts, path, root):
     """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
     relative_texts = texts_relative_to(finding_texts, root)
     return any(names_path(path, text, as_token=True) for text in relative_texts)
+
+
+def path_has_tail(path, tail):
+    """True when `path` is `tail` or ends with `/` and `tail`."""
+    return path == tail or path.endswith(f"/{tail}")
+
+
+def texts_name_path_by_suffix(finding_texts, path, root, known_paths):
+    """Whether one of the finding texts holds a proper trailing part of `path` (`x.py` for `lib/x.py`) that has a `/` or
+    a `.` in it, as a whole token, and `path` is the only one of `known_paths` that ends with that part. A part that
+    two known paths end with names neither."""
+    parts = path.split("/")
+    for start in range(1, len(parts)):
+        suffix = "/".join(parts[start:])
+        if "/" not in suffix and "." not in suffix:
+            continue
+        if not texts_name_path(finding_texts, suffix, root):
+            continue
+        owners = [known for known in known_paths if path_has_tail(known, suffix)]
+        if owners == [path]:
+            return True
+    return False
+
+
+def texts_name_repo_file(finding_texts, path, root, known_paths):
+    """Whether the finding texts name `path`: in full, with a `./` prefix, or by a trailing part of it that no other of
+    `known_paths` ends with."""
+    if texts_name_path(finding_texts, path, root):
+        return True
+    return texts_name_path_by_suffix(finding_texts, path, root, known_paths)
 
 
 def pop_option(arguments, flag):
@@ -1066,17 +1163,24 @@ def read_json_object(file, report_torn=False):
     return found if isinstance(found, dict) else {}
 
 
-def last_transcript_record(transcript_path):
-    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
-    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+def _transcript_tail(transcript_path, caller, unreadable=None):
+    """The tail lines of a transcript, or None when it is missing, or `unreadable` when the read failed (that case
+    prints a `could not read` line naming `caller` on stderr)."""
     try:
-        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
+        return transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
     except FileNotFoundError:
         return None
     except OSError as error:
-        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
-        print(f"last_transcript_record: could not read {transcript_path}, {type(error).__name__}: {error}",
-              file=sys.stderr)
+        print(f"{caller}: could not read {transcript_path}, {type(error).__name__}: {error}", file=sys.stderr)
+        return unreadable
+
+
+def last_transcript_record(transcript_path):
+    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
+    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+    tail_lines = _transcript_tail(transcript_path, "last_transcript_record")
+    # A failed read counts as alive (None): the open-work gates keep waiting, and the dead-reviewer gate passes.
+    if tail_lines is None:
         return None
     try:
         record = json.loads(_last_nonblank_line(tail_lines))
@@ -1085,12 +1189,41 @@ def last_transcript_record(transcript_path):
     return record if isinstance(record, dict) else None
 
 
+def last_api_error(transcript_path, report_unreadable=False):
+    """The transcript's last user or assistant record when it is an API error message, else None. Records of any
+    other type (turn durations, informational notes, last-prompt, cost state) that Claude Code writes after the
+    error are skipped. None also for a transcript that is missing, empty, or whose last line is torn, and for an
+    unreadable one unless `report_unreadable` is set: then it returns TRANSCRIPT_UNREADABLE."""
+    unreadable = TRANSCRIPT_UNREADABLE if report_unreadable else None
+    tail_lines = _transcript_tail(transcript_path, "last_api_error", unreadable)
+    if tail_lines is None or tail_lines == TRANSCRIPT_UNREADABLE:
+        return tail_lines
+    last_line = _last_nonblank_line(tail_lines)
+    if transcript_record(last_line) is None:
+        return None
+    for line in reversed(tail_lines):
+        record = transcript_record(line)
+        if record is None or record.get("type") not in CONVERSATION_RECORD_TYPES:
+            continue
+        return record if record.get("isApiErrorMessage") is True else None
+    return None
+
+
 def ends_on_api_error(transcript_path):
-    """True when the last record of a transcript is an API error message: the agent may never report.
-    False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
-    record shows the agent went on."""
-    record = last_transcript_record(transcript_path)
-    return record is not None and record.get("isApiErrorMessage") is True
+    """True when the last user or assistant record of a transcript is an API error message: the agent may never
+    report. False for a transcript that is missing, unreadable, empty, or whose last such record is anything else,
+    so a later record shows the agent went on."""
+    return last_api_error(transcript_path) is not None
+
+
+def epoch_of_timestamp(timestamp):
+    """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`; a timestamp with no zone reads as
+    UTC. Raises ValueError for any other."""
+    # Python 3.10's fromisoformat does not read a trailing Z.
+    moment = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return moment.timestamp()
 
 
 def without_paths(files, paths):
@@ -1123,7 +1256,7 @@ def tool_use_calls(line):
 def makes_own_calls(record):
     """Whether a parsed transcript record's tool calls are its own. Only user and assistant records are: an
     api-request-blob record repeats earlier calls, so counting it counts each call twice."""
-    return record.get("type") in ("user", "assistant")
+    return record.get("type") in CONVERSATION_RECORD_TYPES
 
 
 def record_tool_calls(record):
@@ -1535,6 +1668,11 @@ def append_jsonl(path, row):
         os.close(descriptor)
 
 
+def largest_entries(totals, limit, size):
+    """The `limit` (key, total) pairs of the dict `totals` whose `size(total)` is largest; ties sort by key."""
+    return sorted(totals.items(), key=lambda pair: (-size(pair[1]), pair[0]))[:limit]
+
+
 def can_append(path):
     """True when a row can be appended to the file `path` (a file not made yet needs a writable folder)."""
     path = pathlib.Path(path)
@@ -1544,9 +1682,9 @@ def can_append(path):
 
 
 def xdg_state_home():
-    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset, empty or relative."""
     state_home = os.environ.get("XDG_STATE_HOME")
-    if not state_home:
+    if not state_home or not os.path.isabs(state_home):
         return pathlib.Path.home() / ".local" / "state"
     return pathlib.Path(state_home)
 
@@ -1665,12 +1803,3 @@ def items_missing_by_key(items, others, key):
     """The items whose `key` no item of `others` has."""
     other_keys = {key(other) for other in others}
     return {item for item in items if key(item) not in other_keys}
-
-
-def epoch_of_timestamp(timestamp):
-    """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`. Raises ValueError for any other."""
-    # Python 3.10's fromisoformat does not read a trailing Z.
-    moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.timestamp()

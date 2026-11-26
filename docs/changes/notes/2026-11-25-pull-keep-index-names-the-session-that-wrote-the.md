@@ -21,11 +21,11 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 The shared route's two refusals (diverged branch, overwrite) named the first live session whose registry `cwd` sat in
 the repo, so a pusher could message a session that never touched the dirty files. The refusal now reads every live
 session in the repo (`session_registry.other_live_sessions_in`) and each one's transcript plus its subagents'
-transcripts (`session_registry.session_transcript`, now shared with `lane_status.py`). It names a session only when
+transcripts (`session_registry.session_and_subagent_transcripts`, on top of `session_transcript`). It names a session only when
 exactly one has an Edit, Write, MultiEdit or NotebookEdit call with an absolute path on a dirty path, recorded after
 the HEAD commit time, every other transcript was read, and the pushing session wrote none of them. Otherwise it says
 the owner is unknown and lists the live sessions as candidates, with unread transcripts named apart.
-The route choice is unchanged. `epoch_of_timestamp` moves from `human_turn_lookup` to `script_utils`, so the coder
+The route choice is unchanged. `epoch_of_timestamp` moves from `human_turn_lookup` to `script_utils` (one copy there), so the coder
 gate, which loads `loop_transcript`, does not load `human_turn_lookup` and its imports.
 
 ## Evidence

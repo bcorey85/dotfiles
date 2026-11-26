@@ -87,7 +87,7 @@ Spec: <task-dir>
 ### Still unstaged                (from /stage, blast-radius order)
 - <path> — <classifier reason>
 
-Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
+Next: read the residue → run the smoke checklist → stage → /commit → open the PR → /adr <plan folder> → `adr_flow.py status <plan folder>` (`adr: done` ends the branch).
 ```
 
 Persist (non-blocking; on failure mention and continue):
@@ -107,7 +107,7 @@ fi
 - **Never re-read code to situate** (no callers/siblings/LSP map — that's `/orient`; consume or say "not situated").
 - **Never `git add` semantic files, commit, or open a PR.**
 - **Never edit code** — fixes route through `/fix`.
-- **Never run `/adr`** — the user's step after recap, before the PR, so the record ships in it.
+- **Never run `/adr`** — the user's step after the PR is open.
 
 ## Arguments
 

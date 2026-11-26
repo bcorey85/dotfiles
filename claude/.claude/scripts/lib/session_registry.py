@@ -36,6 +36,11 @@ def projects_dir():
     return pathlib.Path.home() / ".claude" / "projects"
 
 
+def session_transcripts(session_id):
+    """Every `<session_id>.jsonl` transcript under any project folder, sorted by path."""
+    return sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
+
+
 def session_subagents_dir(session_id):
     """The `subagents` folder of a session's transcripts (first match under any project), None when it has none."""
     for folder in projects_dir().glob(f"*/{session_id}/subagents"):
@@ -92,23 +97,18 @@ def other_live_sessions_in(folder, own_session_id):
     return found
 
 
-def session_transcript_matches(session_id):
-    """Every `<projects folder>/*/<session_id>.jsonl`, sorted."""
-    return sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
-
-
 def session_transcript(session_id):
     """The transcript file of a session (first match in sorted order under any project), None when it has none or
     `session_id` is not a non-empty string."""
     if not isinstance(session_id, str) or not session_id:
         return None
-    found = session_transcript_matches(session_id)
+    found = session_transcripts(session_id)
     if not found:
         return None
     return found[0]
 
 
-def session_transcripts(session_id):
+def session_and_subagent_transcripts(session_id):
     """The transcript of a session and the transcripts of its subagents (coder dispatches edit through them); empty
     when the session has no main transcript."""
     transcript = session_transcript(session_id)

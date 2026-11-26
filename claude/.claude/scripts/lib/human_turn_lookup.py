@@ -13,13 +13,7 @@ from typing import NamedTuple
 
 import user_prompts
 from script_utils import epoch_of_timestamp, transcript_record
-from session_registry import (
-    live_session_rows,
-    projects_dir,
-    row_for_session_id,
-    session_transcript_matches,
-    sessions_dir,
-)
+from session_registry import live_session_rows, projects_dir, row_for_session_id, session_transcripts, sessions_dir
 
 HUMAN_ORIGIN = {"kind": "human"}
 
@@ -64,7 +58,7 @@ def relaying_row(word):
 
 def transcript_of_session(session_id):
     """The one `<projects folder>/*/<session_id>.jsonl`. Raises HumanTurnRefusedError for none or several."""
-    found = session_transcript_matches(session_id)
+    found = session_transcripts(session_id)
     if not found:
         raise HumanTurnRefusedError(f"no transcript {session_id}.jsonl under {projects_dir()}")
     if len(found) > 1:

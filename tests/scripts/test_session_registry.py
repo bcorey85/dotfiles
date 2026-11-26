@@ -94,7 +94,7 @@ class SessionRegistryTest(unittest.TestCase):
             (self.home / "projects" / project).mkdir(parents=True)
             (self.home / "projects" / project / "sid.jsonl").write_text("")
         expected = [self.home / "projects" / "a" / "sid.jsonl", self.home / "projects" / "b" / "sid.jsonl"]
-        self.assertEqual(expected, session_registry.session_transcript_matches("sid"))
+        self.assertEqual(expected, session_registry.session_transcripts("sid"))
 
     def test_a_session_outside_the_folder_a_dead_one_and_a_row_with_no_cwd_are_no_match(self):
         with tempfile.TemporaryDirectory() as folder:

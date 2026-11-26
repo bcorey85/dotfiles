@@ -28,6 +28,8 @@ import code_wait
 import handback_hook
 import handback_store
 import hook_input
+import merge_free_base
+import phase_asks
 import plan_format
 import process_group
 import resume_review_gate
@@ -42,14 +44,18 @@ from review_loop_post_cap import post_cap_kinds
 from review_loop_prompt_file import (
     ADOPTED_HEADER_KEY,
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
     FINDINGS_KEY,
     FIX_ROUNDS_KEY,
+    GIVEN_BASE_KEY,
     ITER_KEY,
     LIST_SEPARATOR,
     NO_REVIEW_KEY,
+    PLAN_KEY,
     POST_CAP_PASSES_KEY,
+    REPO_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_MAIN,
     RULED_OUT_FILES_KEY,
@@ -64,9 +70,6 @@ from review_loop_prompt_file import (
 )
 
 STATE_NAME = reviewer_dispatch.LAUNCH_STATE_NAME
-# How long a launch waits for a stopped loop's SIGTERM handler to finish removing its worktrees and children.
-STOP_WAIT_SECONDS = 5
-STOP_POLL_SECONDS = 0.05
 AGENT_PREFIX = "review-script-"
 DEFAULT_HANDOFF = "Review the working tree against HEAD."
 FAST_MODEL = "haiku"
@@ -104,16 +107,24 @@ def launch_parser():
     parser.add_argument("--session-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): a session ruled on finding N of the findings file, counted "
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
-    parser.add_argument("--base", help="review every change since this ref, commits included")
+    parser.add_argument("--base",
+                        help="review every change since this ref (its merge base with HEAD when the ref is no "
+                             "ancestor of HEAD), commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root. A file "
                              f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")
+    parser.add_argument("--plan", metavar="PATH",
+                        help="the plan file of this work: absolute, or relative to the repo root. With no flag the "
+                             "plan of the repo's code-phase record is used, when it names a file in the repo")
     parser.add_argument("--ruled-out", action="append", default=[], metavar="PATH",
                         help="a file the user ruled out of this review (repeatable): the loop never reviews it, "
                              "sends no finding on it to a coder and puts back any change a coder makes to it")
     parser.add_argument("--handoff", metavar="FILE", help="the handoff block the reviewers and coder read")
     parser.add_argument("--test", action="append", default=[], dest="tests", metavar="CMD",
                         help="a test command the loop runs on every converged run, before review credit (repeatable)")
+    parser.add_argument("--ci-gate", default="", metavar="RUN",
+                        help="the caller ruled that this CI run is the test gate: the loop runs no local full check "
+                             "and the packet names the run")
     models = parser.add_mutually_exclusive_group()
     models.add_argument("--fast", action="store_true", help=f"run the reviewers and the fix coder on {FAST_MODEL}")
     models.add_argument("--deep", action="store_true", help="run the reviewers on their agents' own model")
@@ -181,10 +192,15 @@ def read_findings_file(findings_file, flag="--fix"):
 
 
 def resolved_base(repo, base):
+    """BaseResolution(given, commit, used): `given` is --base as typed, `used` the commit the review diffs against,
+    which is the merge base with HEAD when the base is no ancestor of HEAD."""
     commit = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
     if not commit:
         raise LaunchError(f"--base {base} names no commit in {repo}")
-    return commit.strip()
+    try:
+        return merge_free_base.resolve_base(repo, commit.strip(), base)
+    except (merge_free_base.NoMergeBaseError, merge_free_base.MergeBaseGitError) as error:
+        raise LaunchError(f"--base {base}: {error}") from error
 
 
 def is_session_brief(full):
@@ -241,6 +257,29 @@ def ruled_out_files(repo, given):
     return paths
 
 
+def launch_plan(repo, given):
+    """The plan path relative to the repo root, or "" for no plan. `given` (the --plan value) must be a file inside
+    the repo, else the launch stops. With no `given`, the plan of the code-phase record when that file exists in the
+    repo."""
+    if given:
+        relative = repo_file_relative(repo, given)
+        if relative is None:
+            raise LaunchError(f"--plan {given} is not a file inside the repo {repo}")
+        return relative
+    recorded = code_wait.read_phase_run(repo).get(phase_asks.PLAN_KEY)
+    if not recorded:
+        return ""
+    return repo_file_relative(repo, recorded) or ""
+
+
+def repo_file_relative(repo, given):
+    """`given` relative to the repo root when it names a file inside the repo, else None."""
+    relative = script_utils.repo_relative(repo, given)
+    if relative is None or not (repo / relative).is_file():
+        return None
+    return relative
+
+
 def check_files_exist(repo, paths, base):
     changed = review_files(repo, base)
     missing = [path for path in paths if not (repo / path).exists() and path not in changed]
@@ -248,12 +287,18 @@ def check_files_exist(repo, paths, base):
         raise LaunchError(f"--file names no file in {repo}: {', '.join(missing)}")
 
 
-def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None):
+def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None, given_base=None, plan="", repo=""):
     # A launch with no --fix still runs fix-first when adopted rulings come back as findings (`findings_file` is set).
     mode = "fix-first" if options.fix or findings_file else "review-first"
     pairs = [("mode", mode), ("caller", options.skill), ("lane", options.lane)]
+    if plan:
+        pairs.append((PLAN_KEY, plan))
+        # reviewer_dispatch.plan_arguments passes --plan only when the header holds both plan and repo.
+        pairs.append((REPO_KEY, str(repo)))
     if base:
         pairs.append((BASE_KEY, base))
+    if given_base:
+        pairs.append((GIVEN_BASE_KEY, given_base))
     if paths:
         pairs.append((FILES_KEY, LIST_SEPARATOR.join(paths)))
     if ruled_out:
@@ -274,6 +319,8 @@ def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None
     if options.fast:
         pairs.append((REVIEWER_MODEL_KEY, FAST_MODEL))
         pairs.append((CODER_MODEL_KEY, FAST_MODEL))
+    if options.ci_gate:
+        pairs.append((CI_GATE_KEY, options.ci_gate))
     if options.iter:
         pairs.append((ITER_KEY, str(options.iter)))
     if options.fix_rounds:
@@ -318,13 +365,15 @@ def packet_args(options, launch_file):
     return [*args, "--lane", options.lane, "--launch", str(launch_file)]
 
 
-def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
-    """The flags a later fix run of this review carries: the same repo, range, files, ruled-out files, reviewer
-    model, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--fix-rounds`, `--post-cap-passes`,
-    `--user-ruled`, `--session-ruled` and `--detach` are the caller's to add."""
+def relaunch_args(options, repo, paths, handoff_file, ruled_out=(), plan=""):
+    """The flags a later fix run of this review carries: the same repo, range, plan, files, ruled-out files,
+    reviewer model, CI gate, lane, handoff and test commands. `--fix`, `--also-fix`, `--iter`, `--fix-rounds`,
+    `--post-cap-passes`, `--user-ruled`, `--session-ruled` and `--detach` are the caller's to add."""
     args = ["--repo", str(repo)]
     if options.base:
         args += ["--base", options.base]
+    if plan:
+        args += ["--plan", plan]
     for path in paths:
         args += ["--file", path]
     for path in ruled_out:
@@ -333,6 +382,8 @@ def relaunch_args(options, repo, paths, handoff_file, ruled_out=()):
         args.append("--fast")
     if options.deep:
         args.append("--deep")
+    if options.ci_gate:
+        args += ["--ci-gate", options.ci_gate]
     for test_command in options.tests:
         args += ["--test", test_command]
     return [*args, "--lane", options.lane, "--handoff", str(handoff_file)]
@@ -449,18 +500,6 @@ def loop_repo(launch_file):
     return pathlib.Path(repo).resolve()
 
 
-def wait_for_exit(pid):
-    """Waits up to STOP_WAIT_SECONDS for pid to exit, so the old loop has removed its worktrees and children before
-    the new loop starts. A pid still running after that is named on stderr and the launch goes on."""
-    deadline = time.monotonic() + STOP_WAIT_SECONDS
-    while process_group.pid_is_alive(pid):
-        if time.monotonic() >= deadline:
-            print(f"review_launch: the earlier loop (pid {pid}) is still running after {STOP_WAIT_SECONDS} s",
-                  file=sys.stderr)
-            return
-        time.sleep(STOP_POLL_SECONDS)
-
-
 def is_live_loop_of(loop_dir, pid, repo):
     """True when the launch record in loop_dir names repo and the command line of pid names the loop's agent id (a
     reused pid does not). Raises LaunchError or OSError when the record or `ps` cannot be read."""
@@ -470,14 +509,20 @@ def is_live_loop_of(loop_dir, pid, repo):
 
 
 def stop_loop(loop_dir, pid, repo):
-    """SIGTERMs the process group of the live loop (loop_dir, pid) of repo and waits for it to exit. A failed kill is
-    printed on stderr and the launch goes on."""
+    """SIGTERMs the process group of the live loop (loop_dir, pid) of repo and waits for every process of the group to
+    exit, so the old loop has removed its worktrees and children before the new loop starts. A group still running
+    after the wait, or a failed kill, is printed on stderr and the launch goes on."""
     try:
-        if process_group.terminate_group(pid):
-            print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
-            wait_for_exit(pid)
+        result = process_group.stop_group(pid)
     except OSError as error:
         print(f"review_launch: could not stop the loop in {loop_dir}: {error}", file=sys.stderr)
+        return
+    if result == process_group.GROUP_GONE:
+        return
+    print(f"Stopped the earlier review loop {loop_dir.name} of {repo} (pid {pid}).")
+    if result == process_group.GROUP_STILL_RUNNING:
+        print(f"review_launch: the earlier loop (pid {pid}) is still running after "
+              f"{process_group.STOP_WAIT_SECONDS} s", file=sys.stderr)
 
 
 def loop_skill(launch_file):
@@ -592,22 +637,32 @@ def command_launch(argv, loop_script):
     findings, user_ruled, left_out = found.findings, found.user_ruled_texts, found.left_out
     options.user_ruled = found.user_ruled_numbers
     options.session_ruled = found.session_ruled_numbers
-    base = resolved_base(repo, options.base) if options.base else ""
+    base_resolution = resolved_base(repo, options.base) if options.base else None
+    base = base_resolution.used if base_resolution else ""
     file_flags = split_brief_files(repo, options.files)
     paths = file_flags.repo_files
     ruled_out = ruled_out_files(repo, options.ruled_out)
+    plan = launch_plan(repo, options.plan)
     check_files_exist(repo, paths, base)
     handoff = with_briefs(handoff_text(options, paths, findings), file_flags.briefs)
     changed = review_files(repo, base, paths)
-    in_scope = script_utils.without_paths(changed, ruled_out)
+    # The loop leaves the plan folder out of a whole-tree scope (LoopRun.review_scope); the guard must agree.
+    scoped = changed if paths else plan_format.outside_plan_folder(changed, plan)
+    in_scope = script_utils.without_paths(scoped, ruled_out)
     if options.fix and left_out and not findings and (options.no_review or not in_scope):
         raise LaunchError(f"every finding in {options.fix} was left out: a recorded ruling already settled each plan "
                           "impact, and there is nothing else to fix or review. Nothing was launched.")
     if not findings and not in_scope:
         since = f"since {options.base}" if base else "against HEAD"
+        if changed and not scoped:
+            raise LaunchError(f"every changed file {since} is under the plan folder {plan_format.plan_folder(plan)}, "
+                              "which holds plan documents, not the change, so the review scope is empty and no "
+                              "reviewer would read anything. Nothing was launched. Name a file with --file to "
+                              "review it.")
         if changed:
-            raise LaunchError(f"every changed file {since} was given to --ruled-out, so the review scope is empty and "
-                              "no reviewer would read anything. Nothing was launched.")
+            outside_plan = f" outside the plan folder {plan_format.plan_folder(plan)}" if scoped != changed else ""
+            raise LaunchError(f"every changed file {since}{outside_plan} was given to --ruled-out, so the review scope "
+                              "is empty and no reviewer would read anything. Nothing was launched.")
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
                           "reviewer would read anything. Nothing was launched. To review committed work, launch "
                           "with --base <ref>.")
@@ -620,13 +675,15 @@ def command_launch(argv, loop_script):
     findings_file = loop_dir / FINDINGS_JSON if findings else None
     if findings_file:
         write_findings(findings_file, findings)
-    prompt = render_prompt(header_pairs(options, base, paths, findings_file, ruled_out, found.adopted), handoff)
+    given_base = base_resolution.given_if_moved() if base_resolution else None
+    pairs = header_pairs(options, base, paths, findings_file, ruled_out, found.adopted, given_base, plan, repo)
+    prompt = render_prompt(pairs, handoff)
     prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
     handoff_file = loop_dir / HANDOFF_NAME
     script_utils.write_text_atomically(handoff_file, handoff)
     launch_file = loop_dir / reviewer_dispatch.LAUNCH_FILE
     launch_record = {reviewer_dispatch.PACKET_ARGS_KEY: packet_args(options, launch_file),
-                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file, ruled_out),
+                     RELAUNCH_KEY: relaunch_args(options, repo, paths, handoff_file, ruled_out, plan),
                      USER_RULED_RECORD_KEY: user_ruled,
                      reviewer_dispatch.LAUNCH_BRANCH_KEY: script_utils.current_branch(repo),
                      reviewer_dispatch.LAUNCH_TIME_KEY: time.time(),

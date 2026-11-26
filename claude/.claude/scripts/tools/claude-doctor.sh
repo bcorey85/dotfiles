@@ -217,7 +217,7 @@ fi
 # there with the evidence behind it. Whitespace-only edits do not move a hash.
 print_info "Rule anchors"
 if [[ -x "$CLAUDE_DIR/scripts/tools/rule-anchors.sh" ]]; then
-  if ra_out=$("$CLAUDE_DIR/scripts/tools/rule-anchors.sh" check 2>&1); then
+  if ra_out=$(cd "$CLAUDE_DIR" && ./scripts/tools/rule-anchors.sh check 2>&1); then
     print_success "every anchored block has a row and every row has a block"
   else
     while IFS= read -r line; do print_error "rule anchor: $line"; done <<<"$ra_out"

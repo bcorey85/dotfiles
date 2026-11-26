@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""PreToolUse hook on Write: the code-fork agent writes only files inside a run folder.
+"""PreToolUse hook on Write: the code-fork agent writes only files inside a run folder, and no Write replaces an
+existing file its session has not read.
 
 code-fork runs the /code, /review and /fix steps. A coder makes every repo edit; the fork writes only its own
 handoff and stop files in the run folder, `git rev-parse --git-path code-phase`: a `code-phase` directory whose
 parent is a git directory (it holds a HEAD file). A shell heredoc cannot carry that text, because the safety gate
-reads a heredoc's body as command text. Any other agent, and the main session, passes untouched.
+reads a heredoc's body as command text. Any other agent, and the main session, passes this check and still goes
+through the unread-overwrite check below.
 
 Its stop.md Write is denied when the run is a /code resume whose source changed with no review loop started
 (code/resume_review_gate.py). A changed tree is denied once; an unreadable resume record or an unfingerprintable tree
@@ -13,9 +15,13 @@ is denied on every try until the review loop starts.
 The fork also cannot write review-stop.md of the run folder while the fix state holds
 `asks_launch_pending`: the fix run that asks-done printed has not launched yet.
 
-Fail-closed for code-fork: any crash while judging its call exits 2 and names the gate. Any other payload
-exits before anything can fail. hook_input loads only for a code-fork call: its imports triple the hook's time, and
-every Write in every session runs this hook.
+Every Write first runs lib/unread_overwrite.py: a Write that would replace an existing file the session has not read
+since it last changed is denied, naming the last writer. Fail-open: a crash in the read check prints a stderr line
+and the Write goes on; a crash in the last-writer lookup keeps the deny and names the error.
+
+Fail-closed for code-fork: any crash while judging its call exits 2 and names the gate. A payload from any other
+agent runs only the fail-open unread-overwrite check. hook_input loads only for a code-fork call or an unread-overwrite
+deny: its imports triple the hook's time, and every Write in every session runs this hook.
 """
 import json
 import os
@@ -25,10 +31,10 @@ import sys
 LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")
 sys.path.insert(0, LIB_DIR)
 import import_guard
+from write_gate_name import GATE_NAME
 
 GATED_AGENT = "code-fork"
 RUN_FOLDER_NAME = "code-phase"
-GATE_NAME = "fork-write-scope"
 DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
              "--path-format=absolute --git-path code-phase` prints. {file_path} is outside it. Send any other edit "
              "to a coder.")
@@ -146,12 +152,39 @@ def write_deny_reason(payload, hook_input):
     return DENY_TEXT.format(file_path=file_path or "The Write names no file and")
 
 
+def unread_overwrite_denied(payload):
+    """True when this Write was denied because the session never read the existing file's current content. Fail-open:
+    a crash in the check writes a stderr line naming the gate and lets the Write go on to the code-fork check."""
+    tool_input = payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return False
+    file_path = tool_input.get("file_path")
+    if not isinstance(file_path, str):
+        return False
+    try:
+        import unread_overwrite
+        reason = unread_overwrite.unread_overwrite_reason(file_path, payload)
+        if not reason:
+            return False
+        import hook_input
+        hook_input.emit_decision("deny", reason)
+    except Exception as error:
+        sys.stderr.write(f"{GATE_NAME}: the unread-overwrite check crashed, so the Write goes on "
+                         f"({type(error).__name__}: {error})\n")
+        return False
+    return True
+
+
 def main():
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return 0
     stdin_text = sys.stdin.buffer.read().decode("utf-8", "replace")
     payload = json.loads(stdin_text)
-    if not isinstance(payload, dict) or payload.get("agent_type") != GATED_AGENT:
+    if not isinstance(payload, dict):
+        return 0
+    if unread_overwrite_denied(payload):
+        return 0
+    if payload.get("agent_type") != GATED_AGENT:
         return 0
 
     try:
@@ -167,8 +200,8 @@ def main():
 
 
 if __name__ == "__main__":
-    # A crash before the code-fork check (unreadable stdin) exits 0 with a stderr line: fail-open for every caller,
-    # since only code-fork is gated and every crash on its own path exits 2 inside main.
+    # A crash before the code-fork check (unreadable stdin) exits 0 with a stderr line: fail-open. The unread-overwrite
+    # check fails open on its own inside main; only the code-fork path fails closed, and exits 2 inside main.
     try:
         exit_code = main()
     except Exception as crash:

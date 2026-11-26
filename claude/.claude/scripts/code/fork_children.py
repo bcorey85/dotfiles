@@ -30,11 +30,11 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 
 import code_wait
 import handback_store
-import human_turn_lookup
 import loop_transcript
 import open_child_gate
 import process_group
 import script_utils
+import transcript_time
 from code_run_names import REVIEW_START_SCRIPT
 from shell_command_words import script_call_arguments
 
@@ -139,11 +139,11 @@ def fork_run_window(fork_transcript, commands):
     record runs the review start script: the loop's pid file is written after that record, and the code-fork's next
     record is not written yet."""
     try:
-        first_start = human_turn_lookup.epoch_of_timestamp(commands.first_start_timestamp)
+        first_start = transcript_time.epoch_of_timestamp(commands.first_start_timestamp)
         if commands.ends_on_review_start:
             return first_start, None
         last_record = script_utils.last_transcript_record(fork_transcript) or {}
-        return first_start, human_turn_lookup.epoch_of_timestamp(last_record.get("timestamp"))
+        return first_start, transcript_time.epoch_of_timestamp(last_record.get("timestamp"))
     except (AttributeError, ValueError) as error:
         print(f"fork_children: {fork_transcript} has no readable record time for the review start: {error}",
               file=sys.stderr)

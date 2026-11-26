@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1190 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1191 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md).
+Latest change: 2026-11-26, [A Write to an existing file the session has not read is refused](notes/2026-11-26-a-write-to-an-existing-file-the-session-has-not-read.md).
 
 ## Top gains
 

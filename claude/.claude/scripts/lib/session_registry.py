@@ -10,6 +10,8 @@ import pathlib
 
 from process_group import pid_is_alive
 
+SUBAGENTS_DIR_NAME = "subagents"
+
 
 def config_dir_override():
     """`$CLAUDE_CONFIG_DIR` as a path, or None when it is unset or empty."""
@@ -35,9 +37,14 @@ def projects_dir():
     return pathlib.Path.home() / ".claude" / "projects"
 
 
+def session_transcripts(session_id):
+    """Every `<projects folder>/*/<session_id>.jsonl`, sorted."""
+    return sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
+
+
 def session_subagents_dir(session_id):
     """The `subagents` folder of a session's transcripts (first match under any project), None when it has none."""
-    for folder in projects_dir().glob(f"*/{session_id}/subagents"):
+    for folder in projects_dir().glob(f"*/{session_id}/{SUBAGENTS_DIR_NAME}"):
         return folder
     return None
 

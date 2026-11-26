@@ -193,10 +193,15 @@ class RunGateTest(HookRunTest):
     GATES = ("quality-check-cap", "git-discipline-gate",
              "comment-bloat-gate", "spec-budget-gate")
 
+    def copy_script_utils(self):
+        # script_utils imports session_registry, which imports process_group
+        for name in toolkit_paths.SCRIPT_UTILS_LIB_MODULES:
+            shutil.copy(str(SCRIPTS_DIR / "lib" / name), str(pathlib.Path(self.tmp.name) / name))
+
     def test_crash_escaping_main_blocks_with_exit_2_and_one_line(self):
         driver = pathlib.Path(self.tmp.name) / "crashing-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
-        shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        self.copy_script_utils()
         shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\n\n\ndef main():\n    raise RuntimeError('boom')\n\n\n"
                           "hook_input.run_gate(main)\n")
@@ -213,7 +218,7 @@ class RunGateTest(HookRunTest):
     def test_run_gate_passes_the_exit_code_of_main_through(self):
         driver = pathlib.Path(self.tmp.name) / "quiet-gate.py"
         shutil.copy(str(SCRIPTS_DIR / "lib" / "hook_input.py"), str(pathlib.Path(self.tmp.name) / "hook_input.py"))
-        shutil.copy(str(SCRIPTS_DIR / "lib" / "script_utils.py"), str(pathlib.Path(self.tmp.name) / "script_utils.py"))
+        self.copy_script_utils()
         shutil.copy(str(SCRIPTS_DIR / "lib" / "import_guard.py"), str(pathlib.Path(self.tmp.name) / "import_guard.py"))
         driver.write_text("import hook_input\nhook_input.run_gate(lambda: 3)\n")
         self.assertEqual(subprocess.run([sys.executable, str(driver)]).returncode, 3)

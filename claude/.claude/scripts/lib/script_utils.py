@@ -17,6 +17,8 @@ import time
 import uuid
 from collections import namedtuple
 
+from session_registry import SUBAGENTS_DIR_NAME
+
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
@@ -998,16 +1000,18 @@ def pre_tool_use_deny(reason):
 def subagent_transcript_path(session_transcript, agent_id):
     """Where Claude Code keeps the transcript of a subagent of the session: `<session transcript without
     .jsonl>/subagents/agent-<id>.jsonl`."""
-    return os.path.join(os.path.splitext(session_transcript)[0], "subagents", subagent_transcript_name(agent_id))
+    return os.path.join(os.path.splitext(session_transcript)[0], SUBAGENTS_DIR_NAME,
+                        subagent_transcript_name(agent_id))
 
 
 SUBAGENT_NAME_PREFIX = "agent-"
+SUBAGENT_TRANSCRIPT_SUFFIX = ".jsonl"
 SUBAGENT_META_SUFFIX = ".meta.json"
 
 
 def subagent_transcript_name(agent_id):
     """The file name Claude Code gives the transcript of the subagent `agent_id`."""
-    return f"{SUBAGENT_NAME_PREFIX}{agent_id}.jsonl"
+    return f"{SUBAGENT_NAME_PREFIX}{agent_id}{SUBAGENT_TRANSCRIPT_SUFFIX}"
 
 
 def subagent_meta_name(agent_id):
@@ -1018,6 +1022,11 @@ def subagent_meta_name(agent_id):
 def subagent_id_from_meta_name(file_name):
     """The agent id in the meta file name `subagent_meta_name` makes."""
     return file_name.removeprefix(SUBAGENT_NAME_PREFIX).removesuffix(SUBAGENT_META_SUFFIX)
+
+
+def subagent_id_from_transcript_name(file_name):
+    """The agent id in the transcript file name `subagent_transcript_name` makes."""
+    return file_name.removeprefix(SUBAGENT_NAME_PREFIX).removesuffix(SUBAGENT_TRANSCRIPT_SUFFIX)
 
 
 def sibling_transcript_path(agent_transcript, agent_id):

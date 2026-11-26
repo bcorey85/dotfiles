@@ -133,6 +133,7 @@ import review_asks
 import review_launch
 import review_user_ruled
 import script_utils
+import uncommitted_hunks
 from ask_outcome_words import RELAY_USAGE
 from capped_review import CAP_REACHED
 from handback import FIX_REMOVED_CHANGE, PLAN_IMPACT_STATUS, PacketError, item_text
@@ -259,7 +260,7 @@ def packet_arguments(argv):
 
 def is_outstanding(packet):
     findings_left = any(packet[key] for key in ("fixed", "ask", "skipped_fp", "nit", "findings_remaining"))
-    return findings_left or bool(handback.held_plan_impacts(packet))
+    return findings_left or bool(packet["handback_edits"]) or bool(handback.held_plan_impacts(packet))
 
 
 def stop_for_parse_failure(error, raw_message):
@@ -591,21 +592,22 @@ def stop_for_status(packet, options, state):
     replies, failures = post_aikido_replies(packet, options.aikido_targets, state, options.pr)
 
     instruction, entry_lines = STOP_STATUSES[packet["status"]]
-    entries = entry_lines(packet)
+    lines = entry_lines(packet)
     summary_line = cap_summary_line(packet) if packet["status"] == CAP_REACHED else None
     if summary_line:
-        entries.insert(0, summary_line)
+        lines.insert(0, summary_line)
+    lines += uncommitted_hunks.cap_stop_lines(packet, state) + handback.handback_edit_lines(packet)
     rerun_lines, rerun_note = scoped_rerun_lines(packet, state) if packet["status"] == CAP_REACHED else ([], "")
     if rerun_lines:
         instruction = SCOPED_RERUN
-        entries += rerun_lines
+        lines += rerun_lines
     if rerun_note:
-        entries.append(rerun_note)
+        lines.append(rerun_note)
     ask_lines = []
     if packet["ask"]:
         done = review_asks.asks_done_lines(packet["ask"], state)
         ask_lines = [jumped_line(state), done.guidance, done.done_line, *done.numbered_lines]
-    print_action("stop", instruction, *entries, *ask_lines)
+    print_action("stop", instruction, *lines, *ask_lines)
     present_plan_impacts(packet, state, options.plan_path)
     if replies:
         print("AIKIDO REPLIES POSTED:")
@@ -713,6 +715,8 @@ def model_duties(packet, options):
         if options.source == "conversation" and not options.escapes:
             duties.append("if a fixed finding was a defect in code /review already passed, run "
                           "`review_fix.py escape --escape ...` (class, severity, gate_missed, guard)")
+    if packet["handback_edits"]:
+        duties.append(handback.HANDBACK_EDIT_APPLY)
     duties.append("write the closing line to the user; add nothing the block already says")
     return "; ".join(duties) + "."
 

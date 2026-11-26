@@ -9,10 +9,15 @@ SOURCED_LIBS = ("toolkit-tools.bash", "main-checkout.bash")
 
 def copy_sourced_libs(root):
     """Copy the libraries a script sources to <root>/lib, where a copy of the script in <root>/bin finds them."""
+    copy_script_lib_modules(root, *SOURCED_LIBS)
+
+
+def copy_script_lib_modules(root, *module_names):
+    """Copy the named scripts/.local/lib modules (for example "lane_list.py") to <root>/lib."""
     lib_dir = pathlib.Path(root) / "lib"
     lib_dir.mkdir(exist_ok=True)
-    for lib_name in SOURCED_LIBS:
-        shutil.copy(SCRIPT_LIB_DIR / lib_name, lib_dir / lib_name)
+    for module_name in module_names:
+        shutil.copy(SCRIPT_LIB_DIR / module_name, lib_dir / module_name)
 
 
 def write_stub(path, body):

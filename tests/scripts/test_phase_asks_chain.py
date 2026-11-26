@@ -4,7 +4,6 @@ prints them with the rule command, that command rules on them, and the listing t
 
 Only the loop's walk is a stand-in: `run_loop` returns a fixed converged outcome with two finding asks, so no
 `claude -p` call is made. The test writes no store row itself."""
-import os
 import pathlib
 import shutil
 import subprocess
@@ -15,6 +14,9 @@ import unittest
 
 import fake_ledger
 import toolkit_paths
+
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import process_group
 
 SESSION = "33333333-aaaa-bbbb-cccc-444444444444"
 FIRST_ID = "0ff295856f1a9ccc"
@@ -110,9 +112,7 @@ class PhaseAsksChainTest(unittest.TestCase):
         pid = int((self.repo / ".git/code-phase/pid").read_text())
         deadline = time.monotonic() + LOOP_WAIT_SECONDS
         while time.monotonic() < deadline:
-            try:
-                os.kill(pid, 0)
-            except OSError:
+            if not process_group.pid_is_alive(pid):
                 return
             time.sleep(0.05)
         self.fail(f"the detached review loop (pid {pid}) still runs after {LOOP_WAIT_SECONDS} s")

@@ -28,6 +28,7 @@ import code_wait
 import handback_hook
 import handback_store
 import hook_input
+import merge_free_base
 import phase_asks
 import plan_format
 import process_group
@@ -47,6 +48,7 @@ from review_loop_prompt_file import (
     FILES_KEY,
     FINDINGS_KEY,
     FIX_ROUNDS_KEY,
+    GIVEN_BASE_KEY,
     ITER_KEY,
     LIST_SEPARATOR,
     NO_REVIEW_KEY,
@@ -107,7 +109,9 @@ def launch_parser():
     parser.add_argument("--session-ruled", action="append", type=int, default=[], metavar="N",
                         help="with --fix (repeatable): a session ruled on finding N of the findings file, counted "
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
-    parser.add_argument("--base", help="review every change since this ref, commits included")
+    parser.add_argument("--base",
+                        help="review every change since this ref (its merge base with HEAD when the ref is no "
+                             "ancestor of HEAD), commits included")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root. A file "
                              f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")
@@ -187,10 +191,15 @@ def read_findings_file(findings_file, flag="--fix"):
 
 
 def resolved_base(repo, base):
+    """BaseResolution(given, commit, used): `given` is --base as typed, `used` the commit the review diffs against,
+    which is the merge base with HEAD when the base is no ancestor of HEAD."""
     commit = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
     if not commit:
         raise LaunchError(f"--base {base} names no commit in {repo}")
-    return commit.strip()
+    try:
+        return merge_free_base.resolve_base(repo, commit.strip(), base)
+    except (merge_free_base.NoMergeBaseError, merge_free_base.MergeBaseGitError) as error:
+        raise LaunchError(f"--base {base}: {error}") from error
 
 
 def is_session_brief(full):
@@ -272,7 +281,7 @@ def check_files_exist(repo, paths, base):
         raise LaunchError(f"--file names no file in {repo}: {', '.join(missing)}")
 
 
-def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None, plan="", repo=""):
+def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None, given_base=None, plan="", repo=""):
     # A launch with no --fix still runs fix-first when adopted rulings come back as findings (`findings_file` is set).
     mode = "fix-first" if options.fix or findings_file else "review-first"
     pairs = [("mode", mode), ("caller", options.skill), ("lane", options.lane)]
@@ -282,6 +291,8 @@ def header_pairs(options, base, paths, findings_file, ruled_out=(), adopted=None
         pairs.append((REPO_KEY, str(repo)))
     if base:
         pairs.append((BASE_KEY, base))
+    if given_base:
+        pairs.append((GIVEN_BASE_KEY, given_base))
     if paths:
         pairs.append((FILES_KEY, LIST_SEPARATOR.join(paths)))
     if ruled_out:
@@ -622,7 +633,8 @@ def command_launch(argv, loop_script):
     findings, user_ruled, left_out = found.findings, found.user_ruled_texts, found.left_out
     options.user_ruled = found.user_ruled_numbers
     options.session_ruled = found.session_ruled_numbers
-    base = resolved_base(repo, options.base) if options.base else ""
+    base_resolution = resolved_base(repo, options.base) if options.base else None
+    base = base_resolution.used if base_resolution else ""
     file_flags = split_brief_files(repo, options.files)
     paths = file_flags.repo_files
     ruled_out = ruled_out_files(repo, options.ruled_out)
@@ -660,7 +672,8 @@ def command_launch(argv, loop_script):
     findings_file = loop_dir / FINDINGS_JSON if findings else None
     if findings_file:
         write_findings(findings_file, findings)
-    pairs = header_pairs(options, base, paths, findings_file, ruled_out, found.adopted, plan, repo)
+    given_base = base_resolution.given_if_moved() if base_resolution else None
+    pairs = header_pairs(options, base, paths, findings_file, ruled_out, found.adopted, given_base, plan, repo)
     prompt = render_prompt(pairs, handoff)
     prompt_file, log_path = write_script_prompt(state_dir, agent_id, prompt)
     handoff_file = loop_dir / HANDOFF_NAME

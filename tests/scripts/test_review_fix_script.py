@@ -551,7 +551,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("files the capped run's fixes touched", output)
 
     def test_a_removed_launch_repo_adds_a_note_and_keeps_the_plain_stop_instruction(self):
-        packet = {**CAP_WITH_AN_OPEN_CLASS_FIELDS, "ask": []}
+        packet = {**CAP_WITH_AN_OPEN_CLASS_FIELDS, "ask": [], "handback_edits": []}
         gone_repo = str(self.temp_root / "removed-worktree")
 
         lines, note = review_fix.scoped_rerun_lines(packet, {"relaunch_args": ["--repo", gone_repo]})
@@ -567,6 +567,44 @@ class ReviewFixScriptTest(unittest.TestCase):
         instruction, *entries = printed.call_args.args[1:]
         self.assertNotEqual(instruction, review_fix.SCOPED_RERUN)
         self.assertIn(note, entries)
+        self.assertTrue(any(entry.startswith("Uncommitted: not read: ") for entry in entries), entries)
+
+    def test_the_cap_stop_names_the_uncommitted_hunks_and_untracked_files(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("README.md:1-3", output)
+        self.assertIn("src/logs.ts (untracked)", output)
+
+    def test_the_cap_stop_prefixes_the_hunk_lines_so_they_stay_out_of_the_handoff(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Uncommitted: README.md:1-3", output)
+        self.assertIn("Uncommitted: src/logs.ts (untracked)", output)
+        self.assertNotIn("README.md:1-3", self.dispatch_lines(output))
+
+    def test_a_stop_that_is_not_a_cap_names_no_uncommitted_change(self):
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(BLOCKER)
+        self.assertEqual(code, 0, output)
+        self.assertIn("ACTION: stop", output)
+        self.assertNotIn("(untracked)", output)
+        self.assertNotIn("no uncommitted change", output)
+
+    def test_the_cap_stop_with_no_open_class_still_names_the_uncommitted_hunks(self):
+        (self.repo / "README.md").write_text("one\ntwo\nthree\n")
+        closed = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, open_classes=[], files_touched=[])
+        code, output = self.packet(closed)
+        self.assertEqual(code, 0, output)
+        self.assertIn("README.md:1-3", output)
+
+    def test_the_cap_stop_on_a_clean_tree_says_there_is_no_uncommitted_change(self):
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        self.assertIn("no uncommitted change", output)
 
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
         no_files = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, files_touched=[])
@@ -835,6 +873,33 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertIn("1 plan impact(s) wait for a ruling", output)
         self.assertNotIn("Nothing is outstanding", output)
         self.assertNotIn("ACTION: redispatch", output)
+
+    def test_a_handback_edit_alone_is_outstanding_and_the_session_is_told_to_apply_it(self):
+        step = "docs/plans/x/03-decisions.md:3 ruled change"
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, handback_edits=[step]))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Hand-back edit: {step}", output)
+        self.assertNotIn("Nothing is outstanding", output)
+        self.assertIn("apply each Hand-back edit's ruled change", output)
+
+    def test_a_converged_handback_edit_is_a_model_duty_and_pending_in_the_user_text(self):
+        step = "docs/plans/x/03-decisions.md:3 ruled change"
+        code, output = self.packet(packet_text(CLEAN_EMPTY_FIELDS, handback_edits=[step]))
+
+        self.assertEqual(code, 0, output)
+        duties = output[output.index("MODEL STILL DOES:"):]
+        self.assertIn("apply each Hand-back edit's ruled change to the sign-off line it names", duties)
+        user_text = output[output.index("BEGIN USER TEXT"):output.index("END USER TEXT")]
+        self.assertIn("Hand-back edits (the session applies these):", user_text)
+        self.assertNotIn("apply each Hand-back edit", user_text)
+
+    def test_a_stop_packet_shows_its_handback_edits(self):
+        step = "docs/plans/x/03-decisions.md:3 ruled change"
+        code, output = self.packet(packet_text(BLOCKER_FIELDS, handback_edits=[step]))
+
+        self.assertEqual(code, 0, output)
+        self.assertIn(f"Hand-back edit: {step}", output)
 
     def test_a_held_plan_impact_whose_edits_are_in_the_tree_says_to_revert_them_when_the_plan_is_kept(self):
         code, output = self.impacts_packet([{**HELD_IMPACT, "applied": True}])

@@ -20,18 +20,8 @@ The state keeps the newest 50 input paths. The writers own
 the value vocabulary (class, guard, result, ...); this script checks shape only, and refuses
 `miss_reason=unknown` (a model writes the input).
 
-Input file (JSON; `log` reads all of it, `handoff` reads only `handoff` and `modifier`):
-  {"finder": "smell-reviewer", "lane": "code", "result": "NEEDS CHANGES",
-   "target": ["src/orders"],   (audit and simplify: dirs; simplify: the files the prep listed)
-   "findings": [{"class": "duplication", "disposition": "fix", "actioned": "fixed",
-                 "file": "a.py", "line": 3, "desc": "...", "severity": "medium",
-                 "escape": true, "miss_reason": "overlooked"}],   (miss_reason: escape findings only)
-   (ruled_by: "user"|"session", disposition=ask only; lets a plan_structure finding be logged actioned=fixed)
-   "guards": {"duplication": "convention"},
-   "handoff": {"files": [{"path": "a.py", "change": "..."}],   (optional: the printed files are the ones git shows
-                changed against HEAD; a listed path keeps its `change`, any other gets a stock line)
-               "tests_run": "pytest a -> exit 0", "flagged": "none", "plan_impact": "none"},
-   "modifier": "+fast"}
+Input file: JSON in the shape `refactor_flow.py log --help` prints; `log` reads all of it, `handoff` reads only
+`handoff` and `modifier`.
 Exit codes: 0 ok or a clean stop, 1 bad input (nothing was written), 2 a writer refused a row.
 """
 import argparse
@@ -56,6 +46,7 @@ import clone_pairs
 import handoff_files
 import numstat
 import plan_format
+import refactor_log_input
 import script_utils
 import shape_clones
 import simplify_slices
@@ -67,7 +58,8 @@ LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "
 LOG_FINDING = os.environ.get("REFACTOR_LOG_FINDING") or str(CLAUDE / "skills" / "review" / "log-review-finding")
 BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "tools" / "branch-base")
 
-FINDERS = {"smell-reviewer", "complexity-reviewer"}
+RefactorFlowError = refactor_log_input.RefactorFlowError
+PLAN_STRUCTURE_TAG = refactor_log_input.PLAN_STRUCTURE_TAG
 MAX_SIMPLIFY_FILES = 25
 MAX_STATE_INPUTS = 50
 MAX_LOG_INPUTS = MAX_STATE_INPUTS
@@ -87,7 +79,6 @@ UNTRACKED_BINARY = "binary"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
-PLAN_STRUCTURE_TAG = "[plan-structure]"
 PLAN_STRUCTURE_RULE = (f"A finding that would remove, rename, move or reshape anything the plan names (its files, "
                        f"exports, layers) or that a Plan Deviations line records goes under `### Ask` with the "
                        f"`{PLAN_STRUCTURE_TAG}` tag, never under `### Fix`. Read the plan for the exports and "
@@ -112,10 +103,6 @@ SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped different
                 "stronger invariant kills, values with more than one owner. Your oracle and magnitude floor are "
                 "hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).")
 NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
-
-
-class RefactorFlowError(Exception):
-    """Bad input: print it, write nothing, exit 1."""
 
 
 class NoSharedHistoryError(RefactorFlowError):
@@ -596,155 +583,6 @@ def _simplify_report(opts, files_by_target):
 
 # ----------------------------------------------------------------------- log
 
-def require_text(container, key, where):
-    value = container.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise RefactorFlowError(f"{where}: `{key}` must be a non-empty string")
-    return value
-
-
-def single_line(container, key, where):
-    value = require_text(container, key, where)
-    if "\n" in value or "\r" in value:
-        raise RefactorFlowError(f"{where}: `{key}` must be one line")
-    return value.strip()
-
-
-SWALLOWED_PAIR = re.compile(r"[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*=")
-
-
-def one_line_path(value, key, where):
-    """A path may hold spaces: the writers get it as one argument. It must not hold a line break, or a
-    ` name=` that the writers read as a second field swallowed into this one."""
-    if "\n" in value or "\r" in value:
-        raise RefactorFlowError(f"{where}: `{key}` must be one line")
-    if SWALLOWED_PAIR.search(value):
-        raise RefactorFlowError(f"{where}: `{key}` must not contain a space followed by `name=` (got {value!r})")
-
-
-def validate_finding(finding, index, mode):
-    where = f"findings[{index}]"
-    if not isinstance(finding, dict):
-        raise RefactorFlowError(f"{where}: must be an object")
-
-    for key in ("class", "disposition", "actioned", "file"):
-        require_text(finding, key, where)
-    one_line_path(finding["file"], "file", where)
-
-    line = finding.get("line")
-    if isinstance(line, bool) or not isinstance(line, int):
-        raise RefactorFlowError(f"{where}: `line` must be an integer (0 when the finding names no line)")
-
-    finding["desc"] = single_line(finding, "desc", where)
-    plan_structure = finding.get("plan_structure", False)
-    if not isinstance(plan_structure, bool):
-        raise RefactorFlowError(f"{where}: `plan_structure` must be true or false (got {plan_structure!r})")
-    ruled_by = finding.get("ruled_by")
-    if ruled_by is not None and not plan_format.is_ruling_by(ruled_by):
-        raise RefactorFlowError(f"{where}: `ruled_by` must be `user` or `session` (got {ruled_by!r})")
-    if plan_structure and finding["disposition"] != "ask":
-        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
-                                f"disposition=ask")
-    if ruled_by is not None and finding["disposition"] != "ask":
-        raise RefactorFlowError(f"{where}: `ruled_by` names who ruled on an ask: disposition=ask")
-    if plan_structure and finding["actioned"] == "fixed" and ruled_by is None:
-        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
-                                f"never actioned=fixed without `ruled_by` (`user` or `session`)")
-    if not isinstance(finding.get("escape", False), bool):
-        raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
-    if finding.get("escape"):
-        validate_escape_finding(finding, where, mode)
-
-
-def validate_escape_finding(finding, where, mode):
-    """The extra checks for a finding marked as an escape."""
-    if mode in ("audit", "targeted"):
-        raise RefactorFlowError(f"{where}: escape rows are not logged in {mode} mode")
-    if mode == "simplify" and finding["class"] != "complexity":
-        raise RefactorFlowError(f"{where}: simplify escape rows must be class=complexity")
-    require_text(finding, "severity", where)
-    # The writer's --check owns the label list; a model writes this input, so `unknown` is refused here.
-    miss_reason = finding.get("miss_reason")
-    if not isinstance(miss_reason, str) or miss_reason in ("", "unknown"):
-        raise RefactorFlowError(f"{where}: an escape finding needs `miss_reason`, a label from "
-                                f"escape-ratchet.md other than `unknown` (got {miss_reason!r})")
-
-
-def validate_handoff(handoff):
-    if not isinstance(handoff, dict):
-        raise RefactorFlowError("`handoff` must be an object")
-    files = handoff.get("files", [])
-    if not isinstance(files, list):
-        raise RefactorFlowError("handoff.files must be a list of {path, change}; the file list comes from git")
-
-    for entry in files:
-        if not isinstance(entry, dict):
-            raise RefactorFlowError("handoff.files entries must be objects")
-        single_line(entry, "path", "handoff.files")
-        single_line(entry, "change", "handoff.files")
-    single_line(handoff, "tests_run", "handoff")
-    single_line(handoff, "flagged", "handoff")
-
-    plan_impact = handoff.get("plan_impact", "none")
-    if not isinstance(plan_impact, str) or not plan_impact.strip():
-        raise RefactorFlowError("handoff.plan_impact must be a non-empty string (`none` when there is none)")
-
-
-def require_escape_guards(findings, guards):
-    escape_classes = sorted({finding["class"] for finding in findings if finding.get("escape")})
-    for escape_class in escape_classes:
-        if not isinstance(guards.get(escape_class), str) or not guards[escape_class]:
-            raise RefactorFlowError(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
-
-
-def validated_targets(refactor_log, finder, mode):
-    targets = refactor_log.get("target") or []
-    if not isinstance(targets, list) or not all(isinstance(item, str) and item for item in targets):
-        raise RefactorFlowError("`target` must be a list of paths")
-    if finder and mode in ("audit", "simplify") and not targets:
-        raise RefactorFlowError("`target` (list of dirs or files) is required in audit and simplify mode")
-    return targets
-
-
-def validate_log(mode, refactor_log):
-    finder = refactor_log.get("finder") or None
-    if mode == "targeted":
-        if finder:
-            raise RefactorFlowError("`finder` must be omitted in targeted mode (no finder is dispatched)")
-    elif not isinstance(finder, str) or finder not in FINDERS:
-        raise RefactorFlowError(f"`finder` must be one of {sorted(FINDERS)}")
-
-    lane = None
-    if finder:
-        lane = require_text(refactor_log, "lane", "log input")
-
-    findings = refactor_log.get("findings", [])
-    if not isinstance(findings, list):
-        raise RefactorFlowError("`findings` must be a list")
-    for index, finding in enumerate(findings):
-        validate_finding(finding, index, mode)
-
-    guards = refactor_log.get("guards", {})
-    if not isinstance(guards, dict):
-        raise RefactorFlowError("`guards` must be an object")
-    require_escape_guards(findings, guards)
-
-    verdict = refactor_log.get("result") or ("NEEDS CHANGES" if findings else "PASS")
-    if not isinstance(verdict, str):
-        raise RefactorFlowError("`result` must be a string")
-
-    targets = validated_targets(refactor_log, finder, mode)
-
-    handoff = refactor_log.get("handoff")
-    if mode == "audit" and handoff:
-        raise RefactorFlowError("audit mode never hands off to /review")
-    if handoff:
-        validate_handoff(handoff)
-
-    return {"finder": finder, "lane": lane, "findings": findings, "guards": guards, "verdict": verdict,
-            "targets": targets, "handoff": handoff}
-
-
 def untracked_line_count(live_targets):
     """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
     total = 0
@@ -801,23 +639,6 @@ def render_handoff(root, handoff, modifier):
 def review_dispatch_next():
     return next_line("tell the user you are auto-dispatching /review, then Skill-invoke /review with the "
                      "handoff block above (plus any modifier).")
-
-
-def read_refactor_log(path):
-    try:
-        refactor_log = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as err:
-        raise RefactorFlowError(f"cannot read --input {path}: {err}") from err
-    if not isinstance(refactor_log, dict):
-        raise RefactorFlowError(f"--input {path} must hold a JSON object")
-    return refactor_log
-
-
-def read_modifier(refactor_log):
-    modifier = refactor_log.get("modifier")
-    if modifier is not None and not isinstance(modifier, str):
-        raise RefactorFlowError("`modifier` must be a string")
-    return modifier
 
 
 def build_writes(mode, base, validated_log):
@@ -1005,9 +826,9 @@ def pending_rows(root, input_path, writes):
 
 def log_verb(opts):
     root = require_repo()
-    refactor_log = read_refactor_log(opts.input)
-    validated_log = validate_log(opts.mode, refactor_log)
-    modifier = read_modifier(refactor_log)
+    refactor_log = refactor_log_input.read_refactor_log(opts.input)
+    validated_log = refactor_log_input.validate_log(opts.mode, refactor_log)
+    modifier = refactor_log_input.read_modifier(refactor_log)
     check_targets_match(opts.mode, validated_log)
     try:
         writes = build_writes(opts.mode, opts.base, validated_log)
@@ -1047,12 +868,12 @@ def log_verb(opts):
 
 def handoff_verb(opts):
     root = require_repo()
-    refactor_log = read_refactor_log(opts.input)
+    refactor_log = refactor_log_input.read_refactor_log(opts.input)
     handoff = refactor_log.get("handoff")
     if not handoff:
         raise RefactorFlowError("the input has no `handoff` key")
-    validate_handoff(handoff)
-    modifier = read_modifier(refactor_log)
+    refactor_log_input.validate_handoff(handoff)
+    modifier = refactor_log_input.read_modifier(refactor_log)
 
     print(render_handoff(root, handoff, modifier))
     print()
@@ -1073,7 +894,9 @@ def parse_arguments():
     simplify = sub.add_parser("simplify-prep")
     simplify.add_argument("target", nargs="+")
     simplify.add_argument("--slice", type=int, default=1)
-    log = sub.add_parser("log")
+    log = sub.add_parser("log", help="append the escape and finder rows of one /refactor run",
+                         epilog=refactor_log_input.log_help_epilog(),
+                         formatter_class=argparse.RawDescriptionHelpFormatter)
     log.add_argument("--mode", required=True, choices=["branch", "targeted", "audit", "simplify"])
     log.add_argument("--input", required=True)
     log.add_argument("--base")

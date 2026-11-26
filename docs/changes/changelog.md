@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1280 changes
+1284 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -70,6 +70,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [the push deny and a bare review start from one reviewed base](notes/2026-11-26-the-push-deny-and-a-bare-review-start-from-one-base.md) [script/git-discipline-gate, script/review-launch] The push gate's unreviewed deny and a bare /review on a clean tree now both name the newest recorded reviewed base that is a strict ancestor of HEAD, so a base equal to HEAD or off the branch is skipped for an older one.
+* [the clean-tree review stop names the fresh review base form](notes/2026-11-26-the-clean-tree-review-stop-names-the-fresh-review.md) [script/review-launch] When a review launch on a clean tree has nothing to review, its stop names a fresh `/review base=<ref>` and says a resume launches nothing.
+* [review launch moves an earlier review-stop.md aside](notes/2026-11-26-review-launch-moves-an-earlier-review-stop-md.md) [script/review-launch, script/code-relay, script/phase-start] A review launch moves an earlier review-stop.md to review-stop.prev.md, so the review fork writes a new file the Write tool accepts.
+* [a bare review on a clean tree reviews the commits since the last reviewed base](notes/2026-11-26-a-bare-review-on-a-clean-tree-reviews-the-commits.md) [script/review-launch] A bare /review on a clean work tree now reviews the commits since the last reviewed base (the HEAD when a converged review recorded it, so that review's own committed changes are included), or a merge HEAD's own changes, in place of stopping with nothing to review.
 * [A code-fork cannot hand back while a skill fork it started in the background runs](notes/2026-11-26-a-code-fork-cannot-hand-back-while-a-skill-fork-it.md) [script/open-child-gate, script/loop-transcript] The open-child hand-back gate now counts a review, code or fix Skill that a code-fork started as a background forked run, so the fork waits for it instead of handing back with no loop status.
 * [a plan folder for a repo with no docs/plans lives in the git dir](notes/2026-11-26-a-plan-folder-for-a-repo-with-no-docs-plans-lives.md) [script/resolve-task-dir, script/verify-prep] resolve-task-dir.sh gains a git-dir plan root, <git dir>/claude-plans/, with a --home verb that names it when the repo has no docs/plans, and verify-prep finds a plan there and names a ticket path there in place of the tmpfs scratchpad.
 * [A finished /code run that a skill the main session is running goes on with that skill's next step](notes/2026-11-26-a-finished-code-run-that-a-skill-main-is-running.md) [script/code-relay] When the /code run wrote no new stop, the relay prints NO_STOP_RULE: relay the Skill result, and for a finished run go on with the invoking skill's next step, otherwise say the Skill result word for word.

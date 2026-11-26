@@ -77,6 +77,46 @@ class PathIsUnderTest(unittest.TestCase):
         self.assertFalse(script_utils.path_is_under("tas", "task"))
 
 
+class MoveAsideTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.run_folder = pathlib.Path(self.temp.name)
+
+    def test_move_aside_reports_a_failed_rename_under_the_caller_and_returns(self):
+        (self.run_folder / "review-stop.md").write_text("Review converged.\n")
+        blocking_folder = self.run_folder / "review-stop.prev.md"
+        blocking_folder.mkdir()
+        (blocking_folder / "inner.txt").write_text("x\n")
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            script_utils.move_aside(self.run_folder, "review-stop.md", "review-stop.prev.md", "a_caller")
+
+        self.assertIn("a_caller: could not move", stderr.getvalue())
+        self.assertTrue((self.run_folder / "review-stop.md").is_file(), "the stop file was lost")
+
+    def test_move_aside_replaces_an_older_previous_file_and_keeps_the_mtime(self):
+        current_file = self.run_folder / "review-stop.md"
+        previous_file = self.run_folder / "review-stop.prev.md"
+        current_file.write_text("new\n")
+        previous_file.write_text("old\n")
+        os.utime(current_file, ns=(5_000_000_000, 5_000_000_000))
+        os.utime(previous_file, ns=(1_000_000_000, 1_000_000_000))
+
+        script_utils.move_aside(self.run_folder, "review-stop.md", "review-stop.prev.md", "a_caller")
+
+        self.assertEqual(previous_file.read_text(), "new\n")
+        self.assertFalse(current_file.exists())
+        self.assertEqual(previous_file.stat().st_mtime_ns, 5_000_000_000)
+
+    def test_move_aside_with_no_file_to_move_does_nothing(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            script_utils.move_aside(self.run_folder, "review-stop.md", "review-stop.prev.md", "a_caller")
+
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertFalse((self.run_folder / "review-stop.prev.md").exists())
+
+
 class NamesPathTest(unittest.TestCase):
     def test_the_default_boundary_rejects_a_trailing_dot_and_the_token_boundary_accepts_it(self):
         self.assertFalse(script_utils.names_path("app.py", "edit app.py."))
@@ -227,6 +267,21 @@ class NextNumberedDirTest(unittest.TestCase):
             (parent / "²").mkdir()
             (parent / "٣").mkdir()
             self.assertEqual(parent / "3", script_utils.next_numbered_dir(parent))
+
+
+class CommitParentsTest(unittest.TestCase):
+    def test_a_root_commit_has_no_parents_and_a_git_failure_gives_none(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder)
+            git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+            subprocess.run([*git, "init", "-q"], cwd=repo, check=True)
+            subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "one"], cwd=repo, check=True)
+            self.assertEqual([], script_utils.commit_parents(repo, "HEAD"))
+            subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "two"], cwd=repo, check=True)
+            first = subprocess.run(["git", "rev-parse", "HEAD~1"], cwd=repo, capture_output=True, text=True,
+                                   check=True).stdout.strip()
+            self.assertEqual([first], script_utils.commit_parents(repo, "HEAD"))
+            self.assertIsNone(script_utils.commit_parents(repo, "no-such-ref"))
 
 
 class WithoutPathsTest(unittest.TestCase):

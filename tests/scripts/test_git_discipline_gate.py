@@ -1040,26 +1040,36 @@ class PushReviewedTreeTest(GateCaseBase):
         self.assertEqual(reason, PUSH_DENIED_PLAIN)
         self.assertNotIn("base=", reason)
 
-    def test_latest_reviewed_base_is_none_without_a_record(self):
-        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
-        self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.tmp))
+    def test_newest_reviewable_base_is_none_without_a_record(self):
+        self.assertIsNone(self.reviewed_tree.newest_reviewable_base(self.repo))
+        self.assertIsNone(self.reviewed_tree.newest_reviewable_base(self.tmp))
 
     def test_malformed_bases_record_reads_as_no_base(self):
         for stored in (["junk", {"base": 5, "tree": "x"}], "junk", {"base": "abc"}):
             with self.subTest(stored=stored):
                 self.write_shared_bases(stored)
-                self.assertIsNone(self.reviewed_tree.latest_reviewed_base(self.repo))
+                self.assertIsNone(self.reviewed_tree.newest_reviewable_base(self.repo))
                 self.reviewed_tree.push_review_state(self.repo)
 
-    def test_latest_reviewed_base_is_the_newest_recorded_base(self):
+    def test_newest_reviewable_base_is_the_newest_recorded_base_that_is_a_strict_ancestor_of_head(self):
         first_base = self.head()
         self.review_then_commit()
-        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), first_base)
+        self.assertEqual(self.reviewed_tree.newest_reviewable_base(self.repo), first_base)
         self.write("app.py", "print('c')\n")
         self.commit("more")
         second_base = self.head()
         self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
-        self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), second_base)
+        self.assertEqual(self.reviewed_tree.newest_reviewable_base(self.repo), first_base)
+        self.write("app.py", "print('d')\n")
+        self.commit("after the second review")
+        self.assertEqual(self.reviewed_tree.newest_reviewable_base(self.repo), second_base)
+
+    def test_newest_reviewable_base_skips_a_recorded_base_that_is_no_ancestor_of_head(self):
+        first_base = self.head()
+        self.review_then_commit()
+        entries = self.reviewed_tree.shared_base_entries(self.repo_top())
+        self.write_shared_bases([*entries, {"base": "0" * 40, "tree": "x"}])
+        self.assertEqual(self.reviewed_tree.newest_reviewable_base(self.repo), first_base)
 
     def credit_capped_review_of_a_plan_finding(self):
         """Store a cap-reached hand-back whose only open finding names a plan file, with a valid full-check receipt

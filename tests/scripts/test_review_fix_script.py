@@ -4471,7 +4471,7 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 2, output)
         self.assertIn("ACTION: stop-usage", output)
         self.assertIn("review scope is empty", output)
-        self.assertIn("--base <ref>", output)
+        self.assertIn("/review base=<ref>", output)
         self.assertEqual(self.dispatch_rows(), [])
         self.assertFalse(script_utils.git_path(self.repo, "review-script").exists())
 

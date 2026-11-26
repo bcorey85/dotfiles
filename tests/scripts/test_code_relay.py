@@ -232,6 +232,34 @@ class RelayTest(unittest.TestCase):
         self.assertIn(review_stop, result.stdout)
         self.assertTrue((self.run_folder / "relayed").exists())
 
+    def test_a_review_stop_moved_aside_by_review_launch_is_not_replaced_by_an_older_stop(self):
+        self.write_stop(STOP)
+        os.utime(self.run_folder / "stop.md", ns=(1, 1))
+        # review_launch moves the stale review-stop.md aside; os.replace keeps its mtime.
+        (self.run_folder / "review-stop.prev.md").write_text("Review converged.\n")
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("review-stop.prev.md is the stop review_launch moved aside", result.stderr)
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
+        self.assertFalse((self.run_folder / "relayed").exists())
+
+    def test_a_new_review_stop_newer_than_a_review_stop_moved_aside_relays_normally(self):
+        self.run_folder.mkdir(exist_ok=True)
+        (self.run_folder / "review-stop.prev.md").write_text("Review converged.\n")
+        os.utime(self.run_folder / "review-stop.prev.md", ns=(1, 1))
+        review_stop = "Review capped.\n\nTo go on: /review resume <your feedback>"
+        (self.run_folder / "review-stop.md").write_text(review_stop)
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(review_stop, result.stdout)
+        self.assertNotIn("Review converged.", result.stdout)
+        self.assertTrue((self.run_folder / "relayed").exists())
+
     def test_no_stop_file_exits_1_and_says_to_relay_the_skill_result(self):
         result = self.relay()
 
@@ -367,6 +395,35 @@ class ReviewedTreeRelayTest(unittest.TestCase):
                 (self.run_folder / file_name).write_text(text)
 
                 self.assertEqual(self.relay().returncode, 1)
+
+    def test_a_bounced_review_stop_moved_aside_by_review_launch_relays_once_with_the_unreviewed_note(self):
+        review_stop = "Review capped.\n\nTo go on: /review resume <your feedback>"
+        (self.run_folder / "stop.md").unlink()
+        (self.run_folder / "review-stop.md").write_text(review_stop)
+        (self.repo / "app.py").write_text("x = 2\n")
+        self.assertIn(RE_REVIEW_FEEDBACK, self.relay().stdout)
+        # review_launch moves the review-stop.md aside on resume; os.replace keeps its mtime.
+        os.replace(self.run_folder / "review-stop.md", self.run_folder / "review-stop.prev.md")
+
+        result = self.relay()
+
+        self.assert_relayed(result)
+        body = result.stdout.split("-----BEGIN USER TEXT-----\n")[1]
+        self.assertIn(UNREVIEWED_NOTE, body.split(review_stop)[0])
+        self.assertIn(review_stop, body)
+        self.assertNotIn("resume " + str(self.repo), body, "a review stop gets no resume path")
+        self.assertIsNone(code_stop_record.last_stop(SESSION), "a review stop is never recorded for the session")
+        self.assertEqual(self.relay().returncode, 1)
+
+    def test_a_stop_moved_aside_by_phase_start_is_not_replaced_by_an_older_review_stop(self):
+        (self.run_folder / "review-stop.md").write_text("Review converged.\n\nTo go on: /review resume <feedback>")
+        os.utime(self.run_folder / "review-stop.md", ns=(1, 1))
+        os.replace(self.run_folder / "stop.md", self.run_folder / "stop.prev.md")
+
+        result = self.relay()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("stop.prev.md is the stop phase_start moved aside", result.stderr)
 
     def test_a_handback_stored_within_a_second_before_a_commit_does_not_count_as_after_it(self):
         stored_at = handback_store.latest_for_repo(SESSION, self.top)["handback"]["ts"]

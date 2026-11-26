@@ -543,6 +543,14 @@ def is_ancestor(repo, older, newer, timeout=None):
     return git_output(repo, "merge-base", "--is-ancestor", older, newer, timeout=timeout) is not None
 
 
+def commit_parents(repo, rev, timeout=None):
+    """The parent commit ids of `rev` in `repo` (empty for a root commit), or None when git fails."""
+    line = git_output(repo, "rev-list", "--parents", "-n", "1", rev, timeout=timeout)
+    if line is None:
+        return None
+    return line.split()[1:]
+
+
 def head_commit(cwd, timeout=None):
     """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
     return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
@@ -1650,6 +1658,21 @@ def _has_git_entry_above(folder):
         if parent == folder:
             return False
         folder = parent
+
+
+def move_aside(folder, name, previous_name, caller):
+    """Rename <folder>/<name> to <previous_name>, replacing an older one, so the fork's next file of that name is new:
+    the Write tool refuses an existing file the fork has not read. The rename keeps the file's mtime. A failed rename
+    is reported on stderr under `caller` and the script goes on."""
+    current_file = pathlib.Path(folder) / name
+    if not current_file.is_file():
+        return
+
+    previous_file = pathlib.Path(folder) / previous_name
+    try:
+        os.replace(current_file, previous_file)
+    except OSError as error:
+        print(f"{caller}: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
 
 
 def write_text_atomically(path, content):

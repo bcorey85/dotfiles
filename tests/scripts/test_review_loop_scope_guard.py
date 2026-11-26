@@ -11,9 +11,11 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import file_backup
+import merge_free_base
 import review_loop_calls
 import review_loop_coder
 import review_loop_outside_writes
+import review_loop_plan
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_scoped_tests
@@ -455,6 +457,24 @@ class ScopeGuardTest(unittest.TestCase):
         self.assertEqual(self.text("new_test.py"), "n = 1\n")
         self.assertEqual(self.text("docs/plans/shop/plan.md"), "# Plan\n\nchanged\n")
         self.assertEqual(review_loop_scope_guard.SCOPE_FAULTS, [])
+
+    def test_a_file_a_merge_brought_in_is_out_of_a_merge_free_scope_and_is_put_back(self):
+        git(self.repo, "commit", "-qam", "own change")
+        git(self.repo, "checkout", "-qb", "side", "HEAD~1")
+        (self.repo / "merged.py").write_text("m = 1\n")
+        git(self.repo, "add", "merged.py")
+        git(self.repo, "commit", "-qm", "side change")
+        git(self.repo, "checkout", "-q", "-")
+        git(self.repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        folded = merge_free_base.merge_free_base(self.repo, "HEAD~1")
+        allowed = review_loop_plan.review_files(self.repo, folded)
+        guard = self.guard(allowed=tuple(allowed))
+        (self.repo / "merged.py").write_text("m = 2\n")
+
+        guard.undo()
+
+        self.assertNotIn("merged.py", allowed)
+        self.assertEqual(self.text("merged.py"), "m = 1\n")
 
     def test_a_guard_failure_after_a_failed_coder_call_is_a_coder_call_error_that_keeps_the_coder_message(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])

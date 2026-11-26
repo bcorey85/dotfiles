@@ -9,7 +9,16 @@ flags a later fix run of the same review carries, and the branch, launch time an
 session-start notice reads), and keeps its state under
 <git dir>/review-script. It SIGTERMs the process group of every live earlier loop of the same repo and run mode; a
 live loop of the repo started in another mode (or whose record names no mode) stops the launch before any folder is
-made. It deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder.
+made. It deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder, and first moves
+the review-stop.md of the starting directory's run folder to review-stop.prev.md, so the fork's Write of this run's
+stop makes a new file.
+
+With no --base, --file, --fix, --also-fix or findings and a clean work tree, it reviews the commits since the newest
+reviewed base the shared record holds that is a strict ancestor of HEAD (lib/reviewed_tree.py
+`newest_reviewable_base`: the HEAD when a converged review recorded it, so that review's own committed changes are
+included), or, when no recorded base is one, the HEAD merge commit's own change (merged-in commits folded out). A
+HEAD that a converged review covered, a non-merge HEAD with no such reviewed base, or a HEAD merge with no change of
+its own, stops the launch with an empty scope.
 
 A findings file (`--fix`, `--also-fix`) holds one finding per item: a line that starts with `- ` at column 0, then
 any indented continuation lines. Blank lines may sit between items. Any other line stops the launch.
@@ -35,6 +44,7 @@ import process_group
 import resume_review_gate
 import review_fix_state
 import review_user_ruled
+import reviewed_tree
 import reviewer_dispatch
 import script_utils
 import stop_file_names
@@ -91,7 +101,9 @@ class LaunchError(ValueError):
 def launch_parser():
     parser = argparse.ArgumentParser(
         prog="review_fix.py launch", add_help=False,
-        description="Start the scripted review loop. With no flag it reviews the working tree against HEAD.")
+        description="Start the scripted review loop. With no flag it reviews the working tree against HEAD; on a "
+                    "clean tree it reviews the commits since the last reviewed base, or the HEAD merge commit's "
+                    "own change (merged-in commits folded out).")
     parser.error = lambda message: (_ for _ in ()).throw(LaunchError(message))
     parser.add_argument("-h", "--help", action="help", help="show this help and exit")
     parser.add_argument("--repo", help="absolute path of the repo to review, when it is not the cwd's repo")
@@ -189,6 +201,51 @@ def read_findings_file(findings_file, flag="--fix"):
     if not findings or not all(findings):
         raise LaunchError(f"{findings_file}: no finding text; {FINDINGS_FORM}")
     return findings
+
+
+def default_base(repo):
+    """(base, reason) for a launch with no --base, --file, --fix, --also-fix or findings in a clean work tree, or
+    None when HEAD needs no review or the launch cannot tell its base. The base is the newest recorded reviewed base
+    that is a strict ancestor of HEAD when HEAD changed since the review, else the first parent of a HEAD merge
+    commit."""
+    state = reviewed_tree.push_review_state(repo)
+    if state == reviewed_tree.PUSH_REVIEWED:
+        return None
+    if state == reviewed_tree.PUSH_CHANGED:
+        reviewed_base = reviewed_tree.newest_reviewable_base(repo)
+        if reviewed_base:
+            return reviewed_base, "the last reviewed base"
+    parents = script_utils.commit_parents(repo, "HEAD")
+    if parents is None or len(parents) < 2:
+        return None
+    return parents[0], ("the first parent of the HEAD merge commit; only the merge's own change is reviewed, "
+                        "merged-in commits folded out")
+
+
+def plan_scoped(changed, paths, plan):
+    """`changed` as the review scope reads it: named files kept as they are, else the plan folder left out. The loop
+    leaves the plan folder out of a whole-tree scope (LoopRun.review_scope); this must agree."""
+    return changed if paths else plan_format.outside_plan_folder(changed, plan)
+
+
+def scoped_files(changed, paths, plan, ruled_out):
+    """The files of `changed` that are in the review's scope."""
+    return script_utils.without_paths(plan_scoped(changed, paths, plan), ruled_out)
+
+
+def clean_tree_base(repo, plan, ruled_out):
+    """The --base for a launch with no --base, --file, --fix, --also-fix or findings: `default_base` when the work
+    tree has no change in scope against HEAD (plan-folder and `ruled_out` files do not count), named on stdout, else
+    None."""
+    if scoped_files(review_files(repo), [], plan, ruled_out):
+        return None
+    picked = default_base(repo)
+    if picked is None:
+        return None
+    base, reason = picked
+    print(f"No --base was given and the work tree has no change in scope: reviewing every change since {base} "
+          f"({reason}).")
+    return base
 
 
 def resolved_base(repo, base):
@@ -349,9 +406,10 @@ def cap_count_args(target):
     return args
 
 
-def handoff_text(options, paths, findings):
+def handoff_text(options, paths, findings, base):
     """The handoff: the --handoff file, else the files named, else the fix brief when `findings` (the findings left
-    after the leave-out) are to be fixed, else the default."""
+    after the leave-out) are to be fixed, else every change since `base` (the commit the diff uses) when --base is set,
+    else the default."""
     if options.handoff:
         try:
             return pathlib.Path(options.handoff).read_text()
@@ -361,6 +419,9 @@ def handoff_text(options, paths, findings):
         return "Review only these files: " + LIST_SEPARATOR.join(paths) + "."
     if options.fix and findings:
         return "Fix the findings, then review the fix."
+    if options.base:
+        return (f"Review every change since {base}, commits included; what merge commits brought in is folded into "
+                "that base.")
     return DEFAULT_HANDOFF
 
 
@@ -469,7 +530,7 @@ def remove_stale_run_folder_findings(repo):
 
 def consume_run_folder_inputs(repo, options):
     """Deletes the --fix, --also-fix and --handoff files that sit in the code-phase run folder. A file elsewhere, such
-    as the asks findings file, and the run folder's review-stop.md stay. A failed Write of the next launch's input then
+    as the asks findings file, stays. A failed Write of the next launch's input then
     cannot leave this launch's file in place for the next one to read."""
     folder = code_wait.phase_dir_or_none(repo)
     if folder is None:
@@ -639,27 +700,34 @@ def command_launch(argv, loop_script):
         raise LaunchError(f"{options.repo or os.getcwd()} is not inside a git work tree")
     repo = found_root.resolve()
 
+    # The fork writes its stop, and the relay reads it, in the run folder of the starting directory, not of --repo.
+    run_folder = code_wait.phase_dir_or_none(pathlib.Path.cwd())
+    if run_folder is not None:
+        script_utils.move_aside(run_folder, stop_file_names.REVIEW_STOP_FILE,
+                                stop_file_names.PREVIOUS_REVIEW_STOP_FILE, "review_launch")
+
     found = fix_run_findings(options, repo)
     findings, user_ruled, left_out = found.findings, found.user_ruled_texts, found.left_out
-    options.user_ruled = found.user_ruled_numbers
-    options.session_ruled = found.session_ruled_numbers
-    base_resolution = resolved_base(repo, options.base) if options.base else None
-    base = base_resolution.used if base_resolution else ""
     file_flags = split_brief_files(repo, options.files)
     paths = file_flags.repo_files
     ruled_out = ruled_out_files(repo, options.ruled_out)
     plan = launch_plan(repo, options.plan)
+    if not (options.base or paths or findings or options.fix):
+        options.base = clean_tree_base(repo, plan, ruled_out)
+    options.user_ruled = found.user_ruled_numbers
+    options.session_ruled = found.session_ruled_numbers
+    base_resolution = resolved_base(repo, options.base) if options.base else None
+    base = base_resolution.used if base_resolution else ""
     check_files_exist(repo, paths, base)
-    handoff = with_briefs(handoff_text(options, paths, findings), file_flags.briefs)
+    handoff = with_briefs(handoff_text(options, paths, findings, base), file_flags.briefs)
     changed = review_files(repo, base, paths)
-    # The loop leaves the plan folder out of a whole-tree scope (LoopRun.review_scope); the guard must agree.
-    scoped = changed if paths else plan_format.outside_plan_folder(changed, plan)
+    scoped = plan_scoped(changed, paths, plan)
     in_scope = script_utils.without_paths(scoped, ruled_out)
     if options.fix and left_out and not findings and (options.no_review or not in_scope):
         raise LaunchError(f"every finding in {options.fix} was left out: a recorded ruling already settled each plan "
                           "impact, and there is nothing else to fix or review. Nothing was launched.")
     if not findings and not in_scope:
-        since = f"since {options.base}" if base else "against HEAD"
+        since = f"since {base}" if base else "against HEAD"
         if changed and not scoped:
             raise LaunchError(f"every changed file {since} is under the plan folder {plan_format.plan_folder(plan)}, "
                               "which holds plan documents, not the change, so the review scope is empty and no "
@@ -673,8 +741,8 @@ def command_launch(argv, loop_script):
             raise LaunchError(f"the branch in {repo} has no changes of its own {since}, so the review scope is "
                               "empty and no reviewer would read anything. Nothing was launched.")
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
-                          "reviewer would read anything. Nothing was launched. To review committed work, launch "
-                          "with --base <ref>.")
+                          "reviewer would read anything. Nothing was launched. To review committed work, start a "
+                          "fresh `/review base=<ref>`: a `/review resume` launches nothing when no run is pending.")
 
     state_dir = script_utils.git_path(repo, STATE_NAME)
     stop_earlier_loops(state_dir, repo, options.skill)

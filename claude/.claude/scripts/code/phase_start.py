@@ -40,9 +40,10 @@ stderr note).
 Before anything is moved, `--resume` exits non-zero when this repo's run folder holds no stop.md and no stop.prev.md
 newer than the session's last relayed stop (lib/code_stop_record.py), and that stop is in another run folder: it
 names both and the stop's recorded `To go on:` line (`/code resume <repo top>` for a finished stop).
-An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays), and an existing
-handoff.txt to handoff.prev.txt, so a review start never reads an earlier phase's hand-off as this phase's; loop-dir
-goes to loop-dir.prev, so a wait never returns an earlier phase's packet before this phase's review starts.
+An existing <git dir>/code-phase/stop.md is renamed to stop.prev.md first (review-stop.md stays: review_launch
+moves it), and an existing handoff.txt to handoff.prev.txt, so a review start never reads an earlier phase's
+hand-off as this phase's; loop-dir goes to loop-dir.prev, so a wait never returns an earlier phase's packet before
+this phase's review starts.
 """
 import json
 import os
@@ -70,6 +71,7 @@ import worktree_snapshot
 
 START_FILE = "start.json"
 COMMAND = "python3 ~/.claude/scripts/code/phase_start.py"
+CALLER = "phase_start"
 
 
 class StartRecordError(ValueError):
@@ -197,21 +199,6 @@ def with_later_dirty_files(kept, record, handed_off):
     new_dirty = {path: saved for path, saved in record["dirty"].items()
                  if path not in kept["dirty"] and path not in own}
     return {**kept, "dirty": {**kept["dirty"], **new_dirty}, "own": own}
-
-
-def move_aside(folder, name, previous_name):
-    """Rename <folder>/<name> to <previous_name>, replacing an older one, so the fork's next file of that name is new:
-    the Write tool refuses an existing file the fork has not read. A failed rename is reported and the script goes
-    on."""
-    current_file = folder / name
-    if not current_file.is_file():
-        return
-
-    previous_file = folder / previous_name
-    try:
-        os.replace(current_file, previous_file)
-    except OSError as error:
-        print(f"phase_start: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
 
 
 def done_phase_numbers(repo, commit, markdown_path):
@@ -404,10 +391,10 @@ def main():
         if refusal is not None:
             sys.exit(refusal)
     handed_off = handed_off_paths(run_folder)
-    move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE)
-    move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE)
-    move_aside(run_folder, stop_file_names.LOOP_DIR_FILE, stop_file_names.PREVIOUS_LOOP_DIR_FILE)
-    move_aside(run_folder, code_wait.SCOPE_FILE, code_wait.PREVIOUS_SCOPE_FILE)
+    script_utils.move_aside(run_folder, stop_file_names.STOP_FILE, stop_file_names.PREVIOUS_STOP_FILE, CALLER)
+    script_utils.move_aside(run_folder, code_wait.HANDOFF_FILE, code_wait.PREVIOUS_HANDOFF_FILE, CALLER)
+    script_utils.move_aside(run_folder, stop_file_names.LOOP_DIR_FILE, stop_file_names.PREVIOUS_LOOP_DIR_FILE, CALLER)
+    script_utils.move_aside(run_folder, code_wait.SCOPE_FILE, code_wait.PREVIOUS_SCOPE_FILE, CALLER)
     if "--resume" not in sys.argv[1:]:
         resume_review_gate.clear_resume(run_folder)
 

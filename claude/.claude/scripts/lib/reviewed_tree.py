@@ -319,17 +319,24 @@ def shared_base_entries(top):
     return [entry for entry in stored if isinstance(entry, dict)]
 
 
-def latest_reviewed_base(repo_dir):
-    """The `base` of the newest entry in the repo's shared bases record, or None when the repo has no record, repo_dir
-    is in no work tree, or that entry holds no base string."""
+def newest_reviewable_base(repo_dir):
+    """The newest `base` in the repo's shared bases record that is a strict ancestor of HEAD, so a review from it
+    covers the commits since; None when repo_dir is in no work tree or no recorded base string is one."""
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return None
-    entries = shared_base_entries(top)
-    if not entries:
+    head = script_utils.git_output(top, "rev-parse", "HEAD", timeout=GIT_TIMEOUT_SECONDS)
+    if head is None:
         return None
-    base = entries[-1].get("base")
-    return base if isinstance(base, str) else None
+    for entry in reversed(shared_base_entries(top)):
+        base = entry.get("base")
+        if not isinstance(base, str):
+            continue
+        if base == head.strip():
+            continue
+        if script_utils.is_ancestor(top, base, "HEAD", timeout=GIT_TIMEOUT_SECONDS):
+            return base
+    return None
 
 
 def push_review_state(repo_dir):
@@ -441,14 +448,10 @@ def last_commit_fingerprint(top):
     None when HEAD has no parent, is a merge (its change would be a whole merged-in branch), or the tree cannot be
     fingerprinted."""
     # Fails closed: a git failure or timeout, a root commit and a merge all give None, so none of them earns credit.
-    parents_line = script_utils.git_output(top, "rev-list", "--parents", "-n", "1", "HEAD",
-                                           timeout=GIT_TIMEOUT_SECONDS)
-    if parents_line is None:
+    parents = script_utils.commit_parents(top, "HEAD", timeout=GIT_TIMEOUT_SECONDS)
+    if parents is None or len(parents) != 1:
         return None
-    tokens = parents_line.split()
-    if len(tokens) != 2:
-        return None
-    parent = tokens[1]
+    parent = parents[0]
 
     found = reviewed_fingerprint(top, base=parent)
     if found is None:

@@ -5,23 +5,23 @@
 
 Run from the directory the Skill call ran in, after it returns. The fork writes every stop to a stop file in the run
 folder (code_wait.phase_dir) before it hands back: /code to stop.md, /review and /fix to review-stop.md. This prints
-the newer one between USER TEXT markers. When stop.prev.md (the stop.md that phase_start moved aside) is newer than
-both stop files, the run wrote no new stop: it exits 1 and writes nothing, unless that stop is a bounced stop.md stop
-not yet relayed (below).
+the newer one between USER TEXT markers. When stop.prev.md (the stop.md that phase_start moved aside) or
+review-stop.prev.md (the review-stop.md that review_launch moved aside) is newer than both stop files, the run wrote
+no new stop: it exits 1 and writes nothing, unless that stop is a bounced stop not yet relayed (below).
 A stop with a `To go on:` line waits on the user: the rule says to make no other tool call. A stop without one is a
 finished run: the rule says to go on with the invoking skill's next step when a skill the main session is running
 invoked it, otherwise to make no other tool call. The relayed stop's name and mtime go in
 <run folder>/relayed, so a second relay of the same stop exits 1.
-Every exit 1 where the run wrote no new stop (no stop file, only a moved-aside stop.prev.md, a stop relayed
-already) prints NO_STOP_RULE on stderr.
+Every exit 1 where the run wrote no new stop (no stop file, only a moved-aside stop.prev.md or
+review-stop.prev.md, a stop relayed already) prints NO_STOP_RULE on stderr.
 A relayed stop.md stop is also recorded for the session (lib/code_stop_record.py, with its `To go on:` line), and
 that line gets the repo top after its first `resume` word unless the word right after `resume` is an absolute path.
 A stop that waits on the user, in a tree whose source changed after the session's clean review (and no commit since),
 is not relayed: the rule sends the main session back through the `To go on:` line to re-run the review round, and
 `relayed` stays unwritten. The stop's stamp goes in <run folder>/bounced, so the same stop, relayed again after the
 resume wrote no new stop, relays to the user with a first line in the USER TEXT block that says the tree changed
-after the converged review. A bounced stop.md stop that phase_start has since moved to stop.prev.md relays the same
-way, from stop.prev.md.
+after the converged review. A bounced stop that phase_start has since moved to stop.prev.md, or review_launch to
+review-stop.prev.md, relays the same way, from the moved file.
 """
 
 import os
@@ -36,7 +36,12 @@ import code_wait
 import handback
 import reviewed_tree
 import script_utils
-from stop_file_names import PREVIOUS_STOP_FILE, STOP_FILE, STOP_FILES
+from stop_file_names import (
+    MOVED_ASIDE_STOPS,
+    PREVIOUS_STOP_FILES,
+    STOP_FILE,
+    STOP_FILES,
+)
 
 RELAYED_FILE = "relayed"
 BOUNCED_FILE = "bounced"
@@ -59,9 +64,9 @@ NO_STOP_RULE = ("Relay the Skill result in place of a stop. When the Skill resul
 
 
 def newest_stop(folder):
-    """The stop file of the run folder with the newest mtime. Counts the previous-stop file too: when it is the
+    """The stop file of the run folder with the newest mtime. Counts the previous-stop files too: when one is the
     newest, the fork wrote no new stop, and an older stop file must not be relayed as new."""
-    stops = [folder / name for name in (*STOP_FILES, PREVIOUS_STOP_FILE) if (folder / name).is_file()]
+    stops = [folder / name for name in (*STOP_FILES, *PREVIOUS_STOP_FILES) if (folder / name).is_file()]
     if not stops:
         return None
     return max(stops, key=lambda stop: stop.stat().st_mtime_ns)
@@ -136,11 +141,12 @@ def user_text_reply(repo, text, add_unreviewed_note):
     return 0, f"{rule}\n-----BEGIN USER TEXT-----\n{text}\n-----END USER TEXT-----"
 
 
-def relay_bounced_stop(repo, folder, previous_stop, stamp):
-    """Relay a stop.md stop that was bounced and then moved aside by the resume's phase_start, which wrote no new
-    stop. The user still gets the unreviewed note when the tree is still edited."""
+def relay_bounced_stop(repo, folder, previous_stop, stamp, origin):
+    """Relay a stop that was bounced and then moved aside by the resume's phase_start (stop.md) or review_launch
+    (review-stop.md), which wrote no new stop. The user still gets the unreviewed note when the tree is still edited.
+    Only a stop.md origin gets the resume path and the session record, as in the main path."""
     text = previous_stop.read_text().strip()
-    top = script_utils.repo_root(repo)
+    top = script_utils.repo_root(repo) if origin == STOP_FILE else None
     if top is not None:
         text = with_resume_path(text, str(top))
     script_utils.write_text_atomically(folder / RELAYED_FILE, stamp + "\n")
@@ -155,11 +161,12 @@ def relay(repo):
     stop = newest_stop(folder)
     if stop is None:
         return 1, f"code_relay: no stop file in {folder}. {NO_STOP_RULE}"
-    if stop.name == PREVIOUS_STOP_FILE:
-        bounced_stamp = f"{STOP_FILE} {stop.stat().st_mtime_ns}"
+    if stop.name in MOVED_ASIDE_STOPS:
+        origin, mover = MOVED_ASIDE_STOPS[stop.name]
+        bounced_stamp = f"{origin} {stop.stat().st_mtime_ns}"
         if is_stamped(folder / BOUNCED_FILE, bounced_stamp) and not is_stamped(folder / RELAYED_FILE, bounced_stamp):
-            return relay_bounced_stop(repo, folder, stop, bounced_stamp)
-        return 1, (f"code_relay: {stop} is the stop phase_start moved aside, so this run wrote no new stop. "
+            return relay_bounced_stop(repo, folder, stop, bounced_stamp, origin)
+        return 1, (f"code_relay: {stop} is the stop {mover} moved aside, so this run wrote no new stop. "
                    f"{NO_STOP_RULE}")
 
     stamp = f"{stop.name} {stop.stat().st_mtime_ns}"

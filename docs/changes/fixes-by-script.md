@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-847 fix notes
+851 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -26,8 +26,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/plan-format | 31 | 7 |
 | script/quality-check-cap | 24 | 5 |
 | script/shell-write-gate | 24 | 4 |
+| script/git-discipline-gate | 22 | 11 |
 | script/pull-keep-index | 22 | 10 |
-| script/git-discipline-gate | 21 | 10 |
 | agent/review-loop | 20 | 0 |
 | script/staged-claim-gate | 20 | 7 |
 | skill/code | 20 | 2 |
@@ -35,11 +35,11 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/verify-prep | 19 | 4 |
 | skill/review | 18 | 1 |
 | script/code-review-start | 17 | 9 |
+| script/review-launch | 17 | 11 |
 | script/code-wait | 16 | 6 |
 | script/criteria-dry-run | 15 | 6 |
 | script/verify-log | 14 | 1 |
 | script/refactor-flow | 13 | 4 |
-| script/review-launch | 13 | 7 |
 | script/inline-interpreter-hint | 12 | 8 |
 | script/log-review-finding | 12 | 0 |
 | script/verify-common | 12 | 2 |
@@ -51,12 +51,12 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/comment-bloat-gate | 8 | 0 |
 | script/lane-status | 8 | 8 |
 | script/phase-asks | 8 | 3 |
+| script/phase-start | 8 | 6 |
 | script/review-fix-asks | 8 | 1 |
 | script/reviewer-dispatch | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
 | script/memory-cap-scope | 7 | 7 |
-| script/phase-start | 7 | 5 |
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
 | script/check-discovery | 6 | 3 |
@@ -72,6 +72,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/reviewed-tree | 6 | 4 |
 | script/shell-statements | 6 | 5 |
 | skill/eng-spec | 6 | 2 |
+| script/code-relay | 5 | 3 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
@@ -84,7 +85,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | (no component) | 4 | 0 |
 | script/agent-model-guard | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
-| script/code-relay | 4 | 2 |
 | script/fork-children | 4 | 4 |
 | script/herdr-worktree-prune | 4 | 3 |
 | script/log-scan | 4 | 0 |

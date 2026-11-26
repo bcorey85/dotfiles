@@ -577,7 +577,7 @@ def check_push_reviewed(command, calls, payload_cwd):
     for directory in push_dirs:
         state = reviewed_tree.push_review_state(directory)
         if state == reviewed_tree.PUSH_CHANGED:
-            base = reviewed_tree.latest_reviewed_base(directory)
+            base = reviewed_tree.newest_reviewable_base(directory)
             if base:
                 raise DenyError(PUSH_UNREVIEWED_DENIED_WITH_BASE.format(base=base))
             raise DenyError(PUSH_UNREVIEWED_DENIED)

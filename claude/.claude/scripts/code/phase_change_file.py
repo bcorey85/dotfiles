@@ -1,0 +1,63 @@
+"""The phase-end change-file check: run the repo's `.githooks/change-file-check` over the work tree's changes.
+
+Run from the repo root. The check reads the `git diff --name-status -z` stream (NUL after each status and each path):
+the work tree's changes against HEAD, and each untracked file as an added one. Its refusal text passes through. A
+repo without the check passes. Exit 1 when the check refuses, with a last line that names the next step."""
+import pathlib
+import subprocess
+import sys
+
+SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(SCRIPTS_DIR / "lib")]
+
+import script_utils
+
+CHECK_RELATIVE_PATH = pathlib.Path(".githooks") / "change-file-check"
+NO_CHECK_LINE = "no change-file check in this repo"
+NEXT_STEP_LINE = ("Dispatch a coder to file the change file with that command, "
+                  "then run phase_change_file.py again.")
+
+
+def work_tree_changes(repo):
+    """The `git diff --name-status -z` stream of the work tree against HEAD (NUL after each status and each path), with
+    each untracked file added as an `A` record; None when git fails. `change-file-check` reads it."""
+    tracked = script_utils.git_output(repo, "diff", "--name-status", "-z", "--no-renames", "HEAD")
+    untracked = script_utils.untracked_paths(repo)
+    if tracked is None or untracked is None:
+        return None
+
+    records = [tracked] if tracked else []
+    records.extend(f"A\0{path}\0" for path in untracked)
+    return "".join(records)
+
+
+def main():
+    repo = script_utils.git_output(pathlib.Path.cwd(), "rev-parse", "--show-toplevel")
+    if repo is None:
+        print("phase_change_file.py: not inside a git work tree", file=sys.stderr)
+        return 2
+
+    check = pathlib.Path(repo) / CHECK_RELATIVE_PATH
+    if not check.is_file():
+        print(NO_CHECK_LINE)
+        return 0
+
+    changes = work_tree_changes(repo)
+    if changes is None:
+        print("phase_change_file.py: git could not list the work tree's changes", file=sys.stderr)
+        return 2
+
+    finished = subprocess.run([str(check)], input=changes, text=True, cwd=repo)
+    if finished.returncode == 0:
+        return 0
+
+    if finished.returncode != 1:
+        print(f"phase_change_file.py: change-file-check failed with exit {finished.returncode}", file=sys.stderr)
+        return 2
+
+    print(NEXT_STEP_LINE, file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -16,7 +16,7 @@ Fix four /code-step defects. Each script phase starts with a test that fails on 
 
 - [x] Phase 1: a resume after a ticked phase starts a new record at HEAD (risk: medium)
 - [x] Phase 2: review_fix decide accepts a plan folder (risk: low)
-- [ ] Phase 3: the phase end runs the change-file check (risk: medium)
+- [x] Phase 3: the phase end runs the change-file check (risk: medium)
 - [ ] Phase 4: a coder's denied git write does not stop the run (risk: low)
 
 ## Phase 1: a resume after a ticked phase starts a new record at HEAD
@@ -64,18 +64,21 @@ calls `read_text()` on the folder.
 Bug: a /code phase changed toolkit files and printed a commit subject with no change file; the pre-commit hook then
 refused the commit.
 
-1. New executable `.githooks/change-file-check` (bash, `set -euo pipefail`): reads `git diff --name-status`-style
-   lines (`<status letter>\t<path>`) on stdin and owns `toolkit_pattern` and `change_file_pattern` (moved from
-   `pre-commit`). A toolkit path with no added or modified change-note path prints the same refusal text the hook
-   prints today and exits 1; else exits 0.
+1. New executable `.githooks/change-file-check` (bash, `set -euo pipefail`): reads the `-z` NUL stream of
+   `git diff -z --name-status --no-renames` on stdin (`<status letter>` NUL `<path>` NUL, so a path git would quote
+   stays whole) and owns `toolkit_pattern` and `change_file_pattern` (moved from `pre-commit`). A toolkit path with no
+   added or modified change-note path prints `change-file-check: the change set changes the toolkit but adds or
+   modifies no docs/changes/notes/20*.md file:` and the toolkit paths, and exits 1; a stream that is not
+   status/path pairs exits 2; else exits 0.
 2. `.githooks/pre-commit`: its change-file block becomes one call:
-   `git diff --cached --name-status --no-renames | "$hooks_dir/change-file-check"`, with the hooks folder found from
-   the hook's own path. Leave the drift block untouched.
+   `git diff --cached -z --name-status --no-renames | "$hooks_dir/change-file-check"`, with the hooks folder found
+   from the hook's own path. Leave the drift block untouched.
 3. New `claude/.claude/scripts/code/phase_change_file.py`, run from the repo root: when `<repo top>/.githooks/
    change-file-check` is absent, print `no change-file check in this repo` and exit 0. Else feed it the work tree's
-   changes against HEAD (`git diff --name-status --no-renames HEAD`, plus each untracked file from
-   `git ls-files --others --exclude-standard` as `A\t<path>`) and pass its output through. On exit 1, add a last line:
-   `Dispatch a coder to file the change file with that command, then run phase_change_file.py again.` and exit 1.
+   changes against HEAD (`git diff -z --name-status --no-renames HEAD`, plus each untracked file from
+   `git ls-files --others --exclude-standard` as `A` NUL `<path>` NUL) and pass its output through. On exit 1, add a
+   last line: `Dispatch a coder to file the change file with that command, then run phase_change_file.py again.` and
+   exit 1.
 4. `skills/code/SKILL.md`, step 2's Phase Status tick bullet: before the tick coder, run
    `python3 ~/.claude/scripts/code/phase_change_file.py` from the repo root; on exit 1, do the step its last line names.
    Rules on wording: no rationale, one line.
@@ -103,3 +106,8 @@ Bug: a fork copied the task's "commit with a pathspec" into its coder's prompt; 
 
 - [ ] **Agent-run**: the new skill-text test fails before the change.
 - [ ] **Tests**: `python3 tests/parallel_tests.py test_code_skill_text.py`
+
+## Plan Deviations
+
+- Phase 3 ruling: the check and both callers use the -z NUL stream (git diff -z --name-status --no-renames; untracked files as A NUL path NUL) in place of status-TAB-path lines, so a path git would quote stays whole; the check exits 2 on a stream that is not status/path pairs. Ruled by the orchestrating session, 2026-11-25; no acceptance criterion changes.
+- Phase 3 ruling: the refusal text reads "change-file-check: the change set changes the toolkit but adds or modifies no docs/changes/notes/20*.md file:" because the phase-end call checks the work tree, not a staged set. Ruled by the orchestrating session, 2026-11-25; no acceptance criterion changes.

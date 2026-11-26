@@ -69,7 +69,7 @@ A coder makes every code and plan edit. You write only `<run folder>/handoff.txt
        branch=<branch> note="<the command, and what the ban protects>"
      ```
 
-   - After the review loop returns `converged` or `deferred` and Automated Verification is green, dispatch a `coder` to change the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...` and nothing else, and wait for it.
+   - After the review loop returns `converged` or `deferred` and Automated Verification is green, run `python3 ~/.claude/scripts/code/phase_change_file.py` from the repo root (on exit 1, do the step its last line names), then dispatch a `coder` to change the phase's `## Phase Status` line from `- [ ] Phase N: ...` to `- [x] Phase N: ...` and nothing else, and wait for it.
    - **Phase-boundary decision**, first match wins, then Read `~/.claude/skills/code/phase-end-block.md` and print the matching block:
      1. Last phase → STOP, block C.
      2. Phase 1, any risk tier → STOP, block B.

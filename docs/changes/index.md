@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1193 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1194 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-25, [review_fix decide accepts a plan folder](notes/2026-11-25-review-fix-decide-accepts-a-plan-folder.md).
+Latest change: 2026-11-25, [The code phase end runs the change-file check](notes/2026-11-25-the-code-phase-end-runs-the-change-file-check.md).
 
 ## Top gains
 

@@ -62,4 +62,4 @@ scratchpad only in general words.
 #### Automated Verification
 
 - [x] **Scratchpad route first**: the deny names the session scratchpad when it exists - `python3 tests/parallel_tests.py test_inline_interpreter_hint.py`
-- [ ] **Suite**: the whole suite passes - `bash tests/run.sh`
+- [x] **Suite**: the whole suite passes - `bash tests/run.sh`

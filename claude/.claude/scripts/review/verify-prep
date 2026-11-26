@@ -112,11 +112,21 @@ def folder_of_plan_file(target, top):
 find_plan_in_dir = vc.raising_verify_error(plan_format.find_plan_in_dir)
 
 
-def ticket_file_path(top):
-    """Where a ticket-only run keeps the fetched ticket: the repo's git-dir plan root, which outlives a reboot and
-    stays out of the tracked tree. `<KEY>` is the ticket key the caller fills in."""
-    git_dir = vc.run(["git", "rev-parse", "--path-format=absolute", "--git-dir"], cwd=top, check=True).stdout.strip()
-    return f"{git_dir}/claude-plans/<KEY>/00-ticket.md"
+def ticket_file_advice(resolver, top):
+    """The exit-4 instruction for a ticket-only run: write the fetched ticket where the resolver's `--home` puts a
+    plan folder for `<KEY>`, the ticket key the caller fills in."""
+    home = vc.run(["bash", resolver, "--home", "<KEY>"], cwd=top)
+    if home.returncode != 0:
+        return ("no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
+                f"raw fields to a ticket file, then rerun with --ticket-file <that file>. The resolver could not "
+                f"name a folder for it (exit {home.returncode}): {home.stderr.strip()}")
+    ticket_path = f"{home.stdout.strip()}/00-ticket.md"
+    git_dir = vc.run(["git", "rev-parse", "--absolute-git-dir"], cwd=top, check=True).stdout.strip()
+    reboot_note = ""
+    if pathlib.Path(ticket_path).is_relative_to(git_dir):
+        reboot_note = " (that folder is in the git dir, so it survives a reboot)"
+    return ("no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
+            f"raw fields to {ticket_path}{reboot_note}, then rerun with --ticket-file {ticket_path}.")
 
 
 def resolve_inputs(target, ticket_file, top):
@@ -136,14 +146,7 @@ def resolve_inputs(target, ticket_file, top):
     if code == 3:
         raise vc.VerifyError("several matches; ask the user which:\n" + output, 3)
     if code == 4:
-        ticket_path = ticket_file_path(top)
-        raise vc.VerifyError(
-            "no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
-            f"raw fields to {ticket_path} (that folder is in the git dir, so it survives a reboot), then rerun "
-            f"with --ticket-file {ticket_path}.\n"
-            + done.stderr.strip(),
-            4,
-        )
+        raise vc.VerifyError(ticket_file_advice(resolver, top) + "\n" + done.stderr.strip(), 4)
     if code not in (0, 5):
         raise vc.VerifyError(f"resolve-task-dir.sh exited {code}: {done.stderr.strip()}")
 

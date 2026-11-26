@@ -894,6 +894,17 @@ class PrepTest(VerifyBranchBase):
         self.assertIn("plan: none", done.stdout)
         self.assertIsNone(self.context()["excludeRel"])
 
+    def test_exit_4_in_a_docs_plans_repo_names_the_docs_plans_ticket_path(self):
+        self.git("checkout", "-q", "-b", "NOPE-1-x")
+        (self.repo / "docs/plans").mkdir(parents=True, exist_ok=True)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 4)
+        docs_ticket_path = f"{self.repo.resolve()}/docs/plans/<KEY>/00-ticket.md"
+        self.assertIn(docs_ticket_path, done.stderr)
+        self.assertNotIn("survives a reboot", done.stderr)
+
     def git_dir_plan_folder(self, name):
         folder = self.repo / ".git" / "claude-plans" / name
         folder.mkdir(parents=True)
@@ -910,11 +921,11 @@ class PrepTest(VerifyBranchBase):
         self.assertIn(f"plan: {folder.resolve() / 'plan.md'}", done.stdout)
         self.assertIn("ticket: none (plan-only)", done.stdout)
 
-    def test_a_git_dir_plan_folder_resolves_on_a_ticketless_branch_with_no_arguments(self):
+    def test_a_ticketless_branch_with_the_git_dir_plan_path_as_target_resolves_plan_only(self):
         self.git("checkout", "-q", "-b", "feature-x")
         folder = self.git_dir_plan_folder("my-plan")
 
-        done = self.prep()
+        done = self.prep(str(folder / "plan.md"))
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn(f"plan: {folder.resolve() / 'plan.md'}", done.stdout)

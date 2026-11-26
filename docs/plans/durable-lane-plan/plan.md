@@ -12,7 +12,8 @@ file to the repo's tracked tree, and the shared resolver finds it. Source:
   message), `claude/.claude/skills/eng-spec/phases/1-ticket.md` step 3,
   `claude/.claude/skills/verify-branch/SKILL.md` exit-4 row, and tests under `tests/scripts/`.
 - Out: `skills/adr/scripts/adr_flow.py` (its task-dir deletion keeps to `docs/plans`), every other `docs/plans/<slug>`
-  mention in skills and agents (they read the file beside the plan), settings.json, any CLAUDE.md.
+  mention in skills and agents (they read the file beside the plan), settings.json, any CLAUDE.md. Other mentions of
+  the criteria file now read "beside the plan".
 
 ## Phase Status
 
@@ -25,28 +26,32 @@ file to the repo's tracked tree, and the shared resolver finds it. Source:
 1. `resolve-task-dir.sh`: the git-dir plan root is `<git dir>/claude-plans`, where `<git dir>` is
    `git rev-parse --path-format=absolute --git-dir` run in the current folder (the worktree's own git dir). Outside a
    git repo there is no git-dir root.
-2. New verb `--home <slug>`: print `docs/plans/<slug>` when the current folder has a `docs/plans` directory, else
-   `<git dir>/claude-plans/<slug>` (absolute). Exit 0. A missing or empty slug, or a slug with a `/`, exits 2 with a
-   usage line on stderr. Outside a git repo with no `docs/plans`: exit 2 naming both.
+2. New verb `--home <slug>`: print an absolute path, `<top>/docs/plans/<slug>` when the repo top level
+   (`git rev-parse --show-toplevel`) has a `docs/plans` directory, else `<git dir>/claude-plans/<slug>`. Exit 0. A missing or empty slug, or a slug with a `/`, exits 2 with a
+   usage line on stderr. Outside a git repo: `$PWD/docs/plans/<slug>` when `./docs/plans` exists, else exit 2 naming
+   both.
 3. Ticket lookup: after `docs/plans` and `docs/eng-specs`, the task-dir glob also searches
    `<git dir>/claude-plans/<TICKET>/` and `<TICKET>-*/`. Matches count with the others (one → exit 0, several → 3).
    Printed paths under the git-dir root are absolute.
-4. No ticket in the argument or branch name: when `<git dir>/claude-plans/` holds exactly one folder, print it and exit
-   0; several, print all and exit 3; none, exit 4 as today.
+4. No ticket in the argument or branch name: exit 4 as before the branch. A ticketless branch passes the plan folder
+   or its `plan.md` path as the argument.
 5. Update the header comment: the git-dir root, `--home`, and that its paths print absolute.
-6. `verify-prep` exit 4: the message names the ticket path `<git dir>/claude-plans/<KEY>/00-ticket.md` (with the real
-   absolute git dir of the repo top) in place of `<scratchpad>/<KEY>-ticket.md`, and says the folder survives a
-   reboot; the rerun stays `--ticket-file <that path>`.
+6. `verify-prep` exit 4: the message names the ticket path `<path>/00-ticket.md`, where `<path>` is what
+   `resolve-task-dir.sh --home <KEY>` prints from the repo top, in place of `<scratchpad>/<KEY>-ticket.md`; the root
+   name lives only in the resolver. It says the folder survives a reboot only when the path is under the git dir. If
+   `--home` fails, the message still says to write the ticket file and names the failure. The rerun stays
+   `--ticket-file <that path>`.
 7. Check every caller still reads the output: verify-prep (`top / output` keeps an absolute path), `adr_flow.py`
    (reports a git-dir task dir as a problem, which is right for deletion), `skills/code/SKILL.md` step 0.
 
 8. Tests: new `tests/scripts/test_resolve_task_dir.py` (script path from an env var defaulting to this tree's
    script): a fixture repo with no `docs/plans` and a ticket branch finds `<git dir>/claude-plans/<TICKET>-x/`; a
-   ticketless branch finds the single folder there and exits 3 on two; `--home` prints `docs/plans/<slug>` with a
-   `docs/plans` folder and the git-dir path without one; in a linked worktree `--home` and the lookup use that
+   ticketless branch exits 4 with no argument and resolves the folder given as a path; `--home` prints the top's
+   absolute `docs/plans/<slug>` with a `docs/plans` folder (also from a subfolder) and the git-dir path without one; in a linked worktree `--home` and the lookup use that
    worktree's git dir; a bad slug exits 2. A verify-prep test: a fixture repo with no `docs/plans` whose plan folder
-   (`plan.md` + `acceptance-criteria.md`) sits in the git-dir root resolves with no arguments; the exit-4 message names
-   the git-dir ticket path.
+   (`plan.md` + `acceptance-criteria.md`) sits in the git-dir root resolves by ticket branch with no arguments, and on
+   a ticketless branch by the plan path; the exit-4 message names the git-dir ticket path, or the `docs/plans` one in
+   a repo that has `docs/plans`.
 
 #### Automated Verification
 
@@ -73,3 +78,9 @@ file to the repo's tracked tree, and the shared resolver finds it. Source:
 
 - [ ] **Anchors**: `bash claude/.claude/scripts/tools/rule-anchors.sh check`
 - [ ] **Full suite**: `bash tests/run.sh`
+
+## Plan Deviations
+
+- AC2 reworded by the durable-lane-plan lane session, 2026-11-26 (criteria owner plan; reported to agent-evals-74): a
+  ticketless branch passes the plan path; the single-folder fallback is dropped because a leftover folder in a shared
+  git dir resolved for unrelated branches.

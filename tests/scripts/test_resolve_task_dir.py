@@ -68,31 +68,20 @@ class ResolveTaskDirTest(unittest.TestCase):
         self.assertEqual(done.returncode, 3)
         self.assertEqual(done.stdout.split(), ["docs/plans/LED-9-a", str(folder)])
 
-    def test_a_ticketless_branch_finds_the_single_git_dir_folder(self):
+    def test_a_ticketless_branch_with_a_git_dir_folder_and_no_argument_exits_4(self):
+        self.git(self.repo, "checkout", "-q", "-b", "feature-x")
+        self.make_plan_folder(self.repo, "my-plan")
+
+        done = self.resolve()
+
+        self.assertEqual(done.returncode, 4)
+        self.assertEqual(done.stdout, "")
+
+    def test_a_ticketless_branch_resolves_the_git_dir_folder_given_as_a_path(self):
         self.git(self.repo, "checkout", "-q", "-b", "feature-x")
         folder = self.make_plan_folder(self.repo, "my-plan")
 
-        done = self.resolve()
-
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(done.stdout.strip(), str(folder))
-
-    def test_a_ticketless_branch_with_two_git_dir_folders_exits_3_listing_both(self):
-        self.git(self.repo, "checkout", "-q", "-b", "feature-x")
-        second = self.make_plan_folder(self.repo, "plan-b")
-        first = self.make_plan_folder(self.repo, "plan-a")
-
-        done = self.resolve()
-
-        self.assertEqual(done.returncode, 3)
-        self.assertEqual(done.stdout.split(), [str(first), str(second)])
-
-    def test_a_ticketless_branch_with_docs_plans_still_finds_the_single_git_dir_folder(self):
-        self.git(self.repo, "checkout", "-q", "-b", "feature-x")
-        (self.repo / "docs/plans").mkdir(parents=True)
-        folder = self.make_plan_folder(self.repo, "my-plan")
-
-        done = self.resolve()
+        done = self.resolve(str(folder))
 
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), str(folder))
@@ -118,7 +107,28 @@ class ResolveTaskDirTest(unittest.TestCase):
         done = self.resolve("--home", "my-slug")
 
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(done.stdout.strip(), "docs/plans/my-slug")
+        self.assertEqual(done.stdout.strip(), str(self.repo / "docs/plans/my-slug"))
+
+    def test_home_from_a_subfolder_prints_the_top_level_docs_plans_path(self):
+        (self.repo / "docs/plans").mkdir(parents=True)
+        sub = self.repo / "src" / "deep"
+        sub.mkdir(parents=True)
+
+        done = self.resolve("--home", "my-slug", cwd=sub)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), str(self.repo / "docs/plans/my-slug"))
+
+    def test_home_outside_a_git_repo_with_docs_plans_prints_the_absolute_path(self):
+        outside = self.root / "plain-docs"
+        (outside / "docs/plans").mkdir(parents=True)
+        env = {**self.env, "GIT_CEILING_DIRECTORIES": str(self.root)}
+
+        done = subprocess.run(["bash", str(SCRIPT), "--home", "s"], cwd=outside, env=env, capture_output=True,
+                              text=True)
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), str(outside / "docs/plans/s"))
 
     def test_home_prints_the_git_dir_path_without_docs_plans(self):
         done = self.resolve("--home", "my-slug")

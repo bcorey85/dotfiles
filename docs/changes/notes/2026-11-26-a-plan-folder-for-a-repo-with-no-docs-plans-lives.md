@@ -9,7 +9,7 @@ kind: "fix"
 components: ["script/resolve-task-dir", "script/verify-prep"]
 evidence: ["judgment"]
 watches: []
-test: "tests/scripts/test_verify_branch_script.py::PrepTest::test_a_git_dir_plan_folder_resolves_on_a_ticketless_branch_with_no_arguments"
+test: "tests/scripts/test_verify_branch_script.py::PrepTest::test_a_git_dir_plan_folder_resolves_by_ticket_branch_with_no_arguments"
 asked: ""
 proof: []
 unmeasured: ""
@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`claude/.claude/scripts/tools/resolve-task-dir.sh`: a repo with no `docs/plans` keeps plan folders in `<git dir>/claude-plans/`, where `<git dir>` is the current worktree's own git dir. `--home <slug>` prints `docs/plans/<slug>` when that folder exists, else the git-dir path. The ticket lookup also searches the git-dir root. With no ticket and no argument, the root's single folder resolves (exit 3 for several). Paths under the git-dir root print absolute. `claude/.claude/scripts/review/verify-prep`: exit 4 names `<git dir>/claude-plans/<KEY>/00-ticket.md` in place of `<scratchpad>/<KEY>-ticket.md`.
+`claude/.claude/scripts/tools/resolve-task-dir.sh`: a repo with no `docs/plans` keeps plan folders in `<git dir>/claude-plans/`, where `<git dir>` is the current worktree's own git dir. `--home <slug>` prints the absolute `<top>/docs/plans/<slug>` when the repo top has `docs/plans`, else the git-dir path. The ticket lookup also searches the git-dir root. Paths under the git-dir root print absolute. `claude/.claude/scripts/review/verify-prep`: exit 4 names `<--home KEY>/00-ticket.md` in place of `<scratchpad>/<KEY>-ticket.md`, and says it survives a reboot only when that path is in the git dir.
 
 ## Evidence
 
@@ -26,7 +26,7 @@ Second sighting (queue item `a-lane-plan-and-its-criteria-in-the-tmpfs`): a rebo
 
 ## Result
 
-The two new verify-prep tests (a git-dir plan folder by ticket branch and by ticketless branch, no arguments) fail against the old resolver (2 failures) and pass against the new one. New `tests/scripts/test_resolve_task_dir.py` covers `--home`, linked worktrees, bad slugs and unchanged docs/plans lookup. Review loop converged in 3 rounds; full suite 7576 tests, 0 failed.
+The new verify-prep test (a git-dir plan folder by ticket branch, no arguments) fails against the old resolver and pass against the new one. New `tests/scripts/test_resolve_task_dir.py` covers `--home`, linked worktrees, bad slugs and unchanged docs/plans lookup. Review loop converged in 3 rounds; full suite 7576 tests, 0 failed.
 
 ## Watch
 
@@ -34,4 +34,4 @@ None.
 
 ## Back-out
 
-Revert the commit; plan folders already in `<git dir>/claude-plans/` then need a path argument.
+Revert the commit; plan folders already in `<git dir>/claude-plans/` then need a path argument. A ticketless branch always passes the plan path.

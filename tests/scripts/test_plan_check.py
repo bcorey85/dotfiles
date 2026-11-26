@@ -71,21 +71,18 @@ class PlanCheckCliTest(unittest.TestCase):
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
         self.assertEqual(owner["rule"], plan_format.CRITERIA_OWNER_RULES["session"])
 
-    def queue_home(self, author, home_name="home"):
-        home = self.folder / home_name
+    def write_queue_item(self, home, name, author):
         queue_dir = home / "agent-evals" / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
-        (queue_dir / "item.md").write_text(f'---\ngenerated: {{"by": "{author}", "at": "2026-11-01"}}\n---\n')
+        (queue_dir / name).write_text(f'---\ngenerated: {{"by": "{author}", "at": "2026-11-01"}}\n---\n')
+
+    def queue_home(self, author, home_name="home"):
+        home = self.folder / home_name
+        self.write_queue_item(home, "item.md", author)
         return home, {**os.environ, "HOME": str(home)}
 
     def owner_with_source(self, author, source, home_name="home"):
-        home, env = self.queue_home(author, home_name)
-        source_value = source.replace("<home>", str(home))
-        (self.folder / "00-ticket.md").write_text(
-            f"# Lane\n\nSource: {source_value}\n\nBrief restated.\n\n## Done when\n\n- Words.\n")
-        done = self.run_plan_check("owner", str(self.plan), env=env)
-        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        return json.loads(done.stdout)
+        return self.owner_with_brief_text(author, f"Source: {source}\n\nBrief restated.", home_name)
 
     def test_owner_prints_session_when_the_source_line_spells_the_queue_path_with_the_home_folder(self):
         owner = self.owner_with_source("claude-code/x", "<home>/agent-evals/queue/item.md")
@@ -112,8 +109,10 @@ class PlanCheckCliTest(unittest.TestCase):
 
         self.assertEqual(json.loads(done.stdout)["owner"], "user")
 
-    def owner_with_brief_text(self, author, brief_text):
-        home, env = self.queue_home(author)
+    def owner_with_brief_text(self, author, brief_text, home_name="home", extra_items=()):
+        home, env = self.queue_home(author, home_name)
+        for name, extra_author in extra_items:
+            self.write_queue_item(home, name, extra_author)
         (self.folder / "00-ticket.md").write_text(
             f"# Lane\n\n{brief_text.replace('<home>', str(home))}\n\n## Done when\n\n- Words.\n")
         done = self.run_plan_check("owner", str(self.plan), env=env)
@@ -176,44 +175,29 @@ class PlanCheckCliTest(unittest.TestCase):
                 self.assertIsNone(owner["source"])
 
     def test_owner_is_user_when_free_text_names_a_human_item_beside_a_session_source_line(self):
-        home, env = self.queue_home("claude-code/x")
-        (home / "agent-evals" / "queue" / "other.md").write_text(
-            '---\ngenerated: {"by": "human:brandon", "at": "2026-11-01"}\n---\n')
-        (self.folder / "00-ticket.md").write_text(
-            "# Lane\n\nSource: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md.\n\n"
-            "## Done when\n\n- Words.\n")
+        owner = self.owner_with_brief_text(
+            "claude-code/x",
+            "Source: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md.",
+            extra_items=(("other.md", "human:brandon"),))
 
-        done = self.run_plan_check("owner", str(self.plan), env=env)
-
-        owner = json.loads(done.stdout)
         self.assertEqual(owner["owner"], "user")
         self.assertEqual(owner["source"], "~/agent-evals/queue/other.md")
 
     def test_owner_is_session_with_the_source_line_when_free_text_names_only_session_items(self):
-        home, env = self.queue_home("claude-code/x")
-        (home / "agent-evals" / "queue" / "other.md").write_text(
-            '---\ngenerated: {"by": "claude-code/x", "at": "2026-11-01"}\n---\n')
-        (self.folder / "00-ticket.md").write_text(
-            "# Lane\n\nSource: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md and "
-            "~/agent-evals/queue/item.md.\n\n## Done when\n\n- Words.\n")
+        owner = self.owner_with_brief_text(
+            "claude-code/x",
+            "Source: ~/agent-evals/queue/item.md\n\nAlso see ~/agent-evals/queue/other.md and "
+            "~/agent-evals/queue/item.md.",
+            extra_items=(("other.md", "claude-code/x"),))
 
-        done = self.run_plan_check("owner", str(self.plan), env=env)
-
-        owner = json.loads(done.stdout)
         self.assertEqual(owner["owner"], "session")
         self.assertEqual(owner["source"], "~/agent-evals/queue/item.md")
 
     def test_owner_is_user_with_the_first_human_path_when_free_text_names_several_items(self):
-        home, env = self.queue_home("claude-code/x")
-        (home / "agent-evals" / "queue" / "other.md").write_text(
-            '---\ngenerated: {"by": "human:brandon", "at": "2026-11-01"}\n---\n')
-        (self.folder / "00-ticket.md").write_text(
-            "# Lane\n\nRead ~/agent-evals/queue/item.md and ~/agent-evals/queue/other.md.\n\n"
-            "## Done when\n\n- Words.\n")
+        owner = self.owner_with_brief_text(
+            "claude-code/x", "Read ~/agent-evals/queue/item.md and ~/agent-evals/queue/other.md.",
+            extra_items=(("other.md", "human:brandon"),))
 
-        done = self.run_plan_check("owner", str(self.plan), env=env)
-
-        owner = json.loads(done.stdout)
         self.assertEqual(owner["owner"], "user")
         self.assertEqual(owner["source"], "~/agent-evals/queue/other.md")
 

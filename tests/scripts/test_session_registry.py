@@ -65,6 +65,30 @@ class SessionRegistryTest(unittest.TestCase):
             found = session_registry.other_live_session_in(repo, "own")
             self.assertEqual("other", found["sessionId"])
 
+    def test_every_other_live_session_inside_the_folder_is_found_in_registry_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo = pathlib.Path(folder).resolve()
+            self.register_in("own", str(repo), "1.json")
+            self.register_in("first", str(repo), "2.json")
+            self.register_in("second", str(repo / "sub"), "3.json")
+            self.register_in("elsewhere", str(repo.parent), "4.json")
+            found = session_registry.other_live_sessions_in(repo, "own")
+            self.assertEqual(["first", "second"], [row["sessionId"] for row in found])
+
+    def test_a_session_transcript_is_found_under_any_project_and_a_missing_one_is_none(self):
+        (self.home / "projects" / "proj").mkdir(parents=True)
+        transcript = self.home / "projects" / "proj" / "sid.jsonl"
+        transcript.write_text("")
+        self.assertEqual(transcript, session_registry.session_transcript("sid"))
+        self.assertIsNone(session_registry.session_transcript("none"))
+        self.assertIsNone(session_registry.session_transcript(None))
+
+    def test_a_session_transcript_in_several_projects_is_the_first_in_sorted_order(self):
+        for project in ("b", "a"):
+            (self.home / "projects" / project).mkdir(parents=True)
+            (self.home / "projects" / project / "sid.jsonl").write_text("")
+        self.assertEqual(self.home / "projects" / "a" / "sid.jsonl", session_registry.session_transcript("sid"))
+
     def test_a_session_outside_the_folder_a_dead_one_and_a_row_with_no_cwd_are_no_match(self):
         with tempfile.TemporaryDirectory() as folder:
             repo = pathlib.Path(folder).resolve()

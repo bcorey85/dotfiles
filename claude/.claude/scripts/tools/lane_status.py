@@ -197,13 +197,7 @@ def transcript_of(agent):
     """The transcript path of the agent's session, or None when herdr names no session or no transcript matches."""
     agent_session = agent.get("agent_session")
     session_id = agent_session.get("value") if isinstance(agent_session, dict) else None
-    if not isinstance(session_id, str) or not session_id:
-        return None
-
-    found = sorted(session_registry.projects_dir().glob(f"*/{session_id}.jsonl"))
-    if not found:
-        return None
-    return found[0]
+    return session_registry.session_transcript(session_id)
 
 
 def api_error_reason(transcript):

@@ -41,13 +41,30 @@ class PullKeepIndexTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.config_dir = config_dir
 
-    def register_other(self, cwd, session_id="other"):
-        """Write a live registry row for a session working in `cwd`; its pid is a `sleep` child that cleanup kills."""
+    def register_other(self, cwd, session_id="other", name="lane-other", edited=()):
+        """Write a live registry row for a session working in `cwd`; its pid is a `sleep` child that cleanup kills.
+        `edited` are the absolute paths its transcript holds an Edit call for."""
         sleeper = subprocess.Popen(["sleep", "600"])
         self.addCleanup(sleeper.wait)
         self.addCleanup(sleeper.kill)
-        row = {"pid": sleeper.pid, "sessionId": session_id, "name": "lane-other", "cwd": str(cwd)}
+        row = {"pid": sleeper.pid, "sessionId": session_id, "name": name, "cwd": str(cwd)}
+        if edited:
+            self.write_transcript(session_id, edited)
         (self.config_dir / "sessions" / f"{sleeper.pid}.json").write_text(json.dumps(row))
+
+    def write_transcript(self, session_id, edited, subagent=False):
+        """A transcript under the config dir's projects folder with one Edit call per path in `edited`; with
+        `subagent`, the transcript of a subagent of the session, and the session's main transcript holds no call."""
+        lines = []
+        for edited_path in edited:
+            block = {"type": "tool_use", "id": "t", "name": "Edit", "input": {"file_path": str(edited_path)}}
+            lines.append(json.dumps({"type": "assistant", "message": {"content": [block]}}))
+        project = self.config_dir / "projects" / "p"
+        if subagent:
+            self.write(project, f"{session_id}.jsonl", "")
+            self.write(project / session_id / "subagents", "agent-a1.jsonl", "\n".join(lines) + "\n")
+            return
+        self.write(project, f"{session_id}.jsonl", "\n".join(lines) + "\n")
 
     def git(self, folder, *arguments):
         env = {**os.environ, **GIT_ENV}
@@ -1221,6 +1238,129 @@ class PullKeepIndexTest(unittest.TestCase):
         self.assertEqual((self.repo / "bin" / "x").read_text(), "1\nlocal-edit\n")
         self.assertEqual(self.kept_refs(), [])
 
+    def diverge_with_dirty_file_and_two_sessions(self, writer_edits, other_edits):
+        """Dirty `bin/x`, two live sessions in the repo (`lane-writer`, `lane-bystander`) whose transcripts hold an
+        Edit call for each path in the given lists, and a branch that diverged from the remote."""
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, "writer-id", "lane-writer", writer_edits)
+        self.register_other(self.repo, "bystander-id", "lane-bystander", other_edits)
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+    def test_the_session_that_wrote_the_dirty_file_is_named_and_the_other_is_not(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "bin" / "x"], [self.repo / "elsewhere.py"])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("lane-writer", finished.stderr)
+        self.assertNotIn("lane-bystander", finished.stderr)
+
+    def test_with_no_session_having_written_the_dirty_file_the_owner_is_unknown_and_none_is_named_owner(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "a.py"], [self.repo / "b.py"])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertIn("candidates: ", finished.stderr)
+        self.assertIn("lane-writer", finished.stderr)
+        self.assertIn("lane-bystander", finished.stderr)
+        self.assertIn("Dirty files: bin/x", finished.stderr)
+
+    def test_with_two_sessions_having_written_the_dirty_file_the_owner_is_unknown(self):
+        edited = [self.repo / "bin" / "x"]
+        self.diverge_with_dirty_file_and_two_sessions(edited, edited)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertNotIn("wrote a dirty file", finished.stderr)
+
+    def test_a_session_with_no_readable_transcript_leaves_the_owner_unknown_and_says_so(self):
+        self.diverge_with_dirty_file_and_two_sessions([], [])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertIn("transcript not read: ", finished.stderr)
+        self.assertIn("lane-writer", finished.stderr.split("transcript not read: ")[1])
+        self.assertIn("lane-bystander", finished.stderr.split("transcript not read: ")[1])
+
+    def test_one_writer_beside_a_session_with_no_transcript_leaves_the_owner_unknown(self):
+        self.diverge_with_dirty_file_and_two_sessions([self.repo / "bin" / "x"], [])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertNotIn("wrote a dirty file", finished.stderr)
+        self.assertIn("transcript not read: lane-bystander", finished.stderr)
+
+    def test_a_write_made_only_by_a_subagent_of_the_session_counts_as_its_write(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, "writer-id", "lane-writer")
+        self.write_transcript("writer-id", [self.repo / "bin" / "x"], subagent=True)
+        self.register_other(self.repo, "bystander-id", "lane-bystander", [self.repo / "bin" / "x"])
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+
+    def test_a_write_by_a_subagent_alone_names_its_session(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, "writer-id", "lane-writer")
+        self.write_transcript("writer-id", [self.repo / "bin" / "x"], subagent=True)
+        self.commit_local("k", "1\n")
+        self.push_from_other_machine("h", "2\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("lane-writer also works", finished.stderr)
+
+    def test_a_relative_path_and_a_path_outside_the_repo_are_no_evidence_of_a_write(self):
+        outside = self.tmp / "elsewhere" / "bin" / "x"
+        self.diverge_with_dirty_file_and_two_sessions(["bin/x"], [outside])
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertNotIn("wrote a dirty file", finished.stderr)
+
+    def test_a_transcript_that_cannot_be_read_is_reported_and_leaves_the_owner_unknown(self):
+        self.diverge_with_dirty_file_and_two_sessions([], [])
+        transcript = self.config_dir / "projects" / "p" / "writer-id.jsonl"
+        transcript.mkdir(parents=True)
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("could not read the transcript", finished.stderr)
+        self.assertIn("lane-writer", finished.stderr.split("transcript not read: ")[1])
+
+    def test_the_overwrite_refusal_names_the_session_that_wrote_the_overlapping_file(self):
+        self.add_files("bin/x")
+        self.write(self.repo, "bin/x", "1\nlocal-edit\n")
+        self.register_other(self.repo, "bystander-id", "lane-bystander", [self.repo / "q.py"])
+        self.register_other(self.repo, "writer-id", "lane-writer", [self.repo / "bin" / "x"])
+        self.push_from_other_machine("bin/x", "theirs\n")
+
+        finished = self.run_script()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("lane-writer", finished.stderr)
+        self.assertNotIn("lane-bystander", finished.stderr)
+
     def share_the_checkout_with_a_dirty_built_page(self, *dirty_sources):
         """Mark `QUEUE.md` a built page, give it and each of `dirty_sources` an unstaged edit, register another
         session, and diverge the branch from a remote that also changed the page."""
@@ -1279,7 +1419,8 @@ class PullKeepIndexTest(unittest.TestCase):
         finished = self.run_script()
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
-        self.assertIn("also works in", finished.stderr)
+        self.assertIn("owner of the dirty files is unknown", finished.stderr)
+        self.assertIn("lane-other", finished.stderr)
 
     def test_a_shared_clean_tree_with_another_session_keeps_the_solo_rebase(self):
         self.register_other(self.repo)

@@ -75,10 +75,11 @@ def row_for_session_id(session_id):
     return None
 
 
-def other_live_session_in(folder, own_session_id):
-    """The first live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it;
-    None when there is none. A row with no string `cwd` is no match."""
+def other_live_sessions_in(folder, own_session_id):
+    """Every live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it, in
+    registry order. A row with no string `cwd` is no match."""
     folder_path = pathlib.Path(folder).resolve()
+    found = []
     for row in live_session_rows():
         if row.get("sessionId") == own_session_id:
             continue
@@ -86,8 +87,28 @@ def other_live_session_in(folder, own_session_id):
         if not isinstance(cwd, str) or not cwd:
             continue
         if pathlib.Path(cwd).resolve().is_relative_to(folder_path):
-            return row
-    return None
+            found.append(row)
+    return found
+
+
+def other_live_session_in(folder, own_session_id):
+    """The first row of `other_live_sessions_in` (registry file order); None when there is none. It is matched by
+    working folder alone, so it says nothing about who wrote a file."""
+    found = other_live_sessions_in(folder, own_session_id)
+    if not found:
+        return None
+    return found[0]
+
+
+def session_transcript(session_id):
+    """The transcript file of a session (first match in sorted order under any project), None when it has none or
+    `session_id` is not a non-empty string."""
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    found = sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
+    if not found:
+        return None
+    return found[0]
 
 
 def holder_label(row):

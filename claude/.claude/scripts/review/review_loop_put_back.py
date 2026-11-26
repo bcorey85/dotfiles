@@ -22,6 +22,15 @@ class ProtectedPutBack(typing.NamedTuple):
         return self.restored_text == self.before_text
 
 
+class PassSnapshots(typing.NamedTuple):
+    """What the loop records before a coder pass so it can put protected text back after it: the sign-off snapshot,
+    the comment snapshot and the criterion-quote snapshot (an AcQuoteSnapshot, never None)."""
+
+    signoffs: typing.Any
+    comments: typing.Any
+    ac_quotes: typing.Any
+
+
 def put_back_lines(repo, path, before_text, current, numbers, whole_stretch=True, may_replace=None):
     """Restores the lines `numbers` of `before_text` in `current`, writes the file byte-exact, and returns its
     ProtectedPutBack."""

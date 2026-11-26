@@ -3529,7 +3529,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop_script = sys.modules["review_loop_script"]
         coder_module = sys.modules["review_loop_coder"]
 
-        with mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+        with mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
                 mock.patch.object(coder_module, "write_fix_diffs", side_effect=RuntimeError("diff write broke")), \
                 self.assertRaises(RuntimeError) as raised:
             loop.repair("coder1", [])
@@ -3568,7 +3569,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         scope_guard.undo.side_effect = RuntimeError("restore failed")
 
         with mock.patch.object(scope_guard_module, "guard_pass", return_value=scope_guard), \
-                mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+                mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
                 mock.patch.object(loop, "issue_text", return_value="issue"), \
                 self.assertRaises(loop_script.CoderFailedError) as raised:
             loop.repair("coder1", [finding])

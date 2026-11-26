@@ -11,6 +11,7 @@ import toolkit_paths
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import file_backup
+import review_loop_calls
 import review_loop_coder
 import review_loop_ruled_out
 import review_loop_scope_guard
@@ -452,7 +453,7 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         undo_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard: restore failed"))
         model_died = review_loop_coder.ModelCallError("model died")
-        model_dies = mock.patch.object(review_loop_coder, "claude_call", side_effect=model_died)
+        model_dies = mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_died)
         with undo_fails, model_dies, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -466,8 +467,8 @@ class ScopeGuardTest(unittest.TestCase):
             (self.repo / "docs/rule-anchors.md").write_text(DOC_REWRITTEN)
             if isinstance(outcome, Exception):
                 raise outcome
-            return outcome
-        return mock.patch.object(review_loop_coder, "claude_call", side_effect=model_call)
+            return review_loop_calls.CallReply(outcome, "")
+        return mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_call)
 
     def test_a_failed_coder_call_puts_the_stray_back_and_runs_no_gate(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
@@ -498,7 +499,8 @@ class ScopeGuardTest(unittest.TestCase):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         scope_guard = self.guard()
         undo_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard: restore failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -520,10 +522,10 @@ class ScopeGuardTest(unittest.TestCase):
 
         def model_edits_app(*_args, **_kwargs):
             (self.repo / "app.py").write_text("x = 9\n")
-            return "Fixed 1."
+            return review_loop_calls.CallReply("Fixed 1.", "")
 
         disk_full = mock.patch.object(file_backup, "restore_paths", side_effect=scope_backup_disk_full)
-        model_works = mock.patch.object(review_loop_coder, "claude_call", side_effect=model_edits_app)
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply", side_effect=model_edits_app)
         with disk_full, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -651,7 +653,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         (self.repo / "tests.py").write_text("t = 3\n")
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -669,7 +672,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard(allowed=allowed)
         (self.repo / "tests.py").write_text("t = 3\n")
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError):
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)
@@ -680,7 +684,8 @@ class ScopeGuardTest(unittest.TestCase):
     def test_a_failed_pass_guard_undo_with_a_working_scope_guard_raises_the_original_error_unjoined(self):
         pass_guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
         undo_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with undo_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=self.guard())
@@ -692,7 +697,8 @@ class ScopeGuardTest(unittest.TestCase):
         scope_guard = self.guard()
         pass_fails = mock.patch.object(pass_guard, "undo", side_effect=RuntimeError("pass guard failed"))
         scope_fails = mock.patch.object(scope_guard, "undo", side_effect=RuntimeError("scope guard failed"))
-        model_works = mock.patch.object(review_loop_coder, "claude_call", return_value="Fixed 1.")
+        model_works = mock.patch.object(review_loop_coder, "claude_call_reply",
+                                       return_value=review_loop_calls.CallReply("Fixed 1.", ""))
         with pass_fails, scope_fails, model_works, self.assertRaises(review_loop_coder.CoderCallError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), pass_guard,
                                          scope_guard=scope_guard)

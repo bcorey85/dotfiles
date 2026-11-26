@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+import typing
 
 import full_check_gate
 import review_loop_untracked
@@ -65,8 +66,20 @@ def record_main_dispatch(out, role, agent, wall):
     record_call(out, sequence, record)
 
 
+class CallReply(typing.NamedTuple):
+    """A model call's result text and the session id of the child (`""` when the reply had none)."""
+
+    text: str
+    session: str
+
+
 def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
-    """One `claude -p` model step. Returns the result text. A call that fails or prints no JSON reply raises. The
+    """One `claude -p` model step. Returns the result text; see `claude_call_reply`."""
+    return claude_call_reply(role, prompt, repo, out, agent, model, tools, deletable, guarded).text
+
+
+def claude_call_reply(role, prompt, repo, out, agent=None, model=None, tools=None, deletable=(), guarded=True):
+    """One `claude -p` model step. Returns a CallReply. A call that fails or prints no JSON reply raises. The
     prompt goes on stdin: a round-two prompt holds the fix diff and can pass the 128 KB limit of one argument.
     `deletable` are the untracked files a finding of the pass asks to delete; the call may remove them.
     `guarded=False` is for a call that runs inside a batch whose caller holds one untracked-file guard for all of
@@ -131,4 +144,4 @@ def claude_call(role, prompt, repo, out, agent=None, model=None, tools=None, del
         # A reply with is_error set can come with exit 0, so the exit code alone does not say why the call failed.
         raise ModelCallError(f"the {role} call failed (exit {return_code}, reply flagged as error: {reported_error})"
                            f"{said}; reply {raw}, stderr {errors}")
-    return text
+    return CallReply(text, session)

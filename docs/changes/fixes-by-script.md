@@ -7,14 +7,14 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-825 fix notes
+826 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 177 | 6 |
-| script/review-loop-script | 79 | 10 |
+| script/review-loop-script | 80 | 11 |
 | script/review-fix | 78 | 6 |
 | script/handback | 58 | 2 |
 | script/review-commit-gate | 46 | 4 |

@@ -167,12 +167,12 @@ def restored_entries(unnamed, current_entries, restored_text, path):
 class CommentRemovalRuns:
     """The LoopRun method that keeps a fix pass from removing comments no finding names."""
 
-    def undo_protected_edits(self, signoffs, comments, findings):
+    def undo_protected_edits(self, snapshots, findings):
         """After a coder pass: puts back the sign-off lines (see `undo_signoff_pass`) and the comment lines the pass
-        removed. Returns the ProtectedPutBack of each file."""
+        removed, from the PassSnapshots `snapshots`. Returns the ProtectedPutBack of each file."""
         held = self.coder_held_files()
-        put_back = self.undo_signoff_pass(signoffs, findings, held)
-        return put_back + self.undo_comment_pass(comments, findings, held)
+        put_back = self.undo_signoff_pass(snapshots.signoffs, findings, held)
+        return put_back + self.undo_comment_pass(snapshots.comments, findings, held)
 
     def undo_comment_pass(self, snapshot, findings, skip=()):
         """After a coder pass: puts back each comment line of the snapshot's files that is gone and that no finding

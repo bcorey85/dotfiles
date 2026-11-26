@@ -11,7 +11,7 @@ import review_loop_ruling_check
 import review_loop_scope_guard
 import review_loop_untracked
 import script_utils
-from review_loop_calls import ModelCallError, claude_call
+from review_loop_calls import ModelCallError, claude_call_reply
 from review_loop_closure import FIX_DIFF_STATS
 from review_loop_plan import changed_files_since
 
@@ -127,8 +127,9 @@ def coder_call(role, prompt, repo, out, held, pass_guard, scope_guard, model="")
     untracked = review_loop_untracked.unheld_untracked(repo, held)
     held_before = review_loop_held.digests(repo, held)
     try:
-        report = claude_call(role, prompt, repo, out, agent="coder", model=model or None,
-                             deletable=pass_guard.deletions)
+        reply = claude_call_reply(role, prompt, repo, out, agent="coder", model=model or None,
+                                  deletable=pass_guard.deletions)
+        report = reply.text
         if not report.strip():
             # A coder that exits 0 with no final report left its findings unverified, as a crash does.
             raise NoFinalReportError(f"the {role} call ended with no final report")

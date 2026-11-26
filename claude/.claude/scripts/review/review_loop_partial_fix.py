@@ -214,8 +214,7 @@ class PartialFixRuns:
         """The stop text of a coder pass that died, or that finished while the loop could not undo all of
         it: puts the protected lines back, settles the findings and the files the pass touched, and sets the
         record a pass that carried findings leaves at the end of the run."""
-        signoffs, comments = snapshots
-        put_back = self.undo_protected_edits(signoffs, comments, findings)
+        put_back = self.undo_protected_edits(snapshots, findings)
         changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]
         self.flag_broken_no_code_rulings(findings, changed, nits)
         reverted = self.ask_for_approval_only_edits(changed, findings)

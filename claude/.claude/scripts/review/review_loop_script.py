@@ -75,6 +75,7 @@ import full_check_gate
 import handback
 import loop_transcript
 import plan_format
+import review_loop_criteria_quotes
 import review_loop_held
 import review_loop_ruled_out
 import review_loop_scope_guard
@@ -133,6 +134,7 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
+from review_loop_put_back import PassSnapshots
 from review_loop_round_audit import RoundAudit
 from review_loop_round_settle import NO_CHANGE_REASON, RoundSettle
 from review_loop_ruled import (
@@ -625,6 +627,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.last_pass = "coder"
         self.untested_fix = True
         comments = snapshot_comments(self.repo, files_in_scope)
+        snapshots = PassSnapshots(signoffs, comments, review_loop_criteria_quotes.EMPTY_AC_QUOTES)
         stats_before = len(FIX_DIFF_STATS)
         if restore_named:
             # The restore pass of a named test runs inside this call and must not clear this pass's put-backs.
@@ -634,10 +637,10 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
                 result = coder_call(call_name, prompt, self.repo, self.out, self.coder_held_files(), guard,
                                      model=self.coder_model, scope_guard=scope_guard)
             except CoderCallError as error:
-                blocker = self.failed_pass_blocker(call_name, error, (signoffs, comments), findings, nits)
+                blocker = self.failed_pass_blocker(call_name, error, snapshots, findings, nits)
                 raise CoderFailedError(blocker) from error
             self.settle_saved_after_pass(call_name)
-            put_back = self.undo_protected_edits(signoffs, comments, findings)
+            put_back = self.undo_protected_edits(snapshots, findings)
             result = self.without_put_back(call_name, result, put_back, findings)
             self.keep_coder_commit_in_scope()
             self.flag_broken_no_code_rulings(findings, result.changed, nits)

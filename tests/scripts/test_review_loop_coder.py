@@ -20,7 +20,9 @@ import review_loop_calls
 import review_loop_closure
 import review_loop_coder
 import review_loop_comment_removal
+import review_loop_criteria_quotes
 import review_loop_partial_fix
+import review_loop_put_back
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_signoffs
@@ -84,9 +86,10 @@ class UntrackedDeletionTest(unittest.TestCase):
                                                 self.no_op_scope_guard(role))
 
     def coder_model_sent(self, **coder_kwargs):
-        """The model coder_call hands to claude_call."""
+        """The model coder_call hands to claude_call_reply."""
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        with mock.patch.object(review_loop_coder, "claude_call", return_value="done") as fake_call:
+        reply = review_loop_calls.CallReply("done", "")
+        with mock.patch.object(review_loop_coder, "claude_call_reply", return_value=reply) as fake_call:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
                                          self.no_op_scope_guard(), **coder_kwargs)
         return fake_call.call_args.kwargs["model"]
@@ -105,9 +108,35 @@ class UntrackedDeletionTest(unittest.TestCase):
 
         self.assertTrue(issubclass(review_loop_coder.NoFinalReportError, review_loop_calls.ModelCallError))
 
+    def test_claude_call_reply_returns_the_session_id(self):
+        def replying_process(*_args, **_kwargs):
+            return 0, json.dumps({"result": "done", "session_id": "abc-123"}), ""
+
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=replying_process,
+                                 preloaded_skills_prompt=lambda _agent: ""):
+            reply = review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out, agent="coder")
+            text = review_loop_calls.claude_call("coder1", "prompt", self.repo, self.out, agent="coder")
+
+        self.assertEqual(reply, review_loop_calls.CallReply("done", "abc-123"))
+        self.assertEqual(text, "done")
+
+    def test_claude_call_reply_session_is_empty_when_the_reply_has_none(self):
+        replies = [{"result": "done"}, {"result": "done", "session_id": None}]
+        for payload in replies:
+            def replying_process(*_args, _payload=payload, **_kwargs):
+                return 0, json.dumps(_payload), ""
+
+            with mock.patch.multiple(review_loop_calls.script_utils, run_process=replying_process,
+                                     preloaded_skills_prompt=lambda _agent: ""):
+                reply = review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out,
+                                                            agent="coder")
+
+            self.assertEqual(reply, review_loop_calls.CallReply("done", ""), f"payload {payload}")
+
     def test_a_coder_failure_that_is_not_a_model_call_error_is_not_swallowed(self):
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        with mock.patch.object(review_loop_coder, "claude_call", side_effect=RuntimeError("a git read failed")), \
+        with mock.patch.object(review_loop_coder, "claude_call_reply",
+                               side_effect=RuntimeError("a git read failed")), \
                 self.assertRaises(RuntimeError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
                                          self.no_op_scope_guard())
@@ -624,8 +653,10 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
         def settle_then_die(loop, findings, *_flags):
             loop.fix_first(findings)
-            snapshots = (review_loop_signoffs.snapshot_signoffs(self.repo, []),
-                         review_loop_comment_removal.snapshot_comments(self.repo, []))
+            snapshots = review_loop_put_back.PassSnapshots(
+                review_loop_signoffs.snapshot_signoffs(self.repo, []),
+                review_loop_comment_removal.snapshot_comments(self.repo, []),
+                review_loop_criteria_quotes.EMPTY_AC_QUOTES)
             died = review_loop_coder.CoderCallError("the coder died", [])
             loop.failed_pass_blocker("coder0", died, snapshots, [finding_record.parse_finding(dead_finding_text)],
                                      [])

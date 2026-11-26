@@ -7,20 +7,20 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-781 fix notes
+789 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
 | script/code-step | 174 | 8 |
-| script/review-loop-script | 77 | 19 |
+| script/review-loop-script | 78 | 20 |
 | script/review-fix | 76 | 17 |
 | script/handback | 58 | 3 |
 | script/review-commit-gate | 46 | 6 |
 | script/review-loop-gate | 35 | 0 |
 | script/coder-gate | 32 | 9 |
-| script/full-check | 31 | 7 |
+| script/full-check | 32 | 8 |
 | script/script-utils | 30 | 8 |
 | script/plan-format | 28 | 8 |
 | script/review-loop | 28 | 11 |
@@ -28,9 +28,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/shell-write-gate | 24 | 4 |
 | agent/review-loop | 20 | 0 |
 | script/pull-keep-index | 20 | 9 |
+| script/shell-command | 19 | 8 |
 | skill/code | 19 | 1 |
 | script/git-discipline-gate | 18 | 7 |
-| script/shell-command | 18 | 7 |
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
 | script/staged-claim-gate | 16 | 4 |
@@ -42,11 +42,11 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/check-output | 11 | 6 |
 | script/criteria-dry-run | 11 | 4 |
 | script/log-escape | 11 | 2 |
+| script/review-launch | 11 | 6 |
 | script/verify-common | 11 | 1 |
 | script/herdr-worktree | 10 | 4 |
+| script/inline-interpreter-hint | 10 | 6 |
 | script/review-asks | 10 | 4 |
-| script/inline-interpreter-hint | 9 | 5 |
-| script/review-launch | 9 | 4 |
 | script/check-scope | 8 | 3 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/phase-asks | 8 | 3 |
@@ -66,6 +66,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/herdr-worktree-watch | 5 | 4 |
 | script/lane-status | 5 | 5 |
 | script/loop-transcript | 5 | 2 |
+| script/memory-cap-scope | 5 | 5 |
 | script/open-child-gate | 5 | 0 |
 | script/phase-start | 5 | 3 |
 | script/review-loop-ruled | 5 | 5 |
@@ -78,9 +79,10 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/adr-flow | 4 | 1 |
 | script/agent-model-guard | 4 | 2 |
 | script/bash-safety-gate | 4 | 0 |
+| script/fork-children | 4 | 4 |
 | script/herdr-dev | 4 | 2 |
+| script/herdr-lane-resume | 4 | 4 |
 | script/log-scan | 4 | 0 |
-| script/memory-cap-scope | 4 | 4 |
 | script/plan-check | 4 | 4 |
 | script/review-loop-packet | 4 | 1 |
 | script/source-paths | 4 | 0 |
@@ -93,9 +95,9 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/code | 3 | 0 |
 | script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 1 |
-| script/fork-children | 3 | 3 |
 | script/gate-commands | 3 | 2 |
-| script/herdr-lane-resume | 3 | 3 |
+| script/herdr-worktree-prune | 3 | 2 |
+| script/hook-input | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
@@ -121,8 +123,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
 | script/herdr-wake-limited | 2 | 1 |
-| script/herdr-worktree-prune | 2 | 1 |
-| script/hook-input | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
 | script/log-escape-check | 2 | 1 |
@@ -131,6 +131,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/mutation-lock | 2 | 2 |
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
+| script/pre-commit | 2 | 2 |
 | script/review-loop-coder | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/review-loop-prompts | 2 | 2 |
@@ -152,6 +153,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | agent/spec-research | 1 | 0 |
 | agent/test-reviewer | 1 | 0 |
 | method/rg-hidden-sweep | 1 | 1 |
+| method/test-suite | 1 | 1 |
 | rule/frontend-style | 1 | 0 |
 | rule/toolkit-script-rules | 1 | 0 |
 | script/accepted-failures | 1 | 1 |
@@ -192,7 +194,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/plan-review-reports | 1 | 0 |
 | script/plan-verification | 1 | 0 |
 | script/post-merge | 1 | 1 |
-| script/pre-commit | 1 | 1 |
+| script/process-group | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/refactor-log-input | 1 | 1 |

@@ -111,6 +111,7 @@ class LintScriptTest(unittest.TestCase):
             gated_file.parent.mkdir(parents=True, exist_ok=True)
             gated_file.write_text("")
         (self.tree / "claude" / ".claude" / "skills").mkdir(parents=True)
+        (self.tree / "scripts" / ".local" / "lib").mkdir(parents=True)
         (self.tree / "tests" / "scripts").mkdir()
         (self.tree / "tests" / "duplicate_code.py").write_text("")
 

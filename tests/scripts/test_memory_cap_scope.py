@@ -324,7 +324,7 @@ class HookTest(unittest.TestCase):
         self.assertNotIn(memory_cap_scope.DENY_TEXT, result.stdout)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], inline_interpreter_hint.TEXT)
+        self.assertEqual(decision["permissionDecisionReason"], inline_interpreter_hint.deny_text(payload))
 
     def test_a_subagent_plain_foreground_run_gets_the_prefix_added(self):
         payload = {"tool_name": "Bash", "agent_id": "coder-1", "tool_input": {"command": "pytest tests/test_a.py"}}

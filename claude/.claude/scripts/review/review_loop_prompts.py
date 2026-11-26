@@ -122,7 +122,7 @@ def reviewer_prompt(repo, agent, owned, prior_issues, fix_diff_path="", open_ask
     if agent == "smell-reviewer":
         lines.append("Bound: the round-one fix diff." if fix_diff_path else "Bound: the diff under first review.")
     if agent == "smell-reviewer" and not fix_diff_path:
-        lines += single_caller_census.report_lines(repo, census_base or "HEAD", set(owned))
+        lines += single_caller_census.census_report_lines(repo, census_base or "HEAD", set(owned))
     if no_code_rulings:
         lines.append(NO_CODE_REVIEW_RULE)
         lines += [f"  - {script_utils.one_line(text, ISSUE_CHARS)}" for text in no_code_rulings]

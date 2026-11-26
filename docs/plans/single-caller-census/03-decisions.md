@@ -16,3 +16,8 @@
   default (work tree against HEAD). Passing `self.review_base` is a one-line edit at `review_loop_script.py:444`, a
   file outside this lane; it goes to the orchestrator as a follow-up. AC4 holds in the loop's default mode; a run
   with `--base` reads the census against HEAD.
+- Ruling by session feature/single-caller-census at 2026-11-25 (review asks): ask 1, keep `census_base` and leave
+  `review_loop_script.py:444` to its owning lane as a follow-up (the earlier ruling stands). Ask 2 accepted: "newer"
+  compares H's def-line blame time with F's. The SKILL.md step sentence is reverted: no SKILL.md prose in this lane,
+  and branch-prep prints the census in the prompt the skill already hands on. `report_lines` is renamed to clear the
+  duplicate-check clash with `stale_prose.py`; `census_lines` folds into it.

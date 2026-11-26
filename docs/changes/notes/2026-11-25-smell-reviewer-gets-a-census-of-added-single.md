@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-`lib/single_caller_census.py` lists three kinds of dead weight that a branch adds to Python code: a one-statement forwarder with one caller, a record field that nothing reads, and a helper whose every caller also calls a newer helper with every argument it passes the older helper. `lib/changed_lines.py` holds the added-line sets that `clone_pairs.py` and `shape_clones.py` also read. The review loop's round-one smell-reviewer prompt carries the census of its owned files under one heading, and `/refactor` branch-prep prints it after the shape-clone candidates.
+`lib/single_caller_census.py` lists three kinds of dead weight that a branch adds to Python code: a one-statement forwarder with one caller, a record field that nothing reads, and a helper whose every caller also calls a newer helper with every argument it passes the older helper, where the newer helper's def line is newer than the older one's. `lib/changed_lines.py` holds the added-line sets that `clone_pairs.py` and `shape_clones.py` also read. The review loop's round-one smell-reviewer prompt carries the census of its owned files under one heading, and `/refactor` branch-prep prints it after the shape-clone candidates.
 
 ## Evidence
 

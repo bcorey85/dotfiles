@@ -301,15 +301,6 @@ def _is_added(definition, added):
     return changed_lines.range_added(added, definition.path, node.lineno, node.end_lineno)
 
 
-def _is_touched(definition, added):
-    node = definition.node
-    return changed_lines.range_touched(added, definition.path, node.lineno, node.end_lineno)
-
-
-def _is_dunder(name):
-    return name.startswith("__") and name.endswith("__")
-
-
 def _body_without_docstring(node):
     if ast.get_docstring(node, clean=False) is not None:
         return node.body[1:]
@@ -331,7 +322,7 @@ def _forwarder_entries(index, added):
     entries = []
     for definition in index.definitions:
         node = definition.node
-        if node.decorator_list or _is_dunder(node.name):
+        if node.decorator_list or (node.name.startswith("__") and node.name.endswith("__")):
             continue
         if not _is_added(definition, added) or not _is_forwarding_body(node):
             continue
@@ -410,7 +401,7 @@ def _widening_helpers(caller, helper_name, index, touched, times, helper_time):
 
     names = set()
     for name, wider_arguments in wider_sets.items():
-        newest = max(times.newest(d.path, d.node.lineno, d.node.end_lineno) for d in touched[name])
+        newest = max(times.newest(d.path, d.node.lineno, d.node.lineno) for d in touched[name])
         if newest <= helper_time:
             continue
 
@@ -431,8 +422,9 @@ def _superseding_names(definition, sites, index, touched, times):
 def _superseded_entries(index, added, times):
     touched = collections.defaultdict(list)
     for definition in index.definitions:
-        if _is_touched(definition, added):
-            touched[definition.node.name].append(definition)
+        node = definition.node
+        if changed_lines.range_touched(added, definition.path, node.lineno, node.end_lineno):
+            touched[node.name].append(definition)
 
     entries = []
     for definition in index.definitions:
@@ -484,26 +476,27 @@ def census(repo, base="HEAD"):
     return Census(entries, notes)
 
 
-def census_lines(result, paths=None):
-    """The prompt lines of a Census: one per entry, only those in `paths` when given, then one per note."""
+def _entry_lines(result, paths=None):
+    """The prompt lines of the entries of a Census, only those in `paths` when given."""
     lines = []
     for entry in result.entries:
         if paths is not None and entry.path not in paths:
             continue
         lines.append(f"{entry.path}:{entry.line} {entry.kind} `{entry.name}`: {entry.detail}")
-    lines += [f"note: {note}" for note in result.notes]
     return lines
 
 
-def report_lines(repo, base, paths=None):
-    """The census of the work tree against `base` under CENSUS_HEADING: the entries in `paths` when given, then
-    every census note, or "none". A census that cannot run is said so in one line."""
+def census_report_lines(repo, base, paths=None):
+    """The census of the work tree against `base` under CENSUS_HEADING: the entries in `paths` when given, or a
+    "none" line that names the base when none is listed, then every census note. A census that cannot run is said
+    so in one line."""
     try:
         result = census(repo, base)
     except CensusError as error:
         return [CENSUS_HEADING, f"The census did not run: {error}"]
-    lines = census_lines(result, paths)
-    return [CENSUS_HEADING, *(lines or ["none"])]
+    entries = _entry_lines(result, paths) or [f"none (read against {base})"]
+    notes = [f"note: {note}" for note in result.notes]
+    return [CENSUS_HEADING, *entries, *notes]
 
 
 def main(argv=None):

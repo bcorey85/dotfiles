@@ -397,6 +397,23 @@ def new_helper(value):
                        + "\n\ndef new_helper(value, extra):\n    return value\n")
         self.assertEqual(self.superseded(work_source), [])
 
+    def test_a_helper_is_superseded_when_every_commit_is_dated(self):
+        directory = self.directory.name
+        git(directory, "init", "-q", "-b", "main")
+        write(directory, "base.py", BASE_SOURCE)
+        commit_at(directory, "2019-01-01T00:00:00", "base")
+        base = git(directory, "rev-parse", "HEAD")
+        write(directory, "app.py", CALLERS_SOURCE)
+        commit_at(directory, "2020-01-01T00:00:00", "old helper and callers")
+        both_calls = "    print(old_helper(items))\n    return new_helper(items)\n"
+        newer = (CALLERS_SOURCE.replace("    return old_helper(items)\n", both_calls)
+                 + "\n\ndef new_helper(value):\n    return value\n")
+        write(directory, "app.py", newer)
+        commit_at(directory, "2021-01-01T00:00:00", "newer helper")
+        result = single_caller_census.census(directory, base)
+        found = [entry.name for entry in result.entries if entry.kind == single_caller_census.SUPERSEDED_HELPER]
+        self.assertEqual(found, ["old_helper"])
+
     def test_a_helper_called_with_an_older_helper_is_not_superseded(self):
         directory = self.directory.name
         git(directory, "init", "-q", "-b", "main")
@@ -492,21 +509,43 @@ def new_helper(value):
         self.assertEqual(done.returncode, 2)
         self.assertIn("git diff", done.stderr)
 
-    def test_census_lines_keep_only_the_named_paths(self):
+    def test_census_report_lines_keep_only_the_named_paths(self):
         base = make_repo(self.directory.name, BRANCH_SOURCE, WORK_SOURCE)
-        result = single_caller_census.census(self.directory.name, base)
-        lines = single_caller_census.census_lines(result)
-        self.assertEqual(len(lines), 3)
+        lines = single_caller_census.census_report_lines(self.directory.name, base)
+        self.assertEqual(lines[0], single_caller_census.CENSUS_HEADING)
+        self.assertEqual(len(lines), 4)
         self.assertIn("app.py:8 unread-field `Row.unused_field`: field `unused_field` is never read as an "
                       "attribute or a string key", lines)
-        self.assertEqual(single_caller_census.census_lines(result, paths={"other.py"}), [])
+        other = single_caller_census.census_report_lines(self.directory.name, base, paths={"other.py"})
+        self.assertEqual(other, [single_caller_census.CENSUS_HEADING, f"none (read against {base})"])
 
-    def test_census_lines_keep_the_notes_when_paths_are_given(self):
+    def test_census_report_lines_keep_the_notes_when_paths_are_given(self):
         make_repo(self.directory.name, BRANCH_SOURCE, BRANCH_SOURCE)
         write(self.directory.name, "view.ts", "export const a = 1;\n")
-        result = single_caller_census.census(self.directory.name)
-        lines = single_caller_census.census_lines(result, paths={"other.py"})
-        self.assertEqual(lines, ["note: 1 TypeScript files were not read: view.ts"])
+        lines = single_caller_census.census_report_lines(self.directory.name, "HEAD", paths={"other.py"})
+        self.assertEqual(lines, [single_caller_census.CENSUS_HEADING, "none (read against HEAD)",
+                                 "note: 1 TypeScript files were not read: view.ts"])
+
+    def test_a_census_that_cannot_run_is_reported_in_one_line(self):
+        lines = single_caller_census.census_report_lines(self.directory.name, "HEAD")
+        self.assertEqual(lines[0], single_caller_census.CENSUS_HEADING)
+        self.assertTrue(lines[1].startswith("The census did not run:"), lines)
+
+    def test_a_body_edit_of_a_sibling_helper_does_not_make_it_newer(self):
+        directory = self.directory.name
+        git(directory, "init", "-q", "-b", "main")
+        write(directory, "base.py", BASE_SOURCE)
+        commit_at(directory, "2019-01-01T00:00:00", "base")
+        base = git(directory, "rev-parse", "HEAD")
+        source = ("def first(value):\n    return value + 1\n\n\ndef second(value):\n    return value + 2\n\n\n"
+                  "def caller(items):\n    print(first(items))\n    return second(items)\n")
+        write(directory, "app.py", source)
+        commit_at(directory, "2020-01-01T00:00:00", "two siblings")
+        write(directory, "app.py", source.replace("value + 2", "value + 3"))
+        commit_at(directory, "2021-01-01T00:00:00", "edit one body")
+        result = single_caller_census.census(directory, base)
+        found = [entry for entry in result.entries if entry.kind == single_caller_census.SUPERSEDED_HELPER]
+        self.assertEqual(found, [])
 
 
 if __name__ == "__main__":

@@ -73,13 +73,19 @@ class CensusInReviewerPromptTest(unittest.TestCase):
         prompt = review_loop_prompts.reviewer_prompt(str(self.repo / "missing"), "smell-reviewer", ["a.py"], [])
         self.assertIn("The census did not run:", prompt)
 
+    def test_a_note_does_not_replace_the_none_line_that_names_the_base(self):
+        self.add_forwarder_file()
+        (self.repo / "view.ts").write_text("export const a = 1;\n")
+        prompt = review_loop_prompts.reviewer_prompt(str(self.repo), "smell-reviewer", ["other.py"], [])
+        self.assertIn(single_caller_census.CENSUS_HEADING + "\nnone (read against HEAD)\nnote: ", prompt)
+
     def test_census_base_moves_the_range_the_census_reads(self):
         self.add_forwarder_file()
         self.git("add", "-A")
         self.git("commit", "-q", "-m", "branch work")
         at_head = review_loop_prompts.reviewer_prompt(str(self.repo), "smell-reviewer", ["mod.py"], [])
         self.assertNotIn("single-caller-forwarder", at_head)
-        self.assertIn(single_caller_census.CENSUS_HEADING + "\nnone", at_head)
+        self.assertIn(single_caller_census.CENSUS_HEADING + "\nnone (read against HEAD)", at_head)
         from_main = review_loop_prompts.reviewer_prompt(
             str(self.repo), "smell-reviewer", ["mod.py"], [], census_base="HEAD~1"
         )

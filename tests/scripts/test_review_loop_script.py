@@ -7766,6 +7766,7 @@ class FakeCommentRun(review_loop_comment_removal.CommentRemovalRuns):
         self.dropped_asks = []
 
     drop_asks = review_loop_ruled.RuledFindings.drop_asks
+    file_put_back_ask = review_loop_ruled.RuledFindings.file_put_back_ask
 
     def add_ask(self, gate, finding):
         self.asks.append(finding)

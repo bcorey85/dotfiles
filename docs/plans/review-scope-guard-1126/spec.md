@@ -14,7 +14,7 @@ The review loop's fix pass gets two more guards. First, when a pass removes text
 ## Phase Status
 
 - [x] Phase 0: Contracts — PassSnapshots, CallReply and claude_call_reply, with no behaviour change (risk: high)
-- [ ] Phase 1: Walking skeleton — the AC-quote guard, end to end (risk: low)
+- [x] Phase 1: Walking skeleton — the AC-quote guard, end to end (risk: low)
 - [ ] Phase 2: The outside-write guard (risk: low)
 - [ ] Phase 3: Owner lines and the full suite (risk: low)
 - [ ] Phase 4: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
@@ -354,6 +354,11 @@ Quality checks green; every reviewer finding fixed, shown wrong, or (an ask that
 #### Manual Verification:
 
 N/A (scripts only).
+
+## Plan Deviations
+
+- Ruled by the orchestrating lane 2026-11-26: `ac_quote_snapshot` dropped its unused `findings` parameter. No acceptance criterion changes.
+- Ruled by the orchestrating lane 2026-11-26: `NEVER_REPLACE` became `never_replace`. No acceptance criterion changes.
 
 ## Testing Strategy
 

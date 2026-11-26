@@ -1,5 +1,5 @@
-"""review_loop_put_back.py: putting protected lines (sign-off lines, or comment lines no finding names) back in a file
-after a coder pass, and the record of each file put back."""
+"""review_loop_put_back.py: putting protected lines (sign-off lines, comment lines no finding names, or lines holding
+text a criterion quotes) back in a file after a coder pass, and the record of each file put back."""
 import pathlib
 import typing
 
@@ -8,8 +8,8 @@ import script_utils
 
 
 class ProtectedPutBack(typing.NamedTuple):
-    """One file the loop put protected lines back in (sign-off lines, or comment lines no finding names): their line
-    numbers in the text before the pass, and that text and the restored one."""
+    """One file the loop put protected lines back in (sign-off lines, comment lines no finding names, or lines holding
+    text a criterion quotes): their line numbers in the text before the pass, and that text and the restored one."""
 
     path: str
     lost_numbers: list
@@ -31,10 +31,11 @@ class PassSnapshots(typing.NamedTuple):
     ac_quotes: typing.Any
 
 
-def put_back_lines(repo, path, before_text, current, numbers, whole_stretch=True, may_replace=None):
-    """Restores the lines `numbers` of `before_text` in `current`, writes the file byte-exact, and returns its
-    ProtectedPutBack."""
-    restored = protected_lines.restore_protected_lines(before_text, current, numbers, whole_stretch, may_replace)
+def put_back_lines(repo, path, before_text, current, numbers, whole_stretch=True, may_replace=None, in_place=False):
+    """Restores the lines `numbers` of `before_text` in `current` (`in_place` as in
+    `protected_lines.restore_protected_lines`), writes the file byte-exact, and returns its ProtectedPutBack."""
+    restored = protected_lines.restore_protected_lines(before_text, current, numbers, whole_stretch, may_replace,
+                                                       in_place)
     script_utils.write_text_atomically(pathlib.Path(repo) / path, restored.encode("utf-8", "surrogateescape"))
     return ProtectedPutBack(path, numbers, before_text, restored)
 

@@ -172,3 +172,8 @@ All blocks below: ruled by the lane session (fix/review-scope-guard-outside), 20
 - **Reasoning:** no criteria means nothing to guard; stopping would break reviews of plans whose ticket has no heading. A malformed criteria section still stops.
 - **Alternatives rejected:** stop the loop (breaks unrelated reviews).
 - **Trade-off accepted:** an AC under a non-standard heading is not guarded.
+
+### Q6. Third queue item: the guard put back a move target
+- **Asked by:** agent-evals-74, 2026-11-26: cover `review-loop-scope-guard-reverts-a-file-that-a` in this branch if the base does not.
+- **Choice:** the base already meets its Done-when; no code change. A file a finding names stays changed (test_review_loop_scope_guard.py:387, :408). An unnamed file the gate needs stays (:829, :1204 at the loop level). Any other put-back file stops the loop with a stop naming it (:839, :847, :862, :1179, :1196). The scope guard's gate judging landed in 769426995 and d166edb14 (2026-11-25 22:28 and 2026-11-26 01:36); which code the incident ran is unknown.
+- **Evidence:** Phase 1's own review loop hit the same put-back (helpers moved into `lib/script_utils.py`). It ran the stowed `~/dotfiles` master, which lacks d166edb14.

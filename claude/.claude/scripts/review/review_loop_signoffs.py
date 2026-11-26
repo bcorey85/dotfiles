@@ -192,16 +192,16 @@ class SignoffRuns:
 
     def put_back_undid(self, finding, put_back):
         """True when the put-back undid the fix of `finding`: its file went back to its text before the pass, or the
-        line it cites is a sign-off or comment line that went back."""
+        line it cites is a sign-off, comment or criterion-quoted line that went back. A file can have several entries
+        (one per kind of put-back); any one of them undoes the fix."""
         path = held_path_in_repo(finding.path, self.repo)
-        for entry in put_back:
-            if entry.path != path:
-                continue
-            return entry.unchanged or finding.line in entry.lost_numbers
-        return False
+        return any(entry.unchanged or finding.line in entry.lost_numbers for entry in put_back if entry.path == path)
 
     def not_put_back(self, items):
-        """The items the sign-off or comment put-back did not restore: a restored finding is not fixed."""
+        """The items the sign-off, comment or criterion-quote put-back did not restore.
+
+        A restored finding is not fixed.
+        """
         return [item for item in items if item not in self.put_back_findings]
 
     def undo_signoff_pass(self, snapshot, findings, skip):

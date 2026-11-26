@@ -32,7 +32,7 @@ Judgment from the queued incident: a fix pass reworded a line an acceptance crit
 
 ## Result
 
-The loop test ends with the quoted line restored, the other fix kept, and one ask naming the criterion.
+`CriteriaQuoteLoopTest` passes (28 tests in the file): the loop test ends with the quoted line restored, the other fix kept, and one ask naming the criterion; the accepted, rejected, no-plan and malformed-criteria loop tests pass too.
 
 ## Watch
 

@@ -1045,6 +1045,57 @@ def criteria_by_id(criteria_text, name=CRITERIA_FILE_NAME):
     return criteria
 
 
+def ac_quotes(text):
+    """The inner text of each quoted span of `text` (double quotes, curly quotes, backticks), in order and without
+    repeats. A backtick span counts only when its inner text holds whitespace; an empty or blank span is skipped."""
+    # Imported here: the gates and skills that load plan_format for the ticket grammar ship without message_text.
+    import message_text
+
+    spans = []
+    for match in message_text.QUOTED_SPAN.finditer(text):
+        span = match.group()
+        inner = span[1:-1]
+        if not inner.strip():
+            continue
+        if span.startswith("`") and not any(char.isspace() for char in inner):
+            continue
+        if inner not in spans:
+            spans.append(inner)
+    return spans
+
+
+def plan_ac_quotes(plan_path):
+    """{span: [labels]} for the quoted spans of the criteria beside the plan: `AC<n>` for each criterion of its
+    acceptance-criteria.md and `Ticket #n` for each criterion of the ticket beside it. A missing file, and a ticket
+    with no criteria heading, add nothing. Any other PlanFormatError propagates, its message starting with the file's
+    full path and the line; an OSError propagates naming its file."""
+    plan_path = pathlib.Path(plan_path)
+    labelled = []
+    criteria_path = plan_path.parent / CRITERIA_FILE_NAME
+    if criteria_path.is_file():
+        criteria = criteria_by_id(criteria_path.read_text(), name=str(criteria_path))
+        labelled += list(criteria.items())
+    ticket_path = ticket_beside(plan_path)
+    if ticket_path is not None:
+        labelled += _ticket_labelled_texts(ticket_path)
+    quotes = {}
+    for label, text in labelled:
+        for span in ac_quotes(text):
+            quotes.setdefault(span, [])
+            if label not in quotes[span]:
+                quotes[span].append(label)
+    return quotes
+
+
+def _ticket_labelled_texts(ticket_path):
+    """[(label, text)] of the ticket's criteria, or [] for a ticket with no criteria heading."""
+    try:
+        items = ticket_criteria(ticket_path.read_text(), name=str(ticket_path))
+    except NoCriteriaHeadingError:
+        return []
+    return [(item["label"], item["text"]) for item in items]
+
+
 def content_words(text):
     words = CONTENT_WORD.findall(text.lower())
     return set(words) - AC_STOP_WORDS

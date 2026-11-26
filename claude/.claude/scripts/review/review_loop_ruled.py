@@ -32,7 +32,7 @@ from approval_asks_store import (
 )
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
-from review_asks import rejected_ask_text
+from review_asks import ask_question, rejected_ask_text
 from review_loop_findings import (
     KEPT_OWNER_LINE_EDIT_REASON,
     NOTE_ASK_REASON,
@@ -417,6 +417,17 @@ class RuledFindings:
         if plan_path is None:
             return None
         return standing_rulings.first_ruling_covering(plan_path, covers)
+
+    def file_put_back_ask(self, ask):
+        """Files `ask` for text the loop put back, unless an ask with the same question (same file, any line) is already
+        filed, or the session rejected one: a rejected ask is dropped, and the put-back stays."""
+        question = ask_question(ask)
+        if any(ask_question(filed) == question for filed in self.asks):
+            return
+        if question in self.rejected_questions:
+            self.drop_asks([ask], REJECTED_ASK_REASON)
+            return
+        self.add_ask(CODER_GATE, ask)
 
     def plan_path_on_disk(self):
         """The loop's plan file as a Path, or None with no plan or no such file."""

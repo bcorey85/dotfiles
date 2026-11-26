@@ -971,6 +971,17 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
+def first_lines_holding(text, needles):
+    """`{needle: first 1-based line of text that holds it}`; a needle the text does not hold is left out."""
+    first_lines = {}
+    for needle in needles:
+        position = text.find(needle)
+        if position < 0:
+            continue
+        first_lines[needle] = text.count("\n", 0, position) + 1
+    return first_lines
+
+
 def write_command_outputs(output_file, command_outputs):
     """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
     section per command, making the file's folder."""

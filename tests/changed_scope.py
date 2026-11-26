@@ -64,6 +64,7 @@ SIGNAL_BUT_NO_PROMPT_READ = {
     "test_log_review_metrics.py": "runs a review skill's script",
     "test_parallel_tests.py": "names a signal module but reads no prompt",
     "test_phase_asks_chain.py": "names a signal module but reads no prompt",
+    "test_review_loop_criteria_quotes.py": "names a signal module but reads no prompt",
     "test_review_loop_scope_guard.py": "names a signal module but reads no prompt",
     "test_review_scope.py": "runs a review skill's script",
     "test_shape_clones.py": "runs a skill's Python script",

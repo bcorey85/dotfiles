@@ -5,6 +5,7 @@ import difflib
 import pathlib
 import typing
 
+import review_loop_criteria_quotes
 import review_loop_held
 import review_loop_ruled_out
 import review_loop_ruling_check
@@ -21,10 +22,11 @@ DIFF_CONTEXT = 12
 def coder_fault_notes():
     """The notes the loop's model calls left for the packet's tool_fault: untracked files a call removed, held files
     a coder changed, ruled-out files put back, out-of-scope files put back, a failed put-back step, out-of-scope
-    files the loop could not copy and ruling checks that could not judge a pass."""
+    files the loop could not copy, ruling checks that could not judge a pass and a criteria file that turned the
+    AC-quote guard off."""
     return [*review_loop_untracked.UNTRACKED_FAULTS, *review_loop_held.HELD_FAULTS,
             *review_loop_ruled_out.RULED_OUT_FAULTS, *review_loop_scope_guard.SCOPE_FAULTS,
-            *review_loop_ruling_check.RULING_CHECK_FAULTS]
+            *review_loop_ruling_check.RULING_CHECK_FAULTS, *review_loop_criteria_quotes.AC_QUOTE_FAULTS]
 
 
 def file_texts(repo, start=None):

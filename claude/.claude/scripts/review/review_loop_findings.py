@@ -100,6 +100,12 @@ def inert_change_marks(text):
     return ASK_CHANGE_MARK.sub(lambda mark: f"{mark.group(0)[:-1]} :", text)
 
 
+def ask_quoted_text(text):
+    """`text` as an ask quotes it: on one line, with any `change:` marker made inert. An accepted ask's text is built
+    the same way, so the two match."""
+    return inert_change_marks(script_utils.one_line(text, None))
+
+
 def section(text, name):
     # The section body keeps the indent of its first line: review_section_findings compares marker indents.
     match = re.search(rf"^#+\s*{name}\s*$(.*?)(?=^#+\s|\Z)", text, re.S | re.M | re.I)

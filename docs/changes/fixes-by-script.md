@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-825 fix notes
+826 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -26,15 +26,15 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/plan-format | 31 | 7 |
 | script/quality-check-cap | 24 | 5 |
 | script/shell-write-gate | 24 | 4 |
-| script/pull-keep-index | 21 | 9 |
+| script/pull-keep-index | 22 | 10 |
 | agent/review-loop | 20 | 0 |
 | script/git-discipline-gate | 20 | 9 |
 | script/staged-claim-gate | 20 | 7 |
 | skill/code | 20 | 2 |
 | script/shell-command | 19 | 7 |
 | script/verify-prep | 18 | 3 |
+| script/code-review-start | 17 | 9 |
 | skill/review | 17 | 0 |
-| script/code-review-start | 16 | 8 |
 | script/code-wait | 16 | 6 |
 | script/verify-log | 14 | 1 |
 | script/refactor-flow | 13 | 4 |
@@ -55,6 +55,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/reviewer-dispatch | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
+| script/phase-start | 7 | 5 |
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
 | script/check-discovery | 6 | 3 |
@@ -63,7 +64,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/ledger-write | 6 | 0 |
 | script/memory-cap-scope | 6 | 6 |
 | script/parallel-tests | 6 | 1 |
-| script/phase-start | 6 | 4 |
 | script/pipe-shell-check | 6 | 0 |
 | script/review-loop-ruled | 6 | 5 |
 | script/reviewed-tree | 6 | 4 |
@@ -139,6 +139,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-findings | 2 | 0 |
 | script/rule-anchors | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
+| script/session-registry | 2 | 2 |
 | script/shell-steps | 2 | 2 |
 | script/signoff-lines | 2 | 2 |
 | script/source-text | 2 | 1 |
@@ -175,6 +176,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/code-step-gates | 1 | 0 |
 | script/code-stop-record | 1 | 1 |
 | script/detach | 1 | 0 |
+| script/dirty-writers | 1 | 1 |
 | script/docker-run-names | 1 | 1 |
 | script/expected-red | 1 | 0 |
 | script/file-lock | 1 | 0 |
@@ -211,12 +213,12 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-fix-names | 1 | 0 |
 | script/review-loop-docs-kind | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
+| script/review-loop-held | 1 | 1 |
 | script/review-loop-partial-fix | 1 | 1 |
 | script/review-loop-prompts | 1 | 1 |
 | script/review-loop-signoffs | 1 | 1 |
 | script/review-loop-stray-files | 1 | 1 |
 | script/ruling-relay | 1 | 0 |
-| script/session-registry | 1 | 1 |
 | script/shape-clones | 1 | 1 |
 | script/shell-variables | 1 | 1 |
 | script/simplify-slices | 1 | 0 |

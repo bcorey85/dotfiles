@@ -5,6 +5,7 @@ in held_unfixed with that proof. An item on a held file with no holder row goes 
 writes a held file back: a held file that changed during a coder call is left as it is and noted."""
 import pathlib
 
+import dirty_writers
 import review_loop_plan
 import script_utils
 import session_registry
@@ -28,19 +29,20 @@ def run_held_files(repo, caller_held, only_files):
 
 def implicit_holders(repo, held_files, known_holders, only_files, own_session_id):
     """{path: holder row} for the files held only because the run is scoped to `only_files` (dirty, outside the
-    scope, with no row yet in `known_holders`), when a live session other than this run's works inside the repo.
-    With no such session they are the run's own leftovers and are not held by anyone."""
+    scope, with no row yet in `known_holders`) that exactly one live session other than this run's wrote after the HEAD
+    commit (lib/dirty_writers.py). A file that session did not write, or this run's session wrote, is not named as held
+    by anyone."""
     if not only_files:
         return {}
     implicit = sorted(path for path in held_files if path not in known_holders)
     if not implicit:
         return {}
-    holder = session_registry.other_live_session_in(repo, own_session_id)
-    if holder is None:
+    found = dirty_writers.holder_with_paths(repo, implicit, own_session_id)
+    if found is None:
         return {}
-    session = session_registry.holder_label(holder)
+    session = session_registry.holder_label(found.row)
     claim = "dirty, outside the run's --file scope"
-    return {path: holder_row(path, session, claim) for path in implicit}
+    return {path: holder_row(path, session, claim) for path in found.paths}
 
 
 def held_path_in_repo(path, repo):

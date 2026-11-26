@@ -53,6 +53,13 @@ class HumanTurnLookupTest(unittest.TestCase):
         folder_path.mkdir(parents=True, exist_ok=True)
         (folder_path / f"{session_id}.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
 
+    def test_a_transcript_under_two_projects_is_refused_as_several(self):
+        self.transcript([user_row("hi", HUMAN)])
+        self.transcript([user_row("hi", HUMAN)], folder="-other-project")
+        with self.assertRaises(HumanTurnRefusedError) as raised:
+            human_turn_lookup.transcript_of_session(SESSION_ID)
+        self.assertIn("2 transcripts named", str(raised.exception))
+
     def verified(self, after=ASKED_AT):
         _, turn = human_turn_lookup.verified_human_turn(NAME, after)
         return turn

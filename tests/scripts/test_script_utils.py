@@ -1802,5 +1802,13 @@ class CommitsSinceTest(unittest.TestCase):
             self.assertIsNone(script_utils.commits_since(self.repo, "abc123"))
 
 
+class EpochOfTimestampTest(unittest.TestCase):
+
+    def test_a_timestamp_with_an_offset_and_one_with_z_read_the_same_moment(self):
+        zulu = script_utils.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
+        offset = script_utils.epoch_of_timestamp("2026-11-15T07:22:12.305+01:00")
+        self.assertEqual(zulu, offset)
+
+
 if __name__ == "__main__":
     unittest.main()

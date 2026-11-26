@@ -18,13 +18,14 @@ stops the run, naming it. The loop's base goes in the prompt's `base:` line. The
 in <git dir>/code-phase/run.json, where `code_wait.py review` checks it.
 
 The prompt header is: lane, repo, plan, phase, later-phase files and held files (with a holder recorded in
-phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, a
-same-bytes file while a live session other than this run's works in the repo; and, with a recorded holder or while
-such a session is live, every untracked file no recorded coder of the run wrote and no earlier or current phase
-section names, outside the plan folder and the start record's dirty map; the held-by line names each holder), a
-`tool fault:` line when a held file changed since the run start, a `held files this phase names:` line for held files
-the phase's plan section names, a `given-base:` line when the base line is not the commit --base names, then the
-handoff block and the repo's gate env.
+phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, only the
+same-bytes files that the one proven writer wrote, when exactly one live session other than this run's is shown to
+have written a start-dirty file whose bytes are unchanged and that the run does not own (lib/dirty_writers.py);
+and, with a recorded holder or such a proven writer, every untracked file no recorded coder of the run wrote and no
+earlier or current phase section names, outside the plan folder and the start record's dirty map; the held-by line
+names each holder), a `tool fault:` line when a held file changed since the run start, a
+`held files this phase names:` line for held files the phase's plan section names, a `given-base:` line when the
+base line is not the commit --base names, then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
@@ -199,10 +200,16 @@ def checked_start_record(repo, base_commit):
     return record
 
 
-def review_holder(repo, record, own_session_id):
-    """The holder of the files this run leaves out: the recorded one, else the other session live in the repo now,
-    else None. A holder is {"session", "cwd"}."""
-    return record["holder"] or phase_start.current_holder(repo, own_session_id)
+def review_holder(repo, record, own_session_id, own_files):
+    """The holder of the files this run leaves out: the recorded one, else the one other live session that wrote a
+    file the fallback can hold (phase_start.holdable_dirty_files of `own_files`: a start-dirty file that is not an
+    own file and whose bytes are unchanged), else None. The fallback cannot hold changed or own files, so they are
+    left out of the writer check. A holder is {"session", "cwd"}; the fallback's also has "paths", the holdable
+    files it wrote."""
+    if record["holder"]:
+        return record["holder"]
+    holdable = phase_start.holdable_dirty_files(repo, record, own_files)
+    return phase_start.current_holder_with_paths(repo, own_session_id, holdable, record["head"])
 
 
 class HeldScope(NamedTuple):
@@ -232,18 +239,19 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_file
         return NO_HELD_FILES
 
     own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    holder = review_holder(repo, record, own_session_id)
+    own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
+    holder = review_holder(repo, record, own_session_id, own_files)
     if holder is None and not own_session_id:
         held_note(notes, "code_review_start: CLAUDE_CODE_SESSION_ID is not set and the start record names no holder, "
                          "so the run's own session cannot be told from a holder and no file is held; run it from the "
                          "session's Bash")
     if holder is None and own_session_id:
-        held_note(notes, "code_review_start: the start record names no holder and no other session is live in the "
-                         "repo, so no file is held.")
+        held_note(notes, "code_review_start: the start record names no holder and no single other live session is "
+                         "proven to have written a start-dirty file whose bytes are unchanged and that the run does "
+                         "not own (none, several, or a transcript was not read), so no file is held.")
     if holder is None:
         return NO_HELD_FILES
 
-    own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
     dirty_rows, held_changed = phase_held_files(repo, record, holder, own_files)
     released = coder_rewritten(repo, record, held_changed, notes)
     if released:
@@ -265,18 +273,18 @@ def coder_rewritten(repo, record, held_changed, notes):
     return [path for path in held_changed if path in written]
 
 
-def phase_held_files(repo, record, holder, own_files=()):
+def phase_held_files(repo, record, holder, own_files):
     """(holder rows {"path", "session", "claim"} of the held dirty files, the held paths whose bytes changed since the
     run start). With a holder recorded at a phase start (phase_start.py's record), every file dirty then is held for
     the whole phase, less `own_files`, the files an earlier phase of the plan names and the files the review loop's
-    fix coder wrote (fix_coder_written), which are the run's own. With no holder recorded, only a same-bytes file is
-    held, for the live session `holder`."""
+    fix coder wrote (fix_coder_written), which are the run's own. With no holder recorded, only the same-bytes files
+    that the live session `holder` wrote (its "paths") are held."""
     candidates = script_utils.without_paths(sorted(record["dirty"]), own_files)
     if not candidates:
         return [], []
     if record["holder"] is not None:
         return recorded_holder_rows(repo, record, holder, candidates)
-    return live_holder_rows(repo, record, holder, candidates)
+    return live_holder_rows(holder)
 
 
 def recorded_holder_rows(repo, record, recorded_holder, candidates):
@@ -289,11 +297,11 @@ def recorded_holder_rows(repo, record, recorded_holder, candidates):
     return rows, [path for path in candidates if path in changed]
 
 
-def live_holder_rows(repo, record, holder, candidates):
-    """(rows, []) holding the candidates whose bytes are unchanged, for the session live in the repo now."""
-    changed = set(phase_start.changed_dirty_files(repo, record))
+def live_holder_rows(holder):
+    """(rows, []) holding the holdable paths (unchanged bytes) that the session live in the repo now wrote, which are
+    the holder's "paths"."""
     claim = held_claim(DIRTY_UNCHANGED, holder["cwd"])
-    return [holder_row(path, holder["session"], claim) for path in candidates if path not in changed], []
+    return [holder_row(path, holder["session"], claim) for path in holder["paths"]], []
 
 
 def targeted_held_files(named_files, held_paths):

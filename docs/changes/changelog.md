@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1257 changes
+1258 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -63,6 +63,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Fixed
 
 * [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md) [script/rule-anchors] `rule-anchors.sh check` run inside a linked dotfiles worktree now reads that worktree's prompt files and docs/rule-anchors.md, so a stale row there is reported.
+* [Phase start and the review loop name a holder by its writes, not its folder](notes/2026-11-26-phase-start-and-the-review-loop-name-a-holder-by.md) [script/phase-start, script/code-review-start, script/review-loop-held, script/dirty-writers, script/pull-keep-index, script/session-registry] A /code phase start, its review start and the review loop name a session as holder of dirty files only when that session's transcripts record a write to them, through one shared lookup in lib/dirty_writers.py that pull_keep_index also uses.
 * [the full check skips only Markdown under docs and adr_flow status refuses on a failing git log](notes/2026-11-25-the-full-check-skips-only-markdown-under-docs-and.md) [script/check-discovery, script/adr-flow] The discovered full check skips only Markdown under docs/ through the notes_paths owner, and adr_flow status refuses when git log fails instead of reading never committed.
 * [A capped review with a passed full check on the tree earns review credit](notes/2026-11-25-a-capped-review-with-a-passed-full-check-on-the.md) [script/capped-review, script/git-discipline-gate] A cap-reached review with no blocker reads as deferred when a passed full-check receipt covers the tree, so a plans-only fix after it no longer leaves the push blocked.
 * [Staged-claim gate passes a line that names a check of what is staged](notes/2026-11-25-staged-claim-gate-passes-a-line-that-names-a-check.md) [script/staged-claim-gate] A reply that describes a check against what is staged no longer reads as a claim that the index holds files, so the Stop hook stops sending it back.

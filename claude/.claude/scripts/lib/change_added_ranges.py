@@ -3,12 +3,17 @@ untracked file, which counts as added whole. Plain repo path and options; knows 
 
 import pathlib
 import sys
+from typing import NamedTuple
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent)]
 import diff_ranges
 import script_utils
 
 WHOLE_FILE = [(1, sys.maxsize)]
+UNTRACKED_SYMLINK = "symlink"
+UNTRACKED_NOT_A_FILE = "not a file"
+UNTRACKED_BINARY = "binary"
+UNTRACKED_TEXT = ""
 DIFF_ARGS = ("diff", "-U0", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/")
 
 
@@ -26,14 +31,25 @@ def change_added_ranges(repo, base="", detect_renames=False, literal_pathspecs=F
 
     added = diff_ranges.added_ranges(diff_text)
     for untracked_path in untracked:
-        if text_only and not _is_text_file(repo, untracked_path):
+        if text_only and read_untracked(repo, untracked_path).kind != UNTRACKED_TEXT:
             continue
         added[untracked_path] = WHOLE_FILE
     return added
 
 
-def _is_text_file(repo, name):
+class UntrackedRead(NamedTuple):
+    kind: str  # UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY, or UNTRACKED_TEXT
+    lines: list  # (line number, text) pairs; empty unless kind is UNTRACKED_TEXT
+
+
+def read_untracked(repo, name):
+    """What an untracked entry is, with its numbered lines when it is a regular UTF-8 text file."""
     full_path = pathlib.Path(repo) / name
-    if full_path.is_symlink() or not full_path.is_file():
-        return False
-    return script_utils.read_text_lines(full_path) is not None
+    if full_path.is_symlink():
+        return UntrackedRead(UNTRACKED_SYMLINK, [])
+    if not full_path.is_file():
+        return UntrackedRead(UNTRACKED_NOT_A_FILE, [])
+    numbered = script_utils.read_text_lines(full_path)
+    if numbered is None:
+        return UntrackedRead(UNTRACKED_BINARY, [])
+    return UntrackedRead(UNTRACKED_TEXT, numbered)

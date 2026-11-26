@@ -97,7 +97,7 @@ from review_loop_closure import (
 )
 from review_loop_coder import CoderCallError, coder_call, coder_fault_notes, without_reverted
 from review_loop_comment_removal import CommentRemovalRuns, snapshot_comments
-from review_loop_docs_kind import change_added_ranges
+from review_loop_docs_kind import review_added_ranges
 from review_loop_final_read import FinalRead
 from review_loop_findings import (
     PLAN_CHANGE_YES,
@@ -564,7 +564,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
         self.round_claimed, self.round_fixes = set(), []
         if self.iter_count == FIRST_ROUND:
-            self.docs_added = change_added_ranges(self.repo, self.review_base)
+            self.docs_added = review_added_ranges(self.repo, self.review_base)
         round_fix, round_nits = [], []
         tree_paths = self.tree_paths()
         for (agent, owned), review in zip(self.dispatches, reviews, strict=True):

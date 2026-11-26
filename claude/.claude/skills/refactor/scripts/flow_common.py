@@ -10,6 +10,7 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import NamedTuple
 
+import change_added_ranges
 import script_utils
 
 CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
@@ -23,9 +24,6 @@ LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPU
 # A file kept beside a log input (the simplify prep's branch-diff record); pruned with its input.
 LOG_INPUT_SIDECAR_SUFFIX = ".simplify-stat"
 
-UNTRACKED_SYMLINK = "symlink"
-UNTRACKED_NOT_A_FILE = "not a file"
-UNTRACKED_BINARY = "binary"
 NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
 
 
@@ -105,21 +103,14 @@ def work_tree_merge_base(base):
 
 class UntrackedFile(NamedTuple):
     path: str
-    added_lines: list  # (line number, text) pairs; empty when kind is set
-    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
+    added_lines: list  # (line number, text) pairs; empty unless kind is UNTRACKED_TEXT
+    kind: str  # why a file is not read as text (change_added_ranges.UNTRACKED_*); UNTRACKED_TEXT for text
 
 
 def classify_untracked(root, name):
     """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    full_path = Path(root) / name
-    if full_path.is_symlink():
-        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
-    if not full_path.is_file():
-        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
-    numbered = script_utils.read_text_lines(full_path)
-    if numbered is None:
-        return UntrackedFile(name, [], UNTRACKED_BINARY)
-    return UntrackedFile(name, numbered, "")
+    read = change_added_ranges.read_untracked(root, name)
+    return UntrackedFile(name, read.lines, read.kind)
 
 
 def untracked_files(root):

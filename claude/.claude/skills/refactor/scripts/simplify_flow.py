@@ -43,7 +43,7 @@ SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped different
                 "collapses, indirection with one implementation, configurability nothing configures, guards a "
                 "stronger invariant kills, values with more than one owner. Your oracle and magnitude floor are "
                 "hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).")
-WHOLE_FILE = "untracked, whole file"
+WHOLE_FILE_LABEL = "untracked, whole file"
 
 
 class SpanBase(NamedTuple):
@@ -83,7 +83,7 @@ def read_branch_stat(merge_base, root):
     numstat_text = diff_output(merge_base, "--numstat", "-z")
     files = numstat.changed_lines_by_path(numstat_text)
     for entry in untracked_files(root):
-        if not entry.kind:
+        if entry.kind == change_added_ranges.UNTRACKED_TEXT:
             files[entry.path] = (len(entry.added_lines), 0)
     return BranchStat(merge_base, files)
 
@@ -157,7 +157,7 @@ def compare_branch_diff(input_path, root):
 
 def added_line_numbers(merge_base, root):
     """{root-relative path: added line ranges text such as `3-5, 9`} of the work tree against the merge base; an
-    untracked text file maps to WHOLE_FILE."""
+    untracked text file maps to WHOLE_FILE_LABEL."""
     try:
         ranges_by_path = change_added_ranges.change_added_ranges(root, merge_base, literal_pathspecs=True,
                                                                  text_only=True)
@@ -169,7 +169,7 @@ def added_line_numbers(merge_base, root):
     added = {}
     for path, ranges in ranges_by_path.items():
         if ranges == change_added_ranges.WHOLE_FILE:
-            added[path] = WHOLE_FILE
+            added[path] = WHOLE_FILE_LABEL
         elif ranges:
             added[path] = diff_ranges.ranges_text(ranges)
     return added

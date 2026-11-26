@@ -7,7 +7,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
-import change_added_ranges as change_added_ranges_lib
+import change_added_ranges
 import diff_ranges
 import script_utils
 from handback import DOCS_CLASS
@@ -18,10 +18,10 @@ NEW = "new"
 DOCS_KINDS = (STALE, NEW)
 
 
-def change_added_ranges(repo, base=""):
+def review_added_ranges(repo, base=""):
     """{path: [(first, last)]} of the lines the working tree adds against `base` (HEAD when empty), renames followed
     and every untracked file counted whole. None when git cannot answer, as in a repo with no commit."""
-    return change_added_ranges_lib.change_added_ranges(repo, base, detect_renames=True)
+    return change_added_ranges.change_added_ranges(repo, base, detect_renames=True)
 
 
 def docs_kind(repo, added, finding):

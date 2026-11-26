@@ -50,6 +50,7 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import change_added_ranges
 import clone_pairs
 import handoff_files
 import numstat
@@ -170,7 +171,9 @@ def labelled_span_files(span):
 
 
 def untracked_label(entry):
-    return f"{UNTRACKED_LABEL}, {entry.kind}" if entry.kind else UNTRACKED_LABEL
+    if entry.kind == change_added_ranges.UNTRACKED_TEXT:
+        return UNTRACKED_LABEL
+    return f"{UNTRACKED_LABEL}, {entry.kind}"
 
 
 def file_line(path, label):

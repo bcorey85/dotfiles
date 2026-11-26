@@ -138,7 +138,7 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertIn("relayed already", result.stderr)
-        self.assertIn("Skill result word for word", result.stderr)
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
 
     def test_a_rewritten_stop_relays_again(self):
         self.write_stop(STOP)
@@ -160,6 +160,22 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(review_stop, result.stdout)
         self.assertNotIn("Phase 2 complete", result.stdout)
+
+    def test_a_nested_forks_newer_review_stop_relays_in_place_of_the_outer_run_stop(self):
+        # The relay cannot tell which run wrote a stop file, so a waited-on /review fork's stop that is newer than the
+        # /code run's stop.md is relayed. The code-fork deny text tells the fork to write its stop again after the
+        # wait, which makes stop.md the newest.
+        self.write_stop(STOP)
+        os.utime(self.run_folder / "stop.md", ns=(1, 1))
+        (self.run_folder / "review-stop.md").write_text("Nested review stopped.\n")
+        self.assertIn("Nested review stopped.", self.relay().stdout)
+
+        (self.run_folder / "stop.md").write_text(STOP)
+
+        result = self.relay()
+
+        self.assertIn("Phase 2 complete", result.stdout)
+        self.assertNotIn("Nested review stopped.", result.stdout)
 
     def test_a_finished_stop_says_to_go_on_with_the_invoking_skill(self):
         self.run_folder.mkdir()
@@ -200,6 +216,8 @@ class RelayTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "")
         self.assertFalse((self.run_folder / "relayed").exists())
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
+        self.assertNotIn("Say the Skill result word for word as your whole reply", result.stderr)
 
     def test_a_review_stop_newer_than_the_moved_aside_stop_relays_normally(self):
         self.write_stop(STOP)
@@ -219,6 +237,7 @@ class RelayTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("no stop file", result.stderr)
+        self.assertIn(code_relay.NO_STOP_RULE, result.stderr)
 
 
 class ReviewedTreeRelayTest(unittest.TestCase):

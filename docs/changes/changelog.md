@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1275 changes
+1277 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -70,7 +70,9 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A code-fork cannot hand back while a skill fork it started in the background runs](notes/2026-11-26-a-code-fork-cannot-hand-back-while-a-skill-fork-it.md) [script/open-child-gate, script/loop-transcript] The open-child hand-back gate now counts a review, code or fix Skill that a code-fork started as a background forked run, so the fork waits for it instead of handing back with no loop status.
 * [a plan folder for a repo with no docs/plans lives in the git dir](notes/2026-11-26-a-plan-folder-for-a-repo-with-no-docs-plans-lives.md) [script/resolve-task-dir, script/verify-prep] resolve-task-dir.sh gains a git-dir plan root, <git dir>/claude-plans/, with a --home verb that names it when the repo has no docs/plans, and verify-prep finds a plan there and names a ticket path there in place of the tmpfs scratchpad.
+* [A finished /code run that a skill the main session is running goes on with that skill's next step](notes/2026-11-26-a-finished-code-run-that-a-skill-main-is-running.md) [script/code-relay] When the /code run wrote no new stop, the relay prints NO_STOP_RULE: relay the Skill result, and for a finished run go on with the invoking skill's next step, otherwise say the Skill result word for word.
 * [The criteria dry run lists closing-phase checks as CLOSING](notes/2026-11-26-the-criteria-dry-run-lists-closing-phase-checks-as.md) [script/criteria-dry-run, skill/eng-spec] criteria_dry_run.py prints `CHECK <label> CLOSING <skill> <command or item text>` for each Automated Verification item of a closing phase and runs none of them, so every phase's checks show in the report; the exit code is unchanged.
 * [full_check default limit is 1800 s](notes/2026-11-26-full-check-default-limit-is-1800-s.md) [script/full-check] full_check.py's default limit rises from 540 s to 1800 s, so a branch-end check of the dotfiles suite (about 870 s) passes and writes its receipt.
 * [A search worded exits 0 reads RED on no match](notes/2026-11-26-a-search-worded-exits-0-reads-red-on-no-match.md) [script/criteria-dry-run, shared/criteria-verdict] An rg, grep or git grep criterion whose text says it exits 0 now reads as a presence check, so no match (exit 1) reads RED, not GREEN; ban wording on the same line still wins.

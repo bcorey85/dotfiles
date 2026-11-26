@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-842 fix notes
+844 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -63,6 +63,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/full-check-gate | 6 | 2 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 0 |
+| script/loop-transcript | 6 | 3 |
+| script/open-child-gate | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
 | script/plan-check | 6 | 6 |
@@ -76,14 +78,13 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/herdr-dev | 5 | 3 |
 | script/herdr-lane-resume | 5 | 5 |
 | script/herdr-worktree-watch | 5 | 4 |
-| script/loop-transcript | 5 | 2 |
-| script/open-child-gate | 5 | 0 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/agent-model-guard | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
+| script/code-relay | 4 | 2 |
 | script/fork-children | 4 | 4 |
 | script/herdr-worktree-prune | 4 | 3 |
 | script/log-scan | 4 | 0 |
@@ -95,7 +96,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | rule/orchestration | 3 | 0 |
 | script/calibration-guard | 3 | 1 |
 | script/code | 3 | 0 |
-| script/code-relay | 3 | 1 |
 | script/criteria-verdict | 3 | 0 |
 | script/fork-write-scope | 3 | 1 |
 | script/gate-commands | 3 | 0 |

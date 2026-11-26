@@ -146,6 +146,8 @@ class LoopTranscript:
         self.send_lines = {}  # SendMessage tool_use_id -> (transcript line, recipient)
         self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
         self.background_shells = []  # (transcript line, tool_use_id) of the shell calls that run on in the background
+        self.skill_calls = set()  # tool_use_ids of the Skill calls
+        self.skill_forks = {}  # Skill tool_use_id -> agent id of the background forked run it started
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
         self.handback_results = set()  # tool_use_ids of the SubagentHandback calls whose result is in the transcript
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
@@ -179,10 +181,23 @@ class LoopTranscript:
         for block in blocks:
             self.read_block(n, rec.get("type"), block)
 
-        shell_result = rec.get("toolUseResult")
-        if isinstance(shell_result, dict) and shell_result.get("backgroundTaskId"):
+        tool_use_result = rec.get("toolUseResult")
+        self.read_skill_fork(tool_use_result, blocks)
+        if isinstance(tool_use_result, dict) and tool_use_result.get("backgroundTaskId"):
             self.background_shells += [(n, block.get("tool_use_id")) for block in blocks
                                        if block.get("type") == "tool_result"]
+
+    def read_skill_fork(self, tool_use_result, blocks):
+        """Map each Skill call whose result says it started a background forked run to that run's agent id. A
+        foreground Skill result has no `status: "forked"`, so it maps nothing."""
+        if not isinstance(tool_use_result, dict):
+            return
+        agent_id = tool_use_result.get("agentId")
+        if tool_use_result.get("status") != "forked" or not tool_use_result.get("background") or not agent_id:
+            return
+        for block in blocks:
+            if block.get("type") == "tool_result" and block.get("tool_use_id") in self.skill_calls:
+                self.skill_forks[block["tool_use_id"]] = agent_id
 
     def read_reports(self, n, carrier):
         for notification in NOTIFICATION.finditer(carrier):
@@ -269,6 +284,8 @@ class LoopTranscript:
         if block.get("name") == "Agent":
             self.kinds[block.get("id")] = tool_input.get("subagent_type") or ""
             self.dispatched_at[block.get("id")] = n
+        elif block.get("name") == "Skill":
+            self.skill_calls.add(block.get("id"))
         elif block.get("name") == "SendMessage":
             self.messages_sent.append((n, tool_input.get("to")))
             self.send_lines[block.get("id")] = (n, tool_input.get("to"))
@@ -315,10 +332,23 @@ class LoopTranscript:
         launch's tool_use_id or by the launched agent's id) or agent message, and whose agent has not ended on an API
         error. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
         return [tool_use_id for tool_use_id, text in self.results.items()
-                if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
-                and self.launched_agent(tool_use_id) not in self.agent_messages
-                and self.launched_agent(tool_use_id) not in self.task_notified_at
-                and not self.agent_died(self.launched_agent(tool_use_id))]
+                if text.lstrip().startswith(ASYNC_LAUNCH)
+                and not self.has_reported_back(tool_use_id, self.launched_agent(tool_use_id))]
+
+    def open_skill_forks(self):
+        """The agent ids of the background forked runs that Skill calls started and that have not reported back, by
+        task notification (keyed by the Skill call's tool_use_id or by the agent id) or agent message, and whose agent
+        has not ended on an API error."""
+        return [agent_id for tool_use_id, agent_id in self.skill_forks.items()
+                if not self.has_reported_back(tool_use_id, agent_id)]
+
+    def has_reported_back(self, tool_use_id, agent_id):
+        """True when the launch `tool_use_id` of agent `agent_id` (None when its result names none) has a task
+        notification keyed by either, or an agent message, or the agent ended on an API error."""
+        return (tool_use_id in self.notifications
+                or agent_id in self.agent_messages
+                or agent_id in self.task_notified_at
+                or self.agent_died(agent_id))
 
     def agent_died(self, agent_id):
         """True when the transcript of agent `agent_id`, kept beside this loop's own, ends on an API

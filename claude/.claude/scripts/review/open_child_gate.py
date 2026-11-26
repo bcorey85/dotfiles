@@ -10,7 +10,8 @@ failure when the child failed. The deny is once per agent.
 code-fork: denies a hand-back while a background launch has not reported back and its agent's own transcript does
 not show it finished or dead (`loop_transcript.agent_finished`: its meta file says finished or it delivered a
 hand-back, the finish test code_wait.py also applies), and tells the fork to stay active and wait with code_wait.py.
-The deny is once per child agent.
+A Skill call whose result says `status: "forked"` and `background: true` starts such a child too, named by the
+`agentId` of that result. The deny is once per child agent.
 
 Each deny is kept in the handback store, so a child that never reports cannot trap its caller: a later hand-back
 passes. Every other agent type passes, and so does a hand-back with no open child.
@@ -39,9 +40,10 @@ RESEARCHER_DENY_REASON = (
     "failure that says so; never hand back a caveat on a path that may be partial."
 )
 CODE_FORK_DENY_REASON = (
-    "An agent you dispatched is still running ({children}). Do not hand back and do not end your turn: you stay "
+    "A child run you started is still running ({children}). Do not hand back and do not end your turn: you stay "
     "active. Run `python3 ~/.claude/scripts/code/code_wait.py agent <agentId>` with the Bash timeout set to 600000, "
-    "again while it prints `Still working`, then go on with the step that waits on its report."
+    "again while it prints `Still working`, then go on with the step that waits on its report. After the wait, write "
+    "your stop file again before you hand back: a waited-on /review or /fix run writes a newer stop file of its own."
 )
 
 
@@ -61,14 +63,19 @@ def researcher_deny_reason(hook, transcript):
 
 
 def live_children(transcript):
-    """The ids of the background launches that have not reported back and whose agent's own transcript does not show
-    it finished or dead: the agent id, or the launch's tool_use_id when its result names none."""
+    """The ids of the background launches, and of the background forked runs a Skill call started, that have not
+    reported back and whose agent's own transcript does not show it finished or dead: the agent id, or the launch's
+    tool_use_id when its result names none."""
     children = []
     for launch_id in transcript.open_launches():
         agent_id = transcript.launched_agent(launch_id)
         if not agent_id:
             children.append(launch_id)
             continue
+        child_transcript = script_utils.sibling_transcript_path(transcript.path, agent_id)
+        if not loop_transcript.agent_finished(child_transcript):
+            children.append(agent_id)
+    for agent_id in transcript.open_skill_forks():
         child_transcript = script_utils.sibling_transcript_path(transcript.path, agent_id)
         if not loop_transcript.agent_finished(child_transcript):
             children.append(agent_id)

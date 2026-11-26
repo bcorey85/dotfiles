@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1190 changes
+1191 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -30,6 +30,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 ### Changed
 
 * [The close pass fixes cross-phase review findings](notes/2026-11-25-the-close-pass-fixes-cross-phase-review-findings.md) [script/review-loop, script/code-step, script/gate] The branch close pass fixes the review findings: an unreadable resume record is denied with its recovery, a put-back pass drops every approval ask it filed, and the asks block has one builder.
+* [herdr-worktree refuses a branch that another session claimed](notes/2026-11-25-herdr-worktree-refuses-a-branch-another-session-claimed.md) [script/herdr-worktree] herdr-worktree writes a claim file for the branch before it creates it, and a second session's claim of the same branch fails with a message naming the owner session.
 * [A code resume that changed source gets a review before its stop](notes/2026-11-25-a-code-resume-that-changed-source-gets-a-review.md) [skill/code, script/code-step, script/gate] A /code resume that changed source and writes stop.md with no review loop started in the run is denied once, and the deny names the changed files.
 * [A new /code run stops at once when its report-to session is not live](notes/2026-11-24-a-new-code-run-stops-at-once-when-its-report-to.md) [script/phase-start] phase_start --new-run reads the lane file and stops with the live session names when the lane's report-to session is not live.
 * [A fix pass that goes against an accepted ruling is put back](notes/2026-11-24-a-fix-pass-that-goes-against-an-accepted-ruling-is.md) [script/review-loop-script, script/handback] After each fix pass of a run that holds a ruling, a ruling-check model call judges the pass against the rulings; a pass found against one has its work tree and index restored (a coder commit stays, named) and the run stops critical-blocker with against_ruling in the packet.

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1271 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1272 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [eng-spec opens the task directory the resolver names](notes/2026-11-26-eng-spec-opens-the-task-directory-the-resolver.md).
+Latest change: 2026-11-26, [verify-branch writes a fetched ticket to the path verify-prep names](notes/2026-11-26-verify-branch-writes-a-fetched-ticket-to-the-path.md).
 
 ## Top gains
 

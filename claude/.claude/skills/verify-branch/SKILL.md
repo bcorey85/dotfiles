@@ -25,7 +25,7 @@ It resolves the task dir, reads the criteria, measures the diff, checks whether 
 | 0    | ready                                                                                                              | follow the printed steps                                                                                                                                                           |
 | 2    | loud failure (no criteria, missing file, no base, empty diff, detached HEAD, unknown option, bad notes-paths list) | report the message to the user; never treat it as a pass                                                                                                                           |
 | 3    | several task dirs                                                                                                  | ask which; rerun with the answer                                                                                                                                                   |
-| 4    | no plan                                                                                                            | ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md`, write its raw fields to `<scratchpad>/<KEY>-ticket.md`, rerun `verify-prep --ticket-file <that path>` |
+| 4    | no plan                                                                                                            | ticket-only: fetch the ticket per `~/.claude/skills/_shared/jira-ticket.md`, write its raw fields to the ticket path the message names, rerun `verify-prep --ticket-file <that path>` |
 
 For a sprint-branch cut pass `--base <ref>`. The ticket's ACs are always in scope, plan or no plan. Never check them yourself in place of the gate.
 

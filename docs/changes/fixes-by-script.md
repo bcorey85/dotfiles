@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-838 fix notes
+839 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -248,3 +248,4 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | skill/fix | 1 | 1 |
 | skill/orient | 1 | 1 |
 | skill/pr-comments | 1 | 0 |
+| skill/verify-branch | 1 | 1 |

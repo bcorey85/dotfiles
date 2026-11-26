@@ -704,15 +704,15 @@ class StopLoopTest(unittest.TestCase):
     def write_record(self, relaunch_args):
         self.launch_file.write_text(json.dumps({"packet_args": [], "relaunch_args": relaunch_args}) + "\n")
 
-    def stop(self, wait_seconds=5):
-        with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
-                mock.patch.object(review_launch.process_group, "group_id", return_value=4242), \
+    def stop(self, wait_seconds):
+        with mock.patch.object(review_launch.process_group, "group_id", return_value=4242), \
                 mock.patch.object(review_launch.process_group, "terminate_group", return_value=True), \
                 mock.patch.object(review_launch.process_group, "group_is_alive", return_value=True), \
                 mock.patch.object(review_launch.process_group, "STOP_WAIT_SECONDS", wait_seconds), \
-                contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
             review_launch.stop_loop(self.loop_dir, 4242, self.repo)
-        return stderr.getvalue()
+        return stdout.getvalue(), stderr.getvalue()
 
     def test_stop_waits_for_a_child_that_outlives_the_leader(self):
         # The leader dies on SIGTERM at once; its child ignores SIGTERM for a moment, then exits.
@@ -735,7 +735,6 @@ class StopLoopTest(unittest.TestCase):
         self.addCleanup(reaper.join)
         # Registered after the join so it runs first: a failed stop_loop must not leave the join waiting 60 s.
         self.addCleanup(leader.kill)
-        self.write_record(["--repo", str(self.repo)])
 
         with contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
             review_launch.stop_loop(self.loop_dir, leader.pid, self.repo)
@@ -769,9 +768,17 @@ class StopLoopTest(unittest.TestCase):
         self.assertEqual((stdout, stderr), ("", ""))
         waited.assert_not_called()
 
+    def test_a_stopped_loop_is_announced_on_stdout(self):
+        stdout, stderr, waited = self.stop_with(group=4242, signalled=True)
+        waited.assert_called_once()
+        self.assertIn("Stopped the earlier review loop", stdout)
+        self.assertIn("pid 4242", stdout)
+        self.assertEqual(stderr, "")
+
     def test_a_loop_that_outlives_the_wait_is_named_on_stderr(self):
-        self.write_record(["--repo", str(self.repo)])
-        errors = self.stop(wait_seconds=0.1)
+        announcement, errors = self.stop(wait_seconds=0.1)
+        self.assertIn("Stopped the earlier review loop", announcement)
+        self.assertIn("pid 4242", announcement)
         self.assertIn("pid 4242", errors)
         self.assertIn("is still running after", errors)
 

@@ -25,13 +25,13 @@
 #   entry-less  a name or path with no lane file entry closes too, when an open herdr
 #               workspace sits on that linked worktree path, or on exactly one linked
 #               worktree of that name (under tuios only a path works). Refuses, changing
-#               nothing but the origin/<default> ref, for several linked worktrees of
-#               that name, a working claude agent, or any tree that
-#               `herdr-worktree-prune --check <worktree>` would keep (the main checkout,
-#               a detached HEAD, the default branch, a branch not merged into
+#               nothing but the origin/<default> ref, for the main checkout, several
+#               linked worktrees of that name, a working claude agent, or any tree that
+#               `herdr-worktree-prune --check <worktree>` would keep (a detached
+#               HEAD, the default branch, a branch not merged into
 #               origin/<default> (a squash or rebase merge reads as unmerged),
-#               uncommitted changes, a submodule, a nested repo, a stash entry, a lock),
-#               or a check that fails; the message carries prune's reason.
+#               uncommitted changes, a submodule, a nested repo, a stash entry,
+#               a lock), or a check that fails; the message carries prune's reason.
 #               Otherwise the same close and prune, minus the entry remove.
 #
 # herdr-dev and herdr-worktree-prune run from this script's own folder.

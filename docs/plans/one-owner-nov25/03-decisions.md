@@ -25,3 +25,8 @@
 - 2026-11-25, ruling by agent-evals-c3-owner: accept the capped /review of the two refactor docstring edits
   (`fork_children.py`, `shell_command.command_options`) and resume; its one finding (a line over 120 characters) is
   fixed, and lint and the touched tests pass.
+- 2026-11-25, ruling by agent-evals-c3-owner: the merge /review's ask on pre-commit line 61 (a multi-name
+  `toolkit_drift` skill line compared whole, so a commit that shrinks it is refused) goes to agent-evals, already
+  queued as toolkit-drift-check-refuses-a-commit-that-fixes; the hook stays as it is in this lane.
+- 2026-11-25, ruling by agent-evals-c3-owner: accept the capped merge /review (base 1bc84d3b3); keep its three
+  fixes and fix its open smell (unused setup in `test_review_launch.py`); touched tests and lint pass.

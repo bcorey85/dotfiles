@@ -26,7 +26,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Result
 
-One option walk serves git and systemd-run, so the two no longer repeat it. One edge differs from the old systemd-run skip: a value option as the last word no longer reads past the end.
+One option walk serves git and systemd-run, so the two no longer repeat it. Two edges differ from the old systemd-run skip. A `--slice=X` word that is the value of an earlier value option other than `--slice` (`systemd-run -p --slice=x cmd`) used to read as the slice `x` and now reads as None. A `--slice=y` word that is the value of an earlier `--slice` (`systemd-run --slice --slice=y cmd`) used to read as `y` and now reads as `--slice=y`, the value systemd-run's own parsing gives. A value option as the last word changes only the internal index, not any output.
 
 ## Watch
 

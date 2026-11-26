@@ -164,6 +164,41 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
         self.assertNotIn("dup.py", review_loop_untracked.LOOP_WRITTEN)
 
+    def call_with_findings(self, role, action, finding_texts):
+        """Runs coder_call with a pass guard that read `finding_texts`; the diff under review lists no file."""
+        with self.fake_model(action):
+            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], finding_texts)
+            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard,
+                                                self.no_op_scope_guard(role))
+
+    def test_an_untracked_file_a_finding_names_for_deletion_stays_deleted_when_the_diff_lists_no_such_file(self):
+        (self.repo / "stray.py").write_text("stray\n")
+
+        self.call_with_findings("coder1", lambda repo: (repo / "stray.py").unlink(),
+                                ["`app.py:1` delete stray.py, nothing calls it"])
+
+        self.assertFalse((self.repo / "stray.py").exists())
+        self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
+
+    def test_an_untracked_file_no_finding_names_is_restored_and_noted_when_a_finding_names_another(self):
+        (self.repo / "stray.py").write_text("stray\n")
+        (self.repo / "mine.py").write_text("mine\n")
+
+        self.call_with_findings("coder1", lambda repo: (repo / "mine.py").unlink(),
+                                ["`app.py:1` delete stray.py, nothing calls it"])
+
+        self.assertEqual((self.repo / "mine.py").read_text(), "mine\n")
+        self.assertIn("mine.py", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_a_file_the_fix_coder_record_names_stays_deleted_after_the_loop_state_is_lost(self):
+        (self.repo / "fix_made.py").write_text("x\n")
+        fix_coder_written.add_paths(self.repo, {"fix_made.py"})
+
+        self.call("coder2", lambda repo: (repo / "fix_made.py").unlink())
+
+        self.assertFalse((self.repo / "fix_made.py").exists())
+        self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
+
     def test_a_file_the_fix_coder_wrote_is_recorded_for_the_next_code_review_start(self):
         self.call("coder1", lambda repo: (repo / "fix_made.py").write_text("x\n"))
 

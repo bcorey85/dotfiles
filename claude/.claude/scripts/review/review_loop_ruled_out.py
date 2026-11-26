@@ -73,7 +73,8 @@ class PassGuard:
     pass asks to delete."""
 
     def __init__(self, repo, role, ruled_backup, backup, deletions):
-        # The diff files a finding of the pass asks to delete: the untracked-file guard leaves them alone too.
+        # The diff files and untracked files a finding of the pass asks to delete:
+        # the untracked-file guard leaves them alone too.
         self.deletions = list(deletions)
         self.repo = pathlib.Path(repo)
         self.role = role
@@ -124,7 +125,11 @@ def begin_pass(repo, out, role, ruled_out, diff_files, finding_texts):
     root = pathlib.Path(repo)
     pass_dir = pathlib.Path(out) / BACKUP_FOLDER / role
     ruled_backup = file_backup.save_files(root, ruled_out, pass_dir / "ruled-out")
-    deletions = [path for path in diff_files if path not in ruled_out and names_deletion(finding_texts, path, root)]
+    # A finding may name a stray untracked file the diff under review does not list (a plan-folder file, a file
+    # outside the review scope), so the untracked files are candidates too.
+    untracked = sorted(review_loop_untracked.untracked_set(root))
+    candidates = list(dict.fromkeys([*diff_files, *untracked]))
+    deletions = [path for path in candidates if path not in ruled_out and names_deletion(finding_texts, path, root)]
     # The untracked-file guard around the model call puts back and notes an untracked file it covers; this guard
     # backs up only the rest, so one deletion makes one note.
     covered = review_loop_untracked.guarded_untracked(root, deletions)

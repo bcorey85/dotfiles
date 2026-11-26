@@ -1,6 +1,7 @@
 """review_loop_untracked.py: the guard around every model call of the review loop. A call may edit an untracked file
-but never delete one that no coder of this loop wrote. The guard copies the untracked files to the loop's out folder
-before the call, puts back each one the call removed, and notes which call removed what."""
+but never delete one that no coder of this loop or of the run's fix_coder_written record wrote. The guard copies the
+untracked files to the loop's out folder before the call, puts back each one the call removed, and notes which call
+removed what."""
 import pathlib
 import shutil
 import tempfile
@@ -10,7 +11,8 @@ import file_backup
 import fix_coder_written
 import script_utils
 
-# One note per model call that deleted an untracked file no coder of this loop made, for the packet's tool_fault.
+# One note per model call that deleted an untracked file no coder of this loop or of the run's
+# fix_coder_written record made, for the packet's tool_fault.
 UNTRACKED_FAULTS = []
 # The untracked files an earlier coder call of this loop wrote. A later call may delete one, so it is neither backed up
 # nor put back. A file anyone else writes while a coder call runs counts as that call's file.
@@ -35,7 +37,7 @@ def unheld_untracked(repo, held):
 def record_loop_written(repo, held, untracked_before):
     """Adds the untracked files present now that were not there before the call to LOOP_WRITTEN, and drops the
     recorded files that are gone. The new files also go in the
-    fix_coder_written record, which code_review_start.py reads."""
+    fix_coder_written record, which code_review_start.py and `guarded_untracked` read."""
     untracked_after = unheld_untracked(repo, held)
     written = untracked_after - untracked_before
     LOOP_WRITTEN.update(written)
@@ -64,9 +66,12 @@ class CallGuard:
 
 
 def guarded_untracked(repo, deletable=()):
-    """The untracked files the guard copies and puts back: no coder of this loop wrote them and no finding of the pass
-    asks to delete them (`deletable`). A file another session holds is guarded too."""
-    return untracked_set(repo) - LOOP_WRITTEN - set(deletable)
+    """The untracked files the guard copies and puts back: no coder of this loop or of the run's fix_coder_written
+    record wrote them and no finding of the pass asks to delete them (`deletable`). A file another session holds is
+    guarded too. The fix_coder_written record counts as written by the loop, so a file it names stays deletable after
+    LOOP_WRITTEN is lost with a process."""
+    coder_written = fix_coder_written.recorded(repo)
+    return untracked_set(repo) - LOOP_WRITTEN - coder_written - set(deletable)
 
 
 def begin(repo, out, deletable=()):
@@ -88,8 +93,8 @@ def note_removal(call_label, removal):
     `call-NN-<role>`, the bare role for a call that died before it got a number, or `review<N>-main` for a
     main-session reviewer round."""
     if removal.restored:
-        UNTRACKED_FAULTS.append(f"{call_label} deleted untracked files that no coder of this loop made; the loop "
-                                "restored " + ", ".join(removal.restored))
+        UNTRACKED_FAULTS.append(f"{call_label} deleted untracked files that no coder of this loop or of the run's "
+                                "fix_coder_written record made; the loop restored " + ", ".join(removal.restored))
     if removal.lost:
         UNTRACKED_FAULTS.append(f"{call_label} deleted untracked files the loop could not copy (over "
                                 f"{file_backup.MAX_FILE_BYTES // (1024 * 1024)} MB or unreadable), so they are gone: "

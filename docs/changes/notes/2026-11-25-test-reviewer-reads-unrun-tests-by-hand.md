@@ -7,9 +7,9 @@ generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-25T19:25:54-06:0
 seq: 5
 kind: "fix"
 components: ["script/review-loop-prompts", "agent/test-reviewer"]
-evidence: ["judgment"]
+evidence: ["rule meter"]
 watches: []
-test: "tests/scripts/test_review_loop_prompts_unrun_tests.py::UnrunTestsRuleTest::test_the_test_reviewer_of_a_ci_only_repo_gets_the_unrun_tests_rule"
+test: "tests/scripts/test_review_loop_prompts.py::UnrunTestsRuleTest::test_the_test_reviewer_of_a_ci_only_repo_gets_the_unrun_tests_rule"
 asked: ""
 proof: []
 unmeasured: ""
@@ -19,9 +19,10 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 - `claude/.claude/scripts/review/review_loop_prompts.py`: a `UNRUN_TESTS_RULE` constant. `reviewer_prompt` appends it
-  to the test-reviewer's prompt when `full_check.full_suite_runs_in_ci(repo)` is true. Other reviewers and repos with
-  a local quality check get no new line. `claude/.claude/agents/test-reviewer.md` is unchanged.
-- Test: `tests/scripts/test_review_loop_prompts_unrun_tests.py`.
+  to the test-reviewer's prompt when `full_check.full_suite_runs_in_ci(repo)` is true. Other reviewers, and repos
+  whose CLAUDE.md does not say the full suite runs only in CI (no `Full suite: CI` line and no full-suite section
+  that names CI), get no new line. `claude/.claude/agents/test-reviewer.md` is unchanged.
+- Test: `tests/scripts/test_review_loop_prompts.py`.
 - agent-evals `02c51437`: a `rule_in_prompt` scenario mode in `bin/rule_meter.py` (the on arm appends the rule to the
   task prompt; toolkit files stay whole in both arms), scenario UT01, a django plant with a str-against-UUID assert
   and an entry shared across subtests, and the `flags_unrun_test_faults` detector.

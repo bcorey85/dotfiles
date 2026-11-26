@@ -37,6 +37,11 @@ class UnrunTestsRuleTest(unittest.TestCase):
         prompt = prompt_for(repo, "test-reviewer")
         self.assertNotIn(review_loop_prompts.UNRUN_TESTS_RULE, prompt)
 
+    def test_the_test_reviewer_of_a_repo_with_a_quality_check_and_a_ci_suite_line_gets_the_rule(self):
+        repo = self.make_repo("# Notes\n\nQuality check: make test\n\nFull suite: CI\n")
+        prompt = prompt_for(repo, "test-reviewer")
+        self.assertIn(review_loop_prompts.UNRUN_TESTS_RULE, prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

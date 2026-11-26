@@ -22,6 +22,7 @@ code_wait = importlib.util.module_from_spec(module_spec)
 module_spec.loader.exec_module(code_wait)
 
 AGENT_ID = "a1817e9d1060d81ea"
+OTHER_AGENT_ID = "a2928f0e2171e92fb"
 REPORT = "Phase 0 is implemented."
 STORE_SESSION = "sess-store"
 
@@ -728,6 +729,121 @@ class ReviewerRequestTest(unittest.TestCase):
         self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
         self.assertEqual(pathlib.Path(report_file).read_text(), review)
         self.assertEqual(code_wait.open_reviewer_requests(code_wait.phase_review(self.repo)), [])
+
+    def fill_report(self, entry, agent_id):
+        """Fills a request's report file the way a finished reviewer's wait does, and records who filled it."""
+        pathlib.Path(entry["report_file"]).write_text("filled\n")
+        code_wait.reviewer_dispatch.record_filled_by(self.loop_dir, entry["report_file"], agent_id)
+
+    def test_a_new_agent_naming_a_report_another_agent_filled_is_refused_with_the_round_to_dispatch(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        code_wait.reviewer_dispatch.write_round(self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "Go.")])
+
+        code, output, errors = self.run_main("review", OTHER_AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 1)
+        self.assertNotIn(code_wait.__doc__.strip().splitlines()[0], errors, "the refusal is no usage error")
+        lines = output.strip().splitlines()
+        self.assertIn("round 1 is used: its report was filled by another agent; dispatch round 2", lines[0])
+        self.assertIn("round 2: dispatch these 1 reviewer(s) now", output)
+        last_request = [line for line in lines if line.startswith("- round ")][-1]
+        self.assertIn("review2-code-reviewer", last_request)
+
+    def test_the_agent_that_filled_a_report_run_again_after_round_two_opened_prints_round_two(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        code_wait.reviewer_dispatch.write_round(self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "Go.")])
+
+        code, output, _ = self.run_main("review", AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("round 2: dispatch these 1 reviewer(s) now", output)
+
+    def test_a_finished_reviewer_is_recorded_as_the_filler_of_its_report(self):
+        self.write_finished_reviewer([{"type": "assistant", "message": {"content": [{"type": "text",
+                                                                                     "text": "## Fix\nNone\n"}]}}])
+        report_file = self.entries[0]["report_file"]
+
+        self.run_main("review", AGENT_ID, report_file)
+
+        recorded = code_wait.reviewer_dispatch.all_requests(self.loop_dir)[0]
+        self.assertEqual(recorded["filled_by"], AGENT_ID)
+
+    def test_a_dispatch_for_a_round_no_manifest_holds_is_no_stale_dispatch(self):
+        unknown_report = str(self.loop_dir / "unknown.report.md")
+        problem = code_wait.reviewer_dispatch.used_round_problem(self.loop_dir, [(AGENT_ID, unknown_report)])
+
+        self.assertEqual(problem, "")
+
+    def test_a_filled_report_with_no_recorded_filler_is_not_refused(self):
+        """Old-report gap: a manifest written before `filled_by` existed names no filler, so a report with text and
+        no recorded filler is not refused as a used round."""
+        pathlib.Path(self.entries[0]["report_file"]).write_text("round one\n")
+        code_wait.reviewer_dispatch.write_round(self.loop_dir, 2, [("review2-code-reviewer", "code-reviewer", "Go.")])
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(
+            self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"])])
+
+        self.assertEqual(problem, "")
+
+    def test_a_report_another_agent_filled_in_the_last_round_is_refused_with_no_round_open(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(
+            self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"])])
+
+        self.assertEqual(problem, "round 1 is used: its report was filled by another agent; no round is open")
+
+    def test_the_same_pair_run_again_after_its_report_was_written_still_waits(self):
+        report_file = self.entries[0]["report_file"]
+        self.fill_report(self.entries[0], AGENT_ID)
+
+        code, output, _ = self.run_main("review", AGENT_ID, report_file)
+
+        self.assertEqual((code, output.strip()), (0, code_wait.STILL_WORKING))
+
+    def test_a_call_that_also_names_an_open_request_passes_the_used_round_check(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        round_two = code_wait.reviewer_dispatch.write_round(self.loop_dir, 2,
+                                                            [("review2-code-reviewer", "code-reviewer", "Go.")])
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(
+            self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"]),
+                            (OTHER_AGENT_ID, round_two[0]["report_file"])])
+
+        self.assertEqual(problem, "")
+
+    def test_a_filled_by_another_agent_request_whose_report_was_emptied_is_not_refused(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        pathlib.Path(self.entries[0]["report_file"]).write_text("")
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(
+            self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"])])
+
+        self.assertEqual(problem, "")
+
+    def test_a_stale_pair_beside_a_pair_the_calling_agent_filled_is_not_refused(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        round_two = code_wait.reviewer_dispatch.write_round(self.loop_dir, 2,
+                                                            [("review2-code-reviewer", "code-reviewer", "Go.")])
+        self.fill_report(round_two[0], OTHER_AGENT_ID)
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(
+            self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"]),
+                            (OTHER_AGENT_ID, round_two[0]["report_file"])])
+
+        self.assertEqual(problem, "")
+
+    def test_several_used_rounds_are_named_in_the_plural(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+        round_two = code_wait.reviewer_dispatch.write_round(self.loop_dir, 2,
+                                                            [("review2-code-reviewer", "code-reviewer", "Go.")])
+        self.fill_report(round_two[0], AGENT_ID)
+        code_wait.reviewer_dispatch.write_round(self.loop_dir, 3, [("review3-code-reviewer", "code-reviewer", "Go.")])
+        pairs = [(OTHER_AGENT_ID, self.entries[0]["report_file"]), (OTHER_AGENT_ID, round_two[0]["report_file"])]
+
+        problem = code_wait.reviewer_dispatch.used_round_problem(self.loop_dir, pairs)
+
+        self.assertEqual(problem, "rounds 1, 2 are used: their reports were filled by other agents; dispatch round 3")
 
     def test_a_named_reviewer_still_at_work_is_no_new_request(self):
         self.write_reviewer(AGENT_ID, [], finished=False)

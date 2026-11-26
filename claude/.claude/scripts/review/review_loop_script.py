@@ -95,7 +95,7 @@ from review_loop_closure import (
     receipt_all_held,
     receipt_still_open,
 )
-from review_loop_coder import CoderCallError, coder_call, coder_fault_notes, without_reverted
+from review_loop_coder import CoderCallError, CoderResult, coder_call, coder_fault_notes, without_reverted
 from review_loop_comment_removal import CommentRemovalRuns, snapshot_comments
 from review_loop_docs_kind import change_added_ranges
 from review_loop_final_read import FinalRead
@@ -130,6 +130,8 @@ from review_loop_prompt_file import (
     REVIEWERS_MAIN,
 )
 from review_loop_prompts import coder_prompt, reviewer_prompt
+from review_loop_round_audit import RoundAudit
+from review_loop_round_settle import NO_CHANGE_REASON, RoundSettle
 from review_loop_ruled import (
     RuledFindings,
     adopted_numbers,
@@ -147,7 +149,6 @@ SKILLS = SCRIPT_DIR.parent.parent / "skills" / "review"
 ROUND_BUDGET = 2
 FIRST_ROUND = 1  # the only round labeled against the whole change; a resumed loop starts past it, unlabeled
 LOG_TIMEOUT_SECONDS = 60
-NO_CHANGE_REASON = "the coder made no change"
 
 
 def disposition_call(text, repo, out):
@@ -210,11 +211,6 @@ def fixes_of_round(round_fix):
     for _agent, _owned, agent_fixes in round_fix:
         fixes += agent_fixes
     return fixes
-
-
-def folded_into(item, finding):
-    """Whether `item` is `finding`, or a merged finding that holds it as a part: equal text, never a substring."""
-    return any(part.text == finding.text for part in item.each_part)
 
 
 # ---------- telemetry ----------
@@ -330,7 +326,8 @@ def log_row_findings(repo, run, row, fix_ranges):
 # ---------- the loop ----------
 
 class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, PassChecks, RuledFindings, FinalRead,
-              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, full_check_gate.FullCheckSteps):
+              PostCapPasses, RulingCheck, ReviewIntake, PartialFixRuns, RoundAudit, RoundSettle,
+              full_check_gate.FullCheckSteps):
     """The state one review loop builds up round by round. `progress` holds what a crash still reports: iter, fixed
     and files_touched, updated in place as the loop goes."""
 
@@ -375,6 +372,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         self.filed = {}  # {(reviewer, file): [finding entries]}, so a refiled finding updates its first row
         self.round_claimed = set()  # ids of the entries this round filed or refiled, so no two reports share one
         self.round_fixes = []  # the fix entries this round's reviewers filed, for fix_round to mark
+        self.init_round_audit()
         # findings fixed outside a reviewer round (the caller's fix-first findings, the full check, the class
         # closure), which file no finding row
         self.check_fixed = 0
@@ -385,7 +383,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         # a change (a coder pass, or a whole expected-red not-run) that no passed full check ran after
         self.untested_fix = False
         self.scoped_tests = ""
-        self.last_fix = None  # the CoderResult of the last fix round's coder pass
+        self.last_fix = None  # the round pass's CoderResult, with the missed pass's diffs and files merged in
 
     def init_review_settings(self):
         """The settings the prompt header gives; build_loop overwrites them."""
@@ -590,6 +588,7 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
         diff_files = self.review_scope()
         files_in_scope = list(dict.fromkeys([*diff_files, *finding_paths]))
         issue_texts = [self.issue_text(finding) for finding in findings]
+        self.note_briefed(findings)
         named = self.named_tests() if restore_named else []
         prompt = self.coder_brief(call_name, findings, nits, files_in_scope, issue_texts, named)
         allowed = self.pass_scope(files_in_scope)
@@ -663,71 +662,24 @@ class LoopRun(ScopedTestRuns, NamedTestRuns, SignoffRuns, CommentRemovalRuns, Pa
 
         result = self.repair(round_fix_pass(self.iter_count), round_findings, round_nits)
         changed = result.changed
-        self.last_fix = result
-        self.files_touched.update(changed)
-        self.mark_standing_rewords_applied(changed)
-
-        skips = skipped_issues(result.report, len(round_findings))
-        plan_reported = PLAN_CHANGE_YES.search(result.report.strip()) is not None
-        plan_held = plan_reported and self.record_coder_plan_impact(result.report, changed)
-
-        reverted_findings = self.findings_on_reverted_paths(round_findings, result.reverted)
-        skipped_findings, round_open_fixes = self.record_skips(round_findings, skips, changed, plan_held,
-                                                               reverted_findings)
-        round_open_fixes += [item for item in self.put_back_findings if item not in round_open_fixes]
-        self.keep_open(round_open_fixes)
-        self.mark_round_fixes(round_open_fixes + reverted_findings, skipped_findings)
-        applied = self.not_put_back(item for item in round_findings
-                                    if item not in skipped_findings and item not in reverted_findings)
-        self.fixed += unseen(self.fixed, applied)
-        self.drop_open([*applied, *reverted_findings])
-        self.prior_issues = prior_issue_entries(round_findings, skips, self.put_back_findings, reverted_findings)
+        # An unsent fix stays unmarked until the missed-fix pass below has run on it.
+        sent_fixes = self.sent_round_fixes()
+        skipped_findings, applied, self.prior_issues = self.settle_round_repair(round_findings, result,
+                                                                                only=sent_fixes)
+        missed = self.send_missed_fixes()
+        self.prior_issues += missed.prior_entries
+        changed = list(dict.fromkeys([*changed, *missed.changed]))
+        self.last_fix = CoderResult(result.report, [*result.diffs, *missed.diffs], changed, result.reverted)
+        applied += missed.applied
+        skipped_findings += missed.skipped
 
         self.files = self.review_scope()
         if self.iter_count < ROUND_BUDGET:
-            self.plan_second_round(round_fix, result, skipped_findings)
+            self.plan_second_round(round_fix, self.last_fix, skipped_findings)
         # A toolkit .md file is code, so only a docs-class fix that changes only .md files skips the re-review.
         docs_only = (bool(applied) and all(item.finding_class == handback.DOCS_CLASS for item in applied)
                      and all(path.endswith(".md") for path in changed))
         return not docs_only
-
-    def record_skips(self, round_findings, skips, changed, plan_held, reverted_findings):
-        """Sorts the round's findings the coder did not fix. Returns (skipped findings, findings still open); the
-        skipped list leaves out the reverted findings. With a plan impact held, the coder's skips stay open;
-        otherwise they join skipped_fp. A finding in `reverted_findings` (filed on an approval-only path that the
-        loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) is filed as a user-only ask (or dropped, as a repeat of
-        a rejected one) and is never recorded as fixed, skipped_fp or open, whatever the coder reported."""
-        skipped_entries = [{"item": round_findings[number - 1], "reason": line}
-                           for number, line in sorted(skips.items())
-                           if round_findings[number - 1] not in reverted_findings]
-        round_open_fixes = []
-        if plan_held:
-            round_open_fixes += [entry["item"] for entry in skipped_entries]
-        else:
-            self.skipped_fp += skipped_entries
-        skipped_findings = [entry["item"] for entry in skipped_entries]
-        if changed:
-            return skipped_findings, round_open_fixes
-
-        # A put-back finding stays open through put_back_findings: it is no false positive.
-        unchanged = self.not_put_back(item for item in round_findings
-                                      if item not in skipped_findings and item not in reverted_findings)
-        if plan_held:
-            round_open_fixes += unchanged
-        else:
-            self.skipped_fp += [{"item": item, "reason": NO_CHANGE_REASON} for item in unchanged]
-        return skipped_findings + unchanged, round_open_fixes
-
-    def mark_round_fixes(self, round_open_fixes, skipped_findings):
-        """Sets `actioned` on each fix this round's reviewers filed: none while open or filed as a user-only ask,
-        skipped_fp, or fixed. A fix takes an item's status when it is the item or one of the parts the item merges."""
-        for finding in self.round_fixes:
-            if any(folded_into(item, finding["finding"]) for item in round_open_fixes):
-                finding["actioned"] = "none"
-                continue
-
-            skipped = any(folded_into(item, finding["finding"]) for item in skipped_findings)
-            finding["actioned"] = "skipped_fp" if skipped else "fixed"
 
     def plan_second_round(self, round_fix, result, skipped_findings):
         """Writes the round's fix diff for the next reviewers and plans which of them run."""

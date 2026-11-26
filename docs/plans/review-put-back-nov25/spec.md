@@ -13,7 +13,7 @@ Five fixes to the review loop, one per phase. Finding paths may hold `$` and `+`
 - [x] Phase 1: Paths that hold `$` (risk: low)
 - [x] Phase 2: Match a removed comment by content (risk: medium)
 - [x] Phase 3: Hold a plan impact that cites a user ruling (risk: medium)
-- [ ] Phase 4: Every round finding reaches a coder or an ask; a used round is refused (risk: high)
+- [x] Phase 4: Every round finding reaches a coder or an ask; a used round is refused (risk: high)
 - [ ] Phase 5: Scope put-back keeps earlier fixes and needed files (risk: high)
 
 ## Constraints
@@ -105,7 +105,7 @@ A round returned NEEDS CHANGES with a blocker and two fixes, but the next passes
 1. Trace, with a test that drives `walk()` through a round whose reviewer reports a blocker and fixes, every path by which a fix finding of `review_round()` misses `fix_round`'s `repair()` brief: dedupe through `earlier_filing`/`refile`, `split_review` drops, held or ruled-out files, `open_fixes` not carried into the lint, full-check and class-closure repair briefs, and `prior_issue_entries` marking findings fixed that no coder got. Fix each path found.
 2. Add one check, run before the next review round is built, that every fix finding of the last round's reports is in a coder brief of this round or filed as an ask; a finding in neither goes to a coder pass (or, when that cannot run, the loop stops naming it). Put it in a mixin module, not in `review_loop_script.py` (D4).
 3. Refuse a review-round dispatch whose round the loop has already taken in: find where the loop writes reviewer dispatch lines and reads reports back by round and role (the round/role lines added in review-loop-nov23 phase 5), and exit non-zero with a message that names the round, says it is used, and names the round to dispatch.
-4. Tests: in `T/test_review_loop_script.py` or a new test file for the new module: the walk above fails before and passes after (every finding in a brief or an ask; the re-review prompt never lists an unsent finding as fixed); a re-dispatch of a used round is refused with that message.
+4. Tests: in `T/test_review_loop_script.py` or a new test file for the new module: the in-process fix_round test fails before and passes after (every finding in a brief or an ask; the re-review prompt never lists an unsent finding as fixed); a re-dispatch of a used round is refused with that message.
 
 #### Success Criteria
 
@@ -148,3 +148,4 @@ An earlier round's fix survives a later pass; a needed file is kept; any other s
 ## Plan Deviations
 
 Phase 2: review ask on repeated identical comments ignoring line numbers was rejected by the session on 2026-11-25 (design choice beyond the phase); left for the user.
+2026-11-25: Phase 4: item 1's trace found no real path where a reviewer fix finding misses fix_round's repair() brief and the ticket's incident was not reproduced; the audit (item 2) is the safety net, tested by unit tests against a stub host plus a walk test, in new tests/scripts/test_review_loop_round_audit.py. No acceptance criterion changes.

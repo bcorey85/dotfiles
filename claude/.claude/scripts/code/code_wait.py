@@ -92,6 +92,15 @@ class UsageError(Exception):
     pass
 
 
+class StaleDispatchError(Exception):
+    """A dispatch for a round that another agent already answered. `lines` is the refusal, then the open round's
+    dispatch lines, so the prompts are the last lines printed."""
+
+    def __init__(self, lines):
+        super().__init__(lines[0])
+        self.lines = lines
+
+
 def agent_transcript(agent_id):
     # The newest transcript of this agent id under any session's subagents folder, or None before it is written.
     transcript_name = script_utils.subagent_transcript_name(agent_id)
@@ -514,7 +523,9 @@ def wait_agent(agent_id):
 
 def reviewer_pairs(run, words):
     """The (agent id, report file) pairs of `review`'s arguments. Each report file must be one the loop's requests
-    name."""
+    name. The call is refused only when every pair names a report that another agent already filled (a stale
+    dispatch); a call that also names a pair that is not stale passes. The agent that filled a report, run again with
+    the same command, is never refused."""
     if len(words) % 2:
         raise UsageError(f"`review` takes <agent id> <report file> pairs; got {len(words)} word(s): {words}")
     folder = run.loop_folder()
@@ -527,13 +538,21 @@ def reviewer_pairs(run, words):
             raise UsageError(f"{report_file} is no report file of the running loop's requests; "
                              "expected a report file from an `ACTION: dispatch-reviewer` line")
         pairs.append((checked_agent_id(agent_id), report_file))
+    used_problem = ""
+    if folder is not None:
+        used_problem = reviewer_dispatch.used_round_problem(folder, pairs)
+    if used_problem:
+        pending = open_reviewer_requests(run)
+        dispatch_lines = reviewer_dispatch_lines(run, pending) if pending else []
+        raise StaleDispatchError([used_problem, *dispatch_lines])
     return pairs
 
 
-def write_finished_reports(pairs):
-    """Write the report of each named reviewer that has finished and whose report file holds no text yet. Returns
-    the lines that name each finished reviewer with no report."""
+def write_finished_reports(run, pairs):
+    """Write the report of each named reviewer that has finished and whose report file holds no text yet, and record
+    in the round manifest which agent filled it. Returns the lines that name each finished reviewer with no report."""
     empty = []
+    folder = run.loop_folder()
     for agent_id, report_file in pairs:
         if reviewer_dispatch.report_text(report_file).strip():
             continue
@@ -546,6 +565,8 @@ def write_finished_reports(pairs):
             empty.append(f"- agent {agent_id}; report {report_file}; transcript {transcript}")
             continue
         script_utils.write_text_atomically(pathlib.Path(report_file), report)
+        if folder is not None:
+            reviewer_dispatch.record_filled_by(folder, report_file, agent_id)
     return empty
 
 
@@ -627,7 +648,7 @@ def follow_run(repo, run, words, launched_folder):
     empty = []
 
     def next_step():
-        empty.extend(write_finished_reports(pairs))
+        empty.extend(write_finished_reports(run, pairs))
         return bool(empty) or bool(unanswered_requests(run, pairs)) or not run.running()
 
     if not script_utils.wait_for(next_step, WAIT_SECONDS, POLL_SECONDS):
@@ -715,6 +736,9 @@ def main(argv):
     except UsageError as error:
         print(f"code_wait: {error}\n{__doc__}", file=sys.stderr)
         return 2
+    except StaleDispatchError as error:
+        print("\n".join(error.lines))
+        return 1
 
 
 if __name__ == "__main__":

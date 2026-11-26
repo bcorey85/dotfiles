@@ -110,9 +110,12 @@ def unnamed_removals(path, removed, spans, named, quotes):
     """The (number, text) entries of `removed` that no finding names: not by line, not by a span that holds one and not
     by quoting the comment's text in a finding of the file."""
     named_lines = {line for named_path, line in named if named_path == path and line}
+    # A line a finding quotes names its span the way a line number does.
+    quoted_lines = {number for number, text in removed if quoted_by_finding(path, text, quotes)}
+    named_lines |= quoted_lines
     return [(number, text) for number, text in removed
             if not protected_lines.in_span_with(number, spans, named_lines)
-            and not quoted_by_finding(path, text, quotes)]
+            and number not in quoted_lines]
 
 
 def without_reworded(removed, entries, current_entries, rewrites):

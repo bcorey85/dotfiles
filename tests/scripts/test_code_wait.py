@@ -791,7 +791,18 @@ class ReviewerRequestTest(unittest.TestCase):
         problem = code_wait.reviewer_dispatch.used_round_problem(
             self.loop_dir, [(OTHER_AGENT_ID, self.entries[0]["report_file"])])
 
-        self.assertEqual(problem, "round 1 is used: its report was filled by another agent; no round is open")
+        self.assertEqual(problem, "round 1 is used: its report was filled by another agent; "
+                                  "rerun the wait with no pairs to get the next round or the packet")
+
+    def test_the_refusal_with_no_round_open_ends_on_a_step(self):
+        self.fill_report(self.entries[0], AGENT_ID)
+
+        code, output, _ = self.run_main("review", OTHER_AGENT_ID, self.entries[0]["report_file"])
+
+        self.assertEqual(code, 1)
+        self.assertEqual(output.strip().splitlines()[-1],
+                         "round 1 is used: its report was filled by another agent; "
+                         "rerun the wait with no pairs to get the next round or the packet")
 
     def test_the_same_pair_run_again_after_its_report_was_written_still_waits(self):
         report_file = self.entries[0]["report_file"]

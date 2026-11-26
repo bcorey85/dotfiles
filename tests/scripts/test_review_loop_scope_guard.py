@@ -1035,12 +1035,14 @@ class StubLoop(review_loop_scoped_tests.ScopedTestRuns, review_loop_stray_files.
         self.run = run
         self.pre_existing = False
         self.commands_run = []
+        self.deadlines = []
 
     def reviewed_and_touched_files(self):
         return ["app.py"]
 
     def scoped_run_within(self, commands, deadline):
         self.commands_run.append(commands)
+        self.deadlines.append(deadline)
         return self.run
 
     def scoped_failures_pre_existing(self, real_failures):
@@ -1067,6 +1069,20 @@ class StrayGateTest(unittest.TestCase):
                 loop = StubLoop(["cmd"], run)
                 loop.pre_existing = pre_existing
                 self.assertEqual(loop.stray_gate_passes(), expected, label)
+
+    def test_the_gate_run_is_bound_by_the_scoped_test_time_limit(self):
+        loop = StubLoop(["cmd"], self.scoped_run())
+        with mock.patch.object(review_loop_stray_files.time, "monotonic", return_value=1000.0):
+            loop.stray_gate_passes()
+
+        expected = 1000.0 + review_loop_scoped_tests.NAMED_TESTS_BUDGET_SECONDS
+        self.assertEqual(loop.deadlines, [expected])
+
+    def test_a_run_that_timed_out_gives_no_verdict(self):
+        timed_out = self.scoped_run(tails=["tail"], real_failures=[("cmd", "timeout", "out")], gave_no_result=True)
+        loop = StubLoop(["cmd"], timed_out)
+
+        self.assertIsNone(loop.stray_gate_passes())
 
     def test_a_red_run_with_a_refused_accepted_failures_store_gives_no_verdict(self):
         red = {"tails": ["tail"], "real_failures": [("cmd", "exit 1", "out")]}

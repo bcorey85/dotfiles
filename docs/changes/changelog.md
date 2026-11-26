@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1195 changes
+1196 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -45,6 +45,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Branch review fixes for the review-put-back batch](notes/2026-11-25-branch-review-fixes-for-the-review-put-back-batch.md) [script/review-loop-comment-removal, script/reviewer-dispatch, script/code-wait, script/review-loop-stray-files] A quoted line of a removed comment block keeps the whole block removed, a stale-dispatch refusal with no round open ends on a step, and the stray-file gate runs under the named-tests time limit.
 * [Hold a plan impact that cites a user ruling](notes/2026-11-25-hold-a-plan-impact-that-cites-a-user-ruling.md) [script/review-loop-ruled, script/signoff-lines] A plan impact with no criterion change that quotes or points at a sign-off line the user ruled in the decision log is held for a ruling instead of adopted as code-wins.
 * [Comment put-back matches a finding by quoted text](notes/2026-11-25-comment-put-back-matches-a-finding-by-quoted-text.md) [script/review-loop-comment-removal, script/source-text] A comment a fix pass removes stays removed when a finding of the same file quotes its whole text, even after its line moved, instead of being put back and held as an ask.
 * [Review loop reads finding paths that hold dollar and plus signs](notes/2026-11-25-review-loop-reads-finding-paths-that-hold-dollar.md) [script/script-utils, script/plan-format] A finding on a path such as src/routes/$id.test.tsx or src/routes/+page.svelte now parses to that path and reaches the coder.

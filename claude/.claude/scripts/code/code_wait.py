@@ -12,7 +12,9 @@ printed: a resumed agent's old report is not printed again.
 <report file>` pair names a reviewer the fork dispatched for an open request (see reviewer_dispatch.py): the wait
 writes each one's report to its file as soon as that reviewer finishes, which is how the reports reach the loop (the
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
-when a named reviewer finished with no report (exit 1), or once the loop ends: it prints the loop's output when the
+when a named reviewer finished with no report (exit 1), when a pair names a request that is not open or a round
+another dispatch already filled (the wait writes no report, prints the problem and the dispatch lines, and exits 1),
+or once the loop ends: it prints the loop's output when the
 loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
 exits 1 with the reason and the restart step. A cap-reached packet also gets the `cap reached after N fix round(s)`
 line. When that packet is clean (converged, or capped and read as deferred) or cap-reached, and holds finding asks,

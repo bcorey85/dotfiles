@@ -227,7 +227,9 @@ def used_round_problem(loop_dir, pairs):
         used_text = f"round {used} is used: its report was filled by another agent"
     else:
         used_text = f"rounds {used} are used: their reports were filled by other agents"
-    next_step = f"dispatch round {open_rounds[0]}" if open_rounds else "no round is open"
+    next_step = "rerun the wait with no pairs to get the next round or the packet"
+    if open_rounds:
+        next_step = f"dispatch round {open_rounds[0]}"
     return f"{used_text}; {next_step}"
 
 

@@ -7834,6 +7834,19 @@ class CommentRemovalUnitTest(unittest.TestCase):
         self.assertEqual(self.run_.asks, [])
         self.assertNotIn("moved", (self.repo / "a.py").read_text())
 
+    def test_a_quote_of_one_line_of_a_two_line_comment_block_keeps_the_whole_block_removed(self):
+        lines = ["a = 1\n"] * 13
+        before = "".join(lines) + "# Retry twice because the API flakes\n# and back off between tries.\nb = 2\n"
+        after = "".join(lines) + "b = 2\n"
+        findings = [finding_record.parse_finding(
+            "a.py:10 [bug] the comment `# Retry twice because the API flakes` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("back off", (self.repo / "a.py").read_text())
+
     def test_a_quote_split_across_a_line_break_in_the_finding_names_the_comment(self):
         before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
         after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-766 fix notes
+767 fix notes
 
 Recent: the 7 days up to 2026-11-25, the newest note.
 
@@ -34,8 +34,8 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/verify-prep | 18 | 4 |
 | skill/review | 17 | 0 |
 | script/staged-claim-gate | 16 | 4 |
+| script/code-wait | 15 | 6 |
 | script/code-review-start | 14 | 6 |
-| script/code-wait | 14 | 5 |
 | script/verify-log | 14 | 1 |
 | script/log-review-finding | 12 | 0 |
 | script/criteria-dry-run | 11 | 4 |
@@ -50,10 +50,10 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/inline-interpreter-hint | 8 | 4 |
 | script/phase-asks | 8 | 3 |
 | script/review-fix-asks | 8 | 3 |
+| script/reviewer-dispatch | 8 | 3 |
 | script/check-scope | 7 | 2 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
-| script/reviewer-dispatch | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 1 |
@@ -95,6 +95,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/hunk-review-pane | 3 | 3 |
 | script/lane-status | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
+| script/review-loop-comment-removal | 3 | 3 |
 | script/review-loop-packet | 3 | 0 |
 | script/review-scope | 3 | 0 |
 | script/rg-path-gate | 3 | 1 |
@@ -126,7 +127,6 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/permission-question | 2 | 1 |
 | script/plan-review-shards | 2 | 0 |
 | script/review-loop-coder | 2 | 2 |
-| script/review-loop-comment-removal | 2 | 2 |
 | script/review-loop-findings | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/shell-quoting | 2 | 2 |
@@ -196,6 +196,7 @@ Recent: the 7 days up to 2026-11-25, the newest note.
 | script/review-loop-docs-kind | 1 | 0 |
 | script/review-loop-fix-induced | 1 | 0 |
 | script/review-loop-partial-fix | 1 | 1 |
+| script/review-loop-stray-files | 1 | 1 |
 | script/rule-anchors | 1 | 0 |
 | script/ruling-relay | 1 | 1 |
 | script/shape-clones | 1 | 1 |

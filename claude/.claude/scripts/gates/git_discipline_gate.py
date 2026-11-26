@@ -483,8 +483,12 @@ def is_sole_git_command(command, payload_cwd):
     process substitution, so nothing can change the index or the target clone between the hook's read and the
     commit. A `cd` the gate cannot read is not a sole step: the commit lands in a folder the hook's cwd does not
     name.
+    Reads the same strip_stored_heredocs text as git_commit_dirs, so the lines of a body that cat or tee writes to a
+    file, or that a script run reads, are not read as steps; a command that stores one, such as `cat > f <<EOF`, is
+    still a step, and so is a `git commit -F - <<EOF` body line.
     Called only after git_commit_dirs has read the command, so it parses."""
-    placed = list(placed_commands(command, payload_cwd))
+    stored_cut = shell_statements.strip_stored_heredocs(command)
+    placed = list(placed_commands(stored_cut, payload_cwd))
     if len(placed) != 1:
         return False
     only = placed[0]

@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-854 fix notes
+855 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -26,7 +26,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/plan-format | 31 | 7 |
 | script/quality-check-cap | 24 | 5 |
 | script/shell-write-gate | 24 | 4 |
-| script/git-discipline-gate | 22 | 11 |
+| script/git-discipline-gate | 23 | 12 |
 | script/pull-keep-index | 22 | 10 |
 | agent/review-loop | 20 | 0 |
 | script/staged-claim-gate | 20 | 7 |
@@ -124,6 +124,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/emit-orchestration | 2 | 0 |
 | script/gate | 2 | 2 |
 | script/git-calls | 2 | 2 |
+| script/git-commit-calls | 2 | 2 |
 | script/herdr-wake-limited | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -187,7 +188,6 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/fork-review | 1 | 1 |
 | script/full-check-receipt | 1 | 0 |
 | script/gate-replay | 1 | 0 |
-| script/git-commit-calls | 1 | 1 |
 | script/git-push-main-check | 1 | 0 |
 | script/git-raw-diff | 1 | 1 |
 | script/hook-local-row | 1 | 0 |

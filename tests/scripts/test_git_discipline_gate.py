@@ -1264,6 +1264,21 @@ class SharedCloneCommitTest(GateCaseBase):
         self.assert_shared_allowed("git add a.txt && git commit -m x -- a.txt", shared, shared)
         self.assert_shared_allowed(f"cd {shared} && git commit -m x -- a.txt", other, shared)
 
+    def test_a_heredoc_body_that_only_stores_text_is_no_commit(self):
+        shared = self.repo_on("feature")
+        for command in ("cat > f <<'EOF'\ngit commit -m x\nEOF", "cat > f <<EOF\ngit commit -m x\nEOF"):
+            with self.subTest(command=command):
+                self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_heredoc_body_that_runs_is_a_commit(self):
+        shared = self.repo_on("feature")
+        for command in ("bash <<EOF\ngit commit -m x\nEOF", "sh <<'EOF'\ngit commit -m x\nEOF",
+                        "cat <<'EOF' | bash\ngit commit -m x\nEOF",
+                        "cat > f <<EOF\n$(git commit -m z)\nEOF",
+                        "cat > f <<'EOF'\ngit commit -m x\nEOF\ngit commit -m y"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
     def merging_clone(self):
         shared = self.repo_on("feature")
         start_conflicted_merge(shared)
@@ -1311,6 +1326,18 @@ class SharedCloneCommitTest(GateCaseBase):
                         "git commit -m -a", 'git commit -m "-a" --no-edit'):
             with self.subTest(command=command):
                 self.assert_shared_allowed(command, shared, shared)
+
+    def test_a_heredoc_body_another_command_runs_is_read(self):
+        shared = self.merging_clone()
+        for command in ("{ cat <<'EOF'; } | bash\ngit commit -m x\nEOF",
+                        "source /dev/stdin <<'EOF'\ngit commit -m x\nEOF",
+                        "xargs -0 sh -c <<'EOF'\ngit commit -m x\nEOF"):
+            with self.subTest(command=command):
+                self.assert_shared_denied(command, shared, shared)
+
+    def test_a_stored_heredoc_body_with_an_apostrophe_does_not_break_the_sole_step_read(self):
+        shared = self.merging_clone()
+        self.assert_shared_denied("cat > f <<'EOF'\nit's\nEOF\ngit commit --no-edit", shared, shared)
 
     def test_a_merge_commit_redirected_to_another_clone_is_denied(self):
         merging = self.merging_clone()

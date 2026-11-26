@@ -6,6 +6,7 @@ import re
 from typing import NamedTuple
 
 import script_utils
+import shell_statements
 from shell_command import (
     LAUNCHER_PROGRAMS,
     command_after_wrappers,
@@ -272,12 +273,15 @@ def git_commit_dirs(command, start_dir, commit_call):
     git_c_directory does not follow (`--git-dir`, `--work-tree`, a `-c` that is neither an alias nor an editor
     setting), and one commit_call answers UNPLACED_COMMIT for; the words of each go in `unplaced`. Returns a
     CommitDirs, with both lists [] when the command holds no such commit; None when the command cannot be read (the
-    caller uses `start_dir`)."""
+    caller uses `start_dir`). The command is read as shell_statements.strip_stored_heredocs gives it: a heredoc body
+    that cat or tee writes to a file, or that a script run reads, is not read, so a commit named in one is no
+    commit, except inside a `$(...)` or backtick span of an unquoted body, which the shell runs."""
     commit_dirs = []
     unplaced = []
     first_call_words = None
     try:
-        placed_calls = list(placed_commands(command, start_dir))
+        stored_cut = shell_statements.strip_stored_heredocs(command)
+        placed_calls = list(placed_commands(stored_cut, start_dir))
     except ValueError:
         return None
     for placed_call in placed_calls:

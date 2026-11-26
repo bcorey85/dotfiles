@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import unittest.mock
 
+import receipt_repo
 import toolkit_paths
 
 SCRIPT = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR")
@@ -1053,6 +1054,38 @@ class PushReviewedTreeTest(GateCaseBase):
         second_base = self.head()
         self.assertTrue(self.reviewed_tree.record_reviewed("review-session", self.repo))
         self.assertEqual(self.reviewed_tree.latest_reviewed_base(self.repo), second_base)
+
+    def credit_capped_review_of_a_plan_finding(self):
+        """Store a cap-reached hand-back whose only open finding names a plan file, with a valid full-check receipt
+        for the tree, and credit it as the dispatch of this repo."""
+        sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+        import handback
+        import handback_store
+
+        store_patch = unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.tmp / "store")})
+        store_patch.start()
+        self.addCleanup(store_patch.stop)
+        self.write("app.py", "print('capped')\n")
+        receipt_repo.plant_receipt(str(self.repo))
+        capped = {"status": "cap-reached", "iter": 2,
+                  "findings_remaining": [{"finding": "plan wording", "file_line": "docs/plans/p/spec.md:3"}]}
+        handback_store.record("review-session", "dispatch", repo=self.repo_top())
+        handback_store.record_handback("review-session", status="cap-reached", message=json.dumps(capped),
+                                       no_reviewer=False)
+        refusal, _repo = handback.record_clean_review("review-session")
+        self.assertIsNone(refusal)
+
+    def test_push_passes_after_a_plans_only_commit_on_a_capped_review_and_is_denied_after_a_code_commit(self):
+        self.credit_capped_review_of_a_plan_finding()
+        self.commit("capped change")
+        self.write("docs/plans/p/spec.md", "# plan\n")
+        self.commit("plan edit")
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+
+        self.write("app.py", "print('unreviewed')\n")
+        self.commit("late code")
+        self.assert_denied("git push -u origin HEAD", "[git-discipline-gate] code changed since the last review",
+                           cwd=self.repo)
 
     def test_push_passes_when_only_notes_changed_after_the_review(self):
         self.review_then_commit()

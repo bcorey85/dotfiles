@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1196 changes
+1197 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -42,6 +42,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [A capped review with a passed full check on the tree earns review credit](notes/2026-11-25-a-capped-review-with-a-passed-full-check-on-the.md) [script/capped-review, script/git-discipline-gate] A cap-reached review with no blocker reads as deferred when a passed full-check receipt covers the tree, so a plans-only fix after it no longer leaves the push blocked.
 * [Staged-claim gate passes a line that names a check of what is staged](notes/2026-11-25-staged-claim-gate-passes-a-line-that-names-a-check.md) [script/staged-claim-gate] A reply that describes a check against what is staged no longer reads as a claim that the index holds files, so the Stop hook stops sending it back.
 * [Foreground-suite deny names a cap command only where the host runs it](notes/2026-11-25-foreground-suite-deny-names-a-cap-command-only.md) [script/memory-cap-scope, script/inline-interpreter-hint] On a host with no systemd scope, such as macOS, the foreground full-suite deny names run_in_background alone, so the approved path it names can run.
 * [Push refusal names the review base](notes/2026-11-25-push-refusal-names-the-review-base-background-run-text.md) [script/git-discipline-gate, script/reviewed-tree] The changed-since-review push deny now names the commit to review from, so /review after a commit no longer stops with no changes.

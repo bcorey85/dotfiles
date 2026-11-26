@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1269 changes
+1270 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -67,6 +67,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [a plan folder for a repo with no docs/plans lives in the git dir](notes/2026-11-26-a-plan-folder-for-a-repo-with-no-docs-plans-lives.md) [script/resolve-task-dir, script/verify-prep] resolve-task-dir.sh gains a git-dir plan root, <git dir>/claude-plans/, with a --home verb that names it when the repo has no docs/plans, and verify-prep finds a plan there and names a ticket path there in place of the tmpfs scratchpad.
 * [The criteria dry run lists closing-phase checks as CLOSING](notes/2026-11-26-the-criteria-dry-run-lists-closing-phase-checks-as.md) [script/criteria-dry-run, skill/eng-spec] criteria_dry_run.py prints `CHECK <label> CLOSING <skill> <command or item text>` for each Automated Verification item of a closing phase and runs none of them, so every phase's checks show in the report; the exit code is unchanged.
 * [full_check default limit is 1800 s](notes/2026-11-26-full-check-default-limit-is-1800-s.md) [script/full-check] full_check.py's default limit rises from 540 s to 1800 s, so a branch-end check of the dotfiles suite (about 870 s) passes and writes its receipt.
 * [A search worded exits 0 reads RED on no match](notes/2026-11-26-a-search-worded-exits-0-reads-red-on-no-match.md) [script/criteria-dry-run, shared/criteria-verdict] An rg, grep or git grep criterion whose text says it exits 0 now reads as a presence check, so no match (exit 1) reads RED, not GREEN; ban wording on the same line still wins.

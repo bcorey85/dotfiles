@@ -112,6 +112,13 @@ def folder_of_plan_file(target, top):
 find_plan_in_dir = vc.raising_verify_error(plan_format.find_plan_in_dir)
 
 
+def ticket_file_path(top):
+    """Where a ticket-only run keeps the fetched ticket: the repo's git-dir plan root, which outlives a reboot and
+    stays out of the tracked tree. `<KEY>` is the ticket key the caller fills in."""
+    git_dir = vc.run(["git", "rev-parse", "--path-format=absolute", "--git-dir"], cwd=top, check=True).stdout.strip()
+    return f"{git_dir}/claude-plans/<KEY>/00-ticket.md"
+
+
 def resolve_inputs(target, ticket_file, top):
     """(mode, ticket_path|None, plan_path|None, note). The ticket is None only in `plan-only` mode. Raises VerifyError
     for the ask / ticket-only exits. The resolver runs from the repo top level; a relative `target` or `ticketFile` has
@@ -129,9 +136,11 @@ def resolve_inputs(target, ticket_file, top):
     if code == 3:
         raise vc.VerifyError("several matches; ask the user which:\n" + output, 3)
     if code == 4:
+        ticket_path = ticket_file_path(top)
         raise vc.VerifyError(
             "no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
-            "raw fields to <scratchpad>/<KEY>-ticket.md, then rerun with --ticket-file <that path>.\n"
+            f"raw fields to {ticket_path} (that folder is in the git dir, so it survives a reboot), then rerun "
+            f"with --ticket-file {ticket_path}.\n"
             + done.stderr.strip(),
             4,
         )

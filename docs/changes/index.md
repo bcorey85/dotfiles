@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1269 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1270 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [The criteria dry run lists closing-phase checks as CLOSING](notes/2026-11-26-the-criteria-dry-run-lists-closing-phase-checks-as.md).
+Latest change: 2026-11-26, [a plan folder for a repo with no docs/plans lives in the git dir](notes/2026-11-26-a-plan-folder-for-a-repo-with-no-docs-plans-lives.md).
 
 ## Top gains
 

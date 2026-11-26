@@ -97,15 +97,6 @@ def other_live_sessions_in(folder, own_session_id):
     return found
 
 
-def other_live_session_in(folder, own_session_id):
-    """The first row of `other_live_sessions_in` (registry file order); None when there is none. It is matched by
-    working folder alone, so it says nothing about who wrote a file."""
-    found = other_live_sessions_in(folder, own_session_id)
-    if not found:
-        return None
-    return found[0]
-
-
 def session_transcript(session_id):
     """The transcript file of a session (first match in sorted order under any project), None when it has none or
     `session_id` is not a non-empty string."""

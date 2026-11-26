@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1258 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1260 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-26, [The review loop reads the single-caller census against its review base](notes/2026-11-26-the-review-loop-reads-the-single-caller-census.md).
 

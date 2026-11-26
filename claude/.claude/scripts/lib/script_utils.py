@@ -555,9 +555,9 @@ def head_commit_or_unborn(repo):
     return None
 
 
-def head_commit_time(top):
-    """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
-    stamp = git_output(top, "log", "-1", "--format=%ct")
+def head_commit_time(top, commit="HEAD"):
+    """The committer time of `commit`, HEAD by default, in seconds, or None when git cannot tell (no commit yet)."""
+    stamp = git_output(top, "log", "-1", "--format=%ct", commit)
     if not stamp:
         return None
     return float(stamp)

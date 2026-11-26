@@ -438,30 +438,19 @@ def written_paths(transcript_path, since=None, succeeded_only=False):
 def refused_call_ids(line):
     """The tool_use ids whose tool_result blocks on this transcript line have `is_error` true."""
     record = script_utils.transcript_record(line) if '"tool_result"' in line else None
-    message = record.get("message") if record else None
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return []
-    return [block.get("tool_use_id") for block in content
-            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error")]
+    results = script_utils.record_blocks(record, "tool_result")
+    return [block.get("tool_use_id") for block in results if block.get("is_error")]
 
 
 def call_paths_by_id(line):
     """The (tool_use id, file paths) of each Write, Edit, MultiEdit and NotebookEdit call on one transcript line
     that names a path. A call with no id gets a key of its own."""
     record = script_utils.transcript_record(line) if '"tool_use"' in line else None
-    message = record.get("message") if record else None
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, list):
-        return []
     calls = []
-    for block in content:
-        if not isinstance(block, dict) or block.get("type") != "tool_use":
-            continue
+    for block in script_utils.record_blocks(record, "tool_use"):
         if block.get("name") not in WRITE_TOOL_NAMES:
             continue
-        tool_input = block.get("input")
-        found = input_paths(tool_input if isinstance(tool_input, dict) else {})
+        found = input_paths(script_utils.block_input(block))
         if found:
             calls.append((block.get("id") or object(), found))
     return calls

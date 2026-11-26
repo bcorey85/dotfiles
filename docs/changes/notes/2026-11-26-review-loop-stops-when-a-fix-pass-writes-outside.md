@@ -22,6 +22,8 @@ The loop names each coder call's session (`--session-id`) and reads that transcr
 
 `claude/.claude/scripts/CLAUDE.md` names both new owners: `review/review_loop_outside_writes.py` and `review/review_loop_criteria_quotes.py`, with `plan_format.ac_quotes` and `plan_ac_quotes`.
 
+`loop_transcript.written_paths` and `script_utils.record_tool_calls` read content blocks through one helper, `script_utils.record_blocks`.
+
 ## Evidence
 
 Judgment from the incident: a fix pass wrote to a sibling checkout, and the scope guard, which watches the repo only, never saw it.

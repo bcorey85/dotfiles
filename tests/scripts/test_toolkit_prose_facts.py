@@ -284,11 +284,6 @@ class ToolkitProseFactsTest(unittest.TestCase):
                                     "Ending the run hands back", "Resume"])
         self.assertNotIn("Getting this wrong is silent", CALIBRATION_FILE.read_text())
 
-    def test_review_fork_run_reads_an_existing_review_stop_before_it_writes_it(self):
-        fork_run = (CLAUDE_DIR / "skills" / "_shared" / "review-fork-run.md").read_text()
-        ending = fork_run.split("## Ending the run hands back", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("When that file already exists, Read it first.", ending)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,9 +61,12 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [Memory-cap hook adds the cap to a plain test run in place of denying it](notes/2026-11-23-memory-cap-hook-adds-the-cap-to-a-plain-test-run.md) [script/inline-interpreter-hint, script/check-scope, script/memory-cap-scope, script/quality-check-cap] A single plain test command that lacks the memory cap now runs capped on the first call, with the cap added by the hook, in place of a denied call and a resend. A test runner named by a path (`./pytest`, `.venv/bin/pytest`) is now denied until it carries the cap.
 * [Lane close and phase-change lines name the herdr lane scripts](notes/2026-11-23-lane-close-and-phase-change-lines-name-the-herdr.md) [rule/orchestration] The orchestration Git section now tells the orchestrator to close a merged lane with herdr-lane-resume --close, and says herdr-phase-change takes the worker's ListAgents name and adds the report-to line itself; the dotfiles CLAUDE.md lists the two new lane scripts and where shared script defaults live.
 
+### Removed
+
+* [review fork review-stop.md read-first line withdrawn](notes/2026-11-26-review-fork-review-stop-md-read-first-line.md) [skill/review] The review-fork-run.md line that read an existing review-stop.md before the Write is withdrawn; no skill line ships for it.
+
 ### Fixed
 
-* [Review fork reads an existing review-stop.md before it writes it](notes/2026-11-26-review-fork-reads-an-existing-review-stop-md.md) [skill/review] The review fork reads an existing review-stop.md before it writes it, so its Write is not refused as not read yet.
 * [full_check default limit is 1800 s](notes/2026-11-26-full-check-default-limit-is-1800-s.md) [script/full-check] full_check.py's default limit rises from 540 s to 1800 s, so a branch-end check of the dotfiles suite (about 870 s) passes and writes its receipt.
 * [Memory-cap hook skips heredoc bodies and comments](notes/2026-11-26-memory-cap-hook-skips-heredoc-bodies-and-comments.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/shell-statements] The memory-cap hook reads a test runner only in the command's shell code, so a quoted heredoc body that names vitest, pytest or tests/run.sh is no longer denied.
 * [plan_check check reads a plan folder through its plan file](notes/2026-11-26-plan-check-check-reads-a-plan-folder-through-its.md) [script/plan-check] plan_check.py check given a plan folder reads its plan file, as owner already did, in place of crashing with IsADirectoryError.

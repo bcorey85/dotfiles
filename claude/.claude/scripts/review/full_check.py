@@ -162,8 +162,9 @@ SOURCE_REPO = "repo"
 SOURCE_DISCOVERED = "discovered"
 MISSING_MODULE = re.compile(r"No module named '?([A-Za-z_][\w.]*)'?")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-# Under the Bash tool's 600 s ceiling, so a loop's shell call ends before the tool moves it to the background.
-DEFAULT_TIMEOUT_SECONDS = 540
+# Above a normal full run of the dotfiles suite (about 870 s wall), so a branch-end check with no --timeout passes and
+# writes its receipt. A call past the Bash tool's 600 s ceiling moves to the background and still finishes.
+DEFAULT_TIMEOUT_SECONDS = 1800
 TAIL_LINES = 40
 # A lint error: ruff's rule line, then its ` --> file:line:col` line.
 LINT_RULE_LINE = re.compile(r"^[A-Z]+\d+ ")

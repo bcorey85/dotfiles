@@ -1373,5 +1373,27 @@ class CappedLiveRunTest(unittest.TestCase):
         self.assertFalse(process_group.pid_is_alive(started[0]))
 
 
+# A normal full run of the dotfiles suite takes about 870 s wall.
+DOTFILES_SUITE_WALL_SECONDS = 870
+
+
+class DefaultLimitTest(unittest.TestCase):
+    def test_a_run_with_no_timeout_gets_a_limit_above_a_normal_dotfiles_suite_run(self):
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        repo = pathlib.Path(scratch.name)
+        (repo / "CLAUDE.md").write_text(f"Quality check: `{PASSING_SUITE}`\n")
+        log = repo / "full-check.log"
+
+        with mock.patch.object(full_check, "run", return_value=("passed", "", {"tree": None})) as run, \
+                mock.patch.object(full_check, "print_result"):
+            exit_code = full_check.main([str(repo), "--log", str(log)])
+
+        self.assertEqual(exit_code, 0)
+        limit = run.call_args.args[3]
+        self.assertEqual(limit, full_check.DEFAULT_TIMEOUT_SECONDS)
+        self.assertGreaterEqual(limit, 2 * DOTFILES_SUITE_WALL_SECONDS)
+
+
 if __name__ == "__main__":
     unittest.main()

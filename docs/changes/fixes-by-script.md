@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-828 fix notes
+832 fix notes
 
 Recent: the 7 days up to 2026-11-26, the newest note.
 
@@ -19,7 +19,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/handback | 59 | 3 |
 | script/review-commit-gate | 46 | 4 |
 | script/review-loop-gate | 35 | 0 |
-| script/full-check | 33 | 5 |
+| script/full-check | 34 | 6 |
 | script/coder-gate | 32 | 5 |
 | script/review-loop | 32 | 15 |
 | script/script-utils | 32 | 9 |
@@ -33,18 +33,18 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | skill/code | 20 | 2 |
 | script/shell-command | 19 | 7 |
 | script/verify-prep | 18 | 3 |
+| skill/review | 18 | 1 |
 | script/code-review-start | 17 | 9 |
-| skill/review | 17 | 0 |
 | script/code-wait | 16 | 6 |
 | script/verify-log | 14 | 1 |
 | script/refactor-flow | 13 | 4 |
+| script/inline-interpreter-hint | 12 | 8 |
 | script/log-review-finding | 12 | 0 |
 | script/review-launch | 12 | 6 |
 | script/verify-common | 12 | 2 |
 | script/check-output | 11 | 3 |
 | script/criteria-dry-run | 11 | 2 |
 | script/herdr-worktree | 11 | 4 |
-| script/inline-interpreter-hint | 11 | 7 |
 | script/log-escape | 11 | 1 |
 | script/review-asks | 10 | 1 |
 | script/check-scope | 8 | 2 |
@@ -55,6 +55,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/reviewer-dispatch | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
+| script/memory-cap-scope | 7 | 7 |
 | script/phase-start | 7 | 5 |
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
@@ -62,11 +63,12 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/full-check-gate | 6 | 2 |
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 0 |
-| script/memory-cap-scope | 6 | 6 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
+| script/plan-check | 6 | 6 |
 | script/review-loop-ruled | 6 | 5 |
 | script/reviewed-tree | 6 | 4 |
+| script/shell-statements | 6 | 5 |
 | script/deferred-push-check | 5 | 0 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
@@ -75,10 +77,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/herdr-worktree-watch | 5 | 4 |
 | script/loop-transcript | 5 | 2 |
 | script/open-child-gate | 5 | 0 |
-| script/plan-check | 5 | 5 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
-| script/shell-statements | 5 | 4 |
 | script/test-run-output | 5 | 0 |
 | (no component) | 4 | 0 |
 | script/agent-model-guard | 4 | 1 |

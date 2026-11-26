@@ -24,6 +24,9 @@ import inline_interpreter_hint
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
 
 CAUGHT = {
+    "heredoc_fed_to_a_shell": "bash <<'EOF'\npytest -x tests/\nEOF",
+    "heredoc_piped_into_a_shell": "cat <<'EOF' | bash\npytest -x tests/\nEOF",
+    "runner_after_a_quoted_heredoc": "cat <<'EOF' > notes.md\nvitest notes\nEOF\npytest -x tests/",
     "unittest_piped_to_tail": "python3 -m unittest discover -s bin 2>&1 | tail -5",
     "pytest": "pytest -x tests/",
     "python_module_pytest_after_cd": "cd app && python -m pytest",
@@ -78,6 +81,11 @@ PASSED = {
     "systemd_run_dangling_slice_last_word": "echo pytest && systemd-run --user --scope --slice",
     "plain_ls": "ls tests",
     "unsplittable_text": "echo 'unterminated",
+    # The bench call the gate once denied: quoted heredoc bodies and a quoted argument name vitest.
+    "heredoc_bodies_name_runners": ("Q=bin/build_queue.py\npython3 $Q new --description \"runs vitest uncapped.\" "
+                                    "--body - \"t\" <<'EOF'\nIt runs vitest without the cap.\nEOF\n"
+                                    "python3 $Q new --body - \"u\" <<'EOF'\npytest and bash tests/run.sh\nEOF\n"
+                                    "python3 $Q; echo rc=$?"),
 }
 
 

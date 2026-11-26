@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1261 changes
+1265 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -63,6 +63,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Review fork reads an existing review-stop.md before it writes it](notes/2026-11-26-review-fork-reads-an-existing-review-stop-md.md) [skill/review] The review fork reads an existing review-stop.md before it writes it, so its Write is not refused as not read yet.
+* [full_check default limit is 1800 s](notes/2026-11-26-full-check-default-limit-is-1800-s.md) [script/full-check] full_check.py's default limit rises from 540 s to 1800 s, so a branch-end check of the dotfiles suite (about 870 s) passes and writes its receipt.
+* [Memory-cap hook skips heredoc bodies and comments](notes/2026-11-26-memory-cap-hook-skips-heredoc-bodies-and-comments.md) [script/memory-cap-scope, script/inline-interpreter-hint, script/shell-statements] The memory-cap hook reads a test runner only in the command's shell code, so a quoted heredoc body that names vitest, pytest or tests/run.sh is no longer denied.
+* [plan_check check reads a plan folder through its plan file](notes/2026-11-26-plan-check-check-reads-a-plan-folder-through-its.md) [script/plan-check] plan_check.py check given a plan folder reads its plan file, as owner already did, in place of crashing with IsADirectoryError.
 * [The review loop reads the single-caller census against its review base](notes/2026-11-26-the-review-loop-reads-the-single-caller-census.md) [script/review-loop-script, script/phase-change-file] A based review's smell-reviewer prompt now lists census entries for the whole branch, such as a superseded helper an earlier branch commit added; phase_change_file.py exits 2 with a reason when the change-file check cannot run.
 * [Adopting a plan impact that needs only a ruling settles the review](notes/2026-11-26-adopting-a-plan-impact-that-needs-only-a-ruling.md) [script/review-fix, script/handback] decide adopt on a held plan impact that changes no acceptance criterion and has plan cause ends done, records the ruling as applied, and the push check counts the review clean, with no re-dispatch.
 * [rule-anchors check reads the checkout it runs in](notes/2026-11-26-rule-anchors-check-reads-the-checkout-it-runs-in.md) [script/rule-anchors] `rule-anchors.sh check` run inside a linked dotfiles worktree now reads that worktree's prompt files and docs/rule-anchors.md, so a stale row there is reported.

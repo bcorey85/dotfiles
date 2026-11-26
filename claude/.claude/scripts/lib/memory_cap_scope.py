@@ -5,9 +5,9 @@ run inside `systemd-run --user --scope --slice=tests.slice -p MemoryMax=... -p M
 cap, and the shared slice (the unit in the stowed systemd package) caps all test runs together. uncapped_test_run
 names such a command: a step that runs tests (check_scope.step_runs_tests), `tests/run.sh`, or a test program named
 by a path (`./pytest`), with no systemd-run wrapper in front of it, or with a systemd-run wrapper that names no shared
-slice. A step that asks for usage (`--help`, `-h`, `--version`, `-V`) runs nothing and is not one. A command text that
-shlex cannot split is not one either. cap_available says whether this machine can run the scope: Linux, systemd-run on
-PATH and a user bus.
+slice. Heredoc bodies and comments are not read (shell_statements.shell_code). A step that asks for usage (`--help`,
+`-h`, `--version`, `-V`) runs nothing and is not one. A command text that shlex cannot split is not one either.
+cap_available says whether this machine can run the scope: Linux, systemd-run on PATH and a user bus.
 
 is_rewritable_test_run names the one case the hook fixes itself: the whole command is a single plain step that runs
 a test runner or the repo's tests/run.sh, and capped_command puts CAPPED_PREFIX (which carries the shared slice) in
@@ -24,6 +24,7 @@ import sys
 import uuid
 
 import shell_command
+from shell_statements import shell_code
 
 MEMORY_MAX = "8G"
 TEST_SLICE = "tests.slice"
@@ -151,10 +152,12 @@ def is_own_tests_path(word, name):
 
 
 def uncapped_test_run(command):
+    """True when a step of the command's shell code (shell_statements.shell_code: heredoc bodies and comments cut)
+    is an uncapped test run."""
     if not TEST_WORDS.search(command):
         return False
     try:
-        steps = shell_command.split_simple_commands(command)
+        steps = shell_command.split_simple_commands(shell_code(command))
     except ValueError:
         return False
     return any(step_is_uncapped_test_run(words) for words in steps)
@@ -278,7 +281,7 @@ def foreground_full_suite(command):
     if not TEST_WORDS.search(command):
         return False
     try:
-        steps = shell_command.split_simple_commands(command)
+        steps = shell_command.split_simple_commands(shell_code(command))
     except ValueError:
         return False
     return any(step_is_full_suite(words) for words in steps)

@@ -100,6 +100,29 @@ class PlanCheckCliTest(unittest.TestCase):
         self.assertEqual(done.returncode, 1)
         self.assertIn("spec.md, plan.md or *-05-plan.md", done.stdout)
 
+    def test_check_given_a_plan_folder_reads_its_plan_md_as_the_file_would_be_read(self):
+        plan_folder = self.folder / "task"
+        plan_folder.mkdir()
+        plan_file = plan_folder / "plan.md"
+        plan_file.write_text(PLAN.replace("- [x] Phase 2", "- [ ] Phase 2"))
+
+        on_file = self.run_plan_check("check", str(plan_file))
+        on_folder = self.run_plan_check("check", str(plan_folder))
+
+        self.assertNotIn("Traceback", on_folder.stderr)
+        self.assertEqual((on_folder.returncode, on_folder.stdout), (on_file.returncode, on_file.stdout))
+        self.assertIn(str(plan_file), on_file.stdout)
+
+    def test_check_given_a_folder_with_no_plan_file_names_the_expected_plan_files_and_fails(self):
+        plan_folder = self.folder / "empty"
+        plan_folder.mkdir()
+
+        done = self.run_plan_check("check", str(plan_folder))
+
+        self.assertEqual(done.returncode, 1)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertIn("spec.md, plan.md or *-05-plan.md", done.stdout)
+
     def write_queue_item(self, home, name, author):
         queue_dir = home / "agent-evals" / "queue"
         queue_dir.mkdir(parents=True, exist_ok=True)

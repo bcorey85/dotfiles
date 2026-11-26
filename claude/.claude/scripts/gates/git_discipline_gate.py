@@ -118,6 +118,8 @@ CODER_INDEX_DENIED = ("[git-discipline-gate] a coder may not write the index: th
                       "edits, run `git restore <paths>` or `git checkout -- <paths>`.")
 PUSH_UNREVIEWED_DENIED = ("[git-discipline-gate] code changed since the last review: run /review on this branch, "
                           "then push")
+PUSH_UNREVIEWED_DENIED_WITH_BASE = ("[git-discipline-gate] code changed since the last review: run /review "
+                                    "base={base} on this branch, then push")
 
 
 class DenyError(Exception):
@@ -517,6 +519,9 @@ def check_push_reviewed(command, calls, payload_cwd):
     for directory in push_dirs:
         state = reviewed_tree.push_review_state(directory)
         if state == reviewed_tree.PUSH_CHANGED:
+            base = reviewed_tree.latest_reviewed_base(directory)
+            if base:
+                raise DenyError(PUSH_UNREVIEWED_DENIED_WITH_BASE.format(base=base))
             raise DenyError(PUSH_UNREVIEWED_DENIED)
 
 

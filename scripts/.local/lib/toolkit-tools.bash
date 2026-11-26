@@ -1,4 +1,5 @@
-# Sourced by herdr-dev, herdr-lane-resume, herdr-worktree, herdr-phase-change and herdr-worktree-watch.
+# Sourced by herdr-dev, herdr-lane-resume, herdr-worktree, herdr-phase-change and herdr-worktree-watch, and by
+# scripts/.local/lib/lane_list.py (for herdr-lane-sweep and herdr-worktree-prune).
 # Sets lanes_cli and session_pane, the toolkit scripts' paths, each overridable by an environment variable,
 # and lane_claude, the command a lane's Claude session starts with.
 

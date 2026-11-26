@@ -499,7 +499,9 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
 
     collision_retry.wait_out_collision()
     retry_timeout = min(COMMAND_TIMEOUT_SECONDS, retry_seconds)
-    code, stdout, stderr = script_utils.run_process(popen_command, repo_root, env=environment, timeout=retry_timeout)
+    # A fresh argv: each capped run names a scope unit of its own, and the first run's unit stays loaded when it failed.
+    retry_command, _ = memory_cap_scope.shell_popen_args(command)
+    code, stdout, stderr = script_utils.run_process(retry_command, repo_root, env=environment, timeout=retry_timeout)
     return code, stdout + stderr, retry_timeout
 
 

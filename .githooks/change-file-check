@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Refuse a change set that changes the Claude Code toolkit without an added or modified change file.
+# Reads the `git diff --name-status -z` stream on stdin (NUL after each status and each path), so git never quotes a
+# path and a path may hold a tab or a newline. Exits 1 with the refusal text on stderr, exits 2 on a stream that is not
+# status/path pairs, else 0. The pre-commit hook and the /code phase end both call it, so they read one copy of the
+# patterns.
+set -euo pipefail
+
+toolkit_pattern='^claude/\.claude/(agents|skills|commands|hooks|scripts)/|^claude/\.claude/CLAUDE\.md$'
+change_file_pattern='^docs/changes/notes/20[^/]*\.md$'
+
+toolkit_paths=()
+has_change_file=0
+status=""
+while IFS= read -r -d '' status; do
+    if ! IFS= read -r -d '' changed_path; then
+        echo "change-file-check: stdin: status '$status' has no NUL-terminated path after it" >&2
+        exit 2
+    fi
+    if [[ ! "$status" =~ ^[A-Z]$ ]]; then
+        echo "change-file-check: stdin: expected one capital status letter before each path, got '$status'" >&2
+        exit 2
+    fi
+    if [[ "$changed_path" =~ $toolkit_pattern ]]; then
+        toolkit_paths+=("$changed_path")
+    fi
+    if [[ ("$status" == "A" || "$status" == "M") && "$changed_path" =~ $change_file_pattern ]]; then
+        has_change_file=1
+    fi
+done
+
+# At a clean EOF the failed read leaves status empty; leftover text is a record with no closing NUL.
+if [[ -n "$status" ]]; then
+    echo "change-file-check: stdin: stream ends in a partial record (expected NUL after each status and each path), got '$status'" >&2
+    exit 2
+fi
+
+if [[ ${#toolkit_paths[@]} -gt 0 && "$has_change_file" -eq 0 ]]; then
+    echo "change-file-check: the change set changes the toolkit but adds or modifies no docs/changes/notes/20*.md file:" >&2
+    printf '  %s\n' "${toolkit_paths[@]}" >&2
+    echo "File a change file with: python3 ~/agent-evals/bin/build_changes.py new \"<title>\" --by claude-code/<model id>" >&2
+    exit 1
+fi

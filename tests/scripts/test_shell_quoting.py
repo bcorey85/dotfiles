@@ -13,7 +13,32 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or (HERE if (HERE 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from shell_command import split_command_steps
-from shell_quoting import join_line_continuations, quoted_positions, strip_comments, without_quote_characters
+from shell_quoting import (
+    join_line_continuations,
+    literal_positions,
+    quoted_positions,
+    shell_word,
+    strip_comments,
+    without_quote_characters,
+)
+
+
+class ShellWordTest(unittest.TestCase):
+    def test_plain_text_is_double_quoted_and_text_double_quotes_cannot_hold_is_single_quoted(self):
+        cases = {
+            "/w/a b.ts": '"/w/a b.ts"',
+            "/w/it's": '"/w/it\'s"',
+            "/w/a $(x)": "'/w/a $(x)'",
+            "/w/a`x`": "'/w/a`x`'",
+            "/w/a\\x": "'/w/a\\x'",
+            "/w/a!x": "'/w/a!x'",
+            '/w/a"b': "'/w/a\"b'",
+            "/w/a\nx": "'/w/a\nx'",
+            "/w/it's $x": "'/w/it'\"'\"'s $x'",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text):
+                self.assertEqual(shell_word(text), expected)
 
 
 class WithoutQuoteCharactersTest(unittest.TestCase):
@@ -25,7 +50,8 @@ class WithoutQuoteCharactersTest(unittest.TestCase):
             "plain text": "plain text",
         }
         for text, expected in cases.items():
-            self.assertEqual(without_quote_characters(text), expected, text)
+            with self.subTest(text):
+                self.assertEqual(without_quote_characters(text), expected)
 
 
 class QuotedPositionsTest(unittest.TestCase):
@@ -146,6 +172,18 @@ class JoinLineContinuationsTest(unittest.TestCase):
         }
         for text, expected in cases.items():
             self.assertEqual(expected, join_line_continuations(text), repr(text))
+
+
+class LiteralPositionsTest(unittest.TestCase):
+    def test_single_quoted_and_backslash_escaped_characters_are_literal_but_double_quoted_are_not(self):
+        cases = {
+            "'$a'": {1, 2},
+            "\\$a": {1},
+            '"$a"': set(),
+            "$a": set(),
+        }
+        for text, expected in cases.items():
+            self.assertEqual(expected, literal_positions(text), text)
 
 
 if __name__ == "__main__":

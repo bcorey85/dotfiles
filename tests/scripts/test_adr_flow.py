@@ -130,6 +130,13 @@ if sys.argv[1:3] == ["pr", "view"]:
 sys.exit(1)
 """
 
+FAKE_GH_EMPTY = """#!/usr/bin/env python3
+import sys
+if sys.argv[1:3] == ["pr", "view"]:
+    sys.exit(1)
+print("[]")
+"""
+
 FAKE_GH_FAILS = """#!/usr/bin/env python3
 import sys
 sys.exit(1)
@@ -512,6 +519,325 @@ class AdrFlowTest(unittest.TestCase):
         self.run_flow("prep", "LED-5")
 
         self.assertEqual(self.git("status", "--porcelain=v1", "--ignored"), before)
+
+    # status
+
+    def test_status_with_a_pr_and_a_task_dir_left_is_not_finished(self):
+        task_dir = self.make_task_dir()
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            f"adr: not finished: PR https://github.com/o/r/pull/3 exists and task dir {self.absolute(task_dir)} "
+            "remains; run /adr",
+            result.stdout,
+        )
+
+    def commit_adr(self, name="LED-5-yield-view"):
+        self.write(f"{DECISIONS}/{name}.md", "# adr\n")
+        self.git("add", DECISIONS)
+        self.git("commit", "-q", "-m", "adr")
+
+    def test_status_with_a_task_dir_deleted_but_not_committed_is_not_finished(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr()
+        self.git("rm", "-rq", task_dir)
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+
+    def test_status_with_the_task_dir_deleted_but_no_committed_adr_is_not_finished(self):
+        task_dir = self.make_task_dir()
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+        self.assertIn("docs/decisions/LED-5", result.stdout)
+
+    def test_status_reads_the_upstream_tree_when_the_branch_has_one(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr()
+        self.git("update-ref", "refs/remotes/origin/feature/yield-view", "HEAD")
+        self.git("config", "remote.origin.url", str(self.repo))
+        self.git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        self.git("config", "branch.feature/yield-view.remote", "origin")
+        self.git("config", "branch.feature/yield-view.merge", "refs/heads/feature/yield-view")
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: not finished", result.stdout)
+
+    def test_status_with_a_kept_task_dir_and_a_committed_adr_for_it_is_done(self):
+        self.make_task_dir()
+        self.commit_adr()
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_status_with_a_pr_and_a_committed_then_deleted_task_dir_is_done(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr()
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_status_with_a_mistyped_ticket_key_cannot_tell(self):
+        self.make_task_dir()
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-55")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "adr: cannot tell: LED-55 names no task dir and none was ever committed",
+            result.stdout,
+        )
+
+    def test_status_with_a_key_that_only_a_longer_key_dir_matches_cannot_tell(self):
+        self.make_task_dir("LED-50-x")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: LED-5 names no task dir and none was ever committed", result.stdout)
+
+    def test_status_and_prep_report_a_failing_git_call_without_a_traceback(self):
+        fake_bin = self.temp_root / "fakebin"
+        fake_bin.mkdir()
+        real_git = shutil.which("git")
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            'for word in "$@"; do\n'
+            '  if [ "$word" = symbolic-ref ]; then exit 128; fi\n'
+            "done\n"
+            f'exec {real_git} "$@"\n'
+        )
+        fake_git.chmod(0o755)
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+        self.make_task_dir()
+        original_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{fake_bin}:{original_path}"
+        self.addCleanup(os.environ.__setitem__, "PATH", original_path)
+
+        for verb in ("status", "prep"):
+            result = self.run_flow(verb, "LED-5")
+
+            self.assertEqual(result.returncode, 1, f"{verb}: {result.stdout}{result.stderr}")
+            self.assertTrue(result.stderr.startswith("adr-flow:"), f"{verb}: {result.stderr}")
+            self.assertNotIn("Traceback", result.stderr, verb)
+
+    def test_status_with_a_failing_git_log_refuses_instead_of_reading_never_committed(self):
+        fake_bin = self.temp_root / "fakebin"
+        fake_bin.mkdir()
+        real_git = shutil.which("git")
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/bin/sh\n"
+            'for word in "$@"; do\n'
+            '  if [ "$word" = --format=%H ]; then echo boom >&2; exit 128; fi\n'
+            "done\n"
+            f'exec {real_git} "$@"\n'
+        )
+        fake_git.chmod(0o755)
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+        self.make_task_dir()
+        original_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{fake_bin}:{original_path}"
+        self.addCleanup(os.environ.__setitem__, "PATH", original_path)
+
+        result = self.run_flow("status", "LED-55")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertTrue(result.stderr.startswith("adr-flow:"), result.stderr)
+        self.assertIn("boom", result.stderr)
+        self.assertNotIn("never committed", result.stdout)
+
+    def test_status_with_no_pr_yet_exits_zero_even_with_a_task_dir(self):
+        self.make_task_dir()
+        self.gh = self.fake_gh(FAKE_GH_EMPTY)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: no PR yet")
+
+    def test_status_when_gh_fails_cannot_tell_and_exits_one(self):
+        self.make_task_dir()
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: gh failed", result.stdout)
+
+    def test_status_finds_a_pr_through_the_list_fallback_and_reports_the_task_dir_left(self):
+        self.make_task_dir()
+        self.gh = self.fake_gh(FAKE_GH_FOUND)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("PR https://github.com/o/r/pull/7 exists", result.stdout)
+
+    def test_status_on_a_branch_without_a_ticket_key_takes_the_task_dir_by_path(self):
+        task_dir = self.make_task_dir("yield-view")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", task_dir)
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            f"adr: not finished: PR https://github.com/o/r/pull/3 exists and task dir {self.absolute(task_dir)} "
+            "remains; run /adr",
+            result.stdout,
+        )
+
+    def test_status_with_a_misspelled_plan_folder_cannot_tell(self):
+        self.make_task_dir("yield-view")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", f"{PLANS}/yield-viw")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: docs/plans/yield-viw names no task dir", result.stdout)
+
+    def test_status_with_the_plan_file_inside_a_task_dir_cannot_tell(self):
+        task_dir = self.make_task_dir("yield-view")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", f"{task_dir}/spec.md")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("names no task dir under docs/plans", result.stdout)
+
+    def test_status_with_a_plan_folder_that_was_deleted_is_done(self):
+        task_dir = self.make_task_dir("yield-view")
+        self.commit_adr("yield-view")
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", task_dir)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_status_with_a_dir_that_is_not_a_task_dir_cannot_tell(self):
+        self.write("docs/other/LED-5-x/a.md", "a\n")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "docs/other/LED-5-x")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: not a task dir:", result.stdout)
+
+    def test_status_on_a_detached_head_cannot_tell(self):
+        self.make_task_dir()
+        self.git("checkout", "-q", "--detach")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: detached HEAD", result.stdout)
+
+    def test_bare_status_on_a_ticket_key_branch_whose_plan_folder_was_deleted_is_done(self):
+        task_dir = self.make_task_dir()
+        self.commit_adr("LED-5-foo")
+        self.git("rm", "-rq", task_dir)
+        self.git("commit", "-q", "-m", "delete plan")
+        self.git("checkout", "-q", "-b", "LED-5-foo")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_bare_status_on_a_ticket_key_branch_that_never_had_a_plan_folder_cannot_tell(self):
+        self.git("checkout", "-q", "-b", "LED-5-foo")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: LED-5 names no task dir and none was ever committed", result.stdout)
+
+    def test_status_without_an_argument_on_a_branch_without_a_ticket_key_cannot_tell(self):
+        self.make_task_dir("yield-view")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("adr: cannot tell: no task dir resolved", result.stdout)
+
+    def test_status_with_a_pr_and_several_matching_task_dirs_is_not_finished(self):
+        self.make_task_dir("LED-5-a")
+        self.make_task_dir("LED-5-b")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "adr: not finished: PR https://github.com/o/r/pull/3 exists and several task dirs match", result.stdout
+        )
+
+    def test_status_with_a_pr_and_a_legacy_plan_is_done(self):
+        self.write(f"{PLANS}/LED-5-old.md", "legacy body\n")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_status_with_a_pr_and_an_old_style_eng_specs_dir_is_done(self):
+        self.write("docs/eng-specs/LED-5-old/LED-5-02-research.md", "r\n")
+        self.gh = self.fake_gh(FAKE_GH_VIEW)
+
+        result = self.run_flow("status", "LED-5")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "adr: done")
+
+    def test_status_with_two_arguments_exits_one(self):
+        result = self.run_flow("status", "a", "b")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("status takes one optional argument", result.stderr)
+
+    def test_status_outside_a_git_repository_exits_one(self):
+        outside = self.temp_root / "outside"
+        outside.mkdir()
+
+        result = self.run_flow("status", cwd=outside)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not inside a git repository", result.stderr)
 
     # check
 

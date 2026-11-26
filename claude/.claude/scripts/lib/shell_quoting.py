@@ -1,7 +1,21 @@
-"""Which characters of a shell command sit inside quotes, a comment or after a backslash."""
+"""Which characters of a shell command sit inside quotes, a comment or after a backslash, and `shell_word`: a path as
+one quoted shell word a person can paste."""
 import re
+import shlex
 
 _QUOTE_CHARACTERS = re.compile(r"[\"'\\]")
+
+
+_UNSAFE_IN_DOUBLE_QUOTES = re.compile(r"[\"$`\\!\n]")
+
+
+def shell_word(text):
+    """The text as one shell word a person can paste: in double quotes, or in shell quoting from `shlex.quote`
+    when the text holds a character that double quotes would expand or end on."""
+    text = str(text)
+    if not _UNSAFE_IN_DOUBLE_QUOTES.search(text):
+        return f'"{text}"'
+    return shlex.quote(text)
 
 
 def without_quote_characters(text):
@@ -22,6 +36,14 @@ def quoted_positions(command, unclosed_is_quoted=True):
     if scan.levels[0]["quote"] is not None and not unclosed_is_quoted:
         positions = {position for position in positions if position < scan.quote_opened_at}
     return positions
+
+
+def literal_positions(text):
+    """The indexes of the characters that stay literal: inside single quotes or right after a backslash. A character
+    inside double quotes is not literal, since `$` and a backtick still expand there."""
+    scan = _QuoteScan(text)
+    scan.run()
+    return scan.literal
 
 
 def starts_comment(command, index):
@@ -68,6 +90,7 @@ class _QuoteScan:
     def __init__(self, command):
         self.command = command
         self.positions = set()
+        self.literal = set()
         self.ansi_c_starts = []
         self.comment_starts = []
         # One level per open `"$(` or "`" span, after the base level: its quote, how it closes, its open `(` count, and
@@ -130,6 +153,8 @@ class _QuoteScan:
             self.levels.append({"quote": None, "closer": "`", "depth": 0, "ansi_c": False})
         else:
             self.positions.add(self.index)
+            if quote == "'":
+                self.literal.add(self.index)
 
     def _read_dollar_pair(self, level):
         # `$$` is the process id, so a quote after it is plain. `$'...'` is an ANSI-C string: a backslash escapes the
@@ -147,6 +172,7 @@ class _QuoteScan:
 
     def _hide_next_character(self):
         self.positions.add(self.index + 1)
+        self.literal.add(self.index + 1)
         self.index += 1
 
     def _hide_comment(self):

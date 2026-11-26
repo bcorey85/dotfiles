@@ -33,6 +33,11 @@ def git(cwd, *args):
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
+def git_output(cwd, *args):
+    finished = subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True)
+    return finished.stdout.strip()
+
+
 class HerdrWorktreeTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -73,9 +78,10 @@ echo '{CREATED_WORKSPACE}'""")
         write_stub(self.bin_dir / "herdr-api", "exit 0")
         write_stub(self.bin_dir / "herdr-dev", "exit 0")
         write_stub(self.bin_dir / "herdr-worktree-watch", "exit 0")
+        write_stub(self.bin_dir / "herdr-lane-sweep", "exit 0")
 
     def run_herdr_worktree(self, cwd, *args, fork_start_timeout="30", base_path=None, watch_seconds=None,
-                           lanes_cli=None):
+                           lanes_cli=None, session_id=None):
         env = {key: value for key, value in os.environ.items()
                if key not in ("TUIOS_SOCKET", "HERDR_WORKTREE_WATCH_SECONDS", "CLAUDE_CODE_SESSION_ID")}
         env["HERDR_LANES_CLI"] = str(lanes_cli or LANES_CLI)
@@ -84,11 +90,127 @@ echo '{CREATED_WORKSPACE}'""")
         env["CLAUDE_CONFIG_DIR"] = str(self.config_dir)
         if watch_seconds is not None:
             env["HERDR_WORKTREE_WATCH_SECONDS"] = watch_seconds
+        if session_id is not None:
+            env["CLAUDE_CODE_SESSION_ID"] = session_id
         env["HOME"] = str(self.root)
         env["HERDR_WORKTREE_FORK_TIMEOUT"] = fork_start_timeout
         env["PATH"] = f"{self.bin_dir}:{base_path or env['PATH']}"
         return subprocess.run([str(self.bin_dir / "herdr-worktree"), *args], cwd=cwd, env=env,
                               capture_output=True, text=True)
+
+    def add_session_row(self, file_stem, session_id, name):
+        row = {"pid": os.getpid(), "sessionId": session_id, "name": name}
+        (self.config_dir / "sessions" / f"{file_stem}.json").write_text(json.dumps(row))
+
+    def test_a_second_sessions_claim_of_a_branch_fails_naming_the_owner(self):
+        self.add_session_row("second", "s2", "other-session")
+
+        first = self.run_herdr_worktree(self.main_checkout, "fix/shared", session_id="s1")
+        second = self.run_herdr_worktree(self.main_checkout, "fix/shared", session_id="s2")
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("already claimed by session orchestrator", second.stderr)
+
+    def test_a_second_claim_of_a_branch_fails_before_the_branch_exists(self):
+        self.add_session_row("second", "s2", "other-session")
+        self.run_herdr_worktree(self.main_checkout, "fix/early", session_id="s1")
+        git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-early"))
+        git(self.main_checkout, "branch", "-D", "fix/early")
+
+        second = self.run_herdr_worktree(self.main_checkout, "fix/early", session_id="s2")
+
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("already claimed by session orchestrator", second.stderr)
+
+    def test_a_claim_is_scoped_to_its_branch(self):
+        self.add_session_row("second", "s2", "other-session")
+        self.run_herdr_worktree(self.main_checkout, "fix/a", session_id="s1")
+
+        other_branch = self.run_herdr_worktree(self.main_checkout, "fix/b", session_id="s2")
+
+        self.assertEqual(other_branch.returncode, 0, other_branch.stderr)
+
+    def test_a_claim_is_scoped_to_its_repo(self):
+        self.add_session_row("second", "s2", "other-session")
+        self.run_herdr_worktree(self.main_checkout, "fix/a", session_id="s1")
+        git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-a"))
+        git(self.main_checkout, "branch", "-D", "fix/a")
+        second_repo = self.root / "repo2"
+        second_repo.mkdir()
+        git(second_repo, "init", "-q", "-b", "master")
+        git(second_repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+
+        other_repo = self.run_herdr_worktree(second_repo, "fix/a", session_id="s2")
+
+        self.assertEqual(other_repo.returncode, 0, other_repo.stderr)
+
+    def test_the_same_session_may_claim_its_branch_again(self):
+        self.run_herdr_worktree(self.main_checkout, "fix/again", session_id="s1")
+        git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-again"))
+        git(self.main_checkout, "branch", "-D", "fix/again")
+
+        again = self.run_herdr_worktree(self.main_checkout, "fix/again", session_id="s1")
+
+        self.assertEqual(again.returncode, 0, again.stderr)
+        claim_files = list((self.state_home / "branch-claims").glob("*.json"))
+        self.assertEqual(len(claim_files), 1)
+        self.assertEqual(json.loads(claim_files[0].read_text())["owner"], "orchestrator")
+
+    def test_a_stale_claim_does_not_block(self):
+        self.add_session_row("second", "s2", "other-session")
+        self.run_herdr_worktree(self.main_checkout, "fix/stale", session_id="s1")
+        git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-stale"))
+        git(self.main_checkout, "branch", "-D", "fix/stale")
+        self.backdate_claims()
+
+        second = self.run_herdr_worktree(self.main_checkout, "fix/stale", session_id="s2")
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        claim_files = list((self.state_home / "branch-claims").glob("*.json"))
+        self.assertEqual(len(claim_files), 1)
+        self.assertEqual(json.loads(claim_files[0].read_text())["owner"], "other-session")
+
+    def backdate_claims(self):
+        claim_files = list((self.state_home / "branch-claims").glob("*.json"))
+        self.assertTrue(claim_files, "no claim file was written")
+        old = time.time() - 3600
+        for claim_file in claim_files:
+            os.utime(claim_file, (old, old))
+
+    def test_an_old_claim_still_blocks_while_its_branch_exists(self):
+        self.add_session_row("second", "s2", "other-session")
+        self.run_herdr_worktree(self.main_checkout, "fix/old-live", session_id="s1")
+        self.backdate_claims()
+
+        second = self.run_herdr_worktree(self.main_checkout, "fix/old-live", session_id="s2")
+
+        self.assertEqual(second.returncode, 1)
+        self.assertIn("already claimed by session orchestrator", second.stderr)
+
+    def test_a_caller_with_no_session_name_makes_no_claim_and_is_not_blocked(self):
+        self.run_herdr_worktree(self.main_checkout, "fix/x", session_id="s1")
+        git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-x"))
+        git(self.main_checkout, "branch", "-D", "fix/x")
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").unlink()
+        claims_before = sorted((self.state_home / "branch-claims").glob("*.json"))
+
+        popup = self.run_herdr_worktree(self.main_checkout, "fix/x")
+
+        self.assertEqual(popup.returncode, 0, popup.stderr)
+        self.assertNotIn("claimed", popup.stderr)
+        self.assertEqual(sorted((self.state_home / "branch-claims").glob("*.json")), claims_before)
+
+    def test_a_fork_refused_for_a_missing_claude_pane_leaves_no_claim(self):
+        write_stub(self.bin_dir / "herdr-api", f"echo '{SHELL_PANE}'")
+
+        refused = self.run_herdr_worktree(
+            self.main_checkout, "--fork", "--prompt", "Fix it.", "fix/no-pane", session_id="s1"
+        )
+
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("--fork needs a claude pane", refused.stderr)
+        self.assertEqual(list((self.state_home / "branch-claims").glob("*.json")), [])
 
     def test_a_run_from_a_linked_worktree_asks_herdr_to_branch_from_the_main_checkout(self):
         finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
@@ -360,6 +482,20 @@ esac""")
         self.assertEqual(entry["brief"], "Fix it.\nGo on.")
         self.assertEqual(entry["session_id"], "")
         self.assertEqual(entry["reports_to"], "orchestrator")
+        self.assertEqual(entry["base_commit"], git_output(self.linked_worktree, "rev-parse", "linked"))
+
+    def test_a_fork_whose_worktree_head_cannot_be_read_still_starts_and_the_entry_has_no_base_commit(self):
+        self.stub_fork(CLAUDE_PANE)
+        real_git = shutil.which("git")
+        write_stub(self.bin_dir / "git",
+                   f'case " $* " in *" rev-parse --verify HEAD "*) exit 1;; esac\nexec {real_git} "$@"')
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Fix it.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        entry = self.lane_entry("repo-new-thing")
+        self.assertEqual(entry["branch"], "fix/new-thing")
+        self.assertNotIn("base_commit", entry)
 
     def test_a_fork_from_a_prompt_file_stores_the_brief_the_fork_is_sent(self):
         herdr_dev_args = self.stub_fork(CLAUDE_PANE)
@@ -626,8 +762,10 @@ esac""")
     def test_a_create_reply_without_a_workspace_id_exits_1_and_runs_no_pane_or_watcher_command(self):
         write_stub(self.bin_dir / "herdr", "echo '{\"result\":{}}'")
         other_calls = self.root / "other-calls"
-        for name in ("herdr-api", "herdr-dev", "herdr-worktree-watch"):
+        for name in ("herdr-dev", "herdr-worktree-watch"):
             write_stub(self.bin_dir / name, f'echo {name} >> {other_calls}')
+        # The claim step asks the current pane for its session name, so that call is not a pane command here.
+        write_stub(self.bin_dir / "herdr-api", f'[ "$*" = "pane current" ] || echo herdr-api >> {other_calls}')
 
         finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
 
@@ -645,6 +783,65 @@ esac""")
         time.sleep(0.5)
         self.assertFalse(watch_args.exists())
         self.assertNotIn("watching workspace", finished.stderr)
+
+    def test_the_lane_sweep_runs_before_the_workspace_is_created(self):
+        sweep_saw = self.root / "sweep-saw"
+        sweep_body = (f"if [ -e {self.herdr_args} ]; then echo workspace-existed > {sweep_saw}; "
+                      f"else echo first > {sweep_saw}; fi; echo closed-x")
+        write_stub(self.bin_dir / "herdr-lane-sweep", sweep_body)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(sweep_saw.read_text().strip(), "first")
+        self.assertIn("closed-x", finished.stderr)
+        self.assertNotIn("closed-x", finished.stdout)
+        self.assertTrue(self.herdr_args.exists())
+
+    def test_a_failing_lane_sweep_warns_and_the_run_goes_on(self):
+        write_stub(self.bin_dir / "herdr-lane-sweep", "echo sweep-output; exit 1")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("herdr-worktree: lane sweep failed; the run goes on", finished.stderr)
+        self.assertIn("sweep-output", finished.stderr)
+        self.assertTrue(self.herdr_args.exists())
+
+    def stub_recording_sweep(self):
+        """A sweep stub that appends a line to the returned file on each call."""
+        sweep_calls = self.root / "sweep-calls"
+        write_stub(self.bin_dir / "herdr-lane-sweep", f"echo called >> {sweep_calls}")
+        return sweep_calls
+
+    def test_a_run_with_a_bad_argument_never_calls_the_lane_sweep(self):
+        sweep_calls = self.stub_recording_sweep()
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertFalse(sweep_calls.exists())
+
+    def test_a_run_outside_a_git_repo_never_calls_the_lane_sweep(self):
+        sweep_calls = self.stub_recording_sweep()
+        outside = self.root / "not-a-repo"
+        outside.mkdir()
+
+        finished = self.run_herdr_worktree(outside, "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("not inside a git repo", finished.stderr)
+        self.assertFalse(sweep_calls.exists())
+
+    def test_a_fork_without_a_claude_pane_never_calls_the_lane_sweep(self):
+        sweep_calls = self.stub_recording_sweep()
+        write_stub(self.bin_dir / "herdr-api", "exit 0")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("--fork needs a claude pane", finished.stderr)
+        self.assertFalse(sweep_calls.exists())
 
     def test_help_names_the_recovery_steps(self):
         finished = self.run_herdr_worktree(self.linked_worktree, "--help")
@@ -696,7 +893,9 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         claude_pane, claude_command = finished.stdout.splitlines()
         self.assertEqual(claude_pane, "w1:p1")
-        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        prompt_match = re.search(r"cat '([^']+)'", claude_command)
+        self.assertIsNotNone(prompt_match, claude_command)
+        prompt_file = prompt_match.group(1)
         self.addCleanup(os.remove, prompt_file)
         self.assertEqual(pathlib.Path(prompt_file).read_text(), "Fix it.")
         self.assertTrue(claude_command.endswith(f"&& rm -f '{prompt_file}'"), claude_command)
@@ -706,7 +905,9 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         claude_command = finished.stdout.splitlines()[1]
-        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        prompt_match = re.search(r"cat '([^']+)'", claude_command)
+        self.assertIsNotNone(prompt_match, claude_command)
+        prompt_file = prompt_match.group(1)
         self.addCleanup(os.remove, prompt_file)
         expected_start = f"CLAUDE_CODE_DISABLE_CRON=1 claude --resume s1 --fork-session --name {self.root.name} -- "
         self.assertTrue(claude_command.startswith(expected_start), claude_command)
@@ -720,7 +921,9 @@ esac""")
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
         claude_command = finished.stdout.splitlines()[1]
-        prompt_file = re.search(r"cat '([^']+)'", claude_command).group(1)
+        prompt_match = re.search(r"cat '([^']+)'", claude_command)
+        self.assertIsNotNone(prompt_match, claude_command)
+        prompt_file = prompt_match.group(1)
         self.addCleanup(os.remove, prompt_file)
         typed_words = shlex.split(claude_command)
         self.assertEqual(typed_words[typed_words.index("--name") + 1], folder_name)

@@ -215,10 +215,15 @@ class FixRoundHost(AuditHost):
         self.changed_of = {}
         self.planned_skips = None
 
+    late_repairs = ()
+
     def review_scope(self):
         return {}
 
-    def plan_second_round(self, round_fix, result, skipped_findings):
+    def lint_fixed_files(self, changed):
+        pass
+
+    def plan_second_round(self, round_fix, result, skipped_findings, lint_repairs=()):
         self.planned_skips = skipped_findings
 
     def repair(self, call_name, findings, nits=()):

@@ -29,6 +29,8 @@ MIN_BODY_TOKENS = 16
 TOKENS_PER_EDIT = 20
 MAX_SHAPE_PAIRS = 30
 MAX_CATALOG_FUNCTIONS = 12
+BRANCH_CATALOG_HEADING = "Nearest other functions for each function this branch added:"
+CHANGE_CATALOG_HEADING = "Nearest other functions for each function this change added:"
 MAX_NEIGHBOURS = 3
 NEIGHBOUR_FLOOR = 0.65
 NGRAM_SIZE = 2
@@ -80,6 +82,11 @@ class ShapeResult(NamedTuple):
     notes: list  # strings: what was not read
     skipped: str = ""  # why the whole pass did not run
     uncataloged: int = 0  # added functions past MAX_CATALOG_FUNCTIONS that got no nearest-helper listing
+
+
+class FunctionsRead(NamedTuple):
+    shapes: list  # FunctionShape
+    notes: list  # strings: what was not read
 
 
 def skipped_result(reason):
@@ -254,10 +261,11 @@ def read_python_files(root_dir, paths):
 
 
 def read_functions(root_dir):
-    """(FunctionShape list, notes) for every Python and TypeScript file git lists in the repo at root_dir."""
+    """FunctionsRead for every Python and TypeScript file git lists in the repo at root_dir; None when git cannot
+    list the files."""
     paths = script_utils.repo_file_paths(root_dir)
     if paths is None:
-        return [], [f"git could not list the files in {root_dir}"]
+        return None
     # A tracked file deleted in the work tree is still listed; tree-sitter stops on a missing path.
     paths = [path for path in paths if (Path(root_dir) / path).is_file()]
     shapes, notes = read_python_files(root_dir, [path for path in paths if path.endswith(".py")])
@@ -268,7 +276,7 @@ def read_functions(root_dir):
         typescript_shapes, typescript_notes = read_typescript(root_dir, suffix_paths, suffix, grammar, language)
         shapes.extend(typescript_shapes)
         notes.extend(typescript_notes)
-    return shapes, notes
+    return FunctionsRead(shapes, notes)
 
 
 # ------------------------------------------------------------- comparison
@@ -361,32 +369,65 @@ def catalog_listings(added_functions, functions, branch_added_keys):
     return listings
 
 
-def branch_shapes(diff_files, untracked, root_dir):
-    """The ShapeResult for the work tree at root_dir: pairs for each function that overlaps a changed line, and the
-    catalog neighbours of each function whose every line the branch added."""
-    changed = clone_pairs.changed_line_sets(diff_files, untracked)
-    functions, notes = read_functions(root_dir)
+class ChangeRead(NamedTuple):
+    functions: list  # FunctionShape, every function in the repo
+    changed: list  # the functions that overlap a changed line
+    added: list  # the functions whose every line the change added
+    notes: list  # strings: what was not read
+
+
+def read_change(diff_files, untracked, root_dir):
+    """The ChangeRead for the work tree at root_dir, or None when git cannot list the repo's files."""
+    changed_lines = clone_pairs.changed_line_sets(diff_files, untracked)
+    read = read_functions(root_dir)
+    if read is None:
+        return None
     changed_functions = []
     added_functions = []
-    for function in functions:
+    for function in read.shapes:
         site = clone_pairs.CloneSite(function.path, function.first_line, function.last_line)
-        if not clone_pairs.site_touches(site, changed):
+        if not clone_pairs.site_touches(site, changed_lines):
             continue
         changed_functions.append(function)
         function_lines = range(function.first_line, function.last_line + 1)
-        if all(line in changed[function.path] for line in function_lines):
+        if all(line in changed_lines[function.path] for line in function_lines):
             added_functions.append(function)
+    return ChangeRead(read.shapes, changed_functions, added_functions, read.notes)
 
-    pairs = find_pairs(changed_functions, functions)
-    added_keys = {function_key(function) for function in added_functions}
+
+def unlisted_result(root_dir):
+    return skipped_result(f"git could not list the files in {root_dir}")
+
+
+def result_of(change, pairs):
+    """The ShapeResult of a ChangeRead: `pairs`, and the catalog neighbours of each added function."""
+    added_keys = {function_key(function) for function in change.added}
     # A function under the token floor can never get a listing, so it takes no place under the cap.
     # A test function is never in the catalog's neighbours, so it takes no place either.
-    listable = sorted((function for function in added_functions
+    listable = sorted((function for function in change.added
                        if is_comparable(function) and not source_paths.is_test_path(function.path)),
                       key=function_key)
-    listings = catalog_listings(listable[:MAX_CATALOG_FUNCTIONS], functions, added_keys)
+    listings = catalog_listings(listable[:MAX_CATALOG_FUNCTIONS], change.functions, added_keys)
     uncataloged = max(0, len(listable) - MAX_CATALOG_FUNCTIONS)
-    return ShapeResult(pairs, listings, notes, uncataloged=uncataloged)
+    return ShapeResult(pairs, listings, change.notes, uncataloged=uncataloged)
+
+
+def catalog_shapes(diff_files, untracked, root_dir):
+    """The ShapeResult with only the catalog neighbours of each function whose every line the change added; no pairs
+    are searched."""
+    change = read_change(diff_files, untracked, root_dir)
+    if change is None:
+        return unlisted_result(root_dir)
+    return result_of(change, [])
+
+
+def branch_shapes(diff_files, untracked, root_dir):
+    """The ShapeResult for the work tree at root_dir: pairs for each function that overlaps a changed line, and the
+    catalog neighbours of each function whose every line the branch added."""
+    change = read_change(diff_files, untracked, root_dir)
+    if change is None:
+        return unlisted_result(root_dir)
+    return result_of(change, find_pairs(change.changed, change.functions))
 
 
 # ------------------------------------------------------------------ output
@@ -430,6 +471,21 @@ def pair_section(pairs, title, kind_text):
     return lines
 
 
+def catalog_lines(result, heading):
+    """The lines that list the nearest other functions of each added function, under `heading`; empty when there
+    are none."""
+    lines = []
+    if result.listings:
+        lines.append(heading)
+    for listing in result.listings:
+        lines.append(f"- {site_text(listing.added)} shape: {shape_text(listing.added)}")
+        for neighbour, score in listing.neighbours:
+            lines.append(f"    - {site_text(neighbour)} [similarity {score:.2f}] shape: {shape_text(neighbour)}")
+    if result.uncataloged:
+        lines.append(uncataloged_text(result.uncataloged))
+    return lines
+
+
 def print_candidates(result):
     """Print the pair lists and the catalog neighbours; nothing when there is nothing to judge."""
     if not result.pairs and not result.listings:
@@ -444,12 +500,5 @@ def print_candidates(result):
         lines += pair_section(near, "Near match (token edits apart):", lambda pair: f" [{pair.distance} edit(s)]")
     if len(result.pairs) > len(listed):
         lines.append(f"{len(result.pairs) - len(listed)} more pair(s) not listed")
-    if result.listings:
-        lines.append("Nearest other functions for each function this branch added:")
-    for listing in result.listings:
-        lines.append(f"- {site_text(listing.added)} shape: {shape_text(listing.added)}")
-        for neighbour, score in listing.neighbours:
-            lines.append(f"    - {site_text(neighbour)} [similarity {score:.2f}] shape: {shape_text(neighbour)}")
-    if result.uncataloged:
-        lines.append(uncataloged_text(result.uncataloged))
+    lines += catalog_lines(result, BRANCH_CATALOG_HEADING)
     print("\n".join(lines))

@@ -30,7 +30,7 @@ import script_utils
 from age_text import age_text
 from process_group import pid_is_alive
 from review_fix_state import REVIEW_FIX_COMMAND
-from review_loop_prompt_file import PROMPT_FILE, PromptFileError, read_prompt
+from review_loop_prompt_file import PLAN_KEY, PROMPT_FILE, REPO_KEY, PromptFileError, read_prompt
 
 REQUESTS_FOLDER = "reviewer-requests"
 PID_FILE = "loop.pid"
@@ -433,8 +433,9 @@ def packet_command(loop_dir):
 
 
 def plan_arguments(loop_dir):
-    """`--plan <path>` for the plan the loop's prompt header names (a /code run writes one), so `packet` reads the
-    plan's standing rulings; [] when the run has no prompt file or its header names no plan."""
+    """`--plan <path>` for the plan the loop's prompt header names (a /code run, or a /review launch with a plan,
+    writes one), so `packet` reads the plan's standing rulings; [] when the run has no prompt file or its header
+    names no plan."""
     prompt_file = pathlib.Path(loop_dir) / PROMPT_FILE
     if not prompt_file.is_file():
         return []
@@ -442,7 +443,7 @@ def plan_arguments(loop_dir):
         header, _handoff = read_prompt(prompt_file)
     except PromptFileError as error:
         raise ManifestError(f"{prompt_file}: {error}") from error
-    plan, repo = header.get("plan"), header.get("repo")
+    plan, repo = header.get(PLAN_KEY), header.get(REPO_KEY)
     if not plan or not repo:
         return []
     return ["--plan", str(pathlib.Path(repo) / plan)]

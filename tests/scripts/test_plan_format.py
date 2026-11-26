@@ -1426,6 +1426,22 @@ class PlanFileEditTest(unittest.TestCase):
         plan_format.append_deviation(self.plan_path, ["- note"])
         self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
 
+    def test_a_deviation_for_a_plan_folder_goes_to_the_plan_file_inside_it(self):
+        folder = self.plan_path.parent / "plan-folder"
+        folder.mkdir()
+        plan_file = folder / "plan.md"
+        plan_file.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(folder, ["- folder note"])
+        self.plan_path.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(self.plan_path, ["- folder note"])
+        self.assertEqual(self.plan_path.read_text(), plan_file.read_text())
+
+    def test_a_deviation_for_a_folder_with_no_plan_file_raises_the_plan_error(self):
+        folder = self.plan_path.parent / "empty-folder"
+        folder.mkdir()
+        with self.assertRaisesRegex(plan_format.PlanFormatError, "empty-folder"):
+            plan_format.append_deviation(folder, ["- note"])
+
     def test_a_ruling_entry_names_the_phase_decision_owner_ruling_and_disagreement(self):
         entry = plan_format.ruling_deviation("2", "Adopt plan change", "Pat Signer", "2026-10-25 09:30",
                                              "use the  new\ntable", "assumed: one table\nfound: two")

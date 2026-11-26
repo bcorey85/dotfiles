@@ -17,9 +17,24 @@ from shell_expansion import (
     cut_at_glob_qualifier,
     expand_braces,
     has_attached_glob_syntax,
+    has_substitution_or_tilde,
     redirect_target_words,
     unquoted_expanding_word,
 )
+
+
+class HasSubstitutionOrTildeTest(unittest.TestCase):
+    def test_a_dollar_or_backtick_outside_single_quotes_or_a_leading_tilde_expands(self):
+        for word in ("$X", '"$X"', "`id`", '"`id`"', "~foo", "\"'$X'\"", "\"'`id`'\"", "'a\\'$X", "a\\\\$b"):
+            self.assertTrue(has_substitution_or_tilde(word), word)
+
+    def test_a_single_quoted_or_escaped_dollar_or_backtick_does_not_expand(self):
+        for word in ("'$X'", "'foo$'", "'`id`'", "\\`id\\`", '"a\\$b"', "a\\$b", "plain"):
+            self.assertFalse(has_substitution_or_tilde(word), word)
+
+    def test_a_tilde_expands_only_at_the_start_of_an_unquoted_word(self):
+        for word in ('"~foo"', "a~b"):
+            self.assertFalse(has_substitution_or_tilde(word), word)
 
 
 class HasAttachedGlobSyntaxTest(unittest.TestCase):

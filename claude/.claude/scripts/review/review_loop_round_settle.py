@@ -47,8 +47,9 @@ class RoundSettle:
         """Sorts the round's findings the coder did not fix. Returns (skipped findings, findings still open); the
         skipped list leaves out the reverted findings. With a plan impact held, the coder's skips stay open;
         otherwise they join skipped_fp. A finding in `reverted_findings` (filed on an approval-only path that the
-        loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) is filed as a user-only ask (or dropped, as a repeat of
-        a rejected one) and is never recorded as fixed, skipped_fp or open, whatever the coder reported."""
+        loop reverted, see `REVERTED_APPROVAL_EDIT_REASON`) is filed as an approval ask, user-only unless
+        `session_rules_approval_path`, or dropped as a repeat of a rejected one, and is never recorded as fixed,
+        skipped_fp or open, whatever the coder reported."""
         skipped_entries = [{"item": round_findings[number - 1], "reason": line}
                            for number, line in sorted(skips.items())
                            if round_findings[number - 1] not in reverted_findings]
@@ -72,7 +73,7 @@ class RoundSettle:
 
     def mark_round_fixes(self, round_open_fixes, skipped_findings, only=None):
         """Sets `actioned` on each fix this round's reviewers filed (only those whose finding is in `only`, when
-        given): none while open or filed as a user-only ask, skipped_fp, or fixed. A fix takes an item's status when it
+        given): none while open or filed as an approval ask, skipped_fp, or fixed. A fix takes an item's status when it
         is the item or one of the parts the item merges."""
         for finding in self.round_fixes:
             if only is not None and finding["finding"] not in only:

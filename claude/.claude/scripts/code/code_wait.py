@@ -14,15 +14,16 @@ writes each one's report to its file as soon as that reviewer finishes, which is
 fork has no Write tool). It returns when the loop asks for reviewers no pair answers (`ACTION: dispatch-reviewer`),
 when a named reviewer finished with no report (exit 1), when a pair names a request that is not open or a round
 another dispatch already filled (the wait writes no report, prints the problem and the dispatch lines, and exits 1),
-or once the loop ends: it prints the loop's output when the
-loop left a packet (then exits 1 with a STOP line when the packet's status is fix-removed-change), and otherwise
-exits 1 with the reason and the restart step. A cap-reached packet also gets the `cap reached after N fix round(s)`
-line. When that packet is clean (converged, or capped and read as deferred) or cap-reached, and holds finding asks,
-it also opens a `phase-asks-open` row in the hand-back store and prints the
-`phase_asks.py rule` line the session runs to rule on them. When this session's latest hand-back for the repo still
-holds plan impacts that no ruling settles (`handback.current_session_held_impact_hand_back`) and that packet
-is clean (converged, or capped and read as deferred), `review` also prints a notice that lists each impact and the
-sentence that defers them to phase end (`review_fix.py defer`).
+or once the loop ends: it prints the loop's output when the loop left a packet (then exits 1 with a STOP line when
+the packet's status is fix-removed-change, or stays cap-reached in a lane whose entry names a reports_to session),
+and otherwise exits 1 with the reason and the restart step. A cap-reached packet also gets the `cap reached after N
+fix round(s)` line (before the STOP line when one prints). When that packet is clean
+(converged, or capped and read as deferred) or cap-reached, and holds finding asks, it also opens a
+`phase-asks-open` row in the hand-back store and prints the `phase_asks.py rule` line the session runs to rule on
+them. When this session's latest hand-back for the repo still holds plan impacts that no ruling settles
+(`handback.current_session_held_impact_hand_back`) and that packet is clean (converged, or capped and read as
+deferred), `review` also prints a notice that lists each impact and the sentence that defers them to phase end
+(`review_fix.py defer`).
 On the phase route (not `--loop`), once the loop has ended, `review` also prints a `Tool fault:` line naming the held
 files whose bytes changed (the `held_changed` field of <git dir>/code-phase/review-scope.json), or a could-not-be-read
 line when that file does not parse or its `held_changed` is not a list of paths.
@@ -45,8 +46,10 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review")]
 import code_run_names
 import handback
 import handback_store
+import lane_entries
 import loop_transcript
 import phase_asks
+import plan_format
 import process_group
 import reviewer_dispatch
 import script_utils
@@ -236,10 +239,10 @@ def read_phase_run(repo):
         run_info = json.loads(run_file.read_text())
     except ValueError as error:
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
-                 f"({error}); delete it and run this wait again")
+                 f"({error}); delete it and run the command again")
     if not isinstance(run_info, dict):
         sys.exit(f"code_wait: {run_file} is not the {{\"lane\", \"phase\"}} JSON object code_review_start.py writes "
-                 f"(found {type(run_info).__name__}); delete it and run this wait again")
+                 f"(found {type(run_info).__name__}); delete it and run the command again")
     return run_info
 
 
@@ -383,14 +386,15 @@ class ReviewRun:
     """The review loop a `review` wait follows: the command that waits on it again, the folder that holds its
     reviewer requests (None before the loop names it), whether it still runs, what to print once it ended ("" when
     it left nothing), the message for an ended loop that left nothing, and how to start it again when its process
-    ended before the loop finished."""
+    ended before the loop finished. `stop_line` returns (step line, loaded packet): the packet, in
+    `read_phase_packet`'s form, is set only when the step line is the cap STOP."""
     command: str
     loop_folder: Callable[[], str | None]
     running: Callable[[], bool]
     final_output: Callable[[], str]
     no_output: Callable[[], str]
     restart: str
-    stop_line: Callable[[], str] = lambda: ""
+    stop_line: Callable[[], tuple[str, tuple | None]] = lambda: ("", None)
 
 
 def phase_review_output(repo):
@@ -426,22 +430,78 @@ def phase_review(repo):
 
 
 def phase_stop_line(repo):
-    """The step line for a phase packet whose status the skill's routes do not cover, or "" for any other packet
-    (one that does not parse included: the skill reads it from the printed output)."""
+    """(step line, loaded packet) for a phase packet the skill's routes do not cover (fix-removed-change), or for a
+    cap-reached packet in a lane another session started, whose ruler is that session. The loaded packet, as
+    (loop folder, packet), is set only on the cap STOP. ("", None) for any other packet (one that does not parse
+    included: the skill reads it from the printed output)."""
     folder = loop_dir(repo)
     if folder is None:
-        return ""
+        return "", None
     packet_file = pathlib.Path(folder) / reviewer_dispatch.PACKET_FILE
     try:
-        status = handback.parse(packet_file.read_text()).get("status")
+        parsed = handback.parse(packet_file.read_text())
+        status = parsed.get("status")
     except handback.PacketError:
-        return ""
+        return "", None
+    if status == CAP_REACHED:
+        try:
+            packet = handback.validate(parsed)
+        except handback.PacketError:
+            return "", None
+        cap_line = cap_reached_stop_line(repo, packet)
+        if not cap_line:
+            return "", None
+        return cap_line, (folder, packet)
     if status != handback.FIX_REMOVED_CHANGE:
-        return ""
+        return "", None
     stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
     return (f"STOP ({status}): the fix passes removed half or more of this phase's change. Write the packet's "
             f"`blockers` to {stop_file} and end the run there. The user checks `git diff`; `/code resume` "
-            "(with the plan's absolute path when the run has a plan file) then runs this phase's review again.")
+            "(with the plan's absolute path when the run has a plan file) then runs this phase's review again."), None
+
+
+def lane_reports_to(repo):
+    """The session that started the lane holding `repo`, or "" when no lane holds it, the lane has no such
+    session, or the lane file is refused. Fails open: code_wait then prints no cap stop line, and the skill's
+    `cap-reached` route applies."""
+    try:
+        lane = lane_entries.entry_containing(repo)
+    except lane_entries.LaneFileError as error:
+        print(f"code_wait: a lane file is refused, so the cap stop names no orchestrating session: {error}",
+              file=sys.stderr)
+        return ""
+    if lane is None:
+        return ""
+    return lane["reports_to"]
+
+
+def cap_ruler_line(orchestrator):
+    """The line the fork writes into the stop file after the findings, so the lane's relay of the stop file names
+    the ruler and what to do with its reply."""
+    return (f"Ruling: session {orchestrator}, the orchestrating session that started this lane, "
+            "rules on this cap-reached review, not the user. "
+            "Send it these findings with SendMessage; its reply is this stop's feedback. "
+            "When the run has a plan file, a coder records the ruling in the plan's decision log "
+            f"({plan_format.DECISION_LOG_NAME}, or ## {plan_format.DEVIATIONS_HEADING} when the plan has none) "
+            f"as ruled by session {orchestrator} with the date of its reply.")
+
+
+def cap_reached_stop_line(repo, packet):
+    """The step line for a loaded packet that stays `cap-reached` in a lane another session started, or "" for
+    any other."""
+    orchestrator = lane_reports_to(repo)
+    if not orchestrator:
+        return ""
+    repo_top = script_utils.work_tree_top(str(repo))
+    if effective_status(packet, repo_top) != CAP_REACHED:
+        return ""
+    stop_file = phase_dir(repo) / stop_file_names.STOP_FILE
+    return (f"STOP ({CAP_REACHED}): {orchestrator} started this lane and rules on this cap-reached review, "
+            "not the user. "
+            f"Write the packet's findings_remaining and any finding asks code_wait printed to {stop_file}, "
+            "then this Ruling line, copied whole: "
+            f"\"{cap_ruler_line(orchestrator)}\" And end the run there. "
+            "Then follow the ruling with /code resume (with the plan's absolute path when the run has a plan file).")
 
 
 def launched_loop_running(folder):
@@ -624,10 +684,9 @@ def phase_asks_notice_or_report(repo, run, loaded):
     return None
 
 
-def print_phase_notices(repo, run, code):
-    """Prints the cap summary line, the phase's ask notice and the plan-impact notice after a finished run;
-    returns the run's exit code, or 1 when the asks could not be opened."""
-    loaded = read_phase_packet(repo)
+def print_cap_summary_and_asks(repo, run, loaded):
+    """Prints the cap summary line (a cap-reached packet only) and the phase's ask notice. `loaded` is
+    `read_phase_packet`'s result. False when the asks could not be opened."""
     if loaded is not None:
         _folder, packet = loaded
         if packet["status"] == CAP_REACHED:
@@ -636,9 +695,18 @@ def print_phase_notices(repo, run, code):
                 print(summary_line)
     notice = phase_asks_notice_or_report(repo, run, loaded)
     if notice is None:
-        return 1
+        return False
     if notice:
         print("\n".join(notice))
+    return True
+
+
+def print_phase_notices(repo, run, code):
+    """Prints the cap summary line, the phase's ask notice and the plan-impact notice after a finished run;
+    returns the run's exit code, or 1 when the asks could not be opened."""
+    loaded = read_phase_packet(repo)
+    if not print_cap_summary_and_asks(repo, run, loaded):
+        return 1
     impact_notice = plan_impact_notice(repo)
     if impact_notice:
         print("\n".join(impact_notice))
@@ -663,8 +731,7 @@ def follow_run(repo, run, words, launched_folder):
         return 1
 
     if not run.running():
-        code = print_ended_loop(run)
-        print_held_fault(repo, launched_folder)
+        code = print_ended_loop_and_held(repo, run, launched_folder)
         if code != 0 or launched_folder is not None:
             return code
         return print_phase_notices(repo, run, code)
@@ -691,27 +758,44 @@ def print_held_fault(repo, launched_folder):
         print(released_line)
 
 
+def print_ended_loop_and_held(repo, run, launched_folder):
+    """Prints the ended loop's output, the held-file lines, then the step line, and returns the exit code. When
+    the step line is the cap STOP, the cap summary line and the finding-asks notice print between the held-file
+    lines and the step line; when the asks cannot be opened, their failure step prints last in place of the STOP
+    line and the exit code is 1. The step line prints last: the /code skill does the step the fork's last line
+    names."""
+    code, step_line, cap_packet = print_ended_loop(run)
+    print_held_fault(repo, launched_folder)
+    # The cap STOP line ends the wait, so `follow_run` never reaches `print_phase_notices` for it.
+    if cap_packet is not None and not print_cap_summary_and_asks(repo, run, cap_packet):
+        return 1
+    if step_line:
+        print(step_line)
+    return code
+
+
 def print_ended_loop(run):
+    """Prints what the ended loop left and returns (exit code, step line, loaded packet of a cap STOP or None).
+    The caller prints the step line, so it can follow the held-file lines."""
     # The loop's own output comes first: a loop that ended may have written a packet, a crash packet included, which
     # says more than a missing process does.
     final_output = run.final_output()
     if final_output.strip():
         print(final_output)
-        stop_line = run.stop_line()
+        stop_line, cap_packet = run.stop_line()
         if not stop_line:
-            return 0
-        print(stop_line)
-        return 1
+            return 0, "", None
+        return 1, stop_line, cap_packet
 
     open_requests = open_reviewer_requests(run)
     if open_requests:
         folder = run.loop_folder()
         request_lines = reviewer_dispatch.open_request_lines(open_requests)
-        print("\n".join([reviewer_dispatch.LOOP_GONE, *request_lines, f"Loop folder: {folder}", run.restart]))
-        return 1
+        print("\n".join([reviewer_dispatch.LOOP_GONE, *request_lines, f"Loop folder: {folder}"]))
+        return 1, run.restart, None
 
-    print(f"{run.no_output()} {run.restart}")
-    return 1
+    print(run.no_output())
+    return 1, run.restart, None
 
 
 def review_words(words):

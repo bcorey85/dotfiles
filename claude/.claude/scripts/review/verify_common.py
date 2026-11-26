@@ -153,15 +153,6 @@ def repo_top(cwd, timeout=None):
 DEFAULT_BASE_REFS = ("origin/master", "origin/main", "master", "main")
 
 
-def remote_default_branch(top):
-    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set."""
-    done = run(["git", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], cwd=top)
-    name = done.stdout.strip()
-    if done.returncode != 0 or not name:
-        return None
-    return name
-
-
 def find_base(top, override=None):
     """(ref, mergeBaseSha). An explicit override wins; otherwise origin/master, origin/main, master, main, then the
     remote's default branch (origin/HEAD)."""
@@ -169,7 +160,7 @@ def find_base(top, override=None):
         refs = [override]
     else:
         refs = list(DEFAULT_BASE_REFS)
-        remote_default = remote_default_branch(top)
+        remote_default = script_utils.remote_default_branch(top, VerifyError)
         if remote_default and remote_default not in refs:
             refs.append(remote_default)
     for ref in refs:

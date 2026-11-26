@@ -19,6 +19,8 @@ HERDR_LANE_RESUME = pathlib.Path(os.environ.get("HERDR_LANE_RESUME", BIN_DIR / "
 LANES_CLI = pathlib.Path(os.environ.get("HERDR_LANES_CLI", toolkit_paths.TOOLS_DIR / "lanes.py"))
 SESSION_PANE = pathlib.Path(os.environ.get("SESSION_PANE_SCRIPT", toolkit_paths.TOOLS_DIR / "session_pane.py"))
 
+REAL_PRUNE = pathlib.Path(os.environ.get("HERDR_WORKTREE_PRUNE") or BIN_DIR / "herdr-worktree-prune")
+
 BRIEF = "build the thing"
 NAME = "repo-fork"
 NEW_WORKSPACE = '{"result":{"workspace":{"workspace_id":"wNew"}}}'
@@ -52,7 +54,9 @@ exit 0"""
 HERDR_DEV_BODY = """printf 'herdr-dev %s\\n' "$*" >> "$EVENTS"
 exit 0"""
 
-PRUNE_BODY = """printf 'prune %s %s lanes=%s\\n' "$PWD" "$*" "$(python3 "$HERDR_LANES_CLI" list)" >> "$EVENTS"
+# --check goes to the real prune script and records no event; every other call is recorded and succeeds.
+PRUNE_BODY = """if [ "$1" = "--check" ]; then exec "$REAL_PRUNE" "$@"; fi
+printf 'prune %s %s lanes=%s\\n' "$PWD" "$*" "$(python3 "$HERDR_LANES_CLI" list)" >> "$EVENTS"
 if [ -e "$STATE_DIR/prune-fails" ]; then exit 3; fi
 exit 0"""
 
@@ -121,6 +125,7 @@ class HerdrLaneResumeTest(unittest.TestCase):
             "PATH": f"{self.bin_dir}:{env['PATH']}",
             "XDG_STATE_HOME": str(self.state_home),
             "HERDR_LANES_CLI": str(LANES_CLI),
+            "REAL_PRUNE": str(REAL_PRUNE),
             "HERDR_SESSION_PANE": str(SESSION_PANE),
             "HERDR_LANE_CLOSE_WAIT": "0",
             "EVENTS": str(self.events),
@@ -654,7 +659,27 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         result = self.run_script("--close", NAME)
 
-        self.assert_refused_changing_nothing(result, "branch fork is not merged into origin/master")
+        self.assert_refused_changing_nothing(result, "1 commits not on origin/master")
+
+    def test_entryless_close_of_a_squash_merged_branch_refuses_before_closing(self):
+        self.git(self.main_checkout, "merge", "--squash", "fork")
+        self.git(self.main_checkout, "commit", "-m", "squash")
+        self.git(self.main_checkout, "push", "origin", "master")
+        self.workspace_on(self.worktree)
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, "1 commits not on origin/master")
+
+    def test_entryless_close_of_a_merged_branch_with_a_stash_refuses_before_closing(self):
+        self.merge_fork()
+        self.workspace_on(self.worktree)
+        (self.worktree / "scratch").write_text("stashed\n")
+        self.git(self.worktree, "stash", "push", "--include-untracked")
+
+        result = self.run_script("--close", NAME)
+
+        self.assert_refused_changing_nothing(result, "a stash entry was made on branch fork")
 
     def test_entryless_close_refuses_a_working_agent(self):
         self.merge_fork()
@@ -757,7 +782,7 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         result = self.run_script("--close", NAME)
 
-        self.assert_refused_changing_nothing(result, f"{self.worktree} has uncommitted changes; nothing changed")
+        self.assert_refused_changing_nothing(result, "uncommitted changes: 1 staged, modified or untracked entries")
 
     def test_entryless_prune_exit_code_is_the_script_exit_code(self):
         self.merge_fork()
@@ -813,7 +838,7 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         result = self.run_script("--close", str(self.worktree))
 
-        self.assert_refused_changing_nothing(result, "detached HEAD")
+        self.assert_refused_changing_nothing(result, "detached HEAD (also a rebase or bisect in progress)")
 
     def test_two_workspaces_on_one_linked_worktree_count_as_one_match_by_name(self):
         self.merge_fork()
@@ -846,23 +871,25 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
 
-    def test_branch_is_merged_refusals_change_nothing(self):
+    def test_prune_check_refusals_change_nothing(self):
         self.merge_fork()
         self.workspace_on(self.worktree)
         # Main checkout leaves master so the worktree can switch onto the default branch.
         self.git(self.main_checkout, "checkout", "-b", "other")
         self.git(self.worktree, "checkout", "master")
         on_default = self.run_script("--close", str(self.worktree))
-        self.assert_refused_changing_nothing(on_default, "is on the default branch master")
+        self.assert_refused_changing_nothing(on_default, "checked out on the default branch master")
 
         self.git(self.worktree, "checkout", "fork")
         self.git(self.main_checkout, "remote", "set-url", "origin", str(self.root / "gone.git"))
         fetch_fails = self.run_script("--close", str(self.worktree))
-        self.assert_refused_changing_nothing(fetch_fails, "could not fetch origin/master")
+        self.assert_refused_changing_nothing(fetch_fails, "herdr-worktree-prune --check")
+        self.assertIn("git fetch origin master failed", fetch_fails.stderr)
 
         self.git(self.main_checkout, "remote", "set-head", "origin", "--delete")
         no_head = self.run_script("--close", str(self.worktree))
-        self.assert_refused_changing_nothing(no_head, "has no refs/remotes/origin/HEAD")
+        self.assert_refused_changing_nothing(no_head, "herdr-worktree-prune --check")
+        self.assertIn("origin/HEAD is not set", no_head.stderr)
 
     def test_a_merge_check_that_cannot_run_refuses_and_changes_nothing(self):
         self.workspace_on(self.worktree)
@@ -872,7 +899,7 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         result = self.run_script("--close", str(self.worktree))
 
-        self.assert_refused_changing_nothing(result, "could not check whether branch fork is merged")
+        self.assert_refused_changing_nothing(result, "git merge-base failed")
 
     def test_a_path_that_is_not_a_folder_refuses(self):
         result = self.run_script("--close", str(self.root / "missing" / "x"))

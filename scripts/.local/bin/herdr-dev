@@ -34,9 +34,9 @@
 #                    managed agent, so it gets tab-bar status and
 #                    `herdr agent read/prompt/wait` for free.
 #   Tab 2 "console"  (skipped by --headless) three equal shells for git /
-#                    tests / logs. If the project
-#                    has an mprocs config, pane 1 runs the service stack under
-#                    mprocs instead of a bare shell. Config lookup order:
+#                    tests / logs. If the project has an mprocs config, pane 1
+#                    runs the service stack under mprocs instead of a bare
+#                    shell. Config lookup order:
 #                      1. <project>/mprocs.yaml
 #                      2. ~/.config/mprocs/projects/<basename>.yaml
 #

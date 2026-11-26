@@ -109,7 +109,7 @@ def launch_parser():
                              "from 1; if the fix coder re-asks it, it is skipped, not asked again")
     parser.add_argument("--base",
                         help="review every change since this ref (its merge base with HEAD when the ref is no "
-                             "ancestor of HEAD), commits included")
+                             "ancestor of HEAD), commits included, leaving out what later merge commits brought in")
     parser.add_argument("--file", action="append", default=[], dest="files",
                         help="review only this file (repeatable): absolute, or relative to the repo root. A file "
                              f"under {hook_input.SESSION_TEMP_ROOT_FORMS} is read as a brief for the reviewers")
@@ -192,15 +192,21 @@ def read_findings_file(findings_file, flag="--fix"):
 
 
 def resolved_base(repo, base):
-    """BaseResolution(given, commit, used): `given` is --base as typed, `used` the commit the review diffs against,
-    which is the merge base with HEAD when the base is no ancestor of HEAD."""
+    """BaseResolution(given, commit, used): `given` is --base as typed, `used` the commit the review diffs against:
+    the merge base with HEAD when the base is no ancestor of HEAD, with what later merge commits brought in folded
+    into it."""
     commit = script_utils.git_output(repo, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}")
     if not commit:
         raise LaunchError(f"--base {base} names no commit in {repo}")
     try:
-        return merge_free_base.resolve_base(repo, commit.strip(), base)
+        resolution = merge_free_base.resolve_base(repo, commit.strip(), base)
+        folded = merge_free_base.merge_free_base(repo, resolution.used)
+        return resolution._replace(used=folded)
+    except merge_free_base.MergeConflictError as error:
+        raise LaunchError(f"--base {base}: {str(error).rstrip('.')}. Resolve or revert merge {error.merge}, or "
+                          "pass a --base that comes after it. Nothing was launched.") from error
     except (merge_free_base.NoMergeBaseError, merge_free_base.MergeBaseGitError) as error:
-        raise LaunchError(f"--base {base}: {error}") from error
+        raise LaunchError(f"--base {base}: {str(error).rstrip('.')}. Nothing was launched.") from error
 
 
 def is_session_brief(full):
@@ -663,6 +669,9 @@ def command_launch(argv, loop_script):
             outside_plan = f" outside the plan folder {plan_format.plan_folder(plan)}" if scoped != changed else ""
             raise LaunchError(f"every changed file {since}{outside_plan} was given to --ruled-out, so the review scope "
                               "is empty and no reviewer would read anything. Nothing was launched.")
+        if base:
+            raise LaunchError(f"the branch in {repo} has no changes of its own {since}, so the review scope is "
+                              "empty and no reviewer would read anything. Nothing was launched.")
         raise LaunchError(f"the working tree of {repo} has no changes {since}, so the review scope is empty and no "
                           "reviewer would read anything. Nothing was launched. To review committed work, launch "
                           "with --base <ref>.")

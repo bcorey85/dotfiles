@@ -26,6 +26,7 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import code_wait
 import handback_store
+import merge_free_base
 import process_group
 import resume_review_gate
 import review_fix_names
@@ -111,10 +112,11 @@ class ReviewLaunchTest(unittest.TestCase):
                 "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
                 "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
 
-    def run_launch(self, *flags, repo=None, env_overrides=None, detach=True):
+    def run_launch(self, *flags, repo=None, env_overrides=None, detach=True, edit_readme=True):
         repo = repo or self.repo
         detach_flags = ["--detach"] if detach else []
-        (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
+        if edit_readme:
+            (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
         environment = {**self.launch_environment(), **(env_overrides or {})}
         return subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", *detach_flags, *flags], cwd=repo,
                               text=True, capture_output=True, env=environment, check=False)
@@ -387,7 +389,7 @@ class ReviewLaunchTest(unittest.TestCase):
         ):
             review_launch.resolved_base(self.repo.resolve(), "HEAD")
 
-        self.assertEqual(str(raised.exception), "--base HEAD: git exploded")
+        self.assertEqual(str(raised.exception), "--base HEAD: git exploded. Nothing was launched.")
 
     def test_a_base_with_no_merge_base_stops_the_launch_with_the_recovery_command(self):
         self.git(self.repo, "branch", "-M", "master")
@@ -554,6 +556,71 @@ class ReviewLaunchTest(unittest.TestCase):
         second_dir = next(loop_dir for loop_dir in self.loop_dirs(self.repo) if loop_dir != first_dir)
         second_pid = reviewer_dispatch.loop_pid(second_dir)
         self.assertTrue(process_is_running(second_pid), "the new loop was stopped")
+
+    def merged_branch(self, own_commit=True):
+        """The repo's branch commits its own file (unless own_commit is False), then merges a side branch that adds
+        another file. Returns the commit the branch started from."""
+        start = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                               check=True).stdout.strip()
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        (self.repo / "side.txt").write_text("side\n")
+        self.git(self.repo, "add", "side.txt")
+        self.git(self.repo, "commit", "-q", "-m", "side change")
+        self.git(self.repo, "checkout", "-q", "-")
+        if own_commit:
+            (self.repo / "own.txt").write_text("own\n")
+            self.git(self.repo, "add", "own.txt")
+            self.git(self.repo, "commit", "-q", "-m", "own change")
+        self.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        return start
+
+    def test_a_launch_base_before_a_merge_leaves_the_merged_in_files_out_of_the_review(self):
+        start = self.merged_branch()
+
+        self.launch("--base", start)
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        review_base = next(line.split(": ", 1)[1] for line in prompt_file.read_text().splitlines()
+                           if line.startswith("base: "))
+        changed = subprocess.run(["git", "diff", "--name-only", review_base], cwd=self.repo, capture_output=True,
+                                 text=True, check=True).stdout.split()
+        self.assertIn("own.txt", changed)
+        self.assertNotIn("side.txt", changed)
+
+    def test_a_launch_base_whose_only_later_change_is_a_merge_stops_with_an_empty_scope(self):
+        start = self.merged_branch(own_commit=False)
+
+        done = self.run_launch("--base", start, edit_readme=False)
+
+        output = done.stdout + done.stderr
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertIn("no changes of its own", output)
+        self.assertNotIn("--base <ref>", output)
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_merged_in_parent_that_conflicts_with_the_base_stops_the_launch_and_names_the_merge(self):
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        (self.repo / "README.md").write_text("the side branch's readme\n")
+        self.git(self.repo, "commit", "-q", "-am", "side readme")
+        self.git(self.repo, "checkout", "-q", "-")
+        (self.repo / "README.md").write_text("the base's readme\n")
+        self.git(self.repo, "commit", "-q", "-am", "base readme")
+        self.git(self.repo, "tag", "conflicting-base")
+        git_env = {**os.environ, **GIT_ENV}
+        subprocess.run(["git", "merge", "-q", "--no-ff", "-m", "merge side", "side"], cwd=self.repo, env=git_env,
+                       capture_output=True, check=False)
+        (self.repo / "README.md").write_text("both readmes\n")
+        self.git(self.repo, "commit", "-q", "-am", "merge side")
+        merge = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                               check=True).stdout.strip()
+
+        done = self.run_launch("--base", "conflicting-base")
+
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(merge, done.stdout + done.stderr)
+        self.assertIn("does not merge cleanly", done.stdout + done.stderr)
+        self.assertIn("Nothing was launched", done.stdout + done.stderr)
+        self.assertEqual(self.loop_dirs(self.repo), [])
 
     def test_a_launch_saves_its_skill_in_the_launch_record(self):
         self.launch()
@@ -800,6 +867,21 @@ class ReviewLaunchTest(unittest.TestCase):
             record["packet_args"] = ["--skill", skill]
         (loop_dir / reviewer_dispatch.LAUNCH_FILE).write_text(json.dumps(record) + "\n")
         return loop_dir
+
+
+class ResolvedBaseGitErrorTest(unittest.TestCase):
+    def test_git_failure_in_merge_free_base_stops_the_launch(self):
+        error = merge_free_base.MergeBaseGitError("git log failed.")
+        with (
+            mock.patch.object(review_launch.script_utils, "git_output", return_value="abc123\n"),
+            mock.patch.object(merge_free_base, "resolve_base",
+                              return_value=merge_free_base.BaseResolution("main", "abc123", "abc123")),
+            mock.patch.object(merge_free_base, "merge_free_base", side_effect=error),
+            self.assertRaises(review_launch.LaunchError) as raised,
+        ):
+            review_launch.resolved_base("/repo", "main")
+        self.assertIn("Nothing was launched", str(raised.exception))
+        self.assertIn("git log failed", str(raised.exception))
 
 
 class UserRuledHeaderTest(unittest.TestCase):

@@ -64,6 +64,11 @@
 - **Alternatives rejected:** a placeholder line.
 - **Trade-off accepted:** none.
 
+### AC12 ruling
+
+- **Choice:** AC12 (the live pane check) stays open past merge. agent-evals-74 checks the pane at the first Stop block after the user merges v2.
+- **Ruled by:** agent-evals-74, 2026-11-27.
+
 ## Direction & Constraints
 
 - Only `gates/staged_claim_gate.py` can block among the Stop and SubagentStop hooks: `format_changed.py` prints no decision on Stop and always exits 0, and `ledger-hook` runs async, which the hooks docs say cannot block (https://code.claude.com/docs/en/hooks#run-hooks-in-the-background). Fix 1 touches that one gate plus a new lib helper.

@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,8 +16,15 @@ from stubs import write_stub
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import lane_entries
+import process_group
+import process_table
+import system_resources
 
 LANE_STATUS = pathlib.Path(os.environ.get("LANE_STATUS_SCRIPT", toolkit_paths.TOOLS_DIR / "lane_status.py"))
+VIEWER_CAP = 1024**3
+BASE_COMMIT_DATE = "2099-01-01T00:00:00+00:00"
+# Any real process holds more than this.
+TINY_CAP = 1
 ROOMY_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 99999999 1% /"
 TIGHT_DF = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 999999999 1 100 99% /"
 # A Bash call sent to the background, the result that hands back its task id, the notification when it ends, and the
@@ -51,6 +59,29 @@ class LaneStatusTest(unittest.TestCase):
         self.stub_agents([])
         self.stub_df(ROOMY_DF)
         self.stub_du("100")
+        self.stub_viewers(json.dumps({"cap_bytes": VIEWER_CAP, "viewers": []}))
+        self.program_count = 0
+
+    def stub_viewers(self, json_text, exit_code=0):
+        write_stub(self.bin_dir / "hunk-review-pane", f"cat <<'EOF'\n{json_text}\nEOF\nexit {exit_code}")
+
+    def live_hunk(self, program="hunk"):
+        """Starts a real process whose program name is `program` and returns its pid."""
+        self.program_count += 1
+        program_dir = self.root / f"prog{self.program_count}"
+        program_dir.mkdir()
+        copied = program_dir / program
+        shutil.copy(shutil.which("sleep"), copied)
+        process = subprocess.Popen([str(copied), "60"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def viewer_row(self, pane, root, pid):
+        return {"pane": pane, "root": str(root), "pid": pid}
+
+    def stub_viewer_rows(self, rows, cap_bytes):
+        self.stub_viewers(json.dumps({"cap_bytes": cap_bytes, "viewers": rows}))
 
     def stub_agents(self, agents):
         reply = json.dumps({"result": {"agents": agents}})
@@ -120,6 +151,17 @@ class LaneStatusTest(unittest.TestCase):
 
                 self.assertEqual(finished.stdout, f"one: dead ({reason})\n", finished.stderr)
 
+    def test_an_api_error_followed_by_bookkeeping_records_still_reads_as_dead(self):
+        self.add_lane()
+        error_record = {"type": "assistant", "isApiErrorMessage": True,
+                        "message": {"content": [{"type": "text", "text": "API Error: 500 overloaded"}]}}
+        trailing = [{"type": "system", "subtype": "turn_duration"}, {"type": "last-prompt", "lastPrompt": "go"}]
+        self.stub_agents([self.agent_with_transcript("idle", [*BACKGROUND_RUN, error_record, *trailing])])
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.stdout, "one: dead (api error)\n", finished.stderr)
+
     def test_changes_prints_a_state_once_and_working_when_the_lane_recovers(self):
         self.add_lane()
         self.stub_agents([self.agent("idle")])
@@ -131,6 +173,15 @@ class LaneStatusTest(unittest.TestCase):
 
         outputs = [(run.returncode, run.stdout) for run in (first, again, recovered, quiet)]
         self.assertEqual(outputs, [(1, "one: idle\n"), (0, ""), (1, "one: working\n"), (0, "")])
+
+    def test_changes_prints_scratch_working_when_low_scratch_clears(self):
+        self.stub_df(TIGHT_DF)
+        low = self.run_status("--changes")
+        self.stub_df(ROOMY_DF)
+        cleared = self.run_status("--changes")
+
+        self.assertEqual(low.returncode, 1, low.stderr)
+        self.assertEqual((cleared.returncode, cleared.stdout), (1, "scratch: working\n"), cleared.stderr)
 
     def test_working_agent_and_healthy_machine_print_nothing(self):
         self.add_lane()
@@ -298,6 +349,266 @@ class LaneStatusTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 2)
         self.assertIn(f"{lanes / 'broken.json'}: field (file): expected valid JSON", finished.stderr)
 
+    def test_a_viewer_over_the_cap_is_named_with_its_lane(self):
+        self.add_lane()
+        self.stub_agents([self.agent("working")])
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.worktree / "sub", pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        size_label = system_resources.size_text(process_group.resident_bytes(pid))
+        self.assertEqual(finished.stdout,
+                         f"viewer one: {size_label}, over 0 KB cap (pane w1_p2, pid {pid})\n")
+
+    def test_a_viewer_under_the_cap_prints_nothing(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], VIEWER_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_viewer_outside_any_lane_is_named_by_its_root(self):
+        pid = self.live_hunk()
+        folder = self.root / "no-lane"
+        self.stub_viewer_rows([self.viewer_row("w1_p2", folder, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, rf"^viewer {re.escape(str(folder))}: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_a_stale_pid_file_is_not_a_viewer(self):
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, gone.pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_pid_held_by_another_program_is_not_a_viewer(self):
+        pid = self.live_hunk(program="other")
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (0, ""), finished.stderr)
+
+    def test_a_failed_viewers_call_prints_cannot_read(self):
+        self.stub_df(TIGHT_DF)
+        self.stub_viewers("", exit_code=3)
+
+        finished = self.run_status()
+
+        lines = finished.stdout.splitlines()
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertEqual(len(lines), 2, finished.stdout)
+        self.assertTrue(lines[0].startswith("scratch: "), finished.stdout)
+        self.assertRegex(lines[1], r"^viewers: cannot read \(.*hunk-review-pane.*\)$")
+
+    def test_viewer_json_with_a_bad_shape_prints_cannot_read(self):
+        bad_shapes = [
+            "not json",
+            json.dumps({"viewers": []}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": {}}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": "r", "pid": "7"}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": ["row"]}),
+            json.dumps({"cap_bytes": True, "viewers": []}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": "r", "pid": True}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": 5, "root": "r", "pid": 7}]}),
+            json.dumps({"cap_bytes": VIEWER_CAP, "viewers": [{"pane": "p", "root": None, "pid": 7}]}),
+        ]
+        for text in bad_shapes:
+            with self.subTest(text=text):
+                self.stub_viewers(text)
+
+                finished = self.run_status()
+
+                self.assertEqual(finished.returncode, 1, finished.stderr)
+                self.assertRegex(finished.stdout, r"^viewers: cannot read \(.+\)\n$")
+
+    def test_a_viewer_with_no_root_is_named_by_its_pane(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([{"pane": "w1_p2", "root": "", "pid": pid}], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, rf"^viewer w1_p2: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_a_bad_lane_file_exits_2_when_a_viewer_is_named(self):
+        lane_entries.lanes_dir().mkdir(parents=True)
+        (lane_entries.lanes_dir() / "bad.json").write_text("not json")
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual((finished.returncode, finished.stdout), (2, ""), finished.stderr)
+        self.assertIn("bad.json", finished.stderr)
+
+    def test_a_failing_ps_prints_cannot_read(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        write_stub(self.bin_dir / "ps", "echo broken >&2\nexit 2")
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, r"^viewers: cannot read \(.*ps.*\)\n$")
+
+    def test_a_launcher_missing_from_path_prints_cannot_read(self):
+        spec = importlib.util.spec_from_file_location("lane_status_no_launcher", LANE_STATUS)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module.shutil, "which", return_value=None):
+            report = module.viewer_report()
+
+        self.assertEqual(report, {module.VIEWERS_KEY: "viewers: cannot read (hunk-review-pane is not on PATH)"})
+
+    def remove_lane_if_present(self, name):
+        try:
+            lane_entries.remove_entry(name)
+        except lane_entries.LaneNotFoundError:
+            return
+
+    def test_a_lane_named_like_a_report_key_keeps_its_working_line_under_changes(self):
+        for name in ("viewers", "viewer-x", "memory", "scratch"):
+            with self.subTest(name=name):
+                lane_entries.add_entry(name, str(self.worktree), str(self.root), f"branch-{name}", "brief", "")
+                self.addCleanup(self.remove_lane_if_present, name)
+                self.stub_agents([self.agent("idle")])
+                self.run_status("--changes")
+                self.stub_agents([self.agent("working")])
+
+                again = self.run_status("--changes")
+
+                self.assertEqual(again.stdout, f"{name}: working\n", again.stderr)
+                lane_entries.remove_entry(name)
+
+    def test_no_lanes_still_reports_an_oversized_viewer(self):
+        write_stub(self.bin_dir / "herdr-api", "exit 1")
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout,
+                         rf"^viewer {re.escape(str(self.root))}: .* \(pane w1_p2, pid {pid}\)\n$")
+
+    def test_changes_prints_a_viewer_line_once(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+
+        first = self.run_status("--changes")
+        again = self.run_status("--changes")
+
+        self.assertEqual((first.returncode, again.returncode, again.stdout), (1, 0, ""), first.stderr)
+        self.assertIn(f"pid {pid})", first.stdout)
+
+    def test_changes_prints_a_growing_viewer_once(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        rss_file = self.root / "rss"
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps",
+                   f'case "$*" in\n  *rss=*) cat "{rss_file}" ;;\n  *) exec {real_ps} "$@" ;;\nesac')
+        rss_file.write_text("2048\n")
+
+        first = self.run_status("--changes")
+        rss_file.write_text("4096\n")
+        grown = self.run_status("--changes")
+        plain = self.run_status()
+
+        self.assertEqual(first.returncode, 1, first.stderr)
+        self.assertIn(system_resources.size_text(2048 * 1024), first.stdout)
+        self.assertEqual((grown.returncode, grown.stdout), (0, ""), grown.stderr)
+        self.assertIn(system_resources.size_text(4096 * 1024), plain.stdout)
+
+    def test_changes_prints_a_viewer_only_when_it_is_over_the_cap(self):
+        pid = self.live_hunk()
+        cap_kilobytes = 1024
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], cap_kilobytes * 1024)
+        rss_file = self.root / "rss"
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps",
+                   f'case "$*" in\n  *rss=*) cat "{rss_file}" ;;\n  *) exec {real_ps} "$@" ;;\nesac')
+        rss_file.write_text(f"{cap_kilobytes}\n")
+
+        at_cap = self.run_status("--changes")
+        rss_file.write_text(f"{cap_kilobytes + 1}\n")
+        over_cap = self.run_status("--changes")
+
+        self.assertEqual((at_cap.returncode, at_cap.stdout), (0, ""), at_cap.stderr)
+        self.assertEqual(over_cap.returncode, 1, over_cap.stderr)
+        self.assertIn(system_resources.size_text((cap_kilobytes + 1) * 1024), over_cap.stdout)
+
+    def test_two_viewers_under_one_root_print_one_line_each(self):
+        first_pid = self.live_hunk()
+        second_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, first_pid), self.viewer_row("w1_p2", self.root, second_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+
+        finished = self.run_status()
+
+        lines = finished.stdout.splitlines()
+        self.assertEqual(len(lines), 2, finished.stdout)
+        self.assertIn(f"pane w1_p1, pid {first_pid})", lines[0])
+        self.assertIn(f"pane w1_p2, pid {second_pid})", lines[1])
+
+    def test_a_ps_failure_on_one_viewer_keeps_the_other_viewers_lines(self):
+        bad_pid = self.live_hunk()
+        good_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, bad_pid), self.viewer_row("w1_p2", self.root, good_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+        real_ps = shutil.which("ps")
+        write_stub(self.bin_dir / "ps", f'case "$*" in\n  *"-p {bad_pid}") echo broken >&2; exit 2 ;;\n'
+                   f'  *) exec {real_ps} "$@" ;;\nesac')
+
+        finished = self.run_status()
+
+        self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertRegex(finished.stdout, r"viewers: cannot read \(.*ps.*\)\n")
+        self.assertIn(f"pane w1_p2, pid {good_pid})", finished.stdout)
+
+    def test_changes_prints_only_the_viewer_whose_line_changed(self):
+        first_pid = self.live_hunk()
+        second_pid = self.live_hunk()
+        replacement_pid = self.live_hunk()
+        rows = [self.viewer_row("w1_p1", self.root, first_pid), self.viewer_row("w1_p2", self.root, second_pid)]
+        self.stub_viewer_rows(rows, TINY_CAP)
+        self.run_status("--changes")
+        rows[1] = self.viewer_row("w1_p2", self.root, replacement_pid)
+        self.stub_viewer_rows(rows, TINY_CAP)
+
+        changed = self.run_status("--changes")
+
+        self.assertEqual(changed.returncode, 1, changed.stderr)
+        self.assertEqual(len(changed.stdout.splitlines()), 1, changed.stdout)
+        self.assertIn(f"pane w1_p2, pid {replacement_pid})", changed.stdout)
+
+    def test_changes_prints_no_working_line_when_a_viewer_drops(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], TINY_CAP)
+        self.run_status("--changes")
+        self.stub_viewer_rows([], TINY_CAP)
+
+        dropped = self.run_status("--changes")
+
+        self.assertEqual((dropped.returncode, dropped.stdout), (0, ""), dropped.stderr)
+
+    def test_a_small_cap_prints_the_cap_in_kb(self):
+        pid = self.live_hunk()
+        self.stub_viewer_rows([self.viewer_row("w1_p2", self.root, pid)], 1024)
+
+        finished = self.run_status()
+
+        self.assertRegex(finished.stdout, r"over 1 KB cap \(pane")
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "reads /proc/meminfo")
     def test_memory_under_the_threshold_prints_the_memory_line(self):
         finished = self.run_status(LANE_STATUS_MIN_MEMORY_GB="100000")
@@ -312,6 +623,8 @@ class LaneStatusTest(unittest.TestCase):
             f"spec = importlib.util.spec_from_file_location('lane_status', {str(LANE_STATUS)!r})\n"
             "module = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(module)\n"
+            # shutil.which cannot run under a faked win32 platform; this run is about memory only.
+            "module.viewer_report = dict\n"
             "sys.platform = 'win32'\n"
             "sys.exit(module.main(['lane_status.py']))\n")
         env = self.status_env(LANE_STATUS_MIN_MEMORY_GB=memory_threshold)
@@ -343,6 +656,287 @@ class LaneStatusTest(unittest.TestCase):
 
                 self.assertEqual(finished.returncode, 2)
                 self.assertIn("LANE_STATUS_MIN_SCRATCH_GB", finished.stderr)
+
+    def git(self, folder, *arguments, commit_date=None):
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t"}
+        if commit_date:
+            env["GIT_COMMITTER_DATE"] = commit_date
+        finished = subprocess.run(["git", "-C", str(folder), *arguments], env=env, capture_output=True, text=True)
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        return finished.stdout
+
+    def commit_file(self, folder, name, commit_date=None):
+        (pathlib.Path(folder) / name).write_text(name)
+        self.git(folder, "add", name)
+        self.git(folder, "commit", "-m", name, commit_date=commit_date)
+
+    def git_fixture(self):
+        """A bare origin, a main checkout on master with one commit pushed, and a helper to add lane worktrees."""
+        origin = self.root / "origin.git"
+        subprocess.run(["git", "init", "--bare", "-b", "master", str(origin)], check=True, capture_output=True)
+        self.main = self.root / "main"
+        subprocess.run(["git", "clone", str(origin), str(self.main)], check=True, capture_output=True)
+        self.git(self.main, "checkout", "-b", "master")
+        # Dated a day ahead, so no lane in these tests starts after its branch tip and reads as `no commits` by
+        # accident of the clock; test_git_prints_no_commits_... sets the lane start later on purpose.
+        self.commit_file(self.main, "base", commit_date=BASE_COMMIT_DATE)
+        self.git(self.main, "push", "origin", "master")
+
+    def git_lane(self, name, reports_to):
+        worktree = self.root / f"wt-{name}"
+        self.git(self.main, "worktree", "add", "-b", f"branch-{name}", str(worktree), "master")
+        lane_entries.add_entry(name, str(worktree), str(self.main), f"branch-{name}", "brief", reports_to)
+        return worktree
+
+    def test_git_prints_each_lanes_branch_state(self):
+        self.git_fixture()
+        self.git_lane("merged", "boss")
+        ahead_tree = self.git_lane("ahead", "")
+        self.commit_file(ahead_tree, "a1")
+        self.commit_file(ahead_tree, "a2")
+        (ahead_tree / "scratch.txt").write_text("dirty")
+        lane_entries.add_entry("gone", str(self.root / "vanished"), str(self.main), "branch-gone", "brief", "boss")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master")
+        self.git(self.main, "fetch", "origin")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout.splitlines(), [
+            "ahead: branch-ahead, 2 ahead / 1 behind, 1 dirty, reports_to -",
+            "gone: branch-gone, worktree gone, reports_to boss",
+            "merged: branch-merged, merged, 0 dirty, reports_to boss"])
+
+    def fake_table(self, rows):
+        table = self.root / "process-table.json"
+        table.write_text(json.dumps(rows))
+        return {process_table.TABLE_FILE_VARIABLE: str(table)}
+
+    def test_git_prints_no_commits_for_a_lane_whose_branch_tip_is_older_than_its_start(self):
+        self.git_fixture()
+        zero_tree = self.git_lane("zero", "boss")
+        self.stub_agents([self.agent("idle", zero_tree)])
+        lane_file = lane_entries.lane_file("zero")
+        lane = json.loads(lane_file.read_text())
+        lane["started_at"] = "2099-06-01T00:00:00+00:00"
+        lane_file.write_text(json.dumps(lane))
+        table = self.fake_table([])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["zero: branch-zero, no commits, 0 dirty, reports_to boss"], finished.stdout.splitlines())
+
+    def test_git_marks_a_merged_lane_with_an_idle_agent_as_finished_idle_with_its_claude_rss(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "boss")
+        self.stub_agents([self.agent("idle", worktree)])
+        table = self.fake_table([
+            {"pid": 1, "rss_kb": 1024, "command": "claude", "cwd": str(worktree)},
+            {"pid": 2, "rss_kb": 2048, "command": "claude", "cwd": str(worktree / "sub")},
+            {"pid": 3, "rss_kb": 4096, "command": "claude", "cwd": str(self.root / "elsewhere")},
+            {"pid": 4, "rss_kb": 8192, "command": "node", "cwd": str(worktree)}])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS 3.0 MB), reports_to boss"],
+                         finished.stdout.splitlines())
+
+    def test_git_does_not_mark_a_working_agent_or_an_unmerged_lane_finished_idle(self):
+        self.git_fixture()
+        working_tree = self.git_lane("working", "")
+        ahead_tree = self.git_lane("ahead", "")
+        self.commit_file(ahead_tree, "a1")
+        self.stub_agents([self.agent("working", working_tree), self.agent("idle", ahead_tree)])
+        table = self.fake_table([])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["ahead: branch-ahead, 1 ahead / 0 behind, 0 dirty, reports_to -",
+                          "working: branch-working, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+
+    def test_git_does_not_mark_a_merged_lane_with_no_agent_or_a_working_and_an_idle_agent(self):
+        self.git_fixture()
+        self.git_lane("empty", "")
+        mixed_tree = self.git_lane("mixed", "")
+        self.stub_agents([self.agent("idle", mixed_tree), self.agent("working", mixed_tree)])
+
+        finished = self.run_status("--git", **self.fake_table([]))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["empty: branch-empty, merged, 0 dirty, reports_to -",
+                          "mixed: branch-mixed, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+
+    def test_git_prints_lines_without_a_mark_and_the_reason_when_herdr_api_fails(self):
+        self.git_fixture()
+        self.git_lane("done", "")
+        write_stub(self.bin_dir / "herdr-api", "exit 3")
+
+        finished = self.run_status("--git", **self.fake_table([]))
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, reports_to -"], finished.stdout.splitlines())
+        self.assertIn("no finished-idle marks", finished.stderr)
+        self.assertIn("exit 3", finished.stderr)
+
+    def test_git_says_unknown_when_the_process_table_holds_no_working_folders(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "")
+        self.stub_agents([self.agent("idle", worktree)])
+        table = self.fake_table([{"pid": 1, "rss_kb": 1024, "command": "claude", "cwd": None}])
+
+        finished = self.run_status("--git", **table)
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS unknown), reports_to -"],
+                         finished.stdout.splitlines())
+
+    def test_git_prints_an_unreadable_table_reason_once_for_several_finished_lanes(self):
+        self.git_fixture()
+        first = self.git_lane("first", "")
+        second = self.git_lane("second", "")
+        self.stub_agents([self.agent("idle", first), self.agent("idle", second)])
+        broken = self.root / "broken-table.json"
+        broken.write_text("{not json")
+
+        finished = self.run_status("--git", **{process_table.TABLE_FILE_VARIABLE: str(broken)})
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(2, finished.stdout.count("Claude RSS unreadable"))
+        self.assertEqual(1, finished.stderr.count(str(broken)))
+
+    def test_git_prints_the_reason_when_the_process_table_cannot_be_read(self):
+        self.git_fixture()
+        worktree = self.git_lane("done", "")
+        self.stub_agents([self.agent("done", worktree)])
+        broken = self.root / "broken-table.json"
+        broken.write_text("{not json")
+
+        finished = self.run_status("--git", **{process_table.TABLE_FILE_VARIABLE: str(broken)})
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(["done: branch-done, merged, 0 dirty, finished idle (Claude RSS unreadable), reports_to -"],
+                         finished.stdout.splitlines())
+        self.assertIn(str(broken), finished.stderr)
+
+    def test_git_prints_the_reason_when_no_default_branch_exists(self):
+        self.git_fixture()
+        worktree = self.git_lane("odd", "")
+        shutil.rmtree(self.main / ".git" / "refs" / "remotes")
+        (self.main / ".git" / "packed-refs").write_text("")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(
+            finished.stdout,
+            "odd: branch-odd, git failed (no origin/HEAD, origin/master or origin/main), reports_to -\n")
+        self.assertTrue(worktree.is_dir())
+
+    def test_git_prints_git_own_reason_when_the_main_checkout_is_gone(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        shutil.rmtree(self.main)
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.+\), reports_to -\n$")
+        self.assertNotIn("no origin/HEAD", finished.stdout)
+
+    def test_git_prints_the_reason_when_the_branch_is_missing(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        self.git(self.main, "update-ref", "-d", "refs/heads/branch-odd")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.*branch-odd.*\), reports_to -\n$")
+        self.assertEqual(finished.stdout.count("\n"), 1, "a multi-line git message must stay on one line")
+
+    def test_git_measures_against_origin_head_when_it_is_set(self):
+        self.git_fixture()
+        lane_tree = self.git_lane("odd", "")
+        self.commit_file(lane_tree, "a1")
+        self.git(self.main, "push", "origin", "master:trunk")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, 1 ahead / 0 behind, 0 dirty, reports_to -\n")
+
+    def test_git_falls_back_to_origin_main_when_origin_master_is_missing(self):
+        self.git_fixture()
+        self.git_lane("odd", "")
+        self.git(self.main, "push", "origin", "master:main")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "update-ref", "-d", "refs/remotes/origin/master")
+        # A fetch sets origin/HEAD in recent git; this test needs it unset.
+        self.git(self.main, "update-ref", "-d", "--no-deref", "refs/remotes/origin/HEAD")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, merged, 0 dirty, reports_to -\n")
+
+    def test_git_prefers_origin_master_over_origin_main_when_both_exist(self):
+        self.git_fixture()
+        lane_tree = self.git_lane("odd", "")
+        self.commit_file(lane_tree, "a1")
+        self.commit_file(self.main, "newer")
+        self.git(self.main, "push", "origin", "master:main")
+        self.git(self.main, "fetch", "origin")
+        self.git(self.main, "update-ref", "-d", "--no-deref", "refs/remotes/origin/HEAD")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "odd: branch-odd, 1 ahead / 0 behind, 0 dirty, reports_to -\n")
+
+    def test_git_with_another_flag_exits_2_with_usage_on_stderr(self):
+        for arguments in (("--git", "--changes"), ("--git", "extra")):
+            with self.subTest(arguments=arguments):
+                finished = self.run_status(*arguments)
+
+                self.assertEqual(finished.returncode, 2)
+                self.assertEqual(finished.stdout, "")
+                self.assertIn("--git", finished.stderr)
+
+    def test_git_with_no_open_lanes_prints_nothing_and_exits_0(self):
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertEqual(finished.stdout, "")
+
+    def test_git_prints_the_reason_when_status_fails_in_an_existing_worktree(self):
+        self.git_fixture()
+        worktree = self.git_lane("odd", "")
+        (worktree / ".git").write_text("gitdir: /nonexistent/worktree\n")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertRegex(finished.stdout, r"^odd: branch-odd, git failed \(.*status.* failed: .*\), reports_to -\n$")
+
+    def test_git_with_a_bad_lane_file_exits_2_with_the_message_on_stderr(self):
+        lanes = self.state_home / "herdr-lanes"
+        lanes.mkdir(parents=True)
+        (lanes / "broken.json").write_text("{not json")
+
+        finished = self.run_status("--git")
+
+        self.assertEqual(finished.returncode, 2)
+        self.assertEqual(finished.stdout, "")
+        self.assertIn(f"lane_status: {lanes / 'broken.json'}", finished.stderr)
 
     def test_the_memory_threshold_is_8_gb_when_the_variable_is_unset(self):
         spec = importlib.util.spec_from_file_location("lane_status_under_test", LANE_STATUS)

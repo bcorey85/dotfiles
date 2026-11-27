@@ -28,6 +28,7 @@ from shell_command import (
     and_steps_or_whole,
     attached_inline_code,
     command_after_wrappers,
+    command_options,
     contains_word_run,
     docker_forwarded_variables,
     docker_set_variables,
@@ -42,6 +43,7 @@ from shell_command import (
     is_redirect_word,
     is_short_cluster,
     names_code_runner,
+    option_values,
     options_before_separator,
     parse_raw_simple_commands,
     parse_simple_commands,
@@ -59,6 +61,7 @@ from shell_command import (
     without_flag_values,
     without_redirection_words,
     without_substitution_bodies,
+    without_substitutions,
     words_by_blank,
     words_without_redirections,
 )
@@ -176,6 +179,23 @@ class GitCSettingsTest(unittest.TestCase):
         self.assertEqual(self.settings("-c", "rebase.autoStash"), {"rebase.autostash": "true"})
         self.assertEqual(self.settings("-c", "rebase.autoStash="), {"rebase.autostash": ""})
         self.assertEqual(self.settings("-c", "rebase.autoStash=false"), {"rebase.autostash": "false"})
+
+
+class CommandOptionsTest(unittest.TestCase):
+    VALUE_OPTIONS = frozenset({"-p", "--slice"})
+
+    def test_value_options_in_both_forms_and_a_quoted_value_are_read_and_the_program_follows(self):
+        words = ["systemd-run", "--user", "--slice", "x", "--slice=y", "-p", "X=$(cmd)", "python3", "-m", "unittest"]
+        options, index = command_options(words, self.VALUE_OPTIONS)
+        self.assertEqual(options, [("--user", None), ("--slice", "x"), ("--slice=y", None), ("-p", "X=$(cmd)")],
+                         "each option pairs with its value; --slice=y keeps its value inside the word")
+        self.assertEqual(words[index:], ["python3", "-m", "unittest"], "the program starts after the options")
+        self.assertEqual(list(option_values(options, "--slice")), ["x", "y"])
+
+    def test_a_value_option_with_no_word_after_it_has_no_value(self):
+        options, index = command_options(["systemd-run", "--slice"], self.VALUE_OPTIONS)
+        self.assertEqual(options, [("--slice", None)])
+        self.assertEqual(index, 2)
 
 
 class IsGitWordTest(unittest.TestCase):
@@ -485,6 +505,14 @@ class WithoutSubstitutionBodiesTest(unittest.TestCase):
         cases = {'tee a "$(ls *)"': 'tee a "$(x)"', "tee `ls *` b": "tee `x` b", "tee a*": "tee a*"}
         for text, expected in cases.items():
             self.assertEqual(without_substitution_bodies(text), expected, text)
+
+
+class WithoutSubstitutionsTest(unittest.TestCase):
+    def test_each_outermost_span_is_replaced_whole(self):
+        cases = {"F=$(git x)/stop.md && cat": "F=x/stop.md && cat", "a `ls *` b": "a x b",
+                 "$(a $(b)) c": "x c", "tee a*": "tee a*", "echo '$(ls)'": "echo '$(ls)'"}
+        for text, expected in cases.items():
+            self.assertEqual(without_substitutions(text), expected, text)
 
 
 class RawWordsWithoutRedirectionsTest(unittest.TestCase):

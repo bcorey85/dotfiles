@@ -1,0 +1,1 @@
+{"tool_name": "Write", "tool_input": {"file_path": "{RUN_FOLDER}/stop.md", "content": "## Stop\n\nTo go on: /code resume\n"}, "agent_type": "code-fork"}

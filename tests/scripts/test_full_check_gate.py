@@ -71,6 +71,89 @@ class FullCheckMessagesNameTheCommandThatRanTest(unittest.TestCase):
         self.assertNotIn(BUILD_TIME_COMMAND, findings[0])
 
 
+class RealRunHost(full_check_gate.FullCheckSteps):
+    """A host that keeps the real run_check, in a git repo, with the check command left as given."""
+
+    def __init__(self, folder):
+        self.init_full_check_state()
+        self.repo = folder / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        self.out = folder / "out"
+        self.out.mkdir()
+        self.gate_env = ()
+        self.review_base = ""
+        self.files_touched = set()
+        self.untested_fix = False
+
+    def check_command_for_diff(self, check_command, base):
+        return check_command
+
+
+class CallerCiRunTest(unittest.TestCase):
+    def test_a_ci_run_goes_to_the_runner_only_when_set(self):
+        out = pathlib.Path(tempfile.mkdtemp(prefix="full-check-gate-test-"))
+        calls = []
+
+        def runner(repo, check_command, log, timeout, **options):
+            calls.append(options)
+            return "ok", "", {}
+
+        full_check_gate.run_full_check(out, out, "true", runner=runner)
+        full_check_gate.run_full_check(out, out, "true", runner=runner, ci_run="run-42")
+
+        self.assertNotIn("ci_run", calls[0])
+        self.assertEqual(calls[1]["ci_run"], "run-42")
+
+    def test_a_loop_step_with_a_ci_run_reports_the_ci_gate_result_and_runs_no_check(self):
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="full-check-gate-test-"))
+        host = RealRunHost(folder)
+        host.ci_run = "run-42"
+        marker = host.repo / "ran"
+
+        host.run_check(f"touch {marker}")
+
+        self.assertEqual(host.full_check, full_check.caller_ci_result("run-42"))
+        self.assertFalse(marker.exists(), "a CI-gated loop must not start a local check")
+
+    def test_a_ci_gated_check_pass_still_lints_and_neither_repairs_nor_stops(self):
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="full-check-gate-test-"))
+        host = RealRunHost(folder)
+        host.ci_run = "run-42"
+        linted = []
+        host.lint_pass = lambda check_command: linted.append(check_command) or True
+        host.repair = mock.Mock()
+        host.stop = mock.Mock()
+
+        host.full_check_pass("exit 1")
+
+        self.assertEqual(linted, ["exit 1"], "lint runs for a CI-gated review")
+        self.assertEqual(host.full_check, full_check.caller_ci_result("run-42"))
+        host.repair.assert_not_called()
+        host.stop.assert_not_called()
+
+    def test_a_ci_gated_check_left_out_by_expected_red_still_marks_the_fix_untested(self):
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="full-check-gate-test-"))
+        host = RealRunHost(folder)
+        host.ci_run = "run-42"
+        host.expected_red = [{"command": "exit 1", "until": "Phase 2"}]
+
+        host.run_check(None)
+
+        self.assertEqual(host.full_check, full_check.caller_ci_result("run-42"))
+        self.assertTrue(host.untested_fix)
+
+    def test_a_ci_gated_run_with_a_real_check_and_no_expected_red_leaves_the_fix_as_it_was(self):
+        folder = pathlib.Path(tempfile.mkdtemp(prefix="full-check-gate-test-"))
+        host = RealRunHost(folder)
+        host.ci_run = "run-42"
+        host.untested_fix = False
+
+        host.run_check("exit 1")
+
+        self.assertFalse(host.untested_fix)
+
+
 SCOPED_COMMAND = "pytest tests/test_a.py"
 BASE_THROTTLED_LINE = "FAILED tests/test_a.py::test_one - HTTPError: 429 retry after 12s"
 HEAD_THROTTLED_LINE = "FAILED tests/test_a.py::test_one - HTTPError: 429 retry after 7s"

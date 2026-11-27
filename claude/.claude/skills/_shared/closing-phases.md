@@ -4,7 +4,7 @@ Every `/eng-spec` plan ends with ONE closing phase after the last feature phase 
 
 ## The phase
 
-**Close pass** (risk: high) — `/close-branch`: scripts first, then four report-only reviewers in parallel on the whole branch diff (correctness, structure, test intent, plan and acceptance-criteria reconciliation), ONE `coder` that fixes every finding and writes every owed test, then a report-only gate on the fix diff alone, then the recap sheet. **Root-cause rule:** a cast/`?? default` papering a fixable wide type or loose structure is a finding; fix the source.
+**Close pass** (risk: high) — `/close-branch`: scripts first, then four report-only reviewers in parallel on the whole branch diff (correctness, structure, test intent, plan and acceptance-criteria reconciliation), ONE `coder` that fixes every finding and writes every owed test, then a report-only gate on the fix diff alone, then a coder round for the gate's findings, then the recap sheet. **Root-cause rule:** a cast/`?? default` papering a fixable wide type or loose structure is a finding; fix the source.
 
 Success Criteria: quality checks green; every reviewer finding fixed, shown wrong, or (an ask that changes a ticket AC) put to the user; the fix-diff gate passed; every acceptance criterion mapped to a test or explicitly retired; concentration counts stated; recap and smoke-test checklist delivered.
 
@@ -14,7 +14,7 @@ When the skill reports no open finding, a coder writes one line of evidence unde
 
 A plan written with the older four closing phases (Refactor pass, Test audit, Verify pass, Recap) runs them as written.
 
-Nothing after this is a phase. `/adr` runs **pre-PR**, shipping in the code's PR.
+Nothing after this is a phase. `/adr` runs at branch end, after the PR is open (`/verify-branch` points to it and `/close-branch` runs it once the PR is open; the branch is not finished until `adr_flow.py status <plan folder>` prints `adr: done`).
 
 ## Phase Status line (copy verbatim, renumbering)
 

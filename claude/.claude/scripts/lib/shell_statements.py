@@ -132,9 +132,9 @@ def shell_code(command):
     return shell_quoting.join_line_continuations(uncommented)
 
 
-def outside_heredoc_bodies(command, transform):
-    """The command with transform(text) applied to each run of lines that are no heredoc body or terminator line;
-    those lines stay as written, so a quote in a body does not change the quote state of the lines after it."""
+def heredoc_body_line_numbers(text):
+    """The 1-based numbers of the lines of a script that are a heredoc body or the terminator line of one, whether the
+    body is data or code. A heredoc with no terminator line has none."""
     body_lines = set()
 
     def note_bodies(line, lines, index, heredocs):
@@ -143,13 +143,20 @@ def outside_heredoc_bodies(command, transform):
             return None
 
         skipped = sum(len(body) + 1 for body in bodies)
-        body_lines.update(range(index, index + skipped))
+        body_lines.update(range(index + 1, index + skipped + 1))
         return [], skipped
 
-    rewrite_heredoc_lines(command, note_bodies)
+    rewrite_heredoc_lines(text, note_bodies)
+    return body_lines
+
+
+def outside_heredoc_bodies(command, transform):
+    """The command with transform(text) applied to each run of lines that are no heredoc body or terminator line;
+    those lines stay as written, so a quote in a body does not change the quote state of the lines after it."""
+    body_lines = heredoc_body_line_numbers(command)
     pieces = []
     open_lines = []
-    for number, line in enumerate(command.split("\n")):
+    for number, line in enumerate(command.split("\n"), 1):
         if number not in body_lines:
             open_lines.append(line)
             continue
@@ -490,15 +497,31 @@ def code_spans(body):
 
 
 def opens_shell_heredoc(line):
-    # True when a command on the line takes a heredoc and runs a shell interpreter. A line this reading cannot parse
-    # counts as a shell when any of its words names one: its body is kept and read as commands.
+    # True when a command on the line takes a heredoc and it, or a command its pipe feeds (`cat <<EOF | bash`), runs a
+    # shell interpreter. A line this reading cannot parse counts as a shell when any of its words names one: its body
+    # is kept and read as commands.
     try:
         piped_commands = shell_command.parse_piped_commands(shell_quoting.strip_comments(line))
     except ValueError:
         words = re.split(r"[\s|&;()<>]+", line)
         return any(os.path.basename(word.strip("'\"")) in shell_command.SHELL_INTERPRETERS for word in words)
-    return any(shell_command.runs_shell(words) and any(operator == "<<" for operator, _target in redirections)
-               for words, redirections, _piped in piped_commands)
+    for index, (_words, redirections, _piped) in enumerate(piped_commands):
+        if not any(operator == "<<" for operator, _target in redirections):
+            continue
+        if pipeline_runs_shell(piped_commands, index):
+            return True
+    return False
+
+
+def pipeline_runs_shell(piped_commands, start):
+    # True when the command at start, or a later command joined to it by pipes, runs a shell interpreter.
+    for index in range(start, len(piped_commands)):
+        words, _redirections, piped = piped_commands[index]
+        if index > start and not piped:
+            return False
+        if shell_command.runs_shell(words):
+            return True
+    return False
 
 
 def heredoc_openers(text, line_start):
@@ -580,10 +603,25 @@ def statement_word_pairs(command):
     quotes = []
     pairs = []
     for words in statements(command, quotes=quotes):
-        blanked = [QUOTE_MARK.sub('""', word) for word in words]
-        resolved = [resolved_word(word, quotes) for word in words]
-        pairs.append(WordPair(blanked, resolved))
+        pairs.append(word_pair(words, quotes))
     return pairs
+
+
+def word_pair(words, quotes):
+    # The WordPair of one statement's words; `quotes` is the list clean() filled.
+    blanked = [QUOTE_MARK.sub('""', word) for word in words]
+    resolved = [resolved_word(word, quotes) for word in words]
+    return WordPair(blanked, resolved)
+
+
+def open_statement_word_pair(prefix):
+    """The WordPair of the statement still open at the end of `prefix`: the words after its last separator, leading
+    words of without_leading_noise dropped. Empty lists when `prefix` ends at a separator. `prefix` must close each
+    quote it opens."""
+    quotes = []
+    pieces = STATEMENT_SPLIT.split(clean(prefix, quotes))
+    words = without_leading_noise(pieces[-1].split())
+    return word_pair(words, quotes)
 
 
 ANSI_C_ESCAPE = re.compile(r"\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|.)", re.DOTALL)

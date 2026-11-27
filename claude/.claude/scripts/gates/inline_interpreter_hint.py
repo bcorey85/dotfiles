@@ -17,7 +17,7 @@ permission flow still judges the rewritten command; any other uncapped test comm
 word only among arguments) is denied with the capped form to run. A full-suite test run in the foreground of a main
 session (no agent_id, run_in_background not true) is denied with the way to background it, never rewritten. A plain
 runner step that the inline check blocks is denied, even when the auto-mode pilot lets it pass. Any error there passes
-the call. The answers come in this order: the inline deny, the foreground full-suite deny (BACKGROUND_DENY_TEXT), the
+the call. The answers come in this order: the inline deny, the foreground full-suite deny (background_deny_text()), the
 cap rewrite, then the cap deny (DENY_TEXT). So an uncapped foreground full suite in a chain gets the background text.
 """
 import json
@@ -28,11 +28,13 @@ import sys
 import time
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import hook_input
 import memory_cap_scope
 import shell_command
 import shell_quoting
 import shell_statements
 import shell_steps
+import tool_call_flags
 
 INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
 INLINE = rf"\b(python3?|node|perl|ruby|php)\b[^;|&]*\s({INLINE_FLAGS})\b"
@@ -49,12 +51,19 @@ ALLOWED = (r"import\s+(json|sys|os\.path|pathlib|re|math|hashlib|base64|urllib|c
 HEREDOC_OPERATOR = re.compile(r"<<<?")
 INTERPRETER_FAMILIES = shell_command.INTERPRETER_FAMILIES
 INTERPRETER = shell_command.INTERPRETER
-TEXT = ("Inline interpreter runs (python3 -c, node -e, perl -e, manage.py shell -c) and code fed on stdin to a bare "
-        "interpreter (python3 -, python3 <<'EOF', cat file | python3) are blocked. Do not retry another inline form. "
-        "Write the code to a script file in your scratchpad directory with the Write tool, then run the file: "
-        "python3 <file>, node <file>, or python manage.py shell < <file>. A script file may still read data on "
-        "stdin (python3 <file> <<'EOF'). If the command holds no inline code, run the interpreter step as its own "
-        "Bash call, apart from any later -c, -e or -r flag.")
+ROUTE = "Write the code to a script file in {place} with the Write tool, then run the file: "
+GENERAL_PLACE = "your scratchpad directory"
+TEXT = (ROUTE + "python3 <file>, node <file>, or python manage.py shell < <file>. "
+        "Inline interpreter runs (python3 -c, node -e, perl -e, manage.py shell -c) and code fed on stdin to a bare "
+        "interpreter (python3 -, python3 <<'EOF', cat file | python3) are blocked: do not retry another inline form. "
+        "A script file may still read data on stdin (python3 <file> <<'EOF'). If the command holds no inline code, "
+        "run the interpreter step as its own Bash call, apart from any later -c, -e or -r flag.")
+
+
+def deny_text(payload):
+    """TEXT with the route naming the session's scratchpad folder when it exists, else the general words."""
+    scratchpad = hook_input.existing_session_scratchpad(payload.get("transcript_path"), payload.get("session_id"))
+    return TEXT.format(place=scratchpad or GENERAL_PLACE)
 
 
 def grep(pattern, command):
@@ -221,7 +230,7 @@ def runs_in_foreground(payload):
     tests, so it is never denied."""
     if payload.get("agent_id"):
         return False
-    return (payload.get("tool_input") or {}).get("run_in_background") is not True
+    return not tool_call_flags.runs_in_background(payload.get("tool_input") or {})
 
 
 def main():
@@ -233,9 +242,9 @@ def main():
         is_blocked = blocked(command)
         cap_available = memory_cap_scope.cap_available()
         if is_blocked and not pilot_passes(payload, command):
-            emit_deny(TEXT)
+            emit_deny(deny_text(payload))
         elif runs_in_foreground(payload) and memory_cap_scope.foreground_full_suite(command):
-            emit_deny(memory_cap_scope.BACKGROUND_DENY_TEXT)
+            emit_deny(memory_cap_scope.background_deny_text())
         elif cap_available and not is_blocked and memory_cap_scope.is_rewritable_test_run(command):
             emit_capped_rewrite(payload["tool_input"])
         elif cap_available and memory_cap_scope.uncapped_test_run(command):

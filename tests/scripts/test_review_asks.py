@@ -1,12 +1,79 @@
+import contextlib
+import io
+import os
+import pathlib
 import sys
+import tempfile
 import unittest
+import unittest.mock
 
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+import lane_entries
+import plan_format
 import review_asks
 import review_fix_asks
+
+
+class AsksDoneLineTest(unittest.TestCase):
+    def setUp(self):
+        self.asks = [{"question": "q", "change": "c", "user_only": True}, {"question": "r", "change": "d"}]
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.state_dir = pathlib.Path(temp.name)
+        env = unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": temp.name,
+                                                    "CLAUDE_CODE_SESSION_ID": "lane-sess"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def add_lane(self, session_id):
+        lane_entries.add_entry("one", str(self.state_dir), str(self.state_dir), "b", "brief", "boss")
+        lane_entries.set_session("one", session_id)
+
+    def test_a_lane_session_is_told_by_session_with_the_wanted_change_clause(self):
+        self.add_lane("lane-sess")
+
+        line = review_asks.asks_done_line(self.asks, {"packet_id": "p"}, review_asks.asks_done_ruler())
+
+        self.assertIn("asks-done --by session <outcome-1> <outcome-2>", line)
+        self.assertIn("Decide each ask, then run once:", line)
+        self.assertNotIn("After the user answers", line)
+        self.assertIn("give `held` for user_only ask(s) 1 unless the ask is a wanted change you reject", line)
+
+    def test_a_session_with_no_lane_is_told_by_user(self):
+        self.add_lane("another-sess")
+
+        line = review_asks.asks_done_line(self.asks, {"packet_id": "p"}, review_asks.asks_done_ruler())
+
+        self.assertIn("asks-done --by user <outcome-1> <outcome-2>", line)
+        self.assertIn("A `--by session` call gives `held` for the user_only ask(s) 1", line)
+        self.assertNotIn("unless the ask is a wanted change you reject", line)
+        self.assertIn("After the user answers, run once:", line)
+
+    def test_unreadable_lane_files_give_by_user_and_a_stderr_line(self):
+        lane_entries.lanes_dir().mkdir(parents=True)
+        (lane_entries.lanes_dir() / "bad.json").write_text("not json")
+        errors = io.StringIO()
+
+        with contextlib.redirect_stderr(errors):
+            line = review_asks.asks_done_line(self.asks, {"packet_id": "p"}, review_asks.asks_done_ruler())
+
+        self.assertIn("asks-done --by user ", line)
+        self.assertIn("review_fix: lane files unreadable (", errors.getvalue())
+        self.assertIn("the asks-done line names --by user", errors.getvalue())
+
+
+class AsksDoneGuidanceTest(unittest.TestCase):
+    def test_the_guidance_names_the_ruler_the_asks_done_line_prints(self):
+        session_guidance = review_asks.asks_done_guidance(plan_format.SESSION_RULING)
+        user_guidance = review_asks.asks_done_guidance(plan_format.USER_RULING)
+
+        self.assertIn("names `--by session`", session_guidance)
+        self.assertIn("do not wait for the user", session_guidance)
+        self.assertIn("names `--by user`", user_guidance)
+        self.assertIn("swap in `--by session`", user_guidance)
 
 
 class IsConditionalChangeTest(unittest.TestCase):

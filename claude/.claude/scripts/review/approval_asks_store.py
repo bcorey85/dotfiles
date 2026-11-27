@@ -69,15 +69,20 @@ def wanted_edit_target(path):
     return f"{WANTED_TARGET_PREFIX}{path}{WANTED_TARGET_SUFFIX}"
 
 
-def wanted_target_path(change):
-    """The path a change ends with, as `wanted_edit_target` wrote it, or None when the change does not end with one."""
+def wanted_path_of_change(change):
+    """The path a wanted-change ask's change ends with (see `wanted_edit_target`), or None when it does not end with
+    that form, is not a string, or names an empty path."""
     if not isinstance(change, str):
         return None
+    if not change.endswith(WANTED_TARGET_SUFFIX):
+        return None
     start = change.rfind(WANTED_TARGET_PREFIX)
-    if start < 0 or not change.endswith(WANTED_TARGET_SUFFIX):
+    if start < 0:
         return None
     path = change[start + len(WANTED_TARGET_PREFIX):-len(WANTED_TARGET_SUFFIX)]
-    return path or None
+    if not path:
+        return None
+    return path
 
 
 def wanted_entry(text, change, path, line, title):
@@ -154,7 +159,7 @@ def is_approval_ask(item):
     change = item.get("change")
     if approval_path_of_change(change) is not None:
         return True
-    return wanted_target_path(change) is not None
+    return wanted_path_of_change(change) is not None
 
 
 def approval_ask_changes(asks):

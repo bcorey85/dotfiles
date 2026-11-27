@@ -57,7 +57,7 @@ exit 0""")
         """The numbered steps and the note on <ws> that the log holds for a fork session id of s1."""
         reopen = reopen or f"herdr worktree open --cwd {self.main_checkout} --path {self.worktree} --focus"
         return [f"1. {reopen}",
-                f"2. {focus}herdr-dev {self.worktree} <ws> s1 '{RESUME_PROMPT}'",
+                f"2. {focus}herdr-dev --headless {self.worktree} <ws> s1 '{RESUME_PROMPT}'",
                 WORKSPACE_ID_NOTE]
 
     def assert_recovery_steps(self, log_text, reopen=None, focus=""):
@@ -249,7 +249,10 @@ esac""")
         finished = self.run_watch(watch_seconds=None)
 
         self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(sleep_args.read_text().strip(), "120")
+        # The script subtracts wall seconds already spent, so a loaded machine
+        # that crosses a clock-second boundary during startup sleeps 119.
+        slept = int(sleep_args.read_text().strip())
+        self.assertIn(slept, (119, 120))
 
     def test_a_session_id_reported_after_the_agent_appears_is_polled_for(self):
         pane_calls = self.root / "pane-calls"

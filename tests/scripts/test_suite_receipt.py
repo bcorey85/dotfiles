@@ -3,6 +3,7 @@ exact tree has a green receipt; any other branch reruns."""
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ SUITE_RECEIPT = pathlib.Path(os.environ.get("SUITE_RECEIPT_SCRIPT") or toolkit_p
 EXIT_SKIP = 0
 EXIT_RERUN = 1
 EXIT_FAILED = 2
+EXIT_DIRTY = 3
 GREEN_SUMMARY = {"tests": 12, "files": 3, "failed_files": []}
 RED_SUMMARY = {"tests": 12, "files": 3, "failed_files": ["test_a.py"]}
 
@@ -23,7 +25,9 @@ def git(repo, *args):
     return finished.stdout.strip()
 
 
-class SuiteReceiptTest(unittest.TestCase):
+class LaneRepoCase(unittest.TestCase):
+    """A repo on master with one commit and a worktree `lane` on its own branch."""
+
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -46,6 +50,8 @@ class SuiteReceiptTest(unittest.TestCase):
     def run_receipt(self, *args):
         return subprocess.run([sys.executable, str(SUITE_RECEIPT), *args], capture_output=True, text=True, timeout=30)
 
+
+class SuiteReceiptTest(LaneRepoCase):
     def record_run(self, summary, exit_code, start_tree=None):
         """Records one suite run in the lane worktree; the tree is the lane's as it stands unless start_tree names
         another."""
@@ -141,6 +147,85 @@ class SuiteReceiptTest(unittest.TestCase):
 
         self.assertEqual(status_before, git(self.lane, "status", "--porcelain"))
         self.assertIn("untracked.txt", git(self.lane, "ls-tree", "--name-only", tree))
+
+
+class DirtyCheckTest(LaneRepoCase):
+    """`dirty`: the check before a merge into the main checkout."""
+
+    def lane_cuts_gate_and_rebuilds_page(self):
+        """master holds gate.txt and page.html; the lane deletes the first and rewrites the second."""
+        self.commit("gate.txt", "gate\n")
+        self.commit("page.html", "page v1\n")
+        git(self.lane, "merge", "--quiet", "master")
+        git(self.lane, "rm", "--quiet", "gate.txt")
+        # The commit helper's commit takes the staged deletion with the page.
+        self.commit("page.html", "page v2\n", repo=self.lane)
+
+    def test_a_staged_deletion_and_a_dirty_page_the_merge_touches_stop_it_with_the_fix(self):
+        self.lane_cuts_gate_and_rebuilds_page()
+        git(self.repo, "rm", "--quiet", "gate.txt")
+        (self.repo / "page.html").write_text("page edited by another session\n")
+        head_before = git(self.repo, "rev-parse", "HEAD")
+
+        finished = self.run_receipt("dirty", str(self.repo), "lane")
+
+        self.assertEqual(EXIT_DIRTY, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("gate.txt", finished.stdout)
+        self.assertIn("page.html", finished.stdout)
+        self.assertIn("if the changes are yours, commit them", finished.stdout)
+        self.assertIn("if another session holds them, wait until it commits or drops them", finished.stdout)
+        self.assertIn("rerun the merge line", finished.stdout)
+        self.assertIn("merge in a detached worktree", finished.stdout)
+        self.assertNotIn("git commit", finished.stdout)
+        self.assertEqual(head_before, git(self.repo, "rev-parse", "HEAD"), "a merge started")
+        self.assertFalse((self.repo / ".git" / "MERGE_HEAD").exists())
+        self.assertEqual("page edited by another session\n", (self.repo / "page.html").read_text())
+
+    def test_an_untracked_file_at_a_path_the_branch_adds_stops_the_merge(self):
+        self.commit("added.txt", "from the lane\n", repo=self.lane)
+        (self.repo / "added.txt").write_text("untracked in the checkout\n")
+        (self.repo / "unrelated.txt").write_text("untracked, not on the lane\n")
+
+        finished = self.run_receipt("dirty", str(self.repo), "lane")
+
+        self.assertEqual(EXIT_DIRTY, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("added.txt", finished.stdout)
+        self.assertNotIn("unrelated.txt", finished.stdout)
+
+    def test_a_dirty_file_the_merge_does_not_touch_leaves_the_merge_clear(self):
+        self.lane_cuts_gate_and_rebuilds_page()
+        (self.repo / "base.txt").write_text("edited, not on the lane\n")
+
+        finished = self.run_receipt("dirty", str(self.repo), "lane")
+
+        self.assertEqual(EXIT_SKIP, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("clear:", finished.stdout)
+
+    def test_a_failed_untracked_listing_stops_loudly_and_starts_no_merge(self):
+        self.lane_cuts_gate_and_rebuilds_page()
+        shim_dir = self.scratch / "shim"
+        shim_dir.mkdir()
+        shim = shim_dir / "git"
+        shim.write_text('#!/bin/sh\nfor arg in "$@"; do [ "$arg" = ls-files ] && exit 1; done\n'
+                        f'exec {shutil.which("git")} "$@"\n')
+        shim.chmod(0o755)
+        head_before = git(self.repo, "rev-parse", "HEAD")
+
+        finished = subprocess.run([sys.executable, str(SUITE_RECEIPT), "dirty", str(self.repo), "lane"],
+                                  capture_output=True, text=True, timeout=30,
+                                  env={**os.environ, "PATH": f"{shim_dir}{os.pathsep}{os.environ['PATH']}"})
+
+        self.assertEqual(EXIT_FAILED, finished.returncode, finished.stdout + finished.stderr)
+        self.assertIn("git ls-files --others failed", finished.stderr)
+        self.assertEqual(head_before, git(self.repo, "rev-parse", "HEAD"))
+        self.assertFalse((self.repo / ".git" / "MERGE_HEAD").exists())
+
+    def test_a_clean_checkout_leaves_the_merge_clear(self):
+        self.lane_cuts_gate_and_rebuilds_page()
+
+        finished = self.run_receipt("dirty", str(self.repo), "lane")
+
+        self.assertEqual(EXIT_SKIP, finished.returncode, finished.stdout + finished.stderr)
 
 
 if __name__ == "__main__":

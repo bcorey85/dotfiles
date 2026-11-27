@@ -49,7 +49,15 @@ as another session) plus tracked changes is the shared route: nothing is set asi
 would leave the tree during the pull. The upstream tip is fetched and, when HEAD already holds it, nothing is pulled;
 when it has commits HEAD lacks and HEAD has none of its own, the branch is fast-forwarded in place; when HEAD has
 commits of its own the run exits 1 naming the dirty files, and when the fast-forward would overwrite a dirty file it
-exits 1 naming that file. When every tracked change is a built page and the built-page driver is configured, the run
+exits 1 naming that file. Either refusal names a live session as the holder only when exactly one live session in the
+repo has a write call (Edit, Write, MultiEdit or NotebookEdit) with an absolute path on a dirty path, recorded after
+the HEAD commit time, in its transcript or one of its subagents' transcripts. A write whose record has no parsable
+timestamp, or a timestamp not after the HEAD commit time, counts for nothing. When this session (CLAUDE_CODE_SESSION_ID)
+has such a write itself, or a transcript that could not be read, no session is named and the refusal adds that this
+session also wrote a dirty file; a session with no transcript is no evidence. With none, several, or a transcript
+that could not be read, the refusal says the owner is unknown and lists the live sessions in the repo as candidates
+(those whose transcript was not read are listed apart), never picking one.
+When every tracked change is a built page and the built-page driver is configured, the run
 takes the solo route even beside another session: a built page is build output, so setting it aside, pulling and
 putting it back through the driver rebuilds it in place of a refusal. Every run, `--put-back` included, holds
 `<git common dir>/pull-keep-index.lock`; it waits PULL_KEEP_INDEX_LOCK_SECONDS (a positive integer, default 300) and
@@ -66,6 +74,7 @@ import tempfile
 from typing import NamedTuple
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
+import dirty_writers
 import file_lock
 import script_utils
 import session_registry
@@ -676,33 +685,54 @@ def fetch_incoming(repo, target, upstream_tip):
     return Incoming(branch, fetched.commit)
 
 
-def exit_shared_diverged(repo, other, dirty):
-    sys.exit(f"pull_keep_index: {session_registry.holder_label(other)} also works in {repo} and the branch has local "
-             f"commits; nothing pulled or set aside. Dirty files: {' '.join(dirty)}. Commit them, or wait for that "
-             "session to finish, then rerun.")
+def holder_clause(repo, others, dirty):
+    """Who holds the dirty files, as the opening clause of a refusal: the one live session whose transcripts show a
+    write to a dirty path after the HEAD commit, when every other session's transcripts were read and this session
+    wrote none; else the owner is unknown and the live sessions in the repo are the candidates."""
+    since = script_utils.head_commit_time(repo)
+    if since is None:
+        sys.exit(
+            f"pull_keep_index: could not read the HEAD commit time (git log -1 --format=%ct) in {repo}; "
+            "nothing pulled or set aside"
+        )
+    verdict = dirty_writers.dirty_writers(repo, others, dirty, since, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    sole = verdict.sole_writer()
+    if sole is not None:
+        return f"{session_registry.holder_label(sole)} also works in {repo} and wrote a dirty file"
+    candidates = ", ".join(session_registry.holder_label(row) for row in others)
+    unread_text = f" (transcript not read: {', '.join(verdict.unread)})" if verdict.unread else ""
+    own_text = "this session also wrote a dirty file; " if verdict.own_wrote else ""
+    return (f"the owner of the dirty files is unknown; {own_text}the live sessions in {repo} are the candidates: "
+            f"{candidates}{unread_text}")
 
 
-def exit_shared_overlap(repo, other, overlap):
-    sys.exit(f"pull_keep_index: {session_registry.holder_label(other)} also works in {repo}; the pull would "
-             f"overwrite: {' '.join(overlap)}. Nothing was set aside. Commit those files, or wait for that session "
-             "to finish, then rerun.")
+def exit_shared_diverged(repo, others, dirty):
+    holder = holder_clause(repo, others, dirty)
+    sys.exit(f"pull_keep_index: {holder}; the branch has local commits; nothing pulled or set aside. Dirty files: "
+             f"{' '.join(dirty)}. Commit them, or wait for the session that holds them to finish, then rerun.")
 
 
-def fast_forward(repo, incoming, other, dirty):
+def exit_shared_overlap(repo, others, dirty, overlap):
+    holder = holder_clause(repo, others, dirty)
+    sys.exit(f"pull_keep_index: {holder}; the pull would overwrite: {' '.join(overlap)}. Nothing was set aside. "
+             "Commit those files, or wait for the session that holds them to finish, then rerun.")
+
+
+def fast_forward(repo, incoming, others, dirty):
     """`merge --ff-only` to the fetched tip. Exit 1 when the branch diverged, when the pull would overwrite a dirty
     file, or when the merge fails."""
     if not script_utils.is_ancestor(repo, "HEAD", incoming.commit):
-        exit_shared_diverged(repo, other, dirty)
+        exit_shared_diverged(repo, others, dirty)
     overlap = sorted(set(listed_paths(repo, "HEAD", incoming.commit)) & set(dirty))
     if overlap:
-        exit_shared_overlap(repo, other, overlap)
+        exit_shared_overlap(repo, others, dirty, overlap)
     merged = run_in_repo(repo, "merge", "--ff-only", "--quiet", incoming.commit)
     if merged.returncode != 0:
         problem = script_utils.process_stderr_text(merged)
         sys.exit(f"pull_keep_index: git merge --ff-only failed in {repo}:\n{problem}\nNothing was set aside.")
 
 
-def shared_pull(repo, target, other, dirty, upstream_tip):
+def shared_pull(repo, target, others, dirty, upstream_tip):
     """Pull in a checkout another live session edits, with nothing set aside: that session's edits stay in the tree,
     so a fast-forward is the only move that keeps them. Fetch (unless `upstream_tip` is already fetched); already
     held pulls nothing; else fast-forward. Sets the upstream after a targeted pull."""
@@ -711,7 +741,7 @@ def shared_pull(repo, target, other, dirty, upstream_tip):
     if script_utils.is_ancestor(repo, incoming.commit, "HEAD"):
         print(f"pull_keep_index: {incoming.branch} already holds {short}; nothing pulled.")
     else:
-        fast_forward(repo, incoming, other, dirty)
+        fast_forward(repo, incoming, others, dirty)
     if target:
         set_upstream(repo, *target)
 
@@ -798,9 +828,9 @@ def run_pull(repo):
         return
 
     dirty = listed_paths(repo, "HEAD")
-    other = session_registry.other_live_session_in(repo, os.environ.get("CLAUDE_CODE_SESSION_ID"))
-    if dirty and other is not None and not only_rebuildable_pages(repo, dirty):
-        shared_pull(repo, target, other, dirty, checked.tip)
+    others = session_registry.other_live_sessions_in(repo, os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if dirty and others and not only_rebuildable_pages(repo, dirty):
+        shared_pull(repo, target, others, dirty, checked.tip)
         return
 
     saved = set_aside(repo)

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1173 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1300 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [The late repair read drops repairs an earlier review round already read](notes/2026-11-24-the-late-repair-read-drops-repairs-an-earlier.md).
+Latest change: 2026-11-27, [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 15
+* quality: 16
 
 ## Pages
 

@@ -1,6 +1,8 @@
 """Tests for phase_start.py, the record of the tree a /code phase starts from, and the held files code_review_start.py
 reads from it. Set PHASE_START_SCRIPT to run against another copy."""
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,8 +10,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
+import transcript_lines
 
 PHASE_START = pathlib.Path(os.environ.get("PHASE_START_SCRIPT") or toolkit_paths.CODE_DIR / "phase_start.py")
 REVIEW_START = PHASE_START.parent / "code_review_start.py"
@@ -50,10 +54,23 @@ class PhaseStartTest(unittest.TestCase):
         return self.phase_start_with()
 
     def phase_start_with(self, *flags, session_id="test-session"):
-        environment = {**ENV, "HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
-                       "CLAUDE_CODE_SESSION_ID": session_id}
+        environment = {**ENV, "XDG_STATE_HOME": str(self.home / "state"), "HOME": str(self.home),
+                       "CLAUDE_CONFIG_DIR": str(self.config_dir), "CLAUDE_CODE_SESSION_ID": session_id}
         return subprocess.run([sys.executable, str(PHASE_START), *flags], cwd=self.repo, capture_output=True,
                               text=True, check=False, env=environment)
+
+    def write_lane(self, reports_to):
+        """A lane file whose worktree is the repo, reporting to `reports_to`, under a temp XDG state folder."""
+        lanes = self.home / "state" / "herdr-lanes"
+        lanes.mkdir(parents=True, exist_ok=True)
+        entry = {"name": "lane", "worktree": str(self.repo), "main_checkout": str(self.repo), "branch": "b",
+                 "brief": "x", "session_id": "", "reports_to": reports_to,
+                 "started_at": "2026-11-24T00:00:00+00:00"}
+        (lanes / "lane.json").write_text(json.dumps(entry))
+
+    def write_live_session(self, name):
+        row = {"name": name, "sessionId": "s-" + name, "pid": os.getpid()}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
 
     def start_json(self):
         return json.loads((self.repo / ".git/code-phase/start.json").read_text())
@@ -120,6 +137,41 @@ class PhaseStartTest(unittest.TestCase):
         review = self.review_prompt(done.stdout.strip())
         header = review.stdout.partition("\n\n")[0]
         self.assertIn("held files: theirs.py", header.splitlines())
+
+    def test_a_new_run_whose_report_to_session_is_not_live_stops_and_lists_the_live_names(self):
+        self.write_lane("ghost-orchestrator")
+        self.write_live_session("real-orchestrator")
+        result = self.phase_start_with("--new-run")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("ghost-orchestrator", result.stderr)
+        self.assertIn("real-orchestrator", result.stderr)
+        self.assertFalse((self.repo / ".git/code-phase/start.json").exists())
+
+    def test_a_new_run_whose_report_to_session_is_live_goes_on(self):
+        self.write_lane("real-orchestrator")
+        self.write_live_session("real-orchestrator")
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
+
+    def test_a_new_run_reporting_to_a_derived_name_session_goes_on_with_a_note(self):
+        self.write_lane("agent-evals-c3")
+        row = {"name": "agent-evals-18", "nameSource": "derived", "sessionId": "s-derived", "pid": os.getpid(),
+               "cwd": "/home/someone/agent-evals"}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
+        result = self.phase_start_with("--new-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("agent-evals-c3", result.stderr)
+
+    def test_a_derived_name_row_of_another_folder_does_not_excuse_a_missing_report_to_session(self):
+        self.write_lane("agent-evals-c3")
+        row = {"name": "other-18", "nameSource": "derived", "sessionId": "s-derived", "pid": os.getpid(),
+               "cwd": "/home/someone/other"}
+        (self.config_dir / "sessions" / f"{os.getpid()}.json").write_text(json.dumps(row))
+        self.assertNotEqual(self.phase_start_with("--new-run").returncode, 0)
+
+    def test_a_new_run_with_no_lane_file_or_no_report_to_goes_on(self):
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
+        self.write_lane("")
+        self.assertEqual(self.phase_start_with("--new-run").returncode, 0)
 
     def test_new_run_replaces_the_record(self):
         (self.repo / "theirs.py").write_text("# another session's edit\n")
@@ -225,10 +277,35 @@ class PhaseStartTest(unittest.TestCase):
                                "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
                               env={**ENV, "CLAUDE_CONFIG_DIR": str(self.config_dir)})
 
-    def register_live_session(self, session_id, cwd, name="lane-b"):
-        """A live registry row (this test process's pid) for a session working in `cwd`."""
+    def register_live_session(self, session_id, cwd, name="lane-b", wrote=("theirs.py", "shared.py", "mine.py"),
+                              timestamp=transcript_lines.AFTER_HEAD):
+        """A live registry row (this test process's pid) for a session working in `cwd`, and a transcript with one
+        Edit call, after the HEAD commit, on each file named in `wrote` (relative to the repo)."""
         row = {"pid": os.getpid(), "sessionId": session_id, "name": name, "cwd": str(cwd)}
         (self.config_dir / "sessions" / f"{session_id}.json").write_text(json.dumps(row))
+        transcript = transcript_lines.edit_lines([self.repo / name_written for name_written in wrote], timestamp)
+        projects = self.config_dir / "projects" / "p"
+        projects.mkdir(parents=True, exist_ok=True)
+        (projects / f"{session_id}.jsonl").write_text(transcript)
+
+    def test_a_live_other_session_in_the_repo_that_wrote_no_dirty_file_is_no_holder(self):
+        (self.repo / "theirs.py").write_text("# someone's edit\n")
+        self.register_live_session("other-session", self.repo, wrote=())
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(self.start_json()["holder"])
+
+    def test_two_live_sessions_that_both_wrote_a_dirty_file_name_no_holder(self):
+        (self.repo / "theirs.py").write_text("# someone's edit\n")
+        self.register_live_session("other-session", self.repo)
+        self.register_live_session("third-session", self.repo, name="lane-c")
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(self.start_json()["holder"])
 
     def test_the_record_names_head_and_every_dirty_file_and_the_sha_is_printed(self):
         (self.repo / "theirs.py").write_text("# another session's edit\n")
@@ -287,6 +364,7 @@ class PhaseStartTest(unittest.TestCase):
                       "them); review left them out, so check them: shared.py", header)
 
     def test_a_fresh_start_records_the_live_other_session_as_holder_with_the_runs_session_and_time(self):
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
         self.register_live_session("other-session", self.repo)
 
         done = self.phase_start()
@@ -313,12 +391,90 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(second["sessions"], ["test-session", "second-session"])
 
     def test_a_kept_record_with_no_holder_gets_the_session_live_at_the_next_start(self):
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
         self.phase_start()
         self.assertIsNone(self.start_json()["holder"])
         self.register_live_session("other-session", self.repo)
 
         self.phase_start_with(session_id="second-session")
 
+        self.assertEqual(self.start_json()["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+
+    def write_own_coder_transcript(self, session_id, written):
+        """A subagent transcript of `session_id` with an Edit, after the HEAD commit, on each repo file in `written`."""
+        transcript = transcript_lines.edit_lines([self.repo / name_written for name_written in written])
+        subagents = self.config_dir / "projects" / "p" / session_id / "subagents"
+        subagents.mkdir(parents=True, exist_ok=True)
+        (subagents / "agent-coder.jsonl").write_text(transcript)
+
+    def test_a_kept_record_holder_ignores_the_own_sessions_files_and_finds_the_other_writer(self):
+        (self.repo / "earlier.py").write_text("# the first phase\n")
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
+        self.phase_start()
+        self.register_live_session("second-session", self.repo, name="lane-c", wrote=())
+        self.write_own_coder_transcript("second-session", ["earlier.py"])
+        self.register_live_session("other-session", self.repo, wrote=("theirs.py",))
+        self.register_live_session("third-session", self.repo, name="lane-d", wrote=("earlier.py",))
+
+        self.phase_start_with(session_id="second-session")
+
+        self.assertEqual(self.start_json()["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+
+    def test_a_fresh_start_names_no_holder_when_the_own_session_also_wrote_the_dirty_file(self):
+        (self.repo / "theirs.py").write_text("# an edit both sessions made\n")
+        self.register_live_session("other-session", self.repo, wrote=("theirs.py",))
+        self.register_live_session("test-session", self.repo, name="lane-own", wrote=())
+        self.write_own_coder_transcript("test-session", ["theirs.py"])
+
+        done = self.phase_start()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(self.start_json()["holder"])
+
+    def test_a_kept_record_holder_ignores_a_dirty_file_whose_bytes_changed_since_the_record(self):
+        (self.repo / "theirs.py").write_text("# another session's edit\n")
+        self.phase_start()
+        (self.repo / "theirs.py").write_text("# rewritten after the record\n")
+        self.register_live_session("other-session", self.repo, wrote=("theirs.py",))
+
+        self.phase_start_with(session_id="second-session")
+
+        self.assertIsNone(self.start_json()["holder"])
+
+    def test_a_kept_record_holder_covers_a_file_first_dirty_at_the_second_start(self):
+        (self.repo / "earlier.py").write_text("# the first phase\n")
+        self.phase_start()
+        self.assertIsNone(self.start_json()["holder"])
+        (self.repo / "later.py").write_text("# another session's edit, first seen now\n")
+        self.register_live_session("other-session", self.repo, wrote=("later.py",))
+
+        self.phase_start_with(session_id="second-session")
+
+        record = self.start_json()
+        self.assertIn("later.py", record["dirty"])
+        self.assertEqual(record["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+
+    def test_resume_looks_for_a_holder_over_the_holdable_files(self):
+        self.phase_start()
+        (self.repo / "later.py").write_text("# another session's edit, first seen at the resume\n")
+        self.register_live_session("other-session", self.repo, wrote=("later.py",))
+
+        done = self.phase_start_with("--resume", session_id="resumed-session")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.start_json()["holder"], {"session": "lane-b", "cwd": str(self.repo)})
+
+    def test_resume_finds_a_write_made_before_a_commit_that_moved_head_past_the_recorded_head(self):
+        self.phase_start()
+        (self.repo / "later.py").write_text("# another session's edit\n")
+        self.register_live_session("other-session", self.repo, wrote=("later.py",), timestamp="2028-01-01T00:00:00Z")
+        later_commit = {**os.environ, "GIT_COMMITTER_DATE": "2030-01-01T00:00:00Z"}
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "moved head"], check=True, env=later_commit)
+
+        done = self.phase_start_with("--resume", session_id="resumed-session")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.start_json()["holder"], {"session": "lane-b", "cwd": str(self.repo)})
 
     def test_resume_adds_its_session_id_to_the_kept_record(self):
@@ -439,6 +595,55 @@ class PhaseStartTest(unittest.TestCase):
         self.assertNotIn("held files:", done.stdout)
         self.assertNotIn("held-by:", done.stdout)
 
+    def test_resume_records_the_head_and_tree_and_a_plain_start_removes_the_record(self):
+        self.phase_start()
+        resume_file = self.repo / ".git/code-phase/resume.json"
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        record = json.loads(resume_file.read_text())
+        self.assertEqual(record["head"], git(self.repo, "rev-parse", "HEAD"))
+        self.assertEqual(record["repo"], str(self.repo))
+        self.assertTrue(record["tree"])
+        self.assertFalse(record["denied"])
+
+        self.phase_start()
+
+        self.assertFalse(resume_file.exists())
+
+    def test_resume_with_no_start_record_still_records_the_resume(self):
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((self.repo / ".git/code-phase/resume.json").is_file())
+
+    def test_a_git_fault_while_recording_the_resume_exits_naming_what_was_written_and_the_rerun(self):
+        module = self.load_phase_start_module()
+        fault = module.script_utils.GitCallError("could not fingerprint the tree")
+        environment = {"HOME": str(self.home), "CLAUDE_CONFIG_DIR": str(self.config_dir),
+                       "CLAUDE_CODE_SESSION_ID": "test-session"}
+        printed = io.StringIO()
+        stale_resume = self.repo / ".git/code-phase/resume.json"
+        stale_resume.parent.mkdir(exist_ok=True)
+        stale_resume.write_text('{"stale": true}')
+
+        with (mock.patch.dict(os.environ, environment), mock.patch.object(sys, "argv", ["phase_start.py", "--resume"]),
+              mock.patch.object(module.resume_review_gate, "record_resume", side_effect=fault),
+              mock.patch.object(pathlib.Path, "cwd", return_value=self.repo), contextlib.redirect_stdout(printed),
+              self.assertRaises(SystemExit) as raised):
+            module.main()
+
+        message = str(raised.exception.code)
+        self.assertIn("start record was written", message)
+        self.assertIn("resume.json", message)
+        self.assertIn("could not fingerprint the tree", message)
+        self.assertIn("older one was removed", message)
+        self.assertIn("re-run `phase_start.py --resume`", message)
+        self.assertEqual(printed.getvalue(), "")
+        self.assertTrue((self.repo / ".git/code-phase/start.json").is_file())
+        self.assertFalse((self.repo / ".git/code-phase/resume.json").exists())
+
     def unrelated_commit(self):
         """A commit on an orphan branch: neither an ancestor nor a descendant of the recorded head."""
         git(self.repo, "checkout", "-q", "--orphan", "other")
@@ -496,6 +701,112 @@ class PhaseStartTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(done.stdout.strip(), started_from)
         self.assertEqual(json.loads((self.repo / ".git/code-phase/start.json").read_text())["head"], started_from)
+
+    def commit_plan(self, first_mark, message, second_mark=" "):
+        """Commit a plan file with its phases marked `first_mark` and `second_mark` ("x" ticks one)."""
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text(f"## Phase Status\n\n- [{first_mark}] Phase 1: first (risk: low)\n"
+                             f"- [{second_mark}] Phase 2: second (risk: low)\n\n## Phase 1: first\n")
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-q", "-m", message)
+
+    def test_resume_after_a_commit_that_ticked_a_phase_starts_a_new_record_at_head(self):
+        self.commit_plan(" ", "the plan")
+        self.phase_start()
+        self.commit_plan("x", "phase 1, committed and ticked")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), head)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 1 of docs/plans/x/plan.md was ticked since the start record; starting a new record at "
+                      "HEAD", done.stderr)
+
+    def test_resume_after_a_commit_that_ticked_no_phase_keeps_the_recorded_head(self):
+        self.commit_plan(" ", "the plan")
+        started_from = self.phase_start().stdout.strip()
+        (self.repo / "mine.py").write_text("# the phase's change\n")
+        git(self.repo, "commit", "-q", "-am", "a commit that ticks nothing")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+
+    def test_resume_after_a_commit_that_adds_a_ticked_plan_starts_a_new_record_at_head(self):
+        self.phase_start()
+        self.commit_plan("x", "a plan that is already ticked")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.stdout.strip(), head)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 1 of docs/plans/x/plan.md was ticked", done.stderr)
+
+    def test_resume_after_a_commit_that_ticks_phase_2_with_phase_1_already_done_starts_a_new_record_at_head(self):
+        self.commit_plan("x", "the plan, phase 1 already ticked")
+        self.phase_start()
+        self.commit_plan("x", "phase 2, committed and ticked", second_mark="x")
+
+        done = self.phase_start_with("--resume")
+
+        head = git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.start_json()["head"], head)
+        self.assertIn("phase 2 of docs/plans/x/plan.md was ticked", done.stderr)
+
+    def test_resume_after_a_markdown_edit_that_ticks_nothing_keeps_the_recorded_head(self):
+        self.commit_plan("x", "the plan, phase 1 already ticked")
+        started_from = self.phase_start().stdout.strip()
+        (self.repo / "README.md").write_text("a readme\n")
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.write_text(plan_file.read_text() + "\nA note added to the plan.\n")
+        git(self.repo, "add", "README.md", "docs")
+        git(self.repo, "commit", "-q", "-m", "markdown edits that tick nothing")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertNotIn("was ticked", done.stderr)
+
+    def test_resume_after_a_merge_that_brings_in_a_ticked_plan_keeps_the_recorded_head(self):
+        started_from = self.phase_start().stdout.strip()
+        git(self.repo, "checkout", "-q", "-b", "side")
+        self.commit_plan("x", "another plan, ticked, on a side branch")
+        git(self.repo, "checkout", "-q", "-")
+        (self.repo / "mine.py").write_text("# the phase's change\n")
+        git(self.repo, "commit", "-q", "-am", "a commit that ticks nothing")
+        git(self.repo, "merge", "-q", "--no-ff", "-m", "merge the side branch", "side")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertNotIn("was ticked", done.stderr)
+
+    def test_resume_keeps_the_record_and_names_a_phase_status_line_that_does_not_parse(self):
+        started_from = self.phase_start().stdout.strip()
+        plan_file = self.repo / "docs/plans/x/plan.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("## Phase Status\n\n- [x] Phase 1: first (risk: low)\n- [x] no phase number here\n")
+        git(self.repo, "add", "docs")
+        git(self.repo, "commit", "-q", "-m", "a plan with a bad status line")
+
+        done = self.phase_start_with("--resume")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), started_from)
+        self.assertEqual(self.start_json()["head"], started_from)
+        self.assertIn("docs/plans/x/plan.md:4", done.stderr)
+        self.assertIn("Rewrite it as `- [ ] Phase <id>: <title>`", done.stderr)
+        self.assertNotIn("was ticked", done.stderr)
 
     def other_repo_with_recorded_stop(self):
         """A second repo whose run folder holds this session's recorded stop; the home is a temp folder."""

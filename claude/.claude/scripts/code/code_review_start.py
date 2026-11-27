@@ -2,25 +2,30 @@
 """Run the live review loop script for /code.
 
     python3 ~/.claude/scripts/code/code_review_start.py <lane> <plan> <phase> <handoff file>
-        --base <phase start sha> [--coder-model <model>] [--dry-run | --detach]
+        --base <phase start sha> [--coder-model <model>] [--ci-gate <CI run>] [--dry-run | --detach]
 
 `--coder-model` runs the loop's fix coder on that model: the prompt gets a `coder-model:` line, and a detached run
-keeps the option for its child.
+keeps the option for its child. `--ci-gate` names the CI run the caller ruled to be the test gate: the prompt gets a
+`ci-gate:` line, the loop runs no local full check, and a detached run keeps the option for its child.
 
 The base may be the start record's head (the base `phase_start.py --resume` prints), an ancestor of it (a
-merge-base), or the current HEAD when the record's head is an ancestor of it. When base..HEAD holds a merge commit,
+merge-base), or the current HEAD when the record's head is an ancestor of it. A --base that is no ancestor of HEAD is
+replaced by `git merge-base HEAD <base>` before the merge fold, and a base with no shared history stops the run.
+When base..HEAD holds a merge commit,
 the loop's base is a synthetic commit (no ref) with each merged-in parent folded in, so the review diff leaves out
 what the merge brought; a merge that conflicts
 stops the run, naming it. The loop's base goes in the prompt's `base:` line. The loop folder is recorded
 in <git dir>/code-phase/run.json, where `code_wait.py review` checks it.
 
 The prompt header is: lane, repo, plan, phase, later-phase files and held files (with a holder recorded in
-phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, a
-same-bytes file while a live session other than this run's works in the repo; and, with a recorded holder or while
-such a session is live, every untracked file no recorded coder of the run wrote and no earlier or current phase
-section names, outside the plan folder and the start record's dirty map; the held-by line names each holder), a
-`tool fault:` line when a held file changed since the run start, a `held files this phase names:` line for held files
-the phase's plan section names, then the handoff block and the repo's gate env.
+phase_start.py's record, every file dirty at the run start, whatever its bytes now; with no holder recorded, only the
+same-bytes files that the one proven writer wrote, when exactly one live session other than this run's is shown to
+have written a start-dirty file whose bytes are unchanged and that the run does not own (lib/dirty_writers.py);
+and, with a recorded holder or such a proven writer, every untracked file no recorded coder of the run wrote and no
+earlier or current phase section names, outside the plan folder and the start record's dirty map; the held-by line
+names each holder), a `tool fault:` line when a held file changed since the run start, a
+`held files this phase names:` line for held files the phase's plan section names, a `given-base:` line when the
+base line is not the commit --base names, then the handoff block and the repo's gate env.
 A <plan> of `-` means the run has no plan file: the header leaves out the plan, phase and later-phase lines, and the
 gate commands come from the handoff block's files.
 The loop's state folder is <git dir>/code-step. The pid goes in <git dir>/code-phase/pid, where `code_wait.py review`
@@ -59,9 +64,9 @@ import plan_format
 import reviewer_dispatch
 import script_utils
 import session_registry
+import stop_file_names
 from code_wait import (
     HANDOFF_FILE,
-    LOOP_DIR_FILE,
     PID_FILE,
     REVIEW_OUTPUT,
     SCOPE_FILE,
@@ -71,10 +76,14 @@ from code_wait import (
 )
 from review_loop_prompt_file import (
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
+    GIVEN_BASE_KEY,
     HELD_BY_KEY,
     HELD_FILES_KEY,
     LIST_SEPARATOR,
+    PLAN_KEY,
+    REPO_KEY,
     REVIEWERS_MAIN,
     holder_row,
     loop_script_command,
@@ -82,7 +91,7 @@ from review_loop_prompt_file import (
 )
 
 LOOP_SCRIPT = SCRIPTS_DIR / "review/review_loop_script.py"
-WAIT_COMMAND = "python3 ~/.claude/scripts/code/code_wait.py review"
+WAIT_COMMAND = code_wait.REVIEW_COMMAND
 AGENT_PREFIX = "loop-script-"
 NO_PLAN = gate_commands.NO_PLAN
 HANDOFF_PHASES_FILE = "handoff-phases.json"
@@ -191,10 +200,16 @@ def checked_start_record(repo, base_commit):
     return record
 
 
-def review_holder(repo, record, own_session_id):
-    """The holder of the files this run leaves out: the recorded one, else the other session live in the repo now,
-    else None. A holder is {"session", "cwd"}."""
-    return record["holder"] or phase_start.current_holder(repo, own_session_id)
+def review_holder(repo, record, own_session_id, own_files):
+    """The holder of the files this run leaves out: the recorded one, else the one other live session that wrote a
+    file the fallback can hold (phase_start.holdable_dirty_files of `own_files`: a start-dirty file that is not an
+    own file and whose bytes are unchanged), else None. The fallback cannot hold changed or own files, so they are
+    left out of the writer check. A holder is {"session", "cwd"}; the fallback's also has "paths", the holdable
+    files it wrote."""
+    if record["holder"]:
+        return record["holder"]
+    holdable = phase_start.holdable_dirty_files(repo, record, own_files)
+    return phase_start.current_holder_with_paths(repo, own_session_id, holdable, record["head"])
 
 
 class HeldScope(NamedTuple):
@@ -224,18 +239,19 @@ def held_scope(repo, base_commit, plan=NO_PLAN, phase="", notes=None, named_file
         return NO_HELD_FILES
 
     own_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    holder = review_holder(repo, record, own_session_id)
+    own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
+    holder = review_holder(repo, record, own_session_id, own_files)
     if holder is None and not own_session_id:
         held_note(notes, "code_review_start: CLAUDE_CODE_SESSION_ID is not set and the start record names no holder, "
                          "so the run's own session cannot be told from a holder and no file is held; run it from the "
                          "session's Bash")
     if holder is None and own_session_id:
-        held_note(notes, "code_review_start: the start record names no holder and no other session is live in the "
-                         "repo, so no file is held.")
+        held_note(notes, "code_review_start: the start record names no holder and no single other live session is "
+                         "proven to have written a start-dirty file whose bytes are unchanged and that the run does "
+                         "not own (none, several, or a transcript was not read), so no file is held.")
     if holder is None:
         return NO_HELD_FILES
 
-    own_files = [*named_files.earlier, *fix_coder_written.recorded(repo)]
     dirty_rows, held_changed = phase_held_files(repo, record, holder, own_files)
     released = coder_rewritten(repo, record, held_changed, notes)
     if released:
@@ -257,18 +273,18 @@ def coder_rewritten(repo, record, held_changed, notes):
     return [path for path in held_changed if path in written]
 
 
-def phase_held_files(repo, record, holder, own_files=()):
+def phase_held_files(repo, record, holder, own_files):
     """(holder rows {"path", "session", "claim"} of the held dirty files, the held paths whose bytes changed since the
     run start). With a holder recorded at a phase start (phase_start.py's record), every file dirty then is held for
     the whole phase, less `own_files`, the files an earlier phase of the plan names and the files the review loop's
-    fix coder wrote (fix_coder_written), which are the run's own. With no holder recorded, only a same-bytes file is
-    held, for the live session `holder`."""
+    fix coder wrote (fix_coder_written), which are the run's own. With no holder recorded, only the same-bytes files
+    that the live session `holder` wrote (its "paths") are held."""
     candidates = script_utils.without_paths(sorted(record["dirty"]), own_files)
     if not candidates:
         return [], []
     if record["holder"] is not None:
         return recorded_holder_rows(repo, record, holder, candidates)
-    return live_holder_rows(repo, record, holder, candidates)
+    return live_holder_rows(holder)
 
 
 def recorded_holder_rows(repo, record, recorded_holder, candidates):
@@ -281,11 +297,11 @@ def recorded_holder_rows(repo, record, recorded_holder, candidates):
     return rows, [path for path in candidates if path in changed]
 
 
-def live_holder_rows(repo, record, holder, candidates):
-    """(rows, []) holding the candidates whose bytes are unchanged, for the session live in the repo now."""
-    changed = set(phase_start.changed_dirty_files(repo, record))
+def live_holder_rows(holder):
+    """(rows, []) holding the holdable paths (unchanged bytes) that the session live in the repo now wrote, which are
+    the holder's "paths"."""
     claim = held_claim(DIRTY_UNCHANGED, holder["cwd"])
-    return [holder_row(path, holder["session"], claim) for path in candidates if path not in changed], []
+    return [holder_row(path, holder["session"], claim) for path in holder["paths"]], []
 
 
 def targeted_held_files(named_files, held_paths):
@@ -376,7 +392,9 @@ class ReviewScope(NamedTuple):
     changed since the phase base, and the commit the loop diffs against (None when --base is no commit). `notes` are
     the lines a dry run prints on stdout about what the scope left out. `held_changed` are the held files whose bytes
     changed since the run start, `held_targeted` the held files this phase's section names, `held_released` the
-    files dirty at the run start whose change a coder of the run wrote, which review reads."""
+    files dirty at the run start whose change a coder of the run wrote, which review reads. `given_base` is the
+    --base as given, set only when the review base is not the commit --base names: its merge base with HEAD, or a
+    commit with merged-in changes folded in."""
     holders: list
     handoff: str
     phase_changed: list
@@ -385,10 +403,14 @@ class ReviewScope(NamedTuple):
     held_changed: tuple = ()
     held_targeted: tuple = ()
     held_released: tuple = ()
+    given_base: str | None = None
 
 
 SCOPE_FILE_FLAG = "--scope-file"
+# Each flag below, when absent, reads as "": the coder runs on its agent's own model (--coder-model),
+# and the loop runs the local full check (--ci-gate).
 CODER_MODEL_FLAG = "--coder-model"
+CI_GATE_FLAG = "--ci-gate"
 
 
 def read_scope(scope_file):
@@ -400,14 +422,18 @@ def read_scope(scope_file):
                  f"the JSON object of {', '.join(ReviewScope._fields)}. Run this step again without {SCOPE_FILE_FLAG}.")
 
 
-def diff_base(repo, base_commit):
-    """The commit the review diffs against: `base_commit`, or a synthetic base that leaves out what merge commits of
-    base..HEAD brought in. A merge that does not merge cleanly stops the run, naming the merge."""
+def diff_base(repo, base_commit, base):
+    """The commit the review diffs against: `base_commit`, or its merge base with HEAD when it is no ancestor of HEAD,
+    then a synthetic base that leaves out what merge commits of base..HEAD brought in. A base with no merge base, or a
+    merge that does not merge cleanly, stops the run."""
     try:
-        return merge_free_base.merge_free_base(repo, base_commit)
+        resolved = merge_free_base.resolve_base(repo, base_commit, base)
+        return merge_free_base.merge_free_base(repo, resolved.used)
+    except merge_free_base.NoMergeBaseError as error:
+        sys.exit(f"code_review_start: {error}")
     except merge_free_base.MergeConflictError as error:
-        sys.exit(f"code_review_start: {error}. Resolve or revert merge {error.merge}, or pass a --base after it, "
-                 "then run this step again.")
+        sys.exit(f"code_review_start: {str(error).rstrip('.')}. Resolve or revert merge {error.merge}, "
+                 "or pass a --base after it, then run this step again.")
     except merge_free_base.MergeBaseGitError as error:
         sys.exit(f"code_review_start: the review base could not be built: {error}")
 
@@ -431,26 +457,28 @@ def review_scope(repo, base, coder_handoff, plan=NO_PLAN, phase=""):
     if held_targeted:
         held_note(notes, "code_review_start: this phase's plan names held files, which stay held, so the phase's "
                          f"change to them is not reviewed: {', '.join(held_targeted)}")
-    review_base = diff_base(repo, base_commit)
+    review_base = diff_base(repo, base_commit, base)
     handoff = handoff_with_git_files(repo, review_base, coder_handoff, held_paths, plan)
     phase_changed = phase_changed_files(repo, review_base, held_paths)
     return ReviewScope(holders, handoff, phase_changed, review_base, notes, held.changed, held_targeted,
-                       held.released)
+                       held.released, base if review_base != base_commit else None)
 
 
 def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=(), review_base=None, coder_model="",
-                  held_changed=(), held_targeted=()):
+                  held_changed=(), held_targeted=(), given_base=None, ci_run=""):
     """A later phase's file that this phase's diff already changed stays the phase's own, so a fix pass may edit the
     lines the phase wrote there. A held file is another session's, so the loop neither reviews nor edits it; the
     held-by line carries the holder rows that prove it. The base line makes the loop review the commits since the
     base too, so a phase the user committed before a resume is still reviewed. A `coder_model` adds the line that
-    runs the fix coder on it."""
-    header = ["mode: review-first", "caller: code", f"lane: {lane}", f"repo: {repo}"]
+    runs the fix coder on it. A `ci_run` adds the line that makes the loop run no local full check."""
+    header = ["mode: review-first", "caller: code", f"lane: {lane}", f"{REPO_KEY}: {repo}"]
     if review_base is not None:
         header.append(f"{BASE_KEY}: {review_base}")
+    if given_base:
+        header.append(f"{GIVEN_BASE_KEY}: {given_base}")
 
     if plan != NO_PLAN:
-        header += [f"plan: {plan}", f"phase: {phase}"]
+        header += [f"{PLAN_KEY}: {plan}", f"phase: {phase}"]
         plan_lines = (repo / plan).read_text().splitlines()
         later_paths = expected_red.later_phase_paths(plan_lines, phase)
         later_files = script_utils.without_paths(later_paths, phase_changed)
@@ -465,6 +493,8 @@ def review_prompt(repo, lane, plan, phase, handoff, phase_changed=(), holders=()
         header.append(f"{HELD_TARGETED_KEY}: {LIST_SEPARATOR.join(held_targeted)}")
     if coder_model:
         header.append(f"{CODER_MODEL_KEY}: {coder_model}")
+    if ci_run:
+        header.append(f"{CI_GATE_KEY}: {ci_run}")
 
     prompt = "\n".join(header) + "\n\n" + handoff.strip()
     assignments = gate_env.repo_gate_env(repo, plan_or_none(plan))
@@ -521,7 +551,7 @@ def detach(repo, argv, scope):
                  f"{loop_dir(repo)}). Wait for it with `{WAIT_COMMAND}`, or run this phase in its own worktree.")
     review_output = folder / REVIEW_OUTPUT
     # A folder left by an earlier phase's loop would show its unanswered requests as this loop's.
-    (folder / LOOP_DIR_FILE).unlink(missing_ok=True)
+    (folder / stop_file_names.LOOP_DIR_FILE).unlink(missing_ok=True)
     scope_file = folder / SCOPE_FILE
     script_utils.write_text_atomically(scope_file, json.dumps(scope._asdict()) + "\n")
     child_args = [arg for arg in argv[1:] if arg != "--detach"]
@@ -580,14 +610,15 @@ def base_option(argv):
     return argv[argv.index("--base") + 1]
 
 
-def coder_model_option(argv):
-    """The model `--coder-model` names, or "" when the option is absent (the coder runs on its agent's own)."""
-    if CODER_MODEL_FLAG not in argv:
+def option_value(argv, flag):
+    """The value `flag` names, or "" when the flag is absent. A flag with no value, or one that starts with `-`,
+    exits with the usage."""
+    _rest, value = script_utils.pop_option(argv, flag)
+    if value is None:
         return ""
-    value_index = argv.index(CODER_MODEL_FLAG) + 1
-    if value_index >= len(argv):
+    if not value or value.startswith("-"):
         sys.exit(__doc__)
-    return argv[value_index]
+    return value
 
 
 def run_scope(argv, repo, base, coder_handoff, plan, phase):
@@ -610,8 +641,10 @@ def main(argv):
     coder_handoff = handoff_path.read_text()
     scope = run_scope(argv, repo, base, coder_handoff, plan, phase)
     handoff = scope.handoff
+    coder_model = option_value(argv, CODER_MODEL_FLAG)
+    ci_run = option_value(argv, CI_GATE_FLAG)
     prompt = review_prompt(repo, lane, plan, phase, handoff, scope.phase_changed, scope.holders, scope.review_base,
-                           coder_model_option(argv), scope.held_changed, scope.held_targeted)
+                           coder_model, scope.held_changed, scope.held_targeted, scope.given_base, ci_run)
     if "--dry-run" in argv:
         print(prompt)
         for note in scope.notes:
@@ -651,7 +684,7 @@ def main(argv):
     # record names the loop folder before loop-dir does, so a waiter never sees a folder the record lacks.
     # Absolute, because the wait that reads it runs from the repo top, not from the folder this start ran in.
     code_wait.write_phase_run(repo, lane, phase, prompt_file.parent, plan=recorded_plan_path(repo, plan))
-    script_utils.write_text_atomically(folder / LOOP_DIR_FILE, f"{prompt_file.parent}\n")
+    script_utils.write_text_atomically(folder / stop_file_names.LOOP_DIR_FILE, f"{prompt_file.parent}\n")
     with log_path.open("w") as log:
         finished = subprocess.run(command, cwd=repo, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 

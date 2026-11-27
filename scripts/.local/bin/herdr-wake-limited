@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Press Enter in Claude panes stuck at the usage-limit "press enter" prompt, and
-announce panes stopped on an expired login.
+"""Press Enter in Claude panes stuck at the usage-limit "press enter" prompt, announce
+panes stopped on an expired login, and send one resume prompt to a pane whose
+transcript ends on a usage-limit or overload API error once it has cleared.
 
 Usage: herdr-wake-limited [-h|--help]
 
@@ -13,8 +14,9 @@ This reads the visible screen of every claude agent that `herdr-api agent list`
 names as idle or done. A pane whose last six non-empty lines hold both phrases gets one Enter, one line on
 stdout (pane id and cwd) and one line in
 ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.log (ISO time, pane id,
-cwd); when the log cannot be written, only a stderr line names the pane. Any other pane gets nothing, except a pane on an expired login (below). When herdr does not answer it exits 0 and
-prints nothing, so a timer can run it every few minutes.
+cwd); when the log cannot be written, only a stderr line names the pane. Any other
+pane gets nothing, except a pane on an expired login or an API error (below).
+When herdr does not answer it exits 0 and prints nothing, so a timer can run it every few minutes.
 
 A pane that stopped on an expired login (`Login expired · Please run /login`,
 `Not logged in · Please run /login`; a whole line among the bottom ten
@@ -27,31 +29,79 @@ shows the line or is no longer an idle or done claude agent, so a later expiry
 announces again. Under tuios (TUIOS_SOCKET
 set) there is no notification command, so nothing is announced and the
 noticed file is neither read nor written.
+
+A pane whose session transcript ends on a usage-limit or server (overload,
+lost connection) API error gets one `herdr-api agent prompt` once the error
+has cleared: a usage limit a minute after its reset time, a server error five
+minutes after it was written; an error whose resume time passed more than a
+day ago gets no prompt, and neither does a pane whose input line holds typed
+text or whose screen shows no input line. It also gets one line on stdout (`resumed <pane> <cwd>`) and one log line.
+The answers are kept per Claude session id, as `{session_id: {"uuid": <last answered error>, "count": <resumes in
+a row>}}`, in ${XDG_STATE_HOME:-~/.local/state}/herdr-wake-limited.resumed (JSON, written atomically), so a pane is
+prompted once per error record. A session that has been resumed
+MAX_CONSECUTIVE_RESUMES times in a row (each resume answered by a new API error, as in a long outage) gets no more
+prompts: one line on stdout (`gave up <pane> <cwd>`) and one log line, once, not on every run. A session's entry is
+dropped once its transcript's last conversation record is not an API error or no claude pane, in any state,
+runs it, which resets the count. A run in which a transcript cannot be read keeps every kept entry. A file in the old
+format (a JSON list of error uuids) is read as one resume of each pane ending on such a uuid. A login, billing or
+bad-request error gets no
+prompt. The transcript is found and read through the toolkit's
+`lib/herdr_agents.py`, `lib/api_error_stop.py` and `lib/script_utils.py`, found from this script's
+real path. Under tuios nothing is resumed and the resumed
+file is neither read nor written.
+
+After the panes (not when herdr gives no agent list), at most once per 10 minutes, it also
+starts herdr-lane-sweep from the folder of the path it was started by (the stowed link),
+which closes the lanes whose branch is merged.
+The sweep runs with no stdin and this script waits for it, because a systemd
+oneshot unit kills a child left running. The wait is capped at 300 s: the sweep runs in its own process group,
+which is killed on timeout. A lane killed before its entry was removed is finished by the next sweep; one killed
+during its prune keeps its worktree until the next `herdr-worktree-prune --apply` in that main checkout.
+The last start is the mtime of ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.stamp;
+the sweep's output replaces ${XDG_STATE_HOME:-~/.local/state}/herdr-lane-sweep.log. A sweep that fails or cannot start
+changes neither this script's stdout nor its exit code. Not run under tuios.
 """
+import contextlib
 import datetime
 import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
+import time
+
+# The stowed link resolves into the dotfiles checkout, whose toolkit lib reads transcripts.
+toolkit_lib = pathlib.Path(__file__).resolve().parents[3] / "claude" / ".claude" / "scripts" / "lib"
+sys.path.insert(0, str(toolkit_lib))
+import api_error_stop
+import herdr_agents
+import script_utils
 
 PHRASES = ("your usage limit has reset", "press enter to continue")
 VISIBLE_LINES = "15"
 BOTTOM_LINES = 6
 LOGIN_BOTTOM_LINES = 10
+SWEEP_INTERVAL_SECONDS = 600
+SWEEP_TIMEOUT_SECONDS = 300
+RESUME_PROMPT = ("Your last turn stopped on an API error that has now cleared. "
+                 "Go on with the task from where it stopped.")
 # A whole line: plain words, then the hint. Quotes, prompts or other text around
 # the phrase mean a pane is discussing it, not showing it.
 LOGIN_LINE = re.compile(r"^(?:[●⎿]\s*)?[A-Za-z][A-Za-z ]* · Please run /login$")
 
+# Claude's input line: `> text`, `❯ text`, or either inside the box's side borders (`│ > text │`).
+INPUT_LINE = re.compile(r"^(?:│\s*)?[>❯](?:\s+(?P<typed>.*?))?\s*(?:│)?$")
+# The hint Claude shows in an empty input line.
+INPUT_PLACEHOLDER_START = 'Try "'
+
 
 def herdr_api(*args):
     """Return herdr-api's stdout, or None when herdr gives no answer."""
-    env = dict(os.environ)
-    env["PATH"] = f"{pathlib.Path.home() / '.local' / 'bin'}:{env.get('PATH', '')}"
     try:
-        answer = subprocess.run(["herdr-api", *args], env=env, capture_output=True,
-                                text=True, timeout=20)
+        answer = subprocess.run(["herdr-api", *args], capture_output=True,
+                                text=True, timeout=herdr_agents.HERDR_CALL_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if answer.returncode != 0:
@@ -59,18 +109,18 @@ def herdr_api(*args):
     return answer.stdout
 
 
-def claude_agents():
-    """Idle or done claude agents, or None when herdr gives no usable answer."""
-    listing = herdr_api("agent", "list")
-    if listing is None:
-        return None
+def claude_agents_with_panes():
+    """Every claude agent with a pane, or None when herdr gives no usable answer."""
     try:
-        agents = json.loads(listing)["result"]["agents"]
-    except (ValueError, KeyError, TypeError):
+        agents = herdr_agents.claude_agents()
+    except herdr_agents.PaneCallError:
         return None
-    return [agent for agent in agents
-            if agent.get("agent") == "claude" and agent.get("pane_id")
-            and agent.get("agent_status") in ("idle", "done")]
+    return [agent for agent in agents if agent.get("pane_id")]
+
+
+def is_waiting(agent):
+    """True when herdr reports the pane idle or done."""
+    return agent.get("agent_status") in ("idle", "done")
 
 
 def holds_limit_reset_prompt(text):
@@ -90,30 +140,67 @@ def login_expired_line(text):
     return None
 
 
-def state_dir():
-    state_home = os.environ.get("XDG_STATE_HOME") or str(pathlib.Path.home() / ".local" / "state")
-    return pathlib.Path(state_home)
+def input_may_hold_text(text):
+    """True when Claude's input line, the last prompt-marker line on the screen, holds typed text, or when the screen
+    shows no input line at all (the input is unknown, so nothing may be sent). An empty line and the placeholder hint
+    (`Try "..."`) are not typed text; the box's side borders are ignored."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    marker_lines = [line for line in lines if INPUT_LINE.match(line)]
+    if not marker_lines:
+        return True
+    typed_group = INPUT_LINE.match(marker_lines[-1]).group("typed")
+    typed = (typed_group or "").strip()
+    if not typed:
+        return False
+    return not typed.startswith(INPUT_PLACEHOLDER_START)
 
 
-def read_noticed(noticed_file):
-    """Pane ids already announced. A missing or unreadable file reads as none, so a pane is announced again, never missed."""
+def read_id_list(id_file):
+    """Ids kept by an earlier run. A missing or unreadable file reads as none, so a pane is acted on again, never
+    missed."""
     try:
-        return set(json.loads(noticed_file.read_text()))
+        raw_ids = id_file.read_text()
+        loaded = json.loads(raw_ids)
+        return set(loaded)
     except (OSError, ValueError, TypeError):
         return set()
 
 
-def write_noticed(noticed_file, pane_ids):
-    temp_file = noticed_file.with_name(f"{noticed_file.name}.{os.getpid()}.tmp")
+def is_resumed_entry(entry):
+    """True for a well-formed `{"uuid": str, "count": int}` entry of the resumed file."""
+    if not isinstance(entry, dict):
+        return False
+    count = entry.get("count")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return False
+    return isinstance(entry.get("uuid"), str)
+
+
+def read_resumed_state(resumed_file):
+    """The resumed file as (entries by session id, legacy uuids). A missing, unreadable or corrupt file reads as
+    nothing, so a pane is acted on again, never missed. A file in the old format, a JSON list of answered error
+    uuids, has no session ids: its uuids come back as legacy uuids, which count as one resume of the pane that
+    ends on them."""
     try:
-        noticed_file.parent.mkdir(parents=True, exist_ok=True)
-        temp_file.write_text(json.dumps(sorted(pane_ids)))
-        os.replace(temp_file, noticed_file)
+        raw_state = resumed_file.read_text()
+        loaded = json.loads(raw_state)
+    except (OSError, ValueError):
+        return {}, set()
+    if isinstance(loaded, list):
+        return {}, {uuid for uuid in loaded if isinstance(uuid, str)}
+    if not isinstance(loaded, dict):
+        return {}, set()
+    entries = {session_id: entry for session_id, entry in loaded.items() if is_resumed_entry(entry)}
+    return entries, set()
+
+
+def write_json_state(state_file, payload):
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_json = json.dumps(payload)
+        script_utils.write_text_atomically(state_file, state_json)
     except OSError as error:
-        # unlink raises ENOTDIR when the state folder is a file, so test first.
-        if temp_file.exists():
-            temp_file.unlink()
-        print(f"herdr-wake-limited: could not write {noticed_file}: {error}", file=sys.stderr)
+        print(f"herdr-wake-limited: could not write {state_file}: {error}", file=sys.stderr)
 
 
 def announce_login_expired(pane_id, cwd, line):
@@ -128,7 +215,7 @@ def announce_login_expired(pane_id, cwd, line):
 
 
 def log_event(pane_id, cwd, note=""):
-    log_file = state_dir() / "herdr-wake-limited.log"
+    log_file = script_utils.xdg_state_home() / "herdr-wake-limited.log"
     stamp = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
     try:
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -167,19 +254,120 @@ def wake_pane(agent):
     print(f"woke {pane_id} {cwd}")
 
 
-def handle_pane(agent, noticed, under_tuios):
-    """Act on one pane; True when its id stays in the noticed set."""
+def handle_pane(agent, noticed, under_tuios, screen_handled):
+    """Act on one pane's screen; True when its id stays in the noticed set. A pane at the login or reset prompt,
+    whose screen read failed, or whose input line holds typed text, or that shows no input line, goes into
+    screen_handled, so the API-error pass leaves it alone."""
     pane_id = agent["pane_id"]
     screen = herdr_api("agent", "read", pane_id, "--source", "visible", "--lines", VISIBLE_LINES)
     if screen is None:
-        # A failed read says nothing about the pane: keep its announced state.
+        # A failed read says nothing about the pane: keep its announced state, and send no resume prompt this run.
+        screen_handled.add(pane_id)
         return pane_id in noticed
     login_line = login_expired_line(screen)
     if login_line:
+        screen_handled.add(pane_id)
         return not under_tuios and handle_login_expired(agent, login_line, noticed)
     if holds_limit_reset_prompt(screen):
+        screen_handled.add(pane_id)
         wake_pane(agent)
+    elif input_may_hold_text(screen):
+        # The input line holds typed text, or is off screen: a resume prompt could join a draft.
+        screen_handled.add(pane_id)
     return False
+
+
+def sweep_is_due(stamp_file):
+    """True when the stamp is missing or older than the interval. An unreadable stamp counts as missing."""
+    try:
+        age = time.time() - stamp_file.stat().st_mtime
+    except OSError:
+        return True
+    return age >= SWEEP_INTERVAL_SECONDS
+
+
+def run_lane_sweep():
+    """Run herdr-lane-sweep and wait for it when ten minutes have passed since the last start.
+
+    Its output goes to a log file.
+
+    Fail-open: nothing here changes the wake run's stdout or exit code.
+    """
+    stamp_file = script_utils.xdg_state_home() / "herdr-lane-sweep.stamp"
+    log_file = script_utils.xdg_state_home() / "herdr-lane-sweep.log"
+    if not sweep_is_due(stamp_file):
+        return
+    # Stamped before the run, so a failing sweep is retried at the next interval and not at every timer run.
+    try:
+        stamp_file.parent.mkdir(parents=True, exist_ok=True)
+        stamp_file.touch()
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {stamp_file}: {error}", file=sys.stderr)
+        return
+    # Beside the link that started this run (~/.local/bin under stow), not beside its resolved target.
+    sweep = pathlib.Path(__file__).parent / "herdr-lane-sweep"
+    try:
+        with log_file.open("w") as log:
+            try:
+                # Own process group, so a timeout kills the sweep and the git and close children under it.
+                process = subprocess.Popen([str(sweep)], stdin=subprocess.DEVNULL, stdout=log,
+                                           stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    process.wait(timeout=SWEEP_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired as error:
+                    # The leader can exit just as the wait times out, leaving an empty group.
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    log.write(f"herdr-wake-limited: {sweep} killed after {SWEEP_TIMEOUT_SECONDS}s: {error}\n")
+            except (OSError, subprocess.SubprocessError) as error:
+                log.write(f"herdr-wake-limited: could not run {sweep}: {error}\n")
+    except OSError as error:
+        print(f"herdr-wake-limited: could not write {log_file}: {error}", file=sys.stderr)
+
+
+def resume_stopped_pane(agent, resumed, legacy_uuids, now, may_prompt):
+    """Prompt a pane whose transcript ends on a cleared API error, at most MAX_CONSECUTIVE_RESUMES times in a row.
+    Returns the session's entry to keep in the resumed file, `{"uuid": <last answered error>, "count": <resumes in a
+    row>}`; None when the entry is dropped, which resets the count: the pane has no session or transcript, or its last
+    conversation record is not an API error. Returns TRANSCRIPT_UNREADABLE when the transcript read failed (the
+    caller keeps the whole resumed file, since a failed read says nothing about the pane). While the pane waits to be
+    prompted, the entry it already has is returned unchanged, so a count survives the wait for the next error's
+    resume time. With may_prompt False nothing is sent."""
+    session_id = herdr_agents.herdr_agent_session_id(agent)
+    transcript = herdr_agents.herdr_agent_transcript(agent)
+    if transcript is None:
+        return None
+    record = script_utils.last_api_error(transcript, report_unreadable=True)
+    if record == script_utils.TRANSCRIPT_UNREADABLE:
+        return script_utils.TRANSCRIPT_UNREADABLE
+    if record is None or not isinstance(record.get("uuid"), str):
+        return None
+    error_id = record["uuid"]
+    entry = resumed.get(session_id)
+    if entry is not None and entry["uuid"] == error_id:
+        return entry
+    if entry is None and error_id in legacy_uuids:
+        return {"uuid": error_id, "count": 1}
+    if not may_prompt:
+        return entry
+    resume_at = api_error_stop.resume_epoch(record, now)
+    if resume_at is None or now < resume_at:
+        return entry
+    pane_id = agent["pane_id"]
+    cwd = agent.get("cwd", "")
+    count = 0 if entry is None else entry["count"]
+    if count >= api_error_stop.MAX_CONSECUTIVE_RESUMES:
+        # Recorded as answered, so the next tick stays silent: one line per run of errors, not one per tick.
+        log_event(pane_id, cwd, "gave-up")
+        print(f"gave up {pane_id} {cwd}")
+        return {"uuid": error_id, "count": count}
+    if herdr_api("agent", "prompt", pane_id, RESUME_PROMPT) is None:
+        print(f"herdr-wake-limited: could not prompt {pane_id}", file=sys.stderr)
+        return entry
+    log_event(pane_id, cwd, "resumed")
+    print(f"resumed {pane_id} {cwd}")
+    return {"uuid": error_id, "count": count + 1}
 
 
 def main():
@@ -190,18 +378,47 @@ def main():
         print(f"herdr-wake-limited: unknown argument: {sys.argv[1]}", file=sys.stderr)
         return 1
 
-    agents = claude_agents()
-    if agents is None:
+    # Timer units start with a short PATH that lacks herdr-api; every herdr-api call below inherits this one.
+    local_bin = pathlib.Path.home() / ".local" / "bin"
+    os.environ["PATH"] = f"{local_bin}:{os.environ.get('PATH', '')}"
+
+    all_agents = claude_agents_with_panes()
+    if all_agents is None:
         return 0
+    agents = [agent for agent in all_agents if is_waiting(agent)]
     # tuios shares the noticed file with herdr but lists other pane ids, so a
     # tuios run must not read or rewrite it.
     under_tuios = bool(os.environ.get("TUIOS_SOCKET"))
-    noticed_file = state_dir() / "herdr-wake-limited.noticed"
-    noticed = set() if under_tuios else read_noticed(noticed_file)
+    noticed_file = script_utils.xdg_state_home() / "herdr-wake-limited.noticed"
+    noticed = set() if under_tuios else read_id_list(noticed_file)
+    screen_handled = set()
     still_stuck = {agent["pane_id"] for agent in agents
-                   if handle_pane(agent, noticed, under_tuios)}
-    if not under_tuios and still_stuck != noticed:
-        write_noticed(noticed_file, still_stuck)
+                   if handle_pane(agent, noticed, under_tuios, screen_handled)}
+    if under_tuios:
+        return 0
+    if still_stuck != noticed:
+        write_json_state(noticed_file, sorted(still_stuck))
+
+    resumed_file = script_utils.xdg_state_home() / "herdr-wake-limited.resumed"
+    resumed, legacy_uuids = read_resumed_state(resumed_file)
+    now = time.time()
+    still_resumed = {}
+    keep_all_entries = False
+    for agent in all_agents:
+        # A pane that is working again after its prompt is not listed idle or done, but its entry stays kept
+        # while its transcript still ends on the error.
+        may_prompt = is_waiting(agent) and agent["pane_id"] not in screen_handled
+        entry = resume_stopped_pane(agent, resumed, legacy_uuids, now, may_prompt)
+        if entry == script_utils.TRANSCRIPT_UNREADABLE:
+            keep_all_entries = True
+        elif entry is not None:
+            still_resumed[herdr_agents.herdr_agent_session_id(agent)] = entry
+    if keep_all_entries:
+        for session_id, entry in resumed.items():
+            still_resumed.setdefault(session_id, entry)
+    if still_resumed != resumed or legacy_uuids:
+        write_json_state(resumed_file, still_resumed)
+    run_lane_sweep()
     return 0
 
 

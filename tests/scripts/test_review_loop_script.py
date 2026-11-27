@@ -27,6 +27,7 @@ from approval_ask_chain import accepted_approval_ask_text
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import coder_report
+import file_backup
 import finding_record
 import full_check_gate
 import handback
@@ -40,11 +41,14 @@ import review_loop_coder
 import review_loop_comment_removal
 import review_loop_findings
 import review_loop_held
+import review_loop_outside_writes
 import review_loop_packet
 import review_loop_pass_names
 import review_loop_plan
+import review_loop_post_cap
 import review_loop_prompts
 import review_loop_ruled
+import review_loop_ruling_check
 import review_loop_scoped_tests
 import review_loop_signoffs
 import ruled_change_text
@@ -71,6 +75,7 @@ if "-p" not in args:
     sys.exit("fake claude: called without -p")
 agent = args[args.index("--agent") + 1] if "--agent" in args else None
 key = agent or ("closure" if "class-shaped" in prompt
+                else "ruling-check" if "ruling-check judge" in prompt
                 else "check-finder" if "full quality check" in prompt else "disposition")
 fake_dir = os.environ["FAKE_CLAUDE_DIR"]
 
@@ -96,7 +101,12 @@ with open(os.path.join(fake_dir, "counters.lock"), "w") as lock:
     counters[key] = position + 1
     json.dump(counters, open(counters_path, "w"))
 
-replies = json.load(open(os.path.join(fake_dir, "scenario.json"))).get(key, [])
+# Every ruling-check call answers one "kept" verdict per ruling line of its prompt unless a test gives replies; 20 caps
+# the calls one run may make.
+ruling_lines = [line for line in prompt.splitlines() if line.startswith("- [")]
+kept_verdicts = [{"ruling": line, "verdict": "kept"} for line in ruling_lines]
+all_kept = [{"result": json.dumps({"verdicts": kept_verdicts})}] * 20 if key == "ruling-check" else []
+replies = json.load(open(os.path.join(fake_dir, "scenario.json"))).get(key, all_kept)
 if position >= len(replies):
     print("no canned reply for " + key, file=sys.stderr)
     sys.exit(3)
@@ -126,7 +136,23 @@ if reply.get("commit_all"):
                    check=True)
 
 usage = {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 3, "cache_read_input_tokens": 2}
-print(json.dumps({"result": reply.get("result", ""), "session_id": "fake-session", "usage": usage}))
+session_id = args[args.index("--session-id") + 1] if "--session-id" in args else f"fake-{key}-{position}"
+config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.environ["HOME"], ".claude")
+transcript_dir = os.path.join(config_dir, "projects", "fake-project")
+os.makedirs(transcript_dir, exist_ok=True)
+transcript_records = []
+for path, text in reply.get("transcript_writes", {}).items():
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        handle.write(text)
+    block = {"type": "tool_use", "name": "Write", "input": {"file_path": path, "content": text}}
+    transcript_records.append(json.dumps({"type": "assistant", "message": {"content": [block]}}))
+if not reply.get("no_transcript"):
+    with open(os.path.join(transcript_dir, session_id + ".jsonl"), "w") as handle:
+        handle.write("".join(record + "\\n" for record in transcript_records))
+
+if not reply.get("no_json"):
+    print(json.dumps({"result": reply.get("result", ""), "session_id": session_id, "usage": usage}))
 sys.exit(reply.get("exit", 0))
 '''
 
@@ -146,6 +172,9 @@ FIX_REVIEW = ("## Fix\n- `app.py:2` the limit is wrong for `limit`\n\n## Ask\nNo
 # A check starts with this to fail only with the diff: the base run on HEAD has no diff and passes.
 FAILS_ONLY_WITH_THE_DIFF = "git diff --quiet HEAD -- app.py && exit 0; "
 CLOSED = '{"receipt": "one exit, all re-read", "open": []}'
+OPEN_MEMBER = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
+LATE_FIX = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
+            "Overall Assessment: NEEDS CHANGES\n")
 FIX_THEN_CLEAN = {
     "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
     "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
@@ -245,9 +274,12 @@ class SplitHeldFindingsTest(unittest.TestCase):
 class ImplicitHoldersTest(unittest.TestCase):
     OTHER: typing.ClassVar[dict] = {"pid": 77, "sessionId": "other-id", "name": "lane-b", "cwd": "/repo"}
 
-    def holders(self, live_row, only_files=("app.py",), known=None):
-        with mock.patch.object(review_loop_held.session_registry, "other_live_session_in",
-                               return_value=live_row) as lookup:
+    def holders(self, live_row, only_files=("app.py",), known=None, written=("theirs.py",)):
+        found = None
+        if live_row is not None:
+            found = review_loop_held.dirty_writers.HolderPaths(live_row, list(written))
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=found) as lookup:
             result = review_loop_held.implicit_holders(
                 "/repo", {"theirs.py", "named.py"}, known or {"named.py": {}}, list(only_files), "own-id")
         return result, lookup
@@ -255,11 +287,18 @@ class ImplicitHoldersTest(unittest.TestCase):
     def test_a_dirty_file_outside_the_file_scope_is_held_by_the_live_other_session(self):
         result, lookup = self.holders(self.OTHER)
 
-        lookup.assert_called_once_with("/repo", "own-id")
+        lookup.assert_called_once_with("/repo", ["theirs.py"], "own-id")
         self.assertEqual(result, {"theirs.py": review_loop_held.holder_row(
             "theirs.py", "lane-b", "dirty, outside the run's --file scope")})
 
-    def test_with_no_live_other_session_nothing_is_held(self):
+    def test_only_the_files_the_proven_writer_wrote_are_held(self):
+        with mock.patch.object(review_loop_held.dirty_writers, "holder_with_paths",
+                               return_value=review_loop_held.dirty_writers.HolderPaths(self.OTHER, ["a.py"])):
+            result = review_loop_held.implicit_holders("/repo", {"a.py", "b.py"}, {}, ["app.py"], "own-id")
+
+        self.assertEqual(list(result), ["a.py"])
+
+    def test_with_no_proven_writer_nothing_is_held(self):
         result, _lookup = self.holders(None)
 
         self.assertEqual(result, {})
@@ -287,6 +326,37 @@ class HeldDigestsTest(unittest.TestCase):
             self.assertEqual(len(review_loop_held.HELD_FAULTS), 1)
             self.assertIn("gone.py", review_loop_held.HELD_FAULTS[0])
             self.assertNotIn("same.py", review_loop_held.HELD_FAULTS[0])
+
+
+class RulingCheckHost(review_loop_ruling_check.RulingCheck):
+    """The host surface RulingCheck needs: keep_open records `kept_open`; drop_open removes findings from
+    `open_fixes`; coder_held_files returns `held`; findings_on_reverted_paths returns the findings listed in
+    `reverted_findings`; keep_unreverted_open is the real one."""
+    reverted_findings = ()
+    held = frozenset()
+    open_fixes: typing.ClassVar[list] = ["on-claude-md"]
+    # Tuples, so a test that does not set them cannot share a mutable default.
+    no_code_broken = ()
+    approval_ask_paths = ()
+
+    def __init__(self):
+        self.files_touched = set()
+
+    keep_unreverted_open = review_loop_ruled.RuledFindings.keep_unreverted_open
+    ruled_texts = review_loop_ruled.RuledFindings.ruled_texts
+    drop_approval_asks = review_loop_ruled.RuledFindings.drop_approval_asks
+
+    def keep_open(self, findings):
+        self.kept_open = findings
+
+    def drop_open(self, findings):
+        self.open_fixes = [item for item in self.open_fixes if item not in findings]
+
+    def coder_held_files(self):
+        return self.held
+
+    def findings_on_reverted_paths(self, findings, reverted):
+        return [finding for finding in findings if finding in self.reverted_findings]
 
 
 class RepeatFilterHost(review_loop_ruled.RuledFindings):
@@ -620,6 +690,12 @@ class ReviewLoopHarness:
     """Mixin with no tests: the scratch repo, the stand-in `claude` and the readers of what a run stored."""
 
     def setUp(self):
+        review_loop_ruling_check.RULING_CHECK_FAULTS.clear()
+        self.addCleanup(review_loop_ruling_check.RULING_CHECK_FAULTS.clear)
+        review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear()
+        review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear()
+        self.addCleanup(review_loop_outside_writes.OUTSIDE_WRITE_FAULTS.clear)
+        self.addCleanup(review_loop_outside_writes.PASS_OUTSIDE_WRITES.clear)
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
         self.scratch = pathlib.Path(scratch.name)
@@ -650,6 +726,7 @@ class ReviewLoopHarness:
             "FAKE_CLAUDE_DIR": str(self.fake_dir),
         }
         self.env.pop("CLAUDE_SKIP_HOOKS", None)
+        self.env.pop("CLAUDE_CONFIG_DIR", None)
         self.env.pop("CLAUDE_FORMAT_HOOK_OFF", None)
         self.env["PATH"] = f"{claude.parent}{os.pathsep}{self.env['PATH']}"
         # /code starts the loop with its own state folder.
@@ -857,6 +934,518 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("re-asked", reason)
         self.assertEqual(packet["ask"], [])
 
+    def ruled_run(self, judge_replies, header_extra="", edits=None, ruled_header="session-ruled: 1\n"):
+        """A fix-first run whose one finding a session ruled on, the coder editing app.py. `ruled_header` holds the
+        ruling lines (a session ruling by default)."""
+        ruling = "app.py:2 Proposed change: drop the prefix strip"
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": edits or {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }
+        if judge_replies is not None:
+            scenario["ruling-check"] = [{"result": reply} for reply in judge_replies]
+        header = self.findings_header(ruling) + ruled_header + header_extra
+        return self.run_script(scenario, header_extra=header)
+
+    def test_a_fix_pass_that_keeps_what_a_ruling_dropped_is_put_back_and_stops_the_run(self):
+        against = json.dumps({"verdicts": [
+            {"ruling": "app.py:2 drop the prefix strip", "verdict": "against", "file": "app.py",
+             "kept": "the prefix strip"},
+            {"ruling": "app.py:2 other ruling", "verdict": "kept"},
+            {"ruling": "notes.py:1 second ruling", "verdict": "against", "file": "notes.py", "kept": "the dict"}]})
+        completed = self.ruled_run([against], header_extra="held files: notes.py\n",
+                                   edits={"app.py": APP_FIXED, "notes.py": NOTES_REFLOWED,
+                                          "new_helper.py": "value = 1\n"})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(packet["against_ruling"],
+                         [{"ruling": "app.py:2 drop the prefix strip", "file": "app.py", "kept": "the prefix strip"},
+                          {"ruling": "notes.py:1 second ruling", "file": "notes.py", "kept": "the dict"}])
+        self.assertIn("went against the accepted ruling on app.py: app.py:2 drop the prefix strip; it kept: the "
+                      "prefix strip. The pass was put back. fix pass", packet["blockers"][0])
+        self.assertIn("on notes.py: notes.py:1 second ruling; it kept: the dict.", packet["blockers"][0])
+        printed = self.review_fix_packet_output()
+        self.assertIn("went against the accepted ruling on app.py: app.py:2 drop the prefix strip", printed)
+        self.assertNotIn("other ruling", packet["blockers"][0])
+        self.assertIn("drop the prefix strip", json.dumps(packet["findings_remaining"]), "the finding stays open")
+        self.assertFalse((self.repo / "new_helper.py").exists(), "a file the pass created is deleted")
+        self.assertEqual((self.repo / "app.py").read_text(), APP_AFTER_EDIT)
+        self.assertEqual((self.repo / "notes.py").read_text(), NOTES_REFLOWED,
+                         "a held file with a holder row is not in the backup, so the put-back leaves it")
+        self.assertNotIn("code-reviewer", [call["key"] for call in self.fake_calls()])
+        self.assertEqual(list(self.scratch.rglob("ruling-check/*/files")), [], "the backup is discarded")
+
+    def test_a_fix_pass_the_judge_finds_kept_moves_on_with_its_changes(self):
+        kept = json.dumps({"verdicts": [{"ruling": "app.py:2 drop the prefix strip", "verdict": "kept"}]})
+        completed = self.ruled_run([kept])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["against_ruling"], [])
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        self.assertEqual(list(self.scratch.rglob("ruling-check/*/files")), [], "the backup is discarded")
+        self.assertIn("ruling-check", [call["key"] for call in self.fake_calls()])
+
+    def test_a_run_with_no_ruling_makes_no_ruling_check_call(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: drop the prefix strip"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("ruling-check", [call["key"] for call in self.fake_calls()])
+        self.assertEqual(self.stored_packet()[1]["against_ruling"], [])
+
+    def test_a_judge_reply_that_does_not_parse_stops_as_a_tool_fault_and_leaves_the_pass_in_place(self):
+        completed = self.ruled_run(["no verdicts here", "still none"])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("the ruling check of fix pass", packet["blockers"][0])
+        self.assertIn("stay in the tree", packet["blockers"][0])
+        self.assertIn("the ruling check of fix pass", packet["tool_fault"])
+        self.assertEqual(packet["against_ruling"], [])
+        self.assertIn("app.py", packet["files_touched"])
+        self.assertTrue(packet["findings_remaining"], "the pass's findings stay open")
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+        self.assertNotIn("code-reviewer", [call["key"] for call in self.fake_calls()])
+
+    def judge_calls(self):
+        return [call for call in self.fake_calls() if call["key"] == "ruling-check"]
+
+    def test_a_user_ruling_alone_makes_a_ruling_check_call(self):
+        completed = self.ruled_run(None, ruled_header="user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(len(self.judge_calls()), 1)
+
+    def test_an_adopted_ruling_alone_makes_a_ruling_check_call(self):
+        row = {"number": 1, "text": "drop the prefix strip", "finding_text": None, "owner": "session",
+               "ruled_at": "2026-11-13 11:32:00Z"}
+        completed = self.ruled_run(None, ruled_header=f"adopted: {json.dumps([row])}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(len(self.judge_calls()), 1)
+
+    def test_an_existing_file_a_ruled_finding_names_outside_the_pass_scope_is_put_back(self):
+        helper_before = "helper = 1\n"
+        self.commit_files({"helper.py": helper_before})
+        against = json.dumps({"verdicts": [
+            {"ruling": "helper.py:1 drop the helper", "verdict": "against", "file": "helper.py", "kept": "helper"}]})
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "helper.py": "helper = 2\n"}}],
+            "ruling-check": [{"result": against}],
+        }
+        ruling = "app.py:2 Proposed change: drop the prefix strip and the helper in helper.py"
+        completed = self.run_script(scenario, header_extra=self.findings_header(ruling) + "session-ruled: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "helper.py").read_text(), helper_before)
+
+    def test_a_held_file_with_no_holder_row_that_no_finding_names_is_put_back_byte_for_byte(self):
+        self.commit_files({"held_extra.py": "held = 1\n"})
+        held_before = "held = 5\n"
+        (self.repo / "held_extra.py").write_text(held_before)
+        against = json.dumps({"verdicts": [
+            {"ruling": "app.py:2 drop the prefix strip", "verdict": "against", "file": "app.py",
+             "kept": "the prefix strip"}]})
+        # A run scoped to app.py holds the dirty held_extra.py; with no other live session it has no holder row.
+        completed = self.ruled_run([against], header_extra="files: app.py\n",
+                                   edits={"app.py": APP_FIXED, "held_extra.py": "held = 2\n"})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual((self.repo / "held_extra.py").read_bytes(), held_before.encode())
+        self.assertEqual((self.repo / "app.py").read_text(), APP_AFTER_EDIT)
+
+    def assert_claude_md_finding_in_ask_after_ruling_check(self, replies):
+        """A ruled run whose coder edits CLAUDE.md and app.py, the judge answering `replies`."""
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED, "CLAUDE.md": "# Rules\n"}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}],
+            "closure": [{"result": CLOSED}],
+            "ruling-check": [{"result": reply} for reply in replies],
+        }, header_extra=self.findings_header("CLAUDE.md:1 Proposed change: reword the rule",
+                                             "app.py:2 Proposed change: drop the prefix strip")
+                        + "session-ruled: 1, 2\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual([entry["file_line"] for entry in packet["ask"]], ["CLAUDE.md:1"])
+        self.assertNotIn("CLAUDE.md", json.dumps(packet["findings_remaining"]))
+        self.assertEqual((self.repo / "CLAUDE.md").read_text(), "Quality check: `true`\n")
+
+    def test_a_claude_md_finding_lands_in_ask_when_the_judge_finds_the_pass_against_a_ruling(self):
+        against = json.dumps({"verdicts": [
+            {"ruling": "app.py:2 drop the prefix strip", "verdict": "against", "file": "app.py", "kept": "k"}]})
+        self.assert_claude_md_finding_in_ask_after_ruling_check([against])
+
+    def test_a_claude_md_finding_lands_in_ask_when_the_judge_reply_cannot_be_read(self):
+        self.assert_claude_md_finding_in_ask_after_ruling_check(["no verdicts", "still none"])
+
+    def test_the_judge_prompt_tags_each_ruling_source_once_and_names_no_outcome(self):
+        header = "user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n"
+        completed = self.ruled_run(None, ruled_header=header + "session-ruled: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prompt = self.judge_calls()[0]["prompt"]
+        ruling_lines = [line for line in prompt.splitlines() if line.startswith("- [")]
+        self.assertEqual(len(ruling_lines), 1, "a text held as user_ruled and session_ruled shows once")
+        self.assertTrue(ruling_lines[0].startswith("- [user_ruled] "), ruling_lines[0])
+        marked = review_loop_prompts.user_ruled_issue("app.py:2 Proposed change: drop the prefix strip",
+                                                      "2026-11-13 11:32:00Z")
+        self.assertEqual(ruling_lines[0], f"- [user_ruled] {marked}", "the judge sees the mark the coder saw")
+        self.assertNotIn("[accepted]", prompt)
+        self.assertNotIn("[rejected]", prompt)
+        self.assertIn("carries no outcome mark: judge it as accepted only when its text says so", prompt)
+
+    def test_the_judge_prompt_tags_a_session_only_ruling_as_session_ruled(self):
+        completed = self.ruled_run(None)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        ruling_lines = [line for line in self.judge_calls()[0]["prompt"].splitlines() if line.startswith("- [")]
+        self.assertEqual(len(ruling_lines), 1)
+        self.assertTrue(ruling_lines[0].startswith("- [session_ruled] "), ruling_lines[0])
+
+    def test_the_judge_prompt_tags_an_adopted_ruling_as_adopted(self):
+        row = {"number": 1, "text": "drop the prefix strip", "finding_text": None, "owner": "session",
+               "ruled_at": "2026-11-13 11:32:00Z"}
+        completed = self.ruled_run(None, ruled_header=f"adopted: {json.dumps([row])}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        ruling_lines = [line for line in self.judge_calls()[0]["prompt"].splitlines() if line.startswith("- [")]
+        self.assertEqual(len(ruling_lines), 1)
+        self.assertTrue(ruling_lines[0].startswith("- [adopted] "), ruling_lines[0])
+
+    def test_the_judge_reads_a_pass_diff_file_holding_the_edit_and_the_prompt_names_it(self):
+        completed = self.ruled_run(None)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        diff_files = list(self.scratch.rglob("ruling-check/*/pass.diff"))
+        self.assertEqual(len(diff_files), 1)
+        self.assertIn("+limit = 20", diff_files[0].read_text())
+        self.assertIn(str(diff_files[0]), self.judge_calls()[0]["prompt"])
+
+    def test_a_ruled_run_whose_coder_changes_nothing_makes_no_ruling_check_call_and_keeps_no_backup(self):
+        completed = self.ruled_run(None, edits={"app.py": APP_AFTER_EDIT})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.judge_calls(), [])
+        self.assertEqual(list(self.scratch.rglob("ruling-check/*/files")), [])
+
+    def test_a_judge_reply_with_a_bad_verdict_value_is_asked_again(self):
+        bad = json.dumps({"verdicts": [{"ruling": "r", "verdict": "maybe"}]})
+        good = json.dumps({"verdicts": [{"ruling": "r", "verdict": "kept"}]})
+        completed = self.ruled_run([bad, good])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(len(self.judge_calls()), 2)
+        self.assertIn("each verdict must be 'kept' or 'against'", self.judge_calls()[1]["prompt"])
+
+    def test_a_judge_reply_with_no_verdicts_is_asked_again_and_then_stops_as_a_tool_fault(self):
+        empty = json.dumps({"verdicts": []})
+        completed = self.ruled_run([empty, empty])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("the ruling check of fix pass", packet["blockers"][0])
+        self.assertIn("one verdict for each of the 1 rulings", self.judge_calls()[1]["prompt"])
+        self.assertEqual(len(self.judge_calls()), 2)
+
+    def test_a_failed_coder_pass_discards_the_ruling_backup(self):
+        completed = self.run_script({
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}, "exit": 1}],
+        }, header_extra=self.findings_header("app.py:2 Proposed change: drop the prefix strip")
+                        + "session-ruled: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        coder_calls = [call for call in self.fake_calls() if call["key"] == "coder"]
+        self.assertEqual(len(coder_calls), 1, "the pass ran, so the ruling check had made its backup first")
+        self.assertEqual(list(self.scratch.rglob("ruling-check/*/files")), [])
+
+    def test_an_against_verdict_with_no_file_is_asked_again_and_then_stops_as_a_tool_fault(self):
+        no_file = json.dumps({"verdicts": [{"ruling": "r", "verdict": "against", "kept": "x"}]})
+        completed = self.ruled_run([no_file, no_file])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual(packet["against_ruling"], [])
+        self.assertIn("the ruling check of fix pass", packet["blockers"][0])
+        self.assertEqual(len(self.judge_calls()), 2)
+
+    def test_a_judge_call_that_fails_stops_as_a_tool_fault_and_leaves_the_pass_in_place(self):
+        completed = self.ruled_run([])
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertIn("stay in the tree", packet["blockers"][0])
+        self.assertIn("the ruling check of fix pass", packet["tool_fault"])
+        self.assertEqual((self.repo / "app.py").read_text(), APP_FIXED)
+
+    def test_a_repo_git_cannot_list_stops_the_pass_as_a_ruling_check_fault_that_reaches_the_packet_notes(self):
+        host = RulingCheckHost()
+        host.repo = str(self.scratch / "no-repo-here")
+        host.user_ruled = ["a ruling"]
+        host.session_ruled = []
+        host.adopted = {}
+        faults_before = len(review_loop_ruling_check.RULING_CHECK_FAULTS)
+
+        no_listing = mock.patch.object(review_loop_ruling_check.script_utils, "repo_file_paths", return_value=None)
+        with no_listing, self.assertRaises(review_loop_ruling_check.RulingCheckFaultError) as raised:
+            host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+
+        self.assertIn("git could not list the files", str(raised.exception))
+        self.assertEqual(host.kept_open, ["finding"])
+        self.assertEqual(len(review_loop_ruling_check.RULING_CHECK_FAULTS), faults_before + 1)
+        self.assertIn(str(raised.exception), review_loop_coder.coder_fault_notes())
+
+    def ruled_host(self):
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.out = self.scratch / "out"
+        host.user_ruled = ["a ruling"]
+        host.session_ruled = []
+        host.adopted = {}
+        return host
+
+    def test_an_index_git_cannot_read_stops_the_pass_as_a_ruling_check_fault_and_drops_the_backup(self):
+        host = self.ruled_host()
+        faults_before = len(review_loop_ruling_check.RULING_CHECK_FAULTS)
+        index_fails = mock.patch.object(review_loop_ruling_check.script_utils, "index_entries",
+                                        side_effect=review_loop_ruling_check.script_utils.GitCallError("no index"))
+
+        with index_fails, self.assertRaises(review_loop_ruling_check.RulingCheckFaultError) as raised:
+            host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+
+        self.assertIn("no index", str(raised.exception))
+        self.assertEqual(host.kept_open, ["finding"])
+        self.assertEqual(len(review_loop_ruling_check.RULING_CHECK_FAULTS), faults_before + 1)
+        self.assertEqual(list((self.scratch / "out").rglob("app.py")), [], "the backup folder is gone")
+
+    def test_a_put_back_pass_puts_the_index_back_for_a_changed_a_new_and_a_created_path(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py", "in_scope_new.py"], ["finding"], [])
+        stage_before = git(self.repo, "ls-files", "--stage")
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        (self.repo / "in_scope_new.py").write_text("new\n")
+        (self.repo / "stray.py").write_text("stray\n")
+        git(self.repo, "add", "app.py", "in_scope_new.py", "stray.py")
+        result = types.SimpleNamespace(changed=["app.py", "in_scope_new.py", "stray.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual(git(self.repo, "ls-files", "--stage"), stage_before)
+        self.assertNotIn("Not put back", str(raised.exception))
+
+    def test_a_coder_commit_made_during_the_pass_stays_in_head_and_is_named(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        (self.repo / "app.py").write_text("committed by the coder\n")
+        git(self.repo, "add", "app.py")
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "coder fix")
+        short_hash = git(self.repo, "rev-parse", "--short", "HEAD")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        blocker = str(raised.exception)
+        self.assertIn(f"Commits the coder made during the pass stay in HEAD: {short_hash} coder fix.", blocker)
+        self.assertIn("The work tree and index were put back; the coder's commit stays.", blocker)
+        self.assertNotIn("The pass was put back.", blocker)
+        self.assertIn("app.py", host.files_touched, "the session commits the revert")
+
+    def test_a_coder_commit_in_a_repo_that_had_no_commit_is_named(self):
+        unborn = self.scratch / "unborn"
+        unborn.mkdir()
+        git(unborn, "init", "-q", "-b", "main")
+        (unborn / "app.py").write_text("old\n")
+        host = self.ruled_host()
+        host.repo = str(unborn)
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        self.assertIsNone(host.ruling_head_before)
+        (unborn / "app.py").write_text("committed by the coder\n")
+        git(unborn, "add", "app.py")
+        git(unborn, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "first commit")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("stay in HEAD:", str(raised.exception))
+        self.assertIn("first commit", str(raised.exception))
+
+    def test_a_commit_list_git_cannot_read_is_reported_and_the_pass_is_not_called_put_back(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+        log_fails = mock.patch.object(review_loop_ruling_check.script_utils, "commits_since", return_value=None)
+
+        with log_fails, self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("could not tell whether the coder committed during the pass", str(raised.exception))
+        self.assertNotIn("The pass was put back.", str(raised.exception))
+        self.assertIn("app.py", host.files_touched)
+
+    def test_a_head_git_cannot_name_before_the_pass_stops_it_as_a_ruling_check_fault(self):
+        host = self.ruled_host()
+        head_fails = mock.patch.object(review_loop_ruling_check.script_utils, "head_commit_or_unborn",
+                                       side_effect=review_loop_ruling_check.script_utils.GitCallError("no head"))
+
+        with head_fails, self.assertRaises(review_loop_ruling_check.RulingCheckFaultError) as raised:
+            host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+
+        self.assertIn("no head", str(raised.exception))
+        self.assertEqual(host.kept_open, ["finding"])
+
+    def test_a_path_not_put_back_is_recorded_in_files_touched(self):
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.files_touched = set()
+        host.ruling_files_before = frozenset({"big.bin"})
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], ["big.bin"])
+        result = types.SimpleNamespace(changed=["big.bin"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual(host.files_touched, {"big.bin"})
+
+    def test_a_pass_with_no_coder_commit_keeps_the_put_back_text(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("it kept: k. The pass was put back.", str(raised.exception))
+        self.assertNotIn("Commits the coder made", str(raised.exception))
+
+    def test_an_index_entry_git_cannot_restore_is_named_as_not_put_back(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        git(self.repo, "add", "app.py")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+        restore_fails = mock.patch.object(review_loop_ruling_check.script_utils, "restore_index_entry",
+                                          return_value=False)
+
+        with restore_fails, self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("or an index entry git could not restore: app.py.", str(raised.exception))
+
+    def test_a_path_the_backup_could_not_save_is_named_as_not_put_back(self):
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.ruling_files_before = frozenset({"big.bin", "stray.txt"})
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], ["big.bin", "idle.bin"])
+        result = types.SimpleNamespace(changed=["big.bin", "stray.txt"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("Not put back, over the size cap, unreadable, outside the saved files, a directory left in "
+                      "place or an index entry git could not restore: big.bin, stray.txt.", str(raised.exception))
+        self.assertNotIn("The pass was put back.", str(raised.exception))
+        self.assertIn("Part of the pass was put back.", str(raised.exception))
+        self.assertNotIn("idle.bin", str(raised.exception), "an unsaved file the pass did not change is not named")
+
+    def test_a_directory_the_pass_made_at_an_absent_path_is_named_as_not_put_back(self):
+        (self.repo / "made_dir").mkdir()
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.ruling_files_before = frozenset()
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], [])
+        result = types.SimpleNamespace(changed=["made_dir"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("a directory left in place or an index entry git could not restore: made_dir.",
+                      str(raised.exception))
+
+    def test_a_put_back_pass_keeps_open_only_the_findings_not_on_a_reverted_approval_path(self):
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.ruling_files_before = frozenset()
+        host.reverted_findings = ["on-claude-md"]
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], [])
+        result = types.SimpleNamespace(changed=[], reverted=["CLAUDE.md"])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
+            host.put_back_pass("fix-1", ["on-claude-md", "on-app"], result, backup, against)
+
+        self.assertEqual(host.kept_open, ["on-app"])
+        self.assertEqual(host.open_fixes, [], "a reverted finding kept open by an earlier round is dropped")
+
+    def test_a_held_file_a_finding_text_names_is_left_out_of_the_ruling_backup(self):
+        (self.repo / "notes.py").write_text("n = 1\n")
+        host = self.ruled_host()
+        host.held = frozenset({"notes.py"})
+        listing = ["app.py", "notes.py"]
+
+        with mock.patch.object(review_loop_ruling_check.script_utils, "repo_file_paths", return_value=listing):
+            backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], ["app.py:3 same as notes.py"])
+
+        self.assertNotIn("notes.py", backup.saved)
+        self.assertIn("app.py", backup.saved)
+
+    def test_a_finding_naming_a_file_by_a_trailing_part_gets_that_file_backed_up(self):
+        (self.repo / "lib").mkdir()
+        (self.repo / "lib" / "x.py").write_text("x = 1\n")
+        host = self.ruled_host()
+        listing = ["app.py", "lib/x.py"]
+
+        with mock.patch.object(review_loop_ruling_check.script_utils, "repo_file_paths", return_value=listing):
+            backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], ["x.py:3 wrong name"])
+
+        self.assertIn("lib/x.py", backup.saved)
+
+    def test_a_ruling_check_that_cannot_reach_the_judge_keeps_the_unreverted_findings_open(self):
+        host = RulingCheckHost()
+        host.repo = str(self.repo)
+        host.out = self.scratch / "out"
+        host.reverted_findings = ["on-claude-md"]
+        host.files_touched = set()
+        host.ruling_texts = lambda findings: []
+        host.issue_text = lambda finding: finding
+        result = types.SimpleNamespace(changed=["app.py"], reverted=["CLAUDE.md"], diffs=["d"])
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], [])
+
+        failing = mock.patch.object(review_loop_ruling_check, "reply_with_one_retry",
+                                    side_effect=review_loop_ruling_check.ModelCallError("down"))
+        with failing, self.assertRaises(review_loop_ruling_check.RulingCheckFaultError):
+            host.check_rulings_kept("fix-1", ["on-claude-md", "on-app"], result, backup)
+
+        self.assertEqual(host.kept_open, ["on-app"])
+        self.assertEqual(host.open_fixes, [])
+
     def test_a_code_edit_against_a_no_code_ruling_reaches_the_packet_and_the_next_reviewer_prompt(self):
         ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
                                                "Make no code change.", ruled_change_text.USER_CLAUSE)
@@ -885,6 +1474,161 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _row, packet = self.stored_packet()
         ruling = review_loop_ruled.ruling_line(finding_record.parse_finding(ruled))
         self.assertEqual(packet["no_code_ruling_broken"], [{"ruling": ruling, "file": "app.py"}])
+
+    def test_a_no_code_ruling_edit_the_judge_puts_back_leaves_no_broken_entry_in_the_packet(self):
+        ruled = ruled_change_text.changed_text("app.py:2 [bug] Proposed change: deny the limit",
+                                               "Make no code change.", ruled_change_text.USER_CLAUSE)
+        against = json.dumps({"verdicts": [
+            {"ruling": "app.py:2 Make no code change.", "verdict": "against", "file": "app.py", "kept": "the edit"}]})
+        completed = self.run_script({
+            "coder": [{"result": "Reworded the message.", "edits": {"app.py": APP_FIXED}}],
+            "ruling-check": [{"result": against}],
+        }, header_extra=self.findings_header(ruled) + "user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "critical-blocker")
+        self.assertEqual((self.repo / "app.py").read_text(), APP_AFTER_EDIT)
+        self.assertEqual(packet["no_code_ruling_broken"], [])
+
+    def test_a_put_back_pass_drops_the_approval_ask_and_no_code_entry_it_filed_for_a_restored_path(self):
+        host = self.ruled_host()
+        host.no_code_broken = [{"ruling": "earlier", "file": "old.py"}]
+        host.approval_ask_paths = ["old_approval.md"]
+        wanted_ask = finding_record.parse_finding("`app.py:1` [other] A fix coder wants to edit `app.py`: earlier ask")
+        host.user_only_asks = [finding_record.parse_finding("`old_approval.md:1` [other] earlier ask"), wanted_ask]
+        host.asks = list(host.user_only_asks)
+        host.ask_gates = {}
+        host.approval_ask_bases = {"old_approval.md": "b0"}
+        saved = []
+        host.save_approval_paths = lambda: saved.append(list(host.approval_ask_paths))
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        ask = finding_record.parse_finding(review_loop_ruled.approval_ask_text("app.py"))
+        host.no_code_broken.append({"ruling": "r", "file": "app.py"})
+        host.no_code_broken.append({"ruling": "r", "file": "kept_edit.py"})
+        host.approval_ask_paths.append("app.py")
+        host.user_only_asks.append(ask)
+        host.asks.append(ask)
+        host.ask_gates[ask] = "coder"
+        host.approval_ask_bases["app.py"] = "b1"
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual([entry["file"] for entry in host.no_code_broken], ["old.py", "kept_edit.py"])
+        self.assertEqual(host.approval_ask_paths, ["old_approval.md"])
+        self.assertEqual([item.path for item in host.asks], ["old_approval.md", "app.py"])
+        self.assertIn(wanted_ask, host.user_only_asks, "a wanted-change ask on the same path at line 1 survives")
+        self.assertNotIn(ask, host.user_only_asks)
+        self.assertNotIn("app.py", host.approval_ask_bases)
+        self.assertEqual(saved, [["old_approval.md"]])
+
+    def test_a_put_back_pass_drops_an_approval_ask_it_filed_for_a_path_it_did_not_restore(self):
+        host = self.ruled_host()
+        host.no_code_broken = []
+        host.approval_ask_paths = []
+        host.user_only_asks = []
+        host.asks = []
+        host.ask_gates = {}
+        host.approval_ask_bases = {}
+        saved = []
+        host.save_approval_paths = lambda: saved.append(list(host.approval_ask_paths))
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        for filed_path in ("CLAUDE.md", "app.py"):
+            ask = finding_record.parse_finding(review_loop_ruled.approval_ask_text(filed_path))
+            host.approval_ask_paths.append(filed_path)
+            host.user_only_asks.append(ask)
+            host.asks.append(ask)
+            host.ask_gates[ask] = "coder"
+            host.approval_ask_bases[filed_path] = "b1"
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=["CLAUDE.md"])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError):
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual(host.approval_ask_paths, [], "the reverted CLAUDE.md ask goes with the put-back pass")
+        self.assertEqual(host.user_only_asks, [])
+        self.assertEqual(host.asks, [])
+        self.assertEqual(host.approval_ask_bases, {})
+
+    def test_a_put_back_pass_leaves_the_index_entry_of_a_path_the_backup_could_not_save(self):
+        host = self.ruled_host()
+        backup = file_backup.Backup(self.repo, self.scratch / "copies", [], ["app.py"])
+        host.ruling_index_entries = review_loop_ruling_check.script_utils.index_entries(self.repo, ["app.py"])
+        host.ruling_files_before = frozenset({"app.py"})
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        git(self.repo, "add", "app.py")
+        stage_after_pass = git(self.repo, "ls-files", "--stage")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertEqual(git(self.repo, "ls-files", "--stage"), stage_after_pass)
+        self.assertIn("app.py", str(raised.exception), "the path is still named as not put back")
+
+    def test_an_index_git_cannot_read_at_put_back_names_every_path_as_not_put_back(self):
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        (self.repo / "app.py").write_text("changed by the pass\n")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+        index_fails = mock.patch.object(review_loop_ruling_check.script_utils, "index_entries",
+                                        side_effect=review_loop_ruling_check.script_utils.GitCallError("no index"))
+
+        with index_fails, self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertIn("or an index entry git could not restore: app.py.", str(raised.exception))
+
+    def test_a_tracked_file_deleted_in_the_work_tree_has_its_index_entry_put_back_after_the_pass_recreates_it(self):
+        (self.repo / "app.py").unlink()
+        host = self.ruled_host()
+        backup = host.begin_ruling_check("fix-1", ["app.py"], ["finding"], [])
+        stage_before = git(self.repo, "ls-files", "--stage")
+        (self.repo / "app.py").write_text("recreated by the pass\n")
+        git(self.repo, "add", "app.py")
+        result = types.SimpleNamespace(changed=["app.py"], reverted=[])
+        against = [{"ruling": "r", "verdict": "against", "file": "app.py", "kept": "k"}]
+
+        with self.assertRaises(review_loop_ruling_check.RulingBrokenError) as raised:
+            host.put_back_pass("fix-1", ["finding"], result, backup, against)
+
+        self.assertFalse((self.repo / "app.py").exists())
+        self.assertEqual(git(self.repo, "ls-files", "--stage"), stage_before)
+        self.assertNotIn("Not put back", str(raised.exception))
+        self.assertTrue(str(raised.exception).endswith("The pass was put back."), str(raised.exception))
+        self.assertEqual(host.files_touched, set(), "a path the loop put back is not progress to commit")
+
+    def test_verdict_problem_names_each_malformed_reply_shape(self):
+        against_blank = {"ruling": "r", "verdict": "against", "file": "  ", "kept": "k"}
+        cases = {"verdicts not a list": ({"verdicts": "x"}, "'verdicts' must be a list"),
+                 "verdict not an object": ({"verdicts": ["x"]}, "each verdict must be an object"),
+                 "whitespace-only file": ({"verdicts": [against_blank]}, "non-empty text for 'file'"),
+                 "whitespace-only kept": ({"verdicts": [{**against_blank, "file": "a.py", "kept": " "}]},
+                                          "non-empty text for 'kept'"),
+                 }
+        for name, (parsed, expected) in cases.items():
+            with self.subTest(name):
+                problem = review_loop_ruling_check.verdict_problem(parsed, 1)
+                self.assertIsNotNone(problem, name)
+                self.assertIn(expected, problem, name)
+
+    def test_verdict_problem_refuses_a_reply_that_repeats_one_rulings_verdict(self):
+        kept = {"ruling": "first", "verdict": "kept"}
+        parsed = {"verdicts": [kept, dict(kept)]}
+
+        problem = review_loop_ruling_check.verdict_problem(parsed, 2)
+
+        self.assertIn("one verdict for each of the 2 rulings", problem)
+        two_rulings = {"verdicts": [kept, {"ruling": "second", "verdict": "kept"}]}
+        self.assertIsNone(review_loop_ruling_check.verdict_problem(two_rulings, 2))
 
     def assert_reverted_and_reported(self, packet, path):
         """The reverted edit no finding names is reported once as dropped, and files no ask."""
@@ -1134,6 +1878,36 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual(len(reviews), 1)
         self.assertIn(f"Review every change since {base}", reviews[0]["prompt"])
         self.assertIn("app.py", reviews[0]["prompt"])
+
+    def test_the_packet_names_the_base_as_given_and_the_base_used(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\ngiven-base: master\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["given_base"], packet["base_used"]), ("master", base))
+
+    def test_the_packet_of_a_run_with_no_given_base_line_carries_no_given_base(self):
+        base = git(self.repo, "rev-parse", "HEAD")
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]},
+                                    header_extra=f"base: {base}\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["given_base"], "")
+        self.assertEqual(packet["base_used"], base)
+
+    def test_the_packet_of_a_run_with_no_base_line_carries_neither_base(self):
+        self.commit_files({"app.py": APP_AFTER_EDIT})
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}], "closure": [{"result": CLOSED}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertFalse(packet.get("base_used"))
+        self.assertFalse(packet.get("given_base"))
 
     def test_a_fix_the_coder_commits_on_a_clean_tree_counts_as_fixed_and_is_reviewed(self):
         base = git(self.repo, "rev-parse", "HEAD")
@@ -2204,6 +2978,20 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop, _check_command = loop_main.build_loop(request)
         return loop
 
+    def test_a_ci_gate_header_line_sets_the_loop_ci_run(self):
+        loop_main, request = self.gate_command_request("echo scoped", False, header_extra="ci-gate: run-42\n")
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "run-42")
+
+    def test_no_ci_gate_header_line_leaves_the_loop_ci_run_empty(self):
+        loop_main, request = self.gate_command_request("echo scoped", False)
+
+        loop, _check_command = loop_main.build_loop(request)
+
+        self.assertEqual(loop.ci_run, "")
+
     def test_the_loop_brief_names_the_plan_lines_of_the_phase(self):
         plan = self.repo / "docs" / "plans" / "p" / "spec.md"
         plan.parent.mkdir(parents=True)
@@ -2462,6 +3250,18 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         _, packet = self.stored_packet()
         self.assertEqual((packet["full_check"], packet["full_check_command"]), ("passed", "make check"))
         self.assertEqual("", packet["tool_fault"])
+
+    def test_a_ci_gate_header_runs_no_local_check_and_the_packet_names_the_ci_run(self):
+        marker = self.repo / "ran"
+
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]}, header_extra="ci-gate: run-42\n",
+                                    quality_check=f"touch {marker}")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _, packet = self.stored_packet()
+        self.assertFalse(marker.exists(), "the Quality check command must not run under a ci-gate header")
+        self.assertEqual(packet["full_check"], "not run (CI gate: run-42)")
+        self.assertEqual(packet["full_check_command"], "")
 
     def test_a_stale_prose_hit_report_over_the_tail_limit_reaches_the_coder_whole_in_its_issues_file(self):
         script = self.scratch / "stale_prose.py"
@@ -2761,7 +3561,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         loop_script = sys.modules["review_loop_script"]
         coder_module = sys.modules["review_loop_coder"]
 
-        with mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+        with mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
+                mock.patch.object(review_loop_outside_writes, "record_pass_writes"), \
                 mock.patch.object(coder_module, "write_fix_diffs", side_effect=RuntimeError("diff write broke")), \
                 self.assertRaises(RuntimeError) as raised:
             loop.repair("coder1", [])
@@ -2790,6 +3592,20 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn(finding, loop.open_fixes)
         begin_pass.assert_not_called()
 
+    def test_the_pass_guard_reads_only_the_held_files_a_holder_row_proves(self):
+        loop = self.built_loop_for_gate_command("echo ran", False)
+        ruled_out_module = sys.modules["review_loop_ruled_out"]
+        loop.held_files = {"proven.py", "unproven.py"}
+        loop.held_holders = {"proven.py": {"session": "lane-b"}}
+        finding = mock.MagicMock(path="", text="`app.py:2` the limit is wrong")
+
+        with mock.patch.object(ruled_out_module, "begin_pass", side_effect=RuntimeError("stop here")) as begin_pass, \
+                mock.patch.object(loop, "issue_text", return_value="issue"), \
+                self.assertRaises(RuntimeError):
+            loop.repair("coder1", [finding])
+
+        self.assertEqual(begin_pass.call_args.args[-1], {"proven.py"})
+
     def test_an_undo_failure_after_a_finished_coder_call_is_a_blocker_saying_the_pass_finished(self):
         loop = self.built_loop_for_gate_command("echo ran", False)
         loop_script = sys.modules["review_loop_script"]
@@ -2800,7 +3616,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         scope_guard.undo.side_effect = RuntimeError("restore failed")
 
         with mock.patch.object(scope_guard_module, "guard_pass", return_value=scope_guard), \
-                mock.patch.object(coder_module, "claude_call", return_value="Fixed."), \
+                mock.patch.object(coder_module, "claude_call_reply",
+                                   return_value=review_loop_calls.CallReply("Fixed.", "")), \
+                mock.patch.object(review_loop_outside_writes, "record_pass_writes"), \
                 mock.patch.object(loop, "issue_text", return_value="issue"), \
                 self.assertRaises(loop_script.CoderFailedError) as raised:
             loop.repair("coder1", [finding])
@@ -3531,6 +4349,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
             tool.write_text(recorder)
             tool.chmod(0o755)
         self.commit_files({"pyproject.toml": "[tool.ruff]\nline-length = 100\n", "notes.md": "# notes\n"})
+        # notes.md is part of the change under review, so the coder's edit to it is inside the pass's scope.
+        (self.repo / "notes.md").write_text("# notes\nchanged\n")
         check = f"{FAILS_ONLY_WITH_THE_DIFF}grep -q '# formatted' app.py || {{ echo 'FAIL: unformatted'; exit 1; }}"
 
         completed = self.run_script({
@@ -5995,12 +6815,11 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py", final_prompt)
 
     def test_a_class_repair_after_the_last_read_gets_one_final_read_of_its_diff(self):
-        open_member = {"receipt": "one member still open", "open": ["`app.py:4` the same limit is wrong here too"]}
         completed = self.run_script({
             "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
-            "closure": [{"result": json.dumps(open_member)}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
         })
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -6010,6 +6829,134 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertFalse(row["unreviewed_fix"])
         final_prompt = [call for call in self.fake_calls() if call["key"] == "code-reviewer"][2]["prompt"]
         self.assertIn("late-repair.diff", final_prompt)
+
+    def test_a_capped_run_lists_its_closure_prose_and_late_repair_read_in_walk_order(self):
+        self.save_gate_commands([self.stale_prose_command(1)])
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT + "# class repaired\n"}},
+                      {"result": "Fixed the claim.", "edits": {"app.py": APP_AFTER_EDIT + "# corrected claim\n"}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read", "class closure", "prose repair", "scoped re-review"])
+        summary = review_loop_post_cap.cap_summary_line(packet)
+        expected = ("cap reached after 2 fix round(s); post-cap passes: final read, class closure, prose repair, "
+                    "scoped re-review")
+        self.assertEqual(summary, expected)
+        printed = self.review_fix_packet_output()
+        self.assertIn("cap reached after 2 fix round(s); post-cap passes: final read, class closure", printed)
+        cap_line = next(line for line in printed.splitlines() if line.startswith("cap reached"))
+        self.assertNotRegex(cap_line, r"\b([3-9]|\d{2,})\b")
+        self.assertGreater(packet["iter"], 2)
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['iter']}\b")
+        self.assertGreater(packet["review_round"], 2)
+        self.assertNotRegex(printed, rf"(?<![\w.:-]){packet['review_round']}\b")
+
+    def review_fix_packet_output(self):
+        """What `review_fix.py packet` prints for the packet the run stored."""
+        row, _packet = self.stored_packet()
+        review_fix_script = toolkit_paths.REVIEW_DIR / "review_fix.py"
+        printed = subprocess.run([sys.executable, "-I", str(review_fix_script), "packet", "--skill", "review"],
+                                 input=row["message"], cwd=self.repo, capture_output=True, text=True,
+                                 env={**self.env, "CLAUDE_CODE_SESSION_ID": SESSION})
+        return printed.stdout + printed.stderr
+
+    def test_a_capped_run_with_a_stale_prose_repair_lists_it_among_its_post_cap_passes(self):
+        self.save_gate_commands([self.stale_prose_command(1)])
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX},
+                              {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}},
+                      {"result": "Fixed the claim.", "edits": {"app.py": APP_AFTER_EDIT + "# corrected claim\n"}}],
+            "closure": [{"result": CLOSED}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "cap-reached")
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read", "prose repair", "scoped re-review"])
+
+    def test_a_run_that_converges_in_round_one_and_then_closes_a_class_reports_one_fix_round_and_no_cap_line(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        }, header_extra=self.findings_header("app.py:2 the limit is wrong for `limit`"))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["fix_rounds"], 1)
+        self.assertEqual(packet["post_cap_passes"], ["class closure", "scoped re-review"])
+        self.assertNotIn("cap reached after", self.review_fix_packet_output())
+
+    def test_a_relaunch_header_with_a_word_for_fix_rounds_stops_naming_the_line(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: many\n")
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("expected a whole number", completed.stderr)
+        self.assertIn("fix_rounds", completed.stderr)
+
+    def test_a_run_that_converges_in_its_first_round_reports_one_fix_round_and_no_pass(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]})
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual((packet["status"], packet["fix_rounds"], packet["post_cap_passes"]), ("converged", 1, []))
+
+    def test_a_converged_run_counts_its_two_walk_rounds_and_lists_its_closure_passes_apart(self):
+        completed = self.run_script({
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": CLEAN_REVIEW}, {"result": CLEAN_REVIEW}],
+            "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
+                      {"result": "Closed the class.", "edits": {"app.py": APP_AFTER_EDIT}}],
+            "closure": [{"result": json.dumps(OPEN_MEMBER)}],
+        })
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["status"], "converged")
+        # The closure and the late-repair read are not fix rounds: only the fix round and the clean round count.
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["class closure", "scoped re-review"])
+
+    # Header 2 and header 5 both end at 2: the run adds its own round and the outcome clamp holds the count at the
+    # budget. Dropping the outcome clamp makes both fail; the seed clamp in the loop's main has no case of its own.
+    def test_a_relaunch_header_at_the_budget_stays_at_the_budget(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 2\npost_cap_passes: final read\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
+        self.assertEqual(packet["post_cap_passes"], ["final read"])
+
+    def test_a_relaunch_header_of_one_fix_round_adds_the_runs_own_round_and_reports_two(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 1\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
+
+    def test_a_relaunch_header_above_the_round_budget_is_reported_at_the_outcome_budget(self):
+        completed = self.run_script({"code-reviewer": [{"result": CLEAN_REVIEW}]},
+                                    header_extra="iter: 1\nfix_rounds: 5\n")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["fix_rounds"], 2)
 
     def test_a_class_repair_outside_the_review_scope_stays_unreviewed_and_the_packet_names_the_pass(self):
         open_member = {"receipt": "one member still open", "open": ["`notes.py:1` the same limit is wrong here too"]}
@@ -6072,10 +7019,8 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], ["app.py:3"])
 
     def test_a_final_read_that_files_a_fix_lists_it_as_remaining_and_sends_no_coder(self):
-        late_fix = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
-                    "Overall Assessment: NEEDS CHANGES\n")
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": late_fix}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
             "closure": [{"result": CLOSED}],
@@ -6095,11 +7040,9 @@ class ReviewLoopScriptTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py", final_prompt)
 
     def test_a_red_scoped_test_after_a_final_read_fix_stays_a_critical_blocker(self):
-        late_fix = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\nNone\n\n## Nit\nNone\n\n"
-                    "Overall Assessment: NEEDS CHANGES\n")
         self.save_gate_commands(["grep -q 'limit = 99' app.py"])
         completed = self.run_script({
-            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": late_fix}],
+            "code-reviewer": [{"result": FIX_REVIEW}, {"result": FIX_REVIEW}, {"result": LATE_FIX}],
             "coder": [{"result": "Fixed 1.", "edits": {"app.py": APP_FIXED}},
                       {"result": "Fixed 2.", "edits": {"app.py": APP_AFTER_EDIT}}],
             "closure": [{"result": CLOSED}],
@@ -6455,6 +7398,30 @@ class FixRoundWiringTest(unittest.TestCase):
         self.assertEqual(len(lint_repairs), 1)
         self.assertEqual(lint_repairs[0].changed, ["app.py"])
 
+    def test_a_lint_repair_after_a_fix_round_is_in_the_diff_and_files_the_next_round_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop = self.loop(tmp)
+            finding = finding_record.parse_finding("`app.py:1` rename the value")
+            fix_result = review_loop_coder.CoderResult("1. fixed", ["fix diff"], ["app.py"])
+            lint_result = review_loop_coder.CoderResult("", ["lint diff"], ["lint_only.py"])
+
+            def repair(call_name, _findings, *_args, **_kwargs):
+                if call_name != review_loop_pass_names.LINT_FIX_PASS:
+                    return fix_result
+                loop.note_late_repair(call_name, lint_result)
+                return lint_result
+
+            with mock.patch.object(loop, "repair", side_effect=repair), \
+                    mock.patch.object(loop, "review_scope", return_value=["app.py", "lint_only.py"]), \
+                    mock.patch.object(loop, "mark_repaired"), \
+                    mock.patch.object(full_check_gate.format_files, "lint_problems",
+                                      return_value=[("ruff", "app.py:1:1: E501")]):
+                loop.fix_round([("code-reviewer", ["app.py"], [finding])], [])
+            diff_text = pathlib.Path(loop.round_two_fix_diff_path).read_text()
+
+        self.assertIn("lint diff", diff_text)
+        self.assertEqual(loop.dispatches, [("code-reviewer", ["app.py", "lint_only.py"])])
+
     def test_a_repair_before_a_later_review_round_is_dropped_from_late_repairs(self):
         with tempfile.TemporaryDirectory() as tmp:
             loop = self.loop(tmp)
@@ -6484,7 +7451,7 @@ class FixRoundWiringTest(unittest.TestCase):
 
 
 class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
-    """A coder never edits a sign-off line of a decision log; the loop asks the caller instead."""
+    """A coder never edits a sign-off line of a decision log; the loop asks the caller, or hands a ruled change back."""
 
     def setUp(self):
         super().setUp()
@@ -6511,6 +7478,93 @@ class SignoffLinesLoopTest(ReviewLoopHarness, unittest.TestCase):
         self.assertIn("app.py:2", issues)
         self.assertNotIn(DECISIONS_PATH, issues)
         self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+
+    RULED_FINDING = f"{DECISIONS_PATH}:3 [plan-drift] Proposed change: reword the ruling"
+    REWORDED = DECISIONS_TEXT.replace("Keep plan as written.", "Keep the plan, reworded.")
+
+    def run_fix_first(self, header_tail):
+        findings_file = self.scratch / "findings.json"
+        findings_file.write_text(json.dumps([self.RULED_FINDING]))
+        scenario = {
+            "coder": [{"result": "Fixed 1.", "edits": {DECISIONS_PATH: self.REWORDED}}],
+            "code-reviewer": [{"result": CLEAN_REVIEW}] * 3,
+            "closure": [{"result": CLOSED}],
+        }
+        header = f"mode: fix-first\nfindings: {findings_file}\n" + header_tail
+        completed = self.run_script(scenario, header_extra=header)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        _row, packet = self.stored_packet()
+        return packet
+
+    def coder_calls(self):
+        return [call for call in self.fake_calls() if call["key"] == "coder"]
+
+    USER_SIGNED_TEXT = DECISIONS_TEXT.replace("Ruled by the session, not the user at 2026-11-11 03:17.",
+                                              "Ruled by Brandon Corey at 2026-11-11 03:17.")
+
+    def test_a_finding_on_an_unreadable_file_reads_as_a_user_sign_off_line(self):
+        finding = finding_record.parse_finding(self.RULED_FINDING)
+        self.assertEqual(finding.line, 3)
+        (self.repo / DECISIONS_PATH).unlink()
+
+        self.assertTrue(review_loop_signoffs.finding_on_user_signoff(str(self.repo), finding))
+
+    def assert_handed_back_to_the_caller(self, ruling, ruler_mark):
+        packet = self.run_fix_first(ruling)
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(packet["handback_edits"], [
+            f"{DECISIONS_PATH}:3 {review_loop_signoffs.HANDBACK_EDIT_NOTE}. Ruled finding: {ruler_mark} "
+            f"{self.RULED_FINDING}"])
+
+    def test_a_session_ruled_finding_on_a_session_owned_sign_off_line_is_handed_back_with_the_session(self):
+        self.assert_handed_back_to_the_caller("session-ruled: 1\n", f"[ruled by session {SESSION}]")
+
+    def test_a_user_ruled_finding_on_a_sign_off_line_is_handed_back_with_the_user_and_time(self):
+        self.assert_handed_back_to_the_caller("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n",
+                                              "[accepted by the user, ruled 2026-11-13 11:32:00Z]")
+
+    def test_a_session_ruled_finding_on_a_user_sign_off_line_is_filed_as_an_ask_and_no_hand_back_edit(self):
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertIn(review_loop_signoffs.SESSION_ON_USER_LINE_NOTE, json.dumps(packet["ask"]))
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), self.USER_SIGNED_TEXT)
+
+    def test_a_user_ruled_finding_on_a_user_sign_off_line_is_handed_back(self):
+        self.assertNotEqual(self.USER_SIGNED_TEXT, DECISIONS_TEXT)
+        self.commit_files({DECISIONS_PATH: self.USER_SIGNED_TEXT})
+
+        packet = self.run_fix_first("user-ruled: 1\nuser-ruled-at: 2026-11-13 11:32:00Z\n")
+
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["handback_edits"]), 1)
+        edit = packet["handback_edits"][0]
+        self.assertIn("[accepted by the user, ruled 2026-11-13 11:32:00Z]", edit)
+        self.assertIn(review_loop_signoffs.HANDBACK_EDIT_NOTE, edit)
+        self.assertNotIn("[ruled by session", edit)
+
+    def test_a_ruled_finding_handed_back_stays_open_for_no_round_and_the_run_converges(self):
+        packet = self.run_fix_first("session-ruled: 1\n")
+
+        self.assertEqual(packet["findings_remaining"], [])
+        self.assertEqual(packet["fixed"], [])
+        self.assertEqual(packet["status"], "converged")
+        self.assertEqual(packet["skipped_fp"], [])
+
+    def test_the_same_finding_with_no_ruling_is_filed_as_an_ask_and_no_handback_edit(self):
+        packet = self.run_fix_first("")
+
+        self.assertEqual(self.coder_calls(), [])
+        self.assertEqual([ask["file_line"] for ask in packet["ask"]], [f"{DECISIONS_PATH}:3"])
+        self.assertEqual(packet["handback_edits"], [])
+        self.assertEqual((self.repo / DECISIONS_PATH).read_text(), DECISIONS_TEXT)
 
     def test_lost_lines_counts_repeated_identical_sign_off_lines(self):
         before = [(3, "Ruled by the session."), (5, "Ruled by the session.")]
@@ -6760,6 +7814,7 @@ class FakeCommentRun(review_loop_comment_removal.CommentRemovalRuns):
         self.dropped_asks = []
 
     drop_asks = review_loop_ruled.RuledFindings.drop_asks
+    file_put_back_ask = review_loop_ruled.RuledFindings.file_put_back_ask
 
     def add_ask(self, gate, finding):
         self.asks.append(finding)
@@ -7127,6 +8182,153 @@ class CommentRemovalUnitTest(unittest.TestCase):
         self.run_.undo_comment_pass(snapshot, [])
 
         self.assertEqual(target.read_bytes(), b"s = '\xe9'\n# note\ny = 3\n")
+
+    def test_a_finding_that_quotes_a_comment_whose_line_moved_keeps_it_removed_with_no_ask(self):
+        before = "a = 1\n" * 13 + "#  moved   note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("moved", (self.repo / "a.py").read_text())
+
+    def test_a_quote_of_one_line_of_a_two_line_comment_block_keeps_the_whole_block_removed(self):
+        lines = ["a = 1\n"] * 13
+        before = "".join(lines) + "# Retry twice because the API flakes\n# and back off between tries.\nb = 2\n"
+        after = "".join(lines) + "b = 2\n"
+        findings = [finding_record.parse_finding(
+            "a.py:10 [bug] the comment `# Retry twice because the API flakes` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+        self.assertNotIn("back off", (self.repo / "a.py").read_text())
+
+    def test_a_quote_split_across_a_line_break_in_the_finding_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment \"# moved\n   note\" is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_double_quoted_span_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding('a.py:10 [bug] the comment "# moved note" is stale')]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_without_marker_names_a_comment_whose_text_starts_with_a_star(self):
+        before = "a = 1\n" * 13 + "# *important*\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `*important*` is stale")]
+
+        put_back = self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_quote_of_a_bare_marker_does_not_name_a_removed_empty_comment(self):
+        before = "a = 1\n" * 13 + "#\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the line `#` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("#\n", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_merged_findings_second_part_names_the_comment_in_its_own_file(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        first = finding_record.parse_finding("other.py:3 [bug] unrelated")
+        second = finding_record.parse_finding("a.py:10 [bug] the comment `# moved note` is stale")
+        merged = finding_record.combine([first, second])
+
+        put_back = self.pass_over("a.py", before, after, findings=[merged])
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
+
+    def test_a_finding_that_names_the_file_but_quotes_nothing_of_the_comment_still_puts_it_back_and_asks(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] something unrelated")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_apostrophes_in_a_finding_do_not_make_a_quote_that_names_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        text = "a.py:10 [bug] it doesn't check the loop bound, and the caller's guard is gone"
+        findings = [finding_record.parse_finding(text)]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_in_a_finding_of_another_file_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# moved note\nb = 2\n"
+        after = "a = 1\n" * 13 + "b = 2\n"
+        findings = [finding_record.parse_finding("other.py:10 [bug] the comment `# moved note` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# moved note", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_word_inside_a_longer_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# end\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the `endpoint` returns None")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# end", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_quote_of_a_longer_comment_does_not_name_a_shorter_removed_comment(self):
+        before = "a = 1\n" * 13 + "# TODO\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] the comment `# TODO: drop after v2` is stale")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# TODO", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_an_unquoted_word_of_a_finding_does_not_name_the_comment(self):
+        before = "a = 1\n" * 13 + "# loop\nb = 2\n" + "c = 3\n" * 10
+        after = "a = 1\n" * 13 + "b = 2\n" + "c = 3\n" * 10
+        findings = [finding_record.parse_finding("a.py:10 [bug] fix the off-by-one in the loop")]
+
+        self.pass_over("a.py", before, after, findings=findings)
+
+        self.assertIn("# loop", (self.repo / "a.py").read_text())
+        self.assertEqual(len(self.run_.asks), 1)
+
+    def test_a_finding_that_quotes_a_block_comment_line_whose_line_moved_keeps_it_removed(self):
+        before = "a = 1;\n" * 13 + "/* moved note */\nb = 2;\n" + "c = 3;\n" * 10
+        after = "a = 1;\n" * 13 + "b = 2;\n" + "c = 3;\n" * 10
+        findings = [finding_record.parse_finding("a.ts:10 [bug] the comment `moved note` is stale")]
+
+        put_back = self.pass_over("a.ts", before, after, findings=findings)
+
+        self.assertEqual(put_back, [])
+        self.assertEqual(self.run_.asks, [])
 
     def test_a_skipped_held_file_keeps_its_removed_comment_and_files_no_ask(self):
         target = self.repo / "held.py"

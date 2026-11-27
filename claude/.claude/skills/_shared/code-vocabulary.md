@@ -22,23 +22,11 @@ docstrings, test names, section banners, fixture names, and **filenames**:
 
 The test: **would a corporate-team reviewer with no knowledge of this workflow accept this line?**
 
-## What to write instead
+## Comment rule
 
-A comment earns its place explaining what **the code cannot say itself**. Say the thing, not where it was decided:
-
-```python
-# BAD  — order is a Phase 6 guarantee (D8)
-# GOOD — callers rely on name order; sorted() here, not in the widget
-```
-
-```python
-# BAD  — D4: materialized deliberately, see the decision ledger
-# GOOD — materialized: callers index into this and re-read it
-```
-
-The rationale, the alternatives, and who decided still matter — they live in
+The comment rule is in `skills/coder-core/SKILL.md`. The rationale, the alternatives, and who decided live in
 `docs/plans/` and the ADR, which are not shipped code.
 
 ## Sweep before handing back
 
-Diff-check your own committed code against the table before reporting. `/branch-recap` re-checks at branch scope.
+Diff-check your own committed code against the table before reporting.

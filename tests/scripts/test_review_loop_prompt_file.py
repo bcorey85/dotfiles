@@ -57,6 +57,26 @@ class RuledOutHeaderTest(unittest.TestCase):
         self.assertEqual(review_loop_prompt_file.header_list({"lane": "code"}, "ruled-out files"), [])
 
 
+class HeaderPostCapPassesTest(unittest.TestCase):
+    def test_a_header_with_no_line_has_no_passes(self):
+        self.assertEqual(review_loop_prompt_file.header_post_cap_passes({"lane": "code"}), [])
+
+    def test_known_kinds_are_read_in_order(self):
+        header = {"post_cap_passes": "final read, class closure"}
+        self.assertEqual(review_loop_prompt_file.header_post_cap_passes(header), ["final read", "class closure"])
+
+    def test_a_kind_outside_the_known_kinds_stops_the_run(self):
+        header = {"post_cap_passes": "final read, tea break"}
+        with self.assertRaises(review_loop_prompt_file.PromptFileError) as caught:
+            review_loop_prompt_file.header_post_cap_passes(header)
+        self.assertIn("tea break", str(caught.exception))
+
+    def test_an_empty_kind_stops_the_run(self):
+        for value in ("final read, , class closure", "final read, ", ", "):
+            with self.subTest(value=value), self.assertRaises(review_loop_prompt_file.PromptFileError):
+                review_loop_prompt_file.header_post_cap_passes({"post_cap_passes": value})
+
+
 class CoderModelHeaderTest(unittest.TestCase):
     def test_the_coder_model_line_is_read_under_its_key(self):
         directory = tempfile.TemporaryDirectory()
@@ -172,6 +192,31 @@ class ReviewerBriefTest(unittest.TestCase):
 
         self.assertIn(f"open none of them but `{PLAN_PATH}`, `acceptance-criteria.md` and `00-ticket.md`.", brief)
         self.assertNotIn("plan section named here", brief)
+
+    def test_a_plan_folder_with_a_decision_log_lets_the_reviewer_open_it_and_says_a_ruling_is_no_ask(self):
+        repo = self.repo_with_plan()
+        (repo / PLAN_PATH).parent.joinpath("03-decisions.md").write_text("# Decisions\n")
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH}, "the handoff", repo)
+
+        self.assertIn("`acceptance-criteria.md`, `00-ticket.md` and `03-decisions.md`.", brief)
+        self.assertIn("A question that a ruling recorded in `03-decisions.md` or in the plan answers is not an ask",
+                      brief)
+
+    def test_a_phase_with_a_decision_log_lists_the_plan_section_and_the_decision_log(self):
+        repo = self.repo_with_plan()
+        (repo / PLAN_PATH).parent.joinpath("03-decisions.md").write_text("# Decisions\n")
+
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH, "phase": "2"}, "the handoff", repo)
+
+        self.assertIn("open none of them but the plan section named here, `acceptance-criteria.md`, "
+                      "`00-ticket.md` and `03-decisions.md`.", brief)
+
+    def test_a_plan_folder_with_no_decision_log_names_no_ruling_line(self):
+        brief = review_loop_prompt_file.reviewer_brief({"plan": PLAN_PATH}, "the handoff", self.repo_with_plan())
+
+        self.assertNotIn("03-decisions.md", brief)
+        self.assertIn("`acceptance-criteria.md` and `00-ticket.md`.", brief)
 
     def test_a_review_with_no_plan_keeps_the_whole_diff(self):
         brief = review_loop_prompt_file.reviewer_brief({"base": "abc1234"}, "the handoff", "/nowhere")

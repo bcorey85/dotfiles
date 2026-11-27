@@ -19,6 +19,7 @@ import owner_lines
 import plan_format
 import review_loop_ruled_out
 import script_utils
+import signoff_lines
 import standing_rulings
 from approval_asks_store import (
     UNKNOWN_BASE,
@@ -31,7 +32,7 @@ from approval_asks_store import (
 )
 from finding_record import parse_finding
 from format_files import PROMPT_MARKDOWN_NAMES
-from review_asks import rejected_ask_text
+from review_asks import ask_question, rejected_ask_text
 from review_loop_findings import (
     KEPT_OWNER_LINE_EDIT_REASON,
     NOTE_ASK_REASON,
@@ -245,7 +246,9 @@ class RuledFindings:
         # (ask, reason) of each pointer ask, pass note, repeated ask or repeat of a rejected ask, dropped before the
         # packet
         self.dropped_asks = []
-        self.user_only_asks = []  # the approval asks only the user rules; the packet marks each one `user_only`
+        # the approval asks the session may not rule (the scripts CLAUDE.md asks and a rejected wanted-change ask
+        # excepted); the packet marks each one `user_only`
+        self.user_only_asks = []
         # the repo-relative path each approval ask was filed for
         self.approval_ask_paths = []
         # path -> the blob id its edit is measured against
@@ -266,11 +269,14 @@ class RuledFindings:
         self.kept_held_wanted = []
         # path -> base of each saved approval path that a kept held packet waits on; no ask is filed for it
         self.kept_held_bases = {}
-        self.user_ruled = []  # the texts of the findings the user accepted, which a fix-first run applies
+        # the texts of the findings the user accepted, which a fix-first run applies;
+        # one on a sign-off line goes to handback_edits
+        self.user_ruled = []
         self.session_ruled = []  # the texts of the findings a session ruled on; a coder's re-ask of one is a skip
         self.user_ruled_at = ""  # when the fix run was launched, the ruling's time
         self.adopted = {}  # finding text -> the AdoptedRuling of each finding whose plan change a ruling adopted
         self.adopted_unapplied = []  # the ruling text of each adopted finding the loop stopped on as unapplied
+        self.handback_edits = []  # the hand-back edits for ruled findings on a sign-off line, which no coder edits
         self.session_id = ""  # the session whose store holds the rulings; an applied ruling is recorded there
 
     @property
@@ -352,8 +358,9 @@ class RuledFindings:
 
     def route_plan_items(self, agent, items):
         """(the items the coder fixes this round, the items held for a ruling). A plan impact that changes no
-        acceptance criterion is adopted by rule and fixed like any finding; one that changes a criterion, or says
-        nothing, is held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
+        acceptance criterion is adopted by rule and fixed like any finding, unless it cites a sign-off line the user
+        ruled (see cites_user_ruling), which is held for a ruling; one that changes a criterion, or says nothing, is
+        held for the end. An item the handoff's ruling, a carried finding or a finding the user or a session
         ruled on settles (see ruled_plan_impact) is a plain fix; a new one takes the path above. A reword of a
         criterion is a plain fix too, adopted and applied, when the loop's plan holds a standing ruling that covers
         rewords."""
@@ -367,12 +374,27 @@ class RuledFindings:
             reword = standing_rulings.impact_rewords_criterion(item.text)
             under_standing_ruling = (reword
                                      and self.standing_ruling_covering(standing_rulings.COVERS_REWORDS) is not None)
-            adopted = not ac_change or under_standing_ruling
+            # A no-criterion impact whose plan side is a user ruling would record the reverse of it as code-wins.
+            cites_ruling = not ac_change and self.cites_user_ruling(item.text)
+            adopted = (not ac_change and not cites_ruling) or under_standing_ruling
             self.record_plan_impact({"text": item.text, "gate": agent, "ac_change": ac_change,
                                      "cause": plan_format.PLAN_CAUSE, "adopted": adopted,
                                      "applied": False, "reword": reword})
-            (ruling_held if ac_change and not under_standing_ruling else to_coder).append(item)
+            (ruling_held if not adopted else to_coder).append(item)
         return to_coder, ruling_held
+
+    def cites_user_ruling(self, text):
+        """Whether the plan impact `text` cites a sign-off line the user ruled, in the decision log beside the loop's
+        plan or in the plan's `## Plan Deviations` (see signoff_lines.cites_user_ruling). False with no plan on disk."""
+        plan_path = self.plan_path_on_disk()
+        if plan_path is None:
+            return False
+        log_path = plan_path.parent / plan_format.DECISION_LOG_NAME
+        if log_path.is_file() and signoff_lines.cites_user_ruling(
+                text, log_path.read_text(), [log_path.name], log_path.name):
+            return True
+        return signoff_lines.cites_user_ruling(
+            text, plan_path.read_text(), [plan_path.name, plan_format.DEVIATIONS_HEADING], plan_path.name)
 
     def mark_standing_rewords_applied(self, changed):
         """After a coder pass: the reword impacts adopted under a standing ruling count as applied when the pass
@@ -396,6 +418,17 @@ class RuledFindings:
             return None
         return standing_rulings.first_ruling_covering(plan_path, covers)
 
+    def file_put_back_ask(self, ask):
+        """Files `ask` for text the loop put back, unless an ask with the same question (same file, any line) is already
+        filed, or the session rejected one: a rejected ask is dropped, and the put-back stays."""
+        question = ask_question(ask)
+        if any(ask_question(filed) == question for filed in self.asks):
+            return
+        if question in self.rejected_questions:
+            self.drop_asks([ask], REJECTED_ASK_REASON)
+            return
+        self.add_ask(CODER_GATE, ask)
+
     def plan_path_on_disk(self):
         """The loop's plan file as a Path, or None with no plan or no such file."""
         if not self.plan:
@@ -407,14 +440,18 @@ class RuledFindings:
 
     def record_coder_plan_impact(self, report, changed):
         """A coder's PLAN-IMPACT report joins the plan impacts. Its edits stay and the loop goes on. A toolkit cause,
-        or a cause that does not parse, is never adopted. `changed` holds the files the coder's edits changed. Returns
-        True when the impact is held for a ruling. An impact that a ruling or a finding the user or a session ruled
-        on settles is recorded as adopted and settled: it is never printed, logs no deviation, and is not held."""
+        or a cause that does not parse, is never adopted; nor is a plan-cause impact that changes no criterion but
+        cites a sign-off line the user ruled (see cites_user_ruling): it is held for a ruling. `changed` holds the
+        files the coder's edits changed. Returns True when the impact is held for a ruling. An impact that a ruling
+        or a finding the user or a session ruled on settles is recorded as adopted and settled: it is never printed,
+        logs no deviation, and is not held."""
         text = coder_report.plan_impact_block(report) or report.strip()
         cause = plan_format.stopping_plan_impact_cause([text], cause_required=True)
         ac_change = plan_format.changes_acceptance_criteria(text)
         settled = cause == plan_format.PLAN_CAUSE and ruled_plan_impact(text, self.resolved_texts, self.ruled_texts)
-        adopted = settled or (not ac_change and cause == plan_format.PLAN_CAUSE)
+        adopted = settled
+        if not settled and not ac_change and cause == plan_format.PLAN_CAUSE:
+            adopted = not self.cites_user_ruling(text)
         self.record_plan_impact({"text": text, "gate": CODER_GATE, "ac_change": ac_change, "cause": cause,
                                  "adopted": adopted, "applied": bool(changed), "settled": settled,
                                  "reword": standing_rulings.impact_rewords_criterion(text)})
@@ -597,6 +634,15 @@ class RuledFindings:
         reverted_paths = set(reverted)
         return [finding for finding in findings if held_path_in_repo(finding.path, self.repo) in reverted_paths]
 
+    def keep_unreverted_open(self, findings, reverted):
+        """Keeps `findings` open except those on a reverted approval-only path: those are filed as user-only asks, or
+        dropped as a repeat of a rejected one.
+        Returns the findings on a reverted path. The host has keep_open and drop_open."""
+        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
+        self.drop_open(reverted_findings)
+        self.keep_open([item for item in findings if item not in reverted_findings])
+        return reverted_findings
+
     def committed_during_pass(self, path):
         """Whether the latest coder pass committed a change to `path`: HEAD holds another blob for it than the commit
         HEAD named before the pass did."""
@@ -678,6 +724,20 @@ class RuledFindings:
         if path not in self.approval_ask_paths:
             self.approval_ask_paths.append(path)
         self.approval_ask_bases.setdefault(path, base)
+
+    def drop_approval_asks(self, paths):
+        """Takes back the approval asks filed for `paths`, whose edits a put-back removed, and saves the rest."""
+        for path in paths:
+            filed = parse_finding(approval_ask_text(path))
+            if filed in self.user_only_asks:
+                self.user_only_asks.remove(filed)
+            if filed in self.asks:
+                self.asks.remove(filed)
+            self.ask_gates.pop(filed, None)
+            self.approval_ask_paths.remove(path)
+            self.approval_ask_bases.pop(path, None)
+        if paths:
+            self.save_approval_paths()
 
     def save_approval_paths(self):
         """Saves the paths of the approval asks and the wanted-change asks on the list, so a run that dies

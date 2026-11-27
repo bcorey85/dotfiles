@@ -61,6 +61,12 @@ rows past round 2 per review loop. Before value 0.00; any reading above 0 is a d
 Kept; `code-review-over-cap-rounds` closed at NO CHANGE (ruled by agent-evals-5e). Rounds past the cap stayed at
 zero: 0 of 177 /code review loops, as before. The cap holds; there is nothing left to fall.
 
+### Reading 2026-11-26
+
+`review-over-cap-rounds` closed NOT TRACKED. Its 3 over-cap rows are post-cap passes, not fix rounds: since
+fd7d5cbde, `iter` counts the final read, closure, prose repair and scoped re-review passes, and run rows carry no
+review round, so the metric cannot tell a fix round from those passes.
+
 ## Back-out
 
 Revert the commit; /code's loop then runs headless reviewers again.

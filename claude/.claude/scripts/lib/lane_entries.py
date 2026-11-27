@@ -3,8 +3,8 @@ lock, and is the only writer of both. `scripts/.local/lib/lane-env.zsh` also rea
 form at shell start.
 
 A lane is a worktree started for another Claude session. Its file is `<lanes_dir>/<name>.json` and holds the fields in
-`FIELDS`, so a lane can be resumed or closed later. Every write holds the one lock `lane_lock_path()` names. Standard
-library, `file_lock` and `script_utils`."""
+`FIELDS`, plus `base_commit` when one was recorded, so a lane can be resumed or closed later. Every write holds the
+one lock `lane_lock_path()` names. Standard library, `file_lock` and `script_utils`."""
 import contextlib
 import datetime
 import json
@@ -17,8 +17,10 @@ import script_utils
 
 LOCK_TIMEOUT_SECONDS = 10
 FIELDS = ("name", "worktree", "main_checkout", "branch", "brief", "session_id", "reports_to", "started_at")
+OPTIONAL_FIELDS = ("base_commit",)
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 STARTED_AT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+COMMIT_ID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 class LaneFileError(Exception):
@@ -47,7 +49,7 @@ class LaneNotFoundError(Exception):
 
 
 def lanes_dir():
-    """`${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes`."""
+    """`${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes`; a relative `XDG_STATE_HOME` is ignored."""
     return script_utils.xdg_state_home() / "herdr-lanes"
 
 
@@ -95,6 +97,10 @@ def _is_iso_with_offset(value):
     return True
 
 
+def _is_commit_id(value):
+    return isinstance(value, str) and COMMIT_ID_PATTERN.fullmatch(value) is not None
+
+
 FIELD_RULES = {
     "name": (_is_non_empty_text, "a lane name equal to the file name"),
     "worktree": (_is_absolute_path, "an absolute path"),
@@ -104,6 +110,7 @@ FIELD_RULES = {
     "session_id": (_is_text, "a string, empty until filled"),
     "reports_to": (_is_text, "a string, empty when no session started the lane"),
     "started_at": (_is_iso_with_offset, "an ISO-8601 time with offset, to the second"),
+    "base_commit": (_is_commit_id, "a full lowercase hex commit id (40 or 64 digits)"),
 }
 
 
@@ -116,11 +123,14 @@ def validate_entry(data, file):
         if field not in data:
             raise LaneFileError(file, field, "present")
 
+    allowed = FIELDS + OPTIONAL_FIELDS
     for field in sorted(data):
-        if field not in FIELDS:
-            raise LaneFileError(file, field, f"no such field (allowed: {', '.join(FIELDS)})")
+        if field not in allowed:
+            raise LaneFileError(file, field, f"no such field (allowed: {', '.join(allowed)})")
 
-    for field in FIELDS:
+    for field in allowed:
+        if field not in data:
+            continue
         is_valid, expected = FIELD_RULES[field]
         if not is_valid(data[field]):
             raise LaneFileError(file, field, expected)
@@ -195,6 +205,14 @@ def all_entries():
     return sorted(entries, key=lambda lane: lane["name"])
 
 
+def is_lane_session(session_id):
+    """True when a lane entry holds `session_id`; an empty id (a lane not yet filled) is no session. Raises what
+    `all_entries` raises."""
+    if not session_id:
+        return False
+    return any(lane["session_id"] == session_id for lane in all_entries())
+
+
 def entry(name):
     """The entry named `name`, or None when it has no file."""
     file = lane_file(name)
@@ -239,8 +257,9 @@ def _existing_entry(name):
     return lane
 
 
-def add_entry(name, worktree, main_checkout, branch, brief, reports_to):
-    """Write a new entry with an empty session id and return it. Raises LaneExistsError when an entry of that name
+def add_entry(name, worktree, main_checkout, branch, brief, reports_to, base_commit=None):
+    """Write a new entry with an empty session id and return it. `base_commit`, the commit the branch started from,
+    is stored only when given. Raises LaneExistsError when an entry of that name
     has a worktree folder that exists; an entry whose folder is gone is replaced."""
     lane = {
         "name": name,
@@ -252,6 +271,8 @@ def add_entry(name, worktree, main_checkout, branch, brief, reports_to):
         "reports_to": reports_to,
         "started_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
     }
+    if base_commit is not None:
+        lane["base_commit"] = base_commit
     with _locked():
         existing = entry(name)
         if existing is not None and pathlib.Path(existing["worktree"]).exists():

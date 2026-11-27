@@ -123,6 +123,11 @@ class FullCheckResultTest(unittest.TestCase):
         failed = handback.full_check_lines(self.packet("full-check-failed"))
         self.assertEqual([line for line in failed if line.startswith("Full check:")], [])
 
+    def test_the_user_lines_name_the_ci_run_a_caller_gated_on(self):
+        packet = dict(self.packet("full-check-passed"))
+        packet["full_check"] = full_check.caller_ci_result("run-42")
+        self.assertIn("Full check: not run (CI gate: run-42)", handback.full_check_lines(packet))
+
 
 class ReviewFixPacketTest(unittest.TestCase):
     def setUp(self):

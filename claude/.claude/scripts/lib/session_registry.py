@@ -1,12 +1,14 @@
 """session_registry.py: the live Claude Code session registry and the config folders it sits in.
 
-A live session has one `<pid>.json` row in the sessions folder (fields `name`, `sessionId`, `pid`). The sessions and
-projects folders are under `$CLAUDE_CONFIG_DIR` when it is set, else under the home config folder. Standard library
-and `process_group` only."""
+A live session has one `<pid>.json` row in the sessions folder (fields `name`, `sessionId`, `pid`);
+`row_for_name` and `row_for_session_id` find one live row. The sessions and projects folders
+are under `$CLAUDE_CONFIG_DIR` when it is set, else under the home config folder. Standard library and
+`process_group` and `script_utils` only (neither imports any other toolkit module at load time)."""
 import json
 import os
 import pathlib
 
+import script_utils
 from process_group import pid_is_alive
 
 
@@ -32,6 +34,11 @@ def projects_dir():
     if override is not None:
         return override / "projects"
     return pathlib.Path.home() / ".claude" / "projects"
+
+
+def session_transcripts(session_id):
+    """Every `<session_id>.jsonl` transcript under any project folder, sorted by path."""
+    return sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
 
 
 def session_subagents_dir(session_id):
@@ -66,10 +73,19 @@ def row_for_name(name):
     return None
 
 
-def other_live_session_in(folder, own_session_id):
-    """The first live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it;
-    None when there is none. A row with no string `cwd` is no match."""
+def row_for_session_id(session_id):
+    """The one live row whose `sessionId` equals `session_id`; None when no live row holds it."""
+    for row in live_session_rows():
+        if row.get("sessionId") == session_id:
+            return row
+    return None
+
+
+def other_live_sessions_in(folder, own_session_id):
+    """Every live registry row of a session other than `own_session_id` whose `cwd` is `folder` or inside it, in
+    registry order. A row with no string `cwd` is no match."""
     folder_path = pathlib.Path(folder).resolve()
+    found = []
     for row in live_session_rows():
         if row.get("sessionId") == own_session_id:
             continue
@@ -77,8 +93,31 @@ def other_live_session_in(folder, own_session_id):
         if not isinstance(cwd, str) or not cwd:
             continue
         if pathlib.Path(cwd).resolve().is_relative_to(folder_path):
-            return row
-    return None
+            found.append(row)
+    return found
+
+
+def session_transcript(session_id):
+    """The transcript file of a session (first match in sorted order under any project), None when it has none or
+    `session_id` is not a non-empty string."""
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    found = session_transcripts(session_id)
+    if not found:
+        return None
+    return found[0]
+
+
+def session_and_subagent_transcripts(session_id):
+    """The transcript of a session and the transcripts of its subagents (coder dispatches edit through them); empty
+    when the session has no main transcript."""
+    transcript = session_transcript(session_id)
+    if transcript is None:
+        return []
+    subagent_pattern = pathlib.Path(script_utils.subagent_transcript_path(str(transcript), "*"))
+    subagent_matches = subagent_pattern.parent.glob(subagent_pattern.name)
+    subagent_transcripts = sorted(subagent_matches)
+    return [transcript, *subagent_transcripts]
 
 
 def holder_label(row):

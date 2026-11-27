@@ -22,7 +22,8 @@ When the staged set touches `claude/.claude/agents/`, `skills/`, `rules/` or a t
 pre-commit hook exports the staged `.md` files under `claude/.claude` to a temp dir (`git checkout-index`, so it reads
 the index, not the work tree) and runs `~/agent-evals/bin/toolkit_drift.py --toolkit <that tree>`. The script checks
 that every live rule-meter scenario's rule text is still in its source file exactly once and that the skill folders
-match agent-evals' skill list. A problem refuses the commit with the script's lines. When the script is missing, the
+match agent-evals' skill list. A problem line that HEAD's tree does not also print refuses the commit with that line;
+drift already at HEAD passes with a note. When the script is missing, the
 hook prints one note and goes on. Scripts and hooks commits skip the check. The hook deletes nothing but its temp dir.
 
 ## Evidence

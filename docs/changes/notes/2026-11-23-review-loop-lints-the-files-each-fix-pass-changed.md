@@ -25,8 +25,9 @@ before the next review round. A clean pass starts no repair. A repair after a fi
 records no skipped finding; the exit check's lint repair and the full-check repair record theirs as before. A
 failure the repair leaves is caught by the exit check of a converged run; a run that stops lints nothing more.
 
-The repair's diff is read with the other late repairs, once, at the end of a converged run
-(`review/review_loop_final_read.py`), the lint repair after a fix pass mid-loop included.
+The repair's diff and changed files join the round's fix diff and the second-round plan, so the next round's reviewers
+read it. After the last fix pass of the round budget, the repair is read with the other late repairs, once, at the end
+of a converged run (`review/review_loop_final_read.py`).
 
 ## Evidence
 

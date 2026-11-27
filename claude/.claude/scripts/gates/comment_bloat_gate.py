@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""PostToolUse hook on Write|Edit: block workflow-marker leaks and comment lines that are not a kept kind.
+"""PostToolUse hook on Write|Edit: block workflow-marker leaks and long comment blocks that are not a kept kind.
 
 Enforces the workflow-marker rule of _shared/code-vocabulary.md deterministically. Reads the edited file from
 disk. A marker counts when its line matches a line of the new text exactly. A comment line counts only when its
 stripped text is also absent from the old text (a Write's file before the write, else HEAD), so a re-indented comment
 is not new. The comment check holds each added comment line to the kept kinds: a license header, a lint or format
 suppression or tool directive, a comment block on an exported or public symbol (a Go package doc and a leading run of
-Rust `//!` lines included), or a line with a URL. Heredoc bodies in shell files are data, not comments.
-Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only comment lines inside the
-span new_string occupies in the file are charged (the whole file when new_string is not found in it). Only whole
-comment lines count, never a trailing comment.
+Rust `//!` lines included), or a line with a URL. A run of consecutive non-kept comment lines
+(new or old; a blank, delimiter, suppression, directive or URL line inside a comment block keeps the run going
+without counting; a license header, a public-symbol doc line or a gap ends it) passes
+while at most MAX_FREE_BLOCK_LINES of them are lines HEAD lacks; a run with more is blocked, only its new lines
+listed, and the message sends architecture prose to the repo's architecture docs. Heredoc bodies in shell files are
+data, not comments. Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only
+comment lines inside the span new_string occupies in the file are charged (the whole file when new_string is not
+found in it). Only whole comment lines count, never a trailing comment.
 Exit 2 with the reason on stderr blocks; every other path exits 0. Gate policy: fail-open, so an error exits 0
 after main reports it on stderr.
 """
@@ -28,6 +32,7 @@ import source_text
 from hook_input import emit_stderr
 
 GIT_PROBE_TIMEOUT_SECONDS = 2
+MAX_FREE_BLOCK_LINES = 2
 
 SPACE = r"\s"
 NONBLANK = re.compile(r"\S")
@@ -248,22 +253,22 @@ def repo_relative_path(file_path, surface):
     return script_utils.repo_relative(top, os.path.realpath(file_path)) or surface
 
 
-def old_text_lines(tool_input, file_path, original_file):
+def old_text_lines(tool_input, committed, original_file):
     """The set of lines the edit did not add: the lines of the file before the edit when the tool response carries it
     (`original_file`, a string), else the lines of the file at HEAD (none for a file HEAD does not hold, or outside a
     git work tree), plus an Edit's old_string. None when git failed and the file may be committed, so the old lines
     are unknown."""
-    before = lines_before_edit(file_path, original_file)
+    before = lines_before_edit(committed, original_file)
     if before is None or "old_string" not in tool_input:
         return before
     return before | set(first_present(tool_input, "old_string").split("\n"))
 
 
-def lines_before_edit(file_path, original_file):
-    """The set of lines of `original_file` when it is a string, else the lines at HEAD (see committed_lines)."""
+def lines_before_edit(committed, original_file):
+    """The set of lines of `original_file` when it is a string, else `committed` (see committed_lines)."""
     if isinstance(original_file, str):
         return set(original_file.split("\n"))
-    return committed_lines(file_path)
+    return committed
 
 
 def committed_lines(file_path):
@@ -502,27 +507,61 @@ def kept_through_line(file_path, file_lines, block, header, comment_lines):
     return first - 1
 
 
-def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers):
-    """(number, stripped text) of each comment line whose stripped text is in `added` that is not a kept kind, in line
-    order. `edited_numbers`, when given, limits the check to those line numbers."""
+def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers, counting):
+    """(number, stripped text) of each comment line in the charged span whose stripped text is in `added` that is not a
+    kept kind and sits in a run of consecutive non-kept comment lines holding more than MAX_FREE_BLOCK_LINES lines
+    whose stripped text is in `counting`, in line order. The run extends past the charged span through contiguous
+    comment lines; only new lines inside the span are listed. A blank, delimiter, suppression, directive or URL line
+    inside a comment block keeps the run going without counting; a license header or public-doc line ends it.
+    `edited_numbers`, when given, limits the listed lines to those line numbers."""
     blocks = source_text.contiguous_runs(comment_lines.numbers)
     header = leading_block(file_lines, blocks)
     charged = charged_comment_numbers(comment_lines, edited_numbers)
     unkept = []
+    bridges = set()
     for block in blocks:
         kept_last = kept_through_line(file_path, file_lines, block, header, comment_lines)
         for number in range(block[0], block[1] + 1):
             line = file_lines[number - 1]
-            if number not in charged:
-                continue
-            if line.strip() not in added or not NONBLANK.search(line) or DELIMITER_LINE.match(line):
+            if not NONBLANK.search(line) or DELIMITER_LINE.match(line):
+                if number > kept_last:
+                    bridges.add(number)
                 continue
             if number == 1 and line.startswith(SHEBANG):
                 continue
-            if number <= kept_last or SUPPRESSION.search(line) or DIRECTIVE.search(line) or URL.search(line):
+            if number <= kept_last:
+                continue
+            if SUPPRESSION.search(line) or DIRECTIVE.search(line) or URL.search(line):
+                bridges.add(number)
                 continue
             unkept.append((number, line.strip()))
-    return unkept
+    long_numbers = in_long_runs(unkept, bridges, counting)
+    return [(number, text) for number, text in unkept
+            if number in long_numbers and number in charged and text in added]
+
+
+def in_long_runs(unkept, bridges, counting):
+    """The numbers of the `unkept` lines that sit in a run of consecutive line numbers holding more than
+    MAX_FREE_BLOCK_LINES lines whose text is in `counting`. A line outside `counting` stays in the run without
+    counting; a bridge number (a blank, delimiter, suppression, directive or URL line) joins the runs on either side
+    without counting."""
+    long_numbers = set()
+    run_numbers = sorted({number for number, _ in unkept} | bridges)
+    for first, last in source_text.contiguous_runs(run_numbers):
+        run = [number for number, text in unkept if first <= number <= last]
+        counted = [number for number, text in unkept if first <= number <= last and text in counting]
+        if len(counted) > MAX_FREE_BLOCK_LINES:
+            long_numbers.update(run)
+    return long_numbers
+
+
+def counting_texts(file_lines, added, committed):
+    """The stripped texts that count toward the run limit: every line of the file that HEAD lacks (all of them when
+    HEAD lacks the file), so lines an earlier edit added still count; `added` when git could not say (`committed`
+    is None)."""
+    if committed is None:
+        return added
+    return stripped_added(file_lines, committed)
 
 
 def stripped_added(added_lines, old_lines):
@@ -611,21 +650,25 @@ def check(raw):
     if source_paths.is_doc_path(repo_relative_path(file_path, surface)):
         return 0
 
-    old_lines = old_text_lines(tool_input, file_path, original_file)
+    committed = committed_lines(file_path)
+    old_lines = old_text_lines(tool_input, committed, original_file)
     if old_lines is None:
         emit_stderr(f"comment-bloat-gate: comment check skipped for {name}: git could not say what the file held "
                     "before this write.\n")
         return 0
     added_stripped = stripped_added(added_lines, old_lines)
-    unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers)
+    counting = counting_texts(file_lines, added_stripped, committed)
+    unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers, counting)
     if not unkept:
         return 0
     listing = "".join(f"  {number}: {text}\n" for number, text in unkept)
     return block_inside_repo(
         file_path,
-        f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} are not a kept kind (license header, "
-        "lint or format suppression or tool directive, comment block on an exported or public symbol, line with a "
-        "URL). Delete each one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
+        f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} sit in blocks of "
+        f"{MAX_FREE_BLOCK_LINES + 1}+ lines that are not a kept kind (license header, lint or format suppression or "
+        "tool directive, comment block on an exported or public symbol, line with a URL). Architecture goes in the "
+        "repo's architecture docs, never in code comments (comment rule: skills/coder-core/SKILL.md). Delete each "
+        "one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
     )
 
 

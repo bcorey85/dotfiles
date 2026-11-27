@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1292 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
+1296 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md).
+Latest change: 2026-11-27, [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
 
 ## Top gains
 

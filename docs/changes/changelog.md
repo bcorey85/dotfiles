@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1292 changes
+1296 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,10 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md) [script/comment-bloat-gate] comment-bloat-gate reads HEAD once per edit, counts every comment line of a file HEAD lacks so a new file cannot be built two comment lines per edit, and counting_texts reuses stripped_added.
+* [The comment gate passes a short comment block of at most two lines](notes/2026-11-27-the-comment-gate-passes-a-short-comment-block-of.md) [script/comment-bloat-gate] comment-bloat-gate still keeps its four kinds, and also passes a run of at most two added comment lines that are no kept kind; a run of three or more is blocked with a message that sends architecture prose to the repo's architecture docs and names coder-core.
+* [The code-reviewer cuts each added comment a new engineer would not need](notes/2026-11-27-the-code-reviewer-cuts-each-added-comment-a-new.md) [agent/code-reviewer] code-reviewer's Dead weight item flags each comment the diff adds that a busy engineer new to the code would not need, except a public-API doc description sentence, with delete as the fix; the opencode port matches.
+* [The coder writes a comment only as a last resort](notes/2026-11-27-the-coder-writes-a-comment-only-as-a-last-resort.md) [skill/coder-core] coder-core gains one comment rule: a comment is a last resort, written only for what a busy engineer new to the code must know, and architecture goes in the repo's architecture docs; code-vocabulary's old comment guidance becomes a pointer to it.
 * [plan-reading folds into /code and adr-template moves into the adr skill folder](notes/2026-11-26-plan-reading-folds-into-code-and-adr-template.md) [skill/code, skill/adr, agent/plan-verifier, shared/plan-format] The phase-scoped plan-reading rule moves word for word into a /code section, and the ADR template moves from _shared into skills/adr, so no _shared file has a single loader.
 * [Comment hook allows only kept kinds of comment on each edit](notes/2026-11-26-comment-hook-allows-only-kept-kinds-of-comment-on.md) [script/comment-bloat-gate] The comment-bloat-gate blocks each comment line an edit adds unless it is a license header, a lint or format suppression or tool directive, a comment block on an exported or public symbol, or a line with a URL; the whole-file density cap is gone.
 * [skills name the plan files beside the plan, not under docs/plans](notes/2026-11-26-skills-name-the-plan-files-beside-the-plan-not.md) [skill/eng-spec, skill/code, skill/coder-core, skill/plan-format] eng-spec phases 6 and 7 write and check the spec in the task directory phase 1 opened, eng-spec phase 1 also finds an existing git-dir task directory by ticket key, and /code, coder-core and the plan format name the criteria file as the one beside the plan.

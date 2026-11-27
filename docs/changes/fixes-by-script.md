@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-860 fix notes
+861 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -210,6 +210,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/post-merge | 1 | 1 |
 | script/process-group | 1 | 1 |
 | script/process-table | 1 | 1 |
+| script/pyrightconfig | 1 | 1 |
 | script/pytest-config | 1 | 0 |
 | script/questions-check | 1 | 0 |
 | script/refactor-log-input | 1 | 1 |

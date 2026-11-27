@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1302 changes
+1303 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -83,6 +83,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [pyright resolves the toolkit's bare-name imports](notes/2026-11-27-pyright-resolves-the-toolkit-s-bare-name-imports.md) [script/pyrightconfig] A root pyrightconfig.json lists the toolkit script folders as extraPaths, so an editor's pyright resolves a script's bare-name sibling imports instead of flagging them.
 * [the announced-step check passes a step gated on a date, later events or another party](notes/2026-11-27-the-announced-step-check-passes-a-step-gated-on-a.md) [script/announced-step, script/staged-claim-gate] A step that waits on a date or clock, on later events or on another party's notice no longer blocks a Stop, and a Then or Next step after a gated sentence passes with it.
 * [git commit readers read stored-heredoc-cut text](notes/2026-11-26-git-commit-readers-read-stored-heredoc-cut-text.md) [script/git-commit-calls, script/git-discipline-gate] A git commit line inside a heredoc body that is data (cat > f <<EOF, python3 s.py <<EOF) is no longer read as a commit by the git discipline gate; bodies a shell runs (bash <<EOF, | bash) stay read.
 * [memory-cap hook caps a test run with leading env assignments](notes/2026-11-26-memory-cap-hook-caps-a-test-run-with-leading-env.md) [script/memory-cap-scope, script/inline-interpreter-hint] The memory-cap hook now puts the cap after leading NAME=value words and allows the call, instead of denying it.

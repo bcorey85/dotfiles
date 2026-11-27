@@ -41,7 +41,7 @@ class LaneEnvTest(unittest.TestCase):
                 os.environ.pop("XDG_STATE_HOME", None)
             lane_entries.add_entry(NAME, str(worktree), str(self.home), "x", "brief", "orchestrator")
 
-    def read_cron(self, herdr_env: str | None = "1", xdg_state=True, cwd=None, pwd=None):
+    def read_cron(self, herdr_env: str | None = "1", xdg_state=True, cwd=None, pwd=None, state_home=None):
         env = {k: v for k, v in os.environ.items()
                if k not in ("CLAUDE_CODE_DISABLE_CRON", "HERDR_ENV", "XDG_STATE_HOME")}
         env["HOME"] = str(self.home)
@@ -50,6 +50,8 @@ class LaneEnvTest(unittest.TestCase):
             env["PWD"] = pwd
         if xdg_state:
             env["XDG_STATE_HOME"] = str(self.state)
+        if state_home is not None:
+            env["XDG_STATE_HOME"] = state_home
         if herdr_env is not None:
             env["HERDR_ENV"] = herdr_env
         script = f"source {LANE_ENV}; print -r -- ${{CLAUDE_CODE_DISABLE_CRON-unset}}"
@@ -117,6 +119,10 @@ class LaneEnvTest(unittest.TestCase):
     def test_state_home_falls_back_to_home_local_state(self):
         self.write_lane_file(self.worktree, xdg_state=False)
         self.assertEqual(self.read_cron(xdg_state=False), "1")
+
+    def test_a_relative_state_home_is_ignored_like_the_writer_does(self):
+        self.write_lane_file(self.worktree, xdg_state=False)
+        self.assertEqual(self.read_cron(xdg_state=False, state_home="relative/state"), "1")
 
 
 if __name__ == "__main__":

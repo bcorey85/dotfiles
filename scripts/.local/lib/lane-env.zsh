@@ -7,7 +7,10 @@ _lane_env_apply() {
     emulate -L zsh
     [[ $HERDR_ENV == 1 ]] || return 0
     # ${PWD:A} is the symlink-resolved folder, which is what the lane file records.
-    local lane_file=${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/${PWD:A:t}.json
+    # A relative XDG_STATE_HOME is ignored, as lane_entries.py does.
+    local state_home=$XDG_STATE_HOME
+    [[ $state_home == /* ]] || state_home=$HOME/.local/state
+    local lane_file=$state_home/herdr-lanes/${PWD:A:t}.json
     [[ -r $lane_file ]] || return 0
     local lane_json
     lane_json=$(<$lane_file) || return 0

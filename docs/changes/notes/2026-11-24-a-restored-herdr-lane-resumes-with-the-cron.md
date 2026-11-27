@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-New `scripts/.local/lib/lane-env.zsh`, sourced by `zsh/.zshrc`. In a herdr pane (`HERDR_ENV=1`), it reads the lane file named after the folder, `${XDG_STATE_HOME:-~/.local/state}/herdr-lanes/<folder>.json`. When that file's `worktree` line names the current folder, it exports `CLAUDE_CODE_DISABLE_CRON=1`. It starts no process, so every herdr shell start pays one file read at most. It escapes a backslash or double quote in the folder path the way JSON does before the match, and `lane_entries.py` now writes lane files as UTF-8 with non-ASCII characters unescaped, so a non-ASCII path matches too. It compares the symlink-resolved folder (`${PWD:A}`), and `lane_entries.py` refuses a lane field with a non-UTF-8 byte at write, because herdr-lane-resume reads lane fields through jq, which cannot carry it.
+New `scripts/.local/lib/lane-env.zsh`, sourced by `zsh/.zshrc`. In a herdr pane (`HERDR_ENV=1`), it reads the lane file named after the folder, `$XDG_STATE_HOME/herdr-lanes/<folder>.json`, with `~/.local/state` used when `XDG_STATE_HOME` is unset, empty or relative, as `lane_entries.py` does. When that file's `worktree` line names the current folder, it exports `CLAUDE_CODE_DISABLE_CRON=1`. It starts no process, so every herdr shell start pays one file read at most. It escapes a backslash or double quote in the folder path the way JSON does before the match, and `lane_entries.py` now writes lane files as UTF-8 with non-ASCII characters unescaped, so a non-ASCII path matches too. It compares the symlink-resolved folder (`${PWD:A}`), and `lane_entries.py` refuses a lane field with a non-UTF-8 byte at write, because herdr-lane-resume reads lane fields through jq, which cannot carry it.
 
 ## Evidence
 
@@ -26,7 +26,7 @@ judgment: herdr 0.8.2 restores an agent pane in `src/app/agent_resume.rs` `start
 
 ## Result
 
-All 12 tests in `tests/scripts/test_lane_env.py` pass, and the lane-worktree case fails without the file. On a real lane file, a herdr shell in that lane prints the variable set.
+All 13 tests in `tests/scripts/test_lane_env.py` pass, and the lane-worktree case fails without the file. On a real lane file, a herdr shell in that lane prints the variable set.
 
 ## Watch
 

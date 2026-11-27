@@ -9,7 +9,7 @@ description: "How many fix notes name each component (each script it names, else
 
 856 fix notes
 
-Recent: the 7 days up to 2026-11-26, the newest note.
+Recent: the 7 days up to 2026-11-27, the newest note.
 
 | component | fixes | 7 days to newest note |
 | --- | --- | --- |
@@ -17,21 +17,21 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-script | 82 | 13 |
 | script/review-fix | 79 | 7 |
 | script/handback | 59 | 3 |
-| script/review-commit-gate | 46 | 4 |
+| script/review-commit-gate | 46 | 2 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 34 | 6 |
 | script/script-utils | 33 | 10 |
 | script/coder-gate | 32 | 5 |
 | script/review-loop | 32 | 15 |
 | script/plan-format | 31 | 7 |
-| script/quality-check-cap | 24 | 5 |
-| script/shell-write-gate | 24 | 4 |
-| script/git-discipline-gate | 23 | 12 |
+| script/quality-check-cap | 24 | 4 |
+| script/shell-write-gate | 24 | 0 |
+| script/git-discipline-gate | 23 | 10 |
 | script/pull-keep-index | 22 | 10 |
 | skill/code | 21 | 3 |
 | agent/review-loop | 20 | 0 |
 | script/staged-claim-gate | 20 | 7 |
-| script/shell-command | 19 | 7 |
+| script/shell-command | 19 | 5 |
 | script/verify-prep | 19 | 4 |
 | skill/review | 18 | 1 |
 | script/code-review-start | 17 | 9 |
@@ -39,15 +39,15 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/code-wait | 16 | 6 |
 | script/criteria-dry-run | 15 | 6 |
 | script/verify-log | 14 | 1 |
-| script/inline-interpreter-hint | 13 | 9 |
-| script/refactor-flow | 13 | 4 |
+| script/inline-interpreter-hint | 13 | 8 |
+| script/refactor-flow | 13 | 2 |
 | script/log-review-finding | 12 | 0 |
 | script/verify-common | 12 | 2 |
 | script/check-output | 11 | 3 |
 | script/herdr-worktree | 11 | 4 |
 | script/log-escape | 11 | 1 |
 | script/review-asks | 10 | 1 |
-| script/check-scope | 8 | 2 |
+| script/check-scope | 8 | 1 |
 | script/comment-bloat-gate | 8 | 0 |
 | script/lane-status | 8 | 8 |
 | script/memory-cap-scope | 8 | 8 |
@@ -70,7 +70,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/plan-check | 6 | 6 |
 | script/review-loop-ruled | 6 | 5 |
 | script/reviewed-tree | 6 | 4 |
-| script/shell-statements | 6 | 5 |
+| script/shell-statements | 6 | 2 |
 | skill/eng-spec | 6 | 2 |
 | script/code-relay | 5 | 3 |
 | script/deferred-push-check | 5 | 0 |
@@ -89,7 +89,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/herdr-worktree-prune | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/review-loop-packet | 4 | 1 |
-| script/rg-path-gate | 4 | 2 |
+| script/rg-path-gate | 4 | 1 |
 | script/source-paths | 4 | 0 |
 | script/wait-loop-gate | 4 | 1 |
 | agent/goal-blind-researcher | 3 | 0 |
@@ -106,7 +106,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-comment-removal | 3 | 3 |
 | script/review-scope | 3 | 0 |
 | script/shell-command-words | 3 | 3 |
-| script/shell-quoting | 3 | 3 |
+| script/shell-quoting | 3 | 1 |
 | script/worktree-snapshot | 3 | 0 |
 | skill/stage | 3 | 2 |
 | agent/code-fork | 2 | 0 |
@@ -123,8 +123,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/directory-emptying-deletes | 2 | 2 |
 | script/emit-orchestration | 2 | 0 |
 | script/gate | 2 | 2 |
-| script/git-calls | 2 | 2 |
-| script/git-commit-calls | 2 | 2 |
+| script/git-calls | 2 | 0 |
+| script/git-commit-calls | 2 | 1 |
 | script/herdr-wake-limited | 2 | 1 |
 | script/hook-python | 2 | 0 |
 | script/ledger-deferred | 2 | 0 |
@@ -141,7 +141,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/rule-anchors | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/session-registry | 2 | 2 |
-| script/shell-steps | 2 | 2 |
+| script/shell-steps | 2 | 1 |
 | script/signoff-lines | 2 | 2 |
 | script/source-text | 2 | 1 |
 | script/suite-receipt | 2 | 2 |
@@ -172,7 +172,7 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/batch-reads-nudge | 1 | 0 |
 | script/block-credential-read | 1 | 0 |
 | script/capped-review | 1 | 1 |
-| script/clone-pairs | 1 | 1 |
+| script/clone-pairs | 1 | 0 |
 | script/code-phase-start | 1 | 1 |
 | script/code-run-names | 1 | 1 |
 | script/code-step-gates | 1 | 0 |
@@ -226,8 +226,8 @@ Recent: the 7 days up to 2026-11-26, the newest note.
 | script/review-loop-stray-files | 1 | 1 |
 | script/review-loop-untracked | 1 | 1 |
 | script/ruling-relay | 1 | 0 |
-| script/shape-clones | 1 | 1 |
-| script/shell-variables | 1 | 1 |
+| script/shape-clones | 1 | 0 |
+| script/shell-variables | 1 | 0 |
 | script/simplify-slices | 1 | 0 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |

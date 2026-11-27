@@ -33,8 +33,12 @@ List each moment where the session lost time, tokens or correctness:
 - a tool call that cost far more than it returned
 - a fact the agent could not reach (a log, a service, a machine)
 - a no-op: a rule line the session read that changed nothing it did
+- a stage, lane or agent pass that ran and changed nothing (a review with no fix, a lane whose change was dropped)
+- a step in the wrong owner: the main session doing work a subagent, lane or script could own, or a hop that only relays
+- a model or context mismatch: Opus where Sonnet would do, a poll or subagent that re-reads context to do nothing
+- a stop for the user, or a stop for a ruling the session could make itself
 
-Each moment carries its block index or turn and a short quote. Drop any candidate you cannot tie to a moment.
+Each moment carries its block index or turn and a short quote. A cost repeated over many turns is one moment that lists every turn. Drop any candidate you cannot tie to a moment.
 
 ## Read the environment
 
@@ -57,6 +61,10 @@ Classify each mistake first. A mechanical one (a fixed pattern, a banned API, a 
 | No-op rule line | A deletion candidate, to test with `~/agent-evals/bin/rule_meter.py` before cutting |
 | Fact out of reach | Widen access (tee a log to a file, a read-only command) |
 | Large steering file | Move its lines into a check or a reviewer rule; keep only navigation pointers |
+| Stage or pass that changed nothing | Cut or merge the stage in its skill or agent; bench it as a removal round |
+| Step in the wrong owner | Move the step between main session, subagent, lane and script in the skill or `orchestration.md` |
+| Model or context mismatch | Change the agent's `model`, what its brief carries, or the loop's interval |
+| Stop for the user or a ruling | Let the session rule in the skill that stopped, or make the step a script |
 
 ## Before you report
 
@@ -92,3 +100,5 @@ A log of every candidate, most costly first, at most 7, in three lists:
 - `Project repo`: fixes that land only in the project repo. Each line: title, the moment (index + quote), the file it would change. These are never queued.
 
 Findings from reading the environment cite the file and line in place of a moment.
+
+Before you report, check the mix. When every candidate is a script or a check, read the session again for the last four moment kinds and add each you find. The report also names at least one cut (a stage, rule, agent or step that did not earn its cost), or says what you searched and that none showed.

@@ -22,7 +22,9 @@ def git(repo, *arguments):
     subprocess.run(["git", "-C", str(repo), *arguments], check=True, capture_output=True)
 
 
-class StagedClaimGateTest(unittest.TestCase):
+class GateRepoCase(unittest.TestCase):
+    """A temp folder with a repo of two edited, unstaged files, and a runner for the gate script."""
+
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -53,14 +55,16 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
         return finished.stdout
 
+    def assert_passes(self, message, **options):
+        self.assertEqual(self.run_gate(message, **options), "")
+
+
+class StagedClaimGateTest(GateRepoCase):
     def assert_blocked(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
         self.assertEqual(decision["decision"], "block")
         self.assertIn("git diff --cached --name-only", decision["reason"])
         return decision["reason"]
-
-    def assert_passes(self, message, **options):
-        self.assertEqual(self.run_gate(message, **options), "")
 
     def test_a_staged_claim_with_an_empty_index_is_blocked(self):
         for message in ("Done. The files are staged for you to commit.", "I staged the change.",
@@ -493,13 +497,8 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assert_passes("The files are staged.", cwd=self.outside)
 
 
-class PermissionQuestionTest(unittest.TestCase):
+class PermissionQuestionTest(GateRepoCase):
     """The same Stop hook sends back a main-session turn that ends asking permission for a reversible step."""
-
-    setUp = StagedClaimGateTest.setUp
-    make_repo = StagedClaimGateTest.make_repo
-    run_gate = StagedClaimGateTest.run_gate
-    assert_passes = StagedClaimGateTest.assert_passes
 
     def assert_sent_back(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
@@ -789,12 +788,8 @@ class PermissionQuestionTest(unittest.TestCase):
         self.assertIn("git diff --cached --name-only", reason)
 
 
-class StopBlockOutputTest(unittest.TestCase):
+class StopBlockOutputTest(GateRepoCase):
     """The Stop hook's block output carries the blocked reply in systemMessage for a main-session turn."""
-
-    setUp = StagedClaimGateTest.setUp
-    make_repo = StagedClaimGateTest.make_repo
-    run_gate = StagedClaimGateTest.run_gate
 
     def test_a_stop_block_carries_the_whole_reply_in_the_system_message(self):
         message = "I'll run the suite next."

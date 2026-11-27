@@ -40,6 +40,7 @@ Before you add a parser, rule, status, store or classifier, run `rg` for the fac
 - State file paths and writes: `lib/script_utils.py` (`state_file_path`, `write_text_atomically`, `read_jsonl`); a run file renamed aside so the next one is new: `move_aside`.
 - How alike two strings are: `lib/script_utils.py` `text_similarity`; two sequences of items: `lib/sequence_similarity.py`.
 - Clone detection for /refactor and the duplicate-code gate: `skills/refactor/scripts/clone_pairs.py` (jscpd pairs on changed lines) and `skills/refactor/scripts/shape_clones.py` (function bodies with names and literals stripped). Syntax trees from the tree-sitter CLI: `lib/tree_sitter_xml.py`.
+- A Stop hook's block output, with the blocked reply in `systemMessage`: `lib/stop_block.py` `block_line`.
 - Exit 2 when a fail-closed gate's import crashes: `lib/import_guard.py` `guard`, which imports nothing of the toolkit.
 
 ## Data between steps

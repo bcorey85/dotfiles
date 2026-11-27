@@ -34,7 +34,8 @@ claim that names no such repo and no existing absolute path and finds the cwd in
 this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from its transcript, holds staged files,
 and every relative path the sentence names that exists in the cwd checkout or in that tree, resolved against that
 tree, is among them: a session that stages that way keeps its cwd. A second stop in a row passes (stop_hook_active),
-so a stuck session cannot spin. Fails open: any error exits 0 with a line on stderr. A crash in one check skips
+so a stuck session cannot spin. A Stop block also carries the reply in `systemMessage` (stop_block.py); a
+SubagentStop block does not. Fails open: any error exits 0 with a line on stderr. A crash in one check skips
 only that check; the other checks' reasons still go out.
 """
 import functools
@@ -48,6 +49,7 @@ import announced_step
 import fork_review
 import permission_question
 import script_utils
+import stop_block
 from git_calls import git_calls, joined_directory
 from message_text import without_quoted_spans
 
@@ -271,9 +273,9 @@ def main():
     if hook.get("hook_event_name") == "SubagentStop":
         reasons.append(guarded("fork_review", fork_review.missing_review_reason, hook))
 
-    found_reasons = [reason for reason in reasons if reason]
-    if found_reasons:
-        print(json.dumps({"decision": "block", "reason": " ".join(found_reasons)}))
+    line = stop_block.block_line(reasons, message, show_reply=is_main_session)
+    if line is not None:
+        print(line)
 
 
 if __name__ == "__main__":

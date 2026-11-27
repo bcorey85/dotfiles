@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1291 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
+1292 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-26, [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md).
+Latest change: 2026-11-27, [the Stop hook keeps the blocked reply in the user's pane](notes/2026-11-27-the-stop-hook-keeps-the-blocked-reply-in-the-user.md).
 
 ## Top gains
 

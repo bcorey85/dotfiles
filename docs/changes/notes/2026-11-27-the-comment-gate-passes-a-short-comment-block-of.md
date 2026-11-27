@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The gate blocked every added comment line that was no kept kind. It now groups the added non-kept lines into runs and passes a run of one or two lines. A run of three or more is blocked; the deny says architecture goes in the repo's architecture docs, never in code comments, and names `skills/coder-core/SKILL.md`. Lines HEAD already holds stay in a run without counting; lines an earlier uncommitted edit added count, so a block built two lines per edit is blocked; blank, suppression, directive and URL lines bridge a run without counting; a license header or a public-symbol doc line ends it; a blank line ends a `#` paragraph. The gate applies in every repo and writes nothing into any repo.
+The gate blocked every added comment line that was no kept kind. It now groups the added non-kept lines into runs and passes a run of one or two lines. A run of three or more is blocked; the deny says architecture goes in the repo's architecture docs, never in code comments, and names `skills/coder-core/SKILL.md`. Lines HEAD already holds stay in a run without counting; lines an earlier uncommitted edit added count, in a file HEAD lacks too, so a block built two lines per edit is blocked; blank, suppression, directive and URL lines bridge a run without counting; a license header or a public-symbol doc line ends it; a blank line ends a `#` paragraph. The gate applies in every repo and writes nothing into any repo.
 
 ## Evidence
 

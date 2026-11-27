@@ -24,7 +24,6 @@ MARKER_LINE = "# see dev/agent-ledger-LED-7/docs/" + "plans/LED-7-watch-metrics/
 PHASE_WORD = "Pha" + "se"
 
 COMMENT_LEADERS = ("#", "//", "--")
-SHEBANG = "#!"
 
 
 def load_gate():
@@ -36,7 +35,8 @@ def load_gate():
     return gate
 
 
-BLOCKED_RUN_LENGTH = load_gate().MAX_FREE_BLOCK_LINES + 1
+GATE = load_gate()
+BLOCKED_RUN_LENGTH = GATE.MAX_FREE_BLOCK_LINES + 1
 
 
 class CommentBloatGateTest(unittest.TestCase):
@@ -432,7 +432,7 @@ class CommentBloatGateTest(unittest.TestCase):
         gate blocks."""
         lines = []
         for line in content.split("\n"):
-            is_comment = line.lstrip().startswith(COMMENT_LEADERS) and not line.startswith(SHEBANG)
+            is_comment = line.lstrip().startswith(COMMENT_LEADERS) and not line.startswith(GATE.SHEBANG)
             lines.extend([line] * BLOCKED_RUN_LENGTH if is_comment else [line])
         return self.written(name, "\n".join(lines))
 
@@ -492,6 +492,12 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assertIn("4: # three\n  5: # four", stderr)
         self.assertNotIn("# one", stderr)
 
+    def test_a_block_built_two_lines_per_edit_in_an_uncommitted_file_blocks_on_the_second_edit(self):
+        self.assert_allowed(self.written("a.py", "x = 1\n# one\n# two\n_y = 2\n"))
+        path = str(pathlib.Path(self.tmp.name) / "a.py")
+        pathlib.Path(path).write_text("x = 1\n# one\n# two\n# three\n# four\n_y = 2\n")
+        self.assert_blocked(self.edit_replacing(path, "# two", "# two\n# three\n# four"))
+
     def test_only_the_added_comment_line_is_charged(self):
         new_note = "# new note\n# new note\n# new note"
         path = self.source("a.py", "# old note\nx = 1\n" + new_note + "\n")
@@ -503,9 +509,7 @@ class CommentBloatGateTest(unittest.TestCase):
 
     def test_a_write_charges_only_lines_the_committed_file_lacks(self):
         path = self.source("a.py", "x = 1\n# stays\n")
-        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
-        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
-                        "-m", "base"], check=True)
+        self.commit_all()
         content = "x = 1\n# stays\ny = 2\n# fresh\n# fresh\n# fresh\n"
         pathlib.Path(path).write_text(content)
         stderr = self.assert_blocked(self.edit(path, content, tool="Write"))

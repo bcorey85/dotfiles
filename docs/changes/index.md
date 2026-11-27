@@ -7,7 +7,7 @@ okf_version: "0.2"
 
 1295 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The comment gate reads new lines through one helper](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
+Latest change: 2026-11-27, [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
 
 ## Top gains
 

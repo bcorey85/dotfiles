@@ -9,11 +9,11 @@ suppression or tool directive, a comment block on an exported or public symbol (
 Rust `//!` lines included), or a line with a URL. A run of consecutive non-kept comment lines
 (new or old; a blank, delimiter, suppression, directive or URL line inside a comment block keeps the run going
 without counting; a license header, a public-symbol doc line or a gap ends it) passes
-while at most MAX_FREE_BLOCK_LINES of them are new; a run with more is blocked, only its new lines listed, and the
-message sends architecture prose to the repo's architecture docs. Heredoc bodies in shell files are data, not comments.
-Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only comment lines inside the
-span new_string occupies in the file are charged (the whole file when new_string is not found in it). Only whole
-comment lines count, never a trailing comment.
+while at most MAX_FREE_BLOCK_LINES of them are lines HEAD lacks; a run with more is blocked, only its new lines
+listed, and the message sends architecture prose to the repo's architecture docs. Heredoc bodies in shell files are
+data, not comments. Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only
+comment lines inside the span new_string occupies in the file are charged (the whole file when new_string is not
+found in it). Only whole comment lines count, never a trailing comment.
 Exit 2 with the reason on stderr blocks; every other path exits 0. Gate policy: fail-open, so an error exits 0
 after main reports it on stderr.
 """
@@ -253,22 +253,22 @@ def repo_relative_path(file_path, surface):
     return script_utils.repo_relative(top, os.path.realpath(file_path)) or surface
 
 
-def old_text_lines(tool_input, file_path, original_file):
+def old_text_lines(tool_input, committed, original_file):
     """The set of lines the edit did not add: the lines of the file before the edit when the tool response carries it
     (`original_file`, a string), else the lines of the file at HEAD (none for a file HEAD does not hold, or outside a
     git work tree), plus an Edit's old_string. None when git failed and the file may be committed, so the old lines
     are unknown."""
-    before = lines_before_edit(file_path, original_file)
+    before = lines_before_edit(committed, original_file)
     if before is None or "old_string" not in tool_input:
         return before
     return before | set(first_present(tool_input, "old_string").split("\n"))
 
 
-def lines_before_edit(file_path, original_file):
-    """The set of lines of `original_file` when it is a string, else the lines at HEAD (see committed_lines)."""
+def lines_before_edit(committed, original_file):
+    """The set of lines of `original_file` when it is a string, else `committed` (see committed_lines)."""
     if isinstance(original_file, str):
         return set(original_file.split("\n"))
-    return committed_lines(file_path)
+    return committed
 
 
 def committed_lines(file_path):
@@ -555,11 +555,11 @@ def in_long_runs(unkept, bridges, counting):
     return long_numbers
 
 
-def counting_texts(file_path, file_lines, added):
-    """The stripped texts that count toward the run limit: when HEAD holds a copy of the file, every line of the file
-    that HEAD lacks (so lines an earlier edit added still count); else `added`."""
-    committed = committed_lines(file_path)
-    if not committed:
+def counting_texts(file_lines, added, committed):
+    """The stripped texts that count toward the run limit: every line of the file that HEAD lacks (all of them when
+    HEAD lacks the file), so lines an earlier edit added still count; `added` when git could not say (`committed`
+    is None)."""
+    if committed is None:
         return added
     return stripped_added(file_lines, committed)
 
@@ -650,13 +650,14 @@ def check(raw):
     if source_paths.is_doc_path(repo_relative_path(file_path, surface)):
         return 0
 
-    old_lines = old_text_lines(tool_input, file_path, original_file)
+    committed = committed_lines(file_path)
+    old_lines = old_text_lines(tool_input, committed, original_file)
     if old_lines is None:
         emit_stderr(f"comment-bloat-gate: comment check skipped for {name}: git could not say what the file held "
                     "before this write.\n")
         return 0
     added_stripped = stripped_added(added_lines, old_lines)
-    counting = counting_texts(file_path, file_lines, added_stripped)
+    counting = counting_texts(file_lines, added_stripped, committed)
     unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers, counting)
     if not unkept:
         return 0

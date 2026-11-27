@@ -177,7 +177,8 @@ class AnnouncedStepTest(unittest.TestCase):
                     "I'll run the scan on November 29th.", "I'll merge it by Dec 3.", "I'll act on the result.",
                     "I'll act on its review report.",
                     "- Once the lane merges, I will repoint it.\n- Then I will push the branch.",
-                    "Once the lane merges, I'll repoint it. After that I'll push the branch.")
+                    "Once the lane merges, I'll repoint it. After that I'll push the branch.",
+                    "Once the lane merges, I'll repoint it. Next step: I'll push the branch.")
         for message in messages:
             with self.subTest(message=message):
                 self.assert_passes(message)
@@ -200,11 +201,22 @@ class AnnouncedStepTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_blocks(message)
 
+    def test_each_excluded_word_after_later_still_blocks(self):
+        words = ("this", "its", "is", "was", "as", "perhaps", "always", "anyways", "sometimes", "besides", "versus",
+                 "afterwards", "towards", "yes", "thus", "plus", "does", "has", "us", "whereas", "his", "hers",
+                 "ours", "theirs", "nowadays", "upstairs", "downstairs", "alas", "regardless", "less", "across")
+        for word in words:
+            with self.subTest(word=word):
+                self.assert_blocks(f"I'll fix it later {word}.")
+
     def test_a_negated_announcement_passes(self):
         for message in ("I'm starting no lane for it.", "I'll start nothing for it.", "I will do none of them.",
                         "I'll not touch the branch.", "I'm going to do nothing.",
                         "I will not act on any timer prompt.", "I'll not start the lane.",
-                        "I'll do nothing else today."):
+                        "I'll do nothing else today.", "I'll send nothing.", "I'll launch no lane.",
+                        "I'll open none of them.", "I'll begin nothing.", "I'll run no lane.",
+                        "I'll make no change.", "I'll not run it.", "I'll not begin it.", "I'll not launch it.",
+                        "I'll not open it.", "I'll not send it.", "I'll not make it."):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
@@ -228,6 +240,13 @@ class AnnouncedStepTest(unittest.TestCase):
                         "I'll not defer the rerun.", "I'll not put off the rerun.",
                         "I'll not hold off on the rerun.", "I'll not avoid the suite.", "I'll not abandon the fix.",
                         "I'll not let the suite stay red.", "I'll do nothing short of a full rerun.",
+                        "I'll do nothing aside from the gate.", "I'll do nothing save rerun the suite.",
+                        "I'll not do anything except rerun the suite.",
+                        "I'll not do anything other than rerun the suite.",
+                        "I'll not do anything besides push the branch.",
+                        "I'll not run anything apart from the suite.",
+                        "I'll not make any change beyond rerunning the suite.",
+                        "I'll not take long to rerun the suite.",
                         "I'll do no fewer than three runs.", "I'll do nothing working on it now.",
                         "I'm starting no lane for it. Then I'll merge the branch.",
                         "I'm starting no lane for it, and I'll run the suite.",

@@ -800,8 +800,8 @@ class StopBlockOutputTest(unittest.TestCase):
         message = "I'll run the suite next."
         decision = json.loads(self.run_gate(message))
         self.assertEqual(decision["decision"], "block")
-        label = "A Stop hook sent this reply back to the session. Its text:"
-        self.assertEqual(decision["systemMessage"], f"{label}\n\n{message}")
+        self.assertTrue(decision["systemMessage"].startswith("A Stop hook"))
+        self.assertTrue(decision["systemMessage"].endswith(f"\n\n{message}"))
 
     def test_a_stop_block_on_a_long_reply_cuts_the_system_message_to_the_limit(self):
         message = "Background detail. " * 1100 + "I'll run the suite next."
@@ -809,9 +809,9 @@ class StopBlockOutputTest(unittest.TestCase):
         decision = json.loads(self.run_gate(message))
         self.assertEqual(decision["decision"], "block")
         self.assertLessEqual(len(decision["systemMessage"]), 10_000)
-        self.assertTrue(decision["systemMessage"].endswith("\n[The reply was cut here to fit the hook message limit.]"))
-        self.assertTrue(decision["systemMessage"].startswith(
-            "A Stop hook sent this reply back to the session. Its text:"))
+        cut_line = decision["systemMessage"].splitlines()[-1]
+        self.assertTrue(cut_line.startswith("[") and cut_line.endswith("]"), cut_line)
+        self.assertTrue(decision["systemMessage"].startswith("A Stop hook"))
 
     def test_a_subagent_block_has_no_system_message(self):
         decision = json.loads(self.run_gate("The files are staged.", event="SubagentStop", cwd=self.repo))

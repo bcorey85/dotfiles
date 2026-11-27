@@ -22,16 +22,17 @@ A sentence is no announcement when it also:
 - asks a question (ends on `?`);
 - negates each of its first-person announcements in an allowed form, and holds no progress form: at most one start
   word (`start`, `begin`, `do`, `launch`, `open`, `run`, `touch`, `take`, `send`, `make`) then `no`, `nothing` or
-  `none`, not followed by `but`, `except`, `besides`, `beyond`, `apart`, `aside`, `other`, `more`, `fewer`, `less`,
-  `doubt`, `longer` or `short` ("I'm starting no lane", "I'll start nothing"); or `not` then a start word or `act`
-  ("I will not act on it"). Every other negation ("I'll not postpone the rerun") blocks. The text after it holds no
+  `none` ("I'm starting no lane", "I'll start nothing"), and no idiom word (`but`, `except`, `besides`, `beyond`,
+  `apart`, `aside`, `other`, `more`, `fewer`, `less`, `doubt`, `longer`, `long`, `short`, `save`, `than`) comes
+  anywhere after the announcement; or `not` then a start word or `act` ("I will not act on it", with the same
+  idiom rule). Every other negation ("I'll not postpone the rerun") blocks. The text after it holds no
   `and`, `but`, `then`, `or`, `so`, `while`, `before`, `instead`, `,`, `;`, `:`, an em or en dash or `--`. A negated
   sentence opens no Then or Next chain;
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
   `at 4:30`, `at 4:30pm`, `at 4pm`, `at :47`, `tomorrow`, `tonight`, `the next time`;
 - waits on later events: `later` then a word ending in s, not an excluded one ("later merges"; `this`, `its`, `is`,
-  `was`, `as`, `perhaps`, `always`, `anyways`, `sometimes`, `besides`, `regardless`, `versus`, `afterwards`,
-  `towards`, `yes`, `thus`, `across`, `plus`, `does`, `has`, `less`, `us`, `whereas`, `his`, `hers`, `ours`,
+  `was`, `as`, `perhaps`, `always`, `anyways`, `sometimes`, `besides`, `versus`, `afterwards`,
+  `towards`, `yes`, `thus`, `plus`, `does`, `has`, `us`, `whereas`, `his`, `hers`, `ours`,
   `theirs`, `nowadays`, `upstairs`, `downstairs` and `alas` are out, and so is any word ending in `ss`);
 - waits on another party's notice: `act on (its|their|the)` then up to two words and `notice`, `result` or `report`.
 
@@ -90,26 +91,27 @@ TIME_GATE = re.compile(
     re.IGNORECASE)
 # `later <word ending in s>`: the step waits on events to come. Words that end in s but are no plural noun are out.
 LATER_EVENT = re.compile(
-    r"\blater\s+(?!(?:this|its|is|was|as|perhaps|always|anyways|sometimes|besides|regardless|versus|"
-    r"afterwards|towards|yes|thus|across|plus|does|has|less|us|whereas|his|hers|ours|theirs|nowadays|upstairs|"
+    r"\blater\s+(?!(?:this|its|is|was|as|perhaps|always|anyways|sometimes|besides|versus|"
+    r"afterwards|towards|yes|thus|plus|does|has|us|whereas|his|hers|ours|theirs|nowadays|upstairs|"
     r"downstairs|alas)\b)\w+(?<!s)s\b",
     re.IGNORECASE)
 # The step acts on another party's notice.
 OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,2}(?:notice|result|report)s?\b",
                                 re.IGNORECASE)
 # The text right after a first-person announcement negates it, in one of two allowed forms; every other negation
-# blocks. (1) At most one start word, then `no`, `nothing` or `none`, not followed by an idiom word ("I'm starting
-# no lane", "I'll start nothing"; not "I'll do nothing but rerun it"). (2) `not` then a start word or `act` ("I will
-# not act on it").
+# blocks. (1) At most one start word, then `no`, `nothing` or `none` ("I'm starting no lane", "I'll start
+# nothing"). (2) `not` then a start word or `act` ("I will not act on it"). In both forms, an idiom word anywhere
+# after the announcement blocks ("I'll do nothing but rerun it", "I'll not start it save for the docs").
 _START_WORD = r"(?:start|begin|do|launch|open|run|touch|take|send|make)"
-_NEGATION_IDIOM = r"(?:but|except|besides|beyond|apart|aside|other|more|fewer|less|doubt|longer|short)"
+_NEGATION_IDIOM = r"(?:but|except|besides|beyond|apart|aside|other|more|fewer|less|doubt|longer|long|short|save|than)"
+NEGATION_IDIOM_ANYWHERE = re.compile(r"\b" + _NEGATION_IDIOM + r"\b", re.IGNORECASE)
 ANNOUNCEMENT_NEGATION = re.compile(
-    r"\A\s*(?:(?:" + _START_WORD + r"\s+)?(?:no|nothing|none)(?![-\w])(?!\s+" + _NEGATION_IDIOM + r"\b)"
+    r"\A\s*(?:(?:" + _START_WORD + r"\s+)?(?:no|nothing|none)(?![-\w])"
     r"|not\s+(?:" + _START_WORD + r"|act)\b)", re.IGNORECASE)
 # A list marker: `1.`, `2)`, `-`, `*`, `+`.
 _LIST_MARKER = r"(?:\d+[.)]|[-*+])"
 # A sentence that opens on Then or Next: it follows the sentence before it. `Next steps:` is a header, not a chain.
-CHAINED_STEP = re.compile(r"\A\s*(?:" + _LIST_MARKER + r"\s*)*(?:then|next)\b(?!\s+steps?\b)", re.IGNORECASE)
+CHAINED_STEP = re.compile(r"\A\s*(?:" + _LIST_MARKER + r"\s*)*(?:then|next)\b(?!\s+steps\b)", re.IGNORECASE)
 # A sentence that is only a list marker: SENTENCE_END splits `1.` off its item, and leaves any marker that stands
 # alone on its line as a sentence of its own.
 LIST_MARKER_ONLY = re.compile(r"\A\s*" + _LIST_MARKER + r"\s*\Z")
@@ -145,6 +147,8 @@ def negated(sentence):
         if not ANNOUNCEMENT_NEGATION.match(after_announcement):
             return False
         if CLAUSE_JOIN.search(after_announcement):
+            return False
+        if NEGATION_IDIOM_ANYWHERE.search(after_announcement):
             return False
     return True
 

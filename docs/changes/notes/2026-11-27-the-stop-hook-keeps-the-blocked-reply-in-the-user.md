@@ -26,7 +26,7 @@ Judgment, from the hooks docs (https://code.claude.com/docs/en/hooks#json-output
 
 ## Result
 
-Median hook time over 21 runs (`time_hook.py` on `payload_block.json`): before (be9a5807d) bare Python start 7.7 ms, `staged_claim_gate.py` 43.6 ms; after, bare Python start 7.6 ms, `staged_claim_gate.py` 45.2 ms (re-measured after the announced-step change).
+Median hook time over 21 runs (`time_hook.py` on `payload_block.json`): before (be9a5807d) bare Python start 7.7 ms, `staged_claim_gate.py` 43.6 ms; after, bare Python start 7.8 ms, `staged_claim_gate.py` 44.0 ms (measured at 313801c5b; later edits to `announced_step.py` were not re-timed).
 
 ## Watch
 

@@ -102,6 +102,7 @@ class ImportGuardTest(unittest.TestCase):
     def test_a_crash_in_agent_names_blocks_fork_write_scope_for_every_write(self):
         relative, fork_payload = FORK_WRITE_SCOPE
         other_payload = {**fork_payload, "agent_type": "coder"}
+        self.assertEqual(self.run_gate(relative, fork_payload).returncode, 0)
         (self.scripts / "lib/agent_names.py").write_text('x = "unterminated\n')
 
         for label, payload in (("code-fork", fork_payload), ("coder", other_payload)):

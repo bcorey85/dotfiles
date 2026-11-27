@@ -11,7 +11,9 @@ import unittest
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+sys.path.insert(0, str(toolkit_paths.GATES_DIR))
 from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
+from wait_loop_gate import BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON
 
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
                       or toolkit_paths.GATES_DIR / "wait_loop_gate.py")
@@ -119,7 +121,7 @@ class WaitLoopGateTest(unittest.TestCase):
         finished = run_command("make test", agent_type=REVIEW_LOOP_AGENT_TYPE, in_background=True)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("within 2 minutes", decision["permissionDecisionReason"])
+        self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
         self.assertNotIn("600000", decision["permissionDecisionReason"])
 
     def test_review_loop_shell_background_denied(self):
@@ -142,33 +144,32 @@ class WaitLoopGateTest(unittest.TestCase):
         finished = run_command("make test", agent_type=FORK_AGENT_TYPE, in_background=True)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        reason = decision["permissionDecisionReason"]
-        self.assertIn("foreground", reason)
-        self.assertIn("within 2 minutes", reason)
-        self.assertIn("ends the fork's turn", reason)
+        self.assertEqual(decision["permissionDecisionReason"], CODE_FORK_BACKGROUND_REASON)
 
     def test_code_fork_shell_background_denied(self):
         finished = run_command("make test &", agent_type=FORK_AGENT_TYPE)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("ends the fork's turn", decision["permissionDecisionReason"])
+        self.assertEqual(decision["permissionDecisionReason"], CODE_FORK_BACKGROUND_REASON)
 
     def test_code_fork_detach_words_denied(self):
         for command in ("nohup make test", "setsid pytest -q", "detach pytest -q", "make test & disown"):
             with self.subTest(command=command):
                 finished = run_command(command, agent_type=FORK_AGENT_TYPE)
-                self.assertIn("ends the fork's turn", finished.stdout)
+                reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
 
     def test_review_loop_background_call_gets_its_own_reason_not_the_forks(self):
         finished = run_command("make test", agent_type=REVIEW_LOOP_AGENT_TYPE, in_background=True)
         reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertIn("Review-loop", reason)
-        self.assertNotIn("fork's turn", reason)
+        self.assertEqual(reason, BACKGROUND_REASON)
+        self.assertNotEqual(BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON)
 
     def test_code_fork_seat_without_an_agent_id_is_denied_too(self):
         # The table keys on agent_type alone, as review-loop's does, so the seat is covered.
         payload = {"agent_type": FORK_AGENT_TYPE, "tool_input": {"command": "make test &"}}
-        self.assertIn("ends the fork's turn", run_hook(json.dumps(payload)).stdout)
+        reason = json.loads(run_hook(json.dumps(payload)).stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
 
     def test_background_commands_pass_for_a_coder_and_the_main_session(self):
         for command in ("make test &", "nohup make test"):

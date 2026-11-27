@@ -193,7 +193,9 @@ class AnnouncedStepTest(unittest.TestCase):
                     "Once the lane merges, I'll repoint it. The tree is clean. Then I'll push the branch.",
                     "I'll fix that later is fine.", "I'll redo it later its way.",
                     "I'll fix it later afterwards.", "I'll fix it later towards the end.",
-                    "I'll fix it later yes.", "I'll fix it later thus.")
+                    "I'll fix it later yes.", "I'll fix it later thus.",
+                    "I'll fix that later across the board.", "I'll fix that later plus the docs.",
+                    "I'll fix that later access.", "I'll fix that later nonetheless.")
         for message in messages:
             with self.subTest(message=message):
                 self.assert_blocks(message)
@@ -201,6 +203,7 @@ class AnnouncedStepTest(unittest.TestCase):
     def test_a_negated_announcement_passes(self):
         for message in ("I'm starting no lane for it.", "I'll start nothing for it.", "I will do none of them.",
                         "I'll not touch the branch.", "I'm going to do nothing.",
+                        "I will not act on any timer prompt.", "I'll not start the lane.",
                         "I'll do nothing else today."):
             with self.subTest(message=message):
                 self.assert_passes(message)
@@ -212,8 +215,36 @@ class AnnouncedStepTest(unittest.TestCase):
                         "I'll not forget to run the suite.", "I'll waste no time on the fix.",
                         "I'll no doubt rerun the suite.", "I'll not hesitate to rerun the suite.",
                         "I'll not neglect the tests.", "I'll no longer skip it.",
+                        "I'll do nothing except rerun the suite.", "I'll do nothing besides rerun the suite.",
+                        "I'll do nothing beyond a rerun of the suite.", "I'll touch nothing apart from the gate.",
+                        "I'll not skip the suite this time.", "I'll not ignore the failing test.",
+                        "I'll not omit the docs update.", "I'll not leave the suite red.",
+                        "I'll not delay the rerun.", "I'll not wait to rerun the suite.",
+                        "I'll not merely rerun the suite.", "I'll not simply rerun the suite.",
+                        "I'll do no more than rerun the suite.", "I'll do nothing more than rerun the suite.",
+                        "I'll do no less than rerun the suite.", "I'll do nothing less than rerun the suite.",
+                        "I'll not stop rerunning the suite.", "I'll not cease rerunning the suite.",
+                        "I'll not refrain from rerunning the suite.", "I'll not postpone the rerun.",
+                        "I'll not defer the rerun.", "I'll not put off the rerun.",
+                        "I'll not hold off on the rerun.", "I'll not avoid the suite.", "I'll not abandon the fix.",
+                        "I'll not let the suite stay red.", "I'll do nothing short of a full rerun.",
+                        "I'll do no fewer than three runs.", "I'll do nothing working on it now.",
                         "I'm starting no lane for it. Then I'll merge the branch.",
-                        "I'm starting no lane for it, and I'll run the suite."):
+                        "I'm starting no lane for it, and I'll run the suite.",
+                        "I'll start no lane and run the suite.", "I'll take no shortcuts and fix the bug.",
+                        "I'll touch nothing else and push the branch.",
+                        "I'll make no changes to the gate and run the suite.",
+                        "I'll start no lane and run tests.", "I'll start no lane and will run the suite.",
+                        "I'll start no lane and also run the suite.", "I'll make no changes and push.",
+                        "I'll start no lane, then run the suite.", "I'll start no lane but run the suite.",
+                        "I'll start no lane; run the suite.", "I'll start no lane, instead run the suite.",
+                        "I'll start no lane \N{EM DASH} run the suite.", "I'll start no lane, just run the suite.",
+                        "I'll start no lane, only run the suite.", "I'll start no lane or run the suite.",
+                        "I'll start no lane so run the suite.", "I'll start no lane while I run the suite.",
+                        "I'll start no lane before I run the suite.",
+                        "I'll start no lane, run the suite.", "I'll start no lane, rerun CI.",
+                        "I'll start no lane: run the suite.", "I'll start no lane \N{EN DASH} run the suite.",
+                        "I'll start no lane -- run the suite."):
             with self.subTest(message=message):
                 self.assert_blocks(message)
 

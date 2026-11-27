@@ -71,8 +71,8 @@
 
 ### Negated announcements and blocks 1-3
 
-- **Choice:** a sentence whose every first-person announcement is negated passes: `no`, `nothing`, `none` or `not` right after it or after one start word (`start`, `do`, `launch`, ...), not followed by `other`, `only`, `but`, `forget` and the like. A negated sentence opens no Then or Next chain. Blocks 1-3 stay blocked under D1. The review narrowed the in-between word to start words, so "I'll confirm nothing regressed." still blocks.
-- **Ruled by:** agent-evals-74, 2026-11-27, after the gate blocked "I'm starting no lane for it." in a reply whose steps all waited on another session.
+- **Choice:** an allow list. A sentence whose every first-person announcement is negated in an allowed form passes: at most one start word then `no`, `nothing` or `none`, not followed by an idiom word (`but`, `other`, `more`, `short` and the like); or `not` then a start word or `act`. Every other negation blocks, and a clause joined after it blocks. A negated sentence opens no Then or Next chain. Blocks 1-3 stay blocked under D1. A review finding that names another idiom blocks under the allow list and is ruled no-change.
+- **Ruled by:** agent-evals-74, 2026-11-27, after the gate blocked "I'm starting no lane for it." in a reply whose steps all waited on another session; the allow list replaced a 30-word exclusion list the same day.
 
 ## Direction & Constraints
 

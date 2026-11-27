@@ -160,6 +160,35 @@ class AnnouncedStepTest(unittest.TestCase):
         self.assert_blocks("Draft:\n```\nI am fixing the parser.\n```\nNext I'll look at the reviewer nits.")
         self.assert_blocks("Draft:\n> I am fixing the parser.\nNext I'll look at the reviewer nits.")
 
+    def test_steps_gated_by_a_date_a_clock_later_events_or_another_partys_notice_pass(self):
+        messages = ("I'll run the weekly scan on Nov 29.", "I'll recheck at :47.", "I'll run the scan on Monday.",
+                    "I'll check it tomorrow.", "I'll send later merges to `weekend-toolkit-fixes-v2`.",
+                    "I'll act on their completion notices.",
+                    "Once agent-evals-74 confirms the merge, I'll repoint it. Then I'll push the branch.",
+                    "I'll repoint it once agent-evals-74 confirms.", "I'll run it after Nov 29.",
+                    "I'll merge when the lane reports.",
+                    "The suite is running in the background. Next I'll read its log.",
+                    "1. Once the lane merges, I will repoint it.\n2. Then I will push the branch.",
+                    "+ Once the lane merges, I will repoint it.\n+ Then I will push the branch.",
+                    "1) Once the lane merges, I will repoint it.\n2) Then I will push the branch.",
+                    "Once the lane merges, I'll repoint it. Then I'll push the branch. Next I'll tag it.",
+                    "I'll push it at 4:30.", "I'll run it tonight.", "I'll fix it the next time it runs.",
+                    "I'll merge it by Friday.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_ungated_and_own_step_ordering_promises_still_block(self):
+        messages = ("I'll run the suite next.", "I'll work on it.", "I'll look at the diff.", "I'll fix that later.",
+                    "I'll check who holds them before starting any of them.",
+                    "- One merge line, which I'll write up at the end.",
+                    "The tree is clean. Then I'll push the branch.", "The tree is clean. Next I'll push the branch.",
+                    "I'll list the open items in my final report.", "I'll look at it later this week.",
+                    "I'll do it later as tests.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_blocks(message)
+
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")
 

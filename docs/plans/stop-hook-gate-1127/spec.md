@@ -18,7 +18,7 @@ Then/Next/After-that sentence that follows a gated one. A bare first-person prom
 ## Phase Status
 
 - [x] Phase 1: Blocked reply shown to the user — contracts folded in (single helper, one caller) (risk: low)
-- [ ] Phase 2: Gated future steps pass the announced-step check (risk: low)
+- [x] Phase 2: Gated future steps pass the announced-step check (risk: low)
 - [ ] Phase 3: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
 ## Decisions

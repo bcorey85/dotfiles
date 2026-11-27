@@ -19,7 +19,16 @@ A sentence is no announcement when it also:
   `and I will` ("Turn the gate off and I'll write the check"): the user acts first;
 - says work runs or is waited on: `running`, `background`, `waiting`, `wait for`, `wait on`, `in progress`,
   `notif` (a notification), `queued`, `still runs`;
-- asks a question (ends on `?`).
+- asks a question (ends on `?`);
+- gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
+  `at 4:30`, `at :47`, `tomorrow`, `tonight`, `the next time`;
+- waits on later events: `later` then a plural noun ("later merges");
+- waits on another party's notice: `act on (its|their|the)` then up to two words and `notice`, `result` or `report`.
+
+A sentence that opens on `then` or `next` (after leading space or a list marker) passes when the sentence before it
+names a condition, another actor, running work, a date or clock, later events or another party's notice, and a
+chained sentence that passes keeps the chain open. After an ungated sentence it is judged like any other.
+Own-step ordering ("at the end", "before starting", "in my final report") gates nothing.
 
 A span in backticks or double quotes on one line whose whole text is one announcement is dropped first: a sentence
 cited as an example is no announcement.
@@ -57,6 +66,23 @@ CONDITION = re.compile(r"\b(?:if|once|when|after|until|unless|as\s+soon\s+as)\b"
 OTHER_ACTOR = re.compile(r"\b(?:you|your|yours)\b", re.IGNORECASE)
 WORK_RUNS = re.compile(r"\b(?:running|background|waiting|wait\s+(?:for|on)|in\s+progress|notif\w*|queued|"
                        r"still\s+runs?)\b", re.IGNORECASE)
+_WEEKDAY = r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+_MONTH = (r"(?:january|february|march|april|may|june|july|august|september|october|november|december|"
+          r"jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)")
+# A date or clock the step waits on. The month form has no period after an abbreviation: SENTENCE_END splits there.
+TIME_GATE = re.compile(
+    r"\b(?:(?:on|by)\s+" + _WEEKDAY + r"|(?:on|by)\s+" + _MONTH + r"\s+\d{1,2}(?:st|nd|rd|th)?|at\s+\d{1,2}:\d{2}|"
+    r"at\s+:\d{2}|tomorrow|tonight|the\s+next\s+time)\b", re.IGNORECASE)
+# `later <plural noun>`: the step waits on events to come.
+LATER_EVENT = re.compile(r"\blater\s+(?!(?:this|its|is|was|as)\b)\w+s\b", re.IGNORECASE)
+# The step acts on another party's notice.
+OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,2}(?:notice|result|report)s?\b",
+                                re.IGNORECASE)
+# A sentence that opens on Then or Next: it follows the sentence before it.
+CHAINED_STEP = re.compile(r"\A\s*(?:(?:\d+[.)]|[-*+])\s*)*(?:then|next)\b", re.IGNORECASE)
+# A sentence that is only a list marker (`1.`, `2)`, `-`, `*`, `+`): SENTENCE_END splits `1.` off its item, and
+# leaves any marker that stands alone on its line as a sentence of its own.
+LIST_MARKER_ONLY = re.compile(r"\A\s*(?:\d+[.)]|[-*+])\s*\Z")
 # `<request> and I'll ...` with no `I` or `we` before `and`: the step waits on the request.
 REQUEST_THEN_STEP = re.compile(r"\band\s+I(?:'|\N{RIGHT SINGLE QUOTATION MARK})ll\b|\band\s+I\s+will\b",
                                re.IGNORECASE)
@@ -76,18 +102,33 @@ def announces_report(sentence, announcement):
     return not SECOND_STEP.search(after_announcement)
 
 
+def gated(sentence):
+    """Whether a sentence names a condition, another actor, running work, a date or clock, later events or another
+    party's notice: the step it holds waits on something."""
+    gates = (CONDITION, OTHER_ACTOR, WORK_RUNS, TIME_GATE, LATER_EVENT, OTHER_PARTY_RESULT)
+    return any(gate.search(sentence) for gate in gates)
+
+
 def announced_step(message, transcript_path=None):
-    """The first sentence of a final message that announces a step with no condition, no other actor and no running
-    work, or None. A progress-only sentence, or a first-person one whose announced action is a report word
-    (`announces_report`), passes when the current turn of the transcript launched background work."""
+    """The first sentence of a final message that announces a step that `gated` does not pass and that is not
+    chained to a gated sentence, or None. A Then or Next sentence passes after a gated one. A progress-only
+    sentence, or a first-person one whose announced action is a report word (`announces_report`), passes when the
+    current turn of the transcript launched background work."""
     unquoted_message = without_quoted_spans(ANNOUNCEMENT, without_draft_blocks(message))
     background_launched = None
+    chain_gated = False
     for sentence in SENTENCE_END.split(unquoted_message):
+        if LIST_MARKER_ONLY.match(sentence):
+            continue
+        if CHAINED_STEP.match(sentence) and chain_gated:
+            continue
+        sentence_gated = gated(sentence)
+        chain_gated = sentence_gated
         if not ANNOUNCEMENT.search(sentence):
             continue
         if sentence.rstrip().endswith("?"):
             continue
-        if CONDITION.search(sentence) or OTHER_ACTOR.search(sentence) or WORK_RUNS.search(sentence):
+        if sentence_gated:
             continue
         request = REQUEST_THEN_STEP.search(sentence)
         if request and not FIRST_PERSON.search(sentence[:request.start()]):

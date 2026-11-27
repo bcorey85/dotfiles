@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1292 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
+1293 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [the Stop hook keeps the blocked reply in the user's pane](notes/2026-11-27-the-stop-hook-keeps-the-blocked-reply-in-the-user.md).
+Latest change: 2026-11-27, [the announced-step check passes a step gated on a date, later events or another party](notes/2026-11-27-the-announced-step-check-passes-a-step-gated-on-a.md).
 
 ## Top gains
 

@@ -15,10 +15,11 @@ queue item's Done when, verbatim.
 - AC6: A headless run with the live config shows cc absent from the init event's model-invocable skills, and /cc still runs.
 - AC7: A change file and a rule-anchors row update land with it.
 
-- AC8 (pyright): A pyrightconfig.json at the dotfiles root lists the claude/.claude/scripts subfolders as extraPaths, and pyright on claude/.claude/scripts/gates/inline_interpreter_hint.py and tests/scripts/test_memory_cap_scope.py reports no unresolved import, while a deliberate import of a missing module still shows.
+- AC8 (pyright): A pyrightconfig.json at the dotfiles root lists the claude/.claude/scripts subfolders as extraPaths, and an open .claude script in the editor's pyright gets no unresolved toolkit import, and the same extraPaths in an absolute-path config outside a dot-folder shows no unresolved import while a missing one still shows.
 
 ## Decision log
 
 - 2026-11-24, agent-evals-6b (session; criteria owner session): AC6 cannot pass before the branch lands, since the live config is master. It is met before landing by the headless probe with the edited skill as a project skill (flag hides it from the model, /cc stays in the slash commands). The live-config check runs after the landing line, before the item closes.
 - 2026-11-27, agent-evals-c3-owner (session; criteria owner session): AC3's orchestration half is met by the lane-brief line alone; no orchestration.md bullet. LB02 measures the lane line at 6/6 on, 0/6 off.
 - 2026-11-27, fix/land-orphan-branches lane: the tools/settings_hook.py owner line in claude/.claude/scripts/CLAUDE.md is dropped, per the user's earlier ruling against new Owners lines in that file; the line goes back only on the user's yes.
+- 2026-11-27, agent-evals-c3-owner (session; criteria owner session): AC8 reworded from the CLI check on the two named files to the editor and absolute-path-config check, since the pyright CLI skips dot-folders by default and the defect was editor diagnostics.

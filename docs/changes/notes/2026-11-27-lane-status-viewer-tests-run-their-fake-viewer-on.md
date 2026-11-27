@@ -24,7 +24,7 @@ not help: the multicall binary reads its tool name from the file, not argv[0].
 
 ## Evidence
 
-Judgment: the GitHub runner's `sleep` is a multicall coreutils binary that picks its tool from argv[0]. Started as
+Judgment: the GitHub runner's `sleep` is a multicall coreutils binary that picks its tool from its file name. Copied as
 `hunk`, it printed `coreutils: unknown program 'hunk'` and exited, so 9 viewer tests saw no live viewer.
 
 ## Result

@@ -675,9 +675,7 @@ class CommentBloatGateTest(unittest.TestCase):
 
     def test_an_edit_that_moves_a_committed_comment_is_not_charged(self):
         path = self.source("a.py", "x = 1\n# stays\ny = 2\n")
-        subprocess.run(["git", "-C", self.tmp.name, "add", "a.py"], check=True)
-        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
-                        "-m", "base"], check=True)
+        self.commit_all()
         pathlib.Path(path).write_text("x = 1\ny = 2\n# stays\n")
         self.assert_allowed(self.edit_replacing(path, "y = 2", "y = 2\n# stays"))
 
@@ -991,9 +989,7 @@ class CommentBloatGateTest(unittest.TestCase):
 
     def test_a_write_through_a_symlink_reads_the_committed_target(self):
         path = self.source("real.py", "x = 1\n# stays\n")
-        subprocess.run(["git", "-C", self.tmp.name, "add", "real.py"], check=True)
-        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
-                        "-m", "base"], check=True)
+        self.commit_all()
         link = pathlib.Path(self.tmp.name) / "link.py"
         link.symlink_to(path)
         self.assert_allowed(self.edit(str(link), "x = 1\n# stays\n", tool="Write"))

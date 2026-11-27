@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-Queue item `stop-hook-blocks-a-reply-whose-next-step-waits-on`. `gates/announced_step.py` gains `TIME_GATE` (`on|by` a weekday or a month and day, `at 4:30`, `at :47`, `tomorrow`, `tonight`, `the next time`), `LATER_EVENT` (`later` and a plural noun), `OTHER_PARTY_RESULT` (`act on their ... notices`) and `CHAINED_STEP` (a sentence opening on Then or Next passes after a gated sentence). A first-person announcement negated right after it or after one start word (`no`, `nothing`, `none`, `not`; "I'll confirm nothing regressed." still blocks: "I'm starting no lane for it.", "I'll start nothing for it.") passes too. Own-step ordering ("at the end", "before starting", "in my final report") still blocks, as do bare promises and a Then or Next after an ungated sentence.
+Queue item `stop-hook-blocks-a-reply-whose-next-step-waits-on`. `gates/announced_step.py` gains `TIME_GATE` (`on|by` a weekday or a month and day, `at 4:30`, `at :47`, `tomorrow`, `tonight`, `the next time`), `LATER_EVENT` (`later` and a plural noun), `OTHER_PARTY_RESULT` (`act on their ... notices`) and `CHAINED_STEP` (a sentence opening on Then or Next passes after a gated sentence). A first-person announcement negated right after it or after one start word (`no`, `nothing`, `none`, `not`, not followed by an idiom word such as `other`, `only`, `but`, `forget`: "I'm starting no lane for it.", "I'll start nothing for it.") passes too, and opens no Then or Next chain; "I'll confirm nothing regressed." still blocks. Own-step ordering ("at the end", "before starting", "in my final report") still blocks, as do bare promises and a Then or Next after an ungated sentence.
 
 ## Evidence
 

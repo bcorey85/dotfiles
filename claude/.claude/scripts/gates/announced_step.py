@@ -22,8 +22,9 @@ A sentence is no announcement when it also:
 - asks a question (ends on `?`);
 - negates each of its first-person announcements: right after it, or after one start word (`start`, `begin`, `do`,
   `launch`, `open`, `run`, `touch`, `take`, `send`, `make`), comes `no`, `nothing`, `none` or `not`, not followed by
-  `other`, `only`, `just`, `but`, `else`, `forget`, `fail` or `miss` ("I'm starting no lane", "I'll start nothing"),
-  and it holds no progress form. A negated sentence opens no Then or Next chain;
+  `other`, `only`, `just`, `but`, `forget`, `fail`, `miss`, `doubt`, `hesitate`, `neglect` or `longer` ("I'm
+  starting no lane", "I'll start nothing"), and it holds no progress form. A negated sentence opens no Then or Next
+  chain;
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
   `at 4:30`, `at 4:30pm`, `at 4pm`, `at :47`, `tomorrow`, `tonight`, `the next time`;
 - waits on later events: `later` then a word ending in s, not an excluded one ("later merges"; `this`, `its`, `is`,
@@ -95,7 +96,7 @@ OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,
 _START_WORD = r"(?:start|begin|do|launch|open|run|touch|take|send|make)"
 ANNOUNCEMENT_NEGATION = re.compile(
     r"\A\s*(?:" + _START_WORD + r"\s+)?(?:no|nothing|none|not)(?![-\w])"
-    r"(?!\s+(?:other|only|just|but|else|forget|fail|miss)\b)", re.IGNORECASE)
+    r"(?!\s+(?:other|only|just|but|forget|fail|miss|doubt|hesitate|neglect|longer)\b)", re.IGNORECASE)
 # A list marker: `1.`, `2)`, `-`, `*`, `+`.
 _LIST_MARKER = r"(?:\d+[.)]|[-*+])"
 # A sentence that opens on Then or Next: it follows the sentence before it. `Next steps:` is a header, not a chain.

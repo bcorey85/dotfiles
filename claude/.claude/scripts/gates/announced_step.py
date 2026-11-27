@@ -20,8 +20,10 @@ A sentence is no announcement when it also:
 - says work runs or is waited on: `running`, `background`, `waiting`, `wait for`, `wait on`, `in progress`,
   `notif` (a notification), `queued`, `still runs`;
 - asks a question (ends on `?`);
-- negates each of its first-person announcements: within one word after it comes `no`, `nothing`, `none` or `not`
-  ("I'm starting no lane", "I'll start nothing"), and it holds no progress form;
+- negates each of its first-person announcements: right after it, or after one start word (`start`, `begin`, `do`,
+  `launch`, `open`, `run`, `touch`, `take`, `send`, `make`), comes `no`, `nothing`, `none` or `not`, not followed by
+  `other`, `only`, `just`, `but`, `else`, `forget`, `fail` or `miss` ("I'm starting no lane", "I'll start nothing"),
+  and it holds no progress form. A negated sentence opens no Then or Next chain;
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
   `at 4:30`, `at 4:30pm`, `at 4pm`, `at :47`, `tomorrow`, `tonight`, `the next time`;
 - waits on later events: `later` then a word ending in s, not an excluded one ("later merges"; `this`, `its`, `is`,
@@ -87,9 +89,13 @@ LATER_EVENT = re.compile(
 # The step acts on another party's notice.
 OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,2}(?:notice|result|report)s?\b",
                                 re.IGNORECASE)
-# The text right after a first-person announcement negates it: at most one word, then `no`, `nothing`, `none` or
-# `not` ("I'm starting no lane", "I'll start nothing"). `no-op` is no negation.
-NEGATION = re.compile(r"\A\s*(?:\w+\s+)?(?:no|nothing|none|not)(?![-\w])", re.IGNORECASE)
+# The text right after a first-person announcement negates it: at most one start word, then `no`, `nothing`, `none`
+# or `not` ("I'm starting no lane", "I'll start nothing"). `no-op`, `none other`, `not only`, `nothing but` and
+# `not forget` are no negation.
+_START_WORD = r"(?:start|begin|do|launch|open|run|touch|take|send|make)"
+ANNOUNCEMENT_NEGATION = re.compile(
+    r"\A\s*(?:" + _START_WORD + r"\s+)?(?:no|nothing|none|not)(?![-\w])"
+    r"(?!\s+(?:other|only|just|but|else|forget|fail|miss)\b)", re.IGNORECASE)
 # A list marker: `1.`, `2)`, `-`, `*`, `+`.
 _LIST_MARKER = r"(?:\d+[.)]|[-*+])"
 # A sentence that opens on Then or Next: it follows the sentence before it. `Next steps:` is a header, not a chain.
@@ -117,13 +123,14 @@ def announces_report(sentence, announcement):
 
 
 def negated(sentence):
-    """Whether every announcement in a sentence is first-person and negated (`NEGATION`): it says no step starts."""
+    """Whether every announcement in a sentence is first-person and negated (`ANNOUNCEMENT_NEGATION`): it says no
+    step starts."""
     if PROGRESS_ANNOUNCEMENT.search(sentence):
         return False
     announcements = list(FIRST_PERSON_ANNOUNCEMENT.finditer(sentence))
     if not announcements:
         return False
-    return all(NEGATION.match(sentence[announcement.end():]) for announcement in announcements)
+    return all(ANNOUNCEMENT_NEGATION.match(sentence[announcement.end():]) for announcement in announcements)
 
 
 def gated(sentence):
@@ -134,10 +141,10 @@ def gated(sentence):
 
 
 def announced_step(message, transcript_path=None):
-    """The first sentence of a final message that announces a step that `gated` does not pass and that is not
-    chained to a gated sentence, or None. A Then or Next sentence passes after a gated one. A progress-only
-    sentence, or a first-person one whose announced action is a report word (`announces_report`), passes when the
-    current turn of the transcript launched background work."""
+    """The first sentence of a final message that announces a step that neither `gated` nor `negated` passes and
+    that is not chained to a gated sentence, or None. A Then or Next sentence passes after a gated one. A
+    progress-only sentence, or a first-person one whose announced action is a report word (`announces_report`),
+    passes when the current turn of the transcript launched background work."""
     unquoted_message = without_quoted_spans(ANNOUNCEMENT, without_draft_blocks(message))
     background_launched = None
     previous_gated = False

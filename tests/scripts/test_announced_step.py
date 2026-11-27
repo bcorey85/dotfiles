@@ -200,12 +200,16 @@ class AnnouncedStepTest(unittest.TestCase):
 
     def test_a_negated_announcement_passes(self):
         for message in ("I'm starting no lane for it.", "I'll start nothing for it.", "I will do none of them.",
-                        "I'll not touch the branch."):
+                        "I'll not touch the branch.", "I'm going to do nothing."):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
     def test_an_announcement_beside_a_negated_one_still_blocks(self):
-        for message in ("I'll start the lane.", "I'll remove no-op calls.",
+        for message in ("I'll start the lane.", "I'll remove no-op calls.", "I'll confirm nothing regressed.",
+                        "I'll check no other caller reads it.", "I'll fix none other than the gate.",
+                        "I'll not only fix the gate but also rerun the suite.", "I'll do nothing but rerun the suite.",
+                        "I'll not forget to run the suite.", "I'll waste no time on the fix.",
+                        "I'm starting no lane for it. Then I'll merge the branch.",
                         "I'm starting no lane for it, and I'll run the suite."):
             with self.subTest(message=message):
                 self.assert_blocks(message)

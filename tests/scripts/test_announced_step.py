@@ -160,6 +160,120 @@ class AnnouncedStepTest(unittest.TestCase):
         self.assert_blocks("Draft:\n```\nI am fixing the parser.\n```\nNext I'll look at the reviewer nits.")
         self.assert_blocks("Draft:\n> I am fixing the parser.\nNext I'll look at the reviewer nits.")
 
+    def test_steps_gated_by_a_date_a_clock_later_events_or_another_partys_notice_pass(self):
+        messages = ("I'll run the weekly scan on Nov 29.", "I'll recheck at :47.", "I'll run the scan on Monday.",
+                    "I'll check it tomorrow.", "I'll send later merges to `weekend-toolkit-fixes-v2`.",
+                    "I'll act on their completion notices.",
+                    "Once agent-evals-74 confirms the merge, I'll repoint it. Then I'll push the branch.",
+                    "I'll repoint it once agent-evals-74 confirms.", "I'll run it after Nov 29.",
+                    "I'll merge when the lane reports.",
+                    "The suite is running in the background. Next I'll read its log.",
+                    "1. Once the lane merges, I will repoint it.\n2. Then I will push the branch.",
+                    "+ Once the lane merges, I will repoint it.\n+ Then I will push the branch.",
+                    "1) Once the lane merges, I will repoint it.\n2) Then I will push the branch.",
+                    "Once the lane merges, I'll repoint it. Then I'll push the branch. Next I'll tag it.",
+                    "I'll push it at 4:30.", "I'll run it tonight.", "I'll fix it the next time it runs.",
+                    "I'll merge it by Friday.", "I'll push it at 4:30pm.", "I'll push it at 4pm.",
+                    "I'll run the scan on November 29th.", "I'll merge it by Dec 3.", "I'll act on the result.",
+                    "I'll act on its review report.",
+                    "- Once the lane merges, I will repoint it.\n- Then I will push the branch.",
+                    "Once the lane merges, I'll repoint it. After that I'll push the branch.",
+                    "Once the lane merges, I'll repoint it. Next step: I'll push the branch.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_ungated_and_own_step_ordering_promises_still_block(self):
+        messages = ("I'll run the suite next.", "I'll work on it.", "I'll look at the diff.", "I'll fix that later.",
+                    "I'll check who holds them before starting any of them.",
+                    "- One merge line, which I'll write up at the end.",
+                    "The tree is clean. Then I'll push the branch.", "The tree is clean. Next I'll push the branch.",
+                    "I'll list the open items in my final report.", "I'll look at it later this week.",
+                    "I'll do it later as tests.", "I'll fix that later perhaps.",
+                    "If it fails we stop.\n\nNext steps: I'll run the suite.",
+                    "Once the lane merges, I'll repoint it. The tree is clean. Then I'll push the branch.",
+                    "I'll fix that later is fine.", "I'll redo it later its way.",
+                    "I'll fix it later afterwards.", "I'll fix it later towards the end.",
+                    "I'll fix it later yes.", "I'll fix it later thus.",
+                    "I'll fix that later across the board.", "I'll fix that later plus the docs.",
+                    "I'll fix that later access.", "I'll fix that later nonetheless.")
+        for message in messages:
+            with self.subTest(message=message):
+                self.assert_blocks(message)
+
+    def test_each_excluded_word_after_later_still_blocks(self):
+        words = ("this", "its", "is", "was", "as", "perhaps", "always", "anyways", "sometimes", "besides", "versus",
+                 "afterwards", "towards", "yes", "thus", "plus", "does", "has", "us", "whereas", "his", "hers",
+                 "ours", "theirs", "nowadays", "upstairs", "downstairs", "alas", "regardless", "less", "across")
+        for word in words:
+            with self.subTest(word=word):
+                self.assert_blocks(f"I'll fix it later {word}.")
+
+    def test_a_negated_announcement_passes(self):
+        for message in ("I'm starting no lane for it.", "I'll start nothing for it.", "I will do none of them.",
+                        "I'll not touch the branch.", "I'm going to do nothing.",
+                        "I will not act on any timer prompt.", "I'll not start the lane.",
+                        "I'll do nothing else today.", "I'll send nothing.", "I'll launch no lane.",
+                        "I'll open none of them.", "I'll begin nothing.", "I'll run no lane.",
+                        "I'll make no change.", "I'll not run it.", "I'll not begin it.", "I'll not launch it.",
+                        "I'll not open it.", "I'll not send it.", "I'll not make it."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_an_announcement_beside_a_negated_one_still_blocks(self):
+        for message in ("I'll start the lane.", "I'll remove no-op calls.", "I'll confirm nothing regressed.",
+                        "I'll check no other caller reads it.", "I'll fix none other than the gate.",
+                        "I'll not only fix the gate but also rerun the suite.", "I'll do nothing but rerun the suite.",
+                        "I'll not forget to run the suite.", "I'll waste no time on the fix.",
+                        "I'll no doubt rerun the suite.", "I'll not hesitate to rerun the suite.",
+                        "I'll not neglect the tests.", "I'll no longer skip it.",
+                        "I'll do nothing except rerun the suite.", "I'll do nothing besides rerun the suite.",
+                        "I'll do nothing beyond a rerun of the suite.", "I'll touch nothing apart from the gate.",
+                        "I'll not skip the suite this time.", "I'll not ignore the failing test.",
+                        "I'll not omit the docs update.", "I'll not leave the suite red.",
+                        "I'll not delay the rerun.", "I'll not wait to rerun the suite.",
+                        "I'll not merely rerun the suite.", "I'll not simply rerun the suite.",
+                        "I'll do no more than rerun the suite.", "I'll do nothing more than rerun the suite.",
+                        "I'll do no less than rerun the suite.", "I'll do nothing less than rerun the suite.",
+                        "I'll not stop rerunning the suite.", "I'll not cease rerunning the suite.",
+                        "I'll not refrain from rerunning the suite.", "I'll not postpone the rerun.",
+                        "I'll not defer the rerun.", "I'll not put off the rerun.",
+                        "I'll not hold off on the rerun.", "I'll not avoid the suite.", "I'll not abandon the fix.",
+                        "I'll not let the suite stay red.", "I'll do nothing short of a full rerun.",
+                        "I'll do nothing aside from the gate.", "I'll do nothing save rerun the suite.",
+                        "I'll not do anything except rerun the suite.",
+                        "I'll not do anything other than rerun the suite.",
+                        "I'll not do anything besides push the branch.",
+                        "I'll not run anything apart from the suite.",
+                        "I'll not make any change beyond rerunning the suite.",
+                        "I'll not take long to rerun the suite.",
+                        "I'll do no fewer than three runs.", "I'll do nothing working on it now.",
+                        "I'll not run the suite yet.", "I'll not start it till later.",
+                        "I'll start nothing for now.", "I'm starting no lane yet.", "I'll not do that yet.",
+                        "I'll not run the suite for the moment.", "I'll not run the suite at the moment.",
+                        "I'll not run the suite for the time being.", "I'll start nothing right now.",
+                        "I'll not run the suite soon.", "I'll not run the suite shortly.",
+                        "I'll not run the suite eventually.", "I'll not run the suite afterwards.",
+                        "I'll not run it first.", "I'll start no-op passes.", "I'll do nothingness again.",
+                        "I'm starting no lane for it. Then I'll merge the branch.",
+                        "I'm starting no lane for it, and I'll run the suite.",
+                        "I'll start no lane and run the suite.", "I'll take no shortcuts and fix the bug.",
+                        "I'll touch nothing else and push the branch.",
+                        "I'll make no changes to the gate and run the suite.",
+                        "I'll start no lane and run tests.", "I'll start no lane and will run the suite.",
+                        "I'll start no lane and also run the suite.", "I'll make no changes and push.",
+                        "I'll start no lane, then run the suite.", "I'll start no lane but run the suite.",
+                        "I'll start no lane; run the suite.", "I'll start no lane, instead run the suite.",
+                        "I'll start no lane \N{EM DASH} run the suite.", "I'll start no lane, just run the suite.",
+                        "I'll start no lane, only run the suite.", "I'll start no lane or run the suite.",
+                        "I'll start no lane so run the suite.", "I'll start no lane while I run the suite.",
+                        "I'll start no lane before I run the suite.",
+                        "I'll start no lane, run the suite.", "I'll start no lane, rerun CI.",
+                        "I'll start no lane: run the suite.", "I'll start no lane \N{EN DASH} run the suite.",
+                        "I'll start no lane -- run the suite."):
+            with self.subTest(message=message):
+                self.assert_blocks(message)
+
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")
 

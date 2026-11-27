@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-857 fix notes
+858 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -28,9 +28,9 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/shell-write-gate | 24 | 0 |
 | script/git-discipline-gate | 23 | 10 |
 | script/pull-keep-index | 22 | 10 |
+| script/staged-claim-gate | 21 | 8 |
 | skill/code | 21 | 3 |
 | agent/review-loop | 20 | 0 |
-| script/staged-claim-gate | 20 | 7 |
 | script/shell-command | 19 | 5 |
 | script/verify-prep | 19 | 4 |
 | skill/review | 18 | 1 |
@@ -94,6 +94,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/wait-loop-gate | 4 | 1 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
+| script/announced-step | 3 | 3 |
 | script/calibration-guard | 3 | 1 |
 | script/code | 3 | 0 |
 | script/criteria-verdict | 3 | 0 |
@@ -114,7 +115,6 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | agent/test-intent-reviewer | 2 | 0 |
 | rule/global-claude-md | 2 | 0 |
 | script/agent-cost | 2 | 0 |
-| script/announced-step | 2 | 2 |
 | script/calibration-lock | 2 | 2 |
 | script/coder-packet | 2 | 0 |
 | script/commit-gate-dirty | 2 | 2 |

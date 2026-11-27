@@ -30,8 +30,8 @@ the user at `/cc`; nothing loads cc through the Skill tool.
 ## Result
 
 A headless probe with a copy of the edited skill as a project skill: the model listed the copy without the flag and
-did not list the copy with it, and both stayed in the init event's slash commands. cc has no row in
-`docs/rule-anchors.md`; `rule-anchors.sh check` passes.
+did not list the copy with it, and both stayed in the init event's slash commands. `docs/rule-anchors.md`
+now anchors cc's four blocks; `rule-anchors.sh check` passes.
 
 ## Watch
 

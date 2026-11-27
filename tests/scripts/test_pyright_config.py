@@ -5,7 +5,7 @@ import os
 import pathlib
 import unittest
 
-from toolkit_paths import REPO_ROOT, SCRIPTS_DIR
+from toolkit_paths import CLAUDE_DIR, REPO_ROOT, SCRIPTS_DIR
 
 CONFIG = pathlib.Path(os.environ.get("PYRIGHT_CONFIG_PATH") or REPO_ROOT / "pyrightconfig.json")
 
@@ -18,8 +18,8 @@ def extra_paths():
 class PyrightConfigTest(unittest.TestCase):
     def test_every_script_folder_is_an_extra_path(self):
         listed = {REPO_ROOT / entry for entry in extra_paths()}
-        script_folders = {folder for folder in SCRIPTS_DIR.iterdir()
-                          if folder.is_dir() and any(folder.glob("*.py"))}
+        candidates = [*SCRIPTS_DIR.iterdir(), *(CLAUDE_DIR / "skills").glob("*/scripts")]
+        script_folders = {folder for folder in candidates if folder.is_dir() and any(folder.glob("*.py"))}
         self.assertEqual(sorted(script_folders - listed), [])
 
     def test_every_extra_path_exists(self):

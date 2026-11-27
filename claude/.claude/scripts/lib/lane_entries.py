@@ -240,7 +240,7 @@ def _locked():
 
 
 def _write(lane):
-    """Write one lane file. `scripts/.local/lib/lane-env.zsh` matches the indent-2 `"worktree"` line of this form."""
+    """Write one lane file in the indent-2 form lane-env.zsh matches."""
     file = lane_file(lane["name"])
     validate_entry(lane, file)
     text = json.dumps(lane, indent=2, ensure_ascii=False) + "\n"

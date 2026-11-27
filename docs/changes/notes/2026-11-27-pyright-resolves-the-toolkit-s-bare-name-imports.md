@@ -18,7 +18,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-New `pyrightconfig.json` at the dotfiles root. Its `extraPaths` name `claude/.claude/scripts/{code,gates,lib,review,telemetry,tools}`, the `adr`, `close-branch` and `refactor` skill script folders, and `tests/scripts`, which are the folders the scripts add to `sys.path` at run time.
+New `pyrightconfig.json` at the dotfiles root. Its `extraPaths` name `claude/.claude/scripts/{code,gates,lib,review,telemetry,tools}`, the `adr`, `close-branch` and `refactor` skill script folders, and `tests/scripts`, which are the folders the scripts add to `sys.path` at run time. Its `exclude` replaces pyright's default list,
+which skips dot-folders, so a language server run in workspace mode also covers `claude/.claude`.
 
 ## Evidence
 

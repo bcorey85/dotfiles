@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1299 changes
+1300 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -158,6 +158,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 * [herdr-worktree-watch waits the full interval when nothing was polled](notes/2026-11-24-herdr-worktree-watch-waits-the-full-interval-when.md) [script/herdr-worktree-watch] The watcher's final sleep no longer comes out one second short when the shell's SECONDS clock ticks between its start and the sleep and no poll ran.
 * [announced step passes a progress line after a background launch in the same turn](notes/2026-11-24-announced-step-passes-a-progress-line-after-a.md) [script/announced-step, script/staged-claim-gate, script/wait-loop-gate, script/inline-interpreter-hint, script/user-prompts, script/tool-call-flags] A subjectless progress line passes the announced-step stop check when the current turn launched background work; a crash in one stop check keeps the other checks' reasons.
 * [A session may reject a user-only ask for a wanted change to an approval-only file](notes/2026-11-24-a-session-may-reject-a-user-only-ask-for-a-wanted.md) [shared/review-loop, script/review-fix] The review fork's resume rule lets a `--by session` asks-done call answer `rejected` on a user-only ask whose change ends with an `(edit to <path>)` note and names no criteria; every other outcome on a user-only ask stays `held`.
+* [A restored herdr lane resumes with the cron scheduler off](notes/2026-11-24-a-restored-herdr-lane-resumes-with-the-cron.md) [script/lane-env, shared/lane-entries] A herdr shell whose folder is a registered lane worktree exports CLAUDE_CODE_DISABLE_CRON=1, so a lane that herdr restores after a restart no longer fires the orchestrator's cron jobs.
 * [The session rules a review ask that edits only the scripts CLAUDE.md](notes/2026-11-24-the-session-rules-a-review-ask-that-edits-only-the.md) [script/review-loop] A review ask whose only approval-file edit is in the scripts CLAUDE.md is ruled by the orchestrating session, so a lane no longer waits on the user for it.
 * [quality check cap counts a check piped into rg as cut](notes/2026-11-24-quality-check-cap-counts-a-check-piped-into-rg-as.md) [script/quality-check-cap] A check whose output is piped into rg is recorded as cut, so one rerun redirected to a file is allowed.
 * [pull_keep_index pulls beside a session whose only edits are built pages](notes/2026-11-24-pull-keep-index-pulls-beside-a-session-whose-only.md) [script/pull-keep-index] A pull before push no longer refuses when the other live session's only dirty files are built pages the merge driver owns: the pages are set aside, the branch is pulled, and the driver rebuilds them.

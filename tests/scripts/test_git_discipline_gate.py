@@ -1103,6 +1103,34 @@ class PushReviewedTreeTest(GateCaseBase):
         self.assert_denied("git push -u origin HEAD", "[git-discipline-gate] code changed since the last review",
                            cwd=self.repo)
 
+    def test_push_passes_after_a_merge_commit_and_a_converged_review_whose_fix_is_committed_unchanged(self):
+        sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
+        import handback
+        import handback_store
+
+        store_patch = unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": str(self.tmp / "store")})
+        store_patch.start()
+        self.addCleanup(store_patch.stop)
+        self.write("app.py", "print('branch')\n")
+        self.commit("branch work")
+        self.assertTrue(self.reviewed_tree.record_reviewed("verify-branch", self.repo))
+        self.git("checkout", "-q", "-b", "upstream", "HEAD~1")
+        self.write("other.py", "y = 2\n")
+        self.commit("upstream work")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-edit", "upstream")
+
+        self.write("app.py", "print('fixed by the review')\n")
+        converged = {"status": "converged", "iter": 2, "fixed": []}
+        handback_store.record("review-session", "dispatch", repo=self.repo_top())
+        handback_store.record_handback("review-session", status="converged", message=json.dumps(converged),
+                                       no_reviewer=False)
+        refusal, _repo = handback.record_clean_review("review-session")
+        self.assertIsNone(refusal)
+        self.commit("the reviewed fix")
+        self.assertEqual(self.reviewed_tree.push_review_state(self.repo), self.reviewed_tree.PUSH_REVIEWED)
+        self.assert_allowed("git push -u origin HEAD", cwd=self.repo)
+
     def test_push_passes_when_only_notes_changed_after_the_review(self):
         self.review_then_commit()
         self.write("docs/plan.md", "# plan\n")

@@ -1,8 +1,8 @@
 """review_fix_asks.py: `review_fix.py asks-done`. It logs one outcome row per ask, once; `--correct` logs one more row
 for each corrected ask while the printed fix run has not launched. When the user accepted or modified an ask, it
 writes those asks to a findings file and prints the fix run that applies them: the first run's launch flags plus
-`--fix`, `--iter` and `--detach`, so the loop's fix coder makes the change, a review round covers it, and the
-converged hand-back earns review credit."""
+`--fix`, `--iter`, `--fix-rounds`, `--post-cap-passes` and `--detach`, so the loop's fix coder makes the change, a
+review round covers it, and the converged hand-back earns review credit."""
 import os
 import shlex
 import sys
@@ -19,6 +19,7 @@ from approval_asks_store import (
     ApprovalAsksFileError,
     check_approval_paths_readable,
     forget_ruled_approval_paths,
+    is_approval_ask,
     read_held_changes,
     user_only_changes,
     write_held_changes,
@@ -368,10 +369,10 @@ def missing_packet_repo_reason(relaunch_args):
 
 def repo_for_outcomes(relaunch_args, asks, outcomes):
     """`required_packet_repo` when an outcome writes under the repo (a rejection, an accepted plan-impact ask, or a
-    ruling on a user-only ask, which leaves the saved approval paths), else None: an answer that writes nothing
+    ruling on an approval ask, which leaves the saved approval paths), else None: an answer that writes nothing
     there needs no repo."""
     for item, outcome in zip(asks, outcomes, strict=True):
-        if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or item.get(USER_ONLY_KEY):
+        if outcome == REJECTED or is_accepted_plan_impact(item, outcome) or is_approval_ask(item):
             return required_packet_repo(relaunch_args)
     return None
 
@@ -392,7 +393,7 @@ def record_accepted_plan_impacts(asks, outcomes, repo):
 
 
 def refuse_damaged_approval_paths(repo, asks):
-    """Stops with nothing written when a ruled user-only ask needs the saved approval paths and the file is
+    """Stops with nothing written when a ruled approval ask needs the saved approval paths and the file is
     damaged: a rerun would log every outcome row again."""
     try:
         check_approval_paths_readable(repo, asks)
@@ -402,7 +403,7 @@ def refuse_damaged_approval_paths(repo, asks):
 
 def record_corrected_rejection(item, old_outcome, new_outcome, repo):
     """Keeps the rejected-ask rows in step with a corrected answer: a new rejection is recorded, and a rejection the
-    correction undoes is withdrawn. A corrected user-only ask leaves the saved approval paths, whatever the new
+    correction undoes is withdrawn. A corrected approval ask leaves the saved approval paths, whatever the new
     outcome."""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     forget_ruled_approval_paths(repo, [item])
@@ -413,7 +414,7 @@ def record_corrected_rejection(item, old_outcome, new_outcome, repo):
 
 
 def record_ruled_asks_once(target, asks, outcomes, repo):
-    """Records the packet's rejected asks once, and drops its ruled user-only asks from the saved approval paths: a
+    """Records the packet's rejected asks once, and drops its ruled approval asks from the saved approval paths: a
     retry after a logging failure does neither again."""
     if target.get("asks_rejections_recorded"):
         return
@@ -451,7 +452,8 @@ def write_findings_file(finding_lines):
 
 def print_fix_run(target, findings_file, summary_lines):
     """Prints the fix run that applies the accepted asks in findings_file. A run that left no launch record prints
-    the stored line from `no_record_launch_line`: `--iter`, the dispatched `--repo` and `--detach` only."""
+    the stored line from `no_record_launch_line`: `--iter`, the cap flags (`--fix-rounds`, `--post-cap-passes`), the
+    dispatched `--repo` and `--detach` only."""
     if not target.get("relaunch_args"):
         return print_action(
             NO_LAUNCH_RECORD_ACTION, *summary_lines,
@@ -523,14 +525,16 @@ def fix_launch_line(target, findings_file, user_numbers, session_numbers):
 
 
 def relaunch_line(target, lead_args, handoff_file=None):
-    """The launch line of a later run of the review in target: lead_args, `--iter`, the first run's relaunch flags
-    (with `--handoff` pointed at handoff_file when given) and `--detach`. The later run holds every dirty file not
-    listed, and the first run's own edits are dirty, so the files it touched join the scoped files."""
+    """The launch line of a later run of the review in target: lead_args, `--iter`, the packet's `--fix-rounds` and
+    `--post-cap-passes` (`review_launch.cap_count_args`), the first run's relaunch flags (with `--handoff` pointed
+    at handoff_file when given) and `--detach`. The later run holds every dirty file not listed, and the first
+    run's own edits are dirty, so the files it touched join the scoped files."""
     touched_paths = target.get("files_touched") or []
     relaunch_args = review_launch.relaunch_args_with_files(target["relaunch_args"], touched_paths)
     if handoff_file is not None:
         relaunch_args = review_launch.relaunch_args_with_handoff(relaunch_args, handoff_file)
-    launch_args = [*lead_args, "--iter", str(target["iter"]), *relaunch_args, "--detach"]
+    cap_args = review_launch.cap_count_args(target)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), *cap_args, *relaunch_args, "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -545,11 +549,13 @@ def fix_run_launch_line(target, findings_file):
 
 
 def no_record_launch_line(target, findings_file, user_numbers, session_numbers):
-    """The launch line of a fix run with no launch record: `--iter`, the session's repo (`session_repo`) as `--repo`
-    and `--detach` only."""
+    """The launch line of a fix run with no launch record: `--iter`, the packet's `--fix-rounds` and
+    `--post-cap-passes` (`review_launch.cap_count_args`), the session's repo (`session_repo`) as `--repo` and
+    `--detach` only."""
     repo = required_packet_repo([])
     lead_args = fix_lead_args(findings_file, user_numbers, session_numbers)
-    launch_args = [*lead_args, "--iter", str(target["iter"]), "--repo", str(repo), "--detach"]
+    cap_args = review_launch.cap_count_args(target)
+    launch_args = [*lead_args, "--iter", str(target["iter"]), *cap_args, "--repo", str(repo), "--detach"]
     return f"{LAUNCH_COMMAND} {shlex.join(launch_args)}"
 
 
@@ -645,7 +651,7 @@ def log_corrected_outcomes(state, indexes, outcomes, notes, decided_by, relayed=
     logged_asks = []
     corrected_asks = [state["asks"][index] for index in indexes]
     touches_rejection = any(REJECTED in (state["ask_outcomes"][index], outcomes[index]) for index in indexes)
-    needs_repo = touches_rejection or any(item.get(USER_ONLY_KEY) for item in corrected_asks)
+    needs_repo = touches_rejection or any(is_approval_ask(item) for item in corrected_asks)
     repo = required_packet_repo(state.get("relaunch_args") or []) if needs_repo else None
     refuse_damaged_approval_paths(repo, corrected_asks)
     approval_restore.refuse_corrections_of_state(state, indexes, outcomes)
@@ -729,10 +735,11 @@ def refuse_unless_correctable(state, packet_id):
                          f"packet is {state['packet_id']!r}.")
 
 
-def refuse_session_on_user_only(asks, decided_by, user_command, holdable=False):
+def refuse_session_on_user_only(asks, decided_by, user_command, outcomes, holdable=False):
     """Refuses (nothing is logged) a `--by session` answer to an ask marked `user_only`. `user_command` is the
-    call the refusal tells the session to use for the user's ruling; `holdable` makes it name `held` too."""
-    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, holdable)
+    call the refusal tells the session to use for the user's ruling; `outcomes` (one per ask) lets a `rejected` on
+    a wanted-change ask pass; `holdable` makes it name `held` too."""
+    refusal = review_asks.user_only_refusal(asks, decided_by, user_command, outcomes, holdable)
     if refusal:
         raise UsageError(refusal)
 
@@ -744,7 +751,7 @@ def command_correct_asks(options):
     left to apply."""
     state = load_fix_state()
     refuse_unless_correctable(state, options.packet_id)
-    ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
+    deciders = ask_deciders(state)  # a bad saved ruler stops the run before any row is logged
 
     asks = state["asks"]
     outcomes, notes = read_outcomes(options.outcome_words, asks)
@@ -755,7 +762,10 @@ def command_correct_asks(options):
     # their listing numbers.
     corrected_asks = [item if index in indexes else {} for index, item in enumerate(asks)]
     user_command = f"asks-done --correct --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command)
+    # A user's ruling is never replaced by a session: a None outcome keeps that ask refused.
+    session_outcomes = [None if decider == plan_format.USER_RULING else outcome
+                        for decider, outcome in zip(deciders, outcomes, strict=True)]
+    refuse_session_on_user_only(corrected_asks, options.decided_by, user_command, session_outcomes)
     relayed = verified_fix_relay(options, corrected_asks)
     log_corrected_outcomes(state, indexes, outcomes, notes, options.decided_by, relayed)
 
@@ -833,7 +843,7 @@ def read_answers(state, options, waiting):
     # asks by their numbers in the stop's order.
     kept_places = [{} if outcome == HELD else item for item, outcome in zip(asks, outcomes, strict=True)]
     user_command = f"asks-done --by {plan_format.USER_RULING} ..."
-    refuse_session_on_user_only(kept_places, options.decided_by, user_command, holdable=True)
+    refuse_session_on_user_only(kept_places, options.decided_by, user_command, outcomes, holdable=True)
     review_asks.refuse_conditional_changes(kept_places, outcomes, "asks-done ...")
     review_asks.refuse_unlocated_changes(kept_places, outcomes, notes, "asks-done ...")
     refuse_changed_retry(state, target, split.plain_outcomes, split.plain_notes, correctable=False)

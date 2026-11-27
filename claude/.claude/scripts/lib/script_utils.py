@@ -2,6 +2,7 @@
 
 Installed as ~/.claude/scripts/lib/script_utils.py. Scripts under ~/.claude/scripts/ import it from there by adding
 that directory to sys.path."""
+import argparse
 import difflib
 import json
 import os
@@ -20,7 +21,8 @@ from collections import namedtuple
 FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,})")
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 INLINE_CODE_OR_COMMENT_OPEN = re.compile(r"`[^`]*`|<!--")
-PATH_CHARS = r"\w@.\-"
+PATH_NAME_CHARS = r"\w@\-$+"
+PATH_CHARS = rf"{PATH_NAME_CHARS}."
 PATH_TEXT = rf"[{PATH_CHARS}/]+\.\w+"
 
 
@@ -53,6 +55,8 @@ TIMEOUT_EXIT_CODE = 124
 COMMAND_NOT_FOUND_EXIT_CODE = 127
 REPO_NAME_SCRIPT = pathlib.Path(__file__).resolve().parent.parent / "tools" / "repo-name"
 REPO_NAME_TIMEOUT_SECONDS = 10
+CONVERSATION_RECORD_TYPES = ("user", "assistant")
+TRANSCRIPT_UNREADABLE = "transcript unreadable"
 ENV_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 # A literal value is plain characters or a quoted string with no `$`, backtick, `;`, `&`, `|`, `<`, `>` (and no
 # backslash in a double-quoted one): the shell would run or expand anything else, so it is not a setting that can be
@@ -109,6 +113,25 @@ def fenced_line_indexes(lines):
     """Indexes of the lines inside a fenced code block, the fence lines themselves included. A fence is closed by
     the same character, at least as long as the opener. A fence that is never closed runs to the last line."""
     fenced = set()
+    for block, _is_closed in _fenced_blocks(lines):
+        fenced.update(block)
+    return fenced
+
+
+def closed_fence_indexes(lines):
+    """Same as `fenced_line_indexes`, but a fence that is never closed is left out: only blocks with a closing fence
+    count."""
+    fenced = set()
+    for block, is_closed in _fenced_blocks(lines):
+        if is_closed:
+            fenced.update(block)
+    return fenced
+
+
+def _fenced_blocks(lines):
+    """Each fenced block as (its line indexes, whether a closing fence ended it), in order."""
+    blocks = []
+    block = []
     opener = None
     for index, line in enumerate(lines):
         is_opening = opener is None
@@ -116,10 +139,14 @@ def fenced_line_indexes(lines):
             opener = _fence_opener(line)
         if opener is None:
             continue
-        fenced.add(index)
+        block.append(index)
         if not is_opening and _closes_fence(line, opener):
+            blocks.append((block, True))
+            block = []
             opener = None
-    return fenced
+    if block:
+        blocks.append((block, False))
+    return blocks
 
 
 def _fence_opener(line):
@@ -145,6 +172,22 @@ JSON_TYPE_NAMES = ((str, "a string"), (bool, "a boolean"), (int, "a number"), (f
 def json_type_name(value):
     """The name of a decoded JSON value's type, as a phrase for an error message."""
     return next(name for kind, name in JSON_TYPE_NAMES if isinstance(value, kind))
+
+
+def is_int(value):
+    """Whether a decoded JSON value is an integer; a boolean is not."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def positive_int(text):
+    """An argparse type: the integer in text, which must be above zero."""
+    try:
+        number = int(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from error
+    if number <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a positive integer")
+    return number
 
 
 def is_string_list(value):
@@ -223,6 +266,13 @@ def text_similarity(first, second):
 
     For two token lists or other sequences, use `sequence_similarity` (bounded edit distance, n-gram overlap)."""
     return difflib.SequenceMatcher(None, first, second, autojunk=False).ratio()
+
+
+def rounded_percent(part, total):
+    """`part` as a whole percent of `total`, rounded half up; 0 when `total` is 0."""
+    if total == 0:
+        return 0
+    return (100 * part + total // 2) // total
 
 
 def or_list(words):
@@ -319,6 +369,37 @@ def git_output(cwd, *args, timeout=None):
     if finished.returncode != 0:
         return None
     return os.fsdecode(finished.stdout).rstrip("\n")
+
+
+def committed_text(file_path, timeout=None):
+    """The text of the file at HEAD, without trailing newlines, or "" when HEAD does not hold it: the file is
+    outside a git work tree, is untracked, or the repo has no commit yet. None when git failed, so the file may be
+    committed and its old text is unknown."""
+    if not inside_git_work_tree(file_path, timeout):
+        return ""
+    real_path = os.path.realpath(file_path)
+    folder = os.path.dirname(real_path)
+    name = os.path.basename(real_path)
+    text = git_output(folder, "show", f"HEAD:./{name}", timeout=timeout)
+    if text is not None:
+        return text
+    listed = git_output(folder, "ls-tree", "--name-only", "HEAD", "--", name, timeout=timeout)
+    if listed == "":
+        return ""
+    has_git_dir = git_output(folder, "rev-parse", "--git-dir", timeout=timeout) is not None
+    has_head = git_output(folder, "rev-parse", "--verify", "--quiet", "HEAD", timeout=timeout) is not None
+    if has_git_dir and not has_head:
+        return ""
+    return None
+
+
+def diff_paths(directory, *diff_arguments, timeout=None):
+    """The set of paths `git diff --name-only <diff_arguments>` names in `directory`, or None after a git failure.
+    Renames stay off so a rename shows both its old and new path."""
+    output = git_output(directory, "diff", "--no-renames", "--name-only", "-z", *diff_arguments, timeout=timeout)
+    if output is None:
+        return None
+    return {path for path in output.split("\0") if path}
 
 
 # What main_checkout_dir returns: the folder, and whether it is a bare common dir rather than a checkout folder.
@@ -425,6 +506,23 @@ def restore_index_entry(repo, path, entry):
     return git_output(repo, "update-index", "--add", "--cacheinfo", cache_info) is not None
 
 
+def restore_index_entries(repo, entries_before):
+    """Puts the index entry of each path of `entries_before` (a dict of path to IndexEntry, or None for a path that was
+    not in the index) back to what it was, when it differs now. Returns the set of paths whose entry could not be read
+    or restored; a failed index read names every path."""
+    try:
+        entries_now = index_entries(repo, list(entries_before))
+    except GitCallError:
+        return set(entries_before)
+    failed = set()
+    for path, entry in entries_before.items():
+        if entries_now[path] == entry:
+            continue
+        if not restore_index_entry(repo, path, entry):
+            failed.add(path)
+    return failed
+
+
 def blob_at_commit(repo, commit, path):
     """The blob id of `path` in `commit` of `repo`, or None when the commit has no such file or git cannot say."""
     return git_output(repo, "rev-parse", "--verify", "-q", f"{commit}:{path}")
@@ -467,6 +565,14 @@ def is_ancestor(repo, older, newer, timeout=None):
     return git_output(repo, "merge-base", "--is-ancestor", older, newer, timeout=timeout) is not None
 
 
+def commit_parents(repo, rev, timeout=None):
+    """The parent commit ids of `rev` in `repo` (empty for a root commit), or None when git fails."""
+    line = git_output(repo, "rev-list", "--parents", "-n", "1", rev, timeout=timeout)
+    if line is None:
+        return None
+    return line.split()[1:]
+
+
 def head_commit(cwd, timeout=None):
     """The commit HEAD names in cwd, or None in a repo with no commit or when git fails."""
     return git_output(cwd, "rev-parse", "--verify", "-q", "HEAD", timeout=timeout)
@@ -487,12 +593,31 @@ def head_commit_or_unborn(repo):
     return None
 
 
-def head_commit_time(top):
-    """The HEAD commit's committer time in seconds, or None when git cannot tell (no commit yet)."""
-    stamp = git_output(top, "log", "-1", "--format=%ct")
+def head_commit_time(top, commit="HEAD"):
+    """The committer time of `commit`, HEAD by default, in seconds, or None when git cannot tell (no commit yet)."""
+    stamp = git_output(top, "log", "-1", "--format=%ct", commit)
     if not stamp:
         return None
     return float(stamp)
+
+
+def commits_since(repo, commit):
+    """The "<short hash> <subject>" of each commit HEAD gained since `commit`, oldest first. `commit` None means the
+    repo had no commit: every commit of HEAD counts. Returns None when git cannot say, so a caller tells that apart
+    from no commits ([])."""
+    rev_range = f"{commit}..HEAD"
+    if commit is None:
+        try:
+            head = head_commit_or_unborn(repo)
+        except GitCallError:
+            return None
+        if head is None:
+            return []
+        rev_range = "HEAD"
+    listing = git_output(repo, "log", "--reverse", "--format=%h %s", rev_range)
+    if listing is None:
+        return None
+    return listing.splitlines()
 
 
 def untracked_paths(directory):
@@ -510,6 +635,14 @@ def repo_file_paths(directory):
     if listing is None:
         return None
     return sorted({name for name in listing.split("\0") if name})
+
+
+def repo_file_paths_or_raise(directory):
+    """The paths `repo_file_paths` lists. Raises GitCallError when git fails."""
+    paths = repo_file_paths(directory)
+    if paths is None:
+        raise GitCallError(f"`git ls-files --cached --others --exclude-standard` failed in {directory}")
+    return paths
 
 
 def read_text_lines(path):
@@ -620,6 +753,17 @@ def run_or_raise(argv, error_type, cwd=None, check=False, stdin=None, ok_codes=(
         detail = finished.stderr.strip() or stdout_text.strip()
         raise error_type(f"`{' '.join(argv)}` failed: {detail}")
     return finished
+
+
+def remote_default_branch(folder, error_type):
+    """The remote's default branch as `origin/<name>`, read from origin/HEAD; None when origin/HEAD is not set.
+    Raises error_type when git fails for any other reason."""
+    argv = ["git", "-C", str(folder), "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]
+    finished = run_or_raise(argv, error_type, check=True, ok_codes=(0, 1))
+    name = finished.stdout.strip()
+    if finished.returncode != 0 or not name:
+        return None
+    return name
 
 
 def repo_root(cwd, timeout=None):
@@ -865,6 +1009,17 @@ def one_line(text, limit=200):
     return re.sub(r"\s+", " ", str(text)).strip()[:limit]
 
 
+def first_lines_holding(text, needles):
+    """`{needle: first 1-based line of text that holds it}`; a needle the text does not hold is left out."""
+    first_lines = {}
+    for needle in needles:
+        position = text.find(needle)
+        if position < 0:
+            continue
+        first_lines[needle] = text.count("\n", 0, position) + 1
+    return first_lines
+
+
 def write_command_outputs(output_file, command_outputs):
     """Write each (command, outcome, output) to the file as `$ <command>`, the outcome line and the whole output, one
     section per command, making the file's folder."""
@@ -875,8 +1030,9 @@ def write_command_outputs(output_file, command_outputs):
 
 # What stands before and after a repo-relative path that a finding or note holds as a whole token: no longer path
 # around it (`pkg/app.py`, `app.py/x`, `app.pyc`), but a sentence's closing dot may follow (`edit app.py.`).
-PATH_TOKEN_START = r"(?<![\w./-])"
-PATH_TOKEN_END = r"(?![\w/-]|\.\w)"
+# Path characters include `$`, `+` and `@` on both sides.
+PATH_TOKEN_START = rf"(?<![{PATH_CHARS}/])"
+PATH_TOKEN_END = rf"(?![{PATH_NAME_CHARS}/]|\.\w)"
 
 
 def names_path(path, text, as_token=False):
@@ -884,19 +1040,53 @@ def names_path(path, text, as_token=False):
     With `as_token`, the boundaries are PATH_TOKEN_START and PATH_TOKEN_END, for a repo-relative path in prose."""
     if as_token:
         return re.search(f"{PATH_TOKEN_START}{re.escape(path)}{PATH_TOKEN_END}", text) is not None
-    return re.search(rf"(?<![\w.@+-]){re.escape(path)}(?![\w.@+-])", text) is not None
+    return re.search(rf"(?<![{PATH_CHARS}]){re.escape(path)}(?![{PATH_CHARS}])", text) is not None
+
+
+CURRENT_FOLDER_PREFIX = re.compile(rf"{PATH_TOKEN_START}\./")
 
 
 def texts_relative_to(finding_texts, root):
-    """The finding texts with each `root/` prefix cut out, so a path under `root` reads as its repo-relative path."""
+    """The finding texts with each `root/` prefix and each leading `./` cut out, so a path under `root` or written
+    `./lib/x.py` reads as its repo-relative path."""
     root_prefix = f"{root}/"
-    return [text.replace(root_prefix, "") for text in finding_texts]
+    return [CURRENT_FOLDER_PREFIX.sub("", text.replace(root_prefix, "")) for text in finding_texts]
 
 
 def texts_name_path(finding_texts, path, root):
     """Whether one of the finding texts holds `path` as a whole token. A path under `root` counts as `path`."""
     relative_texts = texts_relative_to(finding_texts, root)
     return any(names_path(path, text, as_token=True) for text in relative_texts)
+
+
+def path_has_tail(path, tail):
+    """True when `path` is `tail` or ends with `/` and `tail`."""
+    return path == tail or path.endswith(f"/{tail}")
+
+
+def texts_name_path_by_suffix(finding_texts, path, root, known_paths):
+    """Whether one of the finding texts holds a proper trailing part of `path` (`x.py` for `lib/x.py`) that has a `/` or
+    a `.` in it, as a whole token, and `path` is the only one of `known_paths` that ends with that part. A part that
+    two known paths end with names neither."""
+    parts = path.split("/")
+    for start in range(1, len(parts)):
+        suffix = "/".join(parts[start:])
+        if "/" not in suffix and "." not in suffix:
+            continue
+        if not texts_name_path(finding_texts, suffix, root):
+            continue
+        owners = [known for known in known_paths if path_has_tail(known, suffix)]
+        if owners == [path]:
+            return True
+    return False
+
+
+def texts_name_repo_file(finding_texts, path, root, known_paths):
+    """Whether the finding texts name `path`: in full, with a `./` prefix, or by a trailing part of it that no other of
+    `known_paths` ends with."""
+    if texts_name_path(finding_texts, path, root):
+        return True
+    return texts_name_path_by_suffix(finding_texts, path, root, known_paths)
 
 
 def pop_option(arguments, flag):
@@ -1024,17 +1214,24 @@ def read_json_object(file, report_torn=False):
     return found if isinstance(found, dict) else {}
 
 
-def last_transcript_record(transcript_path):
-    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
-    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+def _transcript_tail(transcript_path, caller, unreadable=None):
+    """The tail lines of a transcript, or None when it is missing, or `unreadable` when the read failed (that case
+    prints a `could not read` line naming `caller` on stderr)."""
     try:
-        tail_lines = transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
+        return transcript_tail_lines(transcript_path, TRANSCRIPT_TAIL_BYTES)
     except FileNotFoundError:
         return None
     except OSError as error:
-        # A failed read counts as alive: the open-work gates keep waiting, and the dead-reviewer gate passes.
-        print(f"last_transcript_record: could not read {transcript_path}, {type(error).__name__}: {error}",
-              file=sys.stderr)
+        print(f"{caller}: could not read {transcript_path}, {type(error).__name__}: {error}", file=sys.stderr)
+        return unreadable
+
+
+def last_transcript_record(transcript_path):
+    """The last record of a transcript as a dict. None for a transcript that is missing, unreadable, empty, whose
+    last line is torn (an agent part-way through an append) or whose last record is not an object."""
+    tail_lines = _transcript_tail(transcript_path, "last_transcript_record")
+    # A failed read counts as alive (None): the open-work gates keep waiting, and the dead-reviewer gate passes.
+    if tail_lines is None:
         return None
     try:
         record = json.loads(_last_nonblank_line(tail_lines))
@@ -1043,12 +1240,31 @@ def last_transcript_record(transcript_path):
     return record if isinstance(record, dict) else None
 
 
+def last_api_error(transcript_path, report_unreadable=False):
+    """The transcript's last user or assistant record when it is an API error message, else None. Records of any
+    other type (turn durations, informational notes, last-prompt, cost state) that Claude Code writes after the
+    error are skipped. None also for a transcript that is missing, empty, or whose last line is torn, and for an
+    unreadable one unless `report_unreadable` is set: then it returns TRANSCRIPT_UNREADABLE."""
+    unreadable = TRANSCRIPT_UNREADABLE if report_unreadable else None
+    tail_lines = _transcript_tail(transcript_path, "last_api_error", unreadable)
+    if tail_lines is None or tail_lines == TRANSCRIPT_UNREADABLE:
+        return tail_lines
+    last_line = _last_nonblank_line(tail_lines)
+    if transcript_record(last_line) is None:
+        return None
+    for line in reversed(tail_lines):
+        record = transcript_record(line)
+        if record is None or record.get("type") not in CONVERSATION_RECORD_TYPES:
+            continue
+        return record if record.get("isApiErrorMessage") is True else None
+    return None
+
+
 def ends_on_api_error(transcript_path):
-    """True when the last record of a transcript is an API error message: the agent may never report.
-    False for a transcript that is missing, unreadable, empty, or whose last record is anything else, so a later
-    record shows the agent went on."""
-    record = last_transcript_record(transcript_path)
-    return record is not None and record.get("isApiErrorMessage") is True
+    """True when the last user or assistant record of a transcript is an API error message: the agent may never
+    report. False for a transcript that is missing, unreadable, empty, or whose last such record is anything else,
+    so a later record shows the agent went on."""
+    return last_api_error(transcript_path) is not None
 
 
 def without_paths(files, paths):
@@ -1059,27 +1275,51 @@ def without_paths(files, paths):
     return [path for path in files if path not in left_out]
 
 
+def transcript_record(line):
+    """The JSON object of one transcript line, None for a torn line or any other shape."""
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(record, dict):
+        return None
+    return record
+
+
 def tool_use_calls(line):
     """The (tool name, input dict) of each tool call one transcript line makes, in order; empty when the line is
     not JSON or makes none."""
     if '"tool_use"' not in line:
         return []
-    try:
-        record = json.loads(line)
-    except ValueError:
-        return []
-    message = record.get("message") if isinstance(record, dict) else None
+    return record_tool_calls(transcript_record(line))
+
+
+def makes_own_calls(record):
+    """Whether a parsed transcript record's tool calls are its own. Only user and assistant records are: an
+    api-request-blob record repeats earlier calls, so counting it counts each call twice."""
+    return record.get("type") in CONVERSATION_RECORD_TYPES
+
+
+def record_blocks(record, block_type):
+    """The content blocks of `block_type` (such as "tool_use" or "tool_result") in a parsed transcript record's
+    message, in order; empty when the record is None or holds none."""
+    message = record.get("message") if record else None
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []
+    return [block for block in content if isinstance(block, dict) and block.get("type") == block_type]
 
-    calls = []
-    for block in content:
-        if not isinstance(block, dict) or block.get("type") != "tool_use":
-            continue
-        tool_input = block.get("input")
-        calls.append((block.get("name"), tool_input if isinstance(tool_input, dict) else {}))
-    return calls
+
+def block_input(block):
+    """A tool_use block's input dict, or {} when it has none."""
+    tool_input = block.get("input")
+    return tool_input if isinstance(tool_input, dict) else {}
+
+
+def record_tool_calls(record):
+    """The (tool name, input dict) of each tool call a parsed transcript record makes, in order; empty when the
+    record is None or makes none."""
+    return [(block.get("name"), block_input(block)) for block in record_blocks(record, "tool_use")]
 
 
 def bash_commands(transcript_path):
@@ -1442,6 +1682,21 @@ def _has_git_entry_above(folder):
         folder = parent
 
 
+def move_aside(folder, name, previous_name, caller):
+    """Rename <folder>/<name> to <previous_name>, replacing an older one, so the fork's next file of that name is new:
+    the Write tool refuses an existing file the fork has not read. The rename keeps the file's mtime. A failed rename
+    is reported on stderr under `caller` and the script goes on."""
+    current_file = pathlib.Path(folder) / name
+    if not current_file.is_file():
+        return
+
+    previous_file = pathlib.Path(folder) / previous_name
+    try:
+        os.replace(current_file, previous_file)
+    except OSError as error:
+        print(f"{caller}: could not move {current_file} to {previous_file}: {error}", file=sys.stderr)
+
+
 def write_text_atomically(path, content):
     """Write `content` (text, or bytes for a binary-exact write) to `path` so a reader sees the old file or the new
     one, never a half-written file."""
@@ -1474,6 +1729,11 @@ def append_jsonl(path, row):
         os.close(descriptor)
 
 
+def largest_entries(totals, limit, size):
+    """The `limit` (key, total) pairs of the dict `totals` whose `size(total)` is largest; ties sort by key."""
+    return sorted(totals.items(), key=lambda pair: (-size(pair[1]), pair[0]))[:limit]
+
+
 def can_append(path):
     """True when a row can be appended to the file `path` (a file not made yet needs a writable folder)."""
     path = pathlib.Path(path)
@@ -1483,9 +1743,9 @@ def can_append(path):
 
 
 def xdg_state_home():
-    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset or empty."""
+    """`$XDG_STATE_HOME` as a path, or `~/.local/state` when it is unset, empty or relative."""
     state_home = os.environ.get("XDG_STATE_HOME")
-    if not state_home:
+    if not state_home or not os.path.isabs(state_home):
         return pathlib.Path.home() / ".local" / "state"
     return pathlib.Path(state_home)
 

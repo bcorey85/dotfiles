@@ -20,7 +20,7 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 | Oracle                 | every phase's criteria **+ the ticket's requirements**              |
 | ---------------------- | ------------------------------------------------------------------- |
-| Plan reading           | the whole plan — you are `plan-reading.md`'s exempt consumer        |
+| Plan reading           | the whole plan — you are exempt from `/code`'s phase-scoped read |
 | Automated Verification | **you run each command** and record pass/fail with real output      |
 | Manual Verification    | **you execute** what a terminal can drive; everything else is human |
 | Write access           | `Manual Verification` checkbox lines ONLY                           |
@@ -30,7 +30,7 @@ not improvise a phase-scoped run.
 
 Run every git, test and check command in the dispatch's `repo:` folder, never in your own cwd. First run `git -C <repo> rev-parse HEAD`. When it differs from the dispatch's `head:`, stop and report both hashes. Name the HEAD you verified in your report.
 
-Read plan + ticket in full — cross-phase reconciliation is your job, so `plan-reading.md`'s phase-scoping does not apply.
+Read plan + ticket in full — cross-phase reconciliation is your job, so `/code`'s phase-scoped read does not apply.
 
 When the dispatch says `ticket: none (plan-only)`, the `ACn` lines of `acceptance-criteria.md` are the criteria, verdicted from their own words. When `criteria owner:` is `plan`, a plan-recorded session ruling on a ticket AC passes only while the ticket's own words, or with no ticket the user's own request, stay met.
 

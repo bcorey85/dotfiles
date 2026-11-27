@@ -9,9 +9,13 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
+from changed_lines import changed_line_sets, range_touched
 
 MAX_CLONE_PAIRS = 40
 AUDIT_MIN_TOKENS = 70
@@ -103,28 +107,10 @@ def run_jscpd(target, timeout, min_tokens=AUDIT_MIN_TOKENS, cwd=None):
         return read_pairs(Path(work_dir) / REPORT_NAME, prefix)
 
 
-def changed_line_sets(diff_files, untracked):
-    """{path: set of new-side line numbers the branch added}, from parsed diff files (source_text.FileDiff) and the
-    untracked files, whose every line counts."""
-    changed = {}
-    for diff_file in diff_files:
-        lines = changed.setdefault(diff_file.path, set())
-        for hunk in diff_file.hunks:
-            lines.update(number for number, _text in hunk.added)
-    for entry in untracked:
-        lines = changed.setdefault(entry.path, set())
-        lines.update(number for number, _text in entry.added_lines)
-    return changed
-
-
-def site_touches(site, changed):
-    changed_lines = changed.get(site.path, ())
-    return any(line in changed_lines for line in range(site.first_line, site.last_line + 1))
-
-
 def pairs_on_changed_lines(pairs, changed):
     """The pairs with at least one site on a changed line. A pair whose sites all sit in unchanged lines is old debt."""
-    return [pair for pair in pairs if any(site_touches(site, changed) for site in pair.sites)]
+    return [pair for pair in pairs
+            if any(range_touched(changed, site.path, site.first_line, site.last_line) for site in pair.sites)]
 
 
 def branch_pairs(diff_files, untracked, root, timeout):

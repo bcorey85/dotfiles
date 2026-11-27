@@ -12,11 +12,12 @@ import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import human_turn_lookup
+import transcript_time
 from human_turn_lookup import HumanTurnRefusedError
 
 NAME = "relay-session"
 SESSION_ID = "11111111-2222-3333-4444-555555555555"
-ASKED_AT = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
+ASKED_AT = transcript_time.epoch_of_timestamp("2026-11-15T06:00:00.000Z")
 
 
 def user_row(content, origin=None, timestamp="2026-11-15T06:22:12.305Z", **extra):
@@ -52,8 +53,16 @@ class HumanTurnLookupTest(unittest.TestCase):
         folder_path.mkdir(parents=True, exist_ok=True)
         (folder_path / f"{session_id}.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n")
 
+    def test_a_transcript_under_two_projects_is_refused_as_several(self):
+        self.transcript([user_row("hi", HUMAN)])
+        self.transcript([user_row("hi", HUMAN)], folder="-other-project")
+        with self.assertRaises(HumanTurnRefusedError) as raised:
+            human_turn_lookup.transcript_of_session(SESSION_ID)
+        self.assertIn("2 transcripts named", str(raised.exception))
+
     def verified(self, after=ASKED_AT):
-        return human_turn_lookup.verified_human_turn(NAME, after)
+        _, turn = human_turn_lookup.verified_human_turn(NAME, after)
+        return turn
 
     def refused(self, after=ASKED_AT):
         with self.assertRaises(HumanTurnRefusedError) as caught:
@@ -151,12 +160,12 @@ class HumanTurnLookupTest(unittest.TestCase):
     def test_a_row_with_a_bool_pid_is_not_live(self):
         (self.home / "sessions" / "1.json").write_text(json.dumps({"pid": True, "name": NAME, "sessionId": SESSION_ID}))
         self.transcript([user_row("rule it accepted", HUMAN)])
-        self.assertIn("no live session named", self.refused())
+        self.assertIn("no live session has the id or the name", self.refused())
 
     def test_a_row_with_a_pid_past_the_int_range_is_not_live(self):
         self.register(pid=10**30)
         self.transcript([user_row("rule it accepted", HUMAN)])
-        self.assertIn("no live session named", self.refused())
+        self.assertIn("no live session has the id or the name", self.refused())
 
     def test_without_a_config_dir_the_registry_and_transcripts_are_under_the_home_claude_folder(self):
         with tempfile.TemporaryDirectory() as fake_home:
@@ -194,12 +203,12 @@ class HumanTurnLookupTest(unittest.TestCase):
 
     def test_no_registry_row_is_refused(self):
         self.transcript([user_row("rule it accepted", HUMAN)])
-        self.assertIn("no live session named", self.refused())
+        self.assertIn("no live session has the id or the name", self.refused())
 
     def test_a_row_whose_pid_is_dead_is_not_live(self):
         self.register(pid=2 ** 22 + 12345)
         self.transcript([user_row("rule it accepted", HUMAN)])
-        self.assertIn("no live session named", self.refused())
+        self.assertIn("no live session has the id or the name", self.refused())
 
     def test_a_key_file_in_the_registry_folder_is_left_out(self):
         self.register()
@@ -236,10 +245,29 @@ class HumanTurnLookupTest(unittest.TestCase):
         (folder / f"{SESSION_ID}.jsonl").write_text("{not json\n" + good + "\n")
         self.assertEqual(self.verified().timestamp, "2026-11-15T06:22:12.305Z")
 
-    def test_a_timestamp_with_an_offset_and_one_with_z_read_the_same_moment(self):
-        zulu = human_turn_lookup.epoch_of_timestamp("2026-11-15T06:22:12.305Z")
-        offset = human_turn_lookup.epoch_of_timestamp("2026-11-15T07:22:12.305+01:00")
-        self.assertEqual(zulu, offset)
+    def test_a_name_two_live_rows_share_refuses_and_names_the_id_form_while_the_id_of_one_is_accepted(self):
+        other_id = "99999999-2222-3333-4444-555555555555"
+        self.register(file_name="1.json")
+        self.register(file_name="2.json", session_id=other_id)
+        self.transcript([user_row("rule it accepted", HUMAN)])
+        self.assertIn("--relayed-by <sessionId>", self.refused())
+        session, turn = human_turn_lookup.verified_human_turn(SESSION_ID, ASKED_AT)
+        self.assertEqual(session, human_turn_lookup.RelayingSession(SESSION_ID, NAME))
+        self.assertEqual(turn.timestamp, "2026-11-15T06:22:12.305Z")
+
+    def test_a_live_row_with_the_id_but_no_name_is_refused(self):
+        self.register(name="")
+        self.transcript([user_row("rule it accepted", HUMAN)])
+        with self.assertRaises(HumanTurnRefusedError) as caught:
+            human_turn_lookup.verified_human_turn(SESSION_ID, ASKED_AT)
+        self.assertIn("holds no name", str(caught.exception))
+
+    def test_the_id_of_a_dead_session_is_refused(self):
+        self.register(pid=2 ** 22 + 12345)
+        self.transcript([user_row("rule it accepted", HUMAN)])
+        with self.assertRaises(HumanTurnRefusedError) as caught:
+            human_turn_lookup.verified_human_turn(SESSION_ID, ASKED_AT)
+        self.assertIn("no live session has the id or the name", str(caught.exception))
 
 
 if __name__ == "__main__":

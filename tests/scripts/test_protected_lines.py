@@ -81,6 +81,53 @@ class StretchHelpersTest(unittest.TestCase):
         self.assertEqual(restored, "a\nb\nd\n")
 
 
+class InPlaceRestoreTest(unittest.TestCase):
+    LIMITS = "limit = 1\nlimit = 2\nlimit = 3\nlimit = 4\nlimit = 5\n"
+    EVEN_REWRITE = "limit = 1\nlimit = 20\nlimit = three\nlimit = 4\nlimit = 6\n"
+
+    def test_in_place_puts_a_lost_line_back_at_its_own_offset_in_an_even_rewrite(self):
+        restored = protected_lines.restore_protected_lines(self.LIMITS, self.EVEN_REWRITE, [3], in_place=True)
+
+        self.assertEqual(restored, "limit = 1\nlimit = 20\nlimit = 3\nlimit = 4\nlimit = 6\n")
+
+    def test_in_place_replaces_a_rewritten_comment_line_with_the_lost_one(self):
+        before = "a = 1\n# set the Bash timeout up to 600000 ms\nb = 2\n"
+        after = "a = 10\n# about 150 seconds\nb = 2\n"
+        restored = protected_lines.restore_protected_lines(before, after, [2], in_place=True)
+
+        self.assertEqual(restored, "a = 10\n# set the Bash timeout up to 600000 ms\nb = 2\n")
+
+    def test_in_place_puts_two_lost_lines_of_one_stretch_back_at_their_own_offsets(self):
+        before = "l1\nl2\nl3\nl4\nl5\n"
+        after = "m1\nm2\nm3\nm4\nm5\n"
+
+        restored = protected_lines.restore_protected_lines(before, after, [2, 4], in_place=True)
+
+        self.assertEqual(restored, "m1\nl2\nm3\nl4\nm5\n")
+
+    def test_in_place_leaves_a_protected_line_the_pass_did_not_change_alone(self):
+        before = "l1\nl2\nl3\nl4\n"
+        after = "m1\nl2\nm3\nm4\n"
+
+        restored = protected_lines.restore_protected_lines(before, after, [2, 3], in_place=True)
+
+        self.assertEqual(restored, "m1\nl2\nl3\nm4\n")
+
+    def test_in_place_with_never_replace_keeps_every_line_of_an_uneven_rewrite(self):
+        after = "limit = 1\nlimit = 20\nlimit = three\nextra = 9\nlimit = 4\nlimit = 6\n"
+
+        restored = protected_lines.restore_protected_lines(self.LIMITS, after, [3], whole_stretch=False,
+                                                           may_replace=lambda _line: False, in_place=True)
+
+        self.assertEqual(restored, "limit = 1\nlimit = 3\nlimit = 20\nlimit = three\nextra = 9\nlimit = 4\n"
+                                   "limit = 6\n")
+
+    def test_in_place_false_is_unchanged(self):
+        restored = protected_lines.restore_protected_lines(self.LIMITS, self.EVEN_REWRITE, [3])
+
+        self.assertEqual(restored, "limit = 1\nlimit = 3\nlimit = three\nlimit = 4\nlimit = 6\n")
+
+
 class RewrittenStretchTest(unittest.TestCase):
     def test_an_unmatched_lost_line_goes_after_the_last_placed_line_not_in_front(self):
         before = ["alpha beta gamma delta\n", "zzzz qqqq\n"]

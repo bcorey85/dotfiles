@@ -883,12 +883,53 @@ class PrepTest(VerifyBranchBase):
         done = self.prep()
         self.assertEqual(done.returncode, 4)
         self.assertIn("--ticket-file", done.stderr)
+        git_ticket_path = f"{self.repo.resolve() / '.git'}/claude-plans/<KEY>/00-ticket.md"
+        self.assertIn(git_ticket_path, done.stderr)
+        self.assertIn("survives a reboot", done.stderr)
+        self.assertNotIn("<scratchpad>", done.stderr)
         ticket = self.temp_root / "NOPE-1-ticket.md"
         ticket.write_text(TICKET)
         done = self.prep("--ticket-file", str(ticket))
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("plan: none", done.stdout)
         self.assertIsNone(self.context()["excludeRel"])
+
+    def test_exit_4_in_a_docs_plans_repo_names_the_docs_plans_ticket_path(self):
+        self.git("checkout", "-q", "-b", "NOPE-1-x")
+        (self.repo / "docs/plans").mkdir(parents=True, exist_ok=True)
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 4)
+        docs_ticket_path = f"{self.repo.resolve()}/docs/plans/<KEY>/00-ticket.md"
+        self.assertIn(docs_ticket_path, done.stderr)
+        self.assertNotIn("survives a reboot", done.stderr)
+
+    def git_dir_plan_folder(self, name):
+        folder = self.repo / ".git" / "claude-plans" / name
+        folder.mkdir(parents=True)
+        (folder / "plan.md").write_text(SPEC)
+        (folder / "acceptance-criteria.md").write_text(CRITERIA)
+        return folder
+
+    def test_a_git_dir_plan_folder_resolves_by_ticket_branch_with_no_arguments(self):
+        folder = self.git_dir_plan_folder("LED-9-x")
+
+        done = self.prep()
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"plan: {folder.resolve() / 'plan.md'}", done.stdout)
+        self.assertIn("ticket: none (plan-only)", done.stdout)
+
+    def test_a_ticketless_branch_with_the_git_dir_plan_path_as_target_resolves_plan_only(self):
+        self.git("checkout", "-q", "-b", "feature-x")
+        folder = self.git_dir_plan_folder("my-plan")
+
+        done = self.prep(str(folder / "plan.md"))
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn(f"plan: {folder.resolve() / 'plan.md'}", done.stdout)
+        self.assertIn("ticket: none (plan-only)", done.stdout)
 
     def test_legacy_flat_plan_exit_5_is_ticket_and_plan(self):
         self.write("docs/plans/LED-9-flat.md", TICKET + "\n" + SPEC)
@@ -2053,6 +2094,21 @@ class ReviewLogTest(VerifyBranchBase):
         self.write("src/a.py", "print(3)\n")
         self.assertEqual(self.log_review().returncode, 0)
         self.assertEqual(len(self.jsonl(self.findings)), 2)
+
+    def test_the_push_gate_credits_the_review_logged_on_the_tree_its_own_fix_commit_leaves(self):
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}):
+            self.assertTrue(reviewed_tree.record_reviewed("earlier-review", self.repo))
+            self.write("src/a.py", "print(2)\n")
+            self.commit_all("verify fix")
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_CHANGED)
+
+            done = self.log_review("[]")
+
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_REVIEWED)
+            self.write("src/a.py", "print(3)\n")
+            self.commit_all("unreviewed edit")
+            self.assertEqual(reviewed_tree.push_review_state(self.repo), reviewed_tree.PUSH_CHANGED)
 
     def test_runs_from_a_subdirectory(self):
         done = self.log_review(cwd=self.repo / "src")

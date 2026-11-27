@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 25 with a measured gain, 279 behavior changes that no intake metric reads.
+1292 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [hillclimb prices each moment with a script that sums its blocks](notes/2026-11-24-hillclimb-prices-each-moment-with-a-script-that.md).
+Latest change: 2026-11-26, [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md).
 
 ## Top gains
 

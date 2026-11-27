@@ -20,12 +20,10 @@ You run at branch end, after `/review` converged every phase — correctness is 
 
 | Oracle                 | **the ticket's ACs, always** + every phase's criteria               |
 | ---------------------- | ------------------------------------------------------------------- |
-| Plan reading           | the whole plan — you are `plan-reading.md`'s exempt consumer        |
+| Plan reading           | the whole plan — you are exempt from `/code`'s phase-scoped read |
 | Automated Verification | **you run each command** and record pass/fail with real output      |
 | Manual Verification    | **you execute** what a terminal can drive; everything else is human |
 | Write access           | `Manual Verification` checkbox lines ONLY                           |
-
-**A dispatch naming `scope: phase <N>` is stale** — say so and stop; do not improvise a phase-scoped run.
 
 Run every git, test and check command in the dispatch's `repo:` folder, never in your own cwd. First run `git -C <repo> rev-parse HEAD`. When it differs from the dispatch's `head:`, stop and report both hashes. Name the HEAD you verified in your report.
 

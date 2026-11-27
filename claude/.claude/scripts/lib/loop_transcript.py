@@ -12,6 +12,7 @@ import shlex
 import full_check_receipt
 import script_utils
 import shell_command
+import transcript_time
 
 FINDING_ID_HEX_LEN = 16
 FINDING_ID_PATTERN = re.compile(rf"[0-9a-f]{{{FINDING_ID_HEX_LEN}}}")
@@ -145,6 +146,8 @@ class LoopTranscript:
         self.send_lines = {}  # SendMessage tool_use_id -> (transcript line, recipient)
         self.resumes = []  # (transcript line, agent id, SendMessage tool_use_id) of each resume
         self.background_shells = []  # (transcript line, tool_use_id) of the shell calls that run on in the background
+        self.skill_calls = set()  # tool_use_ids of the Skill calls
+        self.skill_forks = {}  # Skill tool_use_id -> agent id of the background forked run it started
         self.handback_ids = set()  # tool_use_ids of the SubagentHandback calls
         self.handback_results = set()  # tool_use_ids of the SubagentHandback calls whose result is in the transcript
         self.handback_lines = []  # the transcript lines of the SubagentHandback calls a hook did not deny
@@ -171,19 +174,30 @@ class LoopTranscript:
         carrier += " " + str((rec.get("attachment") or {}).get("prompt") or "")
         self.read_reports(n, carrier)
 
-        # An api-request-blob record repeats the turn's blocks, so skip it: each call counts once. No other record
-        # type carries tool blocks.
-        if rec.get("type") not in ("user", "assistant"):
+        if not script_utils.makes_own_calls(rec):
             return
 
         blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
         for block in blocks:
             self.read_block(n, rec.get("type"), block)
 
-        shell_result = rec.get("toolUseResult")
-        if isinstance(shell_result, dict) and shell_result.get("backgroundTaskId"):
+        tool_use_result = rec.get("toolUseResult")
+        self.read_skill_fork(tool_use_result, blocks)
+        if isinstance(tool_use_result, dict) and tool_use_result.get("backgroundTaskId"):
             self.background_shells += [(n, block.get("tool_use_id")) for block in blocks
                                        if block.get("type") == "tool_result"]
+
+    def read_skill_fork(self, tool_use_result, blocks):
+        """Map each Skill call whose result says it started a background forked run to that run's agent id. A
+        foreground Skill result has no `status: "forked"`, so it maps nothing."""
+        if not isinstance(tool_use_result, dict):
+            return
+        agent_id = tool_use_result.get("agentId")
+        if tool_use_result.get("status") != "forked" or not tool_use_result.get("background") or not agent_id:
+            return
+        for block in blocks:
+            if block.get("type") == "tool_result" and block.get("tool_use_id") in self.skill_calls:
+                self.skill_forks[block["tool_use_id"]] = agent_id
 
     def read_reports(self, n, carrier):
         for notification in NOTIFICATION.finditer(carrier):
@@ -270,6 +284,8 @@ class LoopTranscript:
         if block.get("name") == "Agent":
             self.kinds[block.get("id")] = tool_input.get("subagent_type") or ""
             self.dispatched_at[block.get("id")] = n
+        elif block.get("name") == "Skill":
+            self.skill_calls.add(block.get("id"))
         elif block.get("name") == "SendMessage":
             self.messages_sent.append((n, tool_input.get("to")))
             self.send_lines[block.get("id")] = (n, tool_input.get("to"))
@@ -316,10 +332,23 @@ class LoopTranscript:
         launch's tool_use_id or by the launched agent's id) or agent message, and whose agent has not ended on an API
         error. Only a result that starts with the launch text is a launch: a foreground report may quote it."""
         return [tool_use_id for tool_use_id, text in self.results.items()
-                if text.lstrip().startswith(ASYNC_LAUNCH) and tool_use_id not in self.notifications
-                and self.launched_agent(tool_use_id) not in self.agent_messages
-                and self.launched_agent(tool_use_id) not in self.task_notified_at
-                and not self.agent_died(self.launched_agent(tool_use_id))]
+                if text.lstrip().startswith(ASYNC_LAUNCH)
+                and not self.has_reported_back(tool_use_id, self.launched_agent(tool_use_id))]
+
+    def open_skill_forks(self):
+        """The agent ids of the background forked runs that Skill calls started and that have not reported back, by
+        task notification (keyed by the Skill call's tool_use_id or by the agent id) or agent message, and whose agent
+        has not ended on an API error."""
+        return [agent_id for tool_use_id, agent_id in self.skill_forks.items()
+                if not self.has_reported_back(tool_use_id, agent_id)]
+
+    def has_reported_back(self, tool_use_id, agent_id):
+        """True when the launch `tool_use_id` of agent `agent_id` (None when its result names none) has a task
+        notification keyed by either, or an agent message, or the agent ended on an API error."""
+        return (tool_use_id in self.notifications
+                or agent_id in self.agent_messages
+                or agent_id in self.task_notified_at
+                or self.agent_died(agent_id))
 
     def agent_died(self, agent_id):
         """True when the transcript of agent `agent_id`, kept beside this loop's own, ends on an API
@@ -415,23 +444,60 @@ def agent_finished(transcript_path):
 WRITE_TOOL_NAMES = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def written_paths(transcript_path):
-    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls."""
-    paths = set()
+def written_paths(transcript_path, since=None, succeeded_only=False):
+    """The file paths a transcript's Write, Edit, MultiEdit and NotebookEdit calls name, as written in the calls.
+    With `since` (epoch seconds), only calls whose record `timestamp` is later count; a record with no parsable
+    timestamp counts for none. With `succeeded_only`, a call whose tool_result has `is_error` true is left out; a
+    call with no result counts, since one cut off mid-write may have written."""
+    paths_by_call = {}
+    refused_ids = set()
     with open(transcript_path, encoding="utf-8", errors="replace") as transcript:
         for line in transcript:
-            paths.update(call_paths(line))
-    return paths
-
-
-def call_paths(line):
-    """The file paths the Write, Edit, MultiEdit and NotebookEdit calls of one transcript line name."""
-    paths = []
-    for name, tool_input in script_utils.tool_use_calls(line):
-        if name not in WRITE_TOOL_NAMES:
+            refused_ids.update(refused_call_ids(line))
+            if since is not None and not recorded_after(line, since):
+                continue
+            for call_id, found in call_paths_by_id(line):
+                paths_by_call.setdefault(call_id, set()).update(found)
+    paths = set()
+    for call_id, found in paths_by_call.items():
+        if succeeded_only and call_id in refused_ids:
             continue
-        paths.extend(input_paths(tool_input))
+        paths.update(found)
     return paths
+
+
+def refused_call_ids(line):
+    """The tool_use ids whose tool_result blocks on this transcript line have `is_error` true."""
+    record = script_utils.transcript_record(line) if '"tool_result"' in line else None
+    results = script_utils.record_blocks(record, "tool_result")
+    return [block.get("tool_use_id") for block in results if block.get("is_error")]
+
+
+def call_paths_by_id(line):
+    """The (tool_use id, file paths) of each Write, Edit, MultiEdit and NotebookEdit call on one transcript line
+    that names a path. A call with no id gets a key of its own."""
+    record = script_utils.transcript_record(line) if '"tool_use"' in line else None
+    calls = []
+    for block in script_utils.record_blocks(record, "tool_use"):
+        if block.get("name") not in WRITE_TOOL_NAMES:
+            continue
+        found = input_paths(script_utils.block_input(block))
+        if found:
+            calls.append((block.get("id") or object(), found))
+    return calls
+
+
+def recorded_after(line, since):
+    """Whether the transcript record on this line has an ISO 8601 `timestamp` later than `since` (epoch seconds)."""
+    record = script_utils.transcript_record(line)
+    timestamp = record.get("timestamp") if record else None
+    if not isinstance(timestamp, str):
+        return False
+    try:
+        epoch = transcript_time.epoch_of_timestamp(timestamp)
+    except ValueError:
+        return False
+    return epoch > since
 
 
 def input_paths(tool_input):

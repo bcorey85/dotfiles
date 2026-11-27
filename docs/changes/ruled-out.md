@@ -7,12 +7,14 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-127 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+129 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
 156 further findings are left out of this page.
 
 ## Rejected
 
+* 2026-11-26 [The coder's why-comment line does not cut unkept comments, so it is deleted](../../../agent-evals/findings/2026-11-26-the-coder-s-why-comment-line-adds-unkept-comments.md) - REMOVE: With the coder-core why-comment line a Sonnet coder writes 62 comment lines the gate would block over 12 runs; without it, 51, so the line comes out. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-22 [Deleting four rules the coder and reviewer already follow cuts 198 words per load with no behavior loss](../../../agent-evals/findings/2026-11-22-deleting-four-rules-the-coder-and-reviewer-already.md) - REMOVE: Four coder and reviewer rules score 8 of 8 with the rule and 8 of 8 without, so deleting them cuts about 198 words from each load and the agents behave the same. [watch: no watch]
   What would reopen it: none recorded
 * 2026-10-17 [Reuse line in architect plan steps, coder build: no hand-written sums in either arm](../../../agent-evals/findings/2026-10-17-reuse-line-in-architect-plan-steps-coder-build-no.md) - REMOVE: Reuse lines in architect plan steps changed no code: no coder hand-wrote the money sum with or without them (six payments-phase plans, one Sonnet coder each), and the rule adds 20% Opus architect output. [watch: no watch]
@@ -60,6 +62,8 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-25 [The code reviewer's unasked-files rule moves the cut of an unasked doc from 2 of 8 to 8 of 8](../../../agent-evals/findings/2026-11-25-the-code-reviewer-s-unasked-files-rule-moves-the.md) - HOLD: With code-reviewer Step 3 item 7 on, Opus flagged a planted doc that no plan step asks for, and that restates the code, as a cut in 8 of 8 runs; with the item removed, 2 of 8 (UF01, neutral prompt). [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-23 [The hunk watch viewer grows with every reload in 0.24.1 and 0.25.0 alike](../../../agent-evals/findings/2026-11-23-the-hunk-watch-viewer-grows-about-1-7-mb-per.md) - HOLD: Upgrading hunk to 0.25.0 does not stop the lane viewer's memory growth: RSS climbs about 0.7 MB per small reload and 1.4 to 5 MB per big-diff reload, and never falls back, so the lane viewer keeps its memory cap [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-23 [Hillclimb pricing line prices more candidate lines but leaves 17 of 18 reports unrankable](../../../agent-evals/findings/2026-11-23-hillclimb-pricing-rule-raises-priced-moments-from.md) - HOLD: A hillclimb line telling the retro to price each moment on its Queued and Skipped lines raises priced candidate lines from 27% to 44% (29/107 to 48/110) on two session fixtures, but only 1 of 18 reports prices three quarters of its lines, so the lists still cannot be ordered by price. [watch: no watch]

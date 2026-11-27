@@ -1,13 +1,19 @@
 """Checks for inline_interpreter_hint.py: it denies interpreter code given inline or on stdin, and names the script
 file to write instead."""
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 import toolkit_paths
 
+sys.path.insert(0, str(toolkit_paths.LIB_DIR))
+import memory_cap_scope
+
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
+GENERAL_ROUTE = "Write the code to a script file in your scratchpad directory with the Write tool"
 
 DENIED_COMMANDS = {
     "python_dash_flag_c": "python3 -c 'print(1)'",
@@ -159,8 +165,8 @@ ALLOWED_COMMANDS = {
 
 
 class InlineInterpreterHintTest(unittest.TestCase):
-    def reason_for(self, command):
-        payload = json.dumps({"tool_input": {"command": command}})
+    def reason_for(self, command, **tool_input_fields):
+        payload = json.dumps({"tool_input": {"command": command, **tool_input_fields}})
         finished = subprocess.run([sys.executable, str(HOOK)], input=payload, capture_output=True, text=True,
                                   check=True)
         if not finished.stdout.strip():
@@ -177,11 +183,62 @@ class InlineInterpreterHintTest(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(self.reason_for(command), "", command)
 
+    def test_a_full_suite_run_is_denied_in_the_foreground_and_allowed_in_the_background(self):
+        command = f"{memory_cap_scope.CAPPED_PREFIX} bash tests/run.sh"
+        self.assertNotEqual(self.reason_for(command), "", "foreground call")
+        self.assertNotEqual(self.reason_for(command, run_in_background=False), "", "explicit foreground call")
+        for flag in (True, "true"):
+            with self.subTest(run_in_background=flag):
+                self.assertEqual(self.reason_for(command, run_in_background=flag), "")
+
     def test_the_deny_names_the_scratchpad_script_and_the_stdin_forms(self):
         reason = self.reason_for("python3 - <<'EOF'\nprint(1)\nEOF")
         self.assertIn("scratchpad", reason)
         self.assertIn("script file", reason)
         self.assertIn("python3 -", reason)
+
+    def scratchpad_reason(self, make_folder, **payload_fields):
+        """The deny text for an inline run, with CLAUDE_CODE_TMPDIR set to a temp folder that holds the session's
+        scratchpad only when make_folder is true. Returns (reason, scratchpad folder)."""
+        with tempfile.TemporaryDirectory() as temp:
+            slug = "-home-user-project"
+            session = "abc-123"
+            scratchpad = os.path.join(temp, f"claude-{os.getuid()}", slug, session, "scratchpad")
+            if make_folder:
+                os.makedirs(scratchpad)
+            transcript = f"/home/user/.claude/projects/{slug}/{session}.jsonl"
+            payload = {"tool_input": {"command": "python3 -c 'print(1)'"}, "transcript_path": transcript,
+                       "session_id": session, **payload_fields}
+            env = {**os.environ, "CLAUDE_CODE_TMPDIR": temp}
+            finished = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload), capture_output=True,
+                                      text=True, check=True, env=env)
+            reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+            return reason, scratchpad
+
+    def test_the_deny_leads_with_the_route_and_names_the_existing_session_scratchpad(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True)
+        self.assertTrue(reason.startswith(f"Write the code to a script file in {scratchpad} with the Write tool"))
+        self.assertIn("python3 -", reason)
+
+    def test_the_deny_keeps_the_general_words_without_a_transcript_path(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True, transcript_path=None)
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
+
+    def test_the_deny_keeps_the_general_words_for_a_transcript_path_with_no_folder(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True, transcript_path="x.jsonl")
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
+
+    def test_the_deny_keeps_the_general_words_when_the_scratchpad_folder_is_missing(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=False)
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
+
+    def test_the_deny_keeps_the_general_words_without_a_session_id(self):
+        reason, scratchpad = self.scratchpad_reason(make_folder=True, session_id="")
+        self.assertNotIn(scratchpad, reason)
+        self.assertTrue(reason.startswith(GENERAL_ROUTE))
 
 
 if __name__ == "__main__":

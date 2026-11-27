@@ -96,10 +96,6 @@ def against_original_cwd(value, original_cwd, must_exist):
 
 PLAN_ONLY_MODE = "plan-only"
 FOLDER_MODES = ("dir", PLAN_ONLY_MODE)
-PLAN_FILE_NAMES = (plan_format.SPEC_FILE_NAME, plan_format.PLAN_ONLY_PLAN_NAME)
-PLAN_GLOB = "*-05-plan.md"
-PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
-
 
 def folder_of_plan_file(target, top):
     """The plan folder when `target` is an existing file named `spec.md` or `plan.md`; else `target` unchanged."""
@@ -108,22 +104,29 @@ def folder_of_plan_file(target, top):
     candidate = pathlib.Path(target)
     if not candidate.is_absolute():
         candidate = top / candidate
-    if candidate.is_file() and candidate.name in PLAN_FILE_NAMES:
+    if candidate.is_file() and candidate.name in plan_format.PLAN_FILE_NAMES:
         return str(candidate.parent)
     return target
 
 
-def find_plan_in_dir(task_dir):
-    """The first task-dir file named in `PLAN_FILE_NAMES`, else the single `PLAN_GLOB` match (legacy
-    `<KEY>-05-plan.md` name)."""
-    for fixed_name in PLAN_FILE_NAMES:
-        fixed = task_dir / fixed_name
-        if fixed.is_file():
-            return fixed
-    matches = sorted(task_dir.glob(PLAN_GLOB))
-    if len(matches) > 1:
-        raise vc.VerifyError(f"{task_dir} holds several {PLAN_GLOB}: {', '.join(m.name for m in matches)}")
-    return matches[0] if matches else None
+find_plan_in_dir = vc.raising_verify_error(plan_format.find_plan_in_dir)
+
+
+def ticket_file_advice(resolver, top):
+    """The exit-4 instruction for a ticket-only run: write the fetched ticket where the resolver's `--home` puts a
+    plan folder for `<KEY>`, the ticket key the caller fills in."""
+    home = vc.run(["bash", resolver, "--home", "<KEY>"], cwd=top)
+    if home.returncode != 0:
+        return ("no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
+                f"raw fields to a ticket file, then rerun with --ticket-file <that file>. The resolver could not "
+                f"name a folder for it (exit {home.returncode}): {home.stderr.strip()}")
+    ticket_path = f"{home.stdout.strip()}/00-ticket.md"
+    git_dir = vc.run(["git", "rev-parse", "--absolute-git-dir"], cwd=top, check=True).stdout.strip()
+    reboot_note = ""
+    if pathlib.Path(ticket_path).is_relative_to(git_dir):
+        reboot_note = " (that folder is in the git dir, so it survives a reboot)"
+    return ("no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
+            f"raw fields to {ticket_path}{reboot_note}, then rerun with --ticket-file {ticket_path}.")
 
 
 def resolve_inputs(target, ticket_file, top):
@@ -143,12 +146,7 @@ def resolve_inputs(target, ticket_file, top):
     if code == 3:
         raise vc.VerifyError("several matches; ask the user which:\n" + output, 3)
     if code == 4:
-        raise vc.VerifyError(
-            "no plan or task dir found. Ticket-only: fetch the ticket per _shared/jira-ticket.md, write its "
-            "raw fields to <scratchpad>/<KEY>-ticket.md, then rerun with --ticket-file <that path>.\n"
-            + done.stderr.strip(),
-            4,
-        )
+        raise vc.VerifyError(ticket_file_advice(resolver, top) + "\n" + done.stderr.strip(), 4)
     if code not in (0, 5):
         raise vc.VerifyError(f"resolve-task-dir.sh exited {code}: {done.stderr.strip()}")
 
@@ -165,7 +163,7 @@ def resolve_inputs(target, ticket_file, top):
         return plan_only_inputs(task_dir, output)
     spec = find_plan_in_dir(task_dir)
     if spec is None:
-        return "dir", ticket, None, f"{task_dir.name} has no {PLAN_NAMES_TEXT}: ticket-only (plan: none)"
+        return "dir", ticket, None, f"{task_dir.name} has no {plan_format.PLAN_NAMES_TEXT}: ticket-only (plan: none)"
     return "dir", ticket, spec, f"task dir {output}"
 
 

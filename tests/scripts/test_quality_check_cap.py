@@ -211,6 +211,14 @@ class QualityCheckCapTest(unittest.TestCase):
         self.post("FOO=1 pytest x")
         self.assert_allowed(self.pre("pytest x"))
 
+    def test_a_memory_capped_run_and_the_plain_run_share_one_key(self):
+        capped_prefix = "systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0"
+        self.post(f"{capped_prefix} pytest tests/x.py")
+        self.assert_denied(self.pre("pytest tests/x.py"))
+        self.edit()
+        self.post("pytest tests/y.py")
+        self.assert_denied(self.pre(f"{capped_prefix} pytest tests/y.py"))
+
     def test_an_env_prefix_inside_a_cd_chain_is_part_of_the_key(self):
         self.post("pytest x")
         self.assert_allowed(self.pre(f"cd {self.work} && FOO=1 pytest x"))
@@ -724,7 +732,7 @@ class QualityCheckCapTest(unittest.TestCase):
         self.assert_allowed(self.pre("for i in 1 2\ndo\n  cargo test\ndone"))
         self.assert_allowed(self.pre("for i in 1 2; do cargo test 2>&1 | tail -3; done"))
 
-    # a run whose output was cut by tail, head or grep
+    # a run whose output was cut by tail, head, grep or rg
 
     def test_a_check_piped_to_tail_is_allowed_once_more_redirected_to_a_file(self):
         ruff = "ruff check a.py b.py c.py"
@@ -744,6 +752,19 @@ class QualityCheckCapTest(unittest.TestCase):
                 command = f"pytest tests/t{index}.py"
                 self.post(f"{command} {cut}")
                 self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+
+    def test_rg_cuts_the_output_too(self):
+        cuts = (("pytest tests/r0.py", "| rg '^(Ran|OK|FAILED)'"),
+                ("pytest tests/r1.py", "2>&1 | rg -A 3 FAILED"),
+                ("pytest tests/r2.py", "| rg"),
+                ("python3 -m unittest discover -s tests", "2>&1 | rg '^(Ran|OK|FAILED)'"))
+        for command, cut in cuts:
+            with self.subTest(command=command, cut=cut):
+                self.post(f"{command} {cut}")
+                self.assert_allowed(self.pre(f"{command} > /tmp/check.log 2>&1"))
+                reason = self.assert_denied(self.pre(command))
+                self.assertIn("tail, head, grep or rg", reason)
+                self.assertIn("no tail, head, grep or rg after it", reason)
 
     def test_a_cut_run_still_denies_a_rerun_that_does_not_keep_the_output(self):
         self.post("pytest -q | tail -3")
@@ -914,6 +935,26 @@ class QualityCheckCapTest(unittest.TestCase):
         payload["hook_event_name"] = "PostToolUse"
         finished = self.fire_raw(json.dumps(payload))
         self.assertEqual((finished.returncode, finished.stdout), (5, ""))
+
+
+class WithoutSystemdRunTest(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        import quality_check_cap
+        self.module = quality_check_cap
+
+    def test_a_quoted_option_value_is_dropped_with_the_other_options(self):
+        segment = 'systemd-run --user --scope -p "Description=unit tests" pytest -x'
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
+
+    def test_a_single_quoted_option_value_shares_the_plain_key(self):
+        segment = "systemd-run --user --scope -p 'MemoryMax=8G' -p MemorySwapMax=0 pytest"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest")
+
+    def test_unquoted_options_are_dropped(self):
+        segment = "systemd-run --user --scope -p MemoryMax=8G pytest -x"
+        self.assertEqual(self.module.without_systemd_run(segment), "pytest -x")
 
 
 if __name__ == "__main__":

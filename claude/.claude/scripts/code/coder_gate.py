@@ -22,6 +22,9 @@
                                   run that died before `clear`, or a second concurrent run in the same session) gates
                                   every later coder hand-back of that session with that gate until `clear` or
                                   MAX_GATE_AGE_SECONDS.
+                                  A /code fork (agent type code-fork) is not a coder: the hook denies its hand-back
+                                  while its transcript shows a coder dispatch with no review and no stop.md write
+                                  after it (fork_review.py), and reads no gate file.
   coder_gate.py bash-hook         PreToolUse hook on Bash: refuses a coder's whole-package check
 
 A command may hold {files}, or {files:.ts,.tsx} to keep only those suffixes, and {tests} or {tests:.ts,.tsx} to keep
@@ -82,10 +85,13 @@ release_import_guard = import_guard.guard("coder-gate", __name__)
 import check_output
 import check_scope
 import collision_retry
+import fork_review
 import gate_env
 import hook_input
+import memory_cap_scope
 import script_utils
 import shell_command
+import shell_command_words
 import test_run_output
 from ansi_text import strip_ansi
 from check_output import (
@@ -480,7 +486,9 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
     # (exit code, output, the timeout the last run used) of the command. A run that collided on a shared test
     # database waits and runs once more, in what the budget has left; when no time is left, or the retry collides
     # too, the collided output stands and sort_failures reads it as a setup fault.
-    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=command_timeout)
+    # Inside the shared capped slice where the machine has one; run_process takes a list as an argv, a string as shell.
+    popen_command, _ = memory_cap_scope.shell_popen_args(command)
+    code, stdout, stderr = script_utils.run_process(popen_command, repo_root, env=environment, timeout=command_timeout)
     output = stdout + stderr
     seconds_left = float("inf")
     if budget_seconds is not None:
@@ -491,7 +499,9 @@ def _run_retrying_collision(command, repo_root, environment, command_timeout, bu
 
     collision_retry.wait_out_collision()
     retry_timeout = min(COMMAND_TIMEOUT_SECONDS, retry_seconds)
-    code, stdout, stderr = script_utils.run_process(command, repo_root, env=environment, timeout=retry_timeout)
+    # A fresh argv: each capped run names a scope unit of its own, and the first run's unit stays loaded when it failed.
+    retry_command, _ = memory_cap_scope.shell_popen_args(command)
+    code, stdout, stderr = script_utils.run_process(retry_command, repo_root, env=environment, timeout=retry_timeout)
     return code, stdout + stderr, retry_timeout
 
 
@@ -618,8 +628,10 @@ def command_outcomes(sorted_failures, timed_out, skipped, not_started=()):
 # unnamed_lines: the `not run:`, `command error:` and `setup fault:` lines of the commands that gave no result and
 # that the result line does not already name; empty for none.
 # gave_no_result: True when any command timed out, never started, errored or hit a setup fault, whatever the outcome.
+# ran_nothing: True when every command was skipped (no changed file matched its placeholder) or no command was
+# given, so no test ran.
 ScopedRun = namedtuple("ScopedRun", ["result", "tails", "real_failures", "summaries",
-                                     "unnamed_lines", "gave_no_result"])
+                                     "unnamed_lines", "gave_no_result", "ran_nothing"], defaults=(False,))
 
 
 def unnamed_result_lines(outcome, unrun, sorted_failures):
@@ -640,7 +652,7 @@ def scoped_run(repo_root, commands, gate_assignments, log_path, budget_seconds=N
     # The ScopedRun of the scoped commands. real_failures holds the (command, outcome, output) of each real failure the
     # tails quote: empty unless the result is a failure. A budget_seconds bounds the whole run, as run_commands does.
     if not commands:
-        return ScopedRun("not run (no scoped test commands)", [], [], [], [], False)
+        return ScopedRun("not run (no scoped test commands)", [], [], [], [], False, True)
 
     gate ={"commands": commands, "repoRoot": repo_root,
             "env": script_utils.environment_from_assignments(gate_assignments)}
@@ -657,7 +669,8 @@ def scoped_run(repo_root, commands, gate_assignments, log_path, budget_seconds=N
                            sorted_failures.setup_faults, timed_out, not_started)
     unnamed_lines = unnamed_result_lines(outcome, unrun, sorted_failures)
     gave_no_result = bool(unrun or sorted_failures.command_errors or sorted_failures.setup_faults)
-    return ScopedRun(result, tails, real_failures, summaries, unnamed_lines, gave_no_result)
+    ran_nothing = len(skipped) == len(commands)
+    return ScopedRun(result, tails, real_failures, summaries, unnamed_lines, gave_no_result, ran_nothing)
 
 
 def scoped_result(sorted_failures, timed_out, skipped, commands, log_path, not_started=()):
@@ -723,18 +736,10 @@ def scoped_test_failure(failures, log_path):
     return f"{result}; full output: {log_path}", tails
 
 
-def runs_script(command, script_name):
-    # Whether a gate command runs the toolkit script `python3 <dir>/<script_name> --base <sha>`: a word of the command
-    # must be the script's own file.
-    for words in shell_command.resolved_command_words(command):
-        if any(pathlib.PurePath(word).name == script_name for word in words):
-            return True
-    return False
-
-
 def is_stale_prose_check(command):
     # The gate command that lists prose naming a changed symbol: a hit asks for a reading, not a code fix.
-    return runs_script(command, STALE_PROSE_SCRIPT)
+    # A word of the command must be the script's own file.
+    return bool(shell_command_words.script_call_arguments(command, STALE_PROSE_SCRIPT))
 
 
 def failure_text(failures):
@@ -871,6 +876,14 @@ def _run_gate_under_lock(gate_file, checked_gate, event, hook_started):
 def run_hook():
     hook_started = time.monotonic()
     event = json.load(sys.stdin)
+    # A /code fork is judged on its own transcript, never on the coder gate file.
+    # Fail closed: a crash here exits 2 through run_gate and denies the hand-back.
+    if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
+        reason = fork_review.missing_review_reason(event)
+        if reason:
+            script_utils.pre_tool_use_deny(reason)
+        return
+
     if event.get("agent_type") != "coder":
         return
 

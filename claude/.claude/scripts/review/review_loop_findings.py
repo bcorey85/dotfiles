@@ -100,6 +100,12 @@ def inert_change_marks(text):
     return ASK_CHANGE_MARK.sub(lambda mark: f"{mark.group(0)[:-1]} :", text)
 
 
+def ask_quoted_text(text):
+    """`text` as an ask quotes it: on one line, with any `change:` marker made inert. An accepted ask's text is built
+    the same way, so the two match."""
+    return inert_change_marks(script_utils.one_line(text, None))
+
+
 def section(text, name):
     # The section body keeps the indent of its first line: review_section_findings compares marker indents.
     match = re.search(rf"^#+\s*{name}\s*$(.*?)(?=^#+\s|\Z)", text, re.S | re.M | re.I)
@@ -372,7 +378,7 @@ def names_absent_file(repo, tree_paths, finding):
         return False
     if finding.bare:
         return False
-    return not any(known == path or known.endswith("/" + path) for known in tree_paths)
+    return not any(script_utils.path_has_tail(known, path) for known in tree_paths)
 
 
 def plan_change_items(items):
@@ -400,7 +406,7 @@ def pointer_ask_split(asks, open_asks):
 POINTER_ASK_REASON = "ask only points back to another ask"
 NOTE_ASK_REASON = "item proposes no change and asks no question, so it is a note and no ask"
 REPEATED_ASK_REASON = "ask repeats an earlier ask or a plan impact already on record"
-REVERTED_APPROVAL_EDIT_REASON = "the fix coder's edit to a file that needs the user's approval was reverted"
+REVERTED_APPROVAL_EDIT_REASON = "the fix coder's edit to an approval-only file was reverted"
 # Filled with `standing_rulings.ruling_label(ruling)`: who ruled and when.
 KEPT_OWNER_LINE_EDIT_REASON = ("no approval ask is needed for an owner-line edit kept under the standing ruling by "
                                "{ruling}")

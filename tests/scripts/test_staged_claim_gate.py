@@ -1,5 +1,8 @@
 """Checks for staged_claim_gate.py, the Stop and SubagentStop hook that blocks a final message saying files are
 staged when the index does not hold them."""
+import contextlib
+import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -281,6 +285,27 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_check_of_what_is_staged_passes_with_an_empty_index(self):
+        for message in ("It checks the skill list against what is staged.",
+                        "It lists whatever is staged.", "It keeps whichever are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_first_person_or_past_tense_claim_after_what_still_blocks_with_an_empty_index(self):
+        for message in ("Here is what I staged.", "Here is what I've staged.", "Here is what I staged: a.txt.",
+                        "Here is what was staged for you to commit."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_copula_before_what_is_staged_is_still_a_claim_with_an_empty_index(self):
+        for message in ("Here is what is staged: app.py and lib.py.", "This is what is staged now."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_claim_naming_another_worktree_by_path_passes_when_its_index_holds_the_files(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        self.assert_passes(f"{linked}/a.txt is staged.")
+
     def test_a_whether_in_an_earlier_clause_does_not_hide_the_claim(self):
         self.assert_blocked("I checked whether the hash moved, and all files are staged.")
 
@@ -399,6 +424,69 @@ class StagedClaimGateTest(unittest.TestCase):
         git(self.repo, "add", "a.txt")
         reason = self.assert_blocked("c.txt is staged.", cwd=sub)
         self.assertIn("sub/c.txt", reason)
+
+    def test_a_crash_in_one_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged. Next I'll look at the nits."}
+        with mock.patch.object(gate.announced_step, "announced_step", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: announced_step skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_staged_claim_check_keeps_the_announced_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "Next I'll look at the nits."}
+        with mock.patch.object(gate, "staged_claim_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn(gate.announced_step.REASON, decision["reason"])
+        self.assertIn("staged-claim-gate: staged_claim_reason skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_permission_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate, "permission_question_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: permission_question skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_fork_review_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "SubagentStop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate.fork_review, "missing_review_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: fork_review skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_main_exits_zero_and_names_the_gate_on_stderr(self):
+        result = subprocess.run([sys.executable, str(SCRIPT)], input="not json", capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("staged-claim-gate: skipped:", result.stderr)
+
+    def load_gate(self):
+        sys.path.insert(0, str(toolkit_paths.GATES_DIR))
+        self.addCleanup(sys.path.remove, str(toolkit_paths.GATES_DIR))
+        spec = importlib.util.spec_from_file_location("staged_claim_gate_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        return gate
+
+    def run_main(self, gate, hook):
+        output, errors = io.StringIO(), io.StringIO()
+        with (mock.patch.object(sys, "stdin", io.StringIO(json.dumps(hook))),
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
+            gate.main()
+        return json.loads(output.getvalue()), errors.getvalue()
 
     def test_a_second_stop_and_a_claim_outside_any_repo_pass(self):
         self.assert_passes("The files are staged.", stop_hook_active=True)
@@ -629,6 +717,36 @@ class PermissionQuestionTest(unittest.TestCase):
                         "The reviewer asked twice. Want me to reply on the thread?"):
             with self.subTest(message=message):
                 self.assert_passes(message)
+
+    def test_a_question_about_a_tracker_write_passes_but_a_local_file_edit_is_sent_back(self):
+        for message in ("The two tickets depend on each other. Shall I add a Jira link from A to B?",
+                        "The ticket has no tag yet. Want me to label the ticket?",
+                        "Want me to comment on the PR?",
+                        "Want me to assign the issue to Sam?",
+                        "Want me to transition the Jira ticket?",
+                        "Want me to comment on Linear?",
+                        "Want me to add a label in GitLab?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("Want me to add linear regression?",
+                        "Want me to comment on GitHub cli?",
+                        "Want me to edit GitLab pages?",
+                        "Want me to add the github.py hook?",
+                        "Want me to edit tickets.py?",
+                        "Want me to add a GitHub actions workflow?",
+                        "Want me to label the variables?",
+                        "Want me to address the reference?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_local_edit_where_the_tracker_noun_is_a_modifier_is_sent_back(self):
+        for message in ("Should I comment out the PR check in run.sh?",
+                        "Should I add the ticket number to the commit message?",
+                        "Want me to add the GitHub link to the README?",
+                        "Should I edit the issue template in docs?",
+                        "Should I link the PR helper into lib?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
 
     def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
         for message in ("Want me to move the helper in github.py?",

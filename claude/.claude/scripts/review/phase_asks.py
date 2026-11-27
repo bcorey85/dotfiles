@@ -5,9 +5,11 @@
     python3 phase_asks.py rule [--by user [{relay_usage}]]
         <accepted|rejected>:<one-line reason> ...
 
-An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md, or an ask that names a
-criterion of a plan whose criteria the user owns) is refused (exit 2, nothing logged)
-unless the call carries `--by user`, which the session uses only to record the user's own ruling. A user
+An ask marked `user_only` (a coder's edit to CLAUDE.md, CLAUDE.local.md or AGENTS.md, except the scripts
+CLAUDE.md, which the session rules, or an ask that names a criterion of a plan whose criteria the user owns)
+is refused (exit 2, nothing logged)
+unless the call carries `--by user`, which the session uses only to record the user's own ruling. The one
+exception: a session `rejected` on a user-only ask for a wanted change to such a file passes. A user
 ruling the user gave to another live session is recorded with
 `--by user {relay_usage}`
 The script needs a real user turn of that session's transcript typed after the newest open row of the batch (it
@@ -16,14 +18,15 @@ stored as an `ask-ruling-relayed` row (who relayed and the turn's time, never th
 Only a user_only ask is credited to the user; the session rules the rest.
 
 `code_wait.py review` opens the asks (one `phase-asks-open` row in the hand-back store) when it returns a clean
-phase packet (converged, or capped and read as deferred) that holds finding asks. `list` prints them. `rule` takes
-one outcome per finding ask, in order, logs each ask's outcome row decided by the session, except a user-only ask's
-row under `--by user`, which is decided by the user, and stores one `phase-asks-ruled` row that names the open
-row it answers, whichever session opened the asks. Each ask ruled `rejected` is also stored as a rejected-ask row (for
-the ruling session and each opener), so the next review loop drops a repeat of it. A later review of the repo
-leaves the asks open: only a newer phase packet with finding asks replaces them.
+phase packet (converged, or capped and read as deferred) or a cap-reached packet that holds finding asks. `list`
+prints them. `rule` takes one outcome per finding ask, in order, logs each ask's outcome row decided by the
+session, except a user-only ask's row under `--by user`, which is decided by the user, and stores one
+`phase-asks-ruled` row that names the open row it answers, whichever session opened the asks. Each ask ruled
+`rejected` is also stored as a rejected-ask row (for the ruling session and each opener), so the next review loop
+drops a repeat of it. A later review of the repo leaves the asks open: only a newer phase packet with finding asks
+replaces them.
 The reasons stay in the store row: the ledger writer drops free text, so the outcome rows carry none.
-An accepted user-only approval ask puts its file back to the blob it held before the fix pass (a file the pass created
+An accepted approval ask puts its file back to the blob it held before the fix pass (a file the pass created
 is deleted; an ask with an unknown base, or a saved absent base for a file HEAD tracks, restores nothing) and
 prints one line per restored file.
 Run from the repo root. Exit 0 when done, 2 when the call is refused (nothing is logged then), 1 when the store is
@@ -152,15 +155,18 @@ def held_criteria_line(asks):
 
 def record_open(session_id, repo, packet, run_info, packet_key):
     """Opens the finding asks of a phase packet for ruling. Returns the lines that tell the session to rule on them,
-    empty when the packet is not clean (a blocked or capped loop leaves its asks to the resumed run), holds no
-    finding ask, or the session has no id. `packet_key` names the packet (loop folder
-    and iteration): a repeat for the same packet adds no row and prints the same lines while the asks are unruled.
+    empty when the packet is neither clean nor cap-reached (a blocked loop leaves its asks to the resumed run), holds
+    no finding ask, or the session has no id. A cap-reached packet opens its asks too, so a rejection is stored and a
+    fresh run drops the ask; opening writes no status, and the packet stays not clean. `packet_key` names the packet
+    (loop folder and iteration): a repeat for the same packet adds no row and prints the same lines while the asks
+    are unruled.
     Raises PhaseAskRowError or OSError (a damaged store, a lock held past its timeout) or CriteriaUnreadableError (the
     plan's criteria cannot be read) when the asks cannot be opened: the caller fails its step on it."""
     asks = finding_asks(packet)
     if not session_id or not asks:
         return []
-    if capped_review.effective_status(packet, repo) not in handback.CLEAN_STATUSES:
+    is_clean = capped_review.effective_status(packet, repo) in handback.CLEAN_STATUSES
+    if not is_clean and packet["status"] != capped_review.CAP_REACHED:
         return []
 
     context = ask_context(repo, packet, run_info)
@@ -172,7 +178,7 @@ def record_open(session_id, repo, packet, run_info, packet_key):
     open_asks = unruled["asks"]
     open_count = len(open_asks)
     lines = [f"{open_count} finding ask(s) await your ruling: run `{LIST_COMMAND}`, then "
-             f"{rule_instruction(open_asks)}."]
+             f"{instruction_for(open_asks)}."]
     held_line = held_criteria_line(open_asks)
     if held_line:
         lines.append(held_line)
@@ -209,7 +215,7 @@ def command_list():
     if state.ruled_row is not None:
         print("These asks are already ruled. Done.")
         return 0
-    print(f"Rule on all {len(asks)} in order: {rule_instruction(asks)}")
+    print(f"Rule on all {len(asks)} in order: {instruction_for(asks)}")
     held_line = held_criteria_line(asks)
     if held_line:
         print(held_line)
@@ -280,17 +286,15 @@ def verified_phase_relay(call, asks, filed_at):
         return None, ruling_relay.relay_refusal_line(error)
 
 
-def ruler_of_call(words, asks):
-    """(RuledCall, None), or (None, the refusal text) when the `--by` word is unknown or a session rules on a user-only
-    ask."""
-    call, refusal = split_ruler(words)
-    if refusal:
-        return None, refusal
-    user_command = f"rule --by {plan_format.USER_RULING} ..."
-    refusal = review_asks.user_only_refusal(asks, call.ruler, user_command)
-    if refusal:
-        return None, refusal
-    return call, None
+def may_reject_wanted(asks):
+    """Whether every user-only ask of `asks` is a wanted-change ask, which a session may reject itself."""
+    user_only_asks = [item for item in asks if item.get(USER_ONLY_KEY)]
+    return all(review_asks.is_wanted_change_ask(item) for item in user_only_asks)
+
+
+def instruction_for(asks):
+    """The `rule_instruction` of `asks`, with the wanted-change flag computed."""
+    return rule_instruction(asks, may_reject_wanted(asks))
 
 
 class OutcomeLog(NamedTuple):
@@ -353,7 +357,7 @@ def rule_open_asks(words):
         return 2
 
     asks = state.open_row["asks"]
-    call, refusal = ruler_of_call(words, asks)
+    call, refusal = split_ruler(words)
     if refusal:
         print(f"phase_asks: {refusal}. Nothing was logged.", file=sys.stderr)
         return 2
@@ -366,6 +370,12 @@ def rule_open_asks(words):
     if refusal:
         print(f"phase_asks: {refusal}. Run `{rule_command(len(asks), by_user=ruler == plan_format.USER_RULING)}`",
               file=sys.stderr)
+        return 2
+    user_command = f"rule --by {plan_format.USER_RULING} ..."
+    outcomes = [outcome for outcome, _reason in rulings]
+    refusal = review_asks.user_only_refusal(asks, ruler, user_command, outcomes=outcomes)
+    if refusal:
+        print(f"phase_asks: {refusal}. Nothing was logged.", file=sys.stderr)
         return 2
 
     # A ruled row goes to the file of each session whose open row it answers (the latest open row, and the older ones
@@ -383,7 +393,6 @@ def rule_open_asks(words):
             return 1
 
     rows_repo = handback_store.ruled_rows_repo(repo)
-    outcomes = [outcome for outcome, _reason in rulings]
     # Checked before any row is written: a damaged file must stop the ruling with nothing logged.
     try:
         check_approval_paths_readable(rows_repo, asks)
@@ -421,7 +430,7 @@ def rule_open_asks(words):
                               rulings=ruled_rulings)
     for failure in failures:
         print(f"phase_asks: outcome row not logged, {failure}", file=sys.stderr)
-    print(f"Ruled {len(asks)} ask(s). List each under `Asks decided` in the phase-complete block. Done.")
+    print(f"Ruled {len(asks)} ask(s). List each under `Asks decided` in your stop or phase-complete block. Done.")
     return 0
 
 

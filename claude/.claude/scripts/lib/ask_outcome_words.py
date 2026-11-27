@@ -3,9 +3,14 @@ callers from importing `phase_asks`."""
 import pathlib
 
 ACCEPTED = "accepted"
-# The ask entry key that marks an ask only the user rules: a coder's edit to an approval-only file, or an ask that
-# names a user-owned criterion (it then also carries CRITERIA_KEY).
+# The ask entry key that marks an ask only the user accepts: a coder's edit to an approval-only file (except the
+# scripts CLAUDE.md, which the session rules), or an ask that names a user-owned criterion (it then also carries
+# CRITERIA_KEY). A session may reject a wanted-change ask.
 USER_ONLY_KEY = "user_only"
+# The ask entry key the loop sets on a wanted-change ask (a coder's edit to an approval-only file that the ask
+# proposes to keep). A reader never works this out from the change text.
+WANTED_CHANGE_KEY = "wanted_change"
+SESSION_MAY_REJECT_WANTED = "a session may reject a wanted change itself; only an accept needs the user"
 # The ask entry key that lists the criterion ids a user-only phase ask names.
 CRITERIA_KEY = "criteria"
 APPROVAL_REASON = "a fix coder edited an approval-only file"
@@ -30,7 +35,7 @@ RELAYED_BY_FLAG = "--relayed-by"
 # The retired option that carried the user's words. A call that still passes it is refused: no ruling stores
 # the user's words.
 RETIRED_QUOTE_FLAG = "--quote"
-RELAY_USAGE = f"{RELAYED_BY_FLAG} <session name>"
+RELAY_USAGE = f"{RELAYED_BY_FLAG} <session name or id>"
 
 
 def rule_command(count, by_user=False):
@@ -54,12 +59,16 @@ def user_only_reason(item):
     return f"it names user-owned criteria {', '.join(criteria)}"
 
 
-def rule_instruction(asks):
+def rule_instruction(asks, may_reject_wanted):
     """The text that says which `rule` line records the ruling on `asks`: the session's own line, or, when an ask is
-    marked `user_only`, a hand-off to the user and the `--by user` line."""
+    marked `user_only`, a hand-off to the user and the `--by user` line. `may_reject_wanted` is true when every
+    user-only ask is a wanted-change ask, which a session may reject itself."""
     numbers = user_only_numbers(asks)
     if not numbers:
         return f"`{rule_command(len(asks))}`"
     listed = ", ".join(f"{number} ({user_only_reason(asks[number - 1])})" for number in numbers)
-    return (f"hand ask(s) {listed} to the user and record the user's "
+    text = (f"hand ask(s) {listed} to the user and record the user's "
             f"outcomes with `{rule_command(len(asks), by_user=True)}`")
+    if may_reject_wanted:
+        text += f"; {SESSION_MAY_REJECT_WANTED}"
+    return text

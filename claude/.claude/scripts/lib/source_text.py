@@ -25,15 +25,17 @@ OPEN_BACKTICK_SCAN = re.compile(rf"(?P<string>{STRING_PATTERN})|//|/\*|`")
 STRING_OR_COMMENT_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#|//")
 STRING_OR_HASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|#")
 STRING_OR_SLASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|//")
+STRING_OR_DASH_START = re.compile(rf"(?P<string>{STRING_PATTERN})|--")
 COMMENT_START_OF_STYLE = {"hash": STRING_OR_HASH_START, "hash_triple": STRING_OR_HASH_START,
-                          "slash": STRING_OR_SLASH_START}
-COMMENT_STYLES = ("slash", "hash", "hash_triple")
+                          "slash": STRING_OR_SLASH_START, "dash": STRING_OR_DASH_START}
+COMMENT_STYLES = ("slash", "hash", "hash_triple", "dash")
 COMMENT_STYLE_OF_SUFFIX = {
     ".py": "hash_triple", ".rb": "hash",
     ".sh": "hash", ".bash": "hash", ".zsh": "hash", ".yml": "hash", ".yaml": "hash",
     **dict.fromkeys((
         ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".kt", ".swift", ".php", ".c", ".h",
-        ".cc", ".cpp", ".hpp"), "slash"),
+        ".cc", ".cpp", ".hpp", ".qml"), "slash"),
+    ".sql": "dash", ".lua": "dash",
 }
 
 
@@ -233,6 +235,12 @@ def _read_hunk_body(lines, start, hunk, position):
     return index
 
 
+# The global options and the `diff` subcommand with the flags that make its output parseable under any user config.
+DIFF_COMMAND_ARGS = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff",
+              "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative",
+              "--no-prefix")
+
+
 def parse_unified_diff(text):
     """The files of `git diff --no-prefix -U0` output as FileDiff objects, in order. Each Hunk holds the text after
     the second `@@` (git's name of the enclosing function), the removed lines as (old line number, text) and the
@@ -295,6 +303,10 @@ def _slash_comment_numbers(lines):
             numbers.add(number)
             in_block = "*/" not in stripped[2:]
     return numbers
+
+
+def _dash_comment_numbers(lines):
+    return {number for number, line in enumerate(lines, 1) if line.strip().startswith("--")}
 
 
 def _hash_comment_numbers(lines, triple_quotes, comments_only=False):
@@ -374,8 +386,8 @@ def without_string_text(line):
 
 def split_trailing_comment(line, style=None):
     """(code, comment): the line cut at the first comment marker that is not inside a single-line string literal. The
-    marker is `#` for style `hash` or `hash_triple`, `//` for `slash`, and either for no style. The comment keeps its
-    marker; it is empty when the line has none."""
+    marker is `#` for style `hash` or `hash_triple`, `//` for `slash`, `--` for `dash`, and `#` or `//` for no
+    style. The comment keeps its marker; it is empty when the line has none."""
     start = COMMENT_START_OF_STYLE.get(style, STRING_OR_COMMENT_START)
     for found in start.finditer(line):
         if found.group("string") is None:
@@ -385,7 +397,8 @@ def split_trailing_comment(line, style=None):
 
 def comment_line_numbers(lines, style):
     """The 1-based numbers of the lines of a source file that are comment text. `slash`: a line that starts with `//`,
-    and every line of a `/* ... */` block. `hash`: a line that starts with `#`. `hash_triple`: the same, plus every
+    and every line of a `/* ... */` block. `dash`: a line that starts with `--`. `hash`: a line that starts with
+    `#`. `hash_triple`: the same, plus every
     line after the opening line of any triple-quoted string (docstring or assigned string alike, up to and including
     the line that closes it), plus the opening line itself when it starts with the quotes. A comment that follows code
     on the same line is not counted."""
@@ -393,7 +406,61 @@ def comment_line_numbers(lines, style):
         return _slash_comment_numbers(lines)
     if style in ("hash", "hash_triple"):
         return _hash_comment_numbers(lines, style == "hash_triple")
+    if style == "dash":
+        return _dash_comment_numbers(lines)
     raise ValueError(f"unknown comment style {style!r}; expected one of {COMMENT_STYLES}")
+
+
+def contiguous_runs(numbers):
+    """The (first, last) pairs of the runs of consecutive integers in `numbers`, in ascending order."""
+    runs = []
+    for number in sorted(set(numbers)):
+        if runs and runs[-1][1] == number - 1:
+            runs[-1] = (runs[-1][0], number)
+        else:
+            runs.append((number, number))
+    return runs
+
+
+def line_numbers_of_text(file_text, text):
+    """The 1-based numbers of the lines that every occurrence of `text` occupies in `file_text`, or None when it does
+    not occur."""
+    numbers = set()
+    start = file_text.find(text)
+    while start >= 0:
+        first = file_text.count("\n", 0, start) + 1
+        numbers.update(range(first, first + text.count("\n") + 1))
+        start = file_text.find(text, start + max(len(text), 1))
+    return numbers or None
+
+
+def triple_quote_close_line(lines, first):
+    """The 1-based number of the line that closes the triple-quoted string that line `first` leaves open, or `first`
+    when that line closes it itself. A later line closes it by the same odd-count rule as the comment scan."""
+    opened = _opened_triple_quote(lines[first - 1], lines[first - 1].strip())
+    if opened.quote is None:
+        return first
+    for number in range(first + 1, len(lines) + 1):
+        if lines[number - 1].count(opened.quote) % 2 == 1:
+            return number
+    return len(lines)
+
+
+def python_name_is_public(name):
+    """True for a name with no leading underscore, and for a dunder."""
+    return not name.startswith("_") or (name.startswith("__") and name.endswith("__"))
+
+
+COMMENT_MARKER = re.compile(r"^\s*(?:#+|//+|/\*+|\*+/?)\s*")
+COMMENT_CLOSER = re.compile(r"\s*\*+/\s*$")
+
+
+def comment_body(line):
+    """The comment `line` without its leading `#`, `//`, `/*` or `*` marker and its trailing `*/`, whitespace runs
+    collapsed to one space."""
+    without_marker = COMMENT_MARKER.sub("", line, count=1)
+    without_closer = COMMENT_CLOSER.sub("", without_marker, count=1)
+    return re.sub(r"\s+", " ", without_closer).strip()
 
 
 def file_comment_entries(path, text):

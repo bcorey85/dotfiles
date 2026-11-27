@@ -7,6 +7,7 @@ import difflib
 import typing
 
 import script_utils
+import source_text
 
 # A changed line counts as the rewrite of a protected line when it is at least this much like it.
 REWRITE_RATIO = 0.6
@@ -124,13 +125,7 @@ def rewritten_stretches(before_text, after_text):
 
 def consecutive_runs(entries):
     """The (first, last) line numbers of each run of consecutive lines in the (number, text) `entries`."""
-    runs = []
-    for number, _text in entries:
-        if runs and runs[-1][1] == number - 1:
-            runs[-1] = (runs[-1][0], number)
-            continue
-        runs.append((number, number))
-    return runs
+    return source_text.contiguous_runs(number for number, _text in entries)
 
 
 def consecutive_entry_runs(entries):
@@ -147,12 +142,15 @@ def in_span_with(number, spans, named_lines):
     )
 
 
-def restore_protected_lines(before_text, after_text, protected_numbers, whole_stretch=True, may_replace=None):
+def restore_protected_lines(before_text, after_text, protected_numbers, whole_stretch=True, may_replace=None,
+                            in_place=False):
     """`after_text` with each protected line of `before_text` that it changed or removed put back. `protected_numbers`
     are 1-based line numbers of `before_text`. A stretch that was removed is restored whole, or only at its protected
     lines when `whole_stretch` is False. In a stretch that was rewritten, each protected line replaces its closest
     rewrite, and the other lines of the stretch stay, so a line someone else added beside the rewrite is kept. When
-    `may_replace` is given, only a stretch line it accepts (called with the line's text) can be replaced."""
+    `may_replace` is given, only a stretch line it accepts (called with the line's text) can be replaced. When
+    `in_place` is True, a rewritten stretch that has as many lines as it had before gets each protected line back at
+    its own offset in the stretch, whatever the line there says; other stretches are handled as above."""
     protected = {number - 1 for number in protected_numbers}
     before_lines, after_lines, opcodes = line_opcodes(before_text, after_text)
     restored = []
@@ -162,12 +160,24 @@ def restore_protected_lines(before_text, after_text, protected_numbers, whole_st
             restored += before_lines[before_start:before_end]
         elif tag == "delete" and lost_in_stretch:
             restored += [before_lines[index] for index in lost_in_stretch]
+        elif tag == "replace" and lost_in_stretch and in_place and before_end - before_start == after_end - after_start:
+            restored += in_place_stretch(before_lines, lost_in_stretch, after_lines[after_start:after_end],
+                                         before_start)
         elif tag == "replace" and lost_in_stretch:
             restored += rewritten_stretch(before_lines, lost_in_stretch, after_lines[after_start:after_end],
                                           may_replace)
         else:
             restored += after_lines[after_start:after_end]
     return "".join(restored)
+
+
+def in_place_stretch(before_lines, lost_indexes, stretch_lines, before_start):
+    """The lines of one rewritten stretch, as long as it was before, with each lost line of `before_lines` back at its
+    own offset in the stretch (`before_start` is the stretch's first index in `before_lines`)."""
+    lines = list(stretch_lines)
+    for index in lost_indexes:
+        lines[index - before_start] = before_lines[index]
+    return lines
 
 
 def rewritten_stretch(before_lines, lost_indexes, stretch_lines, may_replace=None):

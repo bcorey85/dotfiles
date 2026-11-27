@@ -7,7 +7,7 @@ import shlex
 from typing import NamedTuple
 
 from code_text import SP
-from shell_directory import path_word
+from shell_directory import UNREAD_FOLDER, path_word, path_word_is_absolute
 from shell_quoting import join_line_continuations, quoted_positions, strip_comments, unquoted_matches
 
 # `>|` and `>&|` (clobber redirection) are not a pipe. `|&` (pipe both streams), `>&`, `&>` and `&&` are not a lone `&`;
@@ -538,8 +538,9 @@ def git_c_settings(options):
     return settings
 
 
-def git_option_values(options, name):
-    """The value of each `name` option in git_options output, in order, from `--name value` or `--name=value`."""
+def option_values(options, name):
+    """The value of each `name` option in a command_options pair list, in order, from `--name value` or
+    `--name=value`. The pairs may come from any command's options, git's or another's."""
     for option, value in options:
         if option == name and value is not None:
             yield value
@@ -547,17 +548,25 @@ def git_option_values(options, name):
             yield option.partition("=")[2]
 
 
-def git_options(words):
-    """The (option, value) pairs of git's own options in the words of a git call, and the index of the first word
-    after them; a flag's value is None."""
+def command_options(words, value_options):
+    """The (option, value) pairs of a command's own options in its words after the command name, and the index of the
+    first word after them; a flag's value is None. An option in `value_options` takes the next word as its value.
+    A caller that must skip past short clusters such as `-iC dir`, and needs only the index after them,
+    uses skip_options(..., clusters_take_values=True)."""
     options = []
     index = 1
     while index < len(words) and words[index].startswith("-"):
         option = words[index]
-        takes_value = option in GIT_VALUE_OPTIONS and index + 1 < len(words)
+        takes_value = option in value_options and index + 1 < len(words)
         options.append((option, words[index + 1] if takes_value else None))
         index += 2 if takes_value else 1
     return options, index
+
+
+def git_options(words):
+    """The (option, value) pairs of git's own options in the words of a git call, and the index of the first word
+    after them; a flag's value is None."""
+    return command_options(words, GIT_VALUE_OPTIONS)
 
 
 def is_git_word(word):
@@ -930,6 +939,20 @@ def without_substitution_bodies(text):
     return "".join(pieces)
 
 
+def without_substitutions(text):
+    """The text with each outermost `$(...)` and backtick span, its opener and closer included, replaced by one `x`,
+    so no `)` of a span ends a simple command that the span sits in (`F=$(git ...)/stop.md`)."""
+    pieces = []
+    position = 0
+    for start, end in substitution_bounds(text):
+        opener_length = 2 if text[start - 1] == "(" else 1
+        pieces.append(text[position:start - opener_length])
+        pieces.append("x")
+        position = end + 1
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
 PARENTHESIS_DEPTH_CHANGE = {"(": 1, ")": -1}
 
 
@@ -959,12 +982,13 @@ def git_c_directory(words, directory):
     """The directory a git call in `words` runs in, from `directory`, moved by each `-C <dir>` before the subcommand
     (`~` expanded; a `-c alias.<name>=<value>`, `-c core.editor=<value>`, `-c sequence.editor=<value>`,
     `-c user.name=<value>` or `-c user.email=<value>` moves nothing). None when git's options are ones the gate does
-    not follow: `--git-dir`, `--work-tree`, `--config-env`, any other `-c`, a `-C` with no or an empty value, or an
-    option git is not known to have."""
+    not follow: `--git-dir`, `--work-tree`, `--config-env`, any other `-c`, a `-C` with no or an empty value or a
+    value the shell expands (`$X`, a substitution, a glob, a `~user` home, a brace), or an option git
+    is not known to have."""
     options, _index = git_options(words)
     for option, value in options:
         if option == "-C":
-            if not value:
+            if not value or UNREAD_FOLDER.search(value):
                 return None
             directory = os.path.normpath(os.path.join(directory, path_word(value)))
             continue
@@ -973,6 +997,13 @@ def git_c_directory(words, directory):
         if not is_known_git_global_option(option) or option.startswith(("--git-dir", "--work-tree", "--config-env")):
             return None
     return directory
+
+
+def git_c_is_absolute(words):
+    """True when a `-C` value of the git call in `words` is an absolute path once quotes are dropped and `~`
+    is expanded (see `shell_directory.path_word_is_absolute`)."""
+    options, _index = git_options(words)
+    return any(path_word_is_absolute(value) for value in option_values(options, "-C"))
 
 
 def word_moves_directory(word, move_letter, wrapper):

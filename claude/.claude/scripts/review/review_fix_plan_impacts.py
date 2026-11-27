@@ -22,8 +22,8 @@ from script_utils import one_line
 APPLIED_IMPACT_LINE = ("A plan impact that changes an acceptance criterion came from a coder whose edits are already "
                        "in the tree. Keeping the plan as written means reverting those edits; adopting the change "
                        "keeps them.")
-APPLIED_ADOPT_LINE = ("The plan changes as ruled: the coder's edits for the held plan impact are already in the tree, "
-                      "so nothing is re-dispatched and no new review loop runs.")
+APPLIED_ADOPT_LINE = ("The plan changes as ruled: the held plan impact needs no code change past what is already in "
+                      "the tree, so nothing is re-dispatched and no new review loop runs.")
 APPLIED_KEEP_LINE = ("The plan stays as written: the coder's edits for the held plan impact are in the tree, so revert "
                      "them, and nothing is re-dispatched.")
 
@@ -101,15 +101,16 @@ def relayed_owner(owner, relayed):
     it when `relayed` is a RelayedRuling."""
     if relayed is None:
         return owner
-    return f"{owner}, relayed by session {relayed.request.relayed_by} (user turn at {relayed.turn.timestamp})"
+    return f"{owner}, relayed by session {relayed.session_name} (user turn at {relayed.turn.timestamp})"
 
 
 def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo, finding_texts=(), relayed=None,
-                       row_impacts=()):
+                       row_impacts=(), applied=False):
     """The `## Plan Deviations` entry lines of a plan-impact ruling, appended to plan_path when there is one. The ruled
     row goes under `ruled_repo`, the repo the packet answers: one row per accepted finding the ruling covers
     (`finding_texts`), else one row with none. With `row_impacts` (pairs of impact text and finding text or None),
     those pairs are the rows, in place of the rows for the joined `impact_text`, which the deviation entry keeps.
+    With `applied`, each row is also recorded as applied, so no later fix pass is handed it as a pending ruling.
     A relayed ruling also stores a PLAN_RULING_RELAYED row."""
     choice = plan_format.DECISION_WORDS[decision]
     owner = relayed_owner(plan_format.ruling_owner(".", by), relayed)
@@ -120,8 +121,11 @@ def write_ruling_entry(decision, by, ruling, plan_path, impact_text, ruled_repo,
     for row_text, finding_text in rows:
         handback_store.record_ruled_impact(session_id, row_text, ruled_repo, finding_text=finding_text,
                                            decision=decision, owner=owner, ruled_at=ruled_at)
+        if applied:
+            ruling_row = handback_store.AdoptedRuling(row_text, finding_text, owner, ruled_at)
+            handback_store.record_applied_ruling(session_id, ruling_row, ruled_repo)
     if relayed is not None:
-        handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.request.relayed_by,
+        handback_store.record_relayed_plan_ruling(session_id, ruled_repo, by, relayed.session_name,
                                                   relayed.turn.timestamp, impact_text)
     if plan_path is not None:
         plan_format.append_deviation(plan_path, entry)

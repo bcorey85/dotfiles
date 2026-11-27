@@ -1,7 +1,7 @@
 """system_resources.py: how much memory is available and how much disk space a folder has or holds, in GB.
 
-Reads /proc/meminfo on Linux and `vm_stat` on macOS, and runs `df -Pk` and `du -sk` for folders. Knows no
-toolkit rule."""
+Reads /proc/meminfo on Linux and `vm_stat` on macOS, runs `df -Pk` and `du -sk` for folders, and formats a byte
+count as KB, MB or GB text (`size_text`). Knows no toolkit rule."""
 import os
 import pathlib
 import re
@@ -11,6 +11,8 @@ import script_utils
 
 KB_PER_GB = 1024 * 1024
 BYTES_PER_GB = 1024 ** 3
+BYTES_PER_MB = 1024 ** 2
+BYTES_PER_KB = 1024
 MEMINFO_FILE = "/proc/meminfo"
 MEMINFO_AVAILABLE_PATTERN = re.compile(r"^MemAvailable:\s+(\d+)\s+kB\s*$", re.MULTILINE)
 VM_STAT_PAGES_PATTERN = re.compile(r"^Pages (free|inactive|speculative):\s+(\d+)\.\s*$", re.MULTILINE)
@@ -35,6 +37,15 @@ def parse_vm_stat_gb(text, page_size):
     if set(pages) != VM_STAT_KINDS:
         return None
     return sum(pages.values()) * page_size / BYTES_PER_GB
+
+
+def size_text(size):
+    """`N.N GB` at or over 1 GiB, `N.N MB` at or over 1 MiB, else `N KB`."""
+    if size >= BYTES_PER_GB:
+        return f"{size / BYTES_PER_GB:.1f} GB"
+    if size >= BYTES_PER_MB:
+        return f"{size / BYTES_PER_MB:.1f} MB"
+    return f"{size // BYTES_PER_KB} KB"
 
 
 def _command_output(argv):

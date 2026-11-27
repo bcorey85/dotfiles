@@ -117,6 +117,50 @@ class ItemVerdictTest(unittest.TestCase):
                 verdict = criteria_verdict.item_verdict(UV_COMMAND, UV_ITEM, 1, output)
                 self.assertEqual((verdict.outcome, verdict.code), ("ENV", 1))
 
+    def test_an_unset_variable_or_refused_connection_with_no_runner_summary_reads_env(self):
+        vitest_guard = ("Error: Refusing to run the test suite — the environment does not look disposable:\n"
+                        "  - DATABASE_URL is not set\n\n Test Files  1 failed (1)\n      Tests  no tests\n")
+        cases = [
+            ("vitest env guard", "npx vitest run", vitest_guard, "environment failure: - DATABASE_URL is not set"),
+            ("prisma unset variable", "npx prisma migrate deploy",
+             "error: Environment variable not found: DATABASE_URL.\n",
+             "environment failure: error: Environment variable not found: DATABASE_URL."),
+            ("django refused connection", "python manage.py test",
+             'django.db.utils.OperationalError: connection to server at "127.0.0.1", port 5432 failed: '
+             "Connection refused\n",
+             'environment failure: django.db.utils.OperationalError: connection to server at "127.0.0.1", port '
+             "5432 failed: Connection refused"),
+        ]
+        for label, command, output, flag in cases:
+            with self.subTest(label):
+                verdict = criteria_verdict.item_verdict(command, f"`{command}` passes", 1, output)
+                self.assertEqual(("ENV", 1, flag), (verdict.outcome, verdict.code, verdict.flag))
+
+    def test_a_vitest_run_that_counts_failed_tests_beside_an_unset_variable_line_stays_red(self):
+        output = "  - DATABASE_URL is not set\n Test Files  1 failed (1)\n      Tests  2 failed | 3 passed (5)\n"
+
+        verdict = criteria_verdict.item_verdict("npx vitest run", "`npx vitest run` passes", 1, output)
+
+        self.assertEqual("RED", verdict.outcome)
+
+    def test_an_npm_script_whose_binary_is_missing_under_sh_reads_env_naming_the_tool(self):
+        verdict = criteria_verdict.item_verdict("npm run typecheck", "`npm run typecheck` passes", 127,
+                                                "sh: line 1: tsc: command not found\n")
+
+        self.assertEqual("ENV", verdict.outcome)
+        self.assertIn("tsc not found on PATH", verdict.flag)
+
+    def test_a_search_worded_exits_zero_reads_red_on_no_match_and_a_ban_still_reads_green(self):
+        command = "rg -q A f && rg -q B g"
+        verdict = criteria_verdict.item_verdict(command, f"`{command}` exits 0.", 1, "")
+        self.assertEqual(("RED", 1), (verdict.outcome, verdict.code))
+
+        code_form = criteria_verdict.item_verdict("rg -q A f", "`rg -q A f` exit code 0", 1, "")
+        self.assertEqual(("RED", 1), (code_form.outcome, code_form.code))
+
+        ban = criteria_verdict.item_verdict("rg -q A f", "`rg -q A f` must not exit 0", 1, "")
+        self.assertEqual(("GREEN", 0), (ban.outcome, ban.code))
+
     def test_a_line_numbered_command_not_found_stays_red(self):
         cases = [
             ("script with extension", "tests/run.sh: line 40: new_helper: command not found\n"),

@@ -25,6 +25,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+import tool_call_flags
 from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
 from harness_limits import BACKGROUND_AFTER_SECONDS
 from shell_command import resolved_command_words, wrapper_chain
@@ -257,7 +258,7 @@ def starts_detached_job(command):
 
 
 def subagent_reason(payload, tool_input, command):
-    in_background = tool_input.get("run_in_background") is True or starts_detached_job(command)
+    in_background = tool_call_flags.runs_in_background(tool_input) or starts_detached_job(command)
     background_reason = BACKGROUND_REASONS.get(payload.get("agent_type"))
     if in_background and background_reason:
         return background_reason

@@ -6,13 +6,13 @@ code-fork that still has some.
 reviewers it started that have not finished or been stopped, the launches whose result names no agent id yet, and
 what became of the repo's detached /code review loop (stopped only when its process is this code-fork's own review
 start, begun inside the code-fork's lifetime; the review-fix loop of a /review or /fix fork is never stopped here and
-reads `not_code_phase`). The loop reads `stopped` once its process group exited within two seconds of the SIGTERM and
+reads `not_code_phase`). The loop reads `stopped` once its process group exited within the stop wait of the SIGTERM and
 `signalled` when a process of the group is still alive then (the leader may have exited while a child lives on);
 `query_failed` when `ps` could not answer or the code-fork transcript could not be read.
 The repo is `--repo`, else the git top level of the `cwd` of the code-fork transcript's last record, else the current
 folder; with none inside a git checkout the loop reads `no_repo`. Exit 0 with the report; exit 2 for a usage error, a
 missing transcript or an id that is not a code-fork; exit 1 with a `fork_children: could not signal ...` line when
-`process_group.terminate_group` raises OSError (for example, a missing permission).
+`process_group.stop_group` raises OSError (for example, a missing permission).
 
 `fork_children.py hook` reads a PreToolUse event on stdin. It denies, once per code-fork and session, a TaskStop of a
 code-fork that has a live child or an unresolved launch, and names them. Any other call passes. Any error passes and
@@ -30,16 +30,17 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 
 import code_wait
 import handback_store
-import human_turn_lookup
 import loop_transcript
 import open_child_gate
 import process_group
 import script_utils
+import transcript_time
 from agent_names import FORK_AGENT_TYPE
+from code_run_names import REVIEW_START_SCRIPT
+from shell_command_words import script_call_arguments
 
 KIND_TASKSTOP_DENIED = "taskstop_children_denied"
 HOOK_VERB = "hook"
-REVIEW_START_SCRIPT = "code_review_start.py"
 LOOP_NONE = "none"
 LOOP_STOPPED = "stopped"
 LOOP_GONE = "gone"
@@ -50,7 +51,6 @@ LOOP_NOT_CODE_PHASE = "not_code_phase"
 LOOP_UNKNOWN = "query_failed"
 LOOP_NO_REPO = "no_repo"
 REVIEW_FIX_LAUNCH = "review_fix.py launch"
-STOP_WAIT_SECONDS = 2
 DENY_REASON = ("code fork {fork} has live children: {ids}. Run python3 {script} {fork}: TaskStop each agent id it "
                "names; for a launch with no agent id yet, rerun it once the launch result names one. It stops a /code "
                "review loop only, never a /review or /fix loop. Then TaskStop the fork.")
@@ -102,7 +102,7 @@ class ForkCommands(NamedTuple):
     ran_review_start: bool
     first_start_timestamp: object  # the `timestamp` of the record of the first review start; None when it has none
     ran_review_fix: bool
-    ends_on_review_start: bool  # the last record is a Bash call that runs the review start script
+    ends_on_review_start: bool  # the last user or assistant record runs the review start script
 
 
 def scan_fork_commands(fork_transcript):
@@ -115,17 +115,18 @@ def scan_fork_commands(fork_transcript):
     try:
         with open(fork_transcript, encoding="utf-8", errors="replace") as transcript:
             for line in transcript:
-                if not line.strip():
+                record = script_utils.transcript_record(line)
+                if record is None or not script_utils.makes_own_calls(record):
                     continue
-                calls = script_utils.tool_use_calls(line)
+                calls = script_utils.record_tool_calls(record)
                 commands = [tool_input.get("command") for name, tool_input in calls if name == "Bash"]
                 commands = [command for command in commands if isinstance(command, str)]
-                starts_review = any(REVIEW_START_SCRIPT in command for command in commands)
+                starts_review = any(script_call_arguments(command, REVIEW_START_SCRIPT) for command in commands)
                 ran_review_fix = ran_review_fix or any(REVIEW_FIX_LAUNCH in command for command in commands)
                 ends_on_review_start = starts_review
                 if starts_review and not ran_review_start:
                     ran_review_start = True
-                    first_start_timestamp = json.loads(line).get("timestamp")
+                    first_start_timestamp = record.get("timestamp")
     except OSError as error:
         print(f"fork_children: could not read {fork_transcript}: {type(error).__name__}: {error}", file=sys.stderr)
         return None
@@ -134,15 +135,15 @@ def scan_fork_commands(fork_transcript):
 
 def fork_run_window(fork_transcript, commands):
     """(epoch of the code-fork's first review start, epoch of its last record) from its ForkCommands, or None when a
-    time is missing or unreadable (named on stderr). The end is None, an open window, when the last record is the Bash
-    call that runs the review start script: the loop's pid file is written after that record, and the code-fork's next
+    time is missing or unreadable (named on stderr). The end is None, an open window, when the last user or assistant
+    record runs the review start script: the loop's pid file is written after that record, and the code-fork's next
     record is not written yet."""
     try:
-        first_start = human_turn_lookup.epoch_of_timestamp(commands.first_start_timestamp)
+        first_start = transcript_time.epoch_of_timestamp(commands.first_start_timestamp)
         if commands.ends_on_review_start:
             return first_start, None
         last_record = script_utils.last_transcript_record(fork_transcript) or {}
-        return first_start, human_turn_lookup.epoch_of_timestamp(last_record.get("timestamp"))
+        return first_start, transcript_time.epoch_of_timestamp(last_record.get("timestamp"))
     except (AttributeError, ValueError) as error:
         print(f"fork_children: {fork_transcript} has no readable record time for the review start: {error}",
               file=sys.stderr)
@@ -151,7 +152,7 @@ def fork_run_window(fork_transcript, commands):
 
 def started_inside_fork_run(repo, fork_transcript, commands):
     """Whether the loop's pid file was written between the code-fork's first review start and its last record, or at
-    any time after the first review start when the last record is that review-start Bash call."""
+    any time after the first review start when the last user or assistant record is that review-start call."""
     window = fork_run_window(fork_transcript, commands)
     if window is None:
         return False
@@ -195,8 +196,8 @@ def stop_fork_loop(repo, fork_transcript):
     """Stop the repo's detached /code review loop when it is this code-fork's: its pid is alive, its command line holds
     the review start script, the code-fork's own Bash commands ran that script, and the loop started inside the
     code-fork's lifetime. Reports `stopped` once every process of the loop's group exited, `signalled` when one is
-    still alive after STOP_WAIT_SECONDS. The review-fix loop of a /review or /fix fork is not stopped. Exits with a
-    named error line when the signal raises OSError."""
+    still alive after process_group.STOP_WAIT_SECONDS. The review-fix loop of a /review or /fix fork is not stopped.
+    Exits with a named error line when the signal raises OSError."""
     pid = code_wait.running_review_pid(repo)
     if pid is None:
         return loop_report(None, False, LOOP_NONE)
@@ -204,15 +205,13 @@ def stop_fork_loop(repo, fork_transcript):
     not_linked = loop_not_linked_reason(pid, repo, fork_transcript)
     if not_linked:
         return loop_report(pid, False, not_linked)
-    # The leader's group id is read before the signal: a leader that exits no longer names its group.
-    group = process_group.group_id(pid)
     try:
-        signalled = process_group.terminate_group(pid)
+        result = process_group.stop_group(pid)
     except OSError as error:
         sys.exit(f"fork_children: could not signal the review loop of {repo}: {type(error).__name__}: {error}")
-    if group is None or not signalled:
+    if result == process_group.GROUP_GONE:
         return loop_report(pid, False, LOOP_GONE)
-    if not process_group.wait_until_group_gone(group, STOP_WAIT_SECONDS):
+    if result == process_group.GROUP_STILL_RUNNING:
         return loop_report(pid, False, LOOP_SIGNALLED)
     return loop_report(pid, True, LOOP_STOPPED)
 

@@ -58,14 +58,12 @@ class ScopedTestRuns:
             budget = max(deadline - time.monotonic(), 0)
         return coder_gate.scoped_run(self.repo, test_commands, self.gate_env, self.out / SCOPED_TESTS_LOG, budget)
 
-    def derive_scoped_tests(self):
-        """The test commands for the files this run reviewed and changed, for a run whose caller named none. When
-        none derive, `scoped_tests` says so."""
-        paths = self.reviewed_and_touched_files()
-        commands = derived_test_commands(self.repo, paths)
-        if not commands:
-            self.scoped_tests = "not run (no test command derives for the changed files)"
-        return commands
+    def phase_test_commands(self, gate_commands):
+        """The test commands of the phase's gate: the caller's (the stale-prose check left out), else the ones derived
+        for the files this run reviewed and changed. Empty when none derive."""
+        if gate_commands:
+            return test_commands_of(gate_commands)
+        return derived_test_commands(self.repo, self.reviewed_and_touched_files())
 
     def run_test_commands(self, test_commands, budgeted=False, stop_when_unrun=False, report_counts=False):
         """Run the scoped test commands and keep their result. A red run the autofix formatters can fix is fixed and

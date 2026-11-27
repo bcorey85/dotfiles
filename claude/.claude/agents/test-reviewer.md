@@ -24,6 +24,8 @@ The user will specify a scope via arguments. Interpret it as follows:
 
 - **"backend"** or **"be"**: Review all backend test files against their source modules. Detect locations via CLAUDE.md + test-file globs.
 - **"frontend"** or **"fe"**: Review all frontend test files against their source. Same detection in the frontend directory.
+- **"fullstack"** or **"fs"**: Review backend and frontend test files, as for both scopes above.
+- **"owned files"**: When the prompt lists owned files under "Review scope (this round)", review only the tests of those files.
 - **A specific app/module name** (e.g., "engine", "workflow", "formatters"): Review only that module's tests
 - **"branch"**: Review only test files added or modified on the current branch. Find them with `git diff --name-only --diff-filter=AM $(git merge-base HEAD <default>)..HEAD` (`<default>` is the first word that `~/.claude/scripts/tools/branch-base` prints; on its `STOP:` line, ask the user for the base), filtered to test files. Skip Steps 1–2; run Steps 3–4 on branch tests + Step 5 on ADDED tests.
 - **No arguments**: Review both backend and frontend

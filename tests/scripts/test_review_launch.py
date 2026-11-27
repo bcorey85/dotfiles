@@ -5,14 +5,15 @@ Set REVIEW_FIX_SCRIPT to run against another copy of review_fix.py."""
 import argparse
 import contextlib
 import io
-import itertools
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -25,9 +26,12 @@ sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 sys.path.insert(0, str(toolkit_paths.CODE_DIR))
 import code_wait
 import handback_store
+import merge_free_base
 import process_group
+import resume_review_gate
 import review_fix_names
 import review_launch
+import reviewed_tree
 import reviewer_dispatch
 import stop_file_names
 
@@ -60,6 +64,9 @@ def wait_until_gone(pid):
     return False
 
 
+FOLD_NOTE = "; what merge commits brought in is folded into that base."
+
+
 class ReviewLaunchTest(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
@@ -72,6 +79,9 @@ class ReviewLaunchTest(unittest.TestCase):
         self.run_folder = self.repo / ".git" / code_wait.PHASE_DIR_NAME
         self.run_folder.mkdir()
         self.addCleanup(self.stop_every_loop)
+        # An in-process launch moves the review stop of the cwd's run folder: keep it off the checkout under test.
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.repo)
 
     def make_repo(self, name):
         repo = self.temp_root / name
@@ -84,6 +94,13 @@ class ReviewLaunchTest(unittest.TestCase):
 
     def git(self, repo, *args):
         subprocess.run(["git", *args], cwd=repo, env={**os.environ, **GIT_ENV}, check=True, capture_output=True)
+
+    def rev(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def head_sha(self):
+        return self.rev("rev-parse", "HEAD")
 
     def loop_dirs(self, repo):
         loop_root = repo / ".git" / "review-script" / reviewer_dispatch.LOOP_FOLDER
@@ -100,14 +117,17 @@ class ReviewLaunchTest(unittest.TestCase):
                 except ProcessLookupError:
                     continue
 
-    def run_launch(self, *flags, repo=None, env_overrides=None, detach=True):
+    def launch_environment(self):
+        return {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
+                "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
+                "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+
+    def run_launch(self, *flags, repo=None, env_overrides=None, detach=True, edit_readme=True):
         repo = repo or self.repo
         detach_flags = ["--detach"] if detach else []
-        (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
-        environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
-                       "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
-                       "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1",
-                       **(env_overrides or {})}
+        if edit_readme:
+            (repo / "README.md").write_text(f"hi, edited {time.monotonic()}\n")
+        environment = {**self.launch_environment(), **(env_overrides or {})}
         return subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", *detach_flags, *flags], cwd=repo,
                               text=True, capture_output=True, env=environment, check=False)
 
@@ -124,19 +144,35 @@ class ReviewLaunchTest(unittest.TestCase):
         handoff_file.write_text(HANDOFF)
         return fix_file, handoff_file
 
-    def test_a_launch_deletes_the_run_folder_inputs_it_read_and_keeps_a_review_stop(self):
+    def test_a_launch_deletes_the_run_folder_inputs_it_read(self):
         fix_file, handoff_file = self.write_inputs(self.run_folder)
-        stop_file = self.run_folder / stop_file_names.REVIEW_STOP_FILE
-        stop_file.write_text("old stop\n")
 
         self.launch("--fix", str(fix_file), "--handoff", str(handoff_file))
 
         self.assertFalse(fix_file.exists(), "the run-folder findings file stays for the next launch")
         self.assertFalse(handoff_file.exists(), "the run-folder handoff file stays for the next launch")
-        self.assertTrue(stop_file.exists(), "launch deleted review-stop.md")
         loop_dir = self.loop_dirs(self.repo)[-1]
         self.assertEqual((loop_dir / "handoff.txt").read_text(), HANDOFF)
         self.assertTrue((loop_dir / "findings.json").is_file())
+
+    def test_a_launch_in_a_resume_run_lets_the_stop_write_pass_the_resume_gate(self):
+        resume_review_gate.record_resume(self.run_folder, self.repo)
+        stop_path = self.run_folder / stop_file_names.STOP_FILE
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        recorded = (self.run_folder / stop_file_names.LOOP_DIR_FILE).read_text().strip()
+        self.assertEqual(recorded, str(loop_dir))
+        self.assertIsNone(resume_review_gate.resume_deny_reason(stop_path))
+
+    def test_a_launch_with_no_resume_record_writes_no_loop_dir_file(self):
+        fix_file, _ = self.write_inputs(self.run_folder)
+
+        self.launch("--fix", str(fix_file))
+
+        self.assertFalse((self.run_folder / stop_file_names.LOOP_DIR_FILE).exists())
 
     def test_also_fix_findings_follow_the_fix_findings_and_the_run_folder_file_is_consumed(self):
         fix_file = self.run_folder / "asks.md"
@@ -168,6 +204,214 @@ class ReviewLaunchTest(unittest.TestCase):
         relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
         self.assertEqual([relaunch[index + 1] for index, word in enumerate(relaunch) if word == "--ruled-out"],
                          ["a.py", "sub/b.py"])
+
+    def prompt_text(self):
+        return (self.loop_dirs(self.repo)[-1] / "prompt.txt").read_text()
+
+    def write_plan(self):
+        plan_file = self.repo / "docs" / "plans" / "p" / "plan.md"
+        plan_file.parent.mkdir(parents=True)
+        plan_file.write_text("# Plan\n")
+        return plan_file
+
+    def assert_plan_carried(self, plan):
+        self.assertRegex(self.prompt_text(), rf"(?m)^plan: {re.escape(plan)}$")
+        self.assertRegex(self.prompt_text(), rf"(?m)^repo: {re.escape(str(self.repo.resolve()))}$")
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertEqual(relaunch[relaunch.index("--plan") + 1], plan)
+        packet = reviewer_dispatch.packet_command(loop_dir)
+        self.assertTrue(packet.endswith(f"--plan {self.repo.resolve()}/{plan}"), packet)
+
+    def test_the_plan_of_the_code_phase_record_reaches_the_prompt_header(self):
+        self.write_plan()
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        self.launch()
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_plan_flag_wins_over_the_plan_of_the_code_phase_record(self):
+        self.write_plan()
+        other = self.repo / "docs" / "plans" / "q" / "plan.md"
+        other.parent.mkdir(parents=True)
+        other.write_text("# Plan\n")
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        self.launch("--plan", "docs/plans/q/plan.md")
+
+        self.assert_plan_carried("docs/plans/q/plan.md")
+
+    def test_a_relative_plan_flag_is_read_against_the_repo_root(self):
+        self.write_plan()
+
+        self.launch("--plan", "docs/plans/p/plan.md")
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_tree_whose_only_changes_are_plan_documents_stops_as_an_empty_scope(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        environment = self.launch_environment()
+
+        with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo), "--plan", str(plan_file)],
+                                         str(self.loop_stub))
+
+        self.assertIn("is under the plan folder docs/plans/p/", str(raised.exception))
+        self.assertNotIn("--ruled-out", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_file_flag_on_a_plan_document_is_reviewed_though_a_plan_is_given(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+
+        self.launch("--plan", str(plan_file), "--file", "docs/plans/p/plan.md")
+
+        self.assertEqual(len(self.loop_dirs(self.repo)), 1)
+        self.assertRegex(self.prompt_text(), r"(?m)^files: .*docs/plans/p/plan\.md")
+
+    def test_a_launch_with_no_plan_has_no_plan_in_the_relaunch_args(self):
+        self.launch()
+
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        relaunch = json.loads((loop_dir / reviewer_dispatch.LAUNCH_FILE).read_text())["relaunch_args"]
+        self.assertEqual(relaunch[:2], ["--repo", str(self.repo.resolve())])
+        self.assertNotIn("--plan", relaunch)
+
+    def test_a_plan_flag_reaches_the_header_and_the_relaunch_args_as_a_repo_relative_path(self):
+        plan_file = self.write_plan()
+
+        self.launch("--plan", str(plan_file))
+
+        self.assert_plan_carried("docs/plans/p/plan.md")
+
+    def test_a_recorded_plan_that_is_not_a_file_in_the_repo_adds_no_plan_line(self):
+        (self.repo / "docs" / "plans" / "dir").mkdir(parents=True)
+        (self.temp_root / "plan.md").write_text("# Plan\n")
+        outside = str(self.temp_root / "plan.md")
+        for recorded in ("docs/plans/gone/plan.md", outside, "docs/plans/dir"):
+            with self.subTest(recorded=recorded):
+                record = {"lane": "code", "phase": "1", "plan": recorded}
+                (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+                self.launch()
+
+                self.assertRegex(self.prompt_text(), r"(?m)^mode: ")
+                self.assertNotRegex(self.prompt_text(), r"(?m)^plan: ")
+
+    def test_an_unreadable_phase_record_stops_the_launch_with_a_delete_and_rerun_message(self):
+        for label, text in (("not json", "not json"), ("not a json object", "[1, 2]")):
+            with self.subTest(label):
+                (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(text)
+
+                done = self.run_launch()
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("delete it and run the command again", done.stdout + done.stderr)
+
+    def test_a_recorded_plan_whose_folder_has_only_changed_plan_documents_stops_as_an_empty_scope(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        record = {"lane": "code", "phase": "1", "plan": "docs/plans/p/plan.md"}
+        (self.run_folder / code_wait.PHASE_RUN_FILE).write_text(json.dumps(record))
+
+        with mock.patch.dict(os.environ, self.launch_environment()), \
+                self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo)], str(self.loop_stub))
+
+        self.assertIn("is under the plan folder docs/plans/p/", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_plan_flag_that_is_no_file_in_the_repo_stops_the_launch(self):
+        outside = self.temp_root / "plan.md"
+        outside.write_text("# Plan\n")
+        for given in ("docs/plans/gone/plan.md", str(outside)):
+            with self.subTest(given=given):
+                done = self.run_launch("--plan", given)
+
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn(f"--plan {given} is not a file inside the repo", done.stdout + done.stderr)
+
+    def test_a_base_branch_that_moved_ahead_is_replaced_by_the_merge_base_in_the_prompt(self):
+        fork_point = self.head_sha()
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+        self.git(self.repo, "checkout", "-q", "master")
+        (self.repo / "master_only.py").write_text("moved\n")
+        self.git(self.repo, "add", "master_only.py")
+        self.git(self.repo, "commit", "-q", "-m", "master moved")
+        self.git(self.repo, "checkout", "-q", "feature")
+
+        self.launch("--base", "master")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {fork_point}$")
+        self.assertRegex(prompt_file.read_text(), r"(?m)^given-base: master$")
+
+    def test_an_ancestor_base_ref_writes_no_given_base_line(self):
+        master_commit = self.head_sha()
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+
+        self.launch("--base", "master")
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {master_commit}$")
+        self.assertNotIn("given-base", prompt_file.read_text())
+
+    def test_an_ancestor_sha_base_is_used_as_given_with_no_given_base_line(self):
+        fork_point = self.head_sha()
+        self.git(self.repo, "checkout", "-q", "-b", "feature")
+        (self.repo / "own.py").write_text("own\n")
+        self.git(self.repo, "add", "own.py")
+        self.git(self.repo, "commit", "-q", "-m", "own")
+
+        self.launch("--base", fork_point)
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        self.assertRegex(prompt_file.read_text(), rf"(?m)^base: {fork_point}$")
+        self.assertNotIn("given-base", prompt_file.read_text())
+
+    def test_a_git_failure_while_resolving_the_base_becomes_a_launch_error_naming_the_flag(self):
+        failure = review_launch.merge_free_base.MergeBaseGitError("git exploded")
+
+        with (
+            mock.patch.object(review_launch.merge_free_base, "resolve_base", side_effect=failure),
+            self.assertRaises(review_launch.LaunchError) as raised,
+        ):
+            review_launch.resolved_base(self.repo.resolve(), "HEAD")
+
+        self.assertEqual(str(raised.exception), "--base HEAD: git exploded. Nothing was launched.")
+
+    def test_a_base_with_no_merge_base_stops_the_launch_with_the_recovery_command(self):
+        self.git(self.repo, "branch", "-M", "master")
+        self.git(self.repo, "checkout", "-q", "--orphan", "unrelated")
+        (self.repo / "other.py").write_text("other\n")
+        self.git(self.repo, "add", "other.py")
+        self.git(self.repo, "commit", "-q", "-m", "unrelated")
+        self.git(self.repo, "checkout", "-q", "master")
+
+        done = self.run_launch("--base", "unrelated")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("no merge base", done.stdout + done.stderr)
+        self.assertIn("git merge-base HEAD unrelated", done.stdout + done.stderr)
+        self.assertEqual(self.loop_dirs(self.repo), [])
 
     def test_a_launch_with_no_ruled_out_file_writes_no_ruled_out_line(self):
         self.launch()
@@ -258,9 +502,7 @@ class ReviewLaunchTest(unittest.TestCase):
         self.assertIn("--ruled-out sub is a folder; --ruled-out takes one file per flag", str(raised.exception))
 
     def test_a_tree_whose_only_changes_are_ruled_out_files_stops_as_an_empty_scope(self):
-        environment = {**os.environ, **GIT_ENV, **self.ledger_env, "CLAUDE_CODE_SESSION_ID": SESSION,
-                       "HANDBACK_STORE_DIR": str(self.temp_root / "store"),
-                       "REVIEW_FIX_LOOP_SCRIPT": str(self.loop_stub), "CLAUDE_TOOLKIT_TELEMETRY": "1"}
+        environment = self.launch_environment()
         (self.repo / "README.md").write_text("hi, edited\n")
 
         with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
@@ -270,6 +512,22 @@ class ReviewLaunchTest(unittest.TestCase):
         self.assertIn("every changed file against HEAD was given to --ruled-out", str(raised.exception))
         self.assertEqual(self.loop_dirs(self.repo), [])
 
+    def test_plan_documents_mixed_with_ruled_out_files_stop_naming_both_exclusions(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", "-A")
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        plan_file.write_text("# Plan, edited\n")
+        (self.repo / "README.md").write_text("hi, edited\n")
+        environment = self.launch_environment()
+        arguments = ["--detach", "--repo", str(self.repo), "--plan", str(plan_file), "--ruled-out", "README.md"]
+
+        with mock.patch.dict(os.environ, environment), self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(arguments, str(self.loop_stub))
+
+        self.assertIn("every changed file against HEAD outside the plan folder docs/plans/p/ "
+                      "was given to --ruled-out", str(raised.exception))
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
     def test_also_fix_without_fix_stops_the_launch(self):
         with self.assertRaises(review_launch.LaunchError) as raised:
             review_launch.launch_arguments(["--also-fix", "x.md"])
@@ -277,12 +535,9 @@ class ReviewLaunchTest(unittest.TestCase):
 
     def test_a_launch_keeps_inputs_outside_the_run_folder_and_the_asks_findings_file(self):
         outside_fix, outside_handoff = self.write_inputs(self.temp_root / "elsewhere")
-        outside_stop = self.run_folder / stop_file_names.REVIEW_STOP_FILE
-        outside_stop.write_text("old stop\n")
         self.launch("--fix", str(outside_fix), "--handoff", str(outside_handoff))
         self.assertTrue(outside_fix.exists(), "a findings file outside the run folder was deleted")
         self.assertTrue(outside_handoff.exists(), "a handoff file outside the run folder was deleted")
-        self.assertTrue(outside_stop.exists(), "launch deleted review-stop.md")
 
         asks_folder = self.repo / ".git" / review_fix_names.REVIEW_FIX_FOLDER
         asks_file = asks_folder / review_fix_names.ASK_FINDINGS_NAME
@@ -305,6 +560,417 @@ class ReviewLaunchTest(unittest.TestCase):
         second_dir = next(loop_dir for loop_dir in self.loop_dirs(self.repo) if loop_dir != first_dir)
         second_pid = reviewer_dispatch.loop_pid(second_dir)
         self.assertTrue(process_is_running(second_pid), "the new loop was stopped")
+
+    def commit_side_branch(self, message):
+        """Commits side.txt on a new `side` branch, then returns to the branch it started from."""
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        (self.repo / "side.txt").write_text("side\n")
+        self.git(self.repo, "add", "side.txt")
+        self.git(self.repo, "commit", "-q", "-m", message)
+        self.git(self.repo, "checkout", "-q", "-")
+
+    def commit_merge(self):
+        """Commits a merge of a side branch onto HEAD, with a change of its own in the merge commit."""
+        self.commit_side_branch("side")
+        self.git(self.repo, "merge", "-q", "--no-ff", "--no-commit", "side")
+        (self.repo / "README.md").write_text("hi, resolved in the merge\n")
+        self.git(self.repo, "commit", "-q", "-am", "merge side")
+
+    def commit_file(self, name):
+        (self.repo / name).write_text(f"{name}\n")
+        self.git(self.repo, "add", name)
+        self.git(self.repo, "commit", "-q", "-m", f"add {name}")
+
+    def merged_branch(self, own_commit=True):
+        """The repo's branch commits its own file (unless own_commit is False), then merges a side branch that adds
+        another file. Returns the commit the branch started from."""
+        start = self.head_sha()
+        self.commit_side_branch("side change")
+        if own_commit:
+            (self.repo / "own.txt").write_text("own\n")
+            self.git(self.repo, "add", "own.txt")
+            self.git(self.repo, "commit", "-q", "-m", "own change")
+        self.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+        return start
+
+    def test_a_launch_base_before_a_merge_leaves_the_merged_in_files_out_of_the_review(self):
+        start = self.merged_branch()
+
+        self.launch("--base", start)
+
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        review_base = next(line.split(": ", 1)[1] for line in prompt_file.read_text().splitlines()
+                           if line.startswith("base: "))
+        changed = subprocess.run(["git", "diff", "--name-only", review_base], cwd=self.repo, capture_output=True,
+                                 text=True, check=True).stdout.split()
+        self.assertIn("own.txt", changed)
+        self.assertNotIn("side.txt", changed)
+
+    def test_a_launch_base_whose_only_later_change_is_a_merge_stops_with_an_empty_scope(self):
+        start = self.merged_branch(own_commit=False)
+
+        done = self.run_launch("--base", start, edit_readme=False)
+
+        output = done.stdout + done.stderr
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertIn("no changes of its own", output)
+        self.assertNotIn("--base <ref>", output)
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_merged_in_parent_that_conflicts_with_the_base_stops_the_launch_and_names_the_merge(self):
+        self.git(self.repo, "checkout", "-q", "-b", "side")
+        (self.repo / "README.md").write_text("the side branch's readme\n")
+        self.git(self.repo, "commit", "-q", "-am", "side readme")
+        self.git(self.repo, "checkout", "-q", "-")
+        (self.repo / "README.md").write_text("the base's readme\n")
+        self.git(self.repo, "commit", "-q", "-am", "base readme")
+        self.git(self.repo, "tag", "conflicting-base")
+        git_env = {**os.environ, **GIT_ENV}
+        subprocess.run(["git", "merge", "-q", "--no-ff", "-m", "merge side", "side"], cwd=self.repo, env=git_env,
+                       capture_output=True, check=False)
+        (self.repo / "README.md").write_text("both readmes\n")
+        self.git(self.repo, "commit", "-q", "-am", "merge side")
+        merge = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True,
+                               check=True).stdout.strip()
+
+        done = self.run_launch("--base", "conflicting-base")
+
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(merge, done.stdout + done.stderr)
+        self.assertIn("does not merge cleanly", done.stdout + done.stderr)
+        self.assertIn("Nothing was launched", done.stdout + done.stderr)
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def home_environment(self):
+        """A HOME of the test's own, with no reviewed-bases record."""
+        home = self.temp_root / "home"
+        home.mkdir(exist_ok=True)
+        return {"HOME": str(home)}
+
+    def record_review(self):
+        """Records the work tree as a converged review's tree in the test HOME's shared record, through the
+        source's own writer, and returns the HOME environment."""
+        home_environment = self.home_environment()
+        with mock.patch.dict(os.environ, home_environment):
+            recorded = reviewed_tree.record_reviewed("recording-session", self.repo.resolve())
+        self.assertTrue(recorded, "the tree could not be recorded as reviewed")
+        return home_environment
+
+    def prompt_base(self):
+        prompt_file = next((self.repo / ".git" / "review-script" / "loop-script").glob("*/prompt.txt"))
+        return next(line.split(": ", 1)[1] for line in prompt_file.read_text().splitlines()
+                    if line.startswith("base: "))
+
+    def changed_since(self, base):
+        return self.rev("diff", "--name-only", base).split()
+
+    def test_a_bare_launch_on_a_clean_merge_head_reviews_only_what_the_merge_itself_changed(self):
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+        self.assertEqual(self.changed_since(self.prompt_base()), ["README.md"])
+
+    def test_the_empty_scope_stop_on_a_clean_merge_head_names_the_folded_base_not_the_picked_ref(self):
+        self.merged_branch(own_commit=False)
+        first_parent = self.rev("rev-parse", "HEAD^1")
+
+        done = self.run_launch(edit_readme=False, env_overrides=self.home_environment())
+
+        output = done.stdout + done.stderr
+        self.assertNotEqual(done.returncode, 0, output)
+        stop_line = next((line for line in output.splitlines() if "no changes of its own since" in line), None)
+        self.assertIsNotNone(stop_line, output)
+        self.assertNotIn(first_parent, stop_line)
+        named_base = stop_line.split("no changes of its own since ", 1)[1].split(",", 1)[0]
+        self.assertEqual(self.changed_since(named_base), [])
+
+    def test_a_bare_launch_on_a_clean_tree_reviews_the_commits_since_the_last_reviewed_base(self):
+        reviewed = self.head_sha()
+        home_environment = self.record_review()
+        self.commit_file("own.txt")
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(f"reviewing every change since {reviewed} (the last reviewed base)", done.stdout)
+        self.assertEqual(self.prompt_base(), reviewed)
+
+    def test_a_reviewed_uncommitted_change_committed_with_a_later_one_is_reviewed_from_the_recorded_base(self):
+        reviewed = self.head_sha()
+        (self.repo / "reviewed.txt").write_text("reviewed\n")
+        home_environment = self.record_review()
+        self.git(self.repo, "add", "reviewed.txt")
+        self.git(self.repo, "commit", "-q", "-m", "commit the reviewed change")
+        self.commit_file("later.txt")
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.prompt_base(), reviewed)
+        self.assertEqual(sorted(self.changed_since(self.prompt_base())), ["later.txt", "reviewed.txt"])
+
+    def test_a_bare_launch_on_a_clean_head_a_converged_review_covered_stops_with_an_empty_scope(self):
+        # A merge HEAD, so that a fall-through from the reviewed state to the merge rule would launch.
+        self.commit_merge()
+        home_environment = self.record_review()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        output = done.stdout + done.stderr
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertIn("review scope is empty", output)
+        self.assertNotIn("No --base was given", output)
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_an_explicit_base_on_a_clean_merge_head_is_kept(self):
+        first_commit = self.rev("rev-list", "--max-parents=0", "HEAD")
+        self.commit_file("pre.txt")
+        self.commit_merge()
+        first_parent = self.rev("rev-parse", "HEAD^1")
+
+        done = self.run_launch("--base", first_commit, edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        # The launch folds merged-in commits out of the typed base, so the prompt's base can equal the first-parent
+        # pick; the missing "No --base was given" line is what shows the typed base was not replaced.
+        self.assertNotIn("No --base was given", done.stdout)
+        self.assertNotEqual(first_parent, first_commit)
+        # The prompt's base is the typed base with the merged-in commits folded in: a commit whose parent is the typed
+        # base, not the first-parent pick.
+        folded_parent = self.rev("rev-parse", f"{self.prompt_base()}^")
+        self.assertEqual(folded_parent, first_commit)
+        self.assertNotEqual(self.prompt_base(), first_parent)
+        handoff = (self.loop_dirs(self.repo)[-1] / "handoff.txt").read_text()
+        self.assertEqual(handoff, f"Review every change since {self.prompt_base()}, commits included{FOLD_NOTE}")
+
+    def test_a_clean_merge_head_with_only_a_ruled_out_file_dirty_still_picks_the_first_parent(self):
+        self.commit_merge()
+        (self.repo / "side.txt").write_text("side, edited\n")
+
+        done = self.run_launch("--ruled-out", "side.txt", edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+
+    def test_a_dirty_tree_on_a_merge_head_picks_no_base(self):
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=True, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("No --base was given", done.stdout + done.stderr)
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        self.assertEqual((loop_dir / "handoff.txt").read_text(), review_launch.DEFAULT_HANDOFF)
+
+    def test_a_tree_dirty_only_under_the_plan_folder_on_a_merge_head_still_picks_a_base(self):
+        plan_file = self.write_plan()
+        self.git(self.repo, "add", str(plan_file))
+        self.git(self.repo, "commit", "-q", "-m", "plan")
+        self.commit_merge()
+        plan_file.write_text("# Plan, edited\n")
+
+        done = self.run_launch("--plan", str(plan_file), edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+
+    def test_a_launch_with_a_base_hands_off_every_change_since_it_commits_included(self):
+        first_commit = self.rev("rev-list", "--max-parents=0", "HEAD")
+
+        done = self.run_launch("--base", first_commit, edit_readme=True, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        loop_dir = self.loop_dirs(self.repo)[-1]
+        self.assertEqual((loop_dir / "handoff.txt").read_text(),
+                         f"Review every change since {first_commit}, commits included{FOLD_NOTE}")
+
+    def record_review_with_base(self, base):
+        """Records the work tree as reviewed with `base` as its recorded base, and returns the HOME environment.
+        `record_reviewed` always writes a base string, so the record's base is rewritten in place: `None` stands for
+        a record from before bases were kept."""
+        home_environment = self.record_review()
+        with mock.patch.dict(os.environ, home_environment):
+            record_file = reviewed_tree.shared_bases_file()
+            record = json.loads(record_file.read_text())
+            record = {top: [{"base": base, "tree": entries[-1]["tree"]}] for top, entries in record.items()}
+            record_file.write_text(json.dumps(record) + "\n")
+        return home_environment
+
+    def test_a_bare_launch_on_a_changed_merge_head_with_no_recorded_base_takes_the_merge_rule(self):
+        home_environment = self.record_review_with_base(None)
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+        self.assertEqual(self.changed_since(self.prompt_base()), ["README.md"])
+
+    def test_a_bare_launch_on_a_changed_merge_head_with_a_recorded_base_takes_the_recorded_base(self):
+        recorded = self.head_sha()
+        home_environment = self.record_review()
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(f"reviewing every change since {recorded} (the last reviewed base)", done.stdout)
+        self.assertNotIn("the first parent of the HEAD merge commit", done.stdout)
+
+    def test_a_fix_launch_whose_findings_were_all_left_out_on_a_clean_merge_head_picks_no_base(self):
+        self.commit_merge()
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+        left_out = review_launch.FixRunFindings([], [], [], ["the greeting is wrong"], [], {})
+
+        with mock.patch.dict(os.environ, {**self.launch_environment(), **self.home_environment()}), \
+                mock.patch.object(review_launch, "fix_run_findings", return_value=left_out), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                self.assertRaises(review_launch.LaunchError) as raised:
+            review_launch.command_launch(["--detach", "--repo", str(self.repo), "--fix", str(fix_file)],
+                                         str(self.loop_stub))
+
+        self.assertIn("was left out", str(raised.exception))
+        self.assertNotIn("No --base was given", stdout.getvalue())
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_fix_launch_with_findings_on_a_clean_merge_head_picks_no_base(self):
+        self.commit_merge()
+        fix_file, _handoff = self.write_inputs(self.run_folder)
+
+        done = self.run_launch("--fix", str(fix_file), edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("No --base was given", done.stdout)
+        handoff = (self.loop_dirs(self.repo)[-1] / "handoff.txt").read_text()
+        self.assertNotIn("Review every change since", handoff)
+
+    def test_a_file_launch_on_a_clean_merge_head_picks_no_base(self):
+        self.commit_merge()
+
+        done = self.run_launch("--file", "README.md", edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn("No --base was given", done.stdout)
+
+    def test_a_bare_launch_skips_a_recorded_base_that_is_no_ancestor_of_head(self):
+        home_environment = self.record_review_with_base("0" * 40)
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+
+    def test_a_bare_launch_skips_a_recorded_base_on_a_branch_head_never_merged(self):
+        self.git(self.repo, "checkout", "-q", "-b", "elsewhere")
+        self.commit_file("elsewhere.txt")
+        elsewhere = self.head_sha()
+        self.git(self.repo, "checkout", "-q", "-")
+        home_environment = self.record_review_with_base(elsewhere)
+        self.commit_merge()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertNotIn(elsewhere, done.stdout)
+        self.assertIn("the first parent of the HEAD merge commit", done.stdout)
+
+    def test_a_bare_launch_takes_an_older_recorded_base_when_the_newest_is_no_ancestor_of_head(self):
+        older = self.head_sha()
+        self.git(self.repo, "checkout", "-q", "-b", "elsewhere")
+        self.commit_file("elsewhere.txt")
+        elsewhere = self.head_sha()
+        self.git(self.repo, "checkout", "-q", "-")
+        home_environment = self.record_review()
+        with mock.patch.dict(os.environ, home_environment):
+            record_file = reviewed_tree.shared_bases_file()
+            record = json.loads(record_file.read_text())
+            record = {top: [{"base": older, "tree": entries[-1]["tree"]}, {"base": elsewhere, "tree": "t"}]
+                      for top, entries in record.items()}
+            record_file.write_text(json.dumps(record) + "\n")
+        self.commit_file("own.txt")
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(f"reviewing every change since {older} (the last reviewed base)", done.stdout)
+
+    def test_a_bare_launch_skips_a_recorded_base_that_is_head_itself_for_an_older_one(self):
+        older = self.head_sha()
+        home_environment = self.record_review()
+        self.commit_file("own.txt")
+        (self.repo / "scratch.txt").write_text("thrown away\n")
+        with mock.patch.dict(os.environ, home_environment):
+            self.assertTrue(reviewed_tree.record_reviewed("recording-session", self.repo.resolve()))
+        (self.repo / "scratch.txt").unlink()
+
+        done = self.run_launch(edit_readme=False, env_overrides=home_environment)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn(f"reviewing every change since {older} (the last reviewed base)", done.stdout)
+        self.assertEqual(self.changed_since(self.prompt_base()), ["own.txt"])
+
+    def test_a_bare_launch_on_a_clean_tree_with_no_base_to_pick_names_the_fresh_review_form(self):
+        done = self.run_launch(edit_readme=False, env_overrides=self.home_environment())
+
+        output = done.stdout + done.stderr
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertIn("start a fresh `/review base=<ref>`", output)
+        self.assertIn("a `/review resume` launches nothing when no run is pending", output)
+        self.assertEqual(self.loop_dirs(self.repo), [])
+
+    def test_a_launch_moves_an_earlier_review_stop_aside_so_the_fork_writes_a_new_file(self):
+        old_stop = self.run_folder / stop_file_names.REVIEW_STOP_FILE
+        old_stop.write_text("Review converged.\n")
+
+        self.launch()
+
+        self.assertFalse(old_stop.exists())
+        moved = self.run_folder / stop_file_names.PREVIOUS_REVIEW_STOP_FILE
+        self.assertEqual(moved.read_text(), "Review converged.\n")
+
+    def test_a_launch_that_stops_still_moves_the_earlier_review_stop_aside(self):
+        old_stop = self.run_folder / stop_file_names.REVIEW_STOP_FILE
+        old_stop.write_text("Review converged.\n")
+
+        done = self.run_launch(edit_readme=False, env_overrides=self.home_environment())
+
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertFalse(old_stop.exists())
+        moved = self.run_folder / stop_file_names.PREVIOUS_REVIEW_STOP_FILE
+        self.assertEqual(moved.read_text(), "Review converged.\n")
+
+    def test_a_launch_refused_for_a_bad_findings_file_still_moves_the_earlier_review_stop_aside(self):
+        old_stop = self.run_folder / stop_file_names.REVIEW_STOP_FILE
+        old_stop.write_text("Review converged.\n")
+        bad_findings = self.run_folder / "bad-findings.md"
+        bad_findings.write_text("not a finding line\n")
+
+        done = self.run_launch("--fix", str(bad_findings), env_overrides=self.home_environment())
+
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertFalse(old_stop.exists())
+        moved = self.run_folder / stop_file_names.PREVIOUS_REVIEW_STOP_FILE
+        self.assertEqual(moved.read_text(), "Review converged.\n")
+
+    def test_a_launch_with_repo_moves_the_review_stop_of_the_starting_folder_not_of_the_reviewed_repo(self):
+        start = self.make_repo("start")
+        start_run_folder = start / ".git" / code_wait.PHASE_DIR_NAME
+        start_run_folder.mkdir()
+        (start_run_folder / stop_file_names.REVIEW_STOP_FILE).write_text("the fork's earlier stop\n")
+        (self.run_folder / stop_file_names.REVIEW_STOP_FILE).write_text("another session's stop\n")
+        (self.repo / "README.md").write_text("hi, edited\n")
+
+        done = subprocess.run([sys.executable, "-I", str(SCRIPT), "launch", "--detach", "--repo", str(self.repo)],
+                              cwd=start, text=True, capture_output=True, env=self.launch_environment(), check=False)
+
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual((start_run_folder / stop_file_names.PREVIOUS_REVIEW_STOP_FILE).read_text(),
+                         "the fork's earlier stop\n")
+        self.assertEqual((self.run_folder / stop_file_names.REVIEW_STOP_FILE).read_text(), "another session's stop\n")
 
     def test_a_launch_saves_its_skill_in_the_launch_record(self):
         self.launch()
@@ -553,10 +1219,26 @@ class ReviewLaunchTest(unittest.TestCase):
         return loop_dir
 
 
+class ResolvedBaseGitErrorTest(unittest.TestCase):
+    def test_git_failure_in_merge_free_base_stops_the_launch(self):
+        error = merge_free_base.MergeBaseGitError("git log failed.")
+        with (
+            mock.patch.object(review_launch.script_utils, "git_output", return_value="abc123\n"),
+            mock.patch.object(merge_free_base, "resolve_base",
+                              return_value=merge_free_base.BaseResolution("main", "abc123", "abc123")),
+            mock.patch.object(merge_free_base, "merge_free_base", side_effect=error),
+            self.assertRaises(review_launch.LaunchError) as raised,
+        ):
+            review_launch.resolved_base("/repo", "main")
+        self.assertIn("Nothing was launched", str(raised.exception))
+        self.assertIn("git log failed", str(raised.exception))
+
+
 class UserRuledHeaderTest(unittest.TestCase):
     def test_the_user_ruled_time_is_the_plan_ruling_form_the_deviation_entry_takes(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[1], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[1],
+                                     session_ruled=[], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -565,7 +1247,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_session_ruled_numbers_are_written_as_a_header_pair_with_no_ruling_time(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[2, 3])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[2, 3], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -574,7 +1257,8 @@ class UserRuledHeaderTest(unittest.TestCase):
 
     def test_a_launch_with_no_fix_flag_but_findings_to_apply_writes_the_fix_first_mode(self):
         options = argparse.Namespace(fix=None, skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="")
 
         with_findings = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.json")))
         without_findings = dict(review_launch.header_pairs(options, "", [], None))
@@ -582,9 +1266,51 @@ class UserRuledHeaderTest(unittest.TestCase):
         self.assertEqual(with_findings["mode"], "fix-first")
         self.assertEqual(without_findings["mode"], "review-first")
 
+    def test_a_ci_gate_option_is_written_as_a_header_pair(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="run-42")
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertEqual(pairs["ci-gate"], "run-42")
+
+    def test_the_ci_gate_argument_is_parsed_and_reaches_the_launch_header(self):
+        options = review_launch.launch_arguments(["--ci-gate", "run-42"])
+
+        pairs = dict(review_launch.header_pairs(options, "", [], None))
+
+        self.assertEqual(options.ci_gate, "run-42")
+        self.assertEqual(pairs["ci-gate"], "run-42")
+
+    def test_a_relaunch_keeps_the_ci_gate_when_one_is_set(self):
+        options = argparse.Namespace(base="", fast=False, deep=False, tests=[], lane="code", ci_gate="run-42")
+
+        args = review_launch.relaunch_args(options, pathlib.Path("repo"), [], pathlib.Path("handoff.md"))
+
+        position = args.index("--ci-gate")
+        self.assertEqual(args[position:position + 2], ["--ci-gate", "run-42"])
+
+    def test_a_relaunch_adds_no_ci_gate_flag_when_none_is_set(self):
+        options = argparse.Namespace(base="", fast=False, deep=False, tests=[], lane="code", ci_gate="")
+
+        args = review_launch.relaunch_args(options, pathlib.Path("repo"), [], pathlib.Path("handoff.md"))
+
+        self.assertNotIn("--ci-gate", args, "no gate set must add no flag")
+
+    def test_no_ci_gate_option_writes_no_ci_gate_pair(self):
+        options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="")
+
+        pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
+
+        self.assertNotIn("ci-gate", pairs)
+
     def test_no_user_ruled_pair_is_written_without_user_ruled_numbers(self):
         options = argparse.Namespace(fix="findings.md", skill="code", lane="code", no_review=False, fast=False,
-                                     iter=None, user_ruled=[], session_ruled=[])
+                                     iter=None, fix_rounds=0, post_cap_passes="", user_ruled=[],
+                                     session_ruled=[], ci_gate="")
 
         pairs = dict(review_launch.header_pairs(options, "", [], pathlib.Path("findings.md")))
 
@@ -604,27 +1330,83 @@ class StopLoopTest(unittest.TestCase):
     def write_record(self, relaunch_args):
         self.launch_file.write_text(json.dumps({"packet_args": [], "relaunch_args": relaunch_args}) + "\n")
 
-    def stop(self, running_answers, wait_seconds=5):
-        with mock.patch.object(review_launch.process_group, "command_line", return_value="loop review-script-x"), \
+    def stop(self, wait_seconds):
+        with mock.patch.object(review_launch.process_group, "group_id", return_value=4242), \
                 mock.patch.object(review_launch.process_group, "terminate_group", return_value=True), \
-                mock.patch.object(review_launch.process_group, "pid_is_alive", side_effect=running_answers), \
-                mock.patch.object(review_launch, "STOP_WAIT_SECONDS", wait_seconds), \
-                mock.patch.object(review_launch, "STOP_POLL_SECONDS", 0.01), \
-                contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
+                mock.patch.object(review_launch.process_group, "group_is_alive", return_value=True), \
+                mock.patch.object(review_launch.process_group, "STOP_WAIT_SECONDS", wait_seconds), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
             review_launch.stop_loop(self.loop_dir, 4242, self.repo)
-        return stderr.getvalue()
+        return stdout.getvalue(), stderr.getvalue()
 
-    def test_a_stopped_loop_is_waited_for_until_it_exits(self):
-        self.write_record(["--repo", str(self.repo)])
-        running = mock.Mock(side_effect=[True, True, False])
-        errors = self.stop(running)
-        self.assertEqual(running.call_count, 3)
-        self.assertEqual(errors, "")
+    def test_stop_waits_for_a_child_that_outlives_the_leader(self):
+        # The leader dies on SIGTERM at once; its child ignores SIGTERM for a moment, then exits.
+        # The child prints its pid only once SIGTERM is ignored, so the signal cannot arrive before that.
+        child_code = ("import os, signal, time\n"
+                      "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                      "print(os.getpid(), flush=True)\n"
+                      "time.sleep(1.0)\n")
+        leader_code = ("import subprocess, sys, time\n"
+                       f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+                       "time.sleep(60)\n")
+        leader = subprocess.Popen([sys.executable, "-c", leader_code], stdout=subprocess.PIPE, text=True,
+                                  start_new_session=True)
+        child_pid = int(leader.stdout.readline())
+        self.addCleanup(self.kill_if_running, child_pid)
+        group = process_group.group_id(leader.pid)
+        # Reap the leader as soon as it dies: a zombie leader would keep the group alive.
+        reaper = threading.Thread(target=leader.wait)
+        reaper.start()
+        self.addCleanup(reaper.join)
+        # Registered after the join so it runs first: a failed stop_loop must not leave the join waiting 60 s.
+        self.addCleanup(leader.kill)
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr, contextlib.redirect_stdout(io.StringIO()):
+            review_launch.stop_loop(self.loop_dir, leader.pid, self.repo)
+
+        self.assertFalse(process_group.group_is_alive(group), "stop_loop returned while the child still lived")
+        self.assertEqual(stderr.getvalue(), "")
+
+    @staticmethod
+    def kill_if_running(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
+    def stop_with(self, group, signalled):
+        with mock.patch.object(review_launch.process_group, "group_id", return_value=group), \
+                mock.patch.object(review_launch.process_group, "terminate_group", return_value=signalled), \
+                mock.patch.object(review_launch.process_group, "wait_until_group_gone") as waited, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            review_launch.stop_loop(self.loop_dir, 4242, self.repo)
+        return stdout.getvalue(), stderr.getvalue(), waited
+
+    def test_a_leader_with_no_group_prints_nothing_and_does_not_wait(self):
+        stdout, stderr, waited = self.stop_with(group=None, signalled=True)
+        self.assertEqual((stdout, stderr), ("", ""))
+        waited.assert_not_called()
+
+    def test_a_leader_that_was_not_signalled_prints_nothing_and_does_not_wait(self):
+        stdout, stderr, waited = self.stop_with(group=4242, signalled=False)
+        self.assertEqual((stdout, stderr), ("", ""))
+        waited.assert_not_called()
+
+    def test_a_stopped_loop_is_announced_on_stdout(self):
+        stdout, stderr, waited = self.stop_with(group=4242, signalled=True)
+        waited.assert_called_once()
+        self.assertIn("Stopped the earlier review loop", stdout)
+        self.assertIn("pid 4242", stdout)
+        self.assertEqual(stderr, "")
 
     def test_a_loop_that_outlives_the_wait_is_named_on_stderr(self):
-        self.write_record(["--repo", str(self.repo)])
-        errors = self.stop(itertools.repeat(True), wait_seconds=0.1)
+        announcement, errors = self.stop(wait_seconds=0.1)
+        self.assertIn("Stopped the earlier review loop", announcement)
+        self.assertIn("pid 4242", announcement)
         self.assertIn("pid 4242", errors)
+        self.assertIn("is still running after", errors)
 
     def test_a_record_with_no_repo_is_a_launch_error_that_stop_reports(self):
         self.write_record(["--lane", "none"])

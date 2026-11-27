@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """lanes.py: the command line of the lane file. JSON on stdout.
 
-Usage: lanes.py add --name N --worktree W --main-checkout M --branch B [--reports-to R]   (brief on stdin)
+Usage: lanes.py add --name N --worktree W --main-checkout M --branch B [--reports-to R]
+                     [--base-commit C]   (brief on stdin)
        lanes.py set-session N ID [--brief-stdin]     (new brief on stdin)
        lanes.py remove N                             (prints the removed entry)
        lanes.py get N | get --containing PATH        ({"entry": {...} or null})
@@ -32,6 +33,7 @@ def build_parser():
     add.add_argument("--main-checkout", required=True)
     add.add_argument("--branch", required=True)
     add.add_argument("--reports-to", default="")
+    add.add_argument("--base-commit", default=None, help="the commit the lane branch starts from")
 
     set_session = verbs.add_parser("set-session", help="set the session id of an entry")
     set_session.add_argument("name")
@@ -67,7 +69,7 @@ def run_add(args):
     brief = read_brief_from_stdin()
     try:
         lane = lane_entries.add_entry(args.name, args.worktree, args.main_checkout, args.branch, brief,
-                                      args.reports_to)
+                                      args.reports_to, args.base_commit)
     except lane_entries.LaneExistsError as error:
         print(f"lanes: {error}", file=sys.stderr)
         return 1

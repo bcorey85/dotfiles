@@ -7,15 +7,14 @@ description: "The benches that are open now and the question each asks."
 
 # In progress
 
-8 open benches, by rank. Each line is the question the bench asks.
+7 open benches, by rank. Each line is the question the bench asks.
 
-1 further benches are left out of this page.
+0 further benches are left out of this page.
 
 * Review regression suite: pinned findings on sealed cases, run on each reviewer or model change (blocked): A pinned regression suite catches a reviewer or model change that loses real findings before it ships, in place of a one-off bench each time.
 * Remove the research stage from planning: architect explores from the ticket alone (running): Dropping the research chain from planning saves about 4 minutes and one summary the user reads per plan, if plan quality holds.
 * Review asks the user already answered the same way become standing rulings (blocked): Fewer interruptions: a review ask that matches a pattern the user answered the same way twice before is resolved from a ruling file, as pstack's bugbot-triage does.
 * Bench a logic prototype step in eng-spec on the queryview race trap (running): Tests whether running the plan's state model as a throwaway script catches the race that plan review misses on paper in every baseline run.
 * Bench a UI prototype step in eng-spec against a hidden design preference (queued): Tests whether reacting to running UI variants, instead of answering plan questions, gets the build closer to what the user wanted.
-* Escalate the fix coder to Opus after a Sonnet fix fails re-review (queued): Cheap-first, escalate-on-failure (Copilot Fusion's cascade) could cut the third review round, which still needs changes 86% of the time.
-* Give the code reviewer each touched file's earlier escapes and reverts (queued): The code reviewer catches repeat defects it now misses by reading the file's earlier escapes and reverts, as Linear's review agent does.
 * Bench intent-first descriptions for six skills that miss paraphrased asks (queued): Six skills start firing on a paraphrased ask instead of only on their quoted trigger words, so the user gets the skill without typing its slash command
+* cut the review loop's end-of-loop full suite when verify reruns it (queued): Running the full suite once at branch end, not also at the end of each review loop, saves about 7 minutes of wall-clock and CPU per lane at the same catch rate.

@@ -58,6 +58,22 @@ class PreCommitHookTests(unittest.TestCase):
                 self.assertIn("build_changes.py new", result.stderr)
                 self.assertIn(path, result.stderr)
 
+    def test_a_toolkit_path_git_would_quote_is_refused_naming_the_real_path(self):
+        self.install_checker(0)
+        quoted_paths = [
+            "claude/.claude/skills/tab\tname/SKILL.md",
+            "claude/.claude/skills/café/SKILL.md",
+            "claude/.claude/skills/new\nline/SKILL.md",
+        ]
+        for path in quoted_paths:
+            with self.subTest(path=path):
+                self.git("reset", "-q")
+                self.stage(path)
+                result = self.run_hook()
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(path, result.stderr)
+                self.assertIn("change-file-check: the change set changes the toolkit", result.stderr)
+
     def test_toolkit_path_with_added_change_file_passes(self):
         self.install_checker(0)
         self.stage(TOOLKIT_FILES[0])
@@ -122,7 +138,7 @@ class PreCommitHookTests(unittest.TestCase):
         self.stage(CHANGE_FILE)
         result = self.run_hook()
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("agent-evals", result.stderr)
+        self.assertIn("toolkit_drift.py failed", result.stderr)
 
     def test_the_drift_check_reads_the_staged_text_not_the_work_tree(self):
         self.install_checker(0)
@@ -141,6 +157,107 @@ class PreCommitHookTests(unittest.TestCase):
         self.stage("claude/.claude/scripts/lib/util.py")
         self.stage(CHANGE_FILE)
         self.assertEqual(self.run_hook().returncode, 0)
+
+    def install_line_drift_check(self, stray_line=None, silent_crash=False, pass_at_head=False):
+        """A stand-in toolkit_drift.py: one problem line on stderr per CLAUDE.md line starting `stale`.
+
+        silent_crash: exit 1 with no output when a line starts with `crash`.
+        pass_at_head: on the HEAD tree, print the problem lines but exit 0.
+        """
+        script = self.evals / "bin" / "toolkit_drift.py"
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text(
+            "import pathlib, sys\n"
+            "tree = pathlib.Path(sys.argv[sys.argv.index('--toolkit') + 1])\n"
+            "claude_md = tree / 'CLAUDE.md'\n"
+            "lines = claude_md.read_text().splitlines() if claude_md.is_file() else []\n"
+            f"if {silent_crash!r} and any(line.startswith('crash') for line in lines):\n"
+            "    sys.exit(1)\n"
+            "problems = [line for line in lines if line.startswith('stale')]\n"
+            "for line in problems:\n"
+            "    print('toolkit_drift: ' + line, file=sys.stderr)\n"
+            f"stray = {stray_line!r}\n"
+            "if stray and any(line.startswith('crash') for line in lines):\n"
+            "    print(stray, file=sys.stderr)\n"
+            "    sys.exit(1)\n"
+            f"at_head = {pass_at_head!r} and '/head/' in str(tree)\n"
+            "sys.exit(1 if problems and not at_head else 0)\n",
+            encoding="utf-8",
+        )
+
+    def commit_rule_file_at_head(self, text):
+        self.stage("claude/.claude/CLAUDE.md", text)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "seed")
+
+    def stage_rule_file_with_change_file(self, text):
+        self.stage("claude/.claude/CLAUDE.md", text)
+        self.stage(CHANGE_FILE)
+
+    def test_drift_already_at_head_does_not_refuse_a_commit_that_adds_none(self):
+        self.install_checker(0)
+        self.install_line_drift_check()
+        self.commit_rule_file_at_head("stale a\nstale b\n")
+        self.stage_rule_file_with_change_file("stale a\nstale b\nfine\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("2 toolkit drift line(s) already at HEAD", result.stderr)
+
+    def test_a_commit_that_adds_a_drift_line_is_refused_naming_only_that_line(self):
+        self.install_checker(0)
+        self.install_line_drift_check()
+        self.commit_rule_file_at_head("stale a\n")
+        self.stage_rule_file_with_change_file("stale a\nstale c\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("stale c", result.stderr)
+        self.assertNotIn("stale a", result.stderr)
+
+    def test_a_commit_that_shrinks_drift_passes(self):
+        self.install_checker(0)
+        self.install_line_drift_check()
+        self.commit_rule_file_at_head("stale a\nstale b\n")
+        self.stage_rule_file_with_change_file("stale a\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("1 toolkit drift line(s) already at HEAD", result.stderr)
+
+    def test_a_staged_output_line_that_is_not_a_problem_line_is_refused(self):
+        self.install_checker(0)
+        self.install_line_drift_check(stray_line="Traceback: boom")
+        self.commit_rule_file_at_head("stale a\n")
+        self.stage_rule_file_with_change_file("stale a\ncrash\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Traceback: boom", result.stderr)
+        self.assertNotIn("stale a", result.stderr)
+        self.assertNotIn("entries above", result.stderr)
+
+    def test_a_failing_run_that_prints_nothing_is_refused_as_a_crash(self):
+        self.install_checker(0)
+        self.install_line_drift_check(silent_crash=True)
+        self.commit_rule_file_at_head("fine\n")
+        self.stage_rule_file_with_change_file("crash\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("printed no problem line", result.stderr)
+        self.assertNotIn("entries above", result.stderr)
+
+    def test_problems_count_as_added_when_the_head_run_passes(self):
+        self.install_checker(0)
+        self.install_line_drift_check(pass_at_head=True)
+        self.commit_rule_file_at_head("stale x\n")
+        self.stage_rule_file_with_change_file("stale x\nfine\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("stale x", result.stderr)
+
+    def test_drift_with_no_head_commit_is_refused(self):
+        self.install_checker(0)
+        self.install_line_drift_check()
+        self.stage_rule_file_with_change_file("stale a\n")
+        result = self.run_hook()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("stale a", result.stderr)
 
     def test_a_missing_drift_check_notes_it_and_allows(self):
         self.install_checker(0)

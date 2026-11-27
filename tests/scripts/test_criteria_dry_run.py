@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import pathlib
 import stat
@@ -5,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from toolkit_paths import TOOLS_DIR
 
@@ -162,6 +165,33 @@ class EnvironmentFailureTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
 
 
+class CappedRunTest(unittest.TestCase):
+    """dry_run starts each criterion's command inside the shared capped slice when the machine can run one."""
+
+    def started_command(self, cap_available):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = pathlib.Path(temp)
+            plan = repo / "plan.md"
+            plan.write_text("# Plan\n\n## Phase 1: Tool\n\n#### Automated Verification:\n\n"
+                            "- [ ] `echo hi` exits 0\n")
+            with mock.patch.object(criteria_dry_run.memory_cap_scope, "cap_available", return_value=cap_available), \
+                    mock.patch.object(criteria_dry_run.script_utils, "run_command",
+                                      return_value=(0, "")) as run_command, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                criteria_dry_run.dry_run(plan, repo, set(), 5)
+        return run_command.call_args.args[0]
+
+    def test_a_capped_machine_runs_the_command_as_the_capped_argv(self):
+        argv = self.started_command(True)
+
+        self.assertIn("--slice=tests.slice", argv)
+        self.assertEqual("-c", argv[-2])
+        self.assertIn("echo hi", argv[-1])
+
+    def test_a_machine_without_a_scope_runs_the_plain_shell_command(self):
+        self.assertEqual("echo hi", self.started_command(False))
+
+
 class DryRunMissingToolTest(unittest.TestCase):
     def test_a_command_that_exits_127_on_a_missing_tool_reads_env_with_the_fix_not_broken(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -228,11 +258,12 @@ class SkipTest(unittest.TestCase):
 
 
 class ClosingPhaseTest(unittest.TestCase):
-    def test_a_closing_phase_item_is_left_to_its_skill_like_the_plan_check_leaves_it(self):
+    def test_a_closing_phase_item_is_listed_as_closing_and_not_run(self):
         closing_plan = ("# Plan\n\n## Phase 1: Build\n\n#### Automated Verification:\n\n"
                         "- [ ] `test -e not-built-yet` exits 0\n\n## Phase 2: Refactor pass\n\n"
                         "#### Automated Verification:\n\n"
-                        '- [ ] `CHANGED="$(git diff --name-only)" && test -n "$CHANGED"` exits 0\n')
+                        '- [ ] `CHANGED="$(git diff --name-only)" && test -n "$CHANGED"` exits 0\n'
+                        "- [ ] N/A: nothing to run for this pass\n")
 
         with tempfile.TemporaryDirectory() as temp:
             plan = pathlib.Path(temp) / "plan.md"
@@ -240,8 +271,18 @@ class ClosingPhaseTest(unittest.TestCase):
             finished = subprocess.run([sys.executable, str(SCRIPT), str(plan), "--repo", temp],
                                       capture_output=True, text=True)
 
+        output_lines = finished.stdout.splitlines()
+        command_lines = [line for line in output_lines if line.startswith("CHECK 2.2 ")]
+        self.assertEqual(len(command_lines), 1, finished.stdout)
+        self.assertTrue(command_lines[0].startswith("CHECK 2.2 CLOSING /refactor +deep "), command_lines[0])
+        self.assertIn("git diff --name-only", command_lines[0])
+        self.assertNotIn("rc=", command_lines[0])
+        prose_lines = [line for line in output_lines if line.startswith("CHECK 2.3 ")]
+        self.assertEqual(len(prose_lines), 1, finished.stdout)
+        self.assertTrue(prose_lines[0].startswith("CHECK 2.3 CLOSING /refactor +deep "), prose_lines[0])
+        self.assertIn("N/A", prose_lines[0])
+        self.assertNotIn("rc=", prose_lines[0])
         self.assertNotIn("UNPARSED", finished.stdout)
-        self.assertNotIn("CHANGED", finished.stdout)
         self.assertEqual(finished.returncode, 0, finished.stdout)
 
 

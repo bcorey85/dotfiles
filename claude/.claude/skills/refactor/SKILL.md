@@ -9,7 +9,7 @@ allowed-tools: [Agent, Bash, Read, Glob, Grep, Skill]
 Specialist agents find; coders fix; `/review` gates. Two finders:
 
 - `smell-reviewer` — **what repeats or sits wrong** (duplication, placement, naming, dead weight, cohesion). Bound: a diff. Modes 3, 4, 6.
-- `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module — never a diff. Mode 7.
+- `complexity-reviewer` — **what need not exist** (branching a data model collapses, indirection with one implementation, configurability nothing configures, guards a boundary kills, values with several owners). Bound: a whole module, or with `--diff` the added lines the prompt lists. Mode 7.
 
 ## Never modify a test to make a refactor pass
 
@@ -61,44 +61,10 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    **Test audit (conditional)**: dispatch `test-reviewer` (pinned; omit `model`) when the refactor could change test guarantees (moved/split/merged logic, behavior-adjacent paths, touched test files, coder uncertainty). SKIP for purely mechanical refactors with green checks. Weakened/altered tests flagged → test-rule violation: stop, alert the user.
 
-   **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. You supply:
-   - `finder` (the dispatched agent; omit in targeted mode), `lane` (required whenever there is a finder; from conversation/planning artifacts), `result` (optional).
-   - `findings`: one entry per finder finding, each `{class, disposition, actioned, file, line, desc}` (`line` 0 when none; `desc` one line). Add `escape: true` plus `severity` and `miss_reason` (a label from `escape-ratchet.md`; not `unknown`) for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
-   - `guards`: an object, `{"<class>": "<guard>"}`, one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
-   - `handoff`: optional `files` (`{path, change}`, one line each: the printed file list is what git shows changed against HEAD, untracked files included, and a path you list keeps its `change`), `tests_run` (exact command + exit code, or `none`), `flagged` (one line, `none` when nothing is flagged), optional `plan_impact` (may span lines). Add `modifier` if one was given.
-
-   ```json
-   {
-     "finder": "smell-reviewer",
-     "lane": "code",
-     "result": "NEEDS CHANGES",
-     "findings": [
-       {
-         "class": "duplication",
-         "disposition": "fix",
-         "actioned": "fixed",
-         "file": "src/orders.py",
-         "line": 3,
-         "desc": "the same parse in two handlers",
-         "severity": "medium",
-         "escape": true,
-         "miss_reason": "overlooked"
-       }
-     ],
-     "guards": { "duplication": "convention" },
-     "handoff": {
-       "files": [
-         {
-           "path": "src/orders.py",
-           "change": "one parse helper for both handlers"
-         }
-       ],
-       "tests_run": "pytest tests/test_orders.py -> exit 0",
-       "flagged": "none",
-       "plan_impact": "none"
-     }
-   }
-   ```
+   **Log and hand off — one call.** Write the JSON file at the path the prep script's `NEXT:` line named (a fresh path for each invocation), in the shape `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --help` prints, and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py log --mode <branch|targeted|simplify> --input <file> [--base REF]`. Use one input file per /refactor invocation; re-run `log` on that file (the script skips rows already written for it). In branch mode pass `--base` with the base `branch-prep` printed in its `NEXT:` line. It writes the escape rows, the finder rows and prints the `/review` handoff block. Fill these with judgment (the rest of the shape is in `log --help`):
+   - `lane` (required whenever there is a finder; from conversation/planning artifacts).
+   - `findings`: one entry per finder finding. Add `escape: true` plus `severity` and `miss_reason` (a label from `escape-ratchet.md`; not `unknown`) for each distinct smell in branch-loop code (branch-audit: `duplication` for scope-item-1, `smell` otherwise; simplify: `complexity`). One entry per smell, not per file. Never `escape` mechanical-sweep matches or legacy targets — old debt is not an escape.
+   - `guards`: one guard per escape `class` group, from the ratchet (`escape-ratchet.md`, read in step 3a; read it now in simplify mode). The script refuses an escape class with no guard.
 
    If it prints no handoff and code changed, add `handoff` to the file and run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py handoff --input <file>`; that prints the block and writes nothing. If `log` exits 2 (a writer refused a row), still follow its `NEXT:` and tell the user which row failed.
 
@@ -112,11 +78,11 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    c. **Report the work list.** For each surviving finding: the sites, the proposed consolidation, and its route — small single-module extraction → a follow-up **targeted `/refactor`** invocation; `[design-decision]` / cross-module / public-contract → **`/eng-spec`**.
 
-   d. **No escape logging.** Log the finder with `log --mode audit` (JSON as in step 5, with `target`: `["<target-dir>"]`, no `escape`, no `handoff`).
+   d. **No escape logging.** Log the finder with `log --mode audit` (the shape `log --help` prints, with `target`: `["<target-dir>"]`, no `escape`, no `handoff`).
 
 7. **Simplify mode — what could be DELETED if this module were shaped differently.** Fixes are opt-in per finding, never wholesale.
 
-   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target to its tracked and untracked (not ignored) files, drops test, index, style and generated files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left) — tell the user which slice runs and its modules (`--slice N` for the others).
+   a. Run `python3 ~/.claude/skills/refactor/scripts/refactor_flow.py simplify-prep <target...>`. It expands the target to its tracked and untracked (not ignored) files, drops test, index, style and generated files, and over 25 source files splits along module folders and runs slice 1 (it STOPs when no source file is left, or with `--diff` when no file of the target has an added line or the base shares no history with HEAD) — tell the user which slice runs and its modules (`--slice N` for the others). When the user asks to simplify only the lines a branch or PR changed, add `--diff BASE`: the prompt then lists each file of the slice that has an added line, with those lines, and bounds findings to them; use the printed prompt as is, never hand-write a bound.
 
    b. **Do NOT read the files yourself.**
 
@@ -126,7 +92,7 @@ Specialist agents find; coders fix; `/review` gates. Two finders:
 
    e. **Present survivors for the user to choose** (sites, quantified disappearance, enabling change, cost). Nothing found → say so, run `log --mode simplify` (empty-handed, with `target`), and stop. The user picks none → log every finder finding anyway (declined survivors `actioned=none`, triage drops `actioned=skipped_fp`) with `target`, and stop. Empty-handed means the finder returned nothing.
 
-   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only. The `log` call in step 5 carries `--mode simplify` and `target` = the files listed in the printed prompt (the slice that ran).
+   f. **Dispatch chosen findings** via step 5 with two changes: test audit **mandatory**, escape `class=complexity` for branch-loop code only. The `log` call in step 5 carries `--mode simplify` and `target` = the files listed in the printed prompt (the slice that ran). `log --mode simplify` prints the branch diff recorded at prep and at log. When it ends in `STOP:` (added lines rose), tell the user the files it names and the before and after counts, and do not call the pass a simplification until they rule.
 
 ## Code to refactor
 

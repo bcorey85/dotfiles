@@ -124,6 +124,13 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
         self.assertNotIn("600000", decision["permissionDecisionReason"])
 
+    def test_review_loop_background_flag_as_the_string_true_denied(self):
+        payload = {"tool_name": "Bash", "agent_type": REVIEW_LOOP_AGENT_TYPE, "agent_id": "abc123",
+                   "tool_input": {"command": "make test", "run_in_background": "true"}}
+        decision = json.loads(run_hook(json.dumps(payload)).stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
+
     def test_review_loop_shell_background_denied(self):
         for command in ("make test > test.log 2>&1 &", "npm run dev & sleep 5; curl localhost:3000",
                         "nohup make test > test.log", "setsid pytest -q", "detach pytest -q",

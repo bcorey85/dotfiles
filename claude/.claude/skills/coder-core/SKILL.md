@@ -15,7 +15,7 @@ Write every line for the person who reads and changes it next. Only correctness 
 - Give each function one job its name states. Past 40 lines, split it into named steps.
 - Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
 - Return a named type (dataclass, NamedTuple, interface) in place of a tuple of three or more values. Past five parameters, pass one named object.
-- A comment says why the code makes a choice it cannot show. Never restate what the code does.
+- Comments are a last resort. Write one only for what a busy engineer new to the code must know. Architecture goes in the repo's architecture docs, never in code comments.
 - Bind the error in every catch block and use it: log it with the input that caused it, rethrow it, or return it as a typed failure; a catch that only returns a fallback is a swallowed error.
 
 ## You are the terminal implementer
@@ -63,7 +63,7 @@ Before you write a test, search the suite for tests that call the same function,
 
 When a rule's cases are already tested at one layer, test each other entry point that applies the rule with one wiring test. Put inputs that take the same code branch in one table-driven test, with a message for each case.
 
-The plan's acceptance criteria (`docs/plans/<slug>/acceptance-criteria.md`) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
+The plan's acceptance criteria (`acceptance-criteria.md` beside the plan) are the requirements list — read them as spec. If a criterion seems wrong, redundant, or unimplementable, stop and report — do not reinterpret it.
 
 The private workflow never reaches committed code: branch, PR, and issue numbers, phase numbers, decision ids (`D4`, `AC2`), plan paths, pipeline nouns, agent provenance, the user's name, and sign-offs (who and when) are banned from every file you write, including comments and filenames. Write the reason standalone.
 

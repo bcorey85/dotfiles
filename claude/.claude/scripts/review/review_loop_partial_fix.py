@@ -1,6 +1,6 @@
 """review_loop_partial_fix.py: the record of a fix coder that died mid-edit. The tree may hold part of the fix and
 nothing says which findings landed, so the loop saves the findings it gave the coder, less those on a reverted
-approval-only path (a user-only ask now), and the diff the coder left
+approval-only path (an approval ask now), and the diff the coder left
 (`PARTIAL_FIX_NAME`, in the review-fix folder of the repo's git dir so the next launch on the repo finds it; no record
 when git names no git dir). Each path's diff is the coder's own, read before any sign-off or comment lines were put
 back; a path the put-back returned to its old text, or the loop reverted, has no diff in the record. The
@@ -17,6 +17,7 @@ Owner of the dead-coder record. Import it; never read or write the record anothe
 import json
 import typing
 
+import review_loop_outside_writes
 import script_utils
 from approval_asks_store import review_fix_file
 from review_fix_names import PARTIAL_FIX_NAME
@@ -62,9 +63,9 @@ class DeadPassRecord(typing.NamedTuple):
 def dead_pass_record(repo, call_name, findings, reverted_findings, saved, held_unfixed, kept_error):
     """After the coder pass `call_name` died: the stop note words and the pending record. A pass that is not a
     finding pass (its prompt comes from a check's output, which the next launch runs again) saves nothing. The
-    `findings` the coder was given, less the `reverted_findings` (user-only asks now), are unverified; the `saved`
+    `findings` the coder was given, less the `reverted_findings` (approval asks now), are unverified; the `saved`
     texts on a held file (an entry of `held_unfixed`, no coder got them) stay in the record. `kept_error` holds the
-    pass diffs. With no finding at all the record is deleted: an older record would send user-only asks to the
+    pass diffs. With no finding at all the record is deleted: an older record would send approval asks to the
     coder again."""
     if not is_finding_pass(call_name):
         return DeadPassRecord("", None)
@@ -186,7 +187,7 @@ def coder_failure_blocker(call_name, error, scope_guard_failed=False, died=True)
 class PartialFixRuns:
     """The partial-fix record of a run, as a mixin for `LoopRun`. The host class holds repo, held_unfixed,
     files_touched and pending_record, and has undo_protected_edits, flag_broken_no_code_rulings,
-    ask_for_approval_only_edits, keep_coder_commit_in_scope, findings_on_reverted_paths, keep_open and drop_open."""
+    ask_for_approval_only_edits, keep_coder_commit_in_scope, keep_unreverted_open."""
 
     # The findings of the saved record that no coder pass or settle has answered yet. A tuple or a list the run
     # replaces on each change, so no instance shares it.
@@ -214,19 +215,19 @@ class PartialFixRuns:
         """The stop text of a coder pass that died, or that finished while the loop could not undo all of
         it: puts the protected lines back, settles the findings and the files the pass touched, and sets the
         record a pass that carried findings leaves at the end of the run."""
-        signoffs, comments = snapshots
-        put_back = self.undo_protected_edits(signoffs, comments, findings)
+        put_back = self.undo_protected_edits(snapshots, findings)
         changed = [path for path in error.changed if path not in fully_put_back_paths(put_back)]
         self.flag_broken_no_code_rulings(findings, changed, nits)
         reverted = self.ask_for_approval_only_edits(changed, findings)
         kept = [path for path in changed if path not in reverted]
         self.files_touched.update(kept)
         self.keep_coder_commit_in_scope()
-        reverted_findings = self.findings_on_reverted_paths(findings, reverted)
-        self.drop_open(reverted_findings)
-        self.keep_open([item for item in findings if item not in reverted_findings])
+        reverted_findings = self.keep_unreverted_open(findings, reverted)
         kept_error = error.keeping_only(kept)
         blocker = coder_failure_blocker(call_name, kept_error, died=error.died)
+        outside_blocker = review_loop_outside_writes.take_outside_blocker(call_name, self.repo)
+        if outside_blocker:
+            blocker += " " + outside_blocker
         dead = dead_pass_record(self.repo, call_name, findings, reverted_findings, self.saved_record_texts,
                                 self.held_unfixed, kept_error)
         if dead.pending is not None:

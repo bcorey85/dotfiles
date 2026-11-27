@@ -94,19 +94,17 @@ class CalibrationGuardFindingsTest(HookRunTest):
 class InvalidUtf8StdinTest(HookRunTest):
     BAD = b"\xff"
 
-    def test_comment_bloat_gate_still_blocks_a_dense_file_next_to_invalid_utf8(self):
+    def test_comment_bloat_gate_blocks_an_added_comment_next_to_invalid_utf8(self):
         # finding 6
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        lines = [f"value_{number} = {number}" for number in range(20)]
-        lines += [f"# note {number}" for number in range(15)]
-        source.write_text("\n".join(lines) + "\n")
+        source.write_text("value = 0\n# note 1\n# note 1\n# note 1\n")
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
-                                                              "new_string": "# note 1\n@@"}})
+                                                              "new_string": "# note 1\n# note 1\n# note 1\n@@"}})
         stdin = body.encode("utf-8").replace(b"@@", self.BAD)
         finished = self.run_hook("comment-bloat-gate", stdin)
         self.assertEqual(finished.returncode, 2)
-        self.assertIn(b"% comments", finished.stderr)
+        self.assertIn(b"2: # note 1", finished.stderr)
 
     def test_spec_budget_gate_still_denies_next_to_invalid_utf8(self):
         # finding 6
@@ -141,15 +139,13 @@ class IdeographicSpaceTest(HookRunTest):
         # finding 8: `[[:space:]]*` before the comment marker matches U+3000
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        lines = [f"value_{number} = {number}" for number in range(8)]
-        lines += [f"　# note {number}" for number in range(10)]
-        lines += [f"value_x{number} = 0" for number in range(12)]
-        source.write_text("\n".join(lines) + "\n")
+        note = "　# note 1\n" * 3
+        source.write_text("value = 0\n" + note)
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
-                                                              "new_string": "　# note 1\n"}})
+                                                              "new_string": note}})
         finished = self.run_hook("comment-bloat-gate", body)
         self.assertEqual(finished.returncode, 2)
-        self.assertIn(b"% comments", finished.stderr)
+        self.assertIn(b"2: # note 1", finished.stderr)
 
     def test_stale_citation_gate_reads_an_ideographic_space_as_indent(self):
         # finding 8

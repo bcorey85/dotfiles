@@ -8,10 +8,12 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 import toolkit_paths
+import transcript_lines
 
 REVIEW_START = toolkit_paths.CODE_DIR / "code_review_start.py"
 PLAN = "\n".join([
@@ -23,6 +25,16 @@ PLAN = "\n".join([
 BASE = "abc1234"
 SAMPLE_COMMANDS = ["ruff check {files:.py}", "python3 -m pytest {tests:.py}"]
 STALE_PROSE_COMMAND = f"python3 {toolkit_paths.CODE_DIR / 'stale_prose.py'} --base {BASE}"
+
+
+def writer_of(live_row):
+    """A holder_with_paths stand-in: `live_row` wrote every dirty path asked about; None means no writer. Like the
+    real function, it finds no holder for an empty own session id."""
+    def find(_repo, dirty, own_session_id, _commit="HEAD"):
+        if live_row is None or not own_session_id:
+            return None
+        return types.SimpleNamespace(row=live_row, paths=list(dirty))
+    return find
 
 
 class CodeReviewStartTest(unittest.TestCase):
@@ -287,6 +299,112 @@ class CodeReviewStartTest(unittest.TestCase):
         self.assertIn("phase.py", diff_names)
         self.assertNotIn("integration.py", diff_names)
 
+    def master_and_feature(self):
+        """Commit f.py on master, branch feature off it with phase.py. Returns the fork point."""
+        (self.repo / "f.py").write_text("base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "master")
+        fork_point = self.git("rev-parse", "HEAD")
+        self.git("checkout", "-q", "-b", "feature")
+        (self.repo / "phase.py").write_text("the phase\n")
+        self.git("add", "phase.py")
+        self.git("commit", "-q", "-m", "the phase")
+        (self.repo / "handoff.txt").write_text("  files:\n    - path: x\n      why: the phase\n")
+        return fork_point
+
+    def merge_side_branch_into_feature(self, fork_point):
+        self.git("checkout", "-q", "-b", "side", fork_point)
+        (self.repo / "side.py").write_text("from the side branch\n")
+        self.git("add", "side.py")
+        self.git("commit", "-q", "-m", "side change")
+        self.git("checkout", "-q", "feature")
+        self.git("merge", "-q", "--no-ff", "-m", "merge side", "side")
+
+    def advance_master(self):
+        self.git("checkout", "-q", "master")
+        (self.repo / "master_only.py").write_text("master moved\n")
+        self.git("add", "master_only.py")
+        self.git("commit", "-q", "-m", "master moved")
+        self.git("checkout", "-q", "feature")
+        return self.git("rev-parse", "master")
+
+    def dry_run_result(self, base):
+        return subprocess.run([sys.executable, str(REVIEW_START), "lane-a", "-", "1", "handoff.txt", "--base", base,
+                               "--dry-run"], cwd=self.repo, capture_output=True, text=True, check=False,
+                              env={**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"})
+
+    def dry_run(self, base):
+        done = self.dry_run_result(base)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header, _, handoff = done.stdout.partition("\n\n")
+        return header.splitlines(), handoff
+
+    def test_a_moved_base_with_a_merge_on_the_branch_is_folded_from_the_merge_base(self):
+        fork_point = self.master_and_feature()
+        self.merge_side_branch_into_feature(fork_point)
+        master_tip = self.advance_master()
+
+        header_lines, handoff = self.dry_run("master")
+
+        base_line = next(line for line in header_lines if line.startswith("base: "))
+        review_base = base_line.removeprefix("base: ")
+        self.assertNotIn(review_base, (fork_point, master_tip))
+        self.assertIn("given-base: master", header_lines)
+        base_files = self.git("ls-tree", "-r", "--name-only", review_base).splitlines()
+        self.assertIn("side.py", base_files)
+        self.assertNotIn("master_only.py", base_files)
+        self.assertIn("- path: phase.py", handoff)
+        self.assertNotIn("side.py", handoff)
+
+    def test_an_ancestor_base_with_a_merge_on_the_branch_names_the_typed_base_as_given(self):
+        fork_point = self.master_and_feature()
+        self.merge_side_branch_into_feature(fork_point)
+
+        header_lines, handoff = self.dry_run("master")
+
+        base_line = next(line for line in header_lines if line.startswith("base: "))
+        self.assertNotEqual(base_line, f"base: {fork_point}")
+        self.assertIn("given-base: master", header_lines)
+        self.assertNotIn("side.py", handoff)
+
+    def test_a_base_with_no_merge_base_stops_the_run_with_the_recovery_command(self):
+        (self.repo / "f.py").write_text("base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("branch", "-M", "master")
+        self.git("checkout", "-q", "--orphan", "unrelated")
+        (self.repo / "other.py").write_text("unrelated\n")
+        self.git("add", "other.py")
+        self.git("commit", "-q", "-m", "unrelated")
+        self.git("checkout", "-q", "master")
+        (self.repo / "handoff.txt").write_text("handoff\n")
+
+        done = self.dry_run_result("unrelated")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(done.stdout, "")
+        self.assertIn("no merge base", done.stderr)
+        self.assertIn("git merge-base HEAD unrelated", done.stderr)
+
+    def test_a_base_branch_that_moved_ahead_is_replaced_by_the_merge_base_and_both_are_named(self):
+        fork_point = self.master_and_feature()
+        self.advance_master()
+
+        header_lines, handoff = self.dry_run("master")
+
+        self.assertIn(f"base: {fork_point}", header_lines)
+        self.assertIn("given-base: master", header_lines)
+        self.assertIn("- path: phase.py", handoff)
+
+    def test_an_ancestor_base_ref_writes_no_given_base_line(self):
+        fork_point = self.master_and_feature()
+
+        header_lines, _ = self.dry_run("master")
+
+        self.assertIn(f"base: {fork_point}", header_lines)
+        self.assertFalse([line for line in header_lines if line.startswith("given-base")])
+
     def test_a_merge_that_cannot_fold_into_the_base_stops_the_run_naming_it(self):
         (self.repo / "f.py").write_text("base\n")
         self.git("add", "-A")
@@ -445,8 +563,8 @@ class CodeReviewStartTest(unittest.TestCase):
         record = self.dirty_record(unchanged)
         with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
                 mock.patch.object(code_review_start, "foreign_untracked", return_value=[]), \
-                mock.patch.object(code_review_start.session_registry, "other_live_session_in",
-                                  return_value=live_row), \
+                mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                                  side_effect=writer_of(live_row)), \
                 mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
                 contextlib.redirect_stderr(io.StringIO()):
             held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", phase)
@@ -496,40 +614,127 @@ class CodeReviewStartTest(unittest.TestCase):
         code_review_start = self.load_module()
         record = self.dirty_record(["theirs.py"])
         notes = []
+        dirty_writers = code_review_start.phase_start.dirty_writers
         with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
-                mock.patch.object(code_review_start.session_registry, "other_live_session_in", return_value=None), \
+                mock.patch.object(dirty_writers, "holder_with_paths", return_value=None), \
                 mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2", notes)
 
         self.assertEqual(held, code_review_start.NO_HELD_FILES)
         self.assertEqual(len(notes), 1)
-        self.assertIn("no other session is live in the repo, so no file is held", notes[0])
+        self.assertIn("no single other live session is proven to have written a start-dirty file whose bytes are "
+                      "unchanged and that the run does not own (none, several, or a transcript was not read), so no "
+                      "file is held", notes[0])
         self.assertIn(notes[0], stderr.getvalue())
 
     def test_the_run_session_id_is_passed_so_it_is_never_its_own_holder(self):
         code_review_start = self.load_module()
         record = self.dirty_record(["theirs.py"])
         with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
-                mock.patch.object(code_review_start.session_registry, "other_live_session_in",
-                                  return_value=None) as other_live_session_in, \
+                mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                                  return_value=None) as holder_with_paths, \
                 mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}):
             code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
 
-        other_live_session_in.assert_called_once_with(self.repo, "test-session")
+        holder_with_paths.assert_called_once_with(self.repo, ["theirs.py"], "test-session", record["head"])
+
+    def test_held_scope_leaves_the_earlier_phase_files_out_of_the_writer_check(self):
+        code_review_start = self.load_module()
+        record = self.dirty_record(["theirs.py", "earlier.py"])
+        named_files = code_review_start.PlanFiles(["earlier.py"], [])
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
+                mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                                  return_value=None) as holder_with_paths, \
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "test-session"}), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code_review_start.held_scope(self.repo, "abc", named_files=named_files)
+
+        holder_with_paths.assert_called_once_with(self.repo, ["theirs.py"], "test-session", record["head"])
+
+    def test_a_recorded_holder_is_used_without_looking_for_a_writer(self):
+        code_review_start = self.load_module()
+        recorded = {"session": "lane-b", "cwd": str(self.repo)}
+        record = self.dirty_record(["theirs.py"], holder=recorded)
+        with mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths") as holder_with_paths:
+            holder = code_review_start.review_holder(self.repo, record, "test-session", [])
+
+        self.assertEqual(holder, recorded)
+        holder_with_paths.assert_not_called()
+
+    def test_files_the_run_wrote_or_changed_are_not_offered_to_the_writer_check(self):
+        code_review_start = self.load_module()
+        (self.repo / "changed.py").write_text("new bytes\n")
+        record = {**self.dirty_record(["theirs.py", "earlier.py"]),
+                  "dirty": {"theirs.py": None, "earlier.py": None, "changed.py": None}}
+        with mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                               return_value=None) as holder_with_paths:
+            code_review_start.review_holder(self.repo, record, "test-session", ["earlier.py"])
+
+        holder_with_paths.assert_called_once_with(self.repo, ["theirs.py"], "test-session", record["head"])
+
+    def other_session_setup(self, code_review_start, other_written, dirty_files):
+        """Commits a base, makes `dirty_files` dirty and records them, lets the session "other-session" write
+        `other_written` and the run's own coder write phase.py. Returns (config dir, start record)."""
+        git = ["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+        (self.repo / "base.py").write_text("base\n")
+        subprocess.run([*git, "add", "base.py"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "base"], check=True)
+        config = self.config_dir()
+        (config / "sessions").mkdir(exist_ok=True)
+        (config / "projects" / "p").mkdir(parents=True, exist_ok=True)
+
+        row = {"pid": os.getpid(), "sessionId": "other-session", "name": "lane-b", "cwd": str(self.repo)}
+        (config / "sessions" / "other.json").write_text(json.dumps(row))
+        (config / "projects" / "p" / "other-session.jsonl").write_text(
+            transcript_lines.edit_lines([self.repo / name for name in other_written]))
+        (config / "projects" / "p" / "test-session.jsonl").write_text("")
+        subagents = config / "projects" / "p" / "test-session" / "subagents"
+        subagents.mkdir(parents=True)
+        (subagents / "agent-coder.jsonl").write_text(transcript_lines.edit_lines([self.repo / "phase.py"]))
+        dirty = {}
+        for name in dirty_files:
+            (self.repo / name).write_text(f"{name}\n")
+            dirty[name] = code_review_start.phase_start.worktree_snapshot.file_hash(self.repo, name)
+        head = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        record = {"head": head, "dirty": dirty, "holder": None, "sessions": [], "started_at": None}
+        return config, record
+
+    def test_another_session_is_the_holder_when_only_the_own_coder_wrote_a_phase_file(self):
+        code_review_start = self.load_module()
+        config, record = self.other_session_setup(code_review_start, ["theirs.py", "phase.py"],
+                                                  ["theirs.py", "phase.py"])
+
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(config)}):
+            holder = code_review_start.review_holder(self.repo, record, "test-session", [])
+
+        self.assertEqual(holder, {"session": "lane-b", "cwd": str(self.repo), "paths": ["theirs.py"]})
+
+    def test_a_live_holder_holds_only_the_files_it_wrote(self):
+        code_review_start = self.load_module()
+        config, record = self.other_session_setup(code_review_start, ["theirs.py"], ["theirs.py", "untouched.py"])
+
+        with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
+                mock.patch.object(code_review_start, "foreign_untracked", return_value=[]), \
+                mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(config),
+                                             "CLAUDE_CODE_SESSION_ID": "test-session"}), \
+                contextlib.redirect_stderr(io.StringIO()):
+            held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
+
+        self.assertEqual([row["path"] for row in held.dirty], ["theirs.py"])
 
     def test_an_unset_session_id_holds_nothing_and_does_not_exit(self):
         code_review_start = self.load_module()
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
         record = self.dirty_record(["theirs.py"])
         with mock.patch.object(code_review_start, "checked_start_record", return_value=record), \
-                mock.patch.object(code_review_start.session_registry, "other_live_session_in") as other_live, \
+                mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                                  side_effect=writer_of({"sessionId": "s2", "name": "c", "cwd": str(self.repo)})), \
                 mock.patch.dict(os.environ, environment, clear=True), \
                 contextlib.redirect_stderr(io.StringIO()) as note:
             held = code_review_start.held_scope(self.repo, "abc", "docs/plans/p/spec.md", "2")
 
         self.assertEqual(held, code_review_start.NO_HELD_FILES)
-        other_live.assert_not_called()
         self.assertIn("CLAUDE_CODE_SESSION_ID", note.getvalue())
 
     def test_a_dry_run_with_no_session_id_prints_the_prompt(self):
@@ -611,6 +816,54 @@ class CodeReviewStartTest(unittest.TestCase):
 
         printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
         self.assertIn("coder-model: haiku", printed)
+
+    def test_a_ci_gate_option_writes_the_ci_gate_header_line(self):
+        done = self.start("--ci-gate", "run-42", "--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0]
+        self.assertIn("ci-gate: run-42", header.splitlines())
+
+    def test_no_ci_gate_option_writes_no_ci_gate_line(self):
+        done = self.start("--dry-run")
+
+        self.assertEqual(done.returncode, 0, done.stderr)
+        header = done.stdout.partition("\n\n")[0]
+        self.assertNotIn("ci-gate:", header)
+
+    def test_a_coder_model_option_whose_value_is_another_option_stops_with_the_usage(self):
+        done = self.start("--coder-model", "--detach")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--coder-model", done.stderr)
+        self.assertNotIn("coder-model:", done.stdout)
+
+    def test_a_ci_gate_option_with_no_value_stops_with_the_usage(self):
+        done = self.start("--dry-run", "--ci-gate")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--ci-gate", done.stderr)
+        self.assertNotIn("ci-gate:", done.stdout)
+
+    def test_a_ci_gate_option_whose_value_is_another_option_stops_with_the_usage(self):
+        done = self.start("--ci-gate", "--detach")
+
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--ci-gate", done.stderr)
+        self.assertNotIn("ci-gate:", done.stdout)
+
+    def test_a_detached_run_keeps_the_ci_gate_for_its_child(self):
+        self.commit_empty()
+        code_review_start = self.load_module()
+        environment = {**os.environ, "CLAUDE_CODE_SESSION_ID": "test-session"}
+
+        with mock.patch.object(code_review_start, "subprocess") as fake_subprocess:
+            fake_subprocess.Popen.return_value = mock.Mock(pid=4242)
+            self.run_main(code_review_start, ["--ci-gate", "run-42", "--detach"], environment)
+        child_command = fake_subprocess.Popen.call_args.args[0]
+
+        printed, _errors = self.run_main(code_review_start, [*child_command[2:], "--dry-run"], environment)
+        self.assertIn("ci-gate: run-42", printed)
 
     def test_a_run_with_no_session_id_stops_before_it_starts(self):
         environment = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_SESSION_ID"}
@@ -714,7 +967,8 @@ class CodeReviewStartTest(unittest.TestCase):
         code_review_start = self.load_module()
         environment = {"CLAUDE_CODE_SESSION_ID": session_id, "CLAUDE_CONFIG_DIR": str(self.config_dir())}
         with mock.patch.dict(os.environ, environment), \
-                mock.patch.object(code_review_start.session_registry, "other_live_session_in", return_value=live_row), \
+                mock.patch.object(code_review_start.phase_start.dirty_writers, "holder_with_paths",
+                                  side_effect=writer_of(live_row)), \
                 contextlib.redirect_stderr(io.StringIO()):
             scope = code_review_start.review_scope(self.repo, "HEAD", (self.repo / "handoff.txt").read_text(),
                                                    "docs/plans/p/spec.md", "2")

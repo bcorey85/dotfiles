@@ -2,7 +2,10 @@
 # Launch a coding layout for a project in a herdr workspace (a tuios session
 # under tuios).
 #
-# Usage: herdr-dev [--resume] [directory] [workspace_id] [claude_session] [start_prompt]
+# Usage: herdr-dev [--headless] [--resume] [directory] [workspace_id] [claude_session] [start_prompt]
+#   --headless      tab 1 holds the claude pane alone: no hunk pane and no
+#                   console tab. Lanes (herdr-worktree --fork,
+#                   herdr-lane-resume) open this way.
 #   --resume        with claude_session, the claude pane resumes that session
 #                   itself (no --fork-session), under the worktree's name
 #                   (herdr-lane-resume).
@@ -12,7 +15,9 @@
 #                   explicitly so the layout lands in the workspace it just made.
 #   claude_session  a Claude session id; the claude pane opens a fork of that
 #                   conversation (or, with --resume, that conversation itself)
-#                   instead of a fresh one (herdr-worktree --fork).
+#                   instead of a fresh one (herdr-worktree --fork). Lanes start
+#                   with the cron scheduler off, so no inherited job fires and
+#                   CronCreate is unavailable.
 #   start_prompt    free text; with claude_session, the pane's session starts
 #                   working on it at once. Any text up to 128 KiB is safe: it
 #                   reaches the pane through a temp file, not the typed command
@@ -23,13 +28,15 @@
 #
 # Layout:
 #   Tab 1 "code"     claude (40%) | hunk-review-pane (60%; hunk diff --watch that
-#                    hands the pane to nvim on E or from nvim-jump; was nvim, kept
-#                    commented below). herdr auto-detects the claude
-#                    process and adopts the pane as a managed agent, so it gets
-#                    tab-bar status and `herdr agent read/prompt/wait` for free.
-#   Tab 2 "console"  three equal shells for git / tests / logs. If the project
-#                    has an mprocs config, pane 1 runs the service stack under
-#                    mprocs instead of a bare shell. Config lookup order:
+#                    hands the pane to nvim on E or from nvim-jump; was nvim,
+#                    kept commented below; --headless leaves it out). herdr
+#                    auto-detects the claude process and adopts the pane as a
+#                    managed agent, so it gets tab-bar status and
+#                    `herdr agent read/prompt/wait` for free.
+#   Tab 2 "console"  (skipped by --headless) three equal shells for git /
+#                    tests / logs. If the project has an mprocs config, pane 1
+#                    runs the service stack under mprocs instead of a bare
+#                    shell. Config lookup order:
 #                      1. <project>/mprocs.yaml
 #                      2. ~/.config/mprocs/projects/<basename>.yaml
 #
@@ -44,12 +51,19 @@
 
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
+# shellcheck source-path=SCRIPTDIR/../lib source=toolkit-tools.bash
+. "$(dirname "$(readlink -f "$0")")/../lib/toolkit-tools.bash"
 
 resume=""
-if [ "${1:-}" = "--resume" ]; then
-    resume=1
+headless=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --resume) resume=1 ;;
+        --headless) headless=1 ;;
+        *) break ;;
+    esac
     shift
-fi
+done
 
 dir="${1:-.}"
 dir="$(cd "$dir" && pwd)" || { echo "herdr-dev: no such directory: ${1:-.}" >&2; exit 1; }
@@ -97,6 +111,7 @@ tuios_session() {
 
 # Fill the focused, untiled console tab with three equal tiled columns.
 build_tuios_console() {
+    local console_pane="$1"
     local session second_pane
 
     session=$(tuios_session)
@@ -107,10 +122,10 @@ build_tuios_console() {
 
     # BSP leaves 50 | 25 | 25. Narrowing the first column by 1/6 of the width
     # gives 1/3 each, since the right half keeps its 50/50 split.
-    herdr-api pane resize --direction left --amount 0.1667 --pane "$c1" >/dev/null
+    herdr-api pane resize --direction left --amount 0.1667 --pane "$console_pane" >/dev/null
 }
 
-# ── Tab 1 "code": claude (40%) | hunk (60%) ─────────────────────────────────
+# ── Tab 1 "code": claude (40%) | hunk (60%); --headless: claude alone ───────
 code_tab=$(herdr-api workspace get "$ws" | jq -r '.result.workspace.active_tab_id')
 agent=$(herdr-api pane list --workspace "$ws" \
     | jq -r --arg t "$code_tab" '.result.panes[] | select(.tab_id == $t) | .pane_id' | head -1)
@@ -126,7 +141,7 @@ if [ -n "$claude_session" ]; then
     if [ -n "$resume" ]; then
         fork_flag=""
     fi
-    claude_cmd="claude --resume $claude_session$fork_flag --name $session_name"
+    claude_cmd="$lane_claude --resume $claude_session$fork_flag --name $session_name"
     if [ -n "$start_prompt" ]; then
         # The pane shell would expand quotes, $ and backticks typed into it, so
         # the text travels in a file; the text is never re-parsed.
@@ -137,45 +152,58 @@ if [ -n "$claude_session" ]; then
 fi
 start_in_fresh_pane "$agent" "$claude_cmd"
 
-# The right pane is a live hunk diff. To go back to nvim, swap the
+# Without --headless, the right pane is a live hunk diff. To go back to nvim, swap the
 # hunk line below for the two commented nvim lines.
-editor=$(split "$agent" 0.4)
-# herdr-api pane rename "$editor" editor >/dev/null
-# run "$editor" "nvim ."
-run "$editor" "hunk-review-pane"
+editor=""
+if [ -z "$headless" ]; then
+    editor=$(split "$agent" 0.4)
+    # herdr-api pane rename "$editor" editor >/dev/null
+    # run "$editor" "nvim ."
+    run "$editor" "hunk-review-pane"
+fi
 
-if [ -n "${TUIOS_SOCKET:-}" ]; then
+if [ -n "$editor" ] && [ -n "${TUIOS_SOCKET:-}" ]; then
     # 50 | 50 to 40 | 60: move the editor's left edge a tenth of the width.
     herdr-api pane resize --direction left --amount 0.1 --pane "$editor" >/dev/null
 fi
 
-# ── Tab 2 "console": three equal shells ─────────────────────────────────────
-console=$(herdr-api tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
-c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
+# ── Tab 2 "console": three equal shells (--headless: no console tab) ───────
+build_console_tab() {
+    local console c1 c2 console_tab mprocs_cfg
+    console=$(herdr-api tab create --workspace "$ws" --label console --cwd "$dir" --no-focus)
+    c1=$(jq -r '.result.root_pane.pane_id' <<<"$console")
 
-if [ -n "${TUIOS_SOCKET:-}" ]; then
-    console_tab=$(jq -r '.result.tab.tab_id' <<<"$console")
-    herdr-api tab focus "$console_tab" >/dev/null
-    build_tuios_console
-else
-    # 1/3 then half of the remaining 2/3 => three equal columns.
-    c2=$(split "$c1" 0.3334)
-    split "$c2" 0.5 >/dev/null
+    if [ -n "${TUIOS_SOCKET:-}" ]; then
+        console_tab=$(jq -r '.result.tab.tab_id' <<<"$console")
+        herdr-api tab focus "$console_tab" >/dev/null
+        build_tuios_console "$c1"
+    else
+        # 1/3 then half of the remaining 2/3 => three equal columns.
+        c2=$(split "$c1" 0.3334)
+        split "$c2" 0.5 >/dev/null
+    fi
+
+    mprocs_cfg=""
+    if [ -f "$dir/mprocs.yaml" ]; then
+        mprocs_cfg="$dir/mprocs.yaml"
+    elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
+        mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
+    fi
+    if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
+        run "$c1" "mprocs --config \"$mprocs_cfg\""
+    fi
+}
+
+if [ -z "$headless" ]; then
+    build_console_tab
 fi
 
-mprocs_cfg=""
-if [ -f "$dir/mprocs.yaml" ]; then
-    mprocs_cfg="$dir/mprocs.yaml"
-elif [ -f "$HOME/.config/mprocs/projects/$(basename "$dir").yaml" ]; then
-    mprocs_cfg="$HOME/.config/mprocs/projects/$(basename "$dir").yaml"
-fi
-if [ -n "$mprocs_cfg" ] && command -v mprocs &>/dev/null; then
-    run "$c1" "mprocs --config \"$mprocs_cfg\""
-fi
-
-# Land on the editor. `pane focus` is directional only — there is no
-# focus-this-id form — so aim right from the claude pane.
+# Land on the editor, or on the claude pane when headless. `pane focus` is
+# directional only — there is no focus-this-id form — so aim right from the
+# claude pane.
 herdr-api tab focus "$code_tab" >/dev/null
-herdr-api pane focus --direction right --pane "$agent" >/dev/null
+if [ -n "$editor" ]; then
+    herdr-api pane focus --direction right --pane "$agent" >/dev/null
+fi
 
 printf '%s\n' "$agent" "$claude_cmd"

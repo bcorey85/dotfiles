@@ -3,13 +3,20 @@
 # docs/rule-anchors.md so every block has a recorded reason to exist.
 #
 #   rule-anchors.sh list <file>...   hash, file, heading: one line per block
-#   rule-anchors.sh check            every file the sidecar names, against the sidecar
+#   rule-anchors.sh check  every file the sidecar names, against the sidecar (in the dotfiles checkout holding the cwd, else the script's own)
 #
 # A block is a heading line plus the text under it, up to the next heading outside a
 # code fence. Whitespace runs collapse to one space before hashing, so a formatter's
 # padding does not move a hash. File paths are relative to the .claude directory.
 set -uo pipefail
 CLAUDE_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+# The script is symlinked from the main checkout, so inside a linked worktree it would
+# read the main checkout's files. A dotfiles checkout holds this script: use the one
+# the cwd is in.
+cwd_toplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [[ -n "$cwd_toplevel" && -f "$cwd_toplevel/claude/.claude/scripts/tools/rule-anchors.sh" ]]; then
+  CLAUDE_DIR="$cwd_toplevel/claude/.claude"
+fi
 SIDECAR="${RULE_ANCHORS:-$CLAUDE_DIR/../../docs/rule-anchors.md}"
 
 blocks() { # <file> -> hash TAB heading

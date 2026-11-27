@@ -1,5 +1,5 @@
-"""Questions about a running process and its process group, for any caller: a process's command line and a SIGTERM
-for its group. It reads no toolkit state."""
+"""Questions about a running process and its process group, for any caller: a process's command line, program name
+and resident memory, and a SIGTERM for its group. It reads no toolkit state."""
 import os
 import shlex
 import signal
@@ -7,6 +7,12 @@ import subprocess
 import time
 
 PS_TIMEOUT_SECONDS = 10
+# How long a caller waits for a stopped group to exit: long enough for a review loop to remove its worktrees.
+STOP_WAIT_SECONDS = 5
+# The results of stop_group.
+GROUP_GONE = "gone"
+GROUP_STOPPED = "stopped"
+GROUP_STILL_RUNNING = "still_running"
 
 
 class ProcessQueryError(OSError):
@@ -65,9 +71,10 @@ def wait_until_group_gone(group, seconds, poll_seconds=0.05):
     return _wait_until_not(group_is_alive, group, seconds, poll_seconds)
 
 
-def command_line(pid):
-    """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
-    ps_command = ["ps", "-ww", "-o", "command=", "-p", str(pid)]
+def _ps_field(pid, field, wide=False):
+    """The stripped `ps` output for `field` of process pid, or "" when no such process runs. Raises
+    ProcessQueryError when `ps` fails."""
+    ps_command = ["ps", *(["-ww"] if wide else []), "-o", f"{field}=", "-p", str(pid)]
     try:
         finished = subprocess.run(ps_command, capture_output=True, text=True, timeout=PS_TIMEOUT_SECONDS,
                                   check=False)
@@ -82,6 +89,28 @@ def command_line(pid):
     return finished.stdout.strip()
 
 
+def command_line(pid):
+    """The command line of process pid, or "" when no such process runs. Raises ProcessQueryError when `ps` fails."""
+    return _ps_field(pid, "command", wide=True)
+
+
+def resident_bytes(pid):
+    """The resident memory of process pid in bytes, or None when no such process runs. Raises ProcessQueryError
+    when `ps` fails or prints something other than a number of KB."""
+    kilobytes = _ps_field(pid, "rss")
+    if kilobytes == "":
+        return None
+    if not kilobytes.isdigit():
+        raise ProcessQueryError(f"ps -o rss= -p {pid}: expected a number of KB, got {kilobytes!r}")
+    return int(kilobytes) * 1024
+
+
+def program_name(pid):
+    """The base name of the program process pid runs, or "" when no such process runs. Raises ProcessQueryError
+    when `ps` fails."""
+    return os.path.basename(_ps_field(pid, "comm"))
+
+
 def terminate_group(pid):
     """Sends SIGTERM to the process group of process pid. Returns False when the process is already gone and True when
     the signal was sent. Raises OSError on any other failure, such as a missing permission."""
@@ -91,3 +120,17 @@ def terminate_group(pid):
     except ProcessLookupError:
         return False
     return True
+
+
+def stop_group(pid):
+    """SIGTERMs the process group of process pid and waits up to STOP_WAIT_SECONDS (read at call time) for every
+    process of the group to exit. Returns GROUP_GONE when no group was signalled, GROUP_STOPPED when
+    the group exited, GROUP_STILL_RUNNING when one process outlived the wait. Raises OSError as terminate_group does."""
+    # The leader's group id is read before the signal: a leader that exits no longer names its group.
+    group = group_id(pid)
+    signalled = terminate_group(pid)
+    if group is None or not signalled:
+        return GROUP_GONE
+    if not wait_until_group_gone(group, STOP_WAIT_SECONDS):
+        return GROUP_STILL_RUNNING
+    return GROUP_STOPPED

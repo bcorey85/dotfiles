@@ -1,5 +1,8 @@
 """Checks for staged_claim_gate.py, the Stop and SubagentStop hook that blocks a final message saying files are
 staged when the index does not hold them."""
+import contextlib
+import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -8,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import toolkit_paths
 
@@ -18,7 +22,9 @@ def git(repo, *arguments):
     subprocess.run(["git", "-C", str(repo), *arguments], check=True, capture_output=True)
 
 
-class StagedClaimGateTest(unittest.TestCase):
+class GateRepoCase(unittest.TestCase):
+    """A temp folder with a repo of two edited, unstaged files, and a runner for the gate script."""
+
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -49,14 +55,16 @@ class StagedClaimGateTest(unittest.TestCase):
         self.assertEqual((finished.returncode, finished.stderr), (0, ""))
         return finished.stdout
 
+    def assert_passes(self, message, **options):
+        self.assertEqual(self.run_gate(message, **options), "")
+
+
+class StagedClaimGateTest(GateRepoCase):
     def assert_blocked(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
         self.assertEqual(decision["decision"], "block")
         self.assertIn("git diff --cached --name-only", decision["reason"])
         return decision["reason"]
-
-    def assert_passes(self, message, **options):
-        self.assertEqual(self.run_gate(message, **options), "")
 
     def test_a_staged_claim_with_an_empty_index_is_blocked(self):
         for message in ("Done. The files are staged for you to commit.", "I staged the change.",
@@ -281,6 +289,27 @@ class StagedClaimGateTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_check_of_what_is_staged_passes_with_an_empty_index(self):
+        for message in ("It checks the skill list against what is staged.",
+                        "It lists whatever is staged.", "It keeps whichever are staged."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_a_first_person_or_past_tense_claim_after_what_still_blocks_with_an_empty_index(self):
+        for message in ("Here is what I staged.", "Here is what I've staged.", "Here is what I staged: a.txt.",
+                        "Here is what was staged for you to commit."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_copula_before_what_is_staged_is_still_a_claim_with_an_empty_index(self):
+        for message in ("Here is what is staged: app.py and lib.py.", "This is what is staged now."):
+            with self.subTest(message=message):
+                self.assert_blocked(message)
+
+    def test_a_claim_naming_another_worktree_by_path_passes_when_its_index_holds_the_files(self):
+        linked = self.stage_in_linked_tree("a.txt")
+        self.assert_passes(f"{linked}/a.txt is staged.")
+
     def test_a_whether_in_an_earlier_clause_does_not_hide_the_claim(self):
         self.assert_blocked("I checked whether the hash moved, and all files are staged.")
 
@@ -400,18 +429,76 @@ class StagedClaimGateTest(unittest.TestCase):
         reason = self.assert_blocked("c.txt is staged.", cwd=sub)
         self.assertIn("sub/c.txt", reason)
 
+    def test_a_crash_in_one_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged. Next I'll look at the nits."}
+        with mock.patch.object(gate.announced_step, "announced_step", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: announced_step skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_staged_claim_check_keeps_the_announced_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "Next I'll look at the nits."}
+        with mock.patch.object(gate, "staged_claim_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn(gate.announced_step.REASON, decision["reason"])
+        self.assertIn("staged-claim-gate: staged_claim_reason skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_permission_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "Stop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate, "permission_question_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: permission_question skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_the_fork_review_check_keeps_the_staged_claim_reason(self):
+        gate = self.load_gate()
+        hook = {"hook_event_name": "SubagentStop", "cwd": str(self.repo), "transcript_path": "",
+                "last_assistant_message": "The files are staged."}
+        with mock.patch.object(gate.fork_review, "missing_review_reason", side_effect=RuntimeError("boom")):
+            decision, errors = self.run_main(gate, hook)
+
+        self.assertEqual(decision["decision"], "block")
+        self.assertIn("git diff --cached --name-only", decision["reason"])
+        self.assertIn("staged-claim-gate: fork_review skipped: RuntimeError: boom", errors)
+
+    def test_a_crash_in_main_exits_zero_and_names_the_gate_on_stderr(self):
+        result = subprocess.run([sys.executable, str(SCRIPT)], input="not json", capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("staged-claim-gate: skipped:", result.stderr)
+
+    def load_gate(self):
+        sys.path.insert(0, str(toolkit_paths.GATES_DIR))
+        self.addCleanup(sys.path.remove, str(toolkit_paths.GATES_DIR))
+        spec = importlib.util.spec_from_file_location("staged_claim_gate_under_test", SCRIPT)
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        return gate
+
+    def run_main(self, gate, hook):
+        output, errors = io.StringIO(), io.StringIO()
+        with (mock.patch.object(sys, "stdin", io.StringIO(json.dumps(hook))),
+              contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors)):
+            gate.main()
+        return json.loads(output.getvalue()), errors.getvalue()
+
     def test_a_second_stop_and_a_claim_outside_any_repo_pass(self):
         self.assert_passes("The files are staged.", stop_hook_active=True)
         self.assert_passes("The files are staged.", cwd=self.outside)
 
 
-class PermissionQuestionTest(unittest.TestCase):
+class PermissionQuestionTest(GateRepoCase):
     """The same Stop hook sends back a main-session turn that ends asking permission for a reversible step."""
-
-    setUp = StagedClaimGateTest.setUp
-    make_repo = StagedClaimGateTest.make_repo
-    run_gate = StagedClaimGateTest.run_gate
-    assert_passes = StagedClaimGateTest.assert_passes
 
     def assert_sent_back(self, message, **options):
         decision = json.loads(self.run_gate(message, **options))
@@ -630,6 +717,36 @@ class PermissionQuestionTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_passes(message)
 
+    def test_a_question_about_a_tracker_write_passes_but_a_local_file_edit_is_sent_back(self):
+        for message in ("The two tickets depend on each other. Shall I add a Jira link from A to B?",
+                        "The ticket has no tag yet. Want me to label the ticket?",
+                        "Want me to comment on the PR?",
+                        "Want me to assign the issue to Sam?",
+                        "Want me to transition the Jira ticket?",
+                        "Want me to comment on Linear?",
+                        "Want me to add a label in GitLab?"):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+        for message in ("Want me to add linear regression?",
+                        "Want me to comment on GitHub cli?",
+                        "Want me to edit GitLab pages?",
+                        "Want me to add the github.py hook?",
+                        "Want me to edit tickets.py?",
+                        "Want me to add a GitHub actions workflow?",
+                        "Want me to label the variables?",
+                        "Want me to address the reference?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
+    def test_a_local_edit_where_the_tracker_noun_is_a_modifier_is_sent_back(self):
+        for message in ("Should I comment out the PR check in run.sh?",
+                        "Should I add the ticket number to the commit message?",
+                        "Want me to add the GitHub link to the README?",
+                        "Should I edit the issue template in docs?",
+                        "Should I link the PR helper into lib?"):
+            with self.subTest(message=message):
+                self.assert_sent_back(message)
+
     def test_a_question_about_a_file_named_for_a_host_is_still_sent_back(self):
         for message in ("Want me to move the helper in github.py?",
                         "Want me to fix the typo in gitlab-ci.yml?",
@@ -669,6 +786,32 @@ class PermissionQuestionTest(unittest.TestCase):
     def test_a_staged_claim_and_a_permission_question_send_back_both_reasons(self):
         reason = self.assert_sent_back("The files are staged. Want me to fix the report too?")
         self.assertIn("git diff --cached --name-only", reason)
+
+
+class StopBlockOutputTest(GateRepoCase):
+    """The Stop hook's block output carries the blocked reply in systemMessage for a main-session turn."""
+
+    def test_a_stop_block_carries_the_whole_reply_in_the_system_message(self):
+        message = "I'll run the suite next."
+        decision = json.loads(self.run_gate(message))
+        self.assertEqual(decision["decision"], "block")
+        self.assertTrue(decision["systemMessage"].startswith("A Stop hook"))
+        self.assertTrue(decision["systemMessage"].endswith(f"\n\n{message}"))
+
+    def test_a_stop_block_on_a_long_reply_cuts_the_system_message_to_the_limit(self):
+        message = "Background detail. " * 1100 + "I'll run the suite next."
+        self.assertGreater(len(message), 20_000)
+        decision = json.loads(self.run_gate(message))
+        self.assertEqual(decision["decision"], "block")
+        self.assertLessEqual(len(decision["systemMessage"]), 10_000)
+        cut_line = decision["systemMessage"].splitlines()[-1]
+        self.assertTrue(cut_line.startswith("[") and cut_line.endswith("]"), cut_line)
+        self.assertTrue(decision["systemMessage"].startswith("A Stop hook"))
+
+    def test_a_subagent_block_has_no_system_message(self):
+        decision = json.loads(self.run_gate("The files are staged.", event="SubagentStop", cwd=self.repo))
+        self.assertEqual(decision["decision"], "block")
+        self.assertNotIn("systemMessage", decision)
 
 
 if __name__ == "__main__":

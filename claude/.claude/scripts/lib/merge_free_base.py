@@ -5,8 +5,12 @@ merged-in parent into the base, oldest merge first: the tree of `git merge-tree 
 commit object with `git commit-tree` (no ref, so nothing in the repo points at it). `git diff <that commit>` then shows
 the branch's own change and not the merged-in branch's. Only first-parent merges are listed: a merged-in tip already
 holds what the merges inside its own branch brought.
+
+`resolve_base(repo, base, name)` replaces a base that is no ancestor of HEAD with its merge base with HEAD, and
+returns a `BaseResolution` that says whether the base moved.
 """
 import subprocess
+from typing import NamedTuple
 
 GIT_USER = ("-c", "user.name=review", "-c", "user.email=review@localhost")
 MERGE_TREE_CONFLICT_EXIT = 1
@@ -26,8 +30,48 @@ class MergeBaseGitError(Exception):
     """A git call that failed for a reason other than a merge conflict."""
 
 
+class NoMergeBaseError(Exception):
+    """A base that shares no history with HEAD, so no merge base exists. The message names the recovery command."""
+
+
+class BaseResolution(NamedTuple):
+    """`given` is the base as the caller named it, `commit` the commit that name resolved to, and `used` the commit
+    the review diffs against."""
+    given: str
+    commit: str
+    used: str
+
+    def given_if_moved(self):
+        """`given` when `used` is not the commit that `given` named, else None."""
+        if self.used == self.commit:
+            return None
+        return self.given
+
+
 def _git(repo, *args):
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=False)
+
+
+def resolve_base(repo, base, name=None):
+    """BaseResolution(given, commit, used): `commit` is `base`; `used` is `base` when it is an ancestor of HEAD, else
+    `git merge-base HEAD base`, so a base ref whose tip moved ahead does not show its own unmerged commits as
+    reverts. Raises NoMergeBaseError when HEAD and `base` share no history, and MergeBaseGitError when git fails.
+    `name` is the base as given (`given`, and how the error calls it), `base` when None."""
+    name = name or base
+    ancestor = _git(repo, "merge-base", "--is-ancestor", base, "HEAD")
+    if ancestor.returncode == 0:
+        return BaseResolution(name, base, base)
+    if ancestor.returncode != 1:
+        raise MergeBaseGitError(f"git merge-base --is-ancestor {base} HEAD failed: {ancestor.stderr.strip()}")
+
+    found = _git(repo, "merge-base", "HEAD", base)
+    if found.returncode == 1:
+        raise NoMergeBaseError(f"HEAD and the review base {name} have no merge base, so no diff against it holds only "
+                               f"the branch's own change. Run `git merge-base HEAD {name}` to confirm, then pass a "
+                               "--base that shares history with HEAD (fetch it first when it is a remote ref).")
+    if found.returncode != 0:
+        raise MergeBaseGitError(f"git merge-base HEAD {base} failed: {found.stderr.strip()}")
+    return BaseResolution(name, base, found.stdout.strip())
 
 
 def merge_commits(repo, base):

@@ -63,8 +63,11 @@ echo ""
 echo ""
 "$DOTFILES_DIR/install/tuios"
 echo ""
-"$DOTFILES_DIR/install/memory-sample"
-echo ""
+# The memory sampler runs on the Arch home machine only, never on a work laptop.
+if [[ "$PLATFORM" == arch ]]; then
+  "$DOTFILES_DIR/install/memory-sample"
+  echo ""
+fi
 "$DOTFILES_DIR/install/starship"
 echo ""
 "$DOTFILES_DIR/install/claude-plugins"

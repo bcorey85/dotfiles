@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1294 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
+1295 changes, 24 with a measured gain, 280 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The comment gate passes a short comment block of at most two lines](notes/2026-11-27-the-comment-gate-passes-a-short-comment-block-of.md).
+Latest change: 2026-11-27, [The comment gate reads new lines through one helper](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
 
 ## Top gains
 

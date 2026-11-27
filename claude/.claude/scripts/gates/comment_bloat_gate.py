@@ -561,8 +561,7 @@ def counting_texts(file_path, file_lines, added):
     committed = committed_lines(file_path)
     if not committed:
         return added
-    committed_stripped = {line.strip() for line in committed}
-    return {line.strip() for line in file_lines} - committed_stripped - {""}
+    return stripped_added(file_lines, committed)
 
 
 def stripped_added(added_lines, old_lines):

@@ -71,9 +71,9 @@ class LaneStatusTest(unittest.TestCase):
         program_dir = self.root / f"prog{self.program_count}"
         program_dir.mkdir()
         copied = program_dir / program
-        shutil.copy(shutil.which("sleep"), copied)
-        # argv[0] stays "sleep" so a multicall coreutils binary still runs sleep; the process name comes from the file.
-        process = subprocess.Popen(["sleep", "60"], executable=str(copied))
+        # perl, not sleep: a multicall coreutils binary refuses to run under a name it does not know.
+        shutil.copy(shutil.which("perl"), copied)
+        process = subprocess.Popen([str(copied), "-e", "sleep 60"])
         self.addCleanup(process.wait)
         self.addCleanup(process.kill)
         return process.pid

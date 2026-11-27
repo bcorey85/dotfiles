@@ -2,7 +2,7 @@
 type: "Change"
 change_type: "fixed"
 title: "lane-status viewer tests run their fake viewer on runners whose sleep is a multicall binary"
-description: "Dotfiles master CI goes green: the lane-status viewer tests start their fake hunk process with argv[0] sleep, so a multicall coreutils binary still runs it."
+description: "Dotfiles master CI goes green: the lane-status viewer tests copy perl, not sleep, as their fake hunk process, so a multicall coreutils binary no longer refuses to run."
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-27T17:25:41-06:00"}
 seq: 5
 kind: "fix"
@@ -18,8 +18,9 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-The test's fake viewer copies `sleep` to a file named `hunk` and now starts it with `executable=` that file and
-argv[0] `sleep`. The process name still comes from the file, so `ps -o comm=` reads `hunk`. The script is unchanged.
+The test's fake viewer copies `perl` to a file named `hunk` and runs `hunk -e 'sleep 60'`, in place of a copy of
+`sleep`. `ps -o comm=` still reads `hunk`. The script is unchanged. Starting the `sleep` copy with argv[0] `sleep` did
+not help: the multicall binary reads its tool name from the file, not argv[0].
 
 ## Evidence
 
@@ -36,4 +37,4 @@ None: the next master CI run shows it.
 
 ## Back-out
 
-Revert the one Popen line in `tests/scripts/test_lane_status.py`.
+Revert the copy and Popen lines in `tests/scripts/test_lane_status.py`.

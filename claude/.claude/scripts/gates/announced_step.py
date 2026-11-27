@@ -21,13 +21,16 @@ A sentence is no announcement when it also:
   `notif` (a notification), `queued`, `still runs`;
 - asks a question (ends on `?`);
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
-  `at 4:30`, `at :47`, `tomorrow`, `tonight`, `the next time`;
-- waits on later events: `later` then a plural noun ("later merges");
+  `at 4:30`, `at 4:30pm`, `at 4pm`, `at :47`, `tomorrow`, `tonight`, `the next time`;
+- waits on later events: `later` then a word ending in s, not an excluded one ("later merges"; `this`, `its`, `is`,
+  `was`, `as`, `perhaps`, `always`, `anyways`, `sometimes`, `besides`, `regardless`, `versus`, `afterwards`,
+  `towards`, `yes`, `thus` and `unless` are out);
 - waits on another party's notice: `act on (its|their|the)` then up to two words and `notice`, `result` or `report`.
 
-A sentence that opens on `then` or `next` (after leading space or a list marker) passes when the sentence before it
-names a condition, another actor, running work, a date or clock, later events or another party's notice, and a
-chained sentence that passes keeps the chain open. After an ungated sentence it is judged like any other.
+A sentence that opens on `then` or `next` (after leading space or a list marker; `Next steps` is a header, not a
+chain) passes when the sentence before it names a condition, another actor, running work, a date or clock, later
+events or another party's notice, and a chained sentence that passes keeps the chain open. After an ungated
+sentence it is judged like any other.
 Own-step ordering ("at the end", "before starting", "in my final report") gates nothing.
 
 A span in backticks or double quotes on one line whose whole text is one announcement is dropped first: a sentence
@@ -71,18 +74,24 @@ _MONTH = (r"(?:january|february|march|april|may|june|july|august|september|octob
           r"jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)")
 # A date or clock the step waits on. The month form has no period after an abbreviation: SENTENCE_END splits there.
 TIME_GATE = re.compile(
-    r"\b(?:(?:on|by)\s+" + _WEEKDAY + r"|(?:on|by)\s+" + _MONTH + r"\s+\d{1,2}(?:st|nd|rd|th)?|at\s+\d{1,2}:\d{2}|"
-    r"at\s+:\d{2}|tomorrow|tonight|the\s+next\s+time)\b", re.IGNORECASE)
-# `later <plural noun>`: the step waits on events to come.
-LATER_EVENT = re.compile(r"\blater\s+(?!(?:this|its|is|was|as)\b)\w+s\b", re.IGNORECASE)
+    r"\b(?:(?:on|by)\s+" + _WEEKDAY + r"|(?:on|by)\s+" + _MONTH + r"\s+\d{1,2}(?:st|nd|rd|th)?|"
+    r"at\s+\d{1,2}(?::\d{2})?\s*[ap]\.?m|at\s+\d{1,2}:\d{2}|at\s+:\d{2}|tomorrow|tonight|the\s+next\s+time)\b",
+    re.IGNORECASE)
+# `later <word ending in s>`: the step waits on events to come. Words that end in s but are no plural noun are out.
+LATER_EVENT = re.compile(
+    r"\blater\s+(?!(?:this|its|is|was|as|perhaps|always|anyways|sometimes|besides|regardless|versus|"
+    r"afterwards|towards|yes|thus|unless)\b)\w+s\b",
+    re.IGNORECASE)
 # The step acts on another party's notice.
 OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,2}(?:notice|result|report)s?\b",
                                 re.IGNORECASE)
-# A sentence that opens on Then or Next: it follows the sentence before it.
-CHAINED_STEP = re.compile(r"\A\s*(?:(?:\d+[.)]|[-*+])\s*)*(?:then|next)\b", re.IGNORECASE)
-# A sentence that is only a list marker (`1.`, `2)`, `-`, `*`, `+`): SENTENCE_END splits `1.` off its item, and
-# leaves any marker that stands alone on its line as a sentence of its own.
-LIST_MARKER_ONLY = re.compile(r"\A\s*(?:\d+[.)]|[-*+])\s*\Z")
+# A list marker: `1.`, `2)`, `-`, `*`, `+`.
+_LIST_MARKER = r"(?:\d+[.)]|[-*+])"
+# A sentence that opens on Then or Next: it follows the sentence before it. `Next steps:` is a header, not a chain.
+CHAINED_STEP = re.compile(r"\A\s*(?:" + _LIST_MARKER + r"\s*)*(?:then|next)\b(?!\s+steps?\b)", re.IGNORECASE)
+# A sentence that is only a list marker: SENTENCE_END splits `1.` off its item, and leaves any marker that stands
+# alone on its line as a sentence of its own.
+LIST_MARKER_ONLY = re.compile(r"\A\s*" + _LIST_MARKER + r"\s*\Z")
 # `<request> and I'll ...` with no `I` or `we` before `and`: the step waits on the request.
 REQUEST_THEN_STEP = re.compile(r"\band\s+I(?:'|\N{RIGHT SINGLE QUOTATION MARK})ll\b|\band\s+I\s+will\b",
                                re.IGNORECASE)
@@ -116,14 +125,14 @@ def announced_step(message, transcript_path=None):
     current turn of the transcript launched background work."""
     unquoted_message = without_quoted_spans(ANNOUNCEMENT, without_draft_blocks(message))
     background_launched = None
-    chain_gated = False
+    previous_gated = False
     for sentence in SENTENCE_END.split(unquoted_message):
         if LIST_MARKER_ONLY.match(sentence):
             continue
-        if CHAINED_STEP.match(sentence) and chain_gated:
+        if CHAINED_STEP.match(sentence) and previous_gated:
             continue
         sentence_gated = gated(sentence)
-        chain_gated = sentence_gated
+        previous_gated = sentence_gated
         if not ANNOUNCEMENT.search(sentence):
             continue
         if sentence.rstrip().endswith("?"):

@@ -173,7 +173,11 @@ class AnnouncedStepTest(unittest.TestCase):
                     "1) Once the lane merges, I will repoint it.\n2) Then I will push the branch.",
                     "Once the lane merges, I'll repoint it. Then I'll push the branch. Next I'll tag it.",
                     "I'll push it at 4:30.", "I'll run it tonight.", "I'll fix it the next time it runs.",
-                    "I'll merge it by Friday.")
+                    "I'll merge it by Friday.", "I'll push it at 4:30pm.", "I'll push it at 4pm.",
+                    "I'll run the scan on November 29th.", "I'll merge it by Dec 3.", "I'll act on the result.",
+                    "I'll act on its review report.",
+                    "- Once the lane merges, I will repoint it.\n- Then I will push the branch.",
+                    "Once the lane merges, I'll repoint it. After that I'll push the branch.")
         for message in messages:
             with self.subTest(message=message):
                 self.assert_passes(message)
@@ -184,7 +188,12 @@ class AnnouncedStepTest(unittest.TestCase):
                     "- One merge line, which I'll write up at the end.",
                     "The tree is clean. Then I'll push the branch.", "The tree is clean. Next I'll push the branch.",
                     "I'll list the open items in my final report.", "I'll look at it later this week.",
-                    "I'll do it later as tests.")
+                    "I'll do it later as tests.", "I'll fix that later perhaps.",
+                    "If it fails we stop.\n\nNext steps: I'll run the suite.",
+                    "Once the lane merges, I'll repoint it. The tree is clean. Then I'll push the branch.",
+                    "I'll fix that later is fine.", "I'll redo it later its way.",
+                    "I'll fix it later afterwards.", "I'll fix it later towards the end.",
+                    "I'll fix it later yes.", "I'll fix it later thus.")
         for message in messages:
             with self.subTest(message=message):
                 self.assert_blocks(message)

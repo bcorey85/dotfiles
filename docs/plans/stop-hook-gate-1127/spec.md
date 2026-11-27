@@ -21,6 +21,10 @@ Then/Next/After-that sentence that follows a gated one. A bare first-person prom
 - [x] Phase 2: Gated future steps pass the announced-step check (risk: low)
 - [ ] Phase 3: Close pass — /close-branch parallel review, one fix, fix-diff gate, recap (risk: high)
 
+## Plan Deviations
+
+- Phase 1: REPLY_LABEL reads "Its text:", not "Its full text:" (the reply can be cut); session ruling, 2026-11-27.
+
 ## Decisions
 
 1. Gated shapes — a sentence passes on a date or clock gate, a `later <plural noun>` event, `act on (its|their|the)
@@ -71,7 +75,7 @@ Then/Next/After-that sentence that follows a gated one. A bare first-person prom
 - `lib/stop_block.py` (new, standard library only):
   ```python
   SYSTEM_MESSAGE_LIMIT = 10_000
-  REPLY_LABEL = "A Stop hook sent this reply back to the session. Its full text:"
+  REPLY_LABEL = "A Stop hook sent this reply back to the session. Its text:"
   CUT_LINE = "[The reply was cut here to fit the hook message limit.]"
 
   def block_line(reasons, reply, show_reply):
@@ -91,12 +95,14 @@ Then/Next/After-that sentence that follows a gated one. A bare first-person prom
   `gated` for every sentence (announcement or not) and keeps `previous_gated`; a sentence that matches
   `CHAINED_STEP` passes when `previous_gated` holds, and a chained sentence that passes keeps `previous_gated` true.
   - `TIME_GATE`: `(on|by) <weekday>` (full name), `(on|by) <month> <day>` (full name or 3-letter abbreviation, no
-    period, since `SENTENCE_END` splits on it; a 1-2 digit day with an optional `st|nd|rd|th`), `at H:MM` or `at :MM`, `tomorrow`, `tonight`,
-    `the next time`.
-  - `LATER_EVENT`: `later <word ending in s>` excluding `this`, `its`, `is`, `was`, `as` ("later merges", "later
-    lanes").
+    period, since `SENTENCE_END` splits on it; a 1-2 digit day with an optional `st|nd|rd|th`), `at H:MM`, `at :MM` or `at H[:MM] am/pm`, `tomorrow`,
+    `tonight`, `the next time`.
+  - `LATER_EVENT`: `later <word ending in s>` excluding `this`, `its`, `is`, `was`, `as`, `perhaps`, `always`,
+    `anyways`, `sometimes`, `besides`, `regardless`, `versus`, `afterwards`, `towards`, `yes`, `thus` and `unless`
+    ("later merges", "later lanes").
   - `OTHER_PARTY_RESULT`: `act on (its|their|the) (<word> ){0,2}(notice|result|report)s?`.
-  - `CHAINED_STEP`: the sentence opens on `then` or `next` (after leading space or a list marker `-`/`*`). "After
+  - `CHAINED_STEP`: the sentence opens on `then` or `next` (after leading space or list markers `1.`, `2)`, `-`, `*`, `+`);
+    `Next step(s)` is a header and does not chain. "After
     that" needs no entry: `CONDITION` already passes `after`.
 - The module docstring lists each new pass form under "A sentence is no announcement when it also:", and the chained
   rule as its own paragraph. The `staged_claim_gate.py` docstring adds one sentence: a Stop block also carries the

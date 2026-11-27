@@ -9,7 +9,7 @@ kind: "user-rule"
 components: ["script/staged-claim-gate", "script/stop-block"]
 evidence: ["judgment"]
 watches: []
-test: "tests/scripts/test_staged_claim_gate.py::test_a_stop_block_carries_the_whole_reply_in_the_system_message"
+test: "tests/scripts/test_staged_claim_gate.py::StopBlockOutputTest::test_a_stop_block_carries_the_whole_reply_in_the_system_message"
 asked: "2026-11-27: asked by the user that a Stop hook never hide a reply from them"
 proof: []
 unmeasured: "Hook code, not prompt text, so no rule-meter run; no intake field counts replies that a Stop block hid from the user."

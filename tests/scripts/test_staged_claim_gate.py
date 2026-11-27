@@ -15,9 +15,6 @@ from unittest import mock
 
 import toolkit_paths
 
-sys.path.insert(0, str(toolkit_paths.LIB_DIR))
-import stop_block
-
 SCRIPT = toolkit_paths.GATES_DIR / "staged_claim_gate.py"
 
 
@@ -782,26 +779,6 @@ class PermissionQuestionTest(unittest.TestCase):
     def test_a_trigger_phrase_does_not_join_a_choice_question_in_the_next_sentence(self):
         self.assert_passes("The tests are ready to run. Which name do you prefer, totals or sums?")
 
-    def test_a_stop_block_carries_the_whole_reply_in_the_system_message(self):
-        message = "I'll run the suite next."
-        decision = json.loads(self.run_gate(message))
-        self.assertEqual(decision["decision"], "block")
-        self.assertEqual(decision["systemMessage"], f"{stop_block.REPLY_LABEL}\n\n{message}")
-
-    def test_a_stop_block_on_a_long_reply_cuts_the_system_message_to_the_limit(self):
-        message = "Background detail. " * 1100 + "I'll run the suite next."
-        self.assertGreater(len(message), 20_000)
-        decision = json.loads(self.run_gate(message))
-        self.assertEqual(decision["decision"], "block")
-        self.assertLessEqual(len(decision["systemMessage"]), stop_block.SYSTEM_MESSAGE_LIMIT)
-        self.assertTrue(decision["systemMessage"].endswith(stop_block.CUT_LINE))
-        self.assertTrue(decision["systemMessage"].startswith(stop_block.REPLY_LABEL))
-
-    def test_a_subagent_block_has_no_system_message(self):
-        decision = json.loads(self.run_gate("The files are staged.", event="SubagentStop", cwd=self.repo))
-        self.assertEqual(decision["decision"], "block")
-        self.assertNotIn("systemMessage", decision)
-
     def test_a_second_stop_and_a_subagent_hand_back_pass(self):
         message = "The report has the same bug. Want me to fix it too?"
         self.assert_passes(message, stop_hook_active=True)
@@ -810,6 +787,36 @@ class PermissionQuestionTest(unittest.TestCase):
     def test_a_staged_claim_and_a_permission_question_send_back_both_reasons(self):
         reason = self.assert_sent_back("The files are staged. Want me to fix the report too?")
         self.assertIn("git diff --cached --name-only", reason)
+
+
+class StopBlockOutputTest(unittest.TestCase):
+    """The Stop hook's block output carries the blocked reply in systemMessage for a main-session turn."""
+
+    setUp = StagedClaimGateTest.setUp
+    make_repo = StagedClaimGateTest.make_repo
+    run_gate = StagedClaimGateTest.run_gate
+
+    def test_a_stop_block_carries_the_whole_reply_in_the_system_message(self):
+        message = "I'll run the suite next."
+        decision = json.loads(self.run_gate(message))
+        self.assertEqual(decision["decision"], "block")
+        label = "A Stop hook sent this reply back to the session. Its text:"
+        self.assertEqual(decision["systemMessage"], f"{label}\n\n{message}")
+
+    def test_a_stop_block_on_a_long_reply_cuts_the_system_message_to_the_limit(self):
+        message = "Background detail. " * 1100 + "I'll run the suite next."
+        self.assertGreater(len(message), 20_000)
+        decision = json.loads(self.run_gate(message))
+        self.assertEqual(decision["decision"], "block")
+        self.assertLessEqual(len(decision["systemMessage"]), 10_000)
+        self.assertTrue(decision["systemMessage"].endswith("\n[The reply was cut here to fit the hook message limit.]"))
+        self.assertTrue(decision["systemMessage"].startswith(
+            "A Stop hook sent this reply back to the session. Its text:"))
+
+    def test_a_subagent_block_has_no_system_message(self):
+        decision = json.loads(self.run_gate("The files are staged.", event="SubagentStop", cwd=self.repo))
+        self.assertEqual(decision["decision"], "block")
+        self.assertNotIn("systemMessage", decision)
 
 
 if __name__ == "__main__":

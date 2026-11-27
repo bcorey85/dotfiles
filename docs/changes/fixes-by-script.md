@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-859 fix notes
+860 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -194,6 +194,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/human-turn-lookup | 1 | 1 |
 | script/install-memory-sample | 1 | 1 |
 | script/install-stow | 1 | 0 |
+| script/lane-env | 1 | 1 |
 | script/ledger-hook | 1 | 0 |
 | script/lint | 1 | 1 |
 | script/log-agent-usage | 1 | 0 |

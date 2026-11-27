@@ -1,5 +1,6 @@
 """lane_entries.py: owns the lane files (`<state>/herdr-lanes/<name>.json`, one JSON file per lane) and the lane
-lock, and is the only reader and writer of both.
+lock, and is the only writer of both. `scripts/.local/lib/lane-env.zsh` also reads the `worktree` line of the written
+form at shell start.
 
 A lane is a worktree started for another Claude session. Its file is `<lanes_dir>/<name>.json` and holds the fields in
 `FIELDS`, plus `base_commit` when one was recorded, so a lane can be resumed or closed later. Every write holds the
@@ -77,6 +78,15 @@ def _is_text(value):
     return isinstance(value, str)
 
 
+def _encodes_as_utf8(value):
+    """True for a string that encodes as UTF-8 (argv text may hold a surrogate escape)."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _is_iso_with_offset(value):
     if not isinstance(value, str) or not STARTED_AT_PATTERN.fullmatch(value):
         return False
@@ -124,6 +134,8 @@ def validate_entry(data, file):
         is_valid, expected = FIELD_RULES[field]
         if not is_valid(data[field]):
             raise LaneFileError(file, field, expected)
+        if not _encodes_as_utf8(data[field]):
+            raise LaneFileError(file, field, "UTF-8 text")
 
     if not NAME_PATTERN.fullmatch(data["name"]) or data["name"] != pathlib.Path(file).stem:
         raise LaneFileError(file, "name", "a lane name equal to the file name")
@@ -228,9 +240,13 @@ def _locked():
 
 
 def _write(lane):
+    """Write one lane file. `scripts/.local/lib/lane-env.zsh` matches the indent-2 `"worktree"` line of this form."""
     file = lane_file(lane["name"])
     validate_entry(lane, file)
-    script_utils.write_text_atomically(file, json.dumps(lane, indent=2) + "\n")
+    text = json.dumps(lane, indent=2, ensure_ascii=False) + "\n"
+    # Encode here: the writer's text mode uses the locale encoding. validate_entry refuses a value that is not UTF-8,
+    # because herdr-lane-resume reads lane fields through jq, which cannot carry it.
+    script_utils.write_text_atomically(file, text.encode("utf-8"))
 
 
 def _existing_entry(name):

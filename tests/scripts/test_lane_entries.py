@@ -259,6 +259,21 @@ class LaneEntriesTest(unittest.TestCase):
         self.assertEqual("brief", raised.exception.field)
         self.assertEqual("do the work", lane_entries.entry("one")["brief"])
 
+    def test_a_non_utf8_main_checkout_or_worktree_is_refused_naming_the_field(self):
+        bad_path = "/tmp/\udcff"
+        good_worktree = self.make_worktree("one")
+        cases = {
+            "main_checkout": (good_worktree, bad_path),
+            "worktree": (bad_path, str(self.root / "main")),
+        }
+        for field, (worktree, main_checkout) in cases.items():
+            with self.subTest(field=field):
+                with self.assertRaises(lane_entries.LaneFileError) as raised:
+                    lane_entries.add_entry("one", worktree, main_checkout, "b", "do the work", "boss")
+                self.assertEqual(field, raised.exception.field)
+                self.assertIn("UTF-8 text", str(raised.exception))
+                self.assertIsNone(lane_entries.entry("one"))
+
 
 if __name__ == "__main__":
     unittest.main()

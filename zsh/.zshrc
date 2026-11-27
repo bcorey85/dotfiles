@@ -268,6 +268,9 @@ if command -v herdr &>/dev/null; then
   unset _herdr_hook
 fi
 
+# A restored herdr lane pane loses the inline CLAUDE_CODE_DISABLE_CRON=1; restore it in the shell.
+[[ -f $HOME/.local/lib/lane-env.zsh ]] && source "$HOME/.local/lib/lane-env.zsh"
+
 
 alias rl="source ~/.zshrc && clear && echo 'Reloaded .zshrc'"
 alias vc='nvim +"cd ~/dotfiles" ~/dotfiles/zsh/.zshrc'

@@ -22,8 +22,8 @@ class ParseIsoTimestampTest(unittest.TestCase):
 
         self.assertEqual(7200, moment.utcoffset().total_seconds())
 
-    def test_text_that_is_no_timestamp_raises_value_error(self):
-        with self.assertRaises(ValueError):
+    def test_text_that_is_no_timestamp_raises_iso_timestamp_error(self):
+        with self.assertRaises(iso_time.IsoTimestampError):
             iso_time.parse_iso_timestamp("yesterday")
 
     def test_a_fraction_of_any_length_reads(self):
@@ -39,9 +39,9 @@ class ParseZonedIsoTimestampTest(unittest.TestCase):
 
         self.assertEqual(datetime.timezone.utc, moment.tzinfo)
 
-    def test_text_with_no_zone_raises_value_error(self):
+    def test_text_with_no_zone_raises_iso_timestamp_error(self):
         for text in ("2026-11-22", "2026-11-22T14:55:42"):
-            with self.subTest(text), self.assertRaises(ValueError):
+            with self.subTest(text), self.assertRaises(iso_time.IsoTimestampError):
                 iso_time.parse_zoned_iso_timestamp(text)
 
 

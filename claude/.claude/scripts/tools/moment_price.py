@@ -30,7 +30,8 @@ RANGE = re.compile(r"(\d+)(?:-(\d+))?")
 LEDGER_COLUMNS = ["ts", "model", "input_tokens", "cache_creation_tokens", "cache_read_tokens", "output_tokens",
                   "duration_ms"]
 # A request row is stamped when the request ended and the blocks it made carry earlier times, so the query reaches
-# this far past the window end and the script keeps the rows whose request started inside the window.
+# this far past the window end and the script keeps every request whose span overlaps the window: ended at or after
+# the start, started at or before the end.
 REQUEST_SLACK = datetime.timedelta(hours=1)
 SESSION_COLUMN = "session"
 
@@ -90,7 +91,11 @@ def parse_header(line, number, source):
 
 def parse_export(path):
     """The Call list of an export file, in file order. Stops, naming file and line, on anything off the grammar."""
-    lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
+    try:
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise StopError(f"{path}: cannot read ({error})") from None
+    lines = text.splitlines()
     if not lines or SESSION_LINE.fullmatch(lines[0]) is None:
         raise StopError(f"{path}:1: missing session line; expected {SESSION_FORM}")
 
@@ -128,7 +133,7 @@ def parse_timestamp(text):
     bad_form = f"{text!r}: expected an ISO timestamp such as 2026-11-22T14:55:42.777Z"
     try:
         return iso_time.parse_zoned_iso_timestamp(text)
-    except ValueError:
+    except iso_time.IsoTimestampError:
         raise StopError(bad_form) from None
 
 
@@ -179,8 +184,8 @@ def live_call(number, row, command):
     except ValueError:
         raise StopError(f"ledger row {number}: token columns are not whole numbers {row!r}; from: {command}") from None
     try:
-        seconds = parse_timestamp(stamp).timestamp()
-    except StopError:
+        seconds = iso_time.parse_zoned_iso_timestamp(stamp).timestamp()
+    except iso_time.IsoTimestampError:
         raise StopError(f"ledger row {number}: bad ts {stamp!r}; expected an ISO timestamp; from: {command}") from None
     try:
         duration_seconds = int(duration_ms) / 1000
@@ -190,13 +195,27 @@ def live_call(number, row, command):
     return LiveRow(call, seconds - duration_seconds)
 
 
-def price_calls(calls, label):
-    """The only sum: the Price of a list of Call records. Minutes run from the first record's time to the last's,
-    user blocks included; a list that runs back in time (a range across midnight) stops."""
-    seconds = [call.seconds for call in calls]
-    if seconds[-1] < seconds[0]:
+def export_span_seconds(calls, label):
+    """The seconds from the first block's time to the last's, user blocks included; a range that runs back in time
+    (across midnight) stops."""
+    span = calls[-1].seconds - calls[0].seconds
+    if span < 0:
         raise StopError(f"{label}: the range runs across midnight; split it at midnight")
-    minutes = round((seconds[-1] - seconds[0]) / 60)
+    return span
+
+
+def window_span_seconds(since, until):
+    """The seconds from `--since` to `--until`, the same span an export range measures from its first block to its
+    last; a window that runs back in time stops."""
+    span = parse_timestamp(until).timestamp() - parse_timestamp(since).timestamp()
+    if span < 0:
+        raise StopError(f"{since}..{until}: --since is after --until; expected since <= until")
+    return span
+
+
+def price_calls(calls, label, span_seconds):
+    """The only sum: the Price of a list of Call records over a span of seconds that the caller measured."""
+    minutes = round(span_seconds / 60)
 
     per_model = {}
     for call in calls:
@@ -218,7 +237,11 @@ def model_order(item):
 
 def total_tokens(price):
     """Every token type of every model in a Price, summed."""
-    return sum(sum(totals.values()) for totals in price.per_model.values())
+    grand_total = 0
+    for totals in price.per_model.values():
+        model_total = sum(totals.values())
+        grand_total += model_total
+    return grand_total
 
 
 def format_line(price):
@@ -243,6 +266,7 @@ def run_price_verb(args):
     if args.session:
         if not args.since or not args.until or args.target:
             raise UsageError("price --session <id> --since <ts> --until <ts>")
+        span_seconds = window_span_seconds(args.since, args.until)
         calls = read_live_calls(args.session, args.since, args.until)
         label = f"{args.since}..{args.until}"
     else:
@@ -251,7 +275,8 @@ def run_price_verb(args):
         export, range_text = args.target
         calls = select_range(parse_export(export), range_text, export)
         label = block_label(calls)
-    price = price_calls(calls, label)
+        span_seconds = export_span_seconds(calls, label)
+    price = price_calls(calls, label, span_seconds)
     print(format_json(price) if args.json else format_line(price))
 
 

@@ -148,8 +148,14 @@ class MomentPriceTest(unittest.TestCase):
     def test_a_bad_command_line_exits_2(self):
         cases = {
             "session without since": ["price", "--session", "7f3a-2c"],
+            "session with a target": ["price", "--session", "7f3a-2c", "--since", SINCE, "--until", UNTIL, "extra"],
             "export with since": ["price", RETRO, "1-6", "--since", SINCE],
+            "session with since and no until": ["price", "--session", "7f3a-2c", "--since", SINCE],
+            "export with until": ["price", RETRO, "1-6", "--until", UNTIL],
             "price without a range": ["price", RETRO],
+            "check with session": ["check", RETRO, "--session", "7f3a-2c"],
+            "check with since": ["check", RETRO, "--since", SINCE],
+            "check with until": ["check", RETRO, "--until", UNTIL],
             "check with extra args": ["check", RETRO, "extra"],
             "check with json": ["check", RETRO, "--json"],
         }
@@ -174,6 +180,15 @@ class MomentPriceTest(unittest.TestCase):
 
         self.assertEqual((1, ""), (done.returncode, done.stdout))
         self.assertIn("block 40 is not in the file", done.stderr)
+
+    def test_a_missing_export_file_stops_with_a_message(self):
+        missing = self.folder / "no-such-export.md"
+
+        done = self.run_script("price", missing, "1-2")
+
+        self.assertEqual((1, ""), (done.returncode, done.stdout))
+        self.assertIn("cannot read", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
 
     def test_a_range_whose_first_block_is_missing_stops(self):
         text = SESSION_LINE + "## Block 1 · 09:01 · user\n## Block 3 · 09:02 · user\n"
@@ -284,6 +299,30 @@ class MomentPriceTest(unittest.TestCase):
         price = json.loads(done.stdout)
         self.assertEqual(3, price["calls"])
 
+    def test_a_request_that_started_exactly_at_until_is_priced_and_one_millisecond_later_is_not(self):
+        on_the_edge = "2026-11-22T14:58:12.000Z\topus\t7\t0\t0\t0\t2000\n"
+        just_after = "2026-11-22T14:58:12.001Z\topus\t1000\t0\t0\t0\t2000\n"
+        self.plant_rows(LIVE_ROWS + on_the_edge + just_after)
+
+        done = self.run_script(*self.live_args(), "--json")
+
+        price = json.loads(done.stdout)
+        self.assertEqual((3, 167), (price["calls"], price["models"]["opus"]["fresh"]))
+
+    def test_live_minutes_are_the_window_not_the_rows(self):
+        self.plant_rows(ONE_BLOCK_ROWS)
+
+        done = self.run_script("price", "--session", ONE_BLOCK_SESSION, "--since", "2026-11-22T14:55:00.000Z",
+                               "--until", "2026-11-22T14:56:00.000Z", "--json")
+
+        self.assertEqual(1, json.loads(done.stdout)["minutes"])
+
+    def test_a_since_after_until_stops_before_the_ledger_runs(self):
+        done = self.run_script("price", "--session", "7f3a-2c", "--since", UNTIL, "--until", SINCE)
+
+        self.assertEqual((1, ""), (done.returncode, done.stdout))
+        self.assertIn("--since is after --until; expected since <= until", done.stderr)
+
     def test_a_window_whose_only_row_started_after_until_is_a_stop(self):
         self.plant_rows(f"{LIVE_HEADER}2026-11-22T14:58:30.000Z\topus\t1\t0\t0\t0\t1000\n")
 
@@ -354,6 +393,8 @@ class MomentPriceTest(unittest.TestCase):
 
         self.assertEqual((1, ""), (done.returncode, done.stdout))
         self.assertIn("broken", done.stderr)
+        self.assertIn("not read", done.stderr)
+        self.assertIn('ledger query "select', done.stderr)
 
     def test_a_session_id_that_could_carry_a_quote_is_refused_before_the_ledger_runs(self):
         done = self.run_script(*self.live_args("x'; drop table t; --"))

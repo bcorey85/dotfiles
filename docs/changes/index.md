@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 279 behavior changes that no intake metric reads.
+1162 changes, 25 with a measured gain, 279 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-24, [hillclimb prices each moment with a script that sums its blocks](notes/2026-11-24-hillclimb-prices-each-moment-with-a-script-that.md).
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 15
+* quality: 16
 
 ## Pages
 

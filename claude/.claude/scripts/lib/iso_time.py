@@ -6,6 +6,10 @@ import re
 FRACTION = re.compile(r"\.(\d+)")
 
 
+class IsoTimestampError(ValueError):
+    """Text that is not an ISO timestamp, or one with no time zone where a zone is required."""
+
+
 def six_digit_fraction(match):
     """The replacement text for a FRACTION match: the digits padded or cut to 6 (extra digits are dropped)."""
     return "." + (match.group(1) + "000000")[:6]
@@ -13,17 +17,20 @@ def six_digit_fraction(match):
 
 def parse_iso_timestamp(text):
     """The datetime of an ISO timestamp such as 2026-11-22T14:55:42.777Z; a trailing Z reads as UTC.
-    Raises ValueError for text that is not an ISO timestamp."""
+    Raises IsoTimestampError (a ValueError) for text that is not an ISO timestamp."""
     zoned = text[:-1] + "+00:00" if text.endswith("Z") else text
     fixed_fraction = FRACTION.sub(six_digit_fraction, zoned, count=1)
-    return datetime.datetime.fromisoformat(fixed_fraction)
+    try:
+        return datetime.datetime.fromisoformat(fixed_fraction)
+    except ValueError:
+        raise IsoTimestampError(f"not an ISO timestamp: {text!r}") from None
 
 
 def parse_zoned_iso_timestamp(text):
-    """Like parse_iso_timestamp, but text with no zone, such as 2026-11-22, raises ValueError too."""
+    """Like parse_iso_timestamp, but text with no zone, such as 2026-11-22, raises IsoTimestampError too."""
     moment = parse_iso_timestamp(text)
     if moment.tzinfo is None:
-        raise ValueError(f"no time zone in {text!r}")
+        raise IsoTimestampError(f"no time zone in {text!r}")
     return moment
 
 

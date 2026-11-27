@@ -21,4 +21,4 @@ queue item's Done when, verbatim.
 
 - 2026-11-24, agent-evals-6b (session; criteria owner session): AC6 cannot pass before the branch lands, since the live config is master. It is met before landing by the headless probe with the edited skill as a project skill (flag hides it from the model, /cc stays in the slash commands). The live-config check runs after the landing line, before the item closes.
 - 2026-11-27, agent-evals-c3-owner (session; criteria owner session): AC3's orchestration half is met by the lane-brief line alone; no orchestration.md bullet. LB02 measures the lane line at 6/6 on, 0/6 off.
-- 2026-11-27, fix/land-orphan-branches lane: the tools/settings_hook.py owner line in claude/.claude/scripts/CLAUDE.md is dropped, since a CLAUDE.md edit needs the user's yes.
+- 2026-11-27, fix/land-orphan-branches lane: the tools/settings_hook.py owner line in claude/.claude/scripts/CLAUDE.md is dropped, per the user's earlier ruling against new Owners lines in that file; the line goes back only on the user's yes.

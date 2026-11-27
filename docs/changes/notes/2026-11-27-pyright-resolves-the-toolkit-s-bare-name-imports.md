@@ -18,8 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-New `pyrightconfig.json` at the dotfiles root. Its `extraPaths` name `claude/.claude/scripts/{code,gates,lib,review,telemetry,tools}`, the `adr`, `close-branch` and `refactor` skill script folders, and `tests/scripts`, which are the folders the scripts add to `sys.path` at run time. Its `exclude` replaces pyright's default list,
-which skips dot-folders, so a language server run in workspace mode also covers `claude/.claude`.
+New `pyrightconfig.json` at the dotfiles root. Its `extraPaths` name `claude/.claude/scripts/{code,gates,lib,review,telemetry,tools}`, the `adr`, `close-branch` and `refactor` skill script folders, and `tests/scripts`, which are the folders the scripts add to `sys.path` at run time.
 
 ## Evidence
 
@@ -27,7 +26,7 @@ judgment: the scripts import siblings by bare module name through `sys.path` lin
 
 ## Result
 
-`tests/scripts/test_pyright_config.py` fails with no config and passes with it: every script folder is listed and every entry exists. pyright 1.1.414, given the same extraPaths as absolute paths: `gates/inline_interpreter_hint.py` and `tests/scripts/test_memory_cap_scope.py` report no unresolved import, and a file that imports a module that does not exist still reports `reportMissingImports`. The pyright CLI auto-excludes `**/.*` whatever the config says, so a CLI run on a file under `claude/.claude` from the repo root checks nothing. The editor's language server checks the open file, so the config takes effect there.
+`tests/scripts/test_pyright_config.py` fails with no config and passes with it: every script folder is listed and every entry exists. pyright 1.1.414, given the same extraPaths as absolute paths: `gates/inline_interpreter_hint.py` and `tests/scripts/test_memory_cap_scope.py` report no unresolved import, and a file that imports a module that does not exist still reports `reportMissingImports`. The pyright CLI auto-excludes `**/.*` whatever the config says, so a CLI run on a file under `claude/.claude` from the repo root checks nothing. A workspace scan skips dot-folders too, so a file under `claude/.claude` gets diagnostics only while it is open in the editor, where the config takes effect.
 
 ## Watch
 

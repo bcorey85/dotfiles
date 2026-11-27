@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-858 fix notes
+859 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -226,6 +226,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/review-loop-stray-files | 1 | 1 |
 | script/review-loop-untracked | 1 | 1 |
 | script/ruling-relay | 1 | 0 |
+| script/settings-hook | 1 | 1 |
 | script/shape-clones | 1 | 0 |
 | script/shell-variables | 1 | 0 |
 | script/simplify-slices | 1 | 0 |

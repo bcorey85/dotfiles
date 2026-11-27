@@ -36,6 +36,9 @@ When the lane edits files under `claude/.claude/` in dotfiles:
   `~/agent-evals/bin/rule_meter.py run-all --rule <id>`. Put the per-arm counts in the change file's Result.
 - For an anchored prompt file, update its row with `rule-anchors.sh list <file>`, then run `rule-anchors.sh check`.
 - Never edit `settings.json`, any CLAUDE.md or `orchestration.md`. Send the proposed line to `<orchestrator>`.
+- For a hook entry in `settings.json`, send one `python3 ~/.claude/scripts/tools/settings_hook.py add|remove
+  ~/.claude/settings.json ...` line that carries every key the entry has (its `--help` lists them; omit `--matcher` for
+  a group with none), never JSON or an installer script.
 
 ## Checks under the memory cap
 

@@ -1,6 +1,7 @@
 ---
 name: cc
-description: Read the inline code-review comments I left for you — from Neovim (`~/.claude/claude-comments.md` via `<leader>cc`) and from hunk review sessions (`prefix d`) — present them, answer the questions, hand the change requests to `/fix`, then clear them. Triggers on "I have comments for you", "claude comments", "I left you comments", "read my comments", "check claude-comments.md", "check hunk comments", "hunk review comments", "/cc".
+description: Read the inline review comments left from Neovim (`<leader>cc`) and hunk review sessions, answer the questions, hand the change requests to `/fix`, then clear them.
+disable-model-invocation: true
 allowed-tools: [Bash, Read, Glob, Grep, Skill]
 ---
 

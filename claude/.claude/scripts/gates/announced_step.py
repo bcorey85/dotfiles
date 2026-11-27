@@ -20,6 +20,8 @@ A sentence is no announcement when it also:
 - says work runs or is waited on: `running`, `background`, `waiting`, `wait for`, `wait on`, `in progress`,
   `notif` (a notification), `queued`, `still runs`;
 - asks a question (ends on `?`);
+- negates each of its first-person announcements: within one word after it comes `no`, `nothing`, `none` or `not`
+  ("I'm starting no lane", "I'll start nothing"), and it holds no progress form;
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
   `at 4:30`, `at 4:30pm`, `at 4pm`, `at :47`, `tomorrow`, `tonight`, `the next time`;
 - waits on later events: `later` then a word ending in s, not an excluded one ("later merges"; `this`, `its`, `is`,
@@ -85,6 +87,9 @@ LATER_EVENT = re.compile(
 # The step acts on another party's notice.
 OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,2}(?:notice|result|report)s?\b",
                                 re.IGNORECASE)
+# The text right after a first-person announcement negates it: at most one word, then `no`, `nothing`, `none` or
+# `not` ("I'm starting no lane", "I'll start nothing"). `no-op` is no negation.
+NEGATION = re.compile(r"\A\s*(?:\w+\s+)?(?:no|nothing|none|not)(?![-\w])", re.IGNORECASE)
 # A list marker: `1.`, `2)`, `-`, `*`, `+`.
 _LIST_MARKER = r"(?:\d+[.)]|[-*+])"
 # A sentence that opens on Then or Next: it follows the sentence before it. `Next steps:` is a header, not a chain.
@@ -109,6 +114,16 @@ def announces_report(sentence, announcement):
     if not REPORT_ACTION.match(after_announcement):
         return False
     return not SECOND_STEP.search(after_announcement)
+
+
+def negated(sentence):
+    """Whether every announcement in a sentence is first-person and negated (`NEGATION`): it says no step starts."""
+    if PROGRESS_ANNOUNCEMENT.search(sentence):
+        return False
+    announcements = list(FIRST_PERSON_ANNOUNCEMENT.finditer(sentence))
+    if not announcements:
+        return False
+    return all(NEGATION.match(sentence[announcement.end():]) for announcement in announcements)
 
 
 def gated(sentence):
@@ -137,7 +152,7 @@ def announced_step(message, transcript_path=None):
             continue
         if sentence.rstrip().endswith("?"):
             continue
-        if sentence_gated:
+        if sentence_gated or negated(sentence):
             continue
         request = REQUEST_THEN_STEP.search(sentence)
         if request and not FIRST_PERSON.search(sentence[:request.start()]):

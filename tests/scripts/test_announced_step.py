@@ -198,6 +198,18 @@ class AnnouncedStepTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_blocks(message)
 
+    def test_a_negated_announcement_passes(self):
+        for message in ("I'm starting no lane for it.", "I'll start nothing for it.", "I will do none of them.",
+                        "I'll not touch the branch."):
+            with self.subTest(message=message):
+                self.assert_passes(message)
+
+    def test_an_announcement_beside_a_negated_one_still_blocks(self):
+        for message in ("I'll start the lane.", "I'll remove no-op calls.",
+                        "I'm starting no lane for it, and I'll run the suite."):
+            with self.subTest(message=message):
+                self.assert_blocks(message)
+
     def test_subagent_stop_passes(self):
         self.assert_passes("Next I'll look at the reviewer nits.", event="SubagentStop")
 

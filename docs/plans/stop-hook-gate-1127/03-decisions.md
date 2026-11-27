@@ -69,6 +69,11 @@
 - **Choice:** AC12 (the live pane check) stays open past merge. agent-evals-74 checks the pane at the first Stop block after the user merges v2.
 - **Ruled by:** agent-evals-74, 2026-11-27.
 
+### Negated announcements and blocks 1-3
+
+- **Choice:** a sentence whose every first-person announcement is negated within one word (`no`, `nothing`, `none`, `not`) passes. Blocks 1-3 stay blocked under D1.
+- **Ruled by:** agent-evals-74, 2026-11-27, after the gate blocked "I'm starting no lane for it." in a reply whose steps all waited on another session.
+
 ## Direction & Constraints
 
 - Only `gates/staged_claim_gate.py` can block among the Stop and SubagentStop hooks: `format_changed.py` prints no decision on Stop and always exits 0, and `ledger-hook` runs async, which the hooks docs say cannot block (https://code.claude.com/docs/en/hooks#run-hooks-in-the-background). Fix 1 touches that one gate plus a new lib helper.

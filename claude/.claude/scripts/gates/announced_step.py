@@ -23,9 +23,11 @@ A sentence is no announcement when it also:
 - negates each of its first-person announcements in an allowed form, and holds no progress form: at most one start
   word (`start`, `begin`, `do`, `launch`, `open`, `run`, `touch`, `take`, `send`, `make`) then `no`, `nothing` or
   `none` ("I'm starting no lane", "I'll start nothing"), and no idiom word (`but`, `except`, `besides`, `beyond`,
-  `apart`, `aside`, `other`, `more`, `fewer`, `less`, `doubt`, `longer`, `long`, `short`, `save`, `than`) comes
-  anywhere after the announcement; or `not` then a start word or `act` ("I will not act on it", with the same
-  idiom rule). Every other negation ("I'll not postpone the rerun") blocks. The text after it holds no
+  `apart`, `aside`, `other`, `more`, `fewer`, `less`, `doubt`, `longer`, `long`, `short`, `save`, `than`, `yet`,
+  `later`, `till`, `first`, `for now`, `for the moment`, `at the moment`, `for the time being`, `right now`,
+  `soon`, `shortly`, `eventually`, `afterwards`) comes anywhere after the announcement; or
+  `not` then a start word or `act` ("I will not act on it", with the same idiom rule).
+  Every other negation ("I'll not postpone the rerun") blocks. The text after each negated announcement holds no
   `and`, `but`, `then`, `or`, `so`, `while`, `before`, `instead`, `,`, `;`, `:`, an em or en dash or `--`. A negated
   sentence opens no Then or Next chain;
 - gates the step on a date or clock: `on|by` a weekday, `on|by` a month and day (`Nov 29`, `November 29th`),
@@ -103,7 +105,9 @@ OTHER_PARTY_RESULT = re.compile(r"\bact\s+on\s+(?:its|their|the)\s+(?:\w+\s+){0,
 # nothing"). (2) `not` then a start word or `act` ("I will not act on it"). In both forms, an idiom word anywhere
 # after the announcement blocks ("I'll do nothing but rerun it", "I'll not start it save for the docs").
 _START_WORD = r"(?:start|begin|do|launch|open|run|touch|take|send|make)"
-_NEGATION_IDIOM = r"(?:but|except|besides|beyond|apart|aside|other|more|fewer|less|doubt|longer|long|short|save|than)"
+_NEGATION_IDIOM = (r"(?:but|except|besides|beyond|apart|aside|other|more|fewer|less|doubt|longer|long|short|save|"
+                   r"than|yet|later|till|first|for\s+now|for\s+the\s+moment|at\s+the\s+moment|"
+                   r"for\s+the\s+time\s+being|right\s+now|soon|shortly|eventually|afterwards)")
 NEGATION_IDIOM_ANYWHERE = re.compile(r"\b" + _NEGATION_IDIOM + r"\b", re.IGNORECASE)
 ANNOUNCEMENT_NEGATION = re.compile(
     r"\A\s*(?:(?:" + _START_WORD + r"\s+)?(?:no|nothing|none)(?![-\w])"

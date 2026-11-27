@@ -1,6 +1,6 @@
 """unread_overwrite.py: the deny reason for a Write that would replace a file the writing session has not seen in its
-current state. Owner of that check. Standard library and `transcript_time` (standard library only) at import;
-script_utils and session_registry load only when a subagent transcript or a last-writer name is needed.
+current state. Owner of that check. Standard library and `transcript_time` (standard library and `iso_time` only)
+at import; script_utils and session_registry load only when a subagent transcript or a last-writer name is needed.
 
 A session has seen the current content when its transcript holds a Read, Write or Edit result of the path, or an
 @-mentioned file attachment of it, stamped at or after the file's mtime. A Bash command's own edit of the path, which

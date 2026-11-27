@@ -74,9 +74,9 @@ def parse_header(line, number, source):
     if match is None:
         raise StopError(f"{source}:{number}: bad block header {line!r}; expected {BLOCK_FORM}")
     index, hours, minutes, who, fresh, cache_read, output = match.groups()
-    seconds = (int(hours) * 60 + int(minutes)) * 60
     if int(hours) > 23 or int(minutes) > 59:
         raise StopError(f"{source}:{number}: bad time in {line!r}; expected {BLOCK_FORM}")
+    seconds = (int(hours) * 60 + int(minutes)) * 60
     if who == "user":
         if fresh is not None:
             raise StopError(f"{source}:{number}: a user block carries no tokens: {line!r}; expected {BLOCK_FORM}")
@@ -142,17 +142,17 @@ def ledger_sql(session, since, until):
     if SESSION_ID.fullmatch(session) is None:
         raise StopError(f"{session!r}: expected a session id of characters 0-9, a-f and -")
     # The ledger stores `ts` as UTC text with milliseconds. The start rounds up so a row before it stays out.
-    since_text = iso_time.utc_millisecond_text(parse_timestamp(since), round_up=True)
-    query_end = parse_timestamp(until) + REQUEST_SLACK
+    since_text = iso_time.utc_millisecond_text(since, round_up=True)
+    query_end = until + REQUEST_SLACK
     until_text = iso_time.utc_millisecond_text(query_end)
     return (f"select {', '.join(LEDGER_COLUMNS)} from otel_api_request where {SESSION_COLUMN} = '{session}' "
             f"and ts >= '{since_text}' and ts <= '{until_text}' order by ts")
 
 
-def read_live_calls(session, since, until):
-    """The Call list of the ledger's otel_api_request requests whose span overlaps the window. Stops when the ledger
-    cannot be read."""
-    sql = ledger_sql(session, since, until)
+def read_live_calls(session, since, until, label):
+    """The Call list of the ledger's otel_api_request requests whose span overlaps the window (zone-aware datetimes;
+    label names it in messages). Stops when the ledger cannot be read."""
+    sql = ledger_sql(session, since, until)  # since and until are datetimes
     command = f'ledger query "{sql}"'
     not_read = f"not read: the otel_api_request rows of session {session}"
     try:
@@ -166,10 +166,10 @@ def read_live_calls(session, since, until):
     lines = [line for line in done.stdout.splitlines() if line.strip()]
     rows = [line.split("\t") for line in lines[1:]]
     live_rows = [live_call(number, row, command) for number, row in enumerate(rows, start=1)]
-    until_seconds = parse_timestamp(until).timestamp()
+    until_seconds = until.timestamp()
     calls = [live.call for live in live_rows if live.start_seconds <= until_seconds]
     if not calls:
-        raise StopError(f"no otel_api_request rows for session {session} between {since} and {until}; "
+        raise StopError(f"no otel_api_request rows for session {session} in the window {label}; "
                         f"rows may not be collected yet; rerun after `ledger collect`; check with: {command}")
     return calls
 
@@ -204,12 +204,12 @@ def export_span_seconds(calls, label):
     return span
 
 
-def window_span_seconds(since, until):
-    """The seconds from `--since` to `--until`, the same span an export range measures from its first block to its
-    last; a window that runs back in time stops."""
-    span = parse_timestamp(until).timestamp() - parse_timestamp(since).timestamp()
+def window_span_seconds(since, until, label):
+    """The seconds from `--since` to `--until` (datetimes), the same span an export range measures from its first
+    block to its last; a window that runs back in time stops."""
+    span = until.timestamp() - since.timestamp()
     if span < 0:
-        raise StopError(f"{since}..{until}: --since is after --until; expected since <= until")
+        raise StopError(f"{label}: --since is after --until; expected since <= until")
     return span
 
 
@@ -266,9 +266,11 @@ def run_price_verb(args):
     if args.session:
         if not args.since or not args.until or args.target:
             raise UsageError("price --session <id> --since <ts> --until <ts>")
-        span_seconds = window_span_seconds(args.since, args.until)
-        calls = read_live_calls(args.session, args.since, args.until)
+        since = parse_timestamp(args.since)
+        until = parse_timestamp(args.until)
         label = f"{args.since}..{args.until}"
+        span_seconds = window_span_seconds(since, until, label)
+        calls = read_live_calls(args.session, since, until, label)
     else:
         if len(args.target) != 2 or args.since or args.until:
             raise UsageError("price <export.md> <first>-<last>")

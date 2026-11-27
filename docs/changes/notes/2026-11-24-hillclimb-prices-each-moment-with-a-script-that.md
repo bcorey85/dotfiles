@@ -24,7 +24,8 @@ impact: {"metric": "quality", "before": 47, "after": 89, "unit": "% of retro rep
   `check <export>` parses a whole export and stops on any line outside the grammar. `--json` prints the same totals
   as JSON. A ledger that cannot be read stops with the command that reads it, never a zero price.
 - `scripts/lib/iso_time.py`: ISO timestamp parsing and the ledger's UTC millisecond form; `lib/transcript_time.py`
-  now parses through it. `scripts/CLAUDE.md` names it as the owner of that fact.
+  now parses through it. `scripts/CLAUDE.md` names it as the owner of that fact, and its `transcript_time` line now
+  says "standard library and `lib/iso_time.py` only".
 - `skills/hillclimb/SKILL.md`: price each moment with one script call and paste its line on the candidate's report
   line; the report orders candidates by tokens from that line.
 

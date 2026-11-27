@@ -26,7 +26,7 @@ The test above fails on be9a5807d ("I'll run the weekly scan on Nov 29." and "I'
 
 ## Result
 
-Median hook time over 21 runs (`time_hook.py` on `payload_block.json`): before (be9a5807d) bare Python start 7.7 ms, `staged_claim_gate.py` 43.6 ms; after, bare Python start 8.2 ms, `staged_claim_gate.py` 44.6 ms.
+Median hook time over 21 runs (`time_hook.py` on `payload_block.json`): before (be9a5807d) bare Python start 7.7 ms, `staged_claim_gate.py` 43.6 ms; after, bare Python start 7.8 ms, `staged_claim_gate.py` 44.0 ms.
 
 ## Watch
 

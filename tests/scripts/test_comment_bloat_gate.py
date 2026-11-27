@@ -25,7 +25,18 @@ PHASE_WORD = "Pha" + "se"
 
 COMMENT_LEADERS = ("#", "//", "--")
 SHEBANG = "#!"
-BLOCKED_RUN_LENGTH = 3
+
+
+def load_gate():
+    spec = importlib.util.spec_from_file_location("comment_bloat_gate_under_test", SCRIPT)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {SCRIPT}")
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    return gate
+
+
+BLOCKED_RUN_LENGTH = load_gate().MAX_FREE_BLOCK_LINES + 1
 
 
 class CommentBloatGateTest(unittest.TestCase):
@@ -461,9 +472,25 @@ class CommentBloatGateTest(unittest.TestCase):
         content = "x = 1\n# one\n# two\n# mypy: ignore-errors\n# three\n# four\nprint(x)\n"
         self.assert_blocked(self.written("a.py", content))
 
+    def commit_all(self):
+        subprocess.run(["git", "-C", self.tmp.name, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.tmp.name, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "-m", "base"], check=True)
+
     def test_old_comment_lines_next_to_two_added_lines_do_not_count_toward_the_limit(self):
         path = self.source("a.py", "x = 1\n# a\n# b\n# c\n# d\nprint(x)\n")
+        self.commit_all()
         self.assert_allowed(self.edit_replacing(path, "# b", "# b\n# c\n# d"))
+
+    def test_a_block_built_two_lines_per_edit_blocks_on_the_second_edit(self):
+        path = self.source("a.py", "x = 1\n_y = 2\n")
+        self.commit_all()
+        pathlib.Path(path).write_text("x = 1\n# one\n# two\n_y = 2\n")
+        self.assert_allowed(self.edit_replacing(path, "# one", "# one\n# two"))
+        pathlib.Path(path).write_text("x = 1\n# one\n# two\n# three\n# four\n_y = 2\n")
+        stderr = self.assert_blocked(self.edit_replacing(path, "# two", "# two\n# three\n# four"))
+        self.assertIn("4: # three\n  5: # four", stderr)
+        self.assertNotIn("# one", stderr)
 
     def test_only_the_added_comment_line_is_charged(self):
         new_note = "# new note\n# new note\n# new note"
@@ -1006,9 +1033,7 @@ class CommentBloatGateTest(unittest.TestCase):
         self.assertEqual(finished.stderr, "")
 
     def test_a_crash_is_reported_on_stderr_with_the_gate_name_and_the_edit_goes_on(self):
-        spec = importlib.util.spec_from_file_location("comment_bloat_gate_under_test", SCRIPT)
-        gate = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(gate)
+        gate = load_gate()
         captured = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
         with mock.patch.object(gate, "check", side_effect=ValueError("boom")), \
                 mock.patch.object(sys, "stderr", captured):

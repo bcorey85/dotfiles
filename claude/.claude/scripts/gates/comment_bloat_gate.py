@@ -507,13 +507,13 @@ def kept_through_line(file_path, file_lines, block, header, comment_lines):
     return first - 1
 
 
-def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers):
-    """(number, stripped text) of each comment line whose stripped text is in `added` that is not a kept kind and sits
-    in a run of consecutive non-kept comment lines (new or old) holding more than MAX_FREE_BLOCK_LINES new lines, in
-    line order; only the new lines are listed. A blank, delimiter, suppression, directive or URL line inside a
-    comment block keeps the run going without counting; a license header or public-doc line, or a line outside the
-    charged span, ends it.
-    `edited_numbers`, when given, limits the check to those line numbers."""
+def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers, counting):
+    """(number, stripped text) of each comment line in the charged span whose stripped text is in `added` that is not a
+    kept kind and sits in a run of consecutive non-kept comment lines holding more than MAX_FREE_BLOCK_LINES lines
+    whose stripped text is in `counting`, in line order. The run extends past the charged span through contiguous
+    comment lines; only new lines inside the span are listed. A blank, delimiter, suppression, directive or URL line
+    inside a comment block keeps the run going without counting; a license header or public-doc line ends it.
+    `edited_numbers`, when given, limits the listed lines to those line numbers."""
     blocks = source_text.contiguous_runs(comment_lines.numbers)
     header = leading_block(file_lines, blocks)
     charged = charged_comment_numbers(comment_lines, edited_numbers)
@@ -523,8 +523,6 @@ def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_num
         kept_last = kept_through_line(file_path, file_lines, block, header, comment_lines)
         for number in range(block[0], block[1] + 1):
             line = file_lines[number - 1]
-            if number not in charged:
-                continue
             if not NONBLANK.search(line) or DELIMITER_LINE.match(line):
                 if number > kept_last:
                     bridges.add(number)
@@ -537,20 +535,34 @@ def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_num
                 bridges.add(number)
                 continue
             unkept.append((number, line.strip()))
-    return in_long_runs(unkept, bridges, added)
+    long_numbers = in_long_runs(unkept, bridges, counting)
+    return [(number, text) for number, text in unkept
+            if number in long_numbers and number in charged and text in added]
 
 
-def in_long_runs(unkept, bridges, added):
-    """The (number, text) pairs of `unkept` whose text is in `added` and that sit in a run of consecutive line numbers
-    holding more than MAX_FREE_BLOCK_LINES such new lines. An old line stays in the run but is not listed; a bridge
-    number (a blank, delimiter, suppression, directive or URL line) joins the runs on either side without counting."""
+def in_long_runs(unkept, bridges, counting):
+    """The numbers of the `unkept` lines that sit in a run of consecutive line numbers holding more than
+    MAX_FREE_BLOCK_LINES lines whose text is in `counting`. A line outside `counting` stays in the run without
+    counting; a bridge number (a blank, delimiter, suppression, directive or URL line) joins the runs on either side
+    without counting."""
     long_numbers = set()
     run_numbers = sorted({number for number, _ in unkept} | bridges)
     for first, last in source_text.contiguous_runs(run_numbers):
-        new_numbers = [number for number, text in unkept if first <= number <= last and text in added]
-        if len(new_numbers) > MAX_FREE_BLOCK_LINES:
-            long_numbers.update(new_numbers)
-    return [(number, text) for number, text in unkept if number in long_numbers]
+        run = [number for number, text in unkept if first <= number <= last]
+        counted = [number for number, text in unkept if first <= number <= last and text in counting]
+        if len(counted) > MAX_FREE_BLOCK_LINES:
+            long_numbers.update(run)
+    return long_numbers
+
+
+def counting_texts(file_path, file_lines, added):
+    """The stripped texts that count toward the run limit: when HEAD holds a copy of the file, every line of the file
+    that HEAD lacks (so lines an earlier edit added still count); else `added`."""
+    committed = committed_lines(file_path)
+    if not committed:
+        return added
+    committed_stripped = {line.strip() for line in committed}
+    return {line.strip() for line in file_lines} - committed_stripped - {""}
 
 
 def stripped_added(added_lines, old_lines):
@@ -645,7 +657,8 @@ def check(raw):
                     "before this write.\n")
         return 0
     added_stripped = stripped_added(added_lines, old_lines)
-    unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers)
+    counting = counting_texts(file_path, file_lines, added_stripped)
+    unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers, counting)
     if not unkept:
         return 0
     listing = "".join(f"  {number}: {text}\n" for number, text in unkept)

@@ -1,8 +1,6 @@
 # Acceptance Criteria — comment-last-resort
 
-criteria owner: user
-
-> From the queue item's Done when. The user ruled the design; a session ruling moved the rule's home (D1 in `03-decisions.md`).
+> From the queue item `comments-are-a-last-resort-short-comments-pass-the` Done when. A cut or reword needs the user (D0); the rule's home moved by D1.
 
 - **AC1** — The comment rule replaces the old "earns its place" guidance, reworded and never quoted: comments are a last resort, written only for what a busy engineer new to the code must know, and architecture goes in the repo's architecture docs, never in code comments.
   - The rule lives in `skills/coder-core/SKILL.md`; `_shared/code-vocabulary.md` keeps a one-line pointer to it (D1).

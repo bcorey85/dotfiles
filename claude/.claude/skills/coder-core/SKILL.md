@@ -15,6 +15,7 @@ Write every line for the person who reads and changes it next. Only correctness 
 - Give each function one job its name states. Past 40 lines, split it into named steps.
 - Write the plain version: one step per statement, no chained ternaries, no one-liner that packs several steps a reader has to unpack in their head. A comprehension has one loop.
 - Return a named type (dataclass, NamedTuple, interface) in place of a tuple of three or more values. Past five parameters, pass one named object.
+- Comments are a last resort. Write one only for what a busy engineer new to the code must know. Architecture goes in the repo's architecture docs, never in code comments.
 - Bind the error in every catch block and use it: log it with the input that caused it, rethrow it, or return it as a typed failure; a catch that only returns a fallback is a swallowed error.
 
 ## You are the terminal implementer

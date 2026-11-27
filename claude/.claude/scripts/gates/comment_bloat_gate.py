@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""PostToolUse hook on Write|Edit: block workflow-marker leaks and comment lines that are not a kept kind.
+"""PostToolUse hook on Write|Edit: block workflow-marker leaks and long comment blocks that are not a kept kind.
 
 Enforces the workflow-marker rule of _shared/code-vocabulary.md deterministically. Reads the edited file from
 disk. A marker counts when its line matches a line of the new text exactly. A comment line counts only when its
 stripped text is also absent from the old text (a Write's file before the write, else HEAD), so a re-indented comment
 is not new. The comment check holds each added comment line to the kept kinds: a license header, a lint or format
 suppression or tool directive, a comment block on an exported or public symbol (a Go package doc and a leading run of
-Rust `//!` lines included), or a line with a URL. Heredoc bodies in shell files are data, not comments.
+Rust `//!` lines included), or a line with a URL. A run of consecutive non-kept comment lines
+(new or old; a blank, delimiter, suppression, directive or URL line inside a comment block keeps the run going
+without counting; a license header, a public-symbol doc line or a gap ends it) passes
+while at most MAX_FREE_BLOCK_LINES of them are new; a run with more is blocked, only its new lines listed, and the
+message sends architecture prose to the repo's architecture docs. Heredoc bodies in shell files are data, not comments.
 Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only comment lines inside the
 span new_string occupies in the file are charged (the whole file when new_string is not found in it). Only whole
 comment lines count, never a trailing comment.
@@ -28,6 +32,7 @@ import source_text
 from hook_input import emit_stderr
 
 GIT_PROBE_TIMEOUT_SECONDS = 2
+MAX_FREE_BLOCK_LINES = 2
 
 SPACE = r"\s"
 NONBLANK = re.compile(r"\S")
@@ -503,26 +508,49 @@ def kept_through_line(file_path, file_lines, block, header, comment_lines):
 
 
 def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers):
-    """(number, stripped text) of each comment line whose stripped text is in `added` that is not a kept kind, in line
-    order. `edited_numbers`, when given, limits the check to those line numbers."""
+    """(number, stripped text) of each comment line whose stripped text is in `added` that is not a kept kind and sits
+    in a run of consecutive non-kept comment lines (new or old) holding more than MAX_FREE_BLOCK_LINES new lines, in
+    line order; only the new lines are listed. A blank, delimiter, suppression, directive or URL line inside a
+    comment block keeps the run going without counting; a license header or public-doc line, or a line outside the
+    charged span, ends it.
+    `edited_numbers`, when given, limits the check to those line numbers."""
     blocks = source_text.contiguous_runs(comment_lines.numbers)
     header = leading_block(file_lines, blocks)
     charged = charged_comment_numbers(comment_lines, edited_numbers)
     unkept = []
+    bridges = set()
     for block in blocks:
         kept_last = kept_through_line(file_path, file_lines, block, header, comment_lines)
         for number in range(block[0], block[1] + 1):
             line = file_lines[number - 1]
             if number not in charged:
                 continue
-            if line.strip() not in added or not NONBLANK.search(line) or DELIMITER_LINE.match(line):
+            if not NONBLANK.search(line) or DELIMITER_LINE.match(line):
+                if number > kept_last:
+                    bridges.add(number)
                 continue
             if number == 1 and line.startswith(SHEBANG):
                 continue
-            if number <= kept_last or SUPPRESSION.search(line) or DIRECTIVE.search(line) or URL.search(line):
+            if number <= kept_last:
+                continue
+            if SUPPRESSION.search(line) or DIRECTIVE.search(line) or URL.search(line):
+                bridges.add(number)
                 continue
             unkept.append((number, line.strip()))
-    return unkept
+    return in_long_runs(unkept, bridges, added)
+
+
+def in_long_runs(unkept, bridges, added):
+    """The (number, text) pairs of `unkept` whose text is in `added` and that sit in a run of consecutive line numbers
+    holding more than MAX_FREE_BLOCK_LINES such new lines. An old line stays in the run but is not listed; a bridge
+    number (a blank, delimiter, suppression, directive or URL line) joins the runs on either side without counting."""
+    long_numbers = set()
+    run_numbers = sorted({number for number, _ in unkept} | bridges)
+    for first, last in source_text.contiguous_runs(run_numbers):
+        new_numbers = [number for number, text in unkept if first <= number <= last and text in added]
+        if len(new_numbers) > MAX_FREE_BLOCK_LINES:
+            long_numbers.update(new_numbers)
+    return [(number, text) for number, text in unkept if number in long_numbers]
 
 
 def stripped_added(added_lines, old_lines):
@@ -623,9 +651,11 @@ def check(raw):
     listing = "".join(f"  {number}: {text}\n" for number, text in unkept)
     return block_inside_repo(
         file_path,
-        f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} are not a kept kind (license header, "
-        "lint or format suppression or tool directive, comment block on an exported or public symbol, line with a "
-        "URL). Delete each one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
+        f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} sit in blocks of "
+        f"{MAX_FREE_BLOCK_LINES + 1}+ lines that are not a kept kind (license header, lint or format suppression or "
+        "tool directive, comment block on an exported or public symbol, line with a URL). Architecture goes in the "
+        "repo's architecture docs, never in code comments (comment rule: skills/coder-core/SKILL.md). Delete each "
+        "one, or turn it into a name: rename the code so it needs no comment.\n" + listing,
     )
 
 

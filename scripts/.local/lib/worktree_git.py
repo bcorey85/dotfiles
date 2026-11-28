@@ -8,6 +8,7 @@ import subprocess
 from quiet_git import run_quiet_git
 
 HEADS_PREFIX = "refs/heads/"
+UNBORN_HEAD = "0" * 40  # what `git worktree list` prints as HEAD for a branch with no commit
 
 
 class PruneError(Exception):
@@ -45,12 +46,25 @@ class Repo:
     checkout_name: str | None = None
     checkout_hash: str | None = None
 
-    def merge_targets(self):
-        """Every (name, hash) a lane's tip may be merged into: the compare ref, then the main checkout's branch
-        when it has one whose commit differs from the compare hash."""
+    def merge_targets(self, except_name=None, linked=()):
+        """Every (name, hash) a lane's tip may be merged into: the compare ref, the main checkout's branch when it
+        has one whose commit differs from the compare hash, then the branch of every worktree in `linked` that is
+        not prunable, detached or unborn and whose commit differs from the compare hash.
+        `linked` holds the linked worktrees allowed to give credit (none by default); the caller leaves out the
+        trees of open lanes. The branch `except_name` is left out: it is the one being judged, which holds no
+        merge of itself."""
         targets = [(self.compare_name, self.compare_hash)]
         if self.checkout_name is not None and self.checkout_hash != self.compare_hash:
             targets.append((self.checkout_name, self.checkout_hash))
+        named = {name for name, _ in targets}
+        named.add(except_name)
+        for tree in linked:
+            if tree.bare or tree.prunable or tree.detached or tree.branch is None or tree.head == UNBORN_HEAD:
+                continue
+            if tree.branch in named or tree.head == self.compare_hash:
+                continue
+            named.add(tree.branch)
+            targets.append((tree.branch, tree.head))
         return targets
 
 
@@ -163,27 +177,41 @@ def branch_tip(repo, name):
     return resolved.stdout.strip()
 
 
-def merged_into(repo, commit):
-    """Whether `commit` is an ancestor of the compare ref or of the main checkout's branch.
+def merged_into(repo, commit, linked=(), own_branch=None):
+    """Whether `commit` is an ancestor of the compare ref, of the main checkout's branch or of the branch of any
+    linked worktree that is not prunable, detached or unborn and is in `linked`, leaving out `own_branch`, the
+    branch being judged.
 
-    The checkout branch is asked by its live ref, not by the hash taken at start-up: the branch can move during a
-    run. A commit equal to the checkout branch's tip does not count as merged into it: a fresh worktree cut from
+    Those branches are asked by their live refs, not by the hash taken at start-up: a branch can move during a
+    run. A commit equal to such a branch's tip does not count as merged into it: a fresh worktree cut from
     that branch, or a branch it was just made from, holds no work of its own."""
-    for index, (name, target_hash) in enumerate(repo.merge_targets()):
-        is_checkout = index > 0
-        target = f"{HEADS_PREFIX}{name}" if is_checkout else target_hash
-        asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, target)
-        if asked.returncode == 1:
-            continue
-        if asked.returncode != 0:
-            return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
-        if is_checkout and commit == branch_tip(repo, name):
-            continue
-        return MergeVerdict(target=name)
+    targets = repo.merge_targets(except_name=own_branch, linked=linked)
+    compare_name, compare_hash = targets[0]
+    asked = git(repo.main_path, "merge-base", "--is-ancestor", commit, compare_hash)
+    if asked.returncode == 0:
+        return MergeVerdict(target=compare_name)
+    if asked.returncode != 1:
+        return MergeVerdict(error=f"git merge-base failed: {asked.stderr.strip()}")
+    branch_names = [name for name, _ in targets[1:]]
+    if not branch_names:
+        return MergeVerdict()
+    branch_refs = [f"{HEADS_PREFIX}{name}" for name in branch_names]
+    containing = git(repo.main_path, "for-each-ref", f"--contains={commit}",
+                     "--format=%(refname:strip=2) %(objectname)", *branch_refs)
+    if containing.returncode != 0:
+        return MergeVerdict(error=f"git for-each-ref failed: {containing.stderr.strip()}")
+    holders = set()
+    for row in containing.stdout.splitlines():
+        name, _, tip = row.rpartition(" ")
+        if tip != commit:
+            holders.add(name)
+    for name in branch_names:
+        if name in holders:
+            return MergeVerdict(target=name)
     return MergeVerdict()
 
 
-def not_on_text(repo):
-    """'origin/main' or 'origin/main nor on bench-base': the refs a commit is missing from."""
-    names = [name for name, _ in repo.merge_targets()]
+def not_on_text(repo, own_branch=None, linked=()):
+    """'origin/main' or 'origin/main nor on bench-base': the refs the branch `own_branch` is missing from."""
+    names = [name for name, _ in repo.merge_targets(except_name=own_branch, linked=linked)]
     return " nor on ".join(names)

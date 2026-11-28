@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1299 changes
+1300 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -43,6 +43,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [lane close removes a lane merged into a linked-worktree integration branch](notes/2026-11-27-lane-close-removes-a-lane-merged-into-a-linked.md) [script/herdr-worktree-prune, script/herdr-lane-resume] herdr-lane-resume --close now removes a lane worktree whose branch merged into an integration branch checked out in a linked worktree, along with the lane's leftover untracked plan files, so the user no longer force-removes it by hand.
 * [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md) [script/comment-bloat-gate] comment-bloat-gate reads HEAD once per edit, counts every comment line of a file HEAD lacks so a new file cannot be built two comment lines per edit, and counting_texts reuses stripped_added.
 * [The comment gate passes a short comment block of at most two lines](notes/2026-11-27-the-comment-gate-passes-a-short-comment-block-of.md) [script/comment-bloat-gate] comment-bloat-gate still keeps its four kinds, and also passes a run of at most two added comment lines that are no kept kind; a run of three or more is blocked with a message that sends architecture prose to the repo's architecture docs and names coder-core.
 * [The code-reviewer cuts each added comment a new engineer would not need](notes/2026-11-27-the-code-reviewer-cuts-each-added-comment-a-new.md) [agent/code-reviewer] code-reviewer's Dead weight item flags each comment the diff adds that a busy engineer new to the code would not need, except a public-API doc description sentence, with delete as the fix; the opencode port matches.

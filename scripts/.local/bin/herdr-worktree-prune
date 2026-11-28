@@ -29,27 +29,34 @@ Usage: herdr-worktree-prune [--apply] [--branches] [-h|--help]
                Prints one JSON object on stdout and exits 0:
                {"path", "branch", "verdict": "remove"|"keep", "code", "reason"}
                (code and reason are null on remove). It runs the same start-up
-               fetch, and reads only the worktree list and the stashes. A path
+               fetch, and reads only the worktree list, the stashes and the lane list
+               (for the merge credit of linked branches). A path
                that is not a worktree entry of the repo, and any start-up
                failure, exit 1 with the message on stderr; a check that cannot
                run is a keep with code `cannot check`. A call with no path or
                extra arguments exits 2 with the usage.
 
 A branch is deleted with `git update-ref -d refs/heads/<name> <tip>` on the tip
-just checked as an ancestor of the compare ref or of the branch the main
-checkout has checked out, never forced: git refuses when
-the tip moved in between. Then its `branch.<name>` config section is removed.
-A branch whose tip is ahead of its own upstream is still deleted when the
-compare ref or the main checkout's branch holds it; its list line says so.
+just checked as an ancestor of the compare ref, of the branch the main checkout
+has checked out or of the branch of a linked worktree (see the lane-list rule
+below), never forced: git refuses when the tip moved in between. Then its
+`branch.<name>` config section is removed. A branch whose tip is ahead of its
+own upstream is still deleted when one of those refs holds it; its list line
+says so.
 
 Run it from the main checkout or any linked worktree of a repo. Every mode
 first runs `git fetch --quiet origin <default branch>` (list mode too: it
 updates only the remote-tracking ref origin/<default branch>) and compares with
 that ref. Worktree mode, --check and the delete check also accept the branch
-the main checkout has checked out; --branches lists compare-merged branches
-only. They stop, remove nothing and exit 1 when there is no git repo, no
-origin remote, no refs/remotes/origin/HEAD (`git remote set-head origin
---auto`) or origin cannot be fetched.
+the main checkout has checked out and the branch of any linked worktree that
+is not prunable, detached or unborn (an integration branch). A linked worktree
+that is an open lane (`lanes.py list`) gives no credit, so an integration or
+parent tree is never read as merged into a lane cut from it; when the lane
+list cannot be read, no linked branch gives credit (--check reads the list for
+this). --branches lists compare-merged branches only. They stop, remove
+nothing and exit 1 when there is no git repo, no origin remote, no
+refs/remotes/origin/HEAD (`git remote set-head origin --auto`) or origin
+cannot be fetched.
 
 A worktree is removed only when all of these hold; otherwise it is kept and one
 reason is printed:
@@ -57,11 +64,17 @@ reason is printed:
     runs from, not one that holds the working directory;
   - its folder exists, it is not locked, not detached, not bare;
   - its branch is not the default branch and its tip is an ancestor of the
-    compare ref or of the branch the main checkout has checked out, when it is
-    on a branch (a squash or rebase merge looks unmerged: check by hand); a
-    tip equal to the checkout branch's tip does not count as merged into it;
+    compare ref, of the branch the main checkout has checked out or of the
+    branch of any linked worktree that is not prunable, detached, unborn or
+    an open lane, when it is on a branch (a squash or rebase merge looks
+    unmerged: check by hand); a tip equal to a checkout or linked worktree
+    branch's tip does not count as merged into it;
   - git status is clean (ignored files do not count), no submodule, no nested
-    repository at any depth inside an ignored folder;
+    repository at any depth inside an ignored folder. Exception, on a merged
+    branch only: untracked files under docs/plans/<lane>/, where <lane> is the
+    last `/` segment of the branch name, do not count; --apply deletes exactly
+    those files, then runs the plain `git worktree remove`. Any other untracked
+    file, any modified or staged file keeps the tree;
   - no stash entry was made on its branch (an entry that names no branch counts
     when its first parent is the branch tip);
   - no live process has its working directory inside it;
@@ -93,6 +106,7 @@ from worktree_branches import (
     prune_branches,
 )
 from worktree_git import (
+    UNBORN_HEAD,
     PruneError,
     Repo,
     Tally,
@@ -108,13 +122,13 @@ from worktree_git import (
 )
 
 PROC_ROOT = "/proc"
-UNBORN_HEAD = "0" * 40  # what `git worktree list` prints as HEAD for a branch with no commit
 FETCH_TIMEOUT_SECONDS = 120
 HERDR_TIMEOUT_SECONDS = 20
 LSOF_TIMEOUT_SECONDS = 60
 USAGE_LINE = "usage: herdr-worktree-prune [--apply] [--branches] [-h|--help] | --check <path>"
 SUBMODULE_MODE = "160000"
 REMOTE_HEAD_PREFIX = "refs/remotes/origin/"
+PLAN_ROOT = "docs/plans/"
 
 # Reason codes: the totals line counts kept trees by these.
 MAIN_CHECKOUT = "main checkout"
@@ -461,34 +475,56 @@ def check_lane_open(repo, world, tree):
     # Fail closed: with the lane list unread, an open lane's tree cannot be told from a finished one.
     if world.lanes.worktrees is None:
         return Keep(CANNOT_CHECK, f"the lane list could not be read: {world.lanes.problem}")
-    tree_real = real(tree.path)
-    for name, worktree in world.lanes.worktrees:
-        if inside(tree_real, real(worktree)):
-            return Keep(LANE_OPEN, f"lane {name} is open; herdr-lane-resume --close {name} closes it")
+    name = open_lane_of(tree, world.lanes)
+    if name is not None:
+        return Keep(LANE_OPEN, f"lane {name} is open; herdr-lane-resume --close {name} closes it")
     return None
 
 
+def open_lane_of(tree, lanes):
+    """The name of the open lane whose worktree holds the tree, or None. The lane list must have been read."""
+    tree_real = real(tree.path)
+    for name, worktree in lanes.worktrees:
+        if inside(tree_real, real(worktree)):
+            return name
+    return None
+
+
+def credited_worktrees(worktrees, lanes):
+    """The linked worktrees whose branch may give merge credit: none when the lane list was not read, else those
+    that are not inside an open lane's worktree. `worktrees[0]` is the main checkout, already a target."""
+    if lanes.worktrees is None:
+        return []
+    return [tree for tree in worktrees[1:] if open_lane_of(tree, lanes) is None]
+
+
 def check_merged(repo, world, tree):
-    verdict = merged_into(repo, tree.head)
+    linked = credited_worktrees(world.worktrees, world.lanes)
+    verdict = merged_into(repo, tree.head, linked, tree.branch)
     if verdict.target is not None:
         return None
     if verdict.error is not None:
         return Keep(CANNOT_CHECK, verdict.error)
-    target_hashes = [target_hash for _, target_hash in repo.merge_targets()]
+    targets = repo.merge_targets(except_name=tree.branch, linked=linked)
+    target_hashes = [target_hash for _, target_hash in targets]
     counted = git(repo.main_path, "rev-list", "--count", tree.head, "--not", *target_hashes)
     count = counted.stdout.strip() if counted.returncode == 0 else "an unknown number of"
-    return Keep(NOT_MERGED, f"{count} commits not on {not_on_text(repo)}; a squash or rebase merge looks "
+    missing_from = not_on_text(repo, tree.branch, linked)
+    return Keep(NOT_MERGED, f"{count} commits not on {missing_from}; a squash or rebase merge looks "
                             "the same, check by hand")
 
 
 def check_tree_state(repo, world, tree):
     """Dirty, submodule and ignored nested repo, from one git status and one ls-files."""
-    status = git(tree.path, "status", "--porcelain=v1", "-z", "--untracked-files=normal",
-                 "--ignore-submodules=none", "--ignored")
+    status = git(tree.path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+                 "--ignore-submodules=none", "--ignored=matching")
     if status.returncode != 0:
         return Keep(CANNOT_CHECK, f"git status failed: {status.stderr.strip()}")
     entries = [entry for entry in status.stdout.split("\0") if entry]
-    changes = [entry for entry in entries if not entry.startswith("!! ")]
+    plan_entry_prefix = f"?? {plan_folder(tree)}"
+    # The tree's branch is already known merged here (check_merged runs first), so its plan folder is leftover.
+    changes = [entry for entry in entries
+               if not entry.startswith("!! ") and not is_plan_file_entry(entry, plan_entry_prefix)]
     if changes:
         return Keep(DIRTY, f"uncommitted changes: {len(changes)} staged, modified or untracked entries")
     staged = git(tree.path, "ls-files", "-s", "-z")
@@ -501,6 +537,44 @@ def check_tree_state(repo, world, tree):
         nested = find_nested_repo(tree.path, entry[3:])
         if nested is not None:
             return Keep(NESTED_REPO, f"holds an ignored nested repository: {nested}")
+    return None
+
+
+def is_plan_file_entry(entry, plan_entry_prefix):
+    """An untracked file under the plan folder. A directory entry (ending in `/`, a nested repo) is not one."""
+    return entry.startswith(plan_entry_prefix) and not entry.endswith("/")
+
+
+def plan_folder(tree):
+    """`docs/plans/<lane>/`, the folder a finished lane leaves untracked plan files in. <lane> is the last `/`
+    segment of the tree's branch."""
+    lane = tree.branch.rsplit("/", 1)[-1]
+    return f"{PLAN_ROOT}{lane}/"
+
+
+def untracked_plan_files(tree):
+    """The untracked files (relative to the tree, ignored ones left out) under the tree's plan folder, or the
+    reason they cannot be listed as a string."""
+    listed = git(tree.path, "ls-files", "--others", "--exclude-standard", "-z", "--", plan_folder(tree))
+    if listed.returncode != 0:
+        return f"git ls-files failed: {listed.stderr.strip()}"
+    return [name for name in listed.stdout.split("\0") if name]
+
+
+def delete_plan_files(tree):
+    """Delete the untracked files under the tree's plan folder. None when done, else why it could not be."""
+    names = untracked_plan_files(tree)
+    if isinstance(names, str):
+        return names
+    directories = [name for name in names if name.endswith("/")]
+    if directories:
+        return f"it holds a nested repository: {directories[0]}"
+    tree_root = pathlib.Path(tree.path)
+    for name in names:
+        try:
+            (tree_root / name).unlink()
+        except OSError as error:
+            return f"cannot delete {name}: {error}"
     return None
 
 
@@ -631,13 +705,14 @@ def kept_breakdown(keeps):
 
 def print_plan(repo, world, plan, state):
     print(f"compare ref: {repo.compare_name} ({repo.compare_hash[:8]})")
-    extra_names = [name for name, _ in repo.merge_targets()[1:]]
+    linked = credited_worktrees(world.worktrees, world.lanes)
+    extra_names = [name for name, _ in repo.merge_targets(linked=linked)[1:]]
     for name in extra_names:
         print(f"also merged into: {name}")
     state.print_new_notes(world.notes)
     removable = [(tree, tree_size(tree.path)) for tree, keep in plan if keep is None]
     for tree, size in removable:
-        ahead = ahead_text(repo, tree.branch)
+        ahead = ahead_text(repo, tree.branch, linked)
         print(f"remove  {show(tree.path)}  [{describe(tree)}]  {human_size(size)}{ahead}")
     keeps = [(tree, keep) for tree, keep in plan if keep is not None]
     for tree, keep in keeps:
@@ -675,6 +750,11 @@ def remove_one(repo, tree, tally, state):
         tally.kept += 1
         return
     size = tree_size(current.path)
+    not_deleted = delete_plan_files(current)
+    if not_deleted is not None:
+        print(f"failed  {show(current.path)}: plan files stay: {not_deleted}", flush=True)
+        tally.failed += 1
+        return
     removal = git(repo.main_path, "worktree", "remove", current.path)
     if removal.returncode != 0:
         print(f"failed  {show(current.path)}: git worktree remove refused", flush=True)
@@ -688,7 +768,13 @@ def remove_one(repo, tree, tally, state):
 
 
 def delete_branch_after_removal(repo, tree, tally):
-    outcome = delete_branch(repo, tree.branch)
+    try:
+        linked = credited_worktrees(list_worktrees(repo.main_path), read_lanes())
+    except PruneError as error:
+        print(f"failed  branch {tree.branch} stays: {error}. The worktree is gone.", flush=True)
+        tally.failed += 1
+        return
+    outcome = delete_branch(repo, tree.branch, linked)
     if outcome.failure is not None:
         print(f"failed  branch {tree.branch} stays: {outcome.failure}. The worktree is gone.", flush=True)
         tally.failed += 1
@@ -716,10 +802,9 @@ def prune_worktrees(repo, apply):
 # ---- check mode ----
 
 def take_tree_world(repo):
-    """The world for the tree-state checks: the worktree list and the stashes, nothing else is read."""
-    unread = "not read in check mode"
+    """The world for the tree-state checks: the worktree list, the stashes and the lane list (for merge credit)."""
     return World(list_worktrees(repo.main_path), read_stashes(repo.main_path), None, Herdr(None, None), [],
-                 LaneRead(None, unread))
+                 read_lanes())
 
 
 def check_path(repo, path):

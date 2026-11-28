@@ -16,22 +16,32 @@
 #   --close     for a finished lane: refuse while a claude agent in the worktree
 #               is working; close the lane's workspace and wait up to
 #               HERDR_LANE_CLOSE_WAIT seconds (default 10) for its agents, of any
-#               kind, to leave; remove the lane entry; then run herdr-worktree-prune --apply
-#               in the lane's main checkout, which removes the merged, clean
-#               worktrees. Exits with the prune's exit code. Under tuios, which
-#               gives its workspaces no worktree, a workspace labelled <name> is
-#               also closed. An argument holding a / is a worktree path, anything
-#               else a lane name.
+#               kind, to leave; remove the lane entry; then run
+#               herdr-worktree-prune --apply in the lane's main checkout, which
+#               removes the merged, clean worktrees. A branch counts as merged when
+#               it sits in origin/<default>, in the main checkout's branch or in the
+#               branch of a linked worktree that is not prunable, detached or
+#               unborn (an integration branch; a tip equal to that branch's tip does
+#               not count). A linked worktree that is an open lane (`lanes.py list`)
+#               gives no credit, and none does when the lane list cannot be read.
+#               Untracked files under docs/plans/<lane>/ (<lane> is the last /
+#               segment of the lane's branch) of a merged branch do not keep the
+#               tree: the prune deletes them, then removes the worktree. Exits with
+#               the prune's exit code. Under tuios, which gives its workspaces no
+#               worktree, a workspace labelled <name> is also closed. An argument
+#               holding a / is a worktree path, anything else a lane name.
 #   entry-less  a name or path with no lane file entry closes too, when an open herdr
 #               workspace sits on that linked worktree path, or on exactly one linked
 #               worktree of that name (under tuios only a path works). Refuses, changing
 #               nothing but the origin/<default> ref, for the main checkout, several
 #               linked worktrees of that name, a working claude agent, or any tree that
 #               `herdr-worktree-prune --check <worktree>` would keep (a detached
-#               HEAD, the default branch, a branch merged into neither
-#               origin/<default> nor the main checkout's branch (a squash or rebase
-#               merge reads as unmerged),
-#               uncommitted changes, a submodule, a nested repo, a stash entry,
+#               HEAD, the default branch, a branch merged into none of
+#               origin/<default>, the main checkout's branch and the branch of a
+#               linked worktree that is not prunable, detached, unborn or an open
+#               lane (a squash or rebase merge reads as unmerged),
+#               uncommitted changes other than a merged branch's untracked
+#               docs/plans/<lane>/ files, a submodule, a nested repo, a stash entry,
 #               a lock), or a check that fails; the message carries prune's reason.
 #               Otherwise the same close and prune, minus the entry remove.
 #

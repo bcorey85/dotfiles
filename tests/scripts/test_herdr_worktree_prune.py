@@ -64,6 +64,12 @@ fi
 exec "$REAL_GIT" "$@"
 """
 
+# Every git call is appended to $GIT_LOG, then runs the real git.
+STUB_GIT_LOGGING_CALLS = r"""
+echo "$*" >> "$GIT_LOG"
+exec "$REAL_GIT" "$@"
+"""
+
 # Just before `git -C <dir> update-ref -d refs/heads/$MOVE_BRANCH ...` runs, the branch is moved to $MOVE_TO, as
 # another process would do between the check and the delete. Then the real git runs the delete.
 STUB_GIT_MOVING_ONE_BRANCH = r"""
@@ -435,7 +441,7 @@ class CheckedOutBranchMergeTest(PruneTestCase):
 
         self.assertFalse(merged.exists(), applied.stdout + applied.stderr)
         self.assertTrue(unmerged.exists())
-        self.assertNotIn("nor on", line_of(applied, unmerged))
+        self.assertIn("1 commits not on origin/main nor on feature/lane-a; a squash", line_of(applied, unmerged))
 
     def test_a_tip_ahead_of_its_upstream_and_held_only_by_the_checked_out_branch_names_that_branch(self):
         self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
@@ -448,23 +454,21 @@ class CheckedOutBranchMergeTest(PruneTestCase):
 
         self.assertIn("ahead of its own remote branch, fully on bench-base", line_of(listed, tree))
 
-    def test_a_failing_merge_base_is_cannot_check_for_both_refs_and_blocks_a_branch_delete(self):
+    def test_a_failing_merge_base_on_the_compare_ref_is_cannot_check_and_blocks_a_branch_delete(self):
         module = load_script_module()
         tip = self.lab.tip("main")
-        for compare_hash, checkout_hash in (("0" * 40, None), (tip, "0" * 40)):
-            with self.subTest(compare_hash=compare_hash[:4]):
-                repo = module.Repo(str(self.lab.main), "main", "origin/main", compare_hash, str(self.lab.main),
-                                   "bench-base" if checkout_hash else None, checkout_hash)
-                unmerged = self.lab.git(self.lab.main, "commit-tree", "-m", "x", f"{tip}^{{tree}}").stdout.strip()
-                tree = module.Worktree(path=str(self.lab.main), head=unmerged)
+        repo = module.Repo(str(self.lab.main), "main", "origin/main", "0" * 40, str(self.lab.main))
+        unmerged = self.lab.git(self.lab.main, "commit-tree", "-m", "x", f"{tip}^{{tree}}").stdout.strip()
+        tree = module.Worktree(path=str(self.lab.main), head=unmerged)
+        world = types.SimpleNamespace(worktrees=[tree], lanes=module.LaneRead([]))
 
-                keep = module.check_merged(repo, None, tree)
+        keep = module.check_merged(repo, world, tree)
 
-                self.assertEqual(keep.code, module.CANNOT_CHECK)
-                self.lab.git(self.lab.main, "branch", "-f", "probe", unmerged)
-                deletion = load_lib_module("worktree_branches").delete_branch(repo, "probe")
-                self.assertTrue(deletion.failure.startswith("git merge-base failed"), deletion.failure)
-                self.assertIn("probe", self.lab.branches())
+        self.assertEqual(keep.code, module.CANNOT_CHECK)
+        self.lab.git(self.lab.main, "branch", "-f", "probe", unmerged)
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "probe")
+        self.assertTrue(deletion.failure.startswith("git merge-base failed"), deletion.failure)
+        self.assertIn("probe", self.lab.branches())
 
     def test_delete_branch_asks_the_live_checkout_branch_not_the_start_up_hash(self):
         self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
@@ -529,7 +533,7 @@ class CheckedOutBranchMergeTest(PruneTestCase):
         applied = self.lab.prune("--apply")
 
         self.assert_kept_and_untouched(unmerged, "feature/lane-b", applied, "commits not on origin/main")
-        self.assertNotIn("nor on", line_of(applied, unmerged))
+        self.assertIn("2 commits not on origin/main nor on feature/lane-a; a squash", line_of(applied, unmerged))
 
     def test_branch_mode_does_not_delete_a_branch_merged_only_into_the_checked_out_branch(self):
         self.lab.git(self.lab.main, "checkout", "-q", "-b", "bench-base")
@@ -540,6 +544,295 @@ class CheckedOutBranchMergeTest(PruneTestCase):
 
         self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
         self.assertIn("feature/behind-bench", self.lab.branches())
+
+
+class LinkedIntegrationMergeTest(PruneTestCase):
+    """The main checkout is on main; an integration branch is checked out in a linked worktree."""
+
+    def integration_lab(self):
+        integration = self.root / "integration"
+        self.lab.git(self.lab.main, "worktree", "add", "-q", "-b", "integration", str(integration))
+        return integration
+
+    def merge_into_integration(self, integration, branch):
+        self.lab.git(integration, "merge", "-q", "--no-ff", "--no-edit", branch)
+
+    def add_plan_file(self, tree, lane, name="00-ticket.md"):
+        plan_file = tree / "docs" / "plans" / lane / name
+        plan_file.parent.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text("plan\n")
+        return plan_file
+
+    def test_a_worktree_merged_into_a_linked_worktree_branch_is_removed_with_its_branch(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+
+        checked = json.loads(self.lab.prune("--check", str(lane)).stdout)
+        listed = self.lab.prune()
+        applied = self.lab.prune("--apply")
+
+        self.assertEqual(checked["verdict"], "remove", checked)
+        self.assertTrue(line_of(listed, lane).startswith("remove"), listed.stdout)
+        self.assertFalse(lane.exists(), applied.stdout + applied.stderr)
+        self.assertNotIn("feature/lane-a", self.lab.branches())
+        self.assertTrue(integration.exists())
+
+    def test_a_fresh_lane_cut_from_the_linked_worktree_branch_is_kept(self):
+        integration = self.integration_lab()
+        self.lab.commit(integration, "integration.txt")
+        fresh = self.lab.lane("lane-fresh", commits=0)
+        self.lab.git(fresh, "reset", "-q", "--hard", "integration")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(fresh, "feature/lane-fresh", applied, "0 commits not on origin/main")
+        self.assertNotIn("nor on feature/lane-fresh", line_of(applied, fresh))
+        self.assertIn("nor on integration", line_of(applied, fresh))
+
+    def test_the_branch_delete_after_a_removal_counts_a_linked_worktree_branch(self):
+        integration = self.integration_lab()
+        self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        self.lab.git(self.lab.main, "worktree", "remove", str(self.lab.root / "lane-a"))
+        module = load_script_module()
+        repo = module.Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"), str(self.lab.main))
+        linked = module.list_worktrees(str(self.lab.main))[1:]
+
+        deletion = load_lib_module("worktree_branches").delete_branch(repo, "feature/lane-a", linked)
+
+        self.assertIsNone(deletion.failure)
+        self.assertNotIn("feature/lane-a", self.lab.branches())
+
+    def test_a_lane_is_not_merged_into_its_own_branch_after_it_commits_again(self):
+        module = load_script_module()
+        lane = self.lab.lane("lane-a")
+        old_head = self.lab.tip("feature/lane-a")
+        self.lab.commit(lane, "more.txt")
+        repo = module.Repo(str(self.lab.main), "main", "origin/main", self.lab.tip("main"), str(self.lab.main))
+        world = types.SimpleNamespace(worktrees=module.list_worktrees(str(self.lab.main)), lanes=module.LaneRead([]))
+        tree = module.Worktree(path=str(lane), head=old_head, branch="feature/lane-a")
+
+        keep = module.check_merged(repo, world, tree)
+
+        self.assertEqual(keep.code, module.NOT_MERGED)
+
+    def test_an_integration_tree_with_an_open_child_lane_is_kept(self):
+        integration = self.integration_lab()
+        self.lab.commit(integration, "integration.txt")
+        child = self.lab.lane("lane-child", commits=0)
+        self.lab.git(child, "reset", "-q", "--hard", "integration")
+        self.lab.commit(child, "child.txt")
+        self.lab.open_lane("lane-child", child)
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(integration, "integration", applied, "commits not on origin/main")
+        self.assert_kept_and_untouched(child, "feature/lane-child", applied, "lane lane-child is open")
+
+    def test_a_stacked_parent_with_an_open_child_lane_is_kept(self):
+        parent = self.lab.lane("lane-parent")
+        child = self.lab.lane("lane-child", commits=0)
+        self.lab.git(child, "reset", "-q", "--hard", "feature/lane-parent")
+        self.lab.commit(child, "child.txt")
+        self.lab.open_lane("lane-child", child)
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(parent, "feature/lane-parent", applied, "commits not on origin/main")
+        self.assert_kept_and_untouched(child, "feature/lane-child", applied, "lane lane-child is open")
+
+    def test_a_linked_branch_gives_no_credit_when_the_lane_list_cannot_be_read(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        self.lab.env["HERDR_LANES_CLI"] = str(self.root / "missing-lanes.py")
+
+        checked = json.loads(self.lab.prune("--check", str(lane)).stdout)
+
+        self.assertEqual(checked["verdict"], "keep", checked)
+        self.assertEqual(checked["code"], "not merged", checked)
+
+    def test_apply_keeps_a_linked_lane_when_the_lane_list_cannot_be_read(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        self.lab.env["HERDR_LANES_CLI"] = str(self.root / "missing-lanes.py")
+
+        self.lab.prune("--apply")
+
+        self.assertTrue(lane.exists())
+        self.assertIn("feature/lane-a", self.lab.branches())
+
+    def test_apply_keeps_the_branch_when_the_lane_list_fails_after_the_tree_is_removed(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        counter = self.root / "lanes-calls"
+        stub = self.root / "stub-fails-late.py"
+        stub.write_text(
+            "import json, pathlib, sys\n"
+            f"counter = pathlib.Path({str(counter)!r})\n"
+            "calls = int(counter.read_text()) if counter.exists() else 0\n"
+            "counter.write_text(str(calls + 1))\n"
+            "if calls >= 2:\n"
+            "    sys.exit(1)\n"
+            "print(json.dumps({'lanes': []}))\n")
+        self.lab.env["HERDR_LANES_CLI"] = str(stub)
+
+        applied = self.lab.prune("--apply")
+
+        self.assertFalse(lane.exists(), applied.stdout + applied.stderr)
+        self.assertIn("feature/lane-a", self.lab.branches())
+        self.assertIn("The worktree is gone", applied.stdout)
+
+    def test_apply_removes_a_merged_tree_without_force(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        self.add_plan_file(lane, "lane-a")
+        git_log = self.root / "git-calls.log"
+        write_stub(self.lab.bin_dir / "git", STUB_GIT_LOGGING_CALLS)
+        self.lab.env.update({"GIT_LOG": str(git_log), "REAL_GIT": REAL_GIT})
+
+        self.lab.prune("--apply")
+
+        removals = [call for call in git_log.read_text().splitlines() if "worktree remove" in call]
+        self.assertTrue(removals, "no worktree remove call was logged")
+        for call in removals:
+            self.assertNotIn("--force", call)
+
+    def test_delete_plan_files_refuses_a_nested_repo_entry_and_deletes_nothing(self):
+        module = load_script_module()
+        lane = self.lab.lane("lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        tree = module.Worktree(path=str(lane), branch="feature/lane-a")
+        listed = ["docs/plans/lane-a/00-ticket.md", "docs/plans/lane-a/sub/"]
+
+        with mock.patch.object(module, "untracked_plan_files", return_value=listed):
+            failure = module.delete_plan_files(tree)
+
+        self.assertIn("nested repository", failure)
+        self.assertTrue(plan_file.exists())
+
+    def test_untracked_plan_files_of_a_merged_branch_are_deleted_and_the_tree_removed(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        nested_file = self.add_plan_file(lane, "lane-a", "sub/notes.md")
+
+        checked = json.loads(self.lab.prune("--check", str(lane)).stdout)
+        self.assertTrue(plan_file.exists())
+        self.assertTrue(nested_file.exists())
+        applied = self.lab.prune("--apply")
+
+        self.assertEqual(checked["verdict"], "remove", checked)
+        self.assertFalse(plan_file.exists())
+        self.assertFalse(nested_file.exists())
+        self.assertFalse(lane.exists(), applied.stdout + applied.stderr)
+        self.assertNotIn("feature/lane-a", self.lab.branches())
+
+    def test_a_nested_repo_under_the_plan_folder_keeps_the_tree_and_its_plan_files(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        nested = lane / "docs" / "plans" / "lane-a" / "sub"
+        nested.mkdir()
+        self.lab.git(nested, "init", "-q")
+        (nested / "f.txt").write_text("x\n")
+        self.lab.git(nested, "add", "f.txt")
+        self.lab.git(nested, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "uncommitted changes")
+        self.assertTrue(plan_file.exists())
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores directory permissions")
+    def test_a_plan_file_that_cannot_be_deleted_fails_the_tree_and_keeps_it_and_its_branch(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        plan_file.parent.chmod(0o555)
+        self.addCleanup(plan_file.parent.chmod, 0o755)
+
+        applied = self.lab.prune("--apply")
+
+        self.assertIn("plan files stay", applied.stdout)
+        self.assertIn("failed 1", applied.stdout)
+        self.assertTrue(lane.exists())
+        self.assertIn("feature/lane-a", self.lab.branches())
+
+    def test_a_detached_integration_worktree_is_not_a_merge_target(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        self.lab.git(integration, "checkout", "-q", "--detach")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "commits not on origin/main")
+
+    def test_an_unborn_linked_worktree_is_not_a_merge_target(self):
+        lane = self.lab.lane("lane-a")
+        orphan = self.root / "orphan"
+        self.lab.git(self.lab.main, "worktree", "add", "-q", "--orphan", "-b", "orphan", str(orphan))
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "commits not on origin/main")
+
+    def test_a_slashed_branch_names_the_plan_folder_by_its_last_segment_only(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a", branch="fix/deep/lane-a")
+        self.merge_into_integration(integration, "fix/deep/lane-a")
+        self.add_plan_file(lane, "lane-a")
+
+        applied = self.lab.prune("--apply")
+
+        self.assertFalse(lane.exists(), applied.stdout + applied.stderr)
+
+    def test_another_untracked_file_keeps_a_merged_tree_and_its_plan_files(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        self.add_plan_file(lane, "other-lane")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "uncommitted changes")
+        self.assertTrue(plan_file.exists())
+
+    def test_a_modified_or_staged_file_keeps_a_merged_tree_with_plan_files(self):
+        integration = self.integration_lab()
+        lane = self.lab.lane("lane-a")
+        self.merge_into_integration(integration, "feature/lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+        (lane / "lane-a-0.txt").write_text("changed\n")
+        staged = self.lab.lane("lane-b")
+        self.merge_into_integration(integration, "feature/lane-b")
+        self.add_plan_file(staged, "lane-b")
+        (staged / "new.txt").write_text("new\n")
+        self.lab.git(staged, "add", "new.txt")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "uncommitted changes")
+        self.assert_kept_and_untouched(staged, "feature/lane-b", applied, "uncommitted changes")
+        self.assertTrue(plan_file.exists())
+
+    def test_plan_files_on_an_unmerged_branch_keep_the_tree(self):
+        lane = self.lab.lane("lane-a")
+        plan_file = self.add_plan_file(lane, "lane-a")
+
+        applied = self.lab.prune("--apply")
+
+        self.assert_kept_and_untouched(lane, "feature/lane-a", applied, "commits not on origin/main")
+        self.assertTrue(plan_file.exists())
 
 
 class KeptTreeTest(PruneTestCase):

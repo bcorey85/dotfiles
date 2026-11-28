@@ -41,7 +41,7 @@ closing phase with a second recap template.
 
 #### Automated Verification
 
-- [ ] `rg -n 'branch-recap' claude/.claude opencode tests` prints nothing.
-- [ ] `python3 tests/parallel_tests.py test_guidance_rules.py test_telemetry_switch.py test_plan_format.py` passes.
-- [ ] `bash tests/lint.sh claude/.claude/scripts/lib/plan_format.py tests/scripts/test_plan_format.py tests/scripts/test_telemetry_switch.py tests/scripts/test_guidance_rules.py` passes.
-- [ ] `bash tests/run.sh` passes.
+- [x] `rg -n 'branch-recap' claude/.claude opencode tests` prints nothing.
+- [x] `python3 tests/parallel_tests.py test_guidance_rules.py test_telemetry_switch.py test_plan_format.py` passes.
+- [x] `bash tests/lint.sh claude/.claude/scripts/lib/plan_format.py tests/scripts/test_plan_format.py tests/scripts/test_telemetry_switch.py tests/scripts/test_guidance_rules.py` passes.
+- [x] `bash tests/run.sh` passes.

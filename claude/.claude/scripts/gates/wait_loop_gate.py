@@ -58,16 +58,17 @@ FOREGROUND_LIMIT_TEXT = (f"Each foreground call must finish within {BACKGROUND_A
                          "timeout raised above the 2-minute default for a call that runs past 2 minutes; the "
                          "harness moves a longer call to the background. Split a longer job into steps that each "
                          "fit, for example by running tests by name.")
+DETACH_WORDS = ("nohup", "setsid", "detach", "disown")
+DETACH_WORDS_TEXT = ", ".join(DETACH_WORDS[:-1]) + " or " + DETACH_WORDS[-1]
 BACKGROUND_REASON = ("Review-loop runs every check in the foreground. A background job's result does not come back "
                      "to this loop, so it waits for nothing. Run the same command without run_in_background, a "
-                     f"trailing &, nohup, setsid, detach or disown. {FOREGROUND_LIMIT_TEXT}")
+                     f"trailing &, {DETACH_WORDS_TEXT}. {FOREGROUND_LIMIT_TEXT}")
 CODE_FORK_BACKGROUND_REASON = ("A background job ends the fork's turn, which hands back before the phase ends. Run "
-                               "the command in the foreground: no run_in_background, trailing &, nohup, setsid, "
-                               f"detach or disown. {FOREGROUND_LIMIT_TEXT}")
+                               "the command in the foreground: no run_in_background, trailing &, "
+                               f"{DETACH_WORDS_TEXT}. {FOREGROUND_LIMIT_TEXT}")
 BACKGROUND_REASONS = {REVIEW_LOOP_AGENT_TYPE: BACKGROUND_REASON, FORK_AGENT_TYPE: CODE_FORK_BACKGROUND_REASON}
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
-DETACH_WORDS = {"nohup", "setsid", "detach", "disown"}
 KILL_REASON = ("Other sessions run on this machine, so a kill by name, pattern, job spec or variable can end a "
                "process you did not start. Kill only a pid you started and recorded, by its number: `kill 4242`.")
 PATTERN_KILLERS = {"pkill", "killall"}
@@ -255,7 +256,7 @@ def kill_reason(command):
 def starts_detached_job(command):
     if SHELL_BACKGROUND.search(clean(command)):
         return True
-    return any(DETACH_WORDS & set(wrapper_chain(words)) for words in statements(command))
+    return any(set(DETACH_WORDS) & set(wrapper_chain(words)) for words in statements(command))
 
 
 def subagent_reason(payload, tool_input, command):

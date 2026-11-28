@@ -23,7 +23,7 @@ to deny reason. Both reasons now name the 180-second foreground limit (the harne
 background; `lib/harness_limits.py` owns the number, shared with `code_wait.py`). `code-fork` gets a reason that says
 a background job ends the fork's turn and hands back before the phase ends, and gives the approved path: run in the foreground with each call under 180 seconds, and split a longer
 job into steps that each fit. The jobs covered are unchanged: `run_in_background`,
-a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt. A
+a lone `&`, nohup, setsid, detach and disown; both reasons build the detach-word list from `DETACH_WORDS`. The main session, coder and every other agent type stay exempt. A
 code-fork payload with no agent_id (the main session's `--agent code-fork` seat) stays exempt.
 The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
 `lib/agent_names.py`, and `REVIEW_LOOP_AGENT_TYPE` lives there beside it. Importing it from `script_utils` cost the

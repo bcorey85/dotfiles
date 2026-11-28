@@ -67,6 +67,17 @@ class SettingsHookTest(unittest.TestCase):
         self.assertEqual(self.settings.read_bytes(), written)
         self.assertEqual(self.settings.stat().st_mtime, 1, "the second add must not write")
 
+    def test_add_with_other_options_refuses_and_writes_nothing(self):
+        first = self.run_script("add", "PreToolUse", "Bash", "sh new.sh", "--timeout", "5")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        written = self.settings.read_bytes()
+        for extra in (("--timeout", "10"), ("--timeout", "5", "--async"), ()):
+            with self.subTest(extra=extra):
+                second = self.run_script("add", "PreToolUse", "Bash", "sh new.sh", *extra)
+                self.assertEqual(second.returncode, 1, second.stdout)
+                self.assertIn("remove it first", second.stderr)
+                self.assertEqual(self.settings.read_bytes(), written)
+
     def test_add_then_remove_restores_original_bytes(self):
         original = self.settings.read_bytes()
         for event, matcher in (("PreToolUse", "Bash"), ("PreToolUse", "Edit"), ("Notification", "idle")):

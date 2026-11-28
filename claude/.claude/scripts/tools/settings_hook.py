@@ -125,10 +125,17 @@ def add_hook_entry(settings_file, data, arguments):
     """Return True when the entry was added, False when already present."""
     groups = hook_groups(settings_file, data, arguments.event, create=True)
     matching = find_groups(groups, arguments.matcher)
+    requested = new_entry(arguments)
     for group in matching:
         entries = group_entries(settings_file, group)
-        if any(is_target_entry(entry, arguments) for entry in entries):
-            return False
+        present = [entry for entry in entries if is_target_entry(entry, arguments)]
+        if not present:
+            continue
+        if present[0] != requested:
+            stored = json.dumps(present[0], ensure_ascii=False)
+            wanted = json.dumps(requested, ensure_ascii=False)
+            fail(settings_file, f"present as {stored}, not {wanted}; remove it first")
+        return False
     if matching:
         first_entries = group_entries(settings_file, matching[0])
     else:
@@ -137,7 +144,7 @@ def add_hook_entry(settings_file, data, arguments):
             group = {"matcher": arguments.matcher, "hooks": []}
         groups.append(group)
         first_entries = group["hooks"]
-    first_entries.append(new_entry(arguments))
+    first_entries.append(requested)
     return True
 
 

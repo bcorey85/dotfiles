@@ -1,4 +1,5 @@
 {
+  "pythonVersion": "3.10",
   "extraPaths": [
     "claude/.claude/scripts/code",
     "claude/.claude/scripts/gates",

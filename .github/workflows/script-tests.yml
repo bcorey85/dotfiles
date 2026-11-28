@@ -10,6 +10,7 @@ on:
       - "scripts/.local/lib/**"
       - "tests/**"
       - "ruff.toml"
+      - "pyrightconfig.json"
       - ".github/workflows/script-tests.yml"
   pull_request:
     paths:
@@ -20,6 +21,7 @@ on:
       - "scripts/.local/lib/**"
       - "tests/**"
       - "ruff.toml"
+      - "pyrightconfig.json"
       - ".github/workflows/script-tests.yml"
 
 permissions:

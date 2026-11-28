@@ -19,7 +19,8 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 - New `claude/.claude/scripts/tools/settings_hook.py`: `add` or `remove` one hook entry (event, optional matcher,
-  command, optional `if`, `timeout`, `async`) in a settings file. Adding twice writes once. Remove after add gives back
+  command, optional `if`, `timeout`, `async`) in a settings file. Adding twice writes once; an add whose entry is
+  present with other options exits 1 and writes nothing. Remove after add gives back
   the original bytes, for a file with no empty hooks object, hook list or group. A file not in `json.dumps(indent=2, ensure_ascii=False)` form is refused unchanged. One line
   names what changed.
 - `skills/_shared/lane-brief.md`: a lane sends a settings hook change to its orchestrator as one `settings_hook.py`
@@ -32,7 +33,7 @@ one-off installer. Earlier lanes also sent JSON for the user to place by hand.
 
 ## Result
 
-Before: `settings_hook.py` does not exist, so `test_add_then_remove_restores_original_bytes` fails. After: the 24 tests
+Before: `settings_hook.py` does not exist, so `test_add_then_remove_restores_original_bytes` fails. After: the 25 tests
 in `tests/scripts/test_settings_hook.py` pass. Add then remove on a copy of the live `settings.json` is byte-identical.
 
 Rule meter LB02 (agent-evals branch bench/settings-hook-lane-line, opus, a lane that needs a Stop hook entry, graded on

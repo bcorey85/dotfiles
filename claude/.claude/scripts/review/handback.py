@@ -101,7 +101,6 @@ PLAN_DRIFT_CLASS = "plan-drift"
 DOCS_CLASS = "docs"
 CLASSES = ["bug", "smell", "duplication", "complexity", PLAN_DRIFT_CLASS, "test-gap", "weak-assertion", "security",
            "perf", "correctness", DOCS_CLASS, "other"]
-REVIEW_LOOP = "review-loop"
 DEFAULT_GATE = "code-reviewer"
 
 

@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-130 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+132 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-156 further findings are left out of this page.
+157 further findings are left out of this page.
 
 ## Rejected
 
@@ -63,6 +63,10 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 ## On hold
 
 * 2026-11-27 [The code phase-end block's check-yourself lines draw two or three file-line questions in 8 of 8 runs against 0 of 8](../../../agent-evals/findings/2026-11-27-the-code-phase-end-block-s-check-yourself-lines.md) - HOLD: With the check-yourself lines in skills/code/phase-end-block.md, Opus printed two or more questions ending on a path:line of a changed file at the phase stop in 8 of 8 runs; with them removed, 0 of 8 (PQ01, neutral prompt). [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-26 [Cutting the research stage from planning keeps every trap caught but costs 27% more Opus output](../../../agent-evals/findings/2026-11-26-cutting-the-research-stage-from-planning-keeps.md) - HOLD: 8 runs per arm on the bidvault-recovery plan trap: with no research stage, all 8 plans still avoid every trap (8 of 8 both arms), but Opus output rises 27%, cost 12% and plan-review blockers and gaps 39%, so the research stage stays. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-26 [Cutting the code reviewer's nit section saves 0.8% output and adds 19% more fix items](../../../agent-evals/findings/2026-11-26-cutting-the-code-reviewer-s-nit-section-saves-0-8.md) - HOLD: A smoke pair on the 41 regret-pair trees: the code reviewer without its nit section writes 0.8% less output, 19% more fix items and the same catches, so the round was dropped before seal. [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-25 [The code reviewer's unasked-files rule moves the cut of an unasked doc from 2 of 8 to 8 of 8](../../../agent-evals/findings/2026-11-25-the-code-reviewer-s-unasked-files-rule-moves-the.md) - HOLD: With code-reviewer Step 3 item 7 on, Opus flagged a planted doc that no plan step asks for, and that restates the code, as a cut in 8 of 8 runs; with the item removed, 2 of 8 (UF01, neutral prompt). [watch: no watch]
   What would reopen it: none recorded

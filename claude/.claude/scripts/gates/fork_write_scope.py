@@ -19,9 +19,10 @@ Every Write first runs lib/unread_overwrite.py: a Write that would replace an ex
 since it last changed is denied, naming the last writer. Fail-open: a crash in the read check prints a stderr line
 and the Write goes on; a crash in the last-writer lookup keeps the deny and names the error.
 
-Fail-closed for code-fork: any crash while judging its call exits 2 and names the gate. A payload from any other
-agent runs only the fail-open unread-overwrite check. hook_input loads only for a code-fork call or an unread-overwrite
-deny: its imports triple the hook's time, and every Write in every session runs this hook.
+Fail-closed: a crash in the gate's own imports exits 2 and names the gate, for every Write. Any crash while judging a
+code-fork call exits 2 too. A payload from any other agent runs only the fail-open unread-overwrite check. hook_input
+loads only for a code-fork call or an unread-overwrite deny: its imports triple the hook's time, and every Write in
+every session runs this hook.
 """
 import json
 import os
@@ -32,9 +33,11 @@ LIB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__
 sys.path.insert(0, LIB_DIR)
 import import_guard
 
-GATED_AGENT = "code-fork"
-RUN_FOLDER_NAME = "code-phase"
 GATE_NAME = "fork-write-scope"
+import_guard.guard(GATE_NAME, __name__, tool="Write")
+from agent_names import FORK_AGENT_TYPE
+
+RUN_FOLDER_NAME = "code-phase"
 DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
              "--path-format=absolute --git-path code-phase` prints. {file_path} is outside it. Send any other edit "
              "to a coder.")
@@ -184,7 +187,7 @@ def main():
         return 0
     if unread_overwrite_denied(payload):
         return 0
-    if payload.get("agent_type") != GATED_AGENT:
+    if payload.get("agent_type") != FORK_AGENT_TYPE:
         return 0
 
     try:
@@ -200,8 +203,8 @@ def main():
 
 
 if __name__ == "__main__":
-    # A crash before the code-fork check (unreadable stdin) exits 0 with a stderr line: fail-open. The unread-overwrite
-    # check fails open on its own inside main; only the code-fork path fails closed, and exits 2 inside main.
+    # The gate's imports and the code-fork path fail closed (exit 2); the unread-overwrite check and an unreadable
+    # stdin fail open (exit 0 with a stderr line).
     try:
         exit_code = main()
     except Exception as crash:

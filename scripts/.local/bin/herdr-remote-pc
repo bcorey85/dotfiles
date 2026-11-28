@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Attach to the desktop's herdr session.
+# "pc" (~/.ssh/config) is the desktop's home-LAN address. When that host does not
+# answer, or answers as this machine (an away network handed us the same IP), use
+# "pc-away": a machine-local Host that jumps through the home gateway over WireGuard.
+set -e
+
+remote_host=pc
+remote_name=$(ssh -o BatchMode=yes -o ConnectTimeout=3 pc uname -n 2>/dev/null || true)
+local_name=$(uname -n)
+if [[ -z "$remote_name" || "$remote_name" == "$local_name" ]]; then
+    remote_host=pc-away
+fi
+
+exec "$HOME/.local/bin/herdr" --remote "$remote_host" --remote-keybindings server

@@ -64,6 +64,14 @@ def emit_decision(decision, reason):
     sys.stdout.buffer.flush()
 
 
+def emit_added_context(event_name, text):
+    """Hand `text` to the model as the hook's additionalContext for `event_name`, without blocking the call."""
+    encoded = json.dumps({"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": text}},
+                         ensure_ascii=False)
+    sys.stdout.buffer.write(encode_out(encoded + "\n"))
+    sys.stdout.buffer.flush()
+
+
 def report_open_failure(error, path):
     """One plain line for a log or file the hook could not open. The hook goes on without it."""
     text = f"{hook_name()}: cannot open {path}: {os.strerror(error.errno or 0)}\n"

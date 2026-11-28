@@ -58,11 +58,13 @@ import script_utils
 import session_registry
 import stop_file_names
 from capped_review import CAP_REACHED, effective_status
+from harness_limits import BACKGROUND_AFTER_SECONDS
 from review_fix_state import defer_instruction
 from review_loop_post_cap import cap_summary_line
 
-# The harness moves a Bash call that runs past 180 s to the background, where the fork cannot read its result.
-WAIT_SECONDS = 150
+# Stay under harness_limits.BACKGROUND_AFTER_SECONDS: past it the harness moves the call to the background,
+# where the fork cannot read its result.
+WAIT_SECONDS = BACKGROUND_AFTER_SECONDS - 30
 POLL_SECONDS = 5
 # How long a finished agent's empty report is re-read before it counts as no report.
 SETTLE_SECONDS = 3

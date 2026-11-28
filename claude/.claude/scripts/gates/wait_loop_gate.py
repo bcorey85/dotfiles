@@ -9,8 +9,9 @@ six shapes, only when the payload shows a subagent (agent_type or agent_id is se
   3. follow mode (tail -f, docker logs -f, docker compose logs -f, kubectl logs -f, journalctl -f, watch),
      unless the whole call starts with `timeout N` and N <= 120
   4. a standalone sleep longer than 30 seconds
-  5. any background job from review-loop (run_in_background, a lone &, nohup, setsid, detach, disown): it ends its turn
-     waiting on jobs whose results never come back
+  5. any background job from review-loop or code-fork (run_in_background, a lone &, nohup, setsid, detach, disown): it
+     ends its turn waiting on jobs whose results never come back. A code-fork payload with no agent_id is the main
+     session's `--agent code-fork` seat and stays exempt
   6. pkill, killall, and kill with any target that is not a literal pid or `$!` (a job spec, a variable, a
      substitution, a process group, or targets fed by xargs). Only agent_id marks a subagent here: agent_type alone
      is the main session's `--agent` seat.
@@ -26,6 +27,8 @@ import sys
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
 import tool_call_flags
+from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
+from harness_limits import BACKGROUND_AFTER_SECONDS
 from shell_command import resolved_command_words, wrapper_chain
 from shell_statements import clean, statements
 
@@ -51,13 +54,21 @@ FOLLOW_REASON = ("Follow mode never ends, so the call runs until the 10-minute l
 SLEEP_REASON = ("A long sleep wastes the call. Sleep 30 seconds or less. To wait on a condition, use a counted loop, "
                 "for example `for i in $(seq 30); do <check> && break; sleep 3; done`. If the check still fails, "
                 "stop waiting and report it in your hand-back.")
+FOREGROUND_LIMIT_TEXT = (f"Each foreground call must finish within {BACKGROUND_AFTER_SECONDS} seconds, with the Bash "
+                         "timeout raised above the 2-minute default for a call that runs past 2 minutes; the "
+                         "harness moves a longer call to the background. Split a longer job into steps that each "
+                         "fit, for example by running tests by name.")
+DETACH_WORDS = ("nohup", "setsid", "detach", "disown")
+DETACH_WORDS_TEXT = ", ".join(DETACH_WORDS[:-1]) + " or " + DETACH_WORDS[-1]
 BACKGROUND_REASON = ("Review-loop runs every check in the foreground. A background job's result does not come back "
                      "to this loop, so it waits for nothing. Run the same command without run_in_background, a "
-                     "trailing &, nohup, setsid, detach or disown, and set the Bash timeout up to 600000 ms.")
-BACKGROUND_AGENT = "review-loop"
+                     f"trailing &, {DETACH_WORDS_TEXT}. {FOREGROUND_LIMIT_TEXT}")
+CODE_FORK_BACKGROUND_REASON = ("A background job ends the fork's turn, which hands back before the phase ends. Run "
+                               "the command in the foreground: no run_in_background, trailing &, "
+                               f"{DETACH_WORDS_TEXT}. {FOREGROUND_LIMIT_TEXT}")
+BACKGROUND_REASONS = {REVIEW_LOOP_AGENT_TYPE: BACKGROUND_REASON, FORK_AGENT_TYPE: CODE_FORK_BACKGROUND_REASON}
 # A lone & that sends a job to the background; &&, |&, 2>&1 and &> are not one.
 SHELL_BACKGROUND = re.compile(r"(?<![&>|<])&(?![&>])")
-DETACH_WORDS = {"nohup", "setsid", "detach", "disown"}
 KILL_REASON = ("Other sessions run on this machine, so a kill by name, pattern, job spec or variable can end a "
                "process you did not start. Kill only a pid you started and recorded, by its number: `kill 4242`.")
 PATTERN_KILLERS = {"pkill", "killall"}
@@ -245,13 +256,16 @@ def kill_reason(command):
 def starts_detached_job(command):
     if SHELL_BACKGROUND.search(clean(command)):
         return True
-    return any(DETACH_WORDS & set(wrapper_chain(words)) for words in statements(command))
+    return any(set(DETACH_WORDS) & set(wrapper_chain(words)) for words in statements(command))
 
 
 def subagent_reason(payload, tool_input, command):
     in_background = tool_call_flags.runs_in_background(tool_input) or starts_detached_job(command)
-    if in_background and payload.get("agent_type") == BACKGROUND_AGENT:
-        return BACKGROUND_REASON
+    agent_type = payload.get("agent_type")
+    background_reason = BACKGROUND_REASONS.get(agent_type)
+    is_fork_seat = agent_type == FORK_AGENT_TYPE and not payload.get("agent_id")
+    if in_background and background_reason and not is_fork_seat:
+        return background_reason
     if payload.get("agent_id"):
         reason = kill_reason(command)
         if reason:

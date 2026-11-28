@@ -13,6 +13,12 @@ import toolkit_paths
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
                       or toolkit_paths.GATES_DIR / "wait_loop_gate.py")
 
+sys.path.insert(0, str(SCRIPT.parent.parent / "lib"))
+sys.path.insert(0, str(SCRIPT.parent))
+from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
+from harness_limits import BACKGROUND_AFTER_SECONDS
+from wait_loop_gate import BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON, LOOP_REASON
+
 
 def run_hook(stdin):
     return subprocess.run([sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True)
@@ -113,17 +119,20 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assert_passes('echo "until ready; do sleep 60; done"')
 
     def test_review_loop_background_call_denied(self):
-        finished = run_command("make test", agent_type="review-loop", in_background=True)
+        finished = run_command("make test", agent_type=REVIEW_LOOP_AGENT_TYPE, in_background=True)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("600000", decision["permissionDecisionReason"])
+        self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
+        self.assertNotIn("600000", decision["permissionDecisionReason"])
+        self.assertIn(str(BACKGROUND_AFTER_SECONDS), decision["permissionDecisionReason"])
+        self.assertIn("in the foreground", decision["permissionDecisionReason"])
 
     def test_review_loop_background_flag_as_the_string_true_denied(self):
-        payload = {"tool_name": "Bash", "agent_type": "review-loop", "agent_id": "abc123",
+        payload = {"tool_name": "Bash", "agent_type": REVIEW_LOOP_AGENT_TYPE, "agent_id": "abc123",
                    "tool_input": {"command": "make test", "run_in_background": "true"}}
         decision = json.loads(run_hook(json.dumps(payload)).stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertIn("600000", decision["permissionDecisionReason"])
+        self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
 
     def test_review_loop_shell_background_denied(self):
         for command in ("make test > test.log 2>&1 &", "npm run dev & sleep 5; curl localhost:3000",
@@ -131,15 +140,59 @@ class WaitLoopGateTest(unittest.TestCase):
                         "~/.local/bin/detach pytest -q", "/usr/bin/setsid pytest -q",
                         "make test & disown", "env A=1 detach pytest -q", "nice nohup make test"):
             with self.subTest(command=command):
-                finished = run_command(command, agent_type="review-loop")
+                finished = run_command(command, agent_type=REVIEW_LOOP_AGENT_TYPE)
                 self.assertIn("deny", finished.stdout)
 
     def test_review_loop_foreground_call_passes(self):
         for command in ("make test", "make lint && make test 2>&1 | tail -40", "pytest -q &> test.log",
                         "make test |& tail", 'echo "a & b"', "cat <<'EOF'\nrun it &\nEOF"):
             with self.subTest(command=command):
-                finished = run_command(command, agent_type="review-loop")
+                finished = run_command(command, agent_type=REVIEW_LOOP_AGENT_TYPE)
                 self.assertEqual(finished.stdout, "")
+
+    def test_code_fork_background_call_denied_with_the_foreground_form(self):
+        finished = run_command("make test", agent_type=FORK_AGENT_TYPE, in_background=True)
+        decision = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        reason = decision["permissionDecisionReason"]
+        self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
+        self.assertIn(str(BACKGROUND_AFTER_SECONDS), reason)
+        self.assertIn("foreground", reason)
+        self.assertNotIn("600000", reason)
+
+    def test_code_fork_shell_background_denied(self):
+        finished = run_command("make test &", agent_type=FORK_AGENT_TYPE)
+        decision = json.loads(finished.stdout)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertEqual(decision["permissionDecisionReason"], CODE_FORK_BACKGROUND_REASON)
+
+    def test_code_fork_detach_words_denied(self):
+        for command in ("nohup make test", "setsid pytest -q", "detach pytest -q", "make test & disown"):
+            with self.subTest(command=command):
+                finished = run_command(command, agent_type=FORK_AGENT_TYPE)
+                reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
+
+    def test_review_loop_background_call_gets_its_own_reason_not_the_forks(self):
+        finished = run_command("make test", agent_type=REVIEW_LOOP_AGENT_TYPE, in_background=True)
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, BACKGROUND_REASON)
+        self.assertNotEqual(BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON)
+
+    def test_a_foreground_code_fork_unbounded_loop_still_gets_the_loop_reason(self):
+        finished = run_command("until make ready; do sleep 5; done", agent_type=FORK_AGENT_TYPE)
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, LOOP_REASON)
+
+    def test_code_fork_seat_without_an_agent_id_passes(self):
+        payload = {"agent_type": FORK_AGENT_TYPE, "tool_input": {"command": "make test &"}}
+        self.assertEqual(run_hook(json.dumps(payload)).stdout, "")
+
+    def test_background_commands_pass_for_a_coder_and_the_main_session(self):
+        for command in ("make test &", "nohup make test"):
+            with self.subTest(command=command):
+                self.assertEqual(run_command(command, agent_type="coder").stdout, "")
+                self.assertEqual(run_command(command, subagent=False).stdout, "")
 
     def test_background_call_passes_for_other_agents_and_main_session(self):
         for finished in (run_command("make test", in_background=True),

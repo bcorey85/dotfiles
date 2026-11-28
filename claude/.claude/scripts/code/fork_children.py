@@ -35,6 +35,7 @@ import open_child_gate
 import process_group
 import script_utils
 import transcript_time
+from agent_names import FORK_AGENT_TYPE
 from code_run_names import REVIEW_START_SCRIPT
 from shell_command_words import script_call_arguments
 
@@ -71,7 +72,7 @@ def is_live_agent(fork_transcript, agent_id):
 
 def is_code_fork(transcript):
     """Whether the agent whose transcript this is was started as a code-fork."""
-    return loop_transcript.agent_meta(transcript, report_torn=True).get("agentType") == open_child_gate.CODE_FORK
+    return loop_transcript.agent_meta(transcript, report_torn=True).get("agentType") == FORK_AGENT_TYPE
 
 
 def child_ids(fork_transcript, fork_id):
@@ -280,7 +281,7 @@ def run_report(parser, fork_id, repo):
     if transcript is None:
         parser.error(f"no transcript found for agent {fork_id}")
     if not is_code_fork(transcript):
-        parser.error(f"agent {fork_id} is not a {open_child_gate.CODE_FORK}")
+        parser.error(f"agent {fork_id} is not a {FORK_AGENT_TYPE}")
 
     children, unresolved = child_ids(transcript, fork_id)
     repo = repo or fork_repo(transcript)

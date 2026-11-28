@@ -266,7 +266,8 @@ def open_request_lines(pending):
 
 
 def dispatch_lines(loop_dir, pending):
-    return [*request_lines(pending, SESSION_WRITES_NOTE), f"Then run `{WAIT_COMMAND} {loop_dir}` in the background."]
+    wait_line = f"Then run `{WAIT_COMMAND} {loop_dir}` in the background."
+    return [*request_lines(pending, SESSION_WRITES_NOTE), wait_line]
 
 
 def wait_for_step(loop_dir, is_running, poll=POLL_SECONDS):

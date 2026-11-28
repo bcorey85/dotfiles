@@ -27,6 +27,16 @@ class BlockLineTest(unittest.TestCase):
         decision = json.loads(stop_block.block_line(["why"], "", show_reply=True))
         self.assertNotIn("systemMessage", decision)
 
+    def test_a_shown_reply_ends_the_reason_with_the_hidden_reply_note(self):
+        decision = json.loads(stop_block.block_line(["why."], "a reply", show_reply=True))
+        self.assertEqual(decision["reason"], f"why. {stop_block.HIDDEN_REPLY_NOTE}")
+
+    def test_no_shown_reply_leaves_the_hidden_reply_note_out(self):
+        for reply, show_reply in (("a reply", False), ("", True)):
+            with self.subTest(reply=reply, show_reply=show_reply):
+                decision = json.loads(stop_block.block_line(["why."], reply, show_reply=show_reply))
+                self.assertEqual(decision["reason"], "why.")
+
     def test_a_short_reply_shows_as_label_blank_line_reply(self):
         decision = json.loads(stop_block.block_line(["why"], "a reply", show_reply=True))
         self.assertEqual(decision["systemMessage"], f"{stop_block.REPLY_LABEL}\n\na reply")

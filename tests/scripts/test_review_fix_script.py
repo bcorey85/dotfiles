@@ -606,6 +606,36 @@ class ReviewFixScriptTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn("no uncommitted change", output)
 
+    def test_the_scoped_rerun_launch_line_ends_with_detach(self):
+        self.write_dirty("src/logs.ts")
+        code, output = self.packet(CAP_WITH_AN_OPEN_CLASS)
+        self.assertEqual(code, 0, output)
+        launch_line = next(line for line in output.splitlines() if line.startswith("Launch line:"))
+        self.assertTrue(launch_line.endswith(" --detach"), launch_line)
+
+    def test_a_redispatch_with_no_relaunch_flags_says_foreground_and_detach(self):
+        lines = review_fix.redispatch_lines({"iter": 2}, ["RESOLVED: x"])
+        self.assertIn("in the foreground", lines[0])
+        self.assertIn("`--detach`", lines[0])
+        self.assertEqual(lines[1:], ["RESOLVED: x"])
+
+    def test_a_redispatch_with_an_unreadable_first_handoff_says_foreground_and_detach(self):
+        missing_handoff = self.temp_root / "missing-handoff.txt"
+        state = {"iter": 1, "relaunch_args": ["--repo", str(self.repo), "--handoff", str(missing_handoff)]}
+        with self.assertRaises(review_fix.UsageError) as raised:
+            review_fix.redispatch_lines(state, ["RESOLVED: x"])
+        self.assertIn("foreground", str(raised.exception))
+        self.assertIn("--detach", str(raised.exception))
+
+    def test_a_redispatch_with_relaunch_flags_says_foreground_and_prints_a_detached_launch_line(self):
+        first_handoff = self.temp_root / "first-handoff.txt"
+        first_handoff.write_text("handoff:\n")
+        state = {"iter": 1, "relaunch_args": ["--repo", str(self.repo), "--handoff", str(first_handoff)]}
+        with unittest.mock.patch.object(review_fix, "review_fix_dir", return_value=self.temp_root):
+            lines = review_fix.redispatch_lines(state, ["RESOLVED: x"])
+        self.assertIn("in the foreground", lines[0])
+        self.assertTrue(lines[-1].endswith(" --detach"), lines[-1])
+
     def test_a_cap_reached_with_an_open_class_and_no_files_touched_keeps_the_plain_stop(self):
         no_files = packet_text(CAP_WITH_AN_OPEN_CLASS_FIELDS, files_touched=[])
         code, output = self.packet(no_files)

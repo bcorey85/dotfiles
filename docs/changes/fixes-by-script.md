@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-863 fix notes
+864 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -82,6 +82,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/test-run-output | 5 | 0 |
+| script/wait-loop-gate | 5 | 2 |
 | (no component) | 4 | 0 |
 | script/agent-model-guard | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
@@ -91,7 +92,6 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/review-loop-packet | 4 | 1 |
 | script/rg-path-gate | 4 | 1 |
 | script/source-paths | 4 | 0 |
-| script/wait-loop-gate | 4 | 1 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
 | script/announced-step | 3 | 3 |

@@ -62,6 +62,14 @@ class ImportGuardTest(unittest.TestCase):
         self.assertEqual(crashed.returncode, 2, crashed.stderr)
         self.assertIn("[coder-gate] crashed before it could read the call", crashed.stderr)
 
+    def test_a_syntax_error_in_a_lib_module_names_the_hand_back_for_the_coder_gate_hook_mode(self):
+        (self.scripts / PLANTED_MODULE).write_text('x = "unterminated\n')
+
+        crashed = self.run_gate("code/coder_gate.py", arguments=("hook",))
+
+        self.assertEqual(crashed.returncode, 2, crashed.stderr)
+        self.assertIn("SubagentHandback", crashed.stderr)
+
     def test_a_runtime_crash_in_the_coder_gate_hook_blocks_and_names_the_gate(self):
         crashed = subprocess.run([sys.executable, str(self.scripts / "code/coder_gate.py"), "hook"], input="not json",
                                  capture_output=True, text=True, env={"PATH": os.environ["PATH"],
@@ -98,6 +106,21 @@ class ImportGuardTest(unittest.TestCase):
         self.assertEqual(crashed.returncode, 2, crashed.stderr)
         self.assertEqual(crashed.stdout, "", "a crashed gate prints no allow decision")
         self.assertIn("[fork-write-scope] crashed while judging the call", crashed.stderr)
+
+    def test_a_crash_in_agent_names_blocks_fork_write_scope_for_every_write(self):
+        relative, fork_payload = FORK_WRITE_SCOPE
+        other_payload = {**fork_payload, "agent_type": "coder"}
+        self.assertEqual(self.run_gate(relative, fork_payload).returncode, 0)
+        (self.scripts / "lib/agent_names.py").write_text('x = "unterminated\n')
+
+        for label, payload in (("code-fork", fork_payload), ("coder", other_payload)):
+            with self.subTest(agent_type=label):
+                crashed = self.run_gate(relative, payload)
+
+                self.assertEqual(crashed.returncode, 2, crashed.stderr)
+                self.assertEqual(crashed.stdout, "", "a crashed gate prints no allow decision")
+                self.assertIn("[fork-write-scope] crashed before it could read the call", crashed.stderr)
+                self.assertIn("every Write call is blocked", crashed.stderr)
 
     def test_a_crash_in_hook_input_leaves_spec_budget_gate_open(self):
         # A size budget is not a safety gate: it fails open so Edit stays a route to repair the broken module.

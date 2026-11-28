@@ -44,4 +44,7 @@ Bug: a reviewer item that ends in a colon and leads into a list of cases loses t
 
 ## Plan Deviations
 
-- Phase 1 step 1 ruling: session ruling, owner plan, no ticket, criteria intent stays met, 2026-11-27.
+- Phase 1 step 1 adds: when a colon item's notes start nested, the next marker at the item indent closes the list.
+  Session ruling, owner plan, no ticket, criteria intent stays met, 2026-11-27.
+- Not built: a colon on a wrapped continuation line of a finding. No real reviewer reply shows that shape, and the
+  toolkit script rules send a reviewer-only case to no new code. Session ruling, 2026-11-27.

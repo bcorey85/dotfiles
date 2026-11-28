@@ -23,6 +23,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
   plain line at the item indent ends the list.
 - Tagged-bullet format (the test reviewer): untagged bullets under a colon-ended tagged bullet, at its indent or
   nested, join that bullet instead of being dropped. A deeper untagged bullet joins any tagged bullet as its detail.
+- Not covered: a finding whose colon sits on a wrapped continuation line. No real reviewer reply shows that shape.
 
 ## Evidence
 

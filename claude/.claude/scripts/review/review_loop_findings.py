@@ -137,12 +137,12 @@ def item_start_lines(lines, is_ask_section=False):
     file:line, and the bullets under it are its points: when the section opens with one (in an Ask-type section, also a
     `PLAN-IMPACT:` line), each such line at its indent starts an item. Otherwise a bullet or numbered marker at the
     first marker's indent starts one. A marker indented deeper is a sub-bullet, and it and any other line, after a
-    blank line too, continue the item before it. A line at the item indent that ends in a colon, whether an item of
-    its own or a plain line after an item or as an Ask section's first line, leads in a list of the reviewer's notes
-    ("The other claims check out:"): the markers under it continue the item too, until one opens with a file:line or,
-    in an Ask section, states an ask, or a plain line at the item indent closes the list. A located item (one that
-    opens with a file:line) or a plain line opens the list. When a colon-ended item's notes start deeper than the item
-    indent, the next marker at the item indent closes the list. In an Ask-type section, an unbulleted `PLAN-IMPACT:`
+    blank line too, continue the item before it. A located item (one that opens with a file:line) or a plain line at
+    the item indent that ends in a colon, the plain line after an item or as an Ask section's first line, leads in a
+    list of the reviewer's notes ("The other claims check out:"): the markers under it continue the item too, until
+    one opens with a file:line or, in an Ask section, states an ask, or a plain line at the item indent closes the
+    list. When a colon-ended item's notes start deeper than the item indent, the next marker at the item indent closes
+    the list. In an Ask-type section, an unbulleted `PLAN-IMPACT:`
     line at the item indent starts an item and closes a notes list."""
     first_line = next(line for line in lines if line.strip())
     if is_bare_finding_head(first_line, is_ask_section):

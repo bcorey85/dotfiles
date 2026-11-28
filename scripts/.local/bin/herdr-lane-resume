@@ -3,7 +3,7 @@
 #
 # Usage: herdr-lane-resume <name>
 #        herdr-lane-resume --close <name|path>
-#   <name>      the lane's name: its worktree folder name, as herdr-worktree --fork
+#   <name>      the lane's name: its worktree folder name, as herdr-worktree
 #               recorded it in ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<name>.json;
 #               a relative XDG_STATE_HOME is ignored.
 #               Opens a workspace on the worktree (a tuios session under tuios) and
@@ -146,7 +146,7 @@ resume_lane() {
     [ -d "$wt" ] || fail "worktree gone; run herdr-lane-resume --close $name"
     wt=$(real_path "$wt")
     [ -n "$session" ] \
-        || fail "the fork never reported a session id; open the worktree and run claude there"
+        || fail "the lane never reported a session id; open the worktree and run claude there"
 
     live_pane=$(agents_in "$wt" | sed -n '1s/ .*//p')
     [ -z "$live_pane" ] || fail "lane is live in pane $live_pane"

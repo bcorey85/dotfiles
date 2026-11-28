@@ -205,7 +205,7 @@ class ResumeTest(HerdrLaneResumeTest):
         cases = [
             ("no entry", lambda: None, f"no lane named {NAME}"),
             ("worktree gone", worktree_gone, f"worktree gone; run herdr-lane-resume --close {NAME}"),
-            ("no session id", no_session_id, "the fork never reported a session id"),
+            ("no session id", no_session_id, "the lane never reported a session id"),
             ("live agent", live_agent, "lane is live in pane p7"),
             ("open workspace", open_workspace, "workspace wOpen is already open on it; close it, then rerun"),
         ]

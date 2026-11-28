@@ -6,7 +6,7 @@ description: "comment-bloat-gate now passes a run of up to three added non-kept 
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-27T18:00:00-06:00"}
 seq: 5
 kind: "user-rule"
-components: ["script/comment-bloat-gate", "lib/hook_input"]
+components: ["script/comment-bloat-gate", "script/hook-input"]
 evidence: ["user request"]
 watches: []
 test: ""

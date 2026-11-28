@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-866 fix notes
+867 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -105,6 +105,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
 | script/review-loop-comment-removal | 3 | 3 |
+| script/review-loop-findings | 3 | 1 |
 | script/review-scope | 3 | 0 |
 | script/shell-command-words | 3 | 3 |
 | script/shell-quoting | 3 | 1 |
@@ -137,7 +138,6 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/plan-review-shards | 2 | 0 |
 | script/pre-commit | 2 | 2 |
 | script/review-loop-coder | 2 | 1 |
-| script/review-loop-findings | 2 | 0 |
 | script/rule-anchors | 2 | 1 |
 | script/ruled-change-text | 2 | 1 |
 | script/session-registry | 2 | 2 |

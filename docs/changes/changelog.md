@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1311 changes
+1312 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -89,6 +89,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [Review finding parser keeps the case list under a colon-ended finding](notes/2026-11-27-review-finding-parser-keeps-the-case-list-under-a.md) [script/review-loop-findings] A reviewer finding that ends in a colon keeps the case bullets under it, so the fix pass sees every case and no case is filed as an unlocated finding
 * [pyright resolves the toolkit's bare-name imports](notes/2026-11-27-pyright-resolves-the-toolkit-s-bare-name-imports.md) [script/pyrightconfig] A root pyrightconfig.json lists the toolkit script folders as extraPaths, so an editor's pyright resolves a script's bare-name sibling imports instead of flagging them.
 * [lane-status viewer tests run their fake viewer on runners whose sleep is a multicall binary](notes/2026-11-27-lane-status-viewer-tests-run-their-fake-viewer-on.md) [script/lane-status] Dotfiles master CI goes green: the lane-status viewer tests copy perl, not sleep, as their fake hunk process, so a multicall coreutils binary no longer refuses to run.
 * [the announced-step check passes a step gated on a date, later events or another party](notes/2026-11-27-the-announced-step-check-passes-a-step-gated-on-a.md) [script/announced-step, script/staged-claim-gate] A step that waits on a date or clock, on later events or on another party's notice no longer blocks a Stop, and a Then or Next step after a gated sentence passes with it.

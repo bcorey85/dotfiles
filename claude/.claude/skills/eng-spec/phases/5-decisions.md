@@ -46,7 +46,10 @@
     - **Alternatives rejected:** each with the user-visible failure mode it would cause.
     - **Trade-off accepted:** what this choice costs.
 
-    Never batch decisions into a table. No real alternative = constraint: record it under `## Direction & Constraints`. A rejection that only narrows scope needs the user's explicit sign-off. A choice that leaves credentials or data alive past the user's removal intent: state it in security terms, and it needs the user's explicit sign-off.
+    - Never batch decisions into a table.
+    - No real alternative = constraint: record it under `## Direction & Constraints`.
+    - A rejection that only narrows scope needs the user's explicit sign-off.
+    - A choice that leaves credentials or data alive past the user's removal intent: state it in security terms, and it needs the user's explicit sign-off.
 
     Compacted, or unsure what is settled → re-read `02-research.md` and
     `03-decisions.md`. **Never reconstruct a resolved decision from memory, and

@@ -284,6 +284,24 @@ class ToolkitProseFactsTest(unittest.TestCase):
                                     "Ending the run hands back", "Resume"])
         self.assertNotIn("Getting this wrong is silent", CALIBRATION_FILE.read_text())
 
+    def test_coder_core_plan_format_calibration_and_eng_spec_rules_are_one_branch_list_items(self):
+        coder_core = skill_text("coder-core")
+        self.assertIn("\n  - else the repo's documented runner", coder_core)
+        self.assertIn("\n- A collection error or a run with no tests is not a pass.", coder_core)
+        self.assertIn("\n- Any other value asks the user. When `acceptance_criteria` is not `none`", coder_core)
+        self.assertIn("\n- Otherwise write `cause: plan`.", coder_core)
+        plan_format = (CLAUDE_DIR / "skills" / "_shared" / "plan-format.md").read_text()
+        self.assertIn("\n    - `/code` never runs it.", plan_format)
+        self.assertIn("\n  - ban wording (\"no match\", \"absent\", `! rg`) wins.", plan_format)
+        self.assertIn("\n  - The plan check refuses any other form.", plan_format)
+        self.assertIn("\n  - stops before it and names the condition;", plan_format)
+        self.assertIn("\n- You genuinely cannot tell which side is wrong", CALIBRATION_FILE.read_text())
+        phases = CLAUDE_DIR / "skills" / "eng-spec" / "phases"
+        self.assertIn("\n    - Never batch decisions into a table.\n", (phases / "5-decisions.md").read_text())
+        review = (phases / "6b-review.md").read_text()
+        self.assertIn("\n    - Only BLOCKER and GAP re-dispatch.", review)
+        self.assertIn("\n    - `gaps` is the DESIGN GAP items Phase 6 raised and resolved.", review)
+
 
 if __name__ == "__main__":
     unittest.main()

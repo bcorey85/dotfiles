@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1309 changes
+1310 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -46,6 +46,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Changed
 
+* [the last dense rules in coder-core, plan-format, reviewer-calibration and eng-spec become one-branch lists](notes/2026-11-27-the-last-dense-rules-in-coder-core-plan-format.md) [skill/coder-core, shared/plan-format, shared/reviewer-calibration, skill/eng-spec] coder-core's runner choice, acceptance_criteria and cause rules, plan-format's gate, Agent-run, rg-ban and Expected red rules, reviewer-calibration's plan-is-wrong and cannot-tell branches, 5-decisions step 13's record rules and 6b-review step 20's round rules and step 21's count definitions become lists, one branch per item, with every rule word kept.
 * [The comment gate passes a three-line comment block with a nudge to recheck it](notes/2026-11-27-the-comment-gate-passes-three-comment-lines-with-a.md) [script/comment-bloat-gate, script/hook-input] comment-bloat-gate now passes a run of up to three added non-kept comment lines; a run of exactly three passes with additionalContext that asks the coder to reread the block and delete, cut or rename it unless a busy engineer new to the code needs it; a run of four or more is blocked.
 * [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md) [script/comment-bloat-gate] comment-bloat-gate reads HEAD once per edit, counts every comment line of a file HEAD lacks so a new file cannot be built two comment lines per edit, and counting_texts reuses stripped_added.
 * [The comment gate passes a short comment block of at most two lines](notes/2026-11-27-the-comment-gate-passes-a-short-comment-block-of.md) [script/comment-bloat-gate] comment-bloat-gate still keeps its four kinds, and also passes a run of at most two added comment lines that are no kept kind; a run of three or more is blocked with a message that sends architecture prose to the repo's architecture docs and names coder-core.

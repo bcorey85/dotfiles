@@ -71,7 +71,11 @@ The private workflow never reaches committed code: branch, PR, and issue numbers
 
 If your brief says a hook runs the checks when you call SubagentHandback, do not run them yourself. Fix what the hook returns, then call SubagentHandback again. Otherwise:
 
-- Run the typecheck, and lint and tests for only the files you changed, through the command the plan phase lists (when it runs a whole suite, use the repo's documented runner on your changed files), else the repo's documented runner (CLAUDE.md, Makefile, package scripts), and plain `pytest` only when the repo names none. A collection error or a run with no tests is not a pass.
+- Run the typecheck, and lint and tests for only the files you changed, through the first runner that applies:
+  - the command the plan phase lists (when it runs a whole suite, use the repo's documented runner on your changed files);
+  - else the repo's documented runner (CLAUDE.md, Makefile, package scripts);
+  - plain `pytest` only when the repo names none.
+- A collection error or a run with no tests is not a pass.
 - Never run a whole test suite, a whole-package lint or a build.
 - Run a test file that takes minutes by test name, or in the background, never whole in the foreground.
 - Run each check with its full output in a log: `<check> > /tmp/<name>.log 2>&1`. Then read the log with Read or `rg`.
@@ -95,9 +99,13 @@ PLAN-IMPACT:
 
 Add `kind: reword` only when the change keeps the criterion and changes only its words. Write `cut` or `narrow` otherwise, or leave the line out.
 
-Write `acceptance_criteria: none` only when every acceptance criterion holds either way. Then build to the code: the plan follows it. The plan change is adopted and logged under Plan Deviations without asking the user. Any other value asks the user. When `acceptance_criteria` is not `none`, build only what the finding does not touch.
+- Write `acceptance_criteria: none` only when every acceptance criterion holds either way. Then build to the code: the plan follows it. The plan change is adopted and logged under Plan Deviations without asking the user.
+- Any other value asks the user. When `acceptance_criteria` is not `none`, build only what the finding does not touch.
 
-Write `cause: toolkit` when a toolkit gate, hook or script is wrong and nothing in the plan is. The run then stops for the main session and no plan rewrite runs. Otherwise write `cause: plan`.
+Write `cause:` by what is wrong:
+
+- `cause: toolkit` when a toolkit gate, hook or script is wrong and nothing in the plan is. The run then stops for the main session and no plan rewrite runs.
+- Otherwise write `cause: plan`.
 
 ## Review handoff (last lines of your report)
 

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1309 changes, 25 with a measured gain, 283 behavior changes that no intake metric reads.
+1310 changes, 25 with a measured gain, 283 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The code phase end asks two or three check-yourself questions with file lines](notes/2026-11-27-the-code-phase-end-asks-two-or-three-check.md).
+Latest change: 2026-11-27, [the last dense rules in coder-core, plan-format, reviewer-calibration and eng-spec become one-branch lists](notes/2026-11-27-the-last-dense-rules-in-coder-core-plan-format.md).
 
 ## Top gains
 

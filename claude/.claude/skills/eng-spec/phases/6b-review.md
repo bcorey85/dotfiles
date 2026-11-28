@@ -26,10 +26,11 @@ never a `SendMessage` continuation. A DEEP round 2 is a NEW dispatch carrying
 the prior findings plus the repair diff — a verification pass scoped to the
 diff and what it touches, not a fresh read.
 
-    Only BLOCKER and GAP re-dispatch. An ALT never triggers another round.
-    `VERDICT: CLEAN` (no BLOCKER or GAP — a lone ALT still reads CLEAN) ends the
-    loop. After the last round, outstanding BLOCKER/GAP go to the user as-is. No
-    third round.
+    - Only BLOCKER and GAP re-dispatch. An ALT never triggers another round.
+    - `VERDICT: CLEAN` (no BLOCKER or GAP — a lone ALT still reads CLEAN) ends the
+      loop.
+    - After the last round, outstanding BLOCKER/GAP go to the user as-is. No
+      third round.
 
     **Report the delta after round 1**: findings, and how many the previous
     repair created.
@@ -63,13 +64,16 @@ diff and what it touches, not a fresh read.
       plan_review_alts=<raised> plan_review_alts_taken=<accepted>
     ```
 
-    Count them, do not estimate: `criteria` is every `Success Criteria` bullet
-    across all phases plus every id in `acceptance-criteria.md`; `gaps` is the
-    DESIGN GAP items Phase 6 raised and resolved; `falsified` is how many factual
-    claims its sweep found wrong and repaired; `plan_review_findings` is BLOCKER
-    plus GAP across every round of step 20; `plan_review_alts` and
-    `..._taken` are alternatives raised and accepted. Zero is a real answer for every one of
-    them and must be logged as such.
+    Count them, do not estimate:
+
+    - `criteria` is every `Success Criteria` bullet across all phases plus every
+      id in `acceptance-criteria.md`.
+    - `gaps` is the DESIGN GAP items Phase 6 raised and resolved.
+    - `falsified` is how many factual claims its sweep found wrong and repaired.
+    - `plan_review_findings` is BLOCKER plus GAP across every round of step 20.
+    - `plan_review_alts` and `..._taken` are alternatives raised and accepted.
+
+    Zero is a real answer for every one of them and must be logged as such.
 
     Log `verdict=abandoned` instead if the plan is dropped after research.
 

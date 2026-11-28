@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1301 changes
+1302 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -82,6 +82,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Fixed
 
+* [comment-bloat gate tests use a four-line block over the three-line cap](notes/2026-11-27-comment-bloat-gate-tests-use-a-four-line-block.md) [script/comment-bloat-gate] The ideographic-space and invalid-UTF-8 comment-bloat tests now add a four-line comment block, so they test their own case against a block the three-line cap still refuses.
 * [the announced-step check passes a step gated on a date, later events or another party](notes/2026-11-27-the-announced-step-check-passes-a-step-gated-on-a.md) [script/announced-step, script/staged-claim-gate] A step that waits on a date or clock, on later events or on another party's notice no longer blocks a Stop, and a Then or Next step after a gated sentence passes with it.
 * [a blocked Stop asks the session to repeat the hidden reply](notes/2026-11-27-a-blocked-stop-asks-the-session-to-repeat-the-reply.md) [script/staged-claim-gate, script/stop-block] A main-session Stop block's reason now tells the session the user did not see the blocked reply, and the announced-step reason names the line it flagged, so the next reply quotes it and repeats the text.
 * [git commit readers read stored-heredoc-cut text](notes/2026-11-26-git-commit-readers-read-stored-heredoc-cut-text.md) [script/git-commit-calls, script/git-discipline-gate] A git commit line inside a heredoc body that is data (cat > f <<EOF, python3 s.py <<EOF) is no longer read as a commit by the git discipline gate; bodies a shell runs (bash <<EOF, | bash) stay read.

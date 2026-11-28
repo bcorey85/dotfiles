@@ -1,6 +1,7 @@
 """One check per review finding on the Python hook ports, plus the crash-to-block path of run_gate.
 
 Set HOOK_SCRIPTS_DIR to run against another directory of scripts."""
+import importlib.util
 import json
 import os
 import pathlib
@@ -19,6 +20,19 @@ SCRIPTS_DIR = pathlib.Path(os.environ.get("HOOK_SCRIPTS_DIR") or toolkit_paths.S
 def hook_script(file_name):
     """The script file under whichever scripts subfolder holds it."""
     return next(SCRIPTS_DIR.glob("*/" + file_name))
+
+
+def load_comment_bloat_gate():
+    gate_path = hook_script("comment_bloat_gate.py")
+    spec = importlib.util.spec_from_file_location("comment_bloat_gate_under_test", gate_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {gate_path}")
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    return gate
+
+
+BLOCKED_RUN_LENGTH = load_comment_bloat_gate().MAX_FREE_BLOCK_LINES + 1
 
 
 class HookRunTest(unittest.TestCase):
@@ -98,9 +112,10 @@ class InvalidUtf8StdinTest(HookRunTest):
         # finding 6
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        source.write_text("value = 0\n# note 1\n# note 1\n# note 1\n")
+        note = "# note 1\n" * BLOCKED_RUN_LENGTH
+        source.write_text("value = 0\n" + note)
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
-                                                              "new_string": "# note 1\n# note 1\n# note 1\n@@"}})
+                                                              "new_string": note + "@@"}})
         stdin = body.encode("utf-8").replace(b"@@", self.BAD)
         finished = self.run_hook("comment-bloat-gate", stdin)
         self.assertEqual(finished.returncode, 2)
@@ -139,7 +154,7 @@ class IdeographicSpaceTest(HookRunTest):
         # finding 8: `[[:space:]]*` before the comment marker matches U+3000
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        note = "　# note 1\n" * 3
+        note = "　# note 1\n" * BLOCKED_RUN_LENGTH
         source.write_text("value = 0\n" + note)
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
                                                               "new_string": note}})

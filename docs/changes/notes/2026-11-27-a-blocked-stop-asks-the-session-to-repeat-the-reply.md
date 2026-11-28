@@ -7,7 +7,7 @@ generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-27T18:40:00-06:0
 seq: 1
 kind: "user-rule"
 components: ["script/staged-claim-gate", "script/stop-block"]
-evidence: ["live"]
+evidence: ["work incident", "tests"]
 watches: []
 test: "tests/scripts/test_stop_block.py::BlockLineTest::test_a_shown_reply_ends_the_reason_with_the_hidden_reply_note"
 asked: "2026-11-27: the user reported never seeing the blocked reply and asked for it fixed"

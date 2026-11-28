@@ -452,6 +452,54 @@ esac""")
         self.assertEqual(herdr_dev_values[0], "--headless")
         self.assertEqual(herdr_dev_values[3:5], ["s1", brief.rstrip("\n")])
 
+    def test_a_brief_without_fork_opens_a_headless_lane_on_an_empty_session_id_with_entry_and_watcher(self):
+        herdr_dev_args = self.stub_fork(CLAUDE_PANE)
+        watch_args = self.stub_watcher()
+
+        finished = self.run_herdr_worktree(
+            self.linked_worktree, "--prompt", "Fix it.", "fix/new-thing", session_id="s1"
+        )
+
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        herdr_dev_values = herdr_dev_args.read_text().split("\0")
+        self.assertEqual(herdr_dev_values[0], "--headless")
+        self.assertEqual(herdr_dev_values[3:5], ["", "Fix it."])
+        self.assertEqual(self.lane_entry("repo-new-thing")["brief"], "Fix it.")
+        self.wait_for_file(watch_args)
+        worktree = self.root / "repo-new-thing"
+        self.assertEqual(watch_args.read_text().splitlines(),
+                         ["w1", str(worktree), str(self.main_checkout), "w1:p1", ""])
+
+    def test_a_brief_without_fork_whose_pane_never_shows_claude_exits_non_zero(self):
+        self.stub_fork(SHELL_PANE)
+        watch_args = self.stub_watcher()
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--prompt", "Fix it.", "fix/new-thing",
+                                           fork_start_timeout="1")
+
+        self.assertNotEqual(finished.returncode, 0)
+        time.sleep(0.5)
+        self.assertFalse(watch_args.exists())
+
+    def test_an_empty_brief_file_exits_non_zero_naming_the_file(self):
+        self.stub_fork(CLAUDE_PANE)
+        brief_file = self.root / "empty-brief.md"
+        brief_file.write_text("")
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--prompt-file", str(brief_file), "fix/new-thing")
+
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertIn(f"the brief is empty: {brief_file}", finished.stderr)
+
+    def test_an_empty_prompt_exits_non_zero_and_opens_no_worktree(self):
+        self.stub_fork(CLAUDE_PANE)
+
+        finished = self.run_herdr_worktree(self.linked_worktree, "--prompt", "", "fix/new-thing")
+
+        self.assertNotEqual(finished.returncode, 0)
+        self.assertIn("the brief is empty", finished.stderr)
+        self.assertIsNone(self.lane_entry("repo-new-thing"))
+
     def test_a_run_without_fork_opens_the_layout_with_its_hunk_pane(self):
         herdr_dev_args = self.stub_fork(CLAUDE_PANE)
 
@@ -518,21 +566,29 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertEqual(self.lane_entry("repo-new-thing")["reports_to"], "")
 
-    def test_a_fork_replaces_a_stale_entry_of_the_same_label_with_no_live_worktree(self):
-        self.stub_fork(CLAUDE_PANE)
-        env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
-        gone = self.root / "gone"
-        subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-new-thing", "--worktree", str(gone),
-                        "--main-checkout", str(self.main_checkout), "--branch", "old", "--reports-to", "someone"],
-                       input="old", env=env, capture_output=True, text=True, check=True)
+    def test_a_lane_replaces_a_stale_entry_of_the_same_label_with_no_live_worktree(self):
+        for lane_flags in (["--fork"], []):
+            with self.subTest(lane_flags=lane_flags):
+                self.stub_fork(CLAUDE_PANE)
+                env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
+                gone = self.root / "gone"
+                subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-new-thing", "--worktree",
+                                str(gone), "--main-checkout", str(self.main_checkout), "--branch", "old",
+                                "--reports-to", "someone"],
+                               input="old", env=env, capture_output=True, text=True, check=True)
 
-        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "new brief", "fix/new-thing")
+                try:
+                    finished = self.run_herdr_worktree(self.linked_worktree, *lane_flags, "--prompt", "new brief",
+                                                       "fix/new-thing")
 
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        entry = self.lane_entry("repo-new-thing")
-        self.assertEqual(entry["brief"], "new brief")
-        self.assertEqual(entry["reports_to"], "orchestrator")
-        self.assertEqual(entry["worktree"], str(self.root / "repo-new-thing"))
+                    self.assertEqual(finished.returncode, 0, finished.stderr)
+                    entry = self.lane_entry("repo-new-thing")
+                    self.assertEqual(entry["brief"], "new brief")
+                    self.assertEqual(entry["reports_to"], "orchestrator")
+                    self.assertEqual(entry["worktree"], str(self.root / "repo-new-thing"))
+                finally:
+                    git(self.main_checkout, "worktree", "remove", "--force", str(self.root / "repo-new-thing"))
+                    git(self.main_checkout, "branch", "-D", "fix/new-thing")
 
     def test_a_run_without_fork_writes_no_lane_entry(self):
         finished = self.run_herdr_worktree(self.linked_worktree, "fix/new-thing")
@@ -573,19 +629,23 @@ esac""")
         git(self.main_checkout, "fetch", "-q", "origin")
         git(self.main_checkout, "remote", "set-head", "origin", "master")
 
-    def test_a_fork_branches_off_the_branch_checked_out_where_it_runs_not_origins_default(self):
+    def test_a_lane_branches_off_the_branch_checked_out_where_it_runs_not_origins_default(self):
         self.add_origin_with_default_master()
-        git(self.linked_worktree, "-c", "user.name=t", "-c", "user.email=t@t",
-            "commit", "-q", "--allow-empty", "-m", "unpushed lane work")
-        linked_head = subprocess.run(["git", "-C", str(self.linked_worktree), "rev-parse", "HEAD"],
-                                     check=True, capture_output=True, text=True).stdout.strip()
-        self.stub_fork(CLAUDE_PANE)
+        for case_name, lane_flags in (("fork", ["--fork"]), ("fresh", [])):
+            with self.subTest(case_name=case_name):
+                self.herdr_args.unlink(missing_ok=True)
+                git(self.linked_worktree, "-c", "user.name=t", "-c", "user.email=t@t",
+                    "commit", "-q", "--allow-empty", "-m", "unpushed lane work")
+                linked_head = subprocess.run(["git", "-C", str(self.linked_worktree), "rev-parse", "HEAD"],
+                                             check=True, capture_output=True, text=True).stdout.strip()
+                self.stub_fork(CLAUDE_PANE)
 
-        finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "--prompt", "Go on.", "fix/new-thing")
+                finished = self.run_herdr_worktree(self.linked_worktree, *lane_flags, "--prompt", "Go on.",
+                                                   f"fix/new-thing-{case_name}")
 
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        herdr_args = self.herdr_args.read_text().splitlines()
-        self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
+                self.assertEqual(finished.returncode, 0, finished.stderr)
+                herdr_args = self.herdr_args.read_text().splitlines()
+                self.assertEqual(herdr_args[herdr_args.index("--base") + 1], linked_head)
 
     def test_a_run_without_fork_still_branches_off_origins_default(self):
         self.add_origin_with_default_master()
@@ -820,6 +880,7 @@ esac""")
         finished = self.run_herdr_worktree(self.linked_worktree, "--fork", "fix/new-thing")
 
         self.assertEqual(finished.returncode, 1, finished.stderr)
+        self.assertIn("--fork needs a brief", finished.stderr)
         self.assertFalse(sweep_calls.exists())
 
     def test_a_run_outside_a_git_repo_never_calls_the_lane_sweep(self):
@@ -849,7 +910,7 @@ esac""")
         self.assertEqual(finished.returncode, 0, finished.stderr)
         self.assertIn("1. herdr worktree open --cwd", finished.stdout)
         self.assertIn("1. herdr-api workspace create --cwd <worktree>", finished.stdout)
-        self.assertIn("2. herdr-dev --headless <worktree> <ws> <fork session id>", finished.stdout)
+        self.assertIn("2. herdr-dev --headless <worktree> <ws> <lane session id>", finished.stdout)
         self.assertIn("herdr-api workspace focus <ws> >/dev/null && ", finished.stdout)
         self.assertIn("CLAUDE_CODE_DISABLE_CRON=1 claude --resume", finished.stdout)
         self.assertNotIn("ws=$(", finished.stdout)

@@ -26,7 +26,7 @@ Live, 2026-11-27: the gate blocked a main-session Stop for an announced step. Fe
 
 ## Result
 
-No result was recorded when this change shipped.
+Tests pin the reason text; the next live block shows whether the session repeats the reply.
 
 ## Watch
 

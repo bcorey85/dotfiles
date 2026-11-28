@@ -132,14 +132,14 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("Never send the user's words", text)
         self.assertNotIn("answer in that pane", text)
 
-    def test_a_session_that_forks_a_worktree_keeps_the_user_in_its_own_pane(self):
+    def test_a_session_that_starts_a_lane_keeps_the_user_in_its_own_pane(self):
         text = guidance_text("orchestration.md")
-        self.assertIn("this session's name, read from ListAgents, as the session the fork reports to", text)
-        self.assertIn("the fork sends every question for the user and its result there with SendMessage, and never "
+        self.assertIn("this session's name, read from ListAgents, as the session the lane reports to", text)
+        self.assertIn("the lane sends every question for the user and its result there with SendMessage, and never "
                       "asks in its own pane", text)
-        self.assertIn("tell the user the fork's name and that it reports here; never tell the user to switch panes",
+        self.assertIn("tell the user the lane's name and that it reports here; never tell the user to switch panes",
                       text)
-        self.assertIn("pass on to the user what the fork sends", text)
+        self.assertIn("pass on to the user what the lane sends", text)
         self.assertNotIn("tell the user to switch there", text)
 
     def test_a_coder_runs_a_changed_test_file_through_the_sharding_runner(self):

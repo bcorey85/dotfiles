@@ -30,7 +30,7 @@ class BranchDeletion:
     warning: str | None = None  # a problem after a successful delete
 
 
-def ahead_text(repo, name):
+def ahead_text(repo, name, linked=()):
     """Two spaces and a note when the branch has an upstream whose tip does not hold the branch tip, else ''."""
     tip = branch_tip(repo, name)
     named = git(repo.main_path, "for-each-ref", "--format=%(upstream)", f"{HEADS_PREFIX}{name}")
@@ -43,7 +43,7 @@ def ahead_text(repo, name):
     held = git(repo.main_path, "merge-base", "--is-ancestor", tip, upstream.stdout.strip())
     if held.returncode != 1:
         return ""
-    verdict = merged_into(repo, tip)
+    verdict = merged_into(repo, tip, linked, name)
     if verdict.target is None:
         return ""
     return f"  ahead of its own remote branch, fully on {verdict.target}"
@@ -60,20 +60,21 @@ def remove_branch_config(repo, name):
             f"branch.{name} failed: {removed.stderr.strip() or removed.returncode}")
 
 
-def delete_branch(repo, name):
+def delete_branch(repo, name, linked=()):
     """Delete refs/heads/<name> with `git update-ref -d` on the tip just proven an ancestor of the compare hash
-    or of the main checkout's branch.
+    or of the main checkout's branch or the branch of a worktree in `linked` that is not prunable, detached or
+    unborn. The caller leaves open lanes' trees out of `linked`; a call without `linked` counts no linked branch.
 
     Git refuses the delete when the tip moved after the check. Never `branch -D`, never a delete without the old
     value. Only that one ref is named, so `fix/a` never touches `fix/a-b`."""
     tip = branch_tip(repo, name)
     if tip is None:
         return BranchDeletion(failure="the branch ref cannot be read (already gone?)")
-    verdict = merged_into(repo, tip)
+    verdict = merged_into(repo, tip, linked, name)
     if verdict.error is not None:
         return BranchDeletion(failure=verdict.error)
     if verdict.target is None:
-        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {not_on_text(repo)}")
+        return BranchDeletion(failure=f"its tip {tip[:8]} is not on {not_on_text(repo, name, linked)}")
     deleted = git(repo.main_path, "update-ref", "-d", f"{HEADS_PREFIX}{name}", tip)
     if deleted.returncode != 0:
         return BranchDeletion(failure="git update-ref -d refused (the tip moved or the ref is locked): "

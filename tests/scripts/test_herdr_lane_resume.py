@@ -205,7 +205,7 @@ class ResumeTest(HerdrLaneResumeTest):
         cases = [
             ("no entry", lambda: None, f"no lane named {NAME}"),
             ("worktree gone", worktree_gone, f"worktree gone; run herdr-lane-resume --close {NAME}"),
-            ("no session id", no_session_id, "the fork never reported a session id"),
+            ("no session id", no_session_id, "the lane never reported a session id"),
             ("live agent", live_agent, "lane is live in pane p7"),
             ("open workspace", open_workspace, "workspace wOpen is already open on it; close it, then rerun"),
         ]
@@ -644,6 +644,28 @@ class EntrylessCloseTest(HerdrLaneResumeTest):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.recorded_events(), ["herdr workspace close wX", self.prune_event([])])
+
+    def test_close_removes_a_lane_merged_into_a_linked_integration_worktree_with_its_plan_files(self):
+        integration = self.root / "integration"
+        self.git(self.main_checkout, "worktree", "add", str(integration), "-b", "integration")
+        self.git(integration, "merge", "--no-ff", "--no-edit", "fork")
+        plan_folder = self.worktree / "docs" / "plans" / "fork"
+        plan_folder.mkdir(parents=True)
+        (plan_folder / "00-ticket.md").write_text("ticket\n")
+        self.workspace_on(self.worktree)
+        # The herdr stub keeps listing a closed workspace; the real prune must see it gone, as herdr would show it.
+        no_workspaces = '{"result":{"workspaces":[]}}'
+        write_stub(self.bin_dir / "herdr-worktree-prune",
+                   f"""if [ "$1" = "--apply" ]; then echo '{no_workspaces}' > "$STATE_DIR/workspaces.json"; fi
+exec "$REAL_PRUNE" "$@\"""")
+
+        result = self.run_script("--close", NAME)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.worktree.exists(), result.stdout)
+        branches = self.git(self.main_checkout, "for-each-ref", "--format=%(refname:short)", "refs/heads").stdout
+        self.assertNotIn("fork", branches.split())
+        self.assertTrue(integration.is_dir())
 
     def test_entryless_close_by_path_closes_the_merged_workspace_and_prunes(self):
         self.merge_fork()

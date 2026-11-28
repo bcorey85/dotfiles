@@ -127,6 +127,36 @@ class LandLaneTest(unittest.TestCase):
         self.assertIn("shared.txt", finished.stdout)
         self.assertEqual(self.origin_master(), before)
 
+    def test_staged_deletion_and_dirty_built_page_print_the_fix_and_start_no_merge(self):
+        built_page = "docs/changes/changelog.md"
+        (self.main / "docs" / "changes").mkdir(parents=True)
+        self.write(self.main, built_page, "built\n")
+        self.git(self.main, "add", "-A")
+        self.git(self.main, "commit", "-qm", "built page")
+        self.git(self.main, "push", "-q", "origin", "HEAD:master")
+        self.git(self.lane, "merge", "-q", "--no-edit", "master")
+        self.write(self.lane, built_page, "built by the lane\n")
+        (self.lane / "other.txt").unlink()
+        self.git(self.lane, "add", "-A")
+        self.git(self.lane, "commit", "-qm", "lane edits")
+        # Origin is one commit ahead of the lane, so a merge would start if the preflight let the run through.
+        self.push_from_elsewhere("elsewhere.txt", "e\n")
+        self.git(self.main, "rm", "-q", "other.txt")
+        self.write(self.main, built_page, "dirty built page\n")
+        lane_head = self.git(self.lane, "rev-parse", "HEAD")
+        before = self.origin_master()
+        finished = self.land()
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("other.txt", finished.stdout)
+        self.assertIn(built_page, finished.stdout)
+        self.assertIn("commit them or set them aside", finished.stdout + finished.stderr)
+        self.assertEqual(self.git(self.lane, "rev-parse", "HEAD"), lane_head)
+        # A lane is a worktree, so its MERGE_HEAD lives at the path git names, not under a .git folder.
+        merge_head_path = self.git(self.lane, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD")
+        self.assertFalse(pathlib.Path(merge_head_path).exists())
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self.origin_master(), before)
+
     def test_origin_ahead_on_a_file_main_holds_dirty_stops_before_any_push(self):
         self.lane_commit("lane.txt", "lane\n")
         self.push_from_elsewhere("other.txt", "elsewhere\n")
@@ -166,7 +196,8 @@ class LandLaneTest(unittest.TestCase):
         self.assertIn("merge aborted", finished.stdout)
         self.assertIn("rerun: ", finished.stdout)
         self.assertEqual(self.git(self.lane, "rev-parse", "HEAD"), lane_head)
-        self.assertFalse((self.lane / ".git" / "MERGE_HEAD").exists())
+        merge_head_path = self.git(self.lane, "rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD")
+        self.assertFalse(pathlib.Path(merge_head_path).exists())
         self.assertEqual(self.origin_master(), before)
 
     def test_failing_suite_stops_before_the_push(self):

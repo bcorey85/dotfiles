@@ -1138,12 +1138,6 @@ def without_backticked_spans(line):
     return BACKTICKED.sub("", line)
 
 
-def pre_tool_use_deny(reason):
-    """Print the PreToolUse hook output that denies the tool call and shows `reason` to the model."""
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                             "permissionDecisionReason": reason}}))
-
-
 def subagent_transcript_path(session_transcript, agent_id):
     """Where Claude Code keeps the transcript of a subagent of the session: `<session transcript without
     .jsonl>/subagents/agent-<id>.jsonl`."""

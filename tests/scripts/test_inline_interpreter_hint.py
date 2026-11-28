@@ -13,7 +13,8 @@ sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 import memory_cap_scope
 
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
-GENERAL_ROUTE = "Write the code to a script file in your scratchpad directory with the Write tool"
+TAG = "[inline-interpreter-hint] "
+GENERAL_ROUTE = TAG + "Write the code to a script file in your scratchpad directory with the Write tool"
 
 DENIED_COMMANDS = {
     "python_dash_flag_c": "python3 -c 'print(1)'",
@@ -217,7 +218,7 @@ class InlineInterpreterHintTest(unittest.TestCase):
 
     def test_the_deny_leads_with_the_route_and_names_the_existing_session_scratchpad(self):
         reason, scratchpad = self.scratchpad_reason(make_folder=True)
-        self.assertTrue(reason.startswith(f"Write the code to a script file in {scratchpad} with the Write tool"))
+        self.assertTrue(reason.startswith(TAG + f"Write the code to a script file in {scratchpad} with the Write tool"))
         self.assertIn("python3 -", reason)
 
     def test_the_deny_keeps_the_general_words_without_a_transcript_path(self):

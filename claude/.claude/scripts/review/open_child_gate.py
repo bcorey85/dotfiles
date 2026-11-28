@@ -27,6 +27,7 @@ import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import handback_store
+import hook_input
 import loop_transcript
 import script_utils
 
@@ -120,7 +121,7 @@ def main():
     hook = json.load(sys.stdin)
     reason = deny_reason_for(hook)
     if reason:
-        script_utils.pre_tool_use_deny(reason)
+        hook_input.emit_decision("deny", reason)
 
 
 if __name__ == "__main__":

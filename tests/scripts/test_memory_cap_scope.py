@@ -22,6 +22,7 @@ sys.path.insert(0, str(toolkit_paths.GATES_DIR))
 import inline_interpreter_hint
 
 HOOK = toolkit_paths.GATES_DIR / "inline_interpreter_hint.py"
+TAG = "[inline-interpreter-hint] "
 
 CAUGHT = {
     "heredoc_fed_to_a_shell": "bash <<'EOF'\npytest -x tests/\nEOF",
@@ -301,7 +302,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], memory_cap_scope.DENY_TEXT)
+        self.assertEqual(decision["permissionDecisionReason"], TAG + memory_cap_scope.DENY_TEXT)
         self.assertIn("systemd-run --user --scope", decision["permissionDecisionReason"])
         self.assertIn("MemorySwapMax=0", decision["permissionDecisionReason"])
         self.assertIn(memory_cap_scope.CAPPED_PREFIX, decision["permissionDecisionReason"])
@@ -320,7 +321,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], memory_cap_scope.DENY_TEXT)
+        self.assertEqual(decision["permissionDecisionReason"], TAG + memory_cap_scope.DENY_TEXT)
 
     def test_a_background_full_suite_gets_the_prefix_added(self):
         for command in ("pytest", "bash tests/run.sh"):
@@ -358,7 +359,7 @@ class HookTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 decision = json.loads(result.stdout)["hookSpecificOutput"]
                 self.assertEqual(decision["permissionDecision"], "deny")
-                self.assertEqual(decision["permissionDecisionReason"], memory_cap_scope.DENY_TEXT)
+                self.assertEqual(decision["permissionDecisionReason"], TAG + memory_cap_scope.DENY_TEXT)
 
     def test_a_usage_run_is_not_rewritten(self):
         for name, command in NOT_REWRITABLE_NOT_DENIED.items():
@@ -377,7 +378,7 @@ class HookTest(unittest.TestCase):
         self.assertNotIn(memory_cap_scope.DENY_TEXT, result.stdout)
         decision = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], inline_interpreter_hint.deny_text(payload))
+        self.assertEqual(decision["permissionDecisionReason"], TAG + inline_interpreter_hint.deny_text(payload))
 
     def test_a_subagent_plain_foreground_run_gets_the_prefix_added(self):
         payload = {"tool_name": "Bash", "agent_id": "coder-1", "tool_input": {"command": "pytest tests/test_a.py"}}
@@ -394,7 +395,7 @@ class HookTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         with unittest.mock.patch.object(memory_cap_scope, "cap_available", return_value=True):
             expected = memory_cap_scope.background_deny_text()
-        self.assertEqual(decision["permissionDecisionReason"], expected)
+        self.assertEqual(decision["permissionDecisionReason"], TAG + expected)
 
     def test_a_machine_with_no_scope_passes_the_call(self):
         result = subprocess.run(["/usr/bin/env", "-i", "PATH=/nonexistent", sys.executable, str(HOOK)],

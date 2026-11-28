@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -22,6 +23,27 @@ class HookNameTest(unittest.TestCase):
     def test_a_hook_run_with_no_script_name_reports_hook(self):
         with unittest.mock.patch.object(sys, "argv", [""]):
             self.assertEqual("hook", hook_input.hook_name())
+
+
+class RefusalReasonTest(unittest.TestCase):
+    def setUp(self):
+        script = os.path.join("scripts", "rg_path_gate.py")
+        patcher = unittest.mock.patch.object(sys, "argv", [script])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_deny_reason_opens_with_the_gate_tag(self):
+        line = json.loads(hook_input.decision_line("deny", "Pass the path."))
+
+        self.assertEqual("[rg-path-gate] Pass the path.", line["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_reason_that_already_opens_with_a_tag_is_kept(self):
+        self.assertEqual("[git_force_push] no", hook_input.refusal_reason("[git_force_push] no"))
+
+    def test_an_allow_reason_gets_no_tag(self):
+        line = json.loads(hook_input.decision_line("allow", "Added the cap."))
+
+        self.assertEqual("Added the cap.", line["hookSpecificOutput"]["permissionDecisionReason"])
 
 
 class TempDirTest(unittest.TestCase):

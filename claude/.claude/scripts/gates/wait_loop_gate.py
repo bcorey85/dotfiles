@@ -25,6 +25,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+import hook_input
 import tool_call_flags
 from shell_command import resolved_command_words, wrapper_chain
 from shell_statements import clean, statements
@@ -268,9 +269,7 @@ def main():
         if not os.environ.get("CLAUDE_SKIP_HOOKS") and is_subagent and isinstance(command, str):
             reason = subagent_reason(payload, tool_input, command)
             if reason:
-                sys.stdout.write(json.dumps({"hookSpecificOutput": {
-                    "hookEventName": "PreToolUse", "permissionDecision": "deny",
-                    "permissionDecisionReason": reason}}))
+                hook_input.emit_decision("deny", reason)
     except Exception as error:  # fail-open: a gate bug never blocks a Bash call
         sys.stderr.write(f"wait_loop_gate: {type(error).__name__}: {error}\n")
     sys.exit(0)

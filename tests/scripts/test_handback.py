@@ -40,6 +40,8 @@ import review_loop_post_cap  # noqa: E402
 import review_user_ruled  # noqa: E402
 import reviewed_tree  # noqa: E402
 
+TAGGED_DEAD_REVIEWER_REASON = "[handback] " + handback_hook.DEAD_REVIEWER_REASON
+
 
 def packet_text(fields, **changes):
     """The JSON packet of `fields` with `changes` laid over them; a change to None drops that key."""
@@ -1918,7 +1920,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
                 decision = json.loads(out)["hookSpecificOutput"]
                 self.assertEqual(decision["permissionDecision"], "deny")
-                self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+                self.assertEqual(decision["permissionDecisionReason"], TAGGED_DEAD_REVIEWER_REASON)
                 self.assertEqual(self.handback_rows(), [])
 
     def test_a_clean_hand_back_repeated_on_the_same_dead_reviewer_passes_flagged_as_not_reviewed(self):
@@ -1929,7 +1931,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
         repeated = self.hand_back(steps)
 
         reason = json.loads(denied)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(reason, TAGGED_DEAD_REVIEWER_REASON)
         self.assertEqual(repeated, "")
         rows = self.handback_rows()
         self.assertEqual(len(rows), 1)
@@ -1949,7 +1951,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
         passed = self.hand_back(second)
 
         reason = json.loads(denied_again)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertEqual(reason, handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(reason, TAGGED_DEAD_REVIEWER_REASON)
         self.assertEqual(passed, "")
         self.assertTrue(self.handback_rows()[0]["no_reviewer"])
 
@@ -1974,7 +1976,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
 
         decision = json.loads(out)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(decision["permissionDecisionReason"], TAGGED_DEAD_REVIEWER_REASON)
         self.assertEqual(self.handback_rows(), [])
 
     def test_a_capped_packet_that_reads_deferred_is_denied_when_the_latest_reviewer_died(self):
@@ -1986,7 +1988,7 @@ class OneCheckedHandBackTest(HandbackTestBase):
         out = self.hand_back(steps, message=capped, cwd=str(repo))
 
         decision = json.loads(out)["hookSpecificOutput"]
-        self.assertEqual(decision["permissionDecisionReason"], handback_hook.DEAD_REVIEWER_REASON)
+        self.assertEqual(decision["permissionDecisionReason"], TAGGED_DEAD_REVIEWER_REASON)
         self.assertEqual(self.handback_rows(), [])
 
     def test_a_clean_hand_back_passes_when_a_later_reviewer_reported_after_an_earlier_one_died(self):

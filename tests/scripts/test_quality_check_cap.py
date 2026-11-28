@@ -64,6 +64,7 @@ class QualityCheckCapTest(unittest.TestCase):
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["hookEventName"], "PreToolUse")
         self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertTrue(decision["permissionDecisionReason"].startswith("[quality-check-cap] "))
         return decision["permissionDecisionReason"]
 
     def state_files(self, session="s1"):

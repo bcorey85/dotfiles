@@ -30,6 +30,7 @@ sys.path[:0] = [str(SCRIPTS_DIR / folder) for folder in ("lib", "review", "code"
 
 import code_wait
 import handback_store
+import hook_input
 import loop_transcript
 import open_child_gate
 import process_group
@@ -260,7 +261,7 @@ def run_hook_verb():
         print(f"fork-children-hook: skipped, {type(error).__name__}: {error}", file=sys.stderr)
         return
     if reason:
-        script_utils.pre_tool_use_deny(reason)
+        hook_input.emit_decision("deny", reason)
 
 
 def fork_repo(fork_transcript):

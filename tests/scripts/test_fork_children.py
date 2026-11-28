@@ -111,6 +111,7 @@ class ForkChildrenTest(unittest.TestCase):
         decision = json.loads(proc.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
         reason = decision["permissionDecisionReason"]
+        self.assertTrue(reason.startswith("[fork-children] "), reason)
         self.assertIn(f"fork_children.py {FORK_ID}", reason)
         self.assertIn(f"code fork {FORK_ID} has live children: ", reason)
         self.assertIn("TaskStop each agent id it names; for a launch with no agent id yet, rerun it once the launch "

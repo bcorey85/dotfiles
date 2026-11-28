@@ -211,11 +211,6 @@ def pilot_passes(payload, command):
     return True
 
 
-def emit_deny(reason):
-    sys.stdout.write(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}))
-
-
 def emit_capped_rewrite(tool_input):
     """Prints an allow-with-update reply that puts the memory cap in front of the test run."""
     command = tool_input["command"]
@@ -242,13 +237,13 @@ def main():
         is_blocked = blocked(command)
         cap_available = memory_cap_scope.cap_available()
         if is_blocked and not pilot_passes(payload, command):
-            emit_deny(deny_text(payload))
+            hook_input.emit_decision("deny", deny_text(payload))
         elif runs_in_foreground(payload) and memory_cap_scope.foreground_full_suite(command):
-            emit_deny(memory_cap_scope.background_deny_text())
+            hook_input.emit_decision("deny", memory_cap_scope.background_deny_text())
         elif cap_available and not is_blocked and memory_cap_scope.is_rewritable_test_run(command):
             emit_capped_rewrite(payload["tool_input"])
         elif cap_available and memory_cap_scope.uncapped_test_run(command):
-            emit_deny(memory_cap_scope.DENY_TEXT)
+            hook_input.emit_decision("deny", memory_cap_scope.DENY_TEXT)
     except Exception:
         pass
     sys.exit(0)

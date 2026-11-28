@@ -19,6 +19,7 @@ import sys
 
 _SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path[:0] = [os.path.join(os.path.dirname(_SCRIPT_DIR), "lib")]
+import hook_input
 from shell_command import (
     parse_raw_simple_commands,
     parse_simple_commands,
@@ -174,7 +175,7 @@ def decision(tool_input, command, words):
     reason = REASON_NO_FIX if hanging_rg(fixed) is not None else REASON.format(fixed=fixed)
     return {"hookSpecificOutput": {
         "hookEventName": "PreToolUse", "permissionDecision": "deny",
-        "permissionDecisionReason": reason}}
+        "permissionDecisionReason": hook_input.refusal_reason(reason)}}
 
 
 def main():

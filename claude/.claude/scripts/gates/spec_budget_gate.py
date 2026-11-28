@@ -106,13 +106,6 @@ def phase_paths(base):
     return found
 
 
-def deny(reason):
-    line = ('{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",'
-            f'"permissionDecisionReason":"{reason}"}}}}\n')
-    sys.stdout.buffer.write(line.encode("utf-8", "surrogateescape"))
-    sys.stdout.buffer.flush()
-
-
 def check(raw):
     if os.environ.get("CLAUDE_SKIP_HOOKS"):
         return
@@ -164,8 +157,9 @@ def check(raw):
     resident = spine + max_phase
 
     if resident > RESIDENT_CEILING and new_words > old_words:
-        deny(
-            f"spec-budget-gate: this edit puts eng-spec's resident load at ~{resident} words (ceiling "
+        hook_input.emit_decision(
+            "deny",
+            f"this edit puts eng-spec's resident load at ~{resident} words (ceiling "
             f"{RESIDENT_CEILING}) — SKILL.md ({spine}) "
             f"plus its largest phase file ({max_phase}). That is what is actually in context during a run and what has "
             "to "
@@ -176,8 +170,9 @@ def check(raw):
         return
 
     if new_total > TOTAL_CEILING and new_total > total:
-        deny(
-            f"spec-budget-gate: this edit grows the planning tree to ~{new_total} words (ceiling {TOTAL_CEILING}, "
+        hook_input.emit_decision(
+            "deny",
+            f"this edit grows the planning tree to ~{new_total} words (ceiling {TOTAL_CEILING}, "
             f"currently {total}). The "
             f"planning system grows only by displacement — delete words elsewhere in the guarded set (eng-spec, "
             f"spec-* agents, its _shared files) in the same change, or ask the user to raise TOTAL_CEILING in "

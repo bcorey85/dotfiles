@@ -34,7 +34,7 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 0)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertTrue(decision["permissionDecisionReason"])
+        self.assertTrue(decision["permissionDecisionReason"].startswith("[wait-loop-gate] "))
         return decision["permissionDecisionReason"]
 
     def assert_passes(self, command, subagent=True):

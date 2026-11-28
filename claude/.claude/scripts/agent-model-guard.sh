@@ -48,7 +48,7 @@ if [[ "$subagent" == "fork" ]]; then
 fi
 
 if [[ -n "$subagent" ]] && [[ ! "$subagent" =~ ^[A-Za-z0-9_-]+$ ]]; then
-  reason="Agent call to subagent_type='${subagent}' is invalid. subagent_type must contain only alphanumeric characters, hyphens, and underscores."
+  reason="[agent-model-guard] Agent call to subagent_type='${subagent}' is invalid. subagent_type must contain only alphanumeric characters, hyphens, and underscores."
   jq -cn --arg r "$reason" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
@@ -62,7 +62,7 @@ if [[ "$model" == *opus* ]]; then
     echo "is a 'model: opus' line in the agent file's own frontmatter."
     echo "Use 'haiku' (read-only/lookup) or 'sonnet' (fan-out implementation) at the call site."
   } >&2
-  reason="Agent call sets model containing 'opus' at the call site. Call-site Opus is forbidden — add a 'model: opus' pin in the agent file frontmatter instead."
+  reason="[agent-model-guard] Agent call sets model containing 'opus' at the call site. Call-site Opus is forbidden — add a 'model: opus' pin in the agent file frontmatter instead."
   jq -cn --arg r "$reason" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
@@ -74,7 +74,7 @@ if [[ "$model" == *inherit* ]]; then
     echo "When the orchestrator is on Opus this silently fans out Opus subagents."
     echo "Use 'haiku' (read-only/lookup) or 'sonnet' (fan-out implementation) at the call site."
   } >&2
-  reason="Agent call sets model containing 'inherit' at the call site. 'inherit' resolves to the orchestrator model at runtime, silently fanning out Opus subagents."
+  reason="[agent-model-guard] Agent call sets model containing 'inherit' at the call site. 'inherit' resolves to the orchestrator model at runtime, silently fanning out Opus subagents."
   jq -cn --arg r "$reason" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
   exit 0
 fi
@@ -119,6 +119,6 @@ fi
   echo "      model: \"haiku\"  - read-only / lookup work"
   echo "      model: \"sonnet\" - fan-out implementation or analysis"
 } >&2
-reason="Agent call to subagent_type='${subagent}' has no model pin. No 'model:' frontmatter found in the agent file (or the file does not exist). Add a 'model:' line to the agent frontmatter or pass an explicit model at the call site."
+reason="[agent-model-guard] Agent call to subagent_type='${subagent}' has no model pin. No 'model:' frontmatter found in the agent file (or the file does not exist). Add a 'model:' line to the agent frontmatter or pass an explicit model at the call site."
 jq -cn --arg r "$reason" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
 exit 0

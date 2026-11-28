@@ -50,6 +50,7 @@ class OpenChildGateTest(unittest.TestCase):
     def assert_denied(self, proc):
         decision = json.loads(proc.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
+        self.assertTrue(decision["permissionDecisionReason"].startswith("[open-child-gate] "))
         self.assertIn("completion notice", decision["permissionDecisionReason"])
         self.assertIn("Glob", decision["permissionDecisionReason"])
         self.assertIn("failure", decision["permissionDecisionReason"])

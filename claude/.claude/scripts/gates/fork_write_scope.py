@@ -35,21 +35,21 @@ import import_guard
 GATED_AGENT = "code-fork"
 RUN_FOLDER_NAME = "code-phase"
 GATE_NAME = "fork-write-scope"
-DENY_TEXT = (f"{GATE_NAME}: code-fork writes only files in its run folder, the path `git rev-parse "
+DENY_TEXT = (f"[{GATE_NAME}] code-fork writes only files in its run folder, the path `git rev-parse "
              "--path-format=absolute --git-path code-phase` prints. {file_path} is outside it. Send any other edit "
              "to a coder.")
 REVIEW_FIX_ROUTE_TEXT = (
     DENY_TEXT + " To add findings to the fix run asks-done printed, write them to {findings_file} (the same `- ` item "
     "format) and add `--also-fix {findings_file}` to that launch line. The write gate stays closed: no other file "
     "outside the run folder can be written.")
-PENDING_TEXT = (f"{GATE_NAME}: asks-done printed a fix run that has not launched, so {{file_name}} cannot be written "
+PENDING_TEXT = (f"[{GATE_NAME}] asks-done printed a fix run that has not launched, so {{file_name}} cannot be written "
                 "yet. Run this launch line first, then wait on it: {launch_line} If this run must not start, stop and "
                 "tell the user, who removes the `{key}` key from {state_file}.")
-UNREADABLE_RESUME_TEXT = (f"{GATE_NAME}: the resume record {{resume_file}} cannot be checked ({{error}}), so stop.md "
+UNREADABLE_RESUME_TEXT = (f"[{GATE_NAME}] the resume record {{resume_file}} cannot be checked ({{error}}), so stop.md "
                           "cannot be written. Run step 5 (code_review_start.py ... --base <phase base>, the sha "
                           "phase_start.py printed) on the resume diff; stop.md can be written once that review "
                           "loop has started - denied.")
-UNREADABLE_STATE_TEXT = (f"{GATE_NAME}: {{state_file}} is not a readable JSON object ({{error}}), so {{file_name}} "
+UNREADABLE_STATE_TEXT = (f"[{GATE_NAME}] {{state_file}} is not a readable JSON object ({{error}}), so {{file_name}} "
                          "cannot be written. Tell the user to repair or delete that file - denied.")
 
 

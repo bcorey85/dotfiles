@@ -115,6 +115,15 @@ class AgentModelGuardTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("inherit", denial_reason(reply) or "")
 
+    def test_every_denial_opens_with_the_guard_tag(self):
+        cases = [{"subagent_type": "../../etc/x"}, {"subagent_type": "no-such-agent", "model": "opus"},
+                 {"subagent_type": "no-such-agent", "model": "inherit"}, {"subagent_type": "no-such-agent"}]
+        for tool_input in cases:
+            with self.subTest(tool_input=tool_input):
+                code, reply = run_guard({**tool_input, "prompt": "x"})
+                self.assertEqual(code, 0)
+                self.assertTrue((denial_reason(reply) or "").startswith("[agent-model-guard] "))
+
     def test_skip_hooks_variable_passes_opus(self):
         code, reply = run_guard({"subagent_type": "no-such-agent", "model": "opus", "prompt": "x"},
                                 extra_environment={"CLAUDE_SKIP_HOOKS": "1"})

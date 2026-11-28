@@ -252,11 +252,12 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         gate.COMMAND_TIMEOUT_SECONDS = timeout_seconds
         event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
                  "tool_input": {"message": "BEHAVIOR: done"}}
-        printed = io.StringIO()
+        printed = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
         with mock.patch.dict(os.environ, self.env), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
                 contextlib.redirect_stdout(printed):
             gate.run_hook()
-        return printed.getvalue()
+        printed.flush()
+        return printed.buffer.getvalue().decode("utf-8")
 
     def test_the_hook_allows_a_gate_whose_only_command_timed_out_and_stamps_the_timeout(self):
         command = "echo FAILED test_one; sleep 5"
@@ -298,11 +299,12 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         gate.MIN_COMMAND_SECONDS = min_command_seconds
         event = {"agent_type": "coder", "agent_id": "a1", "cwd": str(self.repo),
                  "tool_input": {"message": "BEHAVIOR: done"}}
-        printed = io.StringIO()
+        printed = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
         with mock.patch.dict(os.environ, self.env), mock.patch.object(sys, "stdin", io.StringIO(json.dumps(event))), \
                 contextlib.redirect_stdout(printed):
             gate.run_hook()
-        return printed.getvalue()
+        printed.flush()
+        return printed.buffer.getvalue().decode("utf-8")
 
     def test_a_run_over_the_time_budget_names_the_commands_it_did_not_start_and_ends_with_a_verdict(self):
         self.gate_set("sleep 10", "echo second", "echo third")
@@ -441,6 +443,7 @@ class CoderGateEnvironmentTests(unittest.TestCase):
         hook = self.gate_hook()
 
         reason = json.loads(hook.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertTrue(reason.startswith("[coder-gate] "), reason)
         self.assertIn("Failing tests:\nFAIL: test_x (app.tests.T)", reason)
 
     def test_a_missing_tool_stamp_names_the_tool_and_stays_uncounted(self):

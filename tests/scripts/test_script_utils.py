@@ -931,20 +931,6 @@ class HangingIndentLinesTest(unittest.TestCase):
         self.assertEqual(["- 5"], script_utils.hanging_indent_lines("- ", 5))
 
 
-class PreToolUseDenyTest(unittest.TestCase):
-    def test_prints_one_json_line_that_denies_the_call_with_the_reason(self):
-        printed = io.StringIO()
-
-        with contextlib.redirect_stdout(printed):
-            script_utils.pre_tool_use_deny("Read the file first.")
-
-        printed_lines = printed.getvalue().splitlines()
-        denial = json.loads(printed.getvalue())
-        self.assertEqual({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": "Read the file first."}}, denial)
-        self.assertEqual(1, len(printed_lines))
-
-
 class SortableUniqueIdTest(unittest.TestCase):
     def test_ids_made_in_one_second_differ_and_later_seconds_sort_later(self):
         first = script_utils.sortable_unique_id(1000)

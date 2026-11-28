@@ -79,7 +79,7 @@ class SpecBudgetGateTest(unittest.TestCase):
         self.put("skills/eng-spec/phases/a.md", words(600))
         reason = self.denial(self.write(path, words(901)))
         self.assertEqual(reason,
-                         "spec-budget-gate: this edit puts eng-spec's resident load at ~1501 words (ceiling 1500) — "
+                         "[spec-budget-gate] this edit puts eng-spec's resident load at ~1501 words (ceiling 1500) — "
                          "SKILL.md (901) plus its largest phase file (600). That is what is actually in context "
                          "during a run and what has to survive compaction. Cut words from the spine or from that "
                          "phase file in the same change, or move a rule into the agent that is the only one who "
@@ -138,7 +138,7 @@ class SpecBudgetGateTest(unittest.TestCase):
         self.assert_allowed(self.write(path, words(150)))
         reason = self.denial(self.write(path, words(151)))
         self.assertEqual(reason,
-                         "spec-budget-gate: this edit grows the planning tree to ~8701 words (ceiling 8700, "
+                         "[spec-budget-gate] this edit grows the planning tree to ~8701 words (ceiling 8700, "
                          "currently 8650). The planning system grows only by displacement — delete words elsewhere "
                          "in the guarded set (eng-spec, spec-* agents, its _shared files) in the same change, or "
                          "ask the user to raise TOTAL_CEILING in spec_budget_gate.py. Never raise it yourself.")

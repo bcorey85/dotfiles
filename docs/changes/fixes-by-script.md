@@ -7,7 +7,7 @@ description: "How many fix notes name each component (each script it names, else
 
 # Fixes by script
 
-858 fix notes
+859 fix notes
 
 Recent: the 7 days up to 2026-11-27, the newest note.
 
@@ -16,15 +16,15 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/code-step | 177 | 6 |
 | script/review-loop-script | 82 | 13 |
 | script/review-fix | 79 | 7 |
-| script/handback | 59 | 3 |
+| script/handback | 60 | 4 |
 | script/review-commit-gate | 46 | 2 |
 | script/review-loop-gate | 35 | 0 |
 | script/full-check | 34 | 6 |
+| script/coder-gate | 33 | 6 |
 | script/script-utils | 33 | 10 |
-| script/coder-gate | 32 | 5 |
 | script/review-loop | 32 | 15 |
 | script/plan-format | 31 | 7 |
-| script/quality-check-cap | 24 | 4 |
+| script/quality-check-cap | 25 | 5 |
 | script/shell-write-gate | 24 | 0 |
 | script/git-discipline-gate | 23 | 10 |
 | script/pull-keep-index | 22 | 10 |
@@ -38,8 +38,8 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/review-launch | 17 | 11 |
 | script/code-wait | 16 | 6 |
 | script/criteria-dry-run | 15 | 6 |
+| script/inline-interpreter-hint | 14 | 9 |
 | script/verify-log | 14 | 1 |
-| script/inline-interpreter-hint | 13 | 8 |
 | script/refactor-flow | 13 | 2 |
 | script/log-review-finding | 12 | 0 |
 | script/verify-common | 12 | 2 |
@@ -57,6 +57,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/reviewer-dispatch | 8 | 3 |
 | script/herdr-phase-change | 7 | 3 |
 | script/log-review-metrics | 7 | 0 |
+| script/open-child-gate | 7 | 2 |
 | skill/refactor | 7 | 1 |
 | script/adr-flow | 6 | 3 |
 | script/check-discovery | 6 | 3 |
@@ -64,7 +65,6 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/handback-store | 6 | 0 |
 | script/ledger-write | 6 | 0 |
 | script/loop-transcript | 6 | 3 |
-| script/open-child-gate | 6 | 1 |
 | script/parallel-tests | 6 | 1 |
 | script/pipe-shell-check | 6 | 0 |
 | script/plan-check | 6 | 6 |
@@ -72,35 +72,35 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/reviewed-tree | 6 | 4 |
 | script/shell-statements | 6 | 2 |
 | skill/eng-spec | 6 | 2 |
+| script/agent-model-guard | 5 | 2 |
 | script/code-relay | 5 | 3 |
 | script/deferred-push-check | 5 | 0 |
+| script/fork-children | 5 | 5 |
 | script/format-changed | 5 | 1 |
 | script/format-files | 5 | 1 |
 | script/herdr-dev | 5 | 3 |
 | script/herdr-lane-resume | 5 | 5 |
 | script/herdr-worktree-watch | 5 | 4 |
+| script/rg-path-gate | 5 | 2 |
 | script/run-sh | 5 | 1 |
 | script/session-pane | 5 | 5 |
 | script/test-run-output | 5 | 0 |
+| script/wait-loop-gate | 5 | 2 |
 | (no component) | 4 | 0 |
-| script/agent-model-guard | 4 | 1 |
 | script/bash-safety-gate | 4 | 0 |
-| script/fork-children | 4 | 4 |
+| script/fork-write-scope | 4 | 2 |
 | script/herdr-worktree-prune | 4 | 3 |
+| script/hook-input | 4 | 3 |
 | script/log-scan | 4 | 0 |
 | script/review-loop-packet | 4 | 1 |
-| script/rg-path-gate | 4 | 1 |
 | script/source-paths | 4 | 0 |
-| script/wait-loop-gate | 4 | 1 |
 | agent/goal-blind-researcher | 3 | 0 |
 | rule/orchestration | 3 | 0 |
 | script/announced-step | 3 | 3 |
 | script/calibration-guard | 3 | 1 |
 | script/code | 3 | 0 |
 | script/criteria-verdict | 3 | 0 |
-| script/fork-write-scope | 3 | 1 |
 | script/gate-commands | 3 | 0 |
-| script/hook-input | 3 | 2 |
 | script/hunk-review-pane | 3 | 3 |
 | script/lanes | 3 | 3 |
 | script/log-spec-run | 3 | 0 |
@@ -229,6 +229,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/shape-clones | 1 | 0 |
 | script/shell-variables | 1 | 0 |
 | script/simplify-slices | 1 | 0 |
+| script/spec-budget-gate | 1 | 1 |
 | script/stale-prose | 1 | 0 |
 | script/standing-rulings | 1 | 1 |
 | script/system-resources | 1 | 1 |

@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1301 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
+1302 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The comment gate passes a three-line comment block with a nudge to recheck it](notes/2026-11-27-the-comment-gate-passes-three-comment-lines-with-a.md).
+Latest change: 2026-11-27, [Every toolkit gate refusal opens with its [gate] tag](notes/2026-11-27-every-toolkit-gate-refusal-opens-with-its-gate-tag.md).
 
 ## Top gains
 

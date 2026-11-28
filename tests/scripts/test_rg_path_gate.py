@@ -25,6 +25,7 @@ class RgPathGateTest(unittest.TestCase):
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertNotIn("updatedInput", decision)
+        self.assertTrue(decision["permissionDecisionReason"].startswith("[rg-path-gate] "))
         self.assertIn(f"Run this instead: {fixed}", decision["permissionDecisionReason"])
 
     def assert_passes(self, command):

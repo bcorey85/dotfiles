@@ -169,13 +169,13 @@ class UnreadOverwriteTest(unittest.TestCase):
     def test_a_code_fork_unread_write_gets_the_unread_overwrite_deny(self):
         second = self.transcript("second-id", [])
         reason = self.run_code_fork(second)
-        self.assertTrue(reason.startswith("unread-overwrite:"), reason)
+        self.assertTrue(reason.startswith("[unread-overwrite] "), reason)
         self.assertIn(str(self.shared_log), reason)
 
     def test_a_code_fork_write_that_passes_the_read_check_still_gets_the_fork_deny(self):
         second = self.transcript("second-id", [result_line(str(self.shared_log), 30, "read")])
         reason = self.run_code_fork(second)
-        self.assertTrue(reason.startswith("fork-write-scope: code-fork writes only"), reason)
+        self.assertTrue(reason.startswith("[fork-write-scope] code-fork writes only"), reason)
 
     def test_a_code_fork_write_to_an_existing_run_folder_file_it_read_is_allowed(self):
         run_folder = self.root / "repo" / "code-phase"

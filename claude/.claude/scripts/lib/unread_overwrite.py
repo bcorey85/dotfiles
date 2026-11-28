@@ -15,7 +15,7 @@ import stat
 
 import transcript_time
 
-DENY_TEXT = ("unread-overwrite: {file_path} exists and this session has not read it since it last changed "
+DENY_TEXT = ("[unread-overwrite] {file_path} exists and this session has not read it since it last changed "
              "({writer}). Read it first, then Edit it or Write the merged text, so the other writer's content is kept.")
 # A Claude Write or Edit result, or a Bash edit record, names a writer; a Bash redirect, an editor, a script or an ended
 # session leaves none.

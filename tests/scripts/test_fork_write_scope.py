@@ -58,7 +58,7 @@ class ForkWriteScopeTest(unittest.TestCase):
         self.assertEqual(decision(result), "deny")
         self.assertIn("coder", result.stdout)
         reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertTrue(reason.startswith("fork-write-scope: "), reason)
+        self.assertTrue(reason.startswith("[fork-write-scope] "), reason)
 
     def test_a_review_fix_path_is_denied_and_the_reason_names_the_also_fix_route(self):
         git_dir = self.repo / ".git"
@@ -68,7 +68,7 @@ class ForkWriteScopeTest(unittest.TestCase):
         findings_file = git_dir.resolve() / "code-phase" / "fix-findings.md"
         self.assertIn(f"--also-fix {findings_file}", reason)
         self.assertIn("stays closed", reason)
-        self.assertTrue(reason.startswith("fork-write-scope: "), reason)
+        self.assertTrue(reason.startswith("[fork-write-scope] "), reason)
 
     def test_a_review_fix_folder_outside_a_git_dir_is_denied_without_the_also_fix_route(self):
         result = run_hook(str(self.repo / "review-fix" / "x.md"))
@@ -111,7 +111,7 @@ class PendingLaunchTest(unittest.TestCase):
         result = run_hook(self.stop_file)
         self.assertEqual(decision(result), "deny")
         reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertTrue(reason.startswith("fork-write-scope: "), reason)
+        self.assertTrue(reason.startswith("[fork-write-scope] "), reason)
         self.assertIn(self.LAUNCH_LINE, reason)
         self.assertIn("review-stop.md cannot be written yet", reason)
         self.assertIn("stop and tell the user", reason)

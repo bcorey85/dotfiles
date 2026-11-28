@@ -881,7 +881,7 @@ def run_hook():
     if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
         reason = fork_review.missing_review_reason(event)
         if reason:
-            script_utils.pre_tool_use_deny(reason)
+            hook_input.emit_decision("deny", reason)
         return
 
     if event.get("agent_type") != "coder":
@@ -904,7 +904,7 @@ def run_hook():
     log_gate_run(report.gate, report.coder, report.seconds, report.counts)
 
     if report.coder["result"] == "deny":
-        script_utils.pre_tool_use_deny(denial(report.failures))
+        hook_input.emit_decision("deny", denial(report.failures))
         return
 
     tool_input = event.get("tool_input") or {}
@@ -927,7 +927,7 @@ def run_bash_hook():
     row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "repo": repo_name, "result": "whole-package-deny"}
     append_gate_log(row)
 
-    script_utils.pre_tool_use_deny(reason)
+    hook_input.emit_decision("deny", reason)
 
 
 def _parse_set_arguments(set_arguments):

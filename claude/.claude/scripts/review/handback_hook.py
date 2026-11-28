@@ -6,6 +6,7 @@ import pathlib
 import sys
 
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
+import hook_input
 import loop_transcript
 import script_utils
 from capped_review import CAP_REACHED, effective_status
@@ -319,7 +320,7 @@ def command_hook(argv):
             return 0
         reason = handle_hook(json.load(sys.stdin), argv[0])
         if reason:
-            script_utils.pre_tool_use_deny(reason)
+            hook_input.emit_decision("deny", reason)
     except Exception as error:
         print(f"handback hook: {error}", file=sys.stderr)
     return 0

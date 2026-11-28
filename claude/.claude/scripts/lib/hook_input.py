@@ -51,8 +51,17 @@ def emit_stderr(text):
     sys.stderr.buffer.flush()
 
 
+def refusal_reason(reason):
+    """A deny reason that opens with the gate's `[name]` tag, so a refusal names the gate that made it."""
+    if reason.startswith("["):
+        return reason
+    return f"[{hook_name()}] {reason}"
+
+
 def decision_line(decision, reason):
-    """The one-line PreToolUse permission decision JSON, as `jq -nc` prints it."""
+    """The one-line PreToolUse permission decision JSON, as `jq -nc` prints it. A deny reason opens with its tag."""
+    if decision == "deny":
+        reason = refusal_reason(reason)
     encoded = json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
                                                  "permissionDecisionReason": reason}},
                          ensure_ascii=False, separators=(",", ":"))

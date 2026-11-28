@@ -3,7 +3,7 @@
 
 Usage: herdr-lane-sweep [-h|--help]
 
-A lane is a worktree that `herdr-worktree --fork` started, with one entry under
+A lane is a worktree that `herdr-worktree` started from a brief, with one entry under
 ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/. herdr-worktree runs this
 sweep on every run, once its arguments and repo are checked, and herdr-wake-limited
 starts it at most once every 10 minutes. It prints one line per lane on stdout:

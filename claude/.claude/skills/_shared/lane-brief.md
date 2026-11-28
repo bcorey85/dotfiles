@@ -1,6 +1,6 @@
 # Lane brief
 
-A lane is a session forked into its own worktree by `herdr-worktree --fork`. Its brief names the task and the
+A lane is a session started in its own worktree by `herdr-worktree` from its brief. Its brief names the task and the
 orchestrating session, then points here. `<orchestrator>` below is that session's name.
 
 ## Report only to the orchestrator

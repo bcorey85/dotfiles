@@ -2,20 +2,21 @@
 # Create a git worktree as its own herdr workspace (a tuios session under
 # tuios), laid out by herdr-dev.
 #
-# Usage: herdr-worktree [--fork --prompt-file <path> | --fork --prompt <text>]
+# Usage: herdr-worktree [--fork] [--prompt-file <path> | --prompt <text>]
 #                       [--base <ref>] [branch]
 #   branch        prompted for when omitted (the prefix+ctrl+w popup).
-#   --fork        carry the Claude conversation running in this pane into the
-#                 new workspace's claude pane, as a forked session. Needs a
-#                 brief: --prompt-file or --prompt. The forked lane opens
-#                 without the hunk pane (herdr-dev --headless).
-#   --prompt-file the file holding the brief the forked session starts working
-#                 on at once. Only with --fork.
+#   --prompt-file the file holding the brief. A run with a brief is a lane: a
+#                 claude session in the new workspace's claude pane (fresh, or
+#                 a fork of this conversation with --fork) that starts working
+#                 on the brief at once, opened without the hunk pane
+#                 (herdr-dev --headless).
 #   --prompt      the brief as text, in place of --prompt-file.
-#   --base        the ref to branch off. With --fork it defaults to HEAD, the
-#                 branch the forked conversation was working on. Otherwise it
-#                 defaults to origin's default branch, fetched first, or HEAD
-#                 when the repo has no origin.
+#   --fork        also carry the Claude conversation running in this pane into
+#                 the lane's claude pane, as a forked session. Needs a brief.
+#   --base        the ref to branch off. For a lane it defaults to HEAD, the
+#                 branch checked out here. Otherwise it defaults to origin's
+#                 default branch, fetched first, or HEAD when the repo has no
+#                 origin.
 #
 # The worktree lands beside the main checkout: <repo>-<TICKET-NUM> for a
 # TICKET-NUM-desc branch, otherwise <repo>-<desc> (feature/ and fix/ dropped,
@@ -29,36 +30,37 @@
 # A gitignored .python-version in the main checkout is linked into the new
 # worktree when the worktree has none, so the gates find the pin there.
 #
-# With --fork, the run fails when the new claude pane shows no claude agent
+# For a lane, the run fails when the new claude pane shows no claude agent
 # within HERDR_WORKTREE_FORK_TIMEOUT seconds (default 30). The error names the
-# pane and the command to run there. Once the fork starts, herdr-worktree-watch
+# pane and the command to run there. Once the lane starts, herdr-worktree-watch
 # checks the workspace HERDR_WORKTREE_WATCH_SECONDS later (default 120). If the
 # workspace is gone it writes the recovery steps to herdr-worktree-watch.log in
 # the worktree's git dir and shows a herdr notification that names that log (no
-# notification under tuios). When the lane entry holds the fork's session id, the log
+# notification under tuios). When the lane entry holds the lane's session id, the log
 # holds one step, `1. herdr-lane-resume <worktree folder name>` (herdr and tuios alike).
 # The steps below apply when the entry is missing or its session id is empty. With the
-# fork's session id they are two:
+# lane's session id they are two:
 #   1. herdr worktree open --cwd <main checkout> --path <worktree> --focus
-#   2. herdr-dev --headless <worktree> <ws> <fork session id> '<resume prompt>'
+#   2. herdr-dev --headless <worktree> <ws> <lane session id> '<resume prompt>'
 # <ws> is the workspace id that step 1 prints (.result.workspace.workspace_id);
 # the prompt is a short "go on", not the original brief. Under tuios step 1 is
 #   1. herdr-api workspace create --cwd <worktree> --label <worktree folder name> --focus
 # and step 2 starts with `herdr-api workspace focus <ws> >/dev/null && `.
 # Without the session id, step 1 stays and step 2 is
 # `CLAUDE_CODE_DISABLE_CRON=1 claude --resume` run in the worktree. The watcher is
-# given this conversation's session id and keeps waiting while the pane reports it,
+# given this conversation's session id (with --fork; empty for a fresh lane)
+# and keeps waiting while the pane reports it,
 # so step 2 never names the parent.
 # The watcher's own output goes to that log too.
 #
-# With --fork the run also writes a lane entry before herdr-dev starts: the brief,
-# worktree, branch, main checkout and the name of the session that forked, in
+# A lane run also writes a lane entry before herdr-dev starts: the brief,
+# worktree, branch, main checkout and the name of the session that started it, in
 # ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-lanes/<worktree folder name>.json (a
 # relative XDG_STATE_HOME is ignored). The
-# watcher fills in the fork's session id, and herdr-phase-change keeps the session id
-# and brief current. A failed write warns and the fork still starts; recovery for that
+# watcher fills in the lane's session id, and herdr-phase-change keeps the session id
+# and brief current. A failed write warns and the lane still starts; recovery for that
 # lane is then the steps above. `herdr-lane-resume <name>` reopens a lane from its entry.
-# A run without --fork writes no entry.
+# A run with no brief writes no entry.
 #
 # Once the arguments and the repo are checked, each run goes on with herdr-lane-sweep, which closes the lanes whose
 # branch is merged; a failed sweep only warns.
@@ -96,6 +98,7 @@ usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; }
 fork=""
 prompt=""
 prompt_file=""
+brief_given=""
 base=""
 branch=""
 while [ $# -gt 0 ]; do
@@ -105,11 +108,13 @@ while [ $# -gt 0 ]; do
         --prompt)
             [ $# -ge 2 ] || { echo "herdr-worktree: --prompt needs text" >&2; exit 1; }
             prompt="$2"
+            brief_given=1
             shift
             ;;
         --prompt-file)
             [ $# -ge 2 ] || { echo "herdr-worktree: --prompt-file needs a path" >&2; exit 1; }
             prompt_file="$2"
+            brief_given=1
             shift
             ;;
         --base)
@@ -130,20 +135,24 @@ if [ -n "$prompt_file" ]; then
     [ -z "$prompt" ] || { echo "herdr-worktree: give --prompt or --prompt-file, not both" >&2; exit 1; }
     prompt=$(cat -- "$prompt_file")
 fi
+[ -z "$brief_given" ] || [ -n "$prompt" ] \
+    || { echo "herdr-worktree: the brief is empty${prompt_file:+: $prompt_file}" >&2; exit 1; }
 
 [ -z "$fork" ] || [ -n "$prompt" ] \
     || { echo "herdr-worktree: --fork needs a brief for the forked session: --prompt-file <path> or --prompt <text>" >&2; exit 1; }
-[ -z "$prompt" ] || [ -n "$fork" ] \
-    || { echo "herdr-worktree: --prompt and --prompt-file only work with --fork" >&2; exit 1; }
+
+# A run with a brief is a lane; --fork only adds the caller's conversation to it.
+lane=""
+[ -z "$prompt" ] || lane=1
 
 command -v herdr-api >/dev/null \
     || { echo "herdr-worktree: herdr-api is not on PATH; run ~/dotfiles/install/stow to link it into ~/.local/bin" >&2; exit 1; }
 
 watch_seconds="${HERDR_WORKTREE_WATCH_SECONDS:-120}"
 fork_timeout="${HERDR_WORKTREE_FORK_TIMEOUT:-30}"
-if [ -n "$fork" ]; then
-    # Checked before anything is created: a failure after the fork starts would
-    # report a working fork as failed.
+if [ -n "$lane" ]; then
+    # Checked before anything is created: a failure after the lane starts would
+    # report a working lane as failed.
     missing_helpers=()
     for helper in detach herdr-worktree-watch; do
         [ -x "$bin_dir/$helper" ] || missing_helpers+=("$bin_dir/$helper")
@@ -181,9 +190,9 @@ main_checkout=$(main_checkout_of "$checkout")
 
 if [ -z "$base" ]; then
     base=HEAD
-    # A fork carries this conversation's work on, so its lane starts from the
+    # A lane carries this conversation's work on, so it starts from the
     # branch checked out here, unpushed commits included.
-    if [ -z "$fork" ] && git remote get-url origin &>/dev/null; then
+    if [ -z "$lane" ] && git remote get-url origin &>/dev/null; then
         default_branch=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) \
             || default_branch=""
         if [ -n "$default_branch" ]; then
@@ -231,7 +240,7 @@ fi
 # `lanes.py add` replaces an entry only when its worktree folder is gone and the folder is made next.
 # No entry (exit 1) is the usual case; any other failure is reported by the add below.
 label="$(basename "$worktree")"
-if [ -n "$fork" ]; then
+if [ -n "$lane" ]; then
     python3 "$lanes_cli" remove "$label" >/dev/null 2>&1 || true
 fi
 
@@ -298,8 +307,8 @@ done <<<"$lockfiles"
 herdr-api workspace focus "$ws" >/dev/null
 
 # The lane entry lets herdr-lane-resume reopen the lane. A failed write must not stop
-# the run: the workspace is already open, so it warns and the fork still starts.
-if [ -n "$fork" ]; then
+# the run: the workspace is already open, so it warns and the lane still starts.
+if [ -n "$lane" ]; then
     # The commit the lane branch starts from, so herdr-lane-sweep can tell a lane with work of its own from a new one.
     base_commit=$(git -C "$worktree" rev-parse --verify HEAD 2>/dev/null) || base_commit=""
     if ! add_error=$(printf '%s' "$prompt" | python3 "$lanes_cli" add --name "$label" --worktree "$worktree" \
@@ -313,9 +322,9 @@ if [ -n "$fork" ]; then
 fi
 
 # herdr-dev prints the claude pane's id, then the command it typed there. A
-# forked lane opens with the claude pane alone; a plain worktree keeps hunk.
+# lane opens with the claude pane alone; a plain worktree keeps hunk.
 dev_flags=()
-[ -z "$fork" ] || dev_flags=(--headless)
+[ -z "$lane" ] || dev_flags=(--headless)
 layout=$("$bin_dir/herdr-dev" ${dev_flags[@]+"${dev_flags[@]}"} "$worktree" "$ws" "$claude_session" "$prompt")
 claude_pane=$(sed -n 1p <<<"$layout")
 claude_cmd=$(sed -n 2p <<<"$layout")
@@ -325,7 +334,7 @@ if git -C "$worktree" remote get-url origin &>/dev/null; then
         || echo "herdr-worktree: push failed; run git push -u origin $(printf '%q' "$branch")" >&2
 fi
 
-[ -n "$fork" ] || exit 0
+[ -n "$lane" ] || exit 0
 
 # herdr adopts a pane as a claude agent once it detects the process.
 for _ in $(seq "$fork_timeout"); do
@@ -342,5 +351,5 @@ for _ in $(seq "$fork_timeout"); do
     fi
     sleep 1
 done
-echo "herdr-worktree: the fork did not start: pane $claude_pane shows no claude agent after ${fork_timeout}s. Run this in that pane: $claude_cmd" >&2
+echo "herdr-worktree: the lane did not start: pane $claude_pane shows no claude agent after ${fork_timeout}s. Run this in that pane: $claude_cmd" >&2
 exit 1

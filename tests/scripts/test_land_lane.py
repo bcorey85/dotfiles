@@ -44,8 +44,9 @@ class LandLaneTest(unittest.TestCase):
         self.git(self.main, "add", "-A")
         self.git(self.main, "commit", "-qm", "one")
         self.git(self.main, "push", "-q", "-u", "origin", "HEAD:master")
-        self.lane = self.clone("lane")
-        self.git(self.lane, "checkout", "-q", "-b", "lane")
+        # A lane is a worktree of the main checkout, so the two share one object store.
+        self.lane = self.tmp / "lane"
+        self.git(self.main, "worktree", "add", "-q", "-b", "lane", str(self.lane))
         self.write_suite(f"touch {self.marker}")
 
     def git(self, folder, *arguments):
@@ -124,6 +125,26 @@ class LandLaneTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
         self.assertIn("other.txt", finished.stdout)
         self.assertIn("shared.txt", finished.stdout)
+        self.assertEqual(self.origin_master(), before)
+
+    def test_origin_ahead_on_a_file_main_holds_dirty_stops_before_any_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        self.push_from_elsewhere("other.txt", "elsewhere\n")
+        # The lane never touches other.txt, but the pull into main brings in origin's change to it.
+        self.write(self.main, "other.txt", "dirty\n")
+        before = self.origin_master()
+        finished = self.land()
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("other.txt", finished.stdout)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self.origin_master(), before)
+
+    def test_main_switching_branch_during_the_suite_stops_before_the_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        before = self.origin_master()
+        finished = self.land(suite=f"git -C {self.main} checkout -q -b side")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("side", finished.stdout)
         self.assertEqual(self.origin_master(), before)
 
     def test_unrelated_dirty_file_in_main_does_not_stop(self):
@@ -401,8 +422,9 @@ class LandLaneTest(unittest.TestCase):
     def test_exit_code_comes_from_the_pull_into_main(self):
         self.lane_commit("lane.txt", "lane\n")
         self.push_from_elsewhere("other.txt", "elsewhere\n")
-        # other.txt is not a lane file, so the preflight passes, but the pull cannot overwrite main's edit.
+        # main holds a local commit on other.txt, not a dirty edit, so the preflight passes but the pull conflicts.
         self.write(self.main, "other.txt", "dirty\n")
+        self.git(self.main, "commit", "-qam", "local other")
         finished = self.land()
         self.assertEqual(self.origin_master(), self.git(self.lane, "rev-parse", "HEAD"))
         output = finished.stdout + finished.stderr

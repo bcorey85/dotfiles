@@ -1244,6 +1244,12 @@ class LandLaneGateTest(GateCaseBase):
             "systemd-run --user --scope --quiet -p MemoryMax=8G python3 tools/land_lane.py my-lane",
             "timeout 600 python3 tools/land_lane.py my-lane",
             "(cd /x && python3 tools/land_lane.py my-lane)",
+            'bash -c "python3 tools/land_lane.py x"',
+            "sh -c 'python3 ~/.claude/scripts/tools/land_lane.py x'",
+            'eval "python3 tools/land_lane.py x"',
+            "python3 -X dev tools/land_lane.py x",
+            "python3 -W ignore tools/land_lane.py x",
+            "xargs python3 tools/land_lane.py",
         )
         for form in forms:
             with self.subTest(form=form):
@@ -1262,6 +1268,8 @@ class LandLaneGateTest(GateCaseBase):
             "git status",
             "cat <<'EOF'\npython3 tools/land_lane.py my-lane\nEOF",
             'git log --grep "python3 tools/land_lane.py"',
+            "xargs rg land_lane.py",
+            "bash -c 'echo land_lane.py'",
         )
         for mention in mentions:
             with self.subTest(mention=mention):

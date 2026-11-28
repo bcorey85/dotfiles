@@ -27,7 +27,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/quality-check-cap | 24 | 4 |
 | script/shell-write-gate | 24 | 0 |
 | script/git-discipline-gate | 23 | 10 |
-| script/pull-keep-index | 23 | 11 |
+| script/pull-keep-index | 22 | 10 |
 | script/staged-claim-gate | 21 | 8 |
 | skill/code | 21 | 3 |
 | agent/review-loop | 20 | 0 |

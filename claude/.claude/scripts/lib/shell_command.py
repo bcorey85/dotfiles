@@ -822,6 +822,24 @@ def shell_code_argument(words):
     return None
 
 
+def nested_code_text(words):
+    """The command text a step hands to another command line: a shell's `-c` code (shell_code_argument), an `eval`
+    step's joined arguments, or an `ssh` step's last word when it holds a blank. None when the step carries none."""
+    shell_code = shell_code_argument(words)
+    if shell_code is not None:
+        return shell_code
+
+    program_words = command_after_wrappers(words)
+    if len(program_words) < 2:
+        return None
+    program = os.path.basename(program_words[0])
+    if program == "eval":
+        return " ".join(program_words[1:])
+    if program == "ssh" and re.search(r"\s", program_words[-1]):
+        return program_words[-1]
+    return None
+
+
 def _code_after_option(words, index):
     # The `-c` code text in the word after the option at index, or None when the option is last.
     if index + 1 >= len(words):

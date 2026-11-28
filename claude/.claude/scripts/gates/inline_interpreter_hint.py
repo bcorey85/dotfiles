@@ -40,10 +40,6 @@ INLINE_FLAGS = r"-(c|e|r)|--?(eval|command)"
 INLINE = rf"\b(python3?|node|perl|ruby|php)\b[^;|&]*\s({INLINE_FLAGS})\b"
 # One word of INLINE's flags, matched as the gate matches them: case-insensitive.
 INLINE_FLAG = re.compile(INLINE_FLAGS, re.I)
-# ssh: a last word that holds a space is read as a command string it runs.
-SSH_COMMAND = "ssh"
-# eval: its joined arguments are read as a command string it runs.
-EVAL_COMMAND = "eval"
 ALLOWED = (r"import\s+(json|sys|os\.path|pathlib|re|math|hashlib|base64|urllib|collections|struct|platform|sysconfig|"
            r"ast|tomllib?|configparser|csv|io|textwrap|shutil|tempfile|glob|fnmatch|copy|pprint|inspect|importlib|"
            r"pkg_resources|packaging|setuptools|distutils)|JSON\.(parse|stringify)|require\(|"
@@ -166,11 +162,7 @@ def nested_shell_runs_inline_code(command):
         return False
 
     for words, _redirections, _piped in piped_commands:
-        nested_code = shell_command.shell_code_argument(words)
-        if nested_code is None and len(words) >= 2 and os.path.basename(words[0]) == SSH_COMMAND:
-            nested_code = words[-1] if re.search(r"\s", words[-1]) else None
-        if nested_code is None and len(words) >= 2 and os.path.basename(words[0]) == EVAL_COMMAND:
-            nested_code = " ".join(words[1:])
+        nested_code = shell_command.nested_code_text(words)
         if nested_code is not None and runs_inline_code(nested_code):
             return True
     return False

@@ -4,22 +4,23 @@
 Lands a lane branch on <remote>/<base> in one run. --main defaults to ~/dotfiles.
 Steps, in order:
   0. A lane with uncommitted changes, tracked or untracked (ignored files excepted), stops the run.
-  1. `git fetch <remote>` in the lane.
-  2. <main> must have <base> checked out (a detached HEAD or another branch stops the run). Preflight: a file the
-     lane changed since its merge base with <remote>/<base> that <main> also has changed (staged, unstaged, deleted,
-     renamed, or untracked) stops the run, exit 1, before the merge, the suite or the push.
-  3. When <remote>/<base> is not an ancestor of the lane HEAD, merge it in the lane. A conflict is aborted and listed;
+  1. <main> must have <base> checked out (a detached HEAD or another branch stops the run).
+  2. `git fetch <remote>` in the lane.
+  3. Preflight: a file that <main> has changed (staged, unstaged, deleted, renamed, or untracked) and that the pull
+     into <main> brings in, read against <main>'s own HEAD (the lane HEAD and <remote>/<base>, so commits <main> has
+     not pulled count), stops the run, exit 1, before the merge, the suite or the push.
+  4. When <remote>/<base> is not an ancestor of the lane HEAD, merge it in the lane. A conflict is aborted and listed;
      a merge that fails for another reason is reported as that. Merged or not, the suite is skipped only when a
      green suite receipt covers the tree (suite_receipt.py check); else it runs (`bash tests/run.sh`, under a memory
      cap when the machine can run one). A corrupt receipt row stops the run. A failing suite stops the
      run before the push.
-  4. The preflight runs again, since <main> may have changed during the suite. The lane must still be clean, on the
-     same branch and at the same commit as after the merge in step 3; else the run stops, since the suite did not
-     test what would be pushed.
-  5. `git push <remote> <commit after the merge>:<base>`. A push rejected because <base> moved goes back to step 0;
+  5. The main-on-<base> check and the preflight run again, since <main> may have changed during the suite. The lane
+     must still be clean, on the same branch and at the same commit as after the merge in step 4; else the run
+     stops, since the suite did not test what would be pushed.
+  6. `git push <remote> <commit after the merge>:<base>`. A push rejected because <base> moved goes back to step 0;
      three attempts at most.
-  6. `pull_keep_index.py <main>` runs and its exit code is the exit code of this run.
-Every stop in steps 0 to 5 prints the state, then `rerun: <command>` on its own line. A failure in step 6 prints
+  7. `pull_keep_index.py <main>` runs and its exit code is the exit code of this run.
+Every stop in steps 0 to 6 prints the state, then `rerun: <command>` on its own line. A failure in step 7 prints
 none: pull_keep_index.py prints its own recovery.
 Exit 0 prints one summary line, then the output of pull_keep_index.py."""
 import argparse
@@ -39,6 +40,7 @@ import suite_receipt
 import worktree_snapshot
 
 MAX_ATTEMPTS = 3
+SUITE_COMMAND = "bash tests/run.sh"
 DEFAULT_MAIN = "~/dotfiles"
 LOG_TAIL_LINES = 20
 PULL_SCRIPT = TOOLS_DIR / "pull_keep_index.py"
@@ -74,13 +76,6 @@ def land_git_text(repo, *arguments):
     return land_git(repo, *arguments).stdout.strip()
 
 
-def lane_touched_files(lane, remote_base):
-    """Every name the lane changed since its merge base with remote_base; --no-renames lists a rename's old name too."""
-    merge_base = land_git_text(lane, "merge-base", remote_base, "HEAD")
-    listed = land_git(lane, "diff", "--name-only", "--no-renames", "-z", merge_base, "HEAD")
-    return {name for name in listed.stdout.split("\0") if name}
-
-
 def dirty_files(repo):
     """({path: status code}, {new path: old path} for each rename) of every dirty file in repo."""
     try:
@@ -89,21 +84,20 @@ def dirty_files(repo):
         raise GitStepError(str(error)) from error
 
 
-def preflight(lane, main, remote_base):
-    """Stop when <main> has changed a file the lane also changed, under either name of a rename."""
-    touched = lane_touched_files(lane, remote_base)
-    codes, origins = dirty_files(main)
-    overlapping = []
-    for name, code in sorted(codes.items()):
-        names = [name]
-        if name in origins:
-            names.append(origins[name])
-        if touched.intersection(names):
-            overlapping.append(f"  {code} {' <- '.join(names)}")
+def preflight(main, *incoming):
+    """Stop when <main> holds local changes to a file the pull into <main> brings in. A revision of `incoming` (the
+    lane HEAD, <remote>/<base>) is read against <main>'s own HEAD, so commits <main> has not pulled count too; a
+    rename's old name counts as well as its new one."""
+    overlapping = set()
+    for revision in incoming:
+        try:
+            overlapping.update(suite_receipt.dirty_merge_paths(main, revision))
+        except suite_receipt.ReceiptError as error:
+            raise GitStepError(str(error)) from error
     if not overlapping:
         return
-    print("\n".join(overlapping))
-    raise LandError(f"{main} has local changes to files this lane touches; commit them or set them aside "
+    print("\n".join(f"  {name}" for name in sorted(overlapping)))
+    raise LandError(f"{main} has local changes to files this pull brings in; commit them or set them aside "
                     f"in {main}")
 
 
@@ -123,12 +117,6 @@ def merge_base_into_lane(lane, remote_base):
                     f"merge {remote_base} in {lane} by hand")
 
 
-def suite_command():
-    if memory_cap_scope.cap_available():
-        return [*shlex.split(memory_cap_scope.CAPPED_PREFIX), "bash", "tests/run.sh"]
-    return ["bash", "tests/run.sh"]
-
-
 def receipt_covers_tree(lane, remote_base):
     """True when suite_receipt.check says the lane HEAD needs no suite run; an unreadable receipt is a stop."""
     try:
@@ -143,8 +131,9 @@ def receipt_covers_tree(lane, remote_base):
 def run_suite(lane):
     """Run the suite in the lane; a failure raises LandError naming the log tail."""
     log_handle, log_name = tempfile.mkstemp(prefix="land-lane-suite-", suffix=".log")
+    command, use_shell = memory_cap_scope.shell_popen_args(SUITE_COMMAND)
     with os.fdopen(log_handle, "w") as log_file:
-        finished = subprocess.run(suite_command(), cwd=lane, stdout=log_file, stderr=subprocess.STDOUT,
+        finished = subprocess.run(command, shell=use_shell, cwd=lane, stdout=log_file, stderr=subprocess.STDOUT,
                                   stdin=subprocess.DEVNULL, check=False)
     if finished.returncode == 0:
         pathlib.Path(log_name).unlink()
@@ -164,7 +153,7 @@ def test_or_skip(lane, remote_base):
 
 
 def merge_if_behind(lane, remote_base):
-    """Step 3, the merge half. The summary phrase for it."""
+    """Step 4, the merge half. The summary phrase for it."""
     if script_utils.is_ancestor(lane, remote_base, "HEAD"):
         return "no merge"
     merge_base_into_lane(lane, remote_base)
@@ -219,33 +208,39 @@ def stop_if_lane_moved(lane, vouched):
     stop_on_dirty_lane(lane)
 
 
+class LandedPass(NamedTuple):
+    """What a finished pass pushed: the summary phrase for the merge and suite, and the commit."""
+    outcome: str
+    commit: str
+
+
 def land_once(lane, main, remote, base):
-    """One pass of steps 0 to 5; the summary phrase for the merge and suite."""
+    """One pass of steps 0 to 6; the LandedPass."""
     remote_base = f"{remote}/{base}"
     stop_on_dirty_lane(lane)
     stop_unless_main_has_base(main, base)
     land_git(lane, "fetch", remote)
-    preflight(lane, main, remote_base)
+    preflight(main, land_git_text(lane, "rev-parse", "HEAD"), remote_base)
     merge_phrase = merge_if_behind(lane, remote_base)
     vouched = read_lane_state(lane)
     outcome = f"{merge_phrase}, {test_or_skip(lane, remote_base)}"
-    preflight(lane, main, remote_base)
+    stop_unless_main_has_base(main, base)
+    preflight(main, vouched.head)
     stop_if_lane_moved(lane, vouched)
     push_lane(lane, remote, base, vouched.head)
-    return outcome
+    return LandedPass(outcome=outcome, commit=vouched.head)
 
 
 def land(lane, main, remote, base):
     for _attempt in range(MAX_ATTEMPTS):
         try:
-            outcome = land_once(lane, main, remote, base)
+            landed = land_once(lane, main, remote, base)
             break
         except PushRejectedError as rejected:
             last_cause = str(rejected)
     else:
         raise LandError(f"{remote}/{base} moved during all {MAX_ATTEMPTS} attempts ({last_cause})")
-    pushed_hash = land_git_text(lane, "rev-parse", "--short", "HEAD")
-    print(f"land_lane: {outcome}; pushed {pushed_hash} to {remote}/{base}")
+    print(f"land_lane: {landed.outcome}; pushed {landed.commit[:7]} to {remote}/{base}")
 
 
 def read_land_lane_arguments(argv):

@@ -34,6 +34,7 @@ import os
 import pathlib
 import sys
 
+import git_raw_diff
 import notes_paths
 import script_utils
 
@@ -53,8 +54,7 @@ PUSH_NO_RECORD = "no-record"
 PUSH_REVIEWED = "reviewed"
 PUSH_CHANGED = "changed"
 # Added submodules (160000) are not hashed as files; they stay in the patch. Symlinks (120000) are hashed by link text.
-PATCH_MODES = {b"160000"}
-SYMLINK_MODE = b"120000"
+SYMLINK_MODE = "120000"
 # The fingerprint of a work tree with no change against its base: nothing was hashed.
 NO_CHANGE_FINGERPRINT = "sha256:" + hashlib.sha256().hexdigest()
 
@@ -184,19 +184,16 @@ def added_paths(raw):
     """(files, links, in_patch, blobs) from `git diff --raw -z --no-abbrev --diff-filter=A` output: the added paths to
     hash as whole files, the added symlinks, which are hashed by their link text, the added submodules, which stay in
     the patch, and each added path's new object id (all zeros for a working-tree file)."""
-    raw_fields = [field for field in raw.split(b"\0") if field]
     files = []
     links = []
     in_patch = []
     blobs = {}
-    # With -z and no renames, each entry is a ":<old mode> <new mode> ..." field and then one path field.
-    for meta, name in zip(raw_fields[0::2], raw_fields[1::2], strict=True):
-        meta_fields = meta.split()
-        new_mode = meta_fields[1]
-        blobs[name] = meta_fields[3].decode()
-        if new_mode in PATCH_MODES:
+    for entry in git_raw_diff.raw_entries(raw):
+        name = entry.path
+        blobs[name] = entry.new_sha
+        if entry.new_mode == git_raw_diff.SUBMODULE_MODE:
             in_patch.append(name)
-        elif new_mode == SYMLINK_MODE:
+        elif entry.new_mode == SYMLINK_MODE:
             links.append(name)
         else:
             files.append(name)
@@ -314,6 +311,34 @@ def record_shared_base(top, head, tree_hash):
     script_utils.write_text_atomically(shared_bases_file(), json.dumps(shared) + "\n")
 
 
+def shared_base_entries(top):
+    """The {"base", "tree"} dicts the shared bases record holds for the repo top level, oldest first."""
+    stored = script_utils.read_json_object(shared_bases_file()).get(str(top))
+    if not isinstance(stored, list):
+        return []
+    return [entry for entry in stored if isinstance(entry, dict)]
+
+
+def newest_reviewable_base(repo_dir):
+    """The newest `base` in the repo's shared bases record that is a strict ancestor of HEAD, so a review from it
+    covers the commits since; None when repo_dir is in no work tree or no recorded base string is one."""
+    top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
+    if top is None:
+        return None
+    head = script_utils.git_output(top, "rev-parse", "HEAD", timeout=GIT_TIMEOUT_SECONDS)
+    if head is None:
+        return None
+    for entry in reversed(shared_base_entries(top)):
+        base = entry.get("base")
+        if not isinstance(base, str):
+            continue
+        if base == head.strip():
+            continue
+        if script_utils.is_ancestor(top, base, "HEAD", timeout=GIT_TIMEOUT_SECONDS):
+            return base
+    return None
+
+
 def push_review_state(repo_dir):
     """Whether the HEAD commit of the repo that holds repo_dir is a tree a converged review covered, notes paths left
     out: PUSH_NO_RECORD when no review recorded a base for the repo (or repo_dir is in no work tree), PUSH_REVIEWED
@@ -322,8 +347,7 @@ def push_review_state(repo_dir):
     top = script_utils.repo_root(repo_dir, timeout=GIT_TIMEOUT_SECONDS)
     if top is None:
         return PUSH_NO_RECORD
-    stored = script_utils.read_json_object(shared_bases_file()).get(str(top))
-    entries = [entry for entry in stored if isinstance(entry, dict)] if isinstance(stored, list) else []
+    entries = shared_base_entries(top)
     if not entries:
         return PUSH_NO_RECORD
 
@@ -424,14 +448,10 @@ def last_commit_fingerprint(top):
     None when HEAD has no parent, is a merge (its change would be a whole merged-in branch), or the tree cannot be
     fingerprinted."""
     # Fails closed: a git failure or timeout, a root commit and a merge all give None, so none of them earns credit.
-    parents_line = script_utils.git_output(top, "rev-list", "--parents", "-n", "1", "HEAD",
-                                           timeout=GIT_TIMEOUT_SECONDS)
-    if parents_line is None:
+    parents = script_utils.commit_parents(top, "HEAD", timeout=GIT_TIMEOUT_SECONDS)
+    if parents is None or len(parents) != 1:
         return None
-    tokens = parents_line.split()
-    if len(tokens) != 2:
-        return None
-    parent = tokens[1]
+    parent = parents[0]
 
     found = reviewed_fingerprint(top, base=parent)
     if found is None:

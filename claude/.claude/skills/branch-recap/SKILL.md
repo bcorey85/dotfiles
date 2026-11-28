@@ -1,12 +1,12 @@
 ---
 name: branch-recap
-description: The final closing phase — assemble a gated branch into one pre-PR handoff sheet. Reads only the branch's own process residue (the phase walkthroughs, the verify and test-audit receipts, git status) — never re-reads the codebase, never gates. Triages closing-phase residue and deferred findings, emits a recap receipt. Use for "recap", "branch recap", "wrap up the branch", "/branch-recap". Hands back a read queue — the staging and the commit stay the user's.
+description: Assemble a gated branch into one pre-PR handoff sheet. Reads only the branch's own process residue (the phase walkthroughs, the verify and test-audit receipts, git status) — never re-reads the codebase, never gates. Triages closing-phase residue and deferred findings, emits a recap receipt. Use for "recap", "branch recap", "/branch-recap". Hands back a read queue — the staging and the commit stay the user's.
 allowed-tools: [Bash, Read, Glob, Grep, Agent, AskUserQuestion, Skill]
 ---
 
 # Branch recap
 
-The fourth and last closing phase, and the exit-side counterpart to `/eng-spec`.
+The exit-side counterpart to `/eng-spec`.
 
 **No gates run here.** Every gate already fired at its sharpest oracle: per-phase `/review` convergence, drift-gate reconciliation, `/test-audit` test gate, `/verify-branch` completeness.
 
@@ -87,7 +87,7 @@ Spec: <task-dir>
 ### Still unstaged                (from /stage, blast-radius order)
 - <path> — <classifier reason>
 
-Next: read the residue → run the smoke checklist → /adr → stage → /commit → open the PR.
+Next: read the residue → run the smoke checklist → stage → /commit → open the PR → /adr <plan folder> → `adr_flow.py status <plan folder>` (`adr: done` ends the branch).
 ```
 
 Persist (non-blocking; on failure mention and continue):
@@ -107,7 +107,7 @@ fi
 - **Never re-read code to situate** (no callers/siblings/LSP map — that's `/orient`; consume or say "not situated").
 - **Never `git add` semantic files, commit, or open a PR.**
 - **Never edit code** — fixes route through `/fix`.
-- **Never run `/adr`** — the user's step after recap, before the PR, so the record ships in it.
+- **Never run `/adr`** — the user's step after the PR is open.
 
 ## Arguments
 

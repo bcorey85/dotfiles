@@ -20,7 +20,10 @@ import review_loop_calls
 import review_loop_closure
 import review_loop_coder
 import review_loop_comment_removal
+import review_loop_criteria_quotes
+import review_loop_outside_writes
 import review_loop_partial_fix
+import review_loop_put_back
 import review_loop_ruled_out
 import review_loop_scope_guard
 import review_loop_signoffs
@@ -62,10 +65,13 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.addCleanup(review_loop_untracked.UNTRACKED_FAULTS.clear)
         self.addCleanup(review_loop_untracked.LOOP_WRITTEN.clear)
         self.addCleanup(review_loop_calls.CALLS.clear)
+        record_writes = mock.patch.object(review_loop_outside_writes, "record_pass_writes")
+        self.record_writes = record_writes.start()
+        self.addCleanup(record_writes.stop)
 
     def no_op_scope_guard(self, role="coder1"):
         """A scope guard that owns no path: every path counts as ruled on by another guard."""
-        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, ())
+        return review_loop_scope_guard.guard_pass(self.repo, self.out, role, (), lambda _path: True, (), lambda: None)
 
     def fake_model(self, action):
         """Patches the model process with a stand-in that runs `action(repo)` and replies `done`."""
@@ -76,17 +82,20 @@ class UntrackedDeletionTest(unittest.TestCase):
         return mock.patch.multiple(review_loop_calls.script_utils, run_process=run_process,
                                    preloaded_skills_prompt=lambda _agent: "")
 
-    def call(self, role, action):
-        """Runs coder_call with a stand-in model process that runs `action(repo)`."""
+    def call(self, role, action, finding_texts=(), held=frozenset()):
+        """Runs coder_call with a stand-in model process that runs `action(repo)`, and a pass guard that read
+        `finding_texts`; the diff under review lists no file."""
         with self.fake_model(action):
-            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], [])
-            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(), guard,
+            guard = review_loop_ruled_out.begin_pass(self.repo, self.out, role, set(), [], list(finding_texts),
+                                                     held)
+            return review_loop_coder.coder_call(role, "prompt", self.repo, self.out, set(held), guard,
                                                 self.no_op_scope_guard(role))
 
     def coder_model_sent(self, **coder_kwargs):
-        """The model coder_call hands to claude_call."""
+        """The model coder_call hands to claude_call_reply."""
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        with mock.patch.object(review_loop_coder, "claude_call", return_value="done") as fake_call:
+        reply = review_loop_calls.CallReply("done", "")
+        with mock.patch.object(review_loop_coder, "claude_call_reply", return_value=reply) as fake_call:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
                                          self.no_op_scope_guard(), **coder_kwargs)
         return fake_call.call_args.kwargs["model"]
@@ -105,9 +114,40 @@ class UntrackedDeletionTest(unittest.TestCase):
 
         self.assertTrue(issubclass(review_loop_coder.NoFinalReportError, review_loop_calls.ModelCallError))
 
+    def test_claude_call_reply_names_the_child_session_and_returns_it(self):
+        commands = []
+
+        def replying_process(command, *_args, **_kwargs):
+            commands.append(command)
+            return 0, json.dumps({"result": "done"}), ""
+
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=replying_process,
+                                 preloaded_skills_prompt=lambda _agent: ""):
+            reply = review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out, agent="coder")
+            text = review_loop_calls.claude_call("coder1", "prompt", self.repo, self.out, agent="coder")
+
+        named = commands[0][commands[0].index("--session-id") + 1]
+        self.assertEqual(reply, review_loop_calls.CallReply("done", named))
+        self.assertEqual(text, "done")
+
+    def test_a_call_with_no_json_reply_raises_an_error_that_carries_the_session(self):
+        commands = []
+
+        def silent_process(command, *_args, **_kwargs):
+            commands.append(command)
+            return None, "", ""
+
+        with mock.patch.multiple(review_loop_calls.script_utils, run_process=silent_process,
+                                 preloaded_skills_prompt=lambda _agent: ""), \
+                self.assertRaises(review_loop_calls.ModelCallError) as raised:
+            review_loop_calls.claude_call_reply("coder1", "prompt", self.repo, self.out, agent="coder")
+
+        self.assertEqual(raised.exception.session, commands[0][commands[0].index("--session-id") + 1])
+
     def test_a_coder_failure_that_is_not_a_model_call_error_is_not_swallowed(self):
         guard = review_loop_ruled_out.begin_pass(self.repo, self.out, "coder1", set(), [], [])
-        with mock.patch.object(review_loop_coder, "claude_call", side_effect=RuntimeError("a git read failed")), \
+        with mock.patch.object(review_loop_coder, "claude_call_reply",
+                               side_effect=RuntimeError("a git read failed")), \
                 self.assertRaises(RuntimeError) as raised:
             review_loop_coder.coder_call("coder1", "prompt", self.repo, self.out, set(), guard,
                                          self.no_op_scope_guard())
@@ -125,6 +165,52 @@ class UntrackedDeletionTest(unittest.TestCase):
         self.assertFalse((self.repo / "dup.py").exists())
         self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
         self.assertNotIn("dup.py", review_loop_untracked.LOOP_WRITTEN)
+
+    def test_a_held_untracked_file_a_finding_names_for_deletion_is_put_back_and_noted(self):
+        (self.repo / "theirs.py").write_text("theirs\n")
+
+        self.call("coder1", lambda repo: (repo / "theirs.py").unlink(),
+                  ["`app.py:1` delete theirs.py"], held={"theirs.py"})
+
+        self.assertEqual((self.repo / "theirs.py").read_text(), "theirs\n")
+        self.assertIn("theirs.py", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_a_held_file_the_fix_coder_record_names_is_put_back_and_noted(self):
+        (self.repo / "theirs.py").write_text("theirs\n")
+        fix_coder_written.add_paths(self.repo, {"theirs.py"})
+
+        self.call("coder1", lambda repo: (repo / "theirs.py").unlink(), [], held={"theirs.py"})
+
+        self.assertEqual((self.repo / "theirs.py").read_text(), "theirs\n")
+        self.assertIn("theirs.py", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_an_untracked_file_a_finding_names_for_deletion_stays_deleted_when_the_diff_lists_no_such_file(self):
+        (self.repo / "stray.py").write_text("stray\n")
+
+        self.call("coder1", lambda repo: (repo / "stray.py").unlink(),
+                  ["`app.py:1` delete stray.py, nothing calls it"])
+
+        self.assertFalse((self.repo / "stray.py").exists())
+        self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
+
+    def test_an_untracked_file_no_finding_names_is_restored_and_noted_when_a_finding_names_another(self):
+        (self.repo / "stray.py").write_text("stray\n")
+        (self.repo / "mine.py").write_text("mine\n")
+
+        self.call("coder1", lambda repo: (repo / "mine.py").unlink(),
+                  ["`app.py:1` delete stray.py, nothing calls it"])
+
+        self.assertEqual((self.repo / "mine.py").read_text(), "mine\n")
+        self.assertIn("mine.py", review_loop_untracked.UNTRACKED_FAULTS[0])
+
+    def test_a_file_the_fix_coder_record_names_stays_deleted_after_the_loop_state_is_lost(self):
+        (self.repo / "fix_made.py").write_text("x\n")
+        fix_coder_written.add_paths(self.repo, {"fix_made.py"})
+
+        self.call("coder2", lambda repo: (repo / "fix_made.py").unlink())
+
+        self.assertFalse((self.repo / "fix_made.py").exists())
+        self.assertEqual(review_loop_untracked.UNTRACKED_FAULTS, [])
 
     def test_a_file_the_fix_coder_wrote_is_recorded_for_the_next_code_review_start(self):
         self.call("coder1", lambda repo: (repo / "fix_made.py").write_text("x\n"))
@@ -378,6 +464,7 @@ class RuledOutLoopTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
         for finding_text in cases:
             with self.subTest(finding_text):
                 self.assertTrue(review_loop_ruled_out.names_deletion([finding_text], "lib.py", "/repo"))
+        self.assertTrue(review_loop_ruled_out.names_deletion(["delete ./lib/x.py"], "lib/x.py", "/repo"))
         self.assertFalse(review_loop_ruled_out.names_deletion(["delete lib.py.bak"], "lib.py", "/repo"))
 
     def test_a_ruled_out_file_in_a_removed_folder_is_put_back(self):
@@ -623,8 +710,10 @@ class DeadCoderRecordTest(loop_tests.ReviewLoopHarness, unittest.TestCase):
 
         def settle_then_die(loop, findings, *_flags):
             loop.fix_first(findings)
-            snapshots = (review_loop_signoffs.snapshot_signoffs(self.repo, []),
-                         review_loop_comment_removal.snapshot_comments(self.repo, []))
+            snapshots = review_loop_put_back.PassSnapshots(
+                review_loop_signoffs.snapshot_signoffs(self.repo, []),
+                review_loop_comment_removal.snapshot_comments(self.repo, []),
+                review_loop_criteria_quotes.EMPTY_AC_QUOTES)
             died = review_loop_coder.CoderCallError("the coder died", [])
             loop.failed_pass_blocker("coder0", died, snapshots, [finding_record.parse_finding(dead_finding_text)],
                                      [])

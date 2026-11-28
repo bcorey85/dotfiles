@@ -29,7 +29,7 @@ There is no suite override: the suite is the lane's own `tests/run.sh`. A corrup
 a git failure while reading receipts stops with the inspect hint. The `rerun:` line uses the resolved paths.
 `pull_keep_index.py` is unchanged. Status lines come from `worktree_snapshot.status_entries`.
 
-Only the user runs it: `git_discipline_gate.py` rule 11 denies a session's Bash call that runs `land_lane.py`
+Only the user runs it: `git_discipline_gate.py` rule 12 denies a session's Bash call that runs `land_lane.py`
 (`lib/land_lane_calls.py` reads the command through the shell parsing owners), since its push happens inside Python
 where rule 7 cannot see it. Tests: `LandLaneGateTest` in `tests/scripts/test_git_discipline_gate.py`.
 

@@ -1,0 +1,37 @@
+---
+type: "Change"
+change_type: "fixed"
+title: "git commit readers read stored-heredoc-cut text"
+description: "A git commit line inside a heredoc body that is data (cat > f <<EOF, python3 s.py <<EOF) is no longer read as a commit by the git discipline gate; bodies a shell runs (bash <<EOF, | bash) stay read."
+generated: {"by": "claude-code/claude-sonnet-5-5", "at": "2026-11-26T12:59:02-06:00"}
+seq: 18
+kind: "fix"
+components: ["script/git-commit-calls", "script/git-discipline-gate"]
+evidence: ["test"]
+watches: []
+test: "tests/scripts/test_git_discipline_gate.py::SharedCloneCommitTest::test_a_heredoc_body_that_is_data_is_no_commit"
+asked: ""
+proof: []
+unmeasured: ""
+impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
+---
+
+## Change
+
+`lib/git_commit_calls.py` `git_commit_dirs` and `gates/git_discipline_gate.py` `is_sole_git_command` now read `shell_statements.strip_stored_heredocs(command)`. A `git commit` line inside a heredoc body that is data (`cat > f <<EOF`, or a body a script run reads, `python3 s.py <<EOF`) is no longer read as a commit. A body a shell runs (`bash <<EOF`, `| bash`) is still read.
+
+## Evidence
+
+`test_a_heredoc_body_that_is_data_is_no_commit` fails on the base (ed873e2a5: both `cat > f` shapes denied) and passes after. `SharedCloneCommitTest` gains cases for a stored body (no commit), a body that runs (a commit), a body another command runs (read), and a stored body with an apostrophe (the sole-step read still works).
+
+## Result
+
+The gate's median time on a stored heredoc is 51.0 ms, beside 7.8 ms for a bare `python3 -c pass` (52.4 ms before). A command that writes commit-message text or a script with `cat > f <<EOF` no longer trips the shared-clone commit checks.
+
+## Watch
+
+A commit inside a file the same command writes through a stored heredoc and then runs (`bash run.sh`, `source run.sh`, `. ./run.sh`) is not read, like the commits of any script file.
+
+## Back-out
+
+Drop the `strip_stored_heredocs` call in `git_commit_dirs` and in `is_sole_git_command`.

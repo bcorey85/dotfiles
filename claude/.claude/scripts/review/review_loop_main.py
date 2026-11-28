@@ -23,15 +23,19 @@ import session_registry
 from finding_record import parse_finding
 from review_loop_calls import CALLS, LIVE_CHILDREN, PARENT_SESSION, now
 from review_loop_named_tests import NamedTestRemovedError
+from review_loop_outside_writes import OutsideWriteError
 from review_loop_packet import crash_outcome, packet_message, write_handback_rows, write_usage_row
 from review_loop_pass_checks import ChangeRemovedError, LaterPhaseEditError
 from review_loop_plan import ChangeUnderReview
 from review_loop_prompt_file import (
     BASE_KEY,
+    CI_GATE_KEY,
     CODER_MODEL_KEY,
     FILES_KEY,
+    GIVEN_BASE_KEY,
     HELD_FILES_KEY,
     NO_REVIEW_KEY,
+    PLAN_KEY,
     REVIEWER_MODEL_KEY,
     REVIEWERS_HEADLESS,
     REVIEWERS_MAIN,
@@ -41,15 +45,18 @@ from review_loop_prompt_file import (
     USER_RULED_HEADER_KEY,
     YES,
     header_adopted,
+    header_fix_rounds,
     header_held_by,
     header_iter,
     header_list,
+    header_post_cap_passes,
     header_ruled,
     read_findings,
     read_prompt,
     reviewer_brief,
 )
 from review_loop_ruled import adopted_rulings, rejected_ask_questions, rejected_ask_records
+from review_loop_ruling_check import RulingBrokenError, RulingCheckFaultError
 from review_loop_scoped_tests import test_commands_of
 from review_loop_script import (
     ROUND_BUDGET,
@@ -62,6 +69,7 @@ from review_loop_script import (
     walk,
     write_telemetry,
 )
+from review_loop_stray_files import StrayFileError
 
 
 class LoopRequest(typing.NamedTuple):
@@ -117,7 +125,7 @@ def build_loop(request):
     header, handoff, repo = request.header, request.handoff, request.repo
     brief = reviewer_brief(header, handoff, repo)
     gate_env = plan_format.gate_env_words_in(handoff)
-    loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get("plan", ""))
+    loop = LoopRun(repo, request.out, brief, gate_env, request.progress, header.get(PLAN_KEY, ""))
     loop.reviewers = request.reviewers
     loop.later_phase_files = later_phase_files(header)
     loop.guidance = header.get("guidance", "")
@@ -134,7 +142,7 @@ def build_loop(request):
     if loop.check_overridden:
         test_parts = [(f"test-{index}", [command]) for index, command in enumerate(test_commands, 1)]
         found_command = check_parts.join_parts(test_parts)
-    plan = header.get("plan")
+    plan = header.get(PLAN_KEY)
     plan_on_disk = plan if plan and (pathlib.Path(repo) / plan).is_file() else None
     loop.plan_on_disk, loop.phase = plan_on_disk, header.get("phase")
     check_command, loop.expected_red = full_check.phase_check(repo, found_command, plan_on_disk, loop.phase)
@@ -146,7 +154,9 @@ def build_loop(request):
     loop.gate_commands = list(request.gate_commands)
     loop.reviewer_model = header.get(REVIEWER_MODEL_KEY, "")
     loop.coder_model = header.get(CODER_MODEL_KEY, "")
+    loop.ci_run = header.get(CI_GATE_KEY, "")
     loop.review_base = header.get(BASE_KEY, "")
+    loop.given_base = header.get(GIVEN_BASE_KEY, "")
     loop.only_files = header_list(header, FILES_KEY)
     caller_held = header_list(header, HELD_FILES_KEY)
     loop.held_files = review_loop_held.run_held_files(repo, caller_held, loop.only_files)
@@ -156,6 +166,8 @@ def build_loop(request):
         repo, loop.held_files, loop.held_holders, loop.only_files, request.session))
     loop.iter_count = min(header_iter(header), ROUND_BUDGET - 1)
     request.progress["iter"] = loop.iter_count
+    loop.fix_rounds = min(header_fix_rounds(header), ROUND_BUDGET)
+    loop.post_cap_passes = tuple(header_post_cap_passes(header))
     return loop, check_command
 
 
@@ -207,7 +219,8 @@ def run_loop(request):
         loop.resume_approval_asks([parse_finding(text) for text in findings])
         first_pass(loop, findings, header.get(NO_REVIEW_KEY) == YES, structure_pass_skipped)
         walk(loop, check_command, request.gate_commands)
-    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError) as error:
+    except (LaterPhaseEditError, CoderFailedError, NamedTestRemovedError, RulingBrokenError,
+            RulingCheckFaultError, StrayFileError, OutsideWriteError) as error:
         loop.stop("critical-blocker", [str(error)])
     except ChangeRemovedError as error:
         loop.stop(handback.FIX_REMOVED_CHANGE, [str(error)])

@@ -85,3 +85,25 @@ def combine(parts):
     return Finding(
         text, first.path, first.line, first.finding_class, first.title, identifiers, parts=tuple(parts), bare=first.bare
     )
+
+
+def identity(finding):
+    """What names a finding across rounds: its file, exact line and class. A finding with no path or no exact line is
+    its own identity, so two unlocated findings never merge."""
+    if not finding.path or not finding.line:
+        return finding
+    return (finding.path, finding.line, finding.finding_class)
+
+
+def unseen(recorded, findings):
+    """The findings of `findings` that `recorded` does not already hold under the same identity, each identity
+    once. A later round that raises the same file, line and class again adds nothing."""
+    seen = {identity(finding) for finding in recorded}
+    fresh = []
+    for finding in findings:
+        key = identity(finding)
+        if key in seen:
+            continue
+        seen.add(key)
+        fresh.append(finding)
+    return fresh

@@ -2,7 +2,8 @@
 """Stop and SubagentStop hook: block a final message that says files are staged when the index does not hold them.
 On Stop only, also block a main-session message that ends on a permission question for a reversible step
 (permission_question.py), and a main-session message that says the session will do, or is doing, a step it has not
-started (announced_step.py); send every reason that holds.
+started (announced_step.py); send every reason that holds. On SubagentStop only, also block a /code fork that
+dispatched a coder for a phase and ran no review of it and wrote no stop (fork_review.py).
 
 A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remain|remains|stay|stays> staged`,
 `I staged`, `I've staged` or `I have staged`, and holds no `not`, `no`, `nothing`, `none`, `never` or
@@ -10,6 +11,11 @@ A sentence claims staging when it says `<is|are|were|was|now|all|been|left|remai
 own clause (clauses split at `,`, `;`, `:`, `and`, `but`, `so`), and no `row`, `record`, `diff` or `finding`
 (or plural) as the word just before the claim, in a clause that names no `file`, unless the sentence also names
 `index` or `git`: that is review data, not the index.
+
+An `is staged` or `are staged` claim with `what`, `whatever` or `whichever` as the word right before it ("checks the
+list against what is staged") reads the index and is no claim; this does not cover `I staged`, `I've staged` or
+`I have staged`, nor `was staged` or `were staged`, nor `what` right after `is`, `are`, `was`, `were`, `here's`,
+`that's`, `this's` or `it's` ("here is what is staged: a.py"), which lists the staged files.
 
 Three forms are not claims, judged on the clause up to the claim. A `stay` or `remain` claim whose clause already says
 `staged` describes behavior ("files you staged stay staged"). A claim whose clause holds `say`, `said`, `claim` or
@@ -28,9 +34,10 @@ claim that names no such repo and no existing absolute path and finds the cwd in
 this session ran `git -C <tree> add` or `cd <tree> && ... git add` in, read from its transcript, holds staged files,
 and every relative path the sentence names that exists in the cwd checkout or in that tree, resolved against that
 tree, is among them: a session that stages that way keeps its cwd. A second stop in a row passes (stop_hook_active),
-so a stuck session cannot spin. Fails open: any error exits 0 with no output.
+so a stuck session cannot spin. A Stop block also carries the reply in `systemMessage` (stop_block.py); a
+SubagentStop block does not. Fails open: any error exits 0 with a line on stderr. A crash in one check skips
+only that check; the other checks' reasons still go out.
 """
-import contextlib
 import functools
 import json
 import os
@@ -39,13 +46,15 @@ import sys
 
 sys.path[:0] = [os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib")]
 import announced_step
+import fork_review
 import permission_question
 import script_utils
+import stop_block
 from git_calls import git_calls, joined_directory
 from message_text import without_quoted_spans
 
 STAGED_CLAIM = re.compile(r"\b(?:(?P<first_person>I(?:'ve| have)?\s+staged)"
-                          r"|(?:is|are|were|was|now|all|been|(?P<left>left))\s+staged"
+                          r"|(?:(?P<copula>is|are)|were|was|now|all|been|(?P<left>left))\s+staged"
                           r"|(?P<lasting>remains?|stays?)\s+staged)\b", re.I)
 NEGATION = re.compile(r"\b(?:not|no|nothing|none|never)\b", re.I)
 COMMITTED = re.compile(r"\bcommitted\b", re.I)
@@ -55,6 +64,12 @@ CLAUSE_BREAK = re.compile(r"[,;:]|\s(?:and|but|so)\s", re.I)
 # A claim whose subject is review data ("two rows are staged") speaks of a ledger or a diff folder, not the git index.
 # The review noun must stand just before the claim, so "the diff of the file is staged" is still a claim.
 REVIEW_DATA_SUBJECT = re.compile(r"\b(?:rows?|records?|diffs?|findings?)\s*$", re.I)
+# "checks the list against what is staged" asks what the index holds; it does not claim anything is in it.
+INDEX_QUESTION_WORD = re.compile(r"\b(?:what|whatever|whichever)\s*$", re.I)
+# "here is what is staged" and "this is what is staged" introduce the list of staged files: a claim, not a check.
+COPULA_BEFORE_QUESTION_WORD = re.compile(
+    r"(?:\b(?:is|are|was|were)|\b(?:here|that|this|it)['\N{RIGHT SINGLE QUOTATION MARK}]s)\s+"
+    r"(?:what|whatever|whichever)\s*$", re.I)
 FILE_WORD = re.compile(r"\bfiles?\b", re.I)
 GIT_INDEX = re.compile(r"\b(?:index|git)\b", re.I)
 # The word on its own, not inside a hyphenated name or a path such as `docs/staged-claim.md`.
@@ -114,6 +129,9 @@ def is_index_claim(sentence, claim):
     if CONDITIONAL.search(clause):
         return False
     if not claim.group("first_person"):
+        asks_what_is_staged = INDEX_QUESTION_WORD.search(clause) and not COPULA_BEFORE_QUESTION_WORD.search(clause)
+        if claim.group("copula") and asks_what_is_staged:
+            return False
         reports_other_actor = OTHER_ACTOR.search(clause) or (claim.group("left") and BARE_ACTOR.search(clause))
         if reports_other_actor:
             return False
@@ -218,28 +236,51 @@ def staged_claim_reason(hook, message):
             "`git diff --cached --name-only` in that repo and say what the index holds.")
 
 
+def guarded(name, check, *args):
+    """check(*args), or None when it raises. Fails open per check: a crash in one stop check is reported on stderr
+    and the other checks' reasons still go out."""
+    try:
+        return check(*args)
+    except Exception as error:
+        print(f"staged-claim-gate: {name} skipped: {type(error).__name__}: {error}", file=sys.stderr)
+        return None
+
+
+def permission_question_reason(hook, message):
+    """The permission-question reason for a message that ends on an offer the user did not ask for, or None."""
+    if not permission_question.closing_question(message):
+        return None
+    # Read the transcript only for a message that ends on an offer; an unreadable one judges the message alone.
+    answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
+    if answers_question:
+        return None
+    return permission_question.REASON
+
+
 def main():
     hook = json.load(sys.stdin)
     if hook.get("stop_hook_active"):
         return
     message = hook.get("last_assistant_message") or ""
 
-    reasons = [staged_claim_reason(hook, message)]
+    reasons = [guarded("staged_claim_reason", staged_claim_reason, hook, message)]
     is_main_session = hook.get("hook_event_name") == "Stop"
-    if is_main_session and permission_question.closing_question(message):
-        # Read the transcript only for a message that ends on an offer; an unreadable one judges the message alone.
-        answers_question = permission_question.answers_users_question(hook.get("transcript_path"))
-        if not answers_question:
-            reasons.append(permission_question.REASON)
-    if is_main_session and announced_step.announced_step(message):
-        reasons.append(announced_step.REASON)
+    if is_main_session:
+        reasons.append(guarded("permission_question", permission_question_reason, hook, message))
+        announced = guarded("announced_step", announced_step.announced_step, message, hook.get("transcript_path"))
+        if announced:
+            reasons.append(announced_step.REASON)
+    if hook.get("hook_event_name") == "SubagentStop":
+        reasons.append(guarded("fork_review", fork_review.missing_review_reason, hook))
 
-    found_reasons = [reason for reason in reasons if reason]
-    if found_reasons:
-        print(json.dumps({"decision": "block", "reason": " ".join(found_reasons)}))
+    line = stop_block.block_line(reasons, message, show_reply=is_main_session)
+    if line is not None:
+        print(line)
 
 
 if __name__ == "__main__":
     if not os.environ.get("CLAUDE_SKIP_HOOKS"):
-        with contextlib.suppress(Exception):
+        try:
             main()
+        except Exception as error:
+            print(f"staged-claim-gate: skipped: {type(error).__name__}: {error}", file=sys.stderr)

@@ -11,6 +11,7 @@ from check_output import (
     SUMMARY_FAILURE_NOTE,
     cannot_start_line,
     check_verdict,
+    environment_gap_line,
     missing_tool,
     tool_not_found_text,
 )
@@ -29,15 +30,16 @@ BAN_WORDING = re.compile(r"\bprohibition\b|\bno\s+(?:match(?:es)?|output|hits?)\
                          r"|\bgone\b|\bremoved\b|\bzero\b|\bno\s+longer\b",
                          re.IGNORECASE)
 PRESENCE_WORDING = re.compile(r"\bpresence\b|\bpresent\b|\bexists?\b|\bcontains?\b|\bdefines?\b|\bdefined\b"
-                              r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b", re.IGNORECASE)
+                              r"|\bfinds?\b|\bfound\b|\ba\s+hit\b|\bmatches\b|\bexit(?:s|ing)?\s+(?:code\s+)?0\b",
+                              re.IGNORECASE)
 SEARCH_BAN_NOTE = ("\nan rg, grep or git grep line is a ban unless its text says it checks presence "
-                   "(present, exists, contains, finds)\n")
+                   "(present, exists, contains, finds, exits 0)\n")
 # A ban written `! rg ...` is the same ban as `rg ...`: no match holds it.
 # A leading `cd <dir> &&` does not change what the command searches: it stays in the command and is ignored here.
 LEADING_CD = r"(?:cd \S+ && )?"
 NEGATED_SEARCH = re.compile(r"^(" + LEADING_CD + r")!\s+(?=(?:rg|grep|egrep|git grep)\s)")
-# Output that shows the tool itself could not start (check_output owns the forms) reads ENV: the item says nothing
-# about the plan then.
+# Output that shows the tool itself could not start, or that the environment stopped the run (an unset variable, a
+# refused connection; check_output owns the forms), reads ENV: the item says nothing about the plan then.
 ENV_OUTCOME = "ENV"
 # Exit codes that mean the command did not run to an answer.
 NOT_RUN_EXIT_CODES = (script_utils.COMMAND_NOT_FOUND_EXIT_CODE, script_utils.TIMEOUT_EXIT_CODE)
@@ -46,7 +48,8 @@ NOT_RUN_EXIT_CODES = (script_utils.COMMAND_NOT_FOUND_EXIT_CODE, script_utils.TIM
 class ItemVerdict(NamedTuple):
     """outcome: GREEN, RED, BROKEN (the command did not run: an exit 127 that names no missing tool, or timed out) or
     ENV (an exit 127 that names a missing tool, or a failure whose output shows the tool could not start, such as a
-    version manager's missing version). code: the exit-style verdict (0
+    version manager's missing version, or, with no runner summary, an unset environment variable or a refused
+    connection: `environment_gap_line`). code: the exit-style verdict (0
     holds, anything else fails), output: the command's output with any note on why it failed, hits: the number of
     matches of a search ban (None for any other item), flag: the dry-run flag text for a zero-test match or an ENV
     outcome (else None)."""
@@ -113,7 +116,8 @@ def item_verdict(command, line, code, output):
     """Judge one item whose command ran with exit `code` and `output`. `line` is the plan item's text. An exit 127 whose
     output names the missing program reads ENV with the install fix. Any other exit that says the command did not run
     (not found, timed out) keeps the exit-style verdict, but reads BROKEN. A failing run whose output shows the tool
-    could not start reads ENV, keeping the exit-style code."""
+    could not start, or, with no runner summary, an unset environment variable or a refused connection, reads ENV,
+    keeping the exit-style code."""
     verdict = judge_item(command, line, code, output)
     tool = missing_tool(code, output)
     if tool:
@@ -124,6 +128,8 @@ def item_verdict(command, line, code, output):
         return verdict._replace(outcome="BROKEN")
 
     cause_line = cannot_start_line(code, output)
+    if cause_line is None:
+        cause_line = environment_gap_line(code, output)
     if cause_line is None:
         return verdict
 

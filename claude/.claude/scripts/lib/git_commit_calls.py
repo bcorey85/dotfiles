@@ -6,14 +6,17 @@ import re
 from typing import NamedTuple
 
 import script_utils
+import shell_statements
 from shell_command import (
     LAUNCHER_PROGRAMS,
     command_after_wrappers,
+    flags_before_value,
     git_c_directory,
     git_c_settings,
     git_options,
     is_git_word,
     options_before_separator,
+    value_letter_ends_cluster,
     without_flag_values,
     wrapper_moves_directory,
 )
@@ -39,6 +42,8 @@ VALUE_OPTIONS = {
 COMMIT_VALUE_OPTIONS = {"--message", "--file", "--author", "--date", "--trailer", "--template", "--cleanup",
                         "--reuse-message", "--reedit-message"}
 COMMIT_VALUE_LETTERS = "mFCct"
+# `-u<mode>` and `-S<keyid>` take their value in the same word, so a letter after them is part of the value.
+ATTACHED_VALUE_LETTERS = COMMIT_VALUE_LETTERS + "uS"
 # The flags of `merge` that choose whether it commits; the last one among the arguments wins.
 COMMIT_FLAGS = ("--commit", "--no-commit")
 # `--commit` after `--squash` undoes it, as does `--no-squash`.
@@ -50,6 +55,18 @@ OVERRIDING_FLAGS = {
     ("merge", "--no-commit"): ("--commit",), ("merge", "--squash"): ("--commit", "--no-squash"),
     ("merge", "--ff-only"): ("--ff", "--no-ff"),
 }
+
+
+def commit_takes_next_word(argument):
+    """True when this `git commit` option takes the next word (or the rest of its cluster) as its value."""
+    if argument in COMMIT_VALUE_OPTIONS:
+        return True
+    return value_letter_ends_cluster(argument, COMMIT_VALUE_LETTERS)
+
+
+def commit_flag_letters(option):
+    """The letters of a `git commit` short cluster that are flags: those before the first value letter."""
+    return flags_before_value(option, ATTACHED_VALUE_LETTERS)
 
 
 def stopping_flags(subcommand):
@@ -246,6 +263,14 @@ def place_commit_call(git_words, simple_command, current_dir, start_dir, commit_
     return PlacedCall(bool(commit_answer), commit_directory)
 
 
+def commit_read_steps(command, start_dir):
+    """The placed steps of `command` as the commit readers read them: the text with its stored heredoc bodies cut.
+    Raises ValueError when the command cannot be read. git_commit_dirs and the gate's sole-step check both read
+    through this, so a command one parses the other parses too."""
+    stored_cut = shell_statements.strip_stored_heredocs(command)
+    return list(placed_commands(stored_cut, start_dir))
+
+
 def git_commit_dirs(command, start_dir, commit_call):
     """The directory of each `git commit` (or other call that makes a commit:
     `commit_call(words, directory)` says which, answering True,
@@ -256,12 +281,14 @@ def git_commit_dirs(command, start_dir, commit_call):
     git_c_directory does not follow (`--git-dir`, `--work-tree`, a `-c` that is neither an alias nor an editor
     setting), and one commit_call answers UNPLACED_COMMIT for; the words of each go in `unplaced`. Returns a
     CommitDirs, with both lists [] when the command holds no such commit; None when the command cannot be read (the
-    caller uses `start_dir`)."""
+    caller uses `start_dir`). The command is read as shell_statements.strip_stored_heredocs gives it: a heredoc body
+    that cat or tee writes to a file, or that a script run reads, is not read, so a commit named in one is no
+    commit, except inside a `$(...)` or backtick span of an unquoted body, which the shell runs."""
     commit_dirs = []
     unplaced = []
     first_call_words = None
     try:
-        placed_calls = list(placed_commands(command, start_dir))
+        placed_calls = commit_read_steps(command, start_dir)
     except ValueError:
         return None
     for placed_call in placed_calls:

@@ -3,15 +3,16 @@
 
   refactor_flow.py branch-prep [--head REF] [--base REF] [--jscpd-timeout SECONDS]
   refactor_flow.py audit-prep <dir> [--jscpd-timeout SECONDS]
-  refactor_flow.py simplify-prep <dir|file...> [--slice N]
+  refactor_flow.py simplify-prep <dir|file...> [--slice N] [--diff BASE]
   refactor_flow.py log --mode branch|targeted|audit|simplify --input FILE.json [--base REF]
   refactor_flow.py handoff --input FILE.json
 
 Every verb prints its report and ends with one `NEXT:` line naming what the
 model still does, or a `STOP:` line with the reason. Each prep verb deletes all but the newest 49
-regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`)
-in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it names a fresh path.
-Otherwise read-only except `log`, which appends rows through the existing writers
+regular files named `refactor-flow-` plus 12 hex digits plus `.json` (not every `refactor-flow-*.json`), and their
+`.simplify-stat` sidecars, in REFACTOR_LOG_INPUT_DIR (default: `git rev-parse --git-path refactor-flow`) before it
+names a fresh path. `simplify-prep` also writes that sidecar (the branch-diff record) beside the fresh
+input when it finds a base. Otherwise read-only except `log`, which appends rows through the existing writers
 (log-escape, log-review-finding); this script never writes a second copy of those rows.
 `log` is idempotent per input file: it keeps a hash of every row a writer accepted, grouped by the
 resolved --input path, under ~/.claude/state/refactor-flow/ and skips a row already written for that
@@ -20,24 +21,13 @@ The state keeps the newest 50 input paths. The writers own
 the value vocabulary (class, guard, result, ...); this script checks shape only, and refuses
 `miss_reason=unknown` (a model writes the input).
 
-Input file (JSON; `log` reads all of it, `handoff` reads only `handoff` and `modifier`):
-  {"finder": "smell-reviewer", "lane": "code", "result": "NEEDS CHANGES",
-   "target": ["src/orders"],   (audit and simplify: dirs; simplify: the files the prep listed)
-   "findings": [{"class": "duplication", "disposition": "fix", "actioned": "fixed",
-                 "file": "a.py", "line": 3, "desc": "...", "severity": "medium",
-                 "escape": true, "miss_reason": "overlooked"}],   (miss_reason: escape findings only)
-   (ruled_by: "user"|"session", disposition=ask only; lets a plan_structure finding be logged actioned=fixed)
-   "guards": {"duplication": "convention"},
-   "handoff": {"files": [{"path": "a.py", "change": "..."}],   (optional: the printed files are the ones git shows
-                changed against HEAD; a listed path keeps its `change`, any other gets a stock line)
-               "tests_run": "pytest a -> exit 0", "flagged": "none", "plan_impact": "none"},
-   "modifier": "+fast"}
+Input file: JSON in the shape `refactor_flow.py log --help` prints; `log` reads all of it, `handoff` reads only
+`handoff` and `modifier`.
 Exit codes: 0 ok or a clean stop, 1 bad input (nothing was written), 2 a writer refused a row.
 """
 import argparse
 import contextlib
 import fcntl
-import functools
 import hashlib
 import json
 import os
@@ -45,35 +35,46 @@ import re
 import subprocess
 import sys
 import tempfile
-import uuid
 from pathlib import Path, PurePosixPath
-from stat import S_ISREG
 from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import change_added_ranges
 import clone_pairs
 import handoff_files
 import numstat
 import plan_format
+import refactor_log_input
 import script_utils
 import shape_clones
-import simplify_slices
+import simplify_flow
+import single_caller_census
 import source_text
 import sweep_markers
+import untracked_listing
+from flow_common import (
+    CLAUDE,
+    MAX_STATE_INPUTS,
+    NoBaseError,
+    NoSharedHistoryError,
+    RefactorFlowError,
+    diff_output,
+    fresh_log_input,
+    git,
+    ls_files,
+    next_line,
+    pick_base,
+    ref_exists,
+    require_repo,
+    target_files,
+    work_tree_merge_base,
+)
 
-CLAUDE = Path(os.environ.get("REFACTOR_CLAUDE_DIR", Path(__file__).resolve().parents[3]))
 LOG_ESCAPE = os.environ.get("REFACTOR_LOG_ESCAPE") or str(CLAUDE / "scripts" / "telemetry" / "log-escape")
 LOG_FINDING = os.environ.get("REFACTOR_LOG_FINDING") or str(CLAUDE / "skills" / "review" / "log-review-finding")
-BRANCH_BASE = os.environ.get("BRANCH_BASE_SCRIPT") or str(CLAUDE / "scripts" / "tools" / "branch-base")
 
-FINDERS = {"smell-reviewer", "complexity-reviewer"}
-MAX_SIMPLIFY_FILES = 25
-MAX_STATE_INPUTS = 50
-MAX_LOG_INPUTS = MAX_STATE_INPUTS
-LOG_INPUT_PREFIX = "refactor-flow-"
-LOG_INPUT_HEX_DIGITS = 12
-LOG_INPUT_NAME = re.compile(re.escape(LOG_INPUT_PREFIX) + rf"[0-9a-f]{{{LOG_INPUT_HEX_DIGITS}}}\.json")
+PLAN_STRUCTURE_TAG = refactor_log_input.PLAN_STRUCTURE_TAG
 
 SMELL_BOUND = ("Your review bound for this run is the whole branch diff (`git diff {base}...{head}`), "
                "not a phase diff.")
@@ -81,13 +82,9 @@ SMELL_BOUND_WORK_TREE = ("Your review bound for this run is the whole branch aga
                          "(`git diff {merge_base}`, committed and uncommitted changes) plus the untracked files "
                          "listed above, not a phase diff.")
 UNTRACKED_LABEL = "untracked"
-UNTRACKED_SYMLINK = "symlink"
-UNTRACKED_NOT_A_FILE = "not a file"
-UNTRACKED_BINARY = "binary"
 SMELL_PRIORITY = ("Prioritize cross-phase smells — things no single-phase view could see (multi-task "
                   "duplication, drifted naming, orphaned dead code, idiom divergence from unchanged siblings). "
                   "Every finding must carry `file:line` (and the sibling/prior-art `file:line` for duplication).")
-PLAN_STRUCTURE_TAG = "[plan-structure]"
 PLAN_STRUCTURE_RULE = (f"A finding that would remove, rename, move or reshape anything the plan names (its files, "
                        f"exports, layers) or that a Plan Deviations line records goes under `### Ask` with the "
                        f"`{PLAN_STRUCTURE_TAG}` tag, never under `### Fix`. Read the plan for the exports and "
@@ -105,82 +102,11 @@ BRANCH_NO_PAIRS_TEXT = "jscpd found no clone pair on changed lines"
 BRANCH_CANDIDATES = ("Each pair has a site on a line this branch changed. A new helper that repeats a helper "
                      "elsewhere in the repo is a duplication finding: name the existing one to reuse. "
                      "Apply the anti-churn line before you flag a pair.")
-SIMPLIFY_BOUND = ("Simplify mode: your bound is the whole existing code of `{target}`. Pre-existing shape IS "
-                  "the target.")
-SIMPLIFY_ASK = ("Find what could be deleted if this module were shaped differently: branching a data model "
-                "collapses, indirection with one implementation, configurability nothing configures, guards a "
-                "stronger invariant kills, values with more than one owner. Your oracle and magnitude floor are "
-                "hard gates (quantified disappearance, enabling change, unreachability proof, cost clause).")
-NO_HISTORY_STOP = "STOP: {base} and {head} share no history; ask the user for --base."
-
-
-class RefactorFlowError(Exception):
-    """Bad input: print it, write nothing, exit 1."""
-
-
-class NoSharedHistoryError(RefactorFlowError):
-    """The base and the head have no merge base (orphan branch, shallow clone)."""
-
-
-class NoBaseError(RefactorFlowError):
-    """The branch-base helper found no base; the message is its `STOP:` line."""
-
-
-run = functools.partial(script_utils.run_or_raise, error_type=RefactorFlowError, check=True)
-
-
-def git(*args, check=True):
-    return run(["git", *args], check=check)
-
-
-def require_repo():
-    root = script_utils.repo_root(".")
-    if root is None:
-        raise RefactorFlowError("not inside a git repository")
-    return str(root)
-
-
-def ref_exists(ref):
-    return git("rev-parse", "--verify", "--quiet", ref + "^{commit}", check=False).returncode == 0
-
-
-def pick_base(requested, head=None):
-    """Returns (ref, where the ref came from). The branch-base helper owns the order of candidates."""
-    if requested:
-        if not ref_exists(requested):
-            raise RefactorFlowError(f"--base {requested} is not a commit")
-        return requested, "--base"
-
-    command = ["bash", BRANCH_BASE, *(["--head", head] if head else [])]
-    done = run(command, check=False)
-    if done.returncode == 1 and done.stderr.startswith("STOP:"):
-        raise NoBaseError(done.stderr.strip())
-    if done.returncode != 0:
-        raise RefactorFlowError(f"`{' '.join(command)}` failed: {done.stderr.strip() or done.stdout.strip()}")
-
-    ref, _, source = done.stdout.strip().partition(" ")
-    if not ref or not source:
-        raise RefactorFlowError(f"`{' '.join(command)}` printed {done.stdout.strip()!r}; expected `<ref> <source>`")
-    return ref, source
 
 
 def empty_tree():
     """The empty tree id in this repo's hash algorithm (SHA-1 or SHA-256)."""
     return git("hash-object", "-t", "tree", "/dev/null").stdout.strip()
-
-
-def diff_output(span, *args, pathspecs=()):
-    """Run `git diff` over a span with the flags that make its output parseable under any user config."""
-    limit = ["--", *pathspecs] if pathspecs else []
-    done = git("--literal-pathspecs", "-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff",
-               "--no-textconv", "--no-relative", "--no-prefix", *args, span, *limit,
-               check=False)
-    if done.returncode == 0:
-        return done.stdout
-    if "no merge base" in done.stderr:
-        base, _, head = span.partition("...")
-        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head=head))
-    raise RefactorFlowError(f"`git diff {span}` failed: {done.stderr.strip()}")
 
 
 def parse_branch_diff(diff_text):
@@ -234,93 +160,14 @@ def labelled_span_files(span):
     return entries
 
 
-def work_tree_merge_base(base):
-    """The commit the work-tree span starts from: where HEAD left `base`."""
-    done = git("merge-base", base, "HEAD", check=False)
-    if done.returncode == 1 and not done.stderr.strip():
-        raise NoSharedHistoryError(NO_HISTORY_STOP.format(base=base, head="HEAD"))
-    if done.returncode != 0:
-        raise RefactorFlowError(f"`git merge-base {base} HEAD` failed: {done.stderr.strip()}")
-    return done.stdout.strip()
-
-
-class UntrackedFile(NamedTuple):
-    path: str
-    added_lines: list  # (line number, text) pairs; empty when kind is set
-    kind: str  # why a file is not read as text: UNTRACKED_SYMLINK, UNTRACKED_NOT_A_FILE, UNTRACKED_BINARY; else ""
-
-
-def untracked_files(root):
-    """Untracked files git does not ignore, root-relative; a symlink, a non-regular entry or a file that cannot be
-    read as UTF-8 text is listed with its kind and no lines."""
-    names = script_utils.untracked_paths(root)
-    if names is None:
-        raise RefactorFlowError(f"git could not list the untracked files in {root}")
-    return [classify_untracked(root, name) for name in names]
-
-
-def classify_untracked(root, name):
-    """One untracked file, with its lines when it is a regular UTF-8 text file."""
-    full_path = Path(root) / name
-    if full_path.is_symlink():
-        return UntrackedFile(name, [], UNTRACKED_SYMLINK)
-    if not full_path.is_file():
-        return UntrackedFile(name, [], UNTRACKED_NOT_A_FILE)
-    numbered = script_utils.read_text_lines(full_path)
-    if numbered is None:
-        return UntrackedFile(name, [], UNTRACKED_BINARY)
-    return UntrackedFile(name, numbered, "")
-
-
 def untracked_label(entry):
-    return f"{UNTRACKED_LABEL}, {entry.kind}" if entry.kind else UNTRACKED_LABEL
+    if entry.kind == change_added_ranges.UNTRACKED_TEXT:
+        return UNTRACKED_LABEL
+    return f"{UNTRACKED_LABEL}, {entry.kind}"
 
 
 def file_line(path, label):
     return f"- {path} ({label})" if label else f"- {path}"
-
-
-def next_line(text):
-    return f"NEXT: {text}"
-
-
-def prune_log_inputs(folder):
-    """Delete all but the newest files that leave room for one more; the model writes the new path next.
-    A file another session deletes mid-prune is skipped, and so is anything that is not a regular file."""
-    keep = MAX_LOG_INPUTS - 1
-    dated = []
-    for path in folder.glob(f"{LOG_INPUT_PREFIX}*.json"):
-        if not LOG_INPUT_NAME.fullmatch(path.name):
-            continue
-        try:
-            entry = path.lstat()
-        except OSError:
-            continue
-        if S_ISREG(entry.st_mode):
-            dated.append((entry.st_mtime, path))
-    dated.sort()
-    for _, stale in dated[:-keep]:
-        with contextlib.suppress(OSError):
-            stale.unlink()
-
-
-def log_input_folder():
-    """REFACTOR_LOG_INPUT_DIR, else the repo's own git dir, which outlives the system temp folder."""
-    override = os.environ.get("REFACTOR_LOG_INPUT_DIR")
-    if override:
-        return Path(override)
-    folder = script_utils.git_path(".", "refactor-flow")
-    if folder is None:
-        raise RefactorFlowError("git could not give the refactor-flow folder of this repo")
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-def fresh_log_input():
-    """A path no earlier /refactor invocation used; `log` dedupes rows per input path."""
-    folder = log_input_folder()
-    prune_log_inputs(folder)
-    return str(folder / f"{LOG_INPUT_PREFIX}{uuid.uuid4().hex[:LOG_INPUT_HEX_DIGITS]}.json")
 
 
 def span_plans(files):
@@ -399,7 +246,7 @@ def read_branch_span(base, opts_head, root):
         untracked = []
     else:
         diff_ref = work_tree_merge_base(base)
-        untracked = untracked_files(root)
+        untracked = untracked_listing.untracked_files(root, error_type=RefactorFlowError)
 
     files = labelled_span_files(diff_ref)
     files += [(entry.path, untracked_label(entry)) for entry in untracked]
@@ -472,6 +319,12 @@ def _print_branch_report(span, base, base_source, opts_head, root, jscpd_timeout
     if pairs:
         clone_pairs.print_candidate_pairs(pairs, BRANCH_CANDIDATES)
     shape_clones.print_candidates(shapes)
+    if opts_head:
+        print(single_caller_census.CENSUS_HEADING)
+        print("The census reads only the work tree; it was not run for --head.")
+    else:
+        census_lines = single_caller_census.census_report_lines(root, span.diff_ref)
+        print("\n".join(census_lines))
     print()
     print(_branch_next(base, log_input))
 
@@ -484,22 +337,6 @@ def _branch_next(base, log_input):
                      f"for each distinct class, write the log input to {log_input}, and call "
                      f"`log --mode branch --base {base} --input {log_input}`. Nothing found: call the same "
                      "`log` empty-handed and stop.")
-
-
-def ls_files(targets, *flags):
-    """Files under the target paths (relative to the cwd) that `git ls-files` lists for the flags.
-
-    Ignored files are left out.
-    """
-    done = git("--literal-pathspecs", "ls-files", "-z", *flags, "--exclude-standard", "--", *targets, check=False)
-    if done.returncode != 0:
-        raise RefactorFlowError(f"git ls-files failed for {targets}: {done.stderr.strip()}")
-    return [name for name in done.stdout.split("\0") if name]
-
-
-def target_files(target):
-    """Tracked and untracked (not ignored) files under the target paths, relative to the cwd."""
-    return ls_files(target, "--cached", "--others")
 
 
 def audit_prep(opts):
@@ -530,226 +367,13 @@ def audit_prep(opts):
     return 0
 
 
-def _print_complexity_prompt(chosen, label):
-    print("## complexity-reviewer dispatch prompt (pinned; omit `model`; never +fast)")
-    print("Files:")
-    for name in chosen:
-        print(f"- {name}")
-    print(SIMPLIFY_BOUND.format(target=label))
-    print(SIMPLIFY_ASK)
-    print("Add any project constraint you know that makes a shape mandatory (a required layer, a framework "
-          "seam, a public contract).")
-
-
-def simplify_prep(opts):
-    require_repo()
-    targets = opts.target
-    files_by_target = []
-    for target in targets:
-        found = target_files([target])
-        if not found:
-            print(
-                f"STOP: `{target}` holds no tracked or untracked (not ignored) file; "
-                "ask the user for a dir or module."
-            )
-            return 0
-        files_by_target.append((target, found))
-    return _simplify_report(opts, files_by_target)
-
-
-def _simplify_report(opts, files_by_target):
-    label = " ".join(target for target, _files in files_by_target)
-    try:
-        plan = simplify_slices.plan_slices(files_by_target, MAX_SIMPLIFY_FILES)
-    except simplify_slices.SliceError as error:
-        raise RefactorFlowError(f"simplify-prep: {error}") from error
-    dropped_text = simplify_slices.dropped_summary(plan.dropped)
-    slices = plan.slices
-    if not slices:
-        print(f"STOP: `{label}` holds only test, index, style or generated files ({dropped_text} "
-              f"dropped); ask the user for a source dir or module.")
-        return 0
-    if not 1 <= opts.slice <= len(slices):
-        raise RefactorFlowError(f"--slice {opts.slice} out of range 1..{len(slices)}")
-    chosen = slices[opts.slice - 1]
-    log_input = fresh_log_input()
-
-    print(f"## Simplify target `{label}` ({plan.kept} source file(s))")
-    print(f"Dropped as not source: {dropped_text} file(s).")
-    if len(slices) > 1:
-        print(f"Over {MAX_SIMPLIFY_FILES} files: split into {len(slices)} slices along module folders. This run "
-              f"is slice {opts.slice} of {len(slices)} ({len(chosen.files)} files); modules: "
-              f"{', '.join(chosen.modules)}; tell the user which slice runs, "
-              f"re-run with `--slice N` for the others.")
-    print()
-    _print_complexity_prompt(chosen.files, label)
-    print()
-    print(next_line("do NOT read the files; dispatch ONE complexity-reviewer with the prompt above; triage "
-                    "(drop oracle-failures, under-floor, irreducible; `[design-decision]` to the user); present "
-                    "survivors; on chosen fixes follow step 5 with the test audit mandatory; then "
-                    f"write the log input to {log_input} and call `log --mode simplify --input {log_input}` "
-                    "with `target` = the files listed in the prompt. Every finder finding "
-                    "goes in `findings`: survivors the user declined get actioned=none, triage drops get "
-                    "actioned=skipped_fp. Log empty-handed only when the finder returned nothing."))
-    return 0
-
-
 # ----------------------------------------------------------------------- log
-
-def require_text(container, key, where):
-    value = container.get(key)
-    if not isinstance(value, str) or not value.strip():
-        raise RefactorFlowError(f"{where}: `{key}` must be a non-empty string")
-    return value
-
-
-def single_line(container, key, where):
-    value = require_text(container, key, where)
-    if "\n" in value or "\r" in value:
-        raise RefactorFlowError(f"{where}: `{key}` must be one line")
-    return value.strip()
-
-
-SWALLOWED_PAIR = re.compile(r"[ \t\n\r\f\v][A-Za-z_][A-Za-z0-9_]*=")
-
-
-def one_line_path(value, key, where):
-    """A path may hold spaces: the writers get it as one argument. It must not hold a line break, or a
-    ` name=` that the writers read as a second field swallowed into this one."""
-    if "\n" in value or "\r" in value:
-        raise RefactorFlowError(f"{where}: `{key}` must be one line")
-    if SWALLOWED_PAIR.search(value):
-        raise RefactorFlowError(f"{where}: `{key}` must not contain a space followed by `name=` (got {value!r})")
-
-
-def validate_finding(finding, index, mode):
-    where = f"findings[{index}]"
-    if not isinstance(finding, dict):
-        raise RefactorFlowError(f"{where}: must be an object")
-
-    for key in ("class", "disposition", "actioned", "file"):
-        require_text(finding, key, where)
-    one_line_path(finding["file"], "file", where)
-
-    line = finding.get("line")
-    if isinstance(line, bool) or not isinstance(line, int):
-        raise RefactorFlowError(f"{where}: `line` must be an integer (0 when the finding names no line)")
-
-    finding["desc"] = single_line(finding, "desc", where)
-    plan_structure = finding.get("plan_structure", False)
-    if not isinstance(plan_structure, bool):
-        raise RefactorFlowError(f"{where}: `plan_structure` must be true or false (got {plan_structure!r})")
-    ruled_by = finding.get("ruled_by")
-    if ruled_by is not None and not plan_format.is_ruling_by(ruled_by):
-        raise RefactorFlowError(f"{where}: `ruled_by` must be `user` or `session` (got {ruled_by!r})")
-    if plan_structure and finding["disposition"] != "ask":
-        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
-                                f"disposition=ask")
-    if ruled_by is not None and finding["disposition"] != "ask":
-        raise RefactorFlowError(f"{where}: `ruled_by` names who ruled on an ask: disposition=ask")
-    if plan_structure and finding["actioned"] == "fixed" and ruled_by is None:
-        raise RefactorFlowError(f"{where}: a {PLAN_STRUCTURE_TAG} finding is an ask the user answers: "
-                                f"never actioned=fixed without `ruled_by` (`user` or `session`)")
-    if not isinstance(finding.get("escape", False), bool):
-        raise RefactorFlowError(f"{where}: `escape` must be true or false (got {finding['escape']!r})")
-    if finding.get("escape"):
-        validate_escape_finding(finding, where, mode)
-
-
-def validate_escape_finding(finding, where, mode):
-    """The extra checks for a finding marked as an escape."""
-    if mode in ("audit", "targeted"):
-        raise RefactorFlowError(f"{where}: escape rows are not logged in {mode} mode")
-    if mode == "simplify" and finding["class"] != "complexity":
-        raise RefactorFlowError(f"{where}: simplify escape rows must be class=complexity")
-    require_text(finding, "severity", where)
-    # The writer's --check owns the label list; a model writes this input, so `unknown` is refused here.
-    miss_reason = finding.get("miss_reason")
-    if not isinstance(miss_reason, str) or miss_reason in ("", "unknown"):
-        raise RefactorFlowError(f"{where}: an escape finding needs `miss_reason`, a label from "
-                                f"escape-ratchet.md other than `unknown` (got {miss_reason!r})")
-
-
-def validate_handoff(handoff):
-    if not isinstance(handoff, dict):
-        raise RefactorFlowError("`handoff` must be an object")
-    files = handoff.get("files", [])
-    if not isinstance(files, list):
-        raise RefactorFlowError("handoff.files must be a list of {path, change}; the file list comes from git")
-
-    for entry in files:
-        if not isinstance(entry, dict):
-            raise RefactorFlowError("handoff.files entries must be objects")
-        single_line(entry, "path", "handoff.files")
-        single_line(entry, "change", "handoff.files")
-    single_line(handoff, "tests_run", "handoff")
-    single_line(handoff, "flagged", "handoff")
-
-    plan_impact = handoff.get("plan_impact", "none")
-    if not isinstance(plan_impact, str) or not plan_impact.strip():
-        raise RefactorFlowError("handoff.plan_impact must be a non-empty string (`none` when there is none)")
-
-
-def require_escape_guards(findings, guards):
-    escape_classes = sorted({finding["class"] for finding in findings if finding.get("escape")})
-    for escape_class in escape_classes:
-        if not isinstance(guards.get(escape_class), str) or not guards[escape_class]:
-            raise RefactorFlowError(f"escape class `{escape_class}` needs guards[\"{escape_class}\"] (run the ratchet)")
-
-
-def validated_targets(refactor_log, finder, mode):
-    targets = refactor_log.get("target") or []
-    if not isinstance(targets, list) or not all(isinstance(item, str) and item for item in targets):
-        raise RefactorFlowError("`target` must be a list of paths")
-    if finder and mode in ("audit", "simplify") and not targets:
-        raise RefactorFlowError("`target` (list of dirs or files) is required in audit and simplify mode")
-    return targets
-
-
-def validate_log(mode, refactor_log):
-    finder = refactor_log.get("finder") or None
-    if mode == "targeted":
-        if finder:
-            raise RefactorFlowError("`finder` must be omitted in targeted mode (no finder is dispatched)")
-    elif not isinstance(finder, str) or finder not in FINDERS:
-        raise RefactorFlowError(f"`finder` must be one of {sorted(FINDERS)}")
-
-    lane = None
-    if finder:
-        lane = require_text(refactor_log, "lane", "log input")
-
-    findings = refactor_log.get("findings", [])
-    if not isinstance(findings, list):
-        raise RefactorFlowError("`findings` must be a list")
-    for index, finding in enumerate(findings):
-        validate_finding(finding, index, mode)
-
-    guards = refactor_log.get("guards", {})
-    if not isinstance(guards, dict):
-        raise RefactorFlowError("`guards` must be an object")
-    require_escape_guards(findings, guards)
-
-    verdict = refactor_log.get("result") or ("NEEDS CHANGES" if findings else "PASS")
-    if not isinstance(verdict, str):
-        raise RefactorFlowError("`result` must be a string")
-
-    targets = validated_targets(refactor_log, finder, mode)
-
-    handoff = refactor_log.get("handoff")
-    if mode == "audit" and handoff:
-        raise RefactorFlowError("audit mode never hands off to /review")
-    if handoff:
-        validate_handoff(handoff)
-
-    return {"finder": finder, "lane": lane, "findings": findings, "guards": guards, "verdict": verdict,
-            "targets": targets, "handoff": handoff}
-
 
 def untracked_line_count(live_targets):
     """Lines in the untracked (not ignored) text files under the targets; `git diff` never sees them."""
     total = 0
     for name in ls_files(live_targets, "--others"):
-        total += len(classify_untracked(".", name).added_lines)
+        total += len(untracked_listing.classify_untracked(".", name).added_lines)
     return total
 
 
@@ -798,26 +422,8 @@ def render_handoff(root, handoff, modifier):
     return "\n".join(lines)
 
 
-def review_dispatch_next():
-    return next_line("tell the user you are auto-dispatching /review, then Skill-invoke /review with the "
-                     "handoff block above (plus any modifier).")
-
-
-def read_refactor_log(path):
-    try:
-        refactor_log = json.loads(Path(path).read_text())
-    except (OSError, ValueError) as err:
-        raise RefactorFlowError(f"cannot read --input {path}: {err}") from err
-    if not isinstance(refactor_log, dict):
-        raise RefactorFlowError(f"--input {path} must hold a JSON object")
-    return refactor_log
-
-
-def read_modifier(refactor_log):
-    modifier = refactor_log.get("modifier")
-    if modifier is not None and not isinstance(modifier, str):
-        raise RefactorFlowError("`modifier` must be a string")
-    return modifier
+REVIEW_DISPATCH_STEP = ("tell the user you are auto-dispatching /review, then Skill-invoke /review with the "
+                        "handoff block above (plus any modifier).")
 
 
 def build_writes(mode, base, validated_log):
@@ -985,11 +591,20 @@ def check_targets_match(mode, validated_log):
 
 def log_next(validated_log, mode):
     if validated_log["handoff"]:
-        return review_dispatch_next()
+        return REVIEW_DISPATCH_STEP
     if mode == "audit":
-        return next_line("done; report the work list to the user. No coders, no /review.")
-    return next_line("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
-                     "added, else done.")
+        return "done; report the work list to the user. No coders, no /review."
+    return ("no handoff given; if code changed, run `handoff --input FILE` with a `handoff` key "
+            "added, else done.")
+
+
+def final_line(comparison, validated_log, mode):
+    """The last line `log` prints. The grown-diff STOP carries the step `log_next` would print, after the user's
+    ruling."""
+    step = log_next(validated_log, mode)
+    if not (comparison and comparison.stop):
+        return next_line(step)
+    return f"{comparison.stop} After they rule: {step}"
 
 
 def pending_rows(root, input_path, writes):
@@ -1005,9 +620,9 @@ def pending_rows(root, input_path, writes):
 
 def log_verb(opts):
     root = require_repo()
-    refactor_log = read_refactor_log(opts.input)
-    validated_log = validate_log(opts.mode, refactor_log)
-    modifier = read_modifier(refactor_log)
+    refactor_log = refactor_log_input.read_refactor_log(opts.input)
+    validated_log = refactor_log_input.validate_log(opts.mode, refactor_log)
+    modifier = refactor_log_input.read_modifier(refactor_log)
     check_targets_match(opts.mode, validated_log)
     try:
         writes = build_writes(opts.mode, opts.base, validated_log)
@@ -1022,6 +637,10 @@ def log_verb(opts):
 
     check_writer_rows(writes)
 
+    comparison = None
+    if opts.mode == "simplify":
+        comparison = simplify_flow.compare_branch_diff(opts.input, root)
+
     input_path = str(Path(opts.input).resolve())
     pending = pending_rows(root, input_path, writes)
     skipped = len(writes) - len(pending)
@@ -1029,6 +648,8 @@ def log_verb(opts):
     counts = count_rows([(script, pairs) for script, pairs, _ in pending])
     print(f"## Logging ({opts.mode}): {counts.escapes} escape row(s), {counts.runs} finder run row, "
           f"{counts.findings} finding row(s); {skipped} already logged, skipped.")
+    if comparison:
+        print("\n".join(comparison.lines))
 
     if validated_log["handoff"]:
         print()
@@ -1041,22 +662,22 @@ def log_verb(opts):
         print(f"writer refused: {script} {' '.join(pairs)}\n{error}", file=sys.stderr)
     if refused:
         print(f"writer refused {len(refused)} row(s), tell the user which")
-    print(log_next(validated_log, opts.mode))
+    print(final_line(comparison, validated_log, opts.mode))
     return 2 if refused else 0
 
 
 def handoff_verb(opts):
     root = require_repo()
-    refactor_log = read_refactor_log(opts.input)
+    refactor_log = refactor_log_input.read_refactor_log(opts.input)
     handoff = refactor_log.get("handoff")
     if not handoff:
         raise RefactorFlowError("the input has no `handoff` key")
-    validate_handoff(handoff)
-    modifier = read_modifier(refactor_log)
+    refactor_log_input.validate_handoff(handoff)
+    modifier = refactor_log_input.read_modifier(refactor_log)
 
     print(render_handoff(root, handoff, modifier))
     print()
-    print(review_dispatch_next())
+    print(next_line(REVIEW_DISPATCH_STEP))
     return 0
 
 
@@ -1073,7 +694,10 @@ def parse_arguments():
     simplify = sub.add_parser("simplify-prep")
     simplify.add_argument("target", nargs="+")
     simplify.add_argument("--slice", type=int, default=1)
-    log = sub.add_parser("log")
+    simplify.add_argument("--diff", metavar="BASE")
+    log = sub.add_parser("log", help="append the escape and finder rows of one /refactor run",
+                         epilog=refactor_log_input.log_help_epilog(),
+                         formatter_class=argparse.RawDescriptionHelpFormatter)
     log.add_argument("--mode", required=True, choices=["branch", "targeted", "audit", "simplify"])
     log.add_argument("--input", required=True)
     log.add_argument("--base")
@@ -1084,7 +708,7 @@ def parse_arguments():
 
 def main():
     opts = parse_arguments()
-    handlers = {"branch-prep": branch_prep, "audit-prep": audit_prep, "simplify-prep": simplify_prep,
+    handlers = {"branch-prep": branch_prep, "audit-prep": audit_prep, "simplify-prep": simplify_flow.simplify_prep,
                 "log": log_verb, "handoff": handoff_verb}
     try:
         return handlers[opts.verb](opts)

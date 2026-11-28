@@ -13,21 +13,26 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+from typing import ClassVar
 
 import fake_ledger
 import isolated_state
+import test_review_loop_script as loop_script
 import toolkit_paths
 
 sys.path.insert(0, str(toolkit_paths.LIB_DIR))
 sys.path.insert(0, str(toolkit_paths.REVIEW_DIR))
 import approval_asks_store
 import ask_outcome_words
+import capped_review
 import file_lock
+import handback
 import handback_store
 import phase_asks
 import review_asks
 import reviewed_tree
 import script_utils
+import stop_file_names
 
 SCRIPT = pathlib.Path(os.environ.get("PHASE_ASKS_SCRIPT") or toolkit_paths.REVIEW_DIR / "phase_asks.py")
 CLAUDE_DIR = pathlib.Path(os.environ.get("REVIEW_FIX_CLAUDE_DIR") or toolkit_paths.CLAUDE_DIR)
@@ -47,7 +52,7 @@ def ask(question, finding_id, line):
 
 def user_only_ask(path, finding_id, line):
     """The ask of a coder's edit to the approval-only file `path`, marked for the user alone."""
-    text = f"A fix coder edited `{path}`, which needs the user's approval."
+    text = f"A fix coder edited `{path}`, an approval-only file."
     return {**ask(text, finding_id, line), ask_outcome_words.USER_ONLY_KEY: True}
 
 
@@ -583,7 +588,7 @@ class WaitCase(StoreCase):
         (self.phase_dir / self.code_wait.REVIEW_OUTPUT).write_text("packet printed\n")
         self.loop_folder = self.temp_root / "loop"
         self.loop_folder.mkdir()
-        (self.phase_dir / self.code_wait.LOOP_DIR_FILE).write_text(f"{self.loop_folder}\n")
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{self.loop_folder}\n")
         self.code_wait.write_phase_run(self.repo, "code", "3")
 
     def wait(self, asks):
@@ -615,7 +620,7 @@ class OpenPhaseAsksTest(WaitCase):
         (self.loop_folder / self.code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet_with(ASKS))
 
         with unittest.mock.patch.object(self.code_wait.script_utils, "repo_root", return_value=None):
-            lines = self.code_wait.phase_asks_notice(self.repo)
+            lines = self.code_wait.phase_asks_notice(self.repo, self.code_wait.read_phase_packet(self.repo))
 
         self.assertEqual(lines, [])
         self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
@@ -682,7 +687,7 @@ class OpenPhaseAsksTest(WaitCase):
                               **{handback_store.RULED_OPEN_TS_KEY: first_open["ts"]})
         newer_loop = self.temp_root / "loop-newer"
         newer_loop.mkdir()
-        (self.phase_dir / self.code_wait.LOOP_DIR_FILE).write_text(f"{newer_loop}\n")
+        (self.phase_dir / stop_file_names.LOOP_DIR_FILE).write_text(f"{newer_loop}\n")
         (newer_loop / self.code_wait.reviewer_dispatch.PACKET_FILE).write_text(packet_with(ASKS))
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -774,15 +779,26 @@ class OpenPhaseAsksTest(WaitCase):
         self.assertEqual(lines, [])
         self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
 
-    def test_a_cap_reached_packet_with_asks_opens_nothing(self):
-        packet = json.loads(packet_with(ASKS))
+    def reject_the_first_ask_of(self, packet):
+        """Opens `packet`'s asks, has the session reject the first one through `rule`, and returns the asks the
+        review loop reads back as rejected for this session."""
+        self.seed_handback()
+        phase_asks.record_open(SESSION, self.repo_top, packet, {}, "loop-c:2")
+        code, _output, error = self.run_script("rule", "rejected:not needed")
+        self.assertEqual(code, 0, error)
+        return handback_store.rejected_ask_texts(SESSION, handback_store.ruled_rows_repo(self.repo_top))
+
+    def test_a_cap_reached_packet_with_asks_opens_them_and_a_session_rejection_is_stored(self):
+        packet = json.loads(packet_with(ASKS[:1]))
         packet["status"] = "cap-reached"
         packet.update({"open_classes": [], "unrun_reviewer": [], "full_check_tree": ""})
 
-        lines = phase_asks.record_open(SESSION, self.repo_top, packet, {}, "loop-c:2")
+        stored = self.reject_the_first_ask_of(packet)
 
-        self.assertEqual(lines, [])
-        self.assertEqual(self.store_rows(handback_store.PHASE_ASKS_OPEN), [])
+        self.assertEqual(len(self.store_rows(handback_store.PHASE_ASKS_OPEN)), 1)
+        self.assertEqual(stored, [f"src/a.py:3 {ASKS[0]['question']}"])
+        self.assertNotIn(capped_review.effective_status(packet, self.repo_top), handback.CLEAN_STATUSES,
+                         "ruling a capped packet's asks never reads the run as clean")
 
     def test_a_cap_reached_packet_that_reads_as_deferred_opens_its_asks(self):
         packet = json.loads(packet_with(ASKS))
@@ -849,7 +865,7 @@ class UserOnlyAskTest(ScriptRunCase):
         handback_store.record_phase_asks_open(SESSION, self.repo_top, [open_ask], CONTEXT, "loop-c:3")
         self.rows_before = self.outcome_rows()
 
-    def test_a_session_ruling_is_refused_and_logs_nothing(self):
+    def test_a_session_ruling_on_a_revert_ask_is_refused_and_logs_nothing(self):
         code, _, error = self.run_script("rule", "rejected:keep the edit")
 
         self.assertEqual(code, 2)
@@ -902,7 +918,7 @@ class UserOnlyAskTest(ScriptRunCase):
                                               CONTEXT, "loop-c:4")
         rows_before = self.outcome_rows()
 
-        code, _, error = self.run_script("rule", "accepted:a", "rejected:b")
+        code, _, error = self.run_script("rule", "accepted:a", "rejected:b", "rejected:c")
 
         self.assertEqual(code, 2)
         # ask 2 is the plain ask; the open asks carried from setUp's row hold the other user-only ask
@@ -1015,6 +1031,102 @@ class UserOnlyAskTest(ScriptRunCase):
 
 
 CRITERION_QUESTION = "Should the retry count change what AC2 asks for?"
+
+
+def wanted_ask(path, finding_id, line):
+    """A user-only ask for a wanted change to the approval-only file `path`."""
+    change = f"add the rule to the file {approval_asks_store.wanted_edit_target(path)}"
+    return {**user_only_ask(path, finding_id, line), "wanted_change": True, "change": change}
+
+
+def revert_ask(path, finding_id, line):
+    return {**user_only_ask(path, finding_id, line), "change": approval_asks_store.approval_change(path)}
+
+
+class SessionRejectsWantedChangeTest(ScriptRunCase):
+    """A session may reject a user-only ask for a wanted change to an approval-only file; nothing else passes."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_script("rule", "accepted:a", "rejected:b")
+        self.rows_before = self.outcome_rows()
+
+    def open_one(self, open_ask):
+        handback_store.record_phase_asks_open(SESSION, self.repo_top, [open_ask], CONTEXT, "loop-d:3")
+
+    def test_a_session_rejection_of_a_wanted_change_is_logged_decided_by_the_session(self):
+        for number, path in enumerate(("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")):
+            with self.subTest(path=path):
+                self.open_one(wanted_ask(path, f"7aa295856f1a9f{number:02d}", 1))
+
+                code, _, error = self.run_script("rule", "rejected:not wanted")
+
+                self.assertEqual(code, 0, error)
+                row = self.outcome_rows()[-1]
+                self.assertEqual((row["ask_outcome"], row["ask_decided_by"]), ("rejected", "session"))
+
+    def test_a_session_accept_of_a_wanted_change_is_refused_and_logs_nothing(self):
+        for number, path in enumerate(("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md")):
+            with self.subTest(path=path):
+                self.open_one(wanted_ask(path, f"7bb295856f1a9f{number:02d}", 1))
+                rows_before = self.outcome_rows()
+
+                code, _, error = self.run_script("rule", "accepted:wanted")
+
+                self.assertEqual(code, 2)
+                self.assertIn("ask(s) 1 are user_only", error)
+                self.assertEqual(self.outcome_rows(), rows_before)
+
+    def test_a_session_rejection_of_a_revert_ask_is_refused(self):
+        self.open_one(revert_ask("CLAUDE.md", "7cc295856f1a9fff", 1))
+
+        code, _, error = self.run_script("rule", "rejected:keep it")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 1 are user_only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_a_session_rejection_of_a_criteria_ask_is_refused(self):
+        criteria_ask = {**wanted_ask("CLAUDE.md", "7dd295856f1a9fff", 1), ask_outcome_words.CRITERIA_KEY: ["AC1"]}
+        self.open_one(criteria_ask)
+
+        code, _, error = self.run_script("rule", "rejected:no")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 1 are user_only", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_a_mixed_batch_is_refused_and_names_only_the_revert_ask(self):
+        handback_store.record_phase_asks_open(
+            SESSION, self.repo_top,
+            [wanted_ask("CLAUDE.md", "7ee295856f1a9fff", 1), revert_ask("AGENTS.md", "7ff295856f1a9fff", 2)],
+            CONTEXT, "loop-d:4")
+
+        code, _, error = self.run_script("rule", "rejected:no", "rejected:no")
+
+        self.assertEqual(code, 2)
+        self.assertIn("ask(s) 2 are user_only", error)
+        self.assertNotIn("ask(s) 1", error)
+        self.assertEqual(self.outcome_rows(), self.rows_before)
+
+    def test_the_instruction_says_a_session_may_reject_a_wanted_change_only_when_every_user_only_ask_is_one(self):
+        wanted = [wanted_ask("CLAUDE.md", "7aa295856f1a9fff", 1)]
+        mixed = [*wanted, revert_ask("AGENTS.md", "7bb295856f1a9fff", 2)]
+
+        self.assertIn("may reject a wanted change", phase_asks.instruction_for(wanted))
+        self.assertNotIn("may reject a wanted change", phase_asks.instruction_for(mixed))
+
+
+class WantedPathOfChangeTest(unittest.TestCase):
+    def test_the_reader_inverts_wanted_edit_target(self):
+        change = f"do it {approval_asks_store.wanted_edit_target('docs dir/CLAUDE.md')}"
+
+        self.assertEqual(approval_asks_store.wanted_path_of_change(change), "docs dir/CLAUDE.md")
+
+    def test_other_text_reads_as_none(self):
+        for change in (None, "", "make the change", approval_asks_store.approval_change("CLAUDE.md"), "(edit to ``)"):
+            with self.subTest(change=change):
+                self.assertIsNone(approval_asks_store.wanted_path_of_change(change))
 
 
 class CriterionAskTest(WaitCase):
@@ -1217,6 +1329,61 @@ class CriterionAskTest(WaitCase):
 
         opened = self.store_rows(handback_store.PHASE_ASKS_OPEN)[0]["asks"][0]
         self.assertNotIn(ask_outcome_words.USER_ONLY_KEY, opened)
+
+
+class FreshRunDropsARejectedAskTest(loop_script.ReviewLoopHarness, unittest.TestCase):
+    """A session's rejection of an ask on a review packet is stored, and a fresh review loop run whose reviewer raises
+    the same ask drops it (the packet lists it under `dropped_asks`)."""
+
+    FINAL_READ = ("## Fix\n- `app.py:5` the last limit skips the unit\n\n## Ask\n- `app.py:3` should the limit be "
+                  "configurable?\n\n## Nit\nNone\n\nOverall Assessment: NEEDS CHANGES\n")
+    CAPPED_SCENARIO: ClassVar[dict] = {
+        "code-reviewer": [{"result": loop_script.FIX_REVIEW}, {"result": loop_script.FIX_REVIEW},
+                          {"result": FINAL_READ}],
+        "coder": [{"result": "Fixed 1.", "edits": {"app.py": loop_script.APP_FIXED}},
+                  {"result": "Fixed 2.", "edits": {"app.py": loop_script.APP_AFTER_EDIT}}],
+        "closure": [{"result": loop_script.CLOSED}],
+    }
+    CONVERGED_SCENARIO: ClassVar[dict] = {
+        "code-reviewer": [{"result": ("## Fix\nNone\n\n## Ask\n- `app.py:3` should the limit be configurable?\n\n"
+                                      "## Nit\nNone\n\nOverall Assessment: APPROVED\n")}],
+    }
+
+    def reject_the_packet_ask_through_phase_asks(self, packet):
+        """Opens the packet's asks as code_wait does and rules the first one `rejected` through phase_asks.py."""
+        self.assertEqual(len(packet["ask"]), 1, packet["ask"])
+        env = {**self.env, "CLAUDE_CODE_SESSION_ID": loop_script.SESSION}
+        repo = os.path.realpath(self.repo)
+        with unittest.mock.patch.dict(os.environ, {"HANDBACK_STORE_DIR": env["HANDBACK_STORE_DIR"]}):
+            lines = phase_asks.record_open(loop_script.SESSION, repo, packet, {}, "loop-x:2")
+        self.assertTrue(lines, "the packet's asks were not opened")
+        done = subprocess.run(["python3", "-I", str(SCRIPT), "rule", "rejected:not wanted"], cwd=self.repo, env=env,
+                              text=True, capture_output=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def assert_a_fresh_run_drops_the_rejected_ask(self, scenario):
+        first = self.run_script(scenario)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        _row, first_packet = self.stored_packet()
+        self.reset_fake_run()
+        self.reject_the_packet_ask_through_phase_asks(first_packet)
+
+        second = self.run_script(scenario)
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        _row, packet = self.stored_packet()
+        self.assertEqual(packet["ask"], [])
+        self.assertEqual(len(packet["dropped_asks"]), 1, packet["dropped_asks"])
+        self.assertNotEqual(packet["status"], "critical-blocker")
+        return first_packet, packet
+
+    def test_a_fresh_run_drops_an_ask_the_session_rejected_on_a_converged_packet(self):
+        first_packet, _packet = self.assert_a_fresh_run_drops_the_rejected_ask(self.CONVERGED_SCENARIO)
+        self.assertEqual(first_packet["status"], "converged")
+
+    def test_a_fresh_run_drops_an_ask_the_session_rejected_on_a_cap_reached_packet(self):
+        first_packet, packet = self.assert_a_fresh_run_drops_the_rejected_ask(self.CAPPED_SCENARIO)
+        self.assertEqual((first_packet["status"], packet["status"]), ("cap-reached", "cap-reached"))
 
 
 if __name__ == "__main__":

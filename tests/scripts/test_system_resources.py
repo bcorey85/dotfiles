@@ -108,5 +108,21 @@ class CommandTest(unittest.TestCase):
             self.assertIsNone(system_resources.memory_available_gb())
 
 
+class SizeTextTest(unittest.TestCase):
+    def test_size_text_picks_the_unit_at_each_threshold(self):
+        cases = [
+            (1024**3, "1.0 GB"),
+            (3 * 1024**3 // 2, "1.5 GB"),
+            (1024**3 - 1, "1024.0 MB"),
+            (1024**2, "1.0 MB"),
+            (1024**2 - 1, "1023 KB"),
+            (1024, "1 KB"),
+            (0, "0 KB"),
+        ]
+        for size, expected in cases:
+            with self.subTest(size=size):
+                self.assertEqual(system_resources.size_text(size), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -151,6 +151,23 @@ class StageRunTest(unittest.TestCase):
         self.assertEqual(self.jump_rows(result.stdout), [])
         self.assertEqual(self.metrics_rows()[0]["queue"], "1")
 
+    def test_already_staged_deletion_counts_as_staged_beside_an_unstaged_edit(self):
+        self.add_barrel()
+        self.write("src/service.ts", "export const a = 1;\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "add barrel and service")
+        self.git("rm", "-q", "src/index.ts")
+        self.write("src/service.ts", "export const a = 2;\n")
+
+        result = self.run_stage("--run")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.staged_paths(), ["src/index.ts"])
+        self.assertIn("Staged mechanically (1)", result.stdout)
+        logged = self.metrics_rows()[0]
+        self.assertEqual((logged["suppressed"], logged["queue"]), ("1", "1"))
+        self.assertEqual([row["path"] for row in self.jump_rows(result.stdout)], ["src/service.ts"])
+
     def test_renamed_file(self):
         self.write("src/old.ts", "export const value = 1;\nexport const other = 2;\nexport const third = 3;\n")
         self.git("add", ".")

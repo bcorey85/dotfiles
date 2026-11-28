@@ -36,12 +36,15 @@ When the lane edits files under `claude/.claude/` in dotfiles:
   `~/agent-evals/bin/rule_meter.py run-all --rule <id>`. Put the per-arm counts in the change file's Result.
 - For an anchored prompt file, update its row with `rule-anchors.sh list <file>`, then run `rule-anchors.sh check`.
 - Never edit `settings.json`, any CLAUDE.md or `orchestration.md`. Send the proposed line to `<orchestrator>`.
+- For a hook entry in `settings.json`, send one `python3 ~/.claude/scripts/tools/settings_hook.py add|remove
+  ~/.claude/settings.json ...` line that carries every key the entry has (its `--help` lists them; omit `--matcher` for
+  a group with none), never JSON or an installer script.
 
 ## Checks under the memory cap
 
 - Before a full suite or a heavy run, check `free -g`. Under 8 GB available, wait and tell `<orchestrator>`.
 - Run the suite with a memory cap and in the background:
-  `systemd-run --user --scope --quiet -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh > <log> 2>&1`.
+  `systemd-run --user --scope --quiet --slice=tests.slice -p MemoryMax=8G -p MemorySwapMax=0 bash tests/run.sh > <log> 2>&1`.
 
 ## Final report
 

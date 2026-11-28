@@ -1,19 +1,20 @@
 """human_turn_lookup.py: finds a turn the user typed into another live Claude Code session.
 
-A session name maps to one live row in the sessions folder (`<pid>.json`, fields `name`, `sessionId`); its
-transcript is the one `<sessionId>.jsonl` in a folder under the projects folder (the folder need not match the row's
-cwd); `session_registry` owns both folders. A real user turn is a transcript row that `user_prompts.prompt_text`
-reads as typed text and whose `origin` is exactly `{"kind": "human"}`; its words are `user_prompts.user_words` of
-that text. Peer messages (origin kind `peer`), task notifications, tool results and compact summaries are never a
-user turn.
-`verified_human_turn` returns the turn's time, never its words, or raises HumanTurnRefusedError naming the failed
-lookup. Standard library, `session_registry` and `user_prompts` only."""
-import json
-from datetime import datetime, timezone
+A session id, or a session name that one live row holds, maps to one live row in the sessions folder (`<pid>.json`,
+fields `name`, `sessionId`); its transcript is the one `<sessionId>.jsonl` in a folder under the projects folder
+(the folder need not match the row's cwd); `session_registry` owns both folders. A real user turn is a transcript
+row that `user_prompts.prompt_text` reads as typed text and whose `origin` is exactly `{"kind": "human"}`; its words
+are `user_prompts.user_words` of that text. Peer messages (origin kind `peer`), task notifications, tool results and
+compact summaries are never a user turn.
+`verified_human_turn` returns the relaying session and the turn's time, never its words, or raises
+HumanTurnRefusedError naming the failed lookup. Standard library, `script_utils`, `session_registry`,
+`transcript_time` and `user_prompts` only."""
 from typing import NamedTuple
 
 import user_prompts
-from session_registry import live_session_rows, projects_dir, sessions_dir
+from script_utils import transcript_record
+from session_registry import live_session_rows, projects_dir, row_for_session_id, session_transcripts, sessions_dir
+from transcript_time import epoch_of_timestamp
 
 HUMAN_ORIGIN = {"kind": "human"}
 
@@ -28,38 +29,43 @@ class HumanTurn(NamedTuple):
     epoch: float
 
 
-def session_id_of_name(session_name):
-    """The session id of the one live session named `session_name`. Raises HumanTurnRefusedError for none or several."""
-    matches = [row for row in live_session_rows() if row.get("name") == session_name]
+class RelayingSession(NamedTuple):
+    """The live session that relays a ruling: its session id and the name its registry row holds."""
+    session_id: str
+    name: str
+
+
+def relaying_row(word):
+    """The RelayingSession that `word` names: the live row whose session id is `word`, else the one live row named
+    `word`. Raises HumanTurnRefusedError for a row with no name, for none, or for several rows of one name."""
+    id_row = row_for_session_id(word)
+    if id_row is not None:
+        name = id_row.get("name")
+        if not isinstance(name, str) or not name:
+            raise HumanTurnRefusedError(f"the live row of session id {word} holds no name; name the session, "
+                                        "then relay")
+        return RelayingSession(word, name)
+    matches = [row for row in live_session_rows() if row.get("name") == word]
     if not matches:
-        raise HumanTurnRefusedError(f"no live session named {session_name!r} in {sessions_dir()}")
+        raise HumanTurnRefusedError(f"no live session has the id or the name {word!r} in {sessions_dir()}")
     if len(matches) > 1:
-        raise HumanTurnRefusedError(f"{len(matches)} live sessions are named {session_name!r} in "
-                                    f"{sessions_dir()}; name a session that exactly one live row holds")
+        raise HumanTurnRefusedError(f"{len(matches)} live sessions are named {word!r} in {sessions_dir()}; relay "
+                                    "by the session id of one of them instead: --relayed-by <sessionId>")
     session_id = matches[0].get("sessionId")
     if not isinstance(session_id, str) or not session_id:
-        raise HumanTurnRefusedError(f"the registry row of {session_name!r} holds no sessionId")
-    return session_id
+        raise HumanTurnRefusedError(f"the registry row of {word!r} holds no sessionId")
+    return RelayingSession(session_id, word)
 
 
 def transcript_of_session(session_id):
     """The one `<projects folder>/*/<session_id>.jsonl`. Raises HumanTurnRefusedError for none or several."""
-    found = sorted(projects_dir().glob(f"*/{session_id}.jsonl"))
+    found = session_transcripts(session_id)
     if not found:
         raise HumanTurnRefusedError(f"no transcript {session_id}.jsonl under {projects_dir()}")
     if len(found) > 1:
         raise HumanTurnRefusedError(f"{len(found)} transcripts named {session_id}.jsonl under {projects_dir()}: "
                                     f"{', '.join(str(transcript) for transcript in found)}")
     return found[0]
-
-
-def epoch_of_timestamp(timestamp):
-    """Epoch seconds of an ISO 8601 timestamp such as `2026-11-15T06:22:12.305Z`. Raises ValueError for any other."""
-    # Python 3.10's fromisoformat does not read a trailing Z.
-    moment = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.timestamp()
 
 
 def human_text(row):
@@ -93,11 +99,8 @@ def human_turn_of_line(line):
     """(HumanTurn, text) of a transcript line that is a real user turn with a readable timestamp, else None."""
     if HUMAN_ORIGIN["kind"] not in line:
         return None
-    try:
-        row = json.loads(line)
-    except ValueError:
-        return None
-    if not isinstance(row, dict):
+    row = transcript_record(line)
+    if row is None:
         return None
     text = human_text(row)
     if text is None:
@@ -110,17 +113,18 @@ def human_turn_of_line(line):
     return HumanTurn(timestamp, epoch), text
 
 
-def verified_human_turn(session_name, after_epoch):
-    """The latest real user turn with text in the live session `session_name`, typed after `after_epoch`. Raises
-    HumanTurnRefusedError naming the lookup that failed: no registry row, several rows, no transcript, no human
-    turn, or only turns older than `after_epoch`."""
-    session_id = session_id_of_name(session_name)
-    transcript = transcript_of_session(session_id)
+def verified_human_turn(word, after_epoch):
+    """(RelayingSession, HumanTurn): the session `word` names (a live session id or name) and its latest real user
+    turn with text, typed after `after_epoch`. Raises HumanTurnRefusedError naming the lookup that failed: no
+    registry row, several rows, a live id row with no name, no transcript, no human turn, or only turns older than
+    `after_epoch`."""
+    session = relaying_row(word)
+    transcript = transcript_of_session(session.session_id)
     typed = [turn for turn, text in human_turns(transcript) if text.strip()]
     if not typed:
-        raise HumanTurnRefusedError(f"no human turn in session {session_name!r}")
+        raise HumanTurnRefusedError(f"no human turn in session {session.name!r}")
     recent = [turn for turn in typed if turn.epoch > after_epoch]
     if not recent:
-        raise HumanTurnRefusedError(f"every human turn of session {session_name!r} is older than the ask it would "
+        raise HumanTurnRefusedError(f"every human turn of session {session.name!r} is older than the ask it would "
                                     "rule: ask the user there, then relay")
-    return recent[-1]
+    return session, recent[-1]

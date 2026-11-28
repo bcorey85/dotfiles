@@ -445,7 +445,15 @@ for (const [path, meta] of changed) {
 let staged = [];
 if (doStage && tiers.safe.length > 0) {
   staged = tiers.safe.map((e) => e.path);
-  git(["add", "--", ...staged], { cwd: root });
+  // A deletion already staged with `git rm` is gone from the index, so `git add` on it fails with "pathspec did not match".
+  const deletedSafe = tiers.safe.filter((e) => e.status === "D").map((e) => e.path);
+  const stillIndexedOutput = deletedSafe.length
+    ? git(["ls-files", "--cached", "-z", "--", ...deletedSafe], { cwd: root })
+    : "";
+  const stillIndexed = new Set(stillIndexedOutput.split("\0").filter(Boolean));
+  const alreadyStagedDeletions = new Set(deletedSafe.filter((p) => !stillIndexed.has(p)));
+  const toAdd = staged.filter((p) => !alreadyStagedDeletions.has(p));
+  if (toAdd.length > 0) git(["add", "--", ...toAdd], { cwd: root });
 }
 
 // ---------------------------------------------------------------- --run

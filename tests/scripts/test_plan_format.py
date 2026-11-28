@@ -43,6 +43,23 @@ def parse(text):
     return plan_format.manual_verification(text, "plan.md")
 
 
+class PlanFormatPathCharsTest(unittest.TestCase):
+    def test_plan_regexes_read_dollar_and_plus_paths(self):
+        found = plan_format.PATH_IN_BACKTICKS.findall("edit `src/routes/$id.tsx:12` and `src/routes/+page.svelte:3`")
+        self.assertEqual(found, ["src/routes/$id.tsx", "src/routes/+page.svelte"])
+        for line in ("src/routes/$id.ts:12 [bug] PLAN-IMPACT: x", "`src/routes/+page.svelte:3` PLAN-IMPACT: x"):
+            with self.subTest(line=line):
+                mark = plan_format.PLAN_CHANGE_MARK.match(line)
+                self.assertIsNotNone(mark)
+                self.assertTrue(line[:mark.end()].upper().endswith("PLAN-IMPACT"))
+
+    def test_a_file_entry_on_a_dollar_path_names_that_path(self):
+        plan_lines = ["- **File**: `src/routes/$id.tsx`", "- **Files**: `src/routes/+page.svelte:3`"]
+        section = {"start": 0, "end": len(plan_lines)}
+        paths = plan_format.file_entry_paths(plan_lines, section)
+        self.assertEqual(paths, {"src/routes/$id.tsx", "src/routes/+page.svelte"})
+
+
 class PlanChangeMarkTest(unittest.TestCase):
     def test_a_plan_impact_ask_is_marked_whatever_form_its_line_number_takes(self):
         ask = "plan impact: needs a column"
@@ -1040,6 +1057,83 @@ class LoudFailureTest(unittest.TestCase):
         self.assert_fails_at("#### Manual Verification:\n\n- N/A beyond tests\n  detail\n", 4)
 
 
+class AcQuotesTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.folder = pathlib.Path(self.dir.name)
+        self.plan = self.folder / "spec.md"
+
+    def test_ac_quotes_takes_double_and_curly_quotes_and_spaced_backticks(self):
+        text = 'say "limit = 3" and “a b” and `x y` and `solo` and "" and "  " and "limit = 3"'
+
+        self.assertEqual(plan_format.ac_quotes(text), ["limit = 3", "a b", "x y"])
+
+    def test_plan_ac_quotes_reads_the_criteria_file_and_the_ticket_beside_the_plan(self):
+        (self.folder / "acceptance-criteria.md").write_text('- **AC1** — keep "limit = 3" as it is\n')
+        ticket_text = '# T\n\n## Acceptance Criteria\n\n- says "limit = 3" and "other text"\n'
+        (self.folder / "00-ticket.md").write_text(ticket_text)
+
+        quotes = plan_format.plan_ac_quotes(self.plan)
+
+        self.assertEqual(quotes, {"limit = 3": ["AC1", "Ticket #1"], "other text": ["Ticket #1"]})
+
+    def test_plan_ac_quotes_with_no_criteria_file_and_no_ticket_is_empty(self):
+        self.assertEqual(plan_format.plan_ac_quotes(self.plan), {})
+
+    def test_plan_ac_quotes_ticket_with_no_criteria_heading_adds_nothing(self):
+        (self.folder / "00-ticket.md").write_text('# T\n\njust prose with "some quoted text"\n')
+
+        self.assertEqual(plan_format.plan_ac_quotes(self.plan), {})
+
+    def test_plan_ac_quotes_duplicate_ac_id_raises_an_error_naming_the_criteria_file(self):
+        criteria_path = self.folder / "acceptance-criteria.md"
+        criteria_path.write_text("- **AC1** — one\n- **AC1** — two\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{criteria_path}:2:"), str(raised.exception))
+
+    def test_plan_ac_quotes_non_utf8_criteria_file_raises_an_error_naming_the_file(self):
+        criteria_path = self.folder / "acceptance-criteria.md"
+        criteria_path.write_bytes(b"- **AC1** \xff\xfe one\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{criteria_path}: not UTF-8"), str(raised.exception))
+
+    def test_plan_ac_quotes_non_utf8_ticket_raises_an_error_naming_the_ticket(self):
+        ticket_path = self.folder / "00-ticket.md"
+        ticket_path.write_bytes(b"## Acceptance Criteria\n\n- one \xff\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{ticket_path}: not UTF-8"), str(raised.exception))
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_plan_ac_quotes_unreadable_criteria_file_raises_an_oserror_naming_the_file(self):
+        criteria_path = self.folder / "acceptance-criteria.md"
+        criteria_path.write_text("- **AC1** — one\n")
+        criteria_path.chmod(0)
+
+        with self.assertRaises(OSError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertEqual(raised.exception.filename, str(criteria_path))
+
+    def test_plan_ac_quotes_ticket_with_a_bad_criteria_heading_raises_an_error_naming_the_ticket(self):
+        ticket_path = self.folder / "00-ticket.md"
+        ticket_path.write_text("# T\n\n## Acceptance Criterion Notes\n\n- says \"x y\"\n")
+
+        with self.assertRaises(plan_format.PlanFormatError) as raised:
+            plan_format.plan_ac_quotes(self.plan)
+
+        self.assertTrue(str(raised.exception).startswith(f"{ticket_path}:"), str(raised.exception))
+
+
 @unittest.skipUnless(toolkit_paths.REAL_PLANS_ENABLED, toolkit_paths.REAL_PLANS_SKIP_REASON)
 class RealPlansTest(unittest.TestCase):
     """Every real plan under ~/dev/*/docs/{plans,eng-specs}/ parses, and every section yields phase-tagged items."""
@@ -1063,6 +1157,17 @@ class RealPlansTest(unittest.TestCase):
                 self.assertTrue(all(item["line"] > 0 and item["text"] for item in items))
         print(f"parsed {len(paths)} of {len(paths)} real plan files, {item_count} Manual Verification items",
               file=sys.stderr)
+
+    def test_every_real_plan_folder_s_ac_quotes_parse(self):
+        paths = sorted(glob.glob(str(pathlib.Path.home() / "dev" / "*" / "docs" / "plans" / "*" / "spec.md")))
+        if not paths:
+            self.skipTest("no real plan folders on this machine")
+        parsed = span_count = 0
+        for path in paths:
+            with self.subTest(path=path):
+                span_count += len(plan_format.plan_ac_quotes(pathlib.Path(path)))
+                parsed += 1
+        print(f"parsed {parsed} of {len(paths)} real plan folders, {span_count} quoted spans", file=sys.stderr)
 
     def test_every_real_phase_status_line_marked_moved_parses_with_its_section_and_deviation_entry(self):
         paths = sorted(glob.glob(str(pathlib.Path.home() / "dev" / "*" / "docs" / "plans" / "*" / "spec.md")))
@@ -1408,6 +1513,22 @@ class PlanFileEditTest(unittest.TestCase):
         self.plan_path.write_text("## Phase 1: a\n\ntext\n")
         plan_format.append_deviation(self.plan_path, ["- note"])
         self.assertEqual("## Phase 1: a\n\ntext\n\n## Plan Deviations\n\n- note\n", self.plan_path.read_text())
+
+    def test_a_deviation_for_a_plan_folder_goes_to_the_plan_file_inside_it(self):
+        folder = self.plan_path.parent / "plan-folder"
+        folder.mkdir()
+        plan_file = folder / "plan.md"
+        plan_file.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(folder, ["- folder note"])
+        self.plan_path.write_text(CLOSING_PLAN)
+        plan_format.append_deviation(self.plan_path, ["- folder note"])
+        self.assertEqual(self.plan_path.read_text(), plan_file.read_text())
+
+    def test_a_deviation_for_a_folder_with_no_plan_file_raises_the_plan_error(self):
+        folder = self.plan_path.parent / "empty-folder"
+        folder.mkdir()
+        with self.assertRaisesRegex(plan_format.PlanFormatError, "empty-folder"):
+            plan_format.append_deviation(folder, ["- note"])
 
     def test_a_ruling_entry_names_the_phase_decision_owner_ruling_and_disagreement(self):
         entry = plan_format.ruling_deviation("2", "Adopt plan change", "Pat Signer", "2026-10-25 09:30",

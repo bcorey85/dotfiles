@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """plan_check.py: the write-time check of a plan file.
 
-  plan_check.py check [--final] <plan>   print each way the plan does not hold; exit 1 when any, else 0. --final also
-                                         fails a spec whose criteria file was never written.
-  plan_check.py owner <plan>             print who owns the criteria of the ticket beside the plan as JSON (owner,
-                                         ticket, source, rule); with no ticket beside it, `plan` when the plan is an
-                                         existing `plan.md` whose folder holds acceptance-criteria.md, else `user`
-                                         (ticket null); exit 1 with the message when the ticket cannot be read.
+  plan_check.py check [--final] <plan>   print each way the plan (a plan file, or a plan folder read through its plan
+                                         file) does not hold; exit 1 when any, else 0. --final also fails a spec whose
+                                         criteria file was never written. A folder with no plan file exits 1 naming
+                                         the expected plan-file names.
+  plan_check.py owner <plan>             print who owns the criteria of the ticket beside the plan (a plan file or a
+                                         plan folder) as JSON (owner, ticket, source, rule); with no ticket beside it,
+                                         `plan` when the plan is an existing `plan.md` whose folder holds
+                                         acceptance-criteria.md, else `user` (ticket null); exit 1 with the message when
+                                         the ticket cannot be read, or when a plan folder holds neither a ticket
+                                         nor a plan file (`spec.md`, `plan.md` or one `*-05-plan.md`).
 """
 import json
 import os
@@ -94,9 +98,14 @@ def main(args):
     path_args = args[2:] if final else args[1:]
     if not path_args or args[0] != "check":
         sys.exit(USAGE)
-    plan_path = path_args[0]
+    try:
+        plan_file = plan_format.plan_file_of(path_args[0])
+    except plan_format.PlanFormatError as error:
+        print(error)
+        sys.exit(1)
+    plan_path = str(plan_file)
 
-    plan_lines = pathlib.Path(plan_path).read_text().splitlines()
+    plan_lines = plan_file.read_text().splitlines()
     plan = plan_format.parse_plan_with_closing_phases(plan_lines)
 
     sys.exit(1 if check_plan(plan_lines, plan, plan_path, final) else 0)

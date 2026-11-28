@@ -204,7 +204,7 @@ A ruling, by the user or the orchestrating session, that covers every later rewo
 
 _noun_ · `USER_ONLY_KEY` in `claude/.claude/scripts/lib/ask_outcome_words.py`
 
-An ask that only the user can rule on.
+An ask that only the user can accept; a session may reject one that asks for a wanted change to an approval-only file.
 
 ## Plans and phases
 

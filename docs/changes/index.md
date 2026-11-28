@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1162 changes, 24 with a measured gain, 278 behavior changes that no intake metric reads.
+1305 changes, 25 with a measured gain, 282 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-24, [land_lane lands a dotfiles lane on the first run](notes/2026-11-24-land-lane-lands-a-dotfiles-lane-on-the-first-run.md).
+Latest change: 2026-11-27, [pyright resolves the toolkit's bare-name imports](notes/2026-11-27-pyright-resolves-the-toolkit-s-bare-name-imports.md).
 
 ## Top gains
 
@@ -30,7 +30,7 @@ Each saving is the measured before and after of one change's finding, so a total
 * tokens: 4
 * cost: 3
 * wall-clock: 1
-* quality: 15
+* quality: 16
 
 ## Pages
 

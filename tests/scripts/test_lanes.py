@@ -45,6 +45,21 @@ class LanesCliTest(unittest.TestCase):
         self.assertEqual("", entry["reports_to"])
         self.assertEqual("echo brief", entry["brief"])
 
+    def test_add_with_a_base_commit_stores_it_and_a_bad_one_exits_2(self):
+        worktree = self.root / "based"
+        worktree.mkdir()
+        args = ["add", "--name", "based", "--worktree", str(worktree), "--main-checkout", str(self.root / "main"),
+                "--branch", "b-based"]
+        added = self.run_lanes(*args, "--base-commit", "b" * 40, stdin="brief")
+        self.assertEqual(0, added.returncode, added.stderr)
+        self.assertEqual("b" * 40, json.loads(added.stdout)["base_commit"])
+        listed = json.loads(self.run_lanes("list").stdout)["lanes"]
+        self.assertEqual("b" * 40, listed[0]["base_commit"])
+        refused = self.run_lanes(*args[:-2], "--name", "bad", "--branch", "b-bad", "--base-commit", "nope",
+                                 stdin="brief")
+        self.assertEqual(2, refused.returncode)
+        self.assertIn("base_commit", refused.stderr)
+
     def test_an_unwritable_state_folder_exits_2_not_1(self):
         self.lanes_dir.mkdir(parents=True)
         self.lanes_dir.chmod(0o500)

@@ -31,6 +31,14 @@ class LaneEntriesTest(unittest.TestCase):
         worktree = worktree or self.make_worktree(name)
         return lane_entries.add_entry(name, worktree, str(self.root / "main"), f"branch-{name}", brief, "boss")
 
+    def test_is_lane_session_matches_an_entry_session_id_only(self):
+        self.add("one")
+        lane_entries.set_session("one", "sess-1")
+
+        self.assertTrue(lane_entries.is_lane_session("sess-1"))
+        self.assertFalse(lane_entries.is_lane_session("sess-2"))
+        self.assertFalse(lane_entries.is_lane_session(""), "an unfilled lane has an empty id, which is no session")
+
     def write_raw(self, name, text):
         lane_entries.lanes_dir().mkdir(parents=True, exist_ok=True)
         file = lane_entries.lanes_dir() / f"{name}.json"
@@ -41,9 +49,25 @@ class LaneEntriesTest(unittest.TestCase):
         return {"name": name, "worktree": str(self.root), "main_checkout": str(self.root), "branch": "b",
                 "brief": "x", "session_id": "", "reports_to": "", "started_at": "2026-11-22T10:00:00+00:00"}
 
+    def test_a_base_commit_is_stored_only_when_given_and_must_be_a_full_commit_id(self):
+        self.assertNotIn("base_commit", self.add("plain"))
+        commit = "a" * 40
+        worktree = self.make_worktree("based")
+        based = lane_entries.add_entry("based", worktree, str(self.root / "main"), "b", "x", "", base_commit=commit)
+        self.assertEqual(commit, lane_entries.entry("based")["base_commit"])
+        self.assertEqual(based, lane_entries.entry("based"))
+        for bad in ("", "abc123", "A" * 40, "g" * 40, 7):
+            with self.subTest(bad=bad):
+                file = self.write_raw("one", json.dumps(dict(self.good_entry(), base_commit=bad)))
+                with self.assertRaises(lane_entries.LaneFileError) as raised:
+                    lane_entries.read_entry(file)
+                self.assertEqual("base_commit", raised.exception.field)
+
     def test_the_lanes_dir_follows_xdg_state_home_else_the_home_state_folder(self):
         self.assertEqual(self.root / "state" / "herdr-lanes", lane_entries.lanes_dir())
         with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": "", "HOME": str(self.root)}):
+            self.assertEqual(self.root / ".local" / "state" / "herdr-lanes", lane_entries.lanes_dir())
+        with unittest.mock.patch.dict(os.environ, {"XDG_STATE_HOME": "relstate", "HOME": str(self.root)}):
             self.assertEqual(self.root / ".local" / "state" / "herdr-lanes", lane_entries.lanes_dir())
 
     def test_an_added_entry_is_read_back_listed_sorted_and_removed(self):
@@ -234,6 +258,41 @@ class LaneEntriesTest(unittest.TestCase):
             lane_entries.set_session("one", "sid", brief="")
         self.assertEqual("brief", raised.exception.field)
         self.assertEqual("do the work", lane_entries.entry("one")["brief"])
+
+    def test_a_non_utf8_main_checkout_or_worktree_is_refused_naming_the_field(self):
+        bad_path = "/tmp/\udcff"
+        good_worktree = self.make_worktree("one")
+        main = str(self.root / "main")
+        cases = {
+            "main_checkout": (good_worktree, bad_path, "b", "do the work"),
+            "worktree": (bad_path, main, "b", "do the work"),
+            "branch": (good_worktree, main, "\udcff", "do the work"),
+            "brief": (good_worktree, main, "b", "\udcff"),
+        }
+        for field, (worktree, main_checkout, branch, brief) in cases.items():
+            with self.subTest(field=field):
+                with self.assertRaises(lane_entries.LaneFileError) as raised:
+                    lane_entries.add_entry("one", worktree, main_checkout, branch, brief, "boss")
+                self.assertEqual(field, raised.exception.field)
+                self.assertIn("UTF-8 text", str(raised.exception))
+                self.assertIsNone(lane_entries.entry("one"))
+
+    def test_a_non_utf8_reports_to_is_refused_naming_the_field(self):
+        good_worktree = self.make_worktree("one")
+        main = str(self.root / "main")
+        with self.assertRaises(lane_entries.LaneFileError) as raised:
+            lane_entries.add_entry("one", good_worktree, main, "b", "do the work", "\udcff")
+        self.assertEqual("reports_to", raised.exception.field)
+        self.assertIn("UTF-8 text", str(raised.exception))
+        self.assertIsNone(lane_entries.entry("one"))
+
+    def test_a_non_utf8_session_id_is_refused_naming_the_field(self):
+        self.add("one")
+        with self.assertRaises(lane_entries.LaneFileError) as raised:
+            lane_entries.set_session("one", "\udcff")
+        self.assertEqual("session_id", raised.exception.field)
+        self.assertIn("UTF-8 text", str(raised.exception))
+        self.assertEqual("", lane_entries.entry("one")["session_id"])
 
 
 if __name__ == "__main__":

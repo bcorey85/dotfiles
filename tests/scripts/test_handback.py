@@ -30,10 +30,13 @@ API_ERROR_LAST_RECORD = json.loads(
 spec = importlib.util.spec_from_file_location("handback_under_test", str(SCRIPT))
 handback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(handback)
+import capped_review  # noqa: E402
+import full_check  # noqa: E402
 import handback_hook  # noqa: E402
 import handback_store  # noqa: E402
 import loop_transcript  # noqa: E402
 import plan_format  # noqa: E402
+import review_loop_post_cap  # noqa: E402
 import review_user_ruled  # noqa: E402
 import reviewed_tree  # noqa: E402
 
@@ -716,6 +719,29 @@ class AskRowRoundTest(unittest.TestCase):
         self.assertIn("iter=3", fields)
 
 
+class FixRoundsKeysTest(HandbackTestBase):
+    def test_a_bad_type_for_either_key_is_refused(self):
+        bad_fields = {"a list for fix_rounds": {"fix_rounds": [2]}, "a word for fix_rounds": {"fix_rounds": "many"},
+                      "a string for the passes": {"post_cap_passes": "final read"},
+                      "a number in the passes": {"post_cap_passes": ["final read", 1]}}
+        for message, fields in bad_fields.items():
+            with self.subTest(message), self.assertRaises(handback.PacketError):
+                handback.load(json_packet(**fields))
+
+    def test_a_packet_written_before_the_keys_reads_empty_and_prints_no_summary_line(self):
+        packet = handback.load(json_packet())
+
+        self.assertIsNone(packet["fix_rounds"])
+        self.assertEqual(packet["post_cap_passes"], [])
+        self.assertIsNone(review_loop_post_cap.cap_summary_line(packet))
+
+    def test_a_summary_line_with_no_pass_says_none(self):
+        packet = handback.load(json_packet(fix_rounds=1))
+
+        self.assertEqual(review_loop_post_cap.cap_summary_line(packet),
+                         "cap reached after 1 fix round(s); post-cap passes: none")
+
+
 class AskOutcomeFindingIdTest(unittest.TestCase):
     def test_a_valid_id_is_kept_with_no_note(self):
         self.assertEqual(handback.ask_outcome_finding_id({"finding_id": " a1b2c3d4e5f60001 "}),
@@ -785,6 +811,10 @@ class RenderTest(HandbackTestBase):
         text = packet_text(CONVERGED_FIELDS, findings_remaining=remaining)
         self.assertIn("### Findings remaining", handback.render(handback.load(text), "review"))
 
+    def test_a_handback_edit_renders_as_a_handback_edit_line(self):
+        packet = handback.load(json_packet(handback_edits=["a/log.md:3 apply the ruled change"]))
+        self.assertIn("Hand-back edit: a/log.md:3 apply the ruled change", handback.render(packet, "review"))
+
     def test_a_code_change_against_a_no_code_ruling_renders_its_ruling_and_file(self):
         broken = {"ruling": "`a/c.py:3` Make no code change.", "file": "a/b.py"}
         packet = handback.load(json_packet(no_code_ruling_broken=[broken]))
@@ -804,11 +834,32 @@ class RenderTest(HandbackTestBase):
             self.assertIn("no_code_ruling_broken[0]", raised.exception.problems[0])
             self.assertIn(expected, raised.exception.problems[0])
 
+    def test_the_against_ruling_key_reads_back_and_an_old_packet_reads_it_empty(self):
+        entry = {"ruling": "a/c.py:3 drop the strip", "file": "a/b.py", "kept": "the strip"}
+
+        self.assertEqual(handback.load(json_packet(against_ruling=[entry]))["against_ruling"], [entry])
+        self.assertEqual(handback.load(json_packet())["against_ruling"], [])
+
+    def test_an_against_ruling_entry_without_a_ruling_and_a_file_is_a_packet_error(self):
+        for entry in ("a/b.py", {"ruling": "x", "kept": "k"}, {"file": "a/b.py", "kept": "k"},
+                      {"ruling": "x", "file": "a/b.py"}, {"ruling": "x", "file": "a/b.py", "kept": ""}):
+            with self.subTest(entry=entry), self.assertRaises(handback.PacketError) as raised:
+                handback.load(json_packet(against_ruling=[entry]))
+            self.assertIn("against_ruling[0]", raised.exception.problems[0])
+
     def test_stored_packet_reads_a_non_json_message_as_no_packet_and_a_broken_one_as_an_error(self):
         self.assertEqual(handback.stored_packet("plain text"), (None, None))
         packet, error = handback.stored_packet('{"status": "converged", "iter": ')
         self.assertIsNone(packet)
         self.assertTrue(error)
+
+    def test_a_given_base_the_review_base_replaced_prints_a_review_base_line_and_an_empty_one_prints_none(self):
+        moved = handback.load(json_packet(given_base="master", base_used="abc123"))
+        self.assertIn("Review base: master", handback.render(moved, "review"))
+        self.assertIn("reviewed since abc123", handback.render(moved, "review"))
+
+        unmoved = handback.load(json_packet(given_base="", base_used="abc123"))
+        self.assertNotIn("Review base:", handback.render(unmoved, "review"))
 
     def test_bare_not_applicable_closure_with_empty_fixed_prints_one_line(self):
         packet = handback.load(json_packet(iter=0, class_closure="n/a"))
@@ -821,14 +872,15 @@ class RenderTest(HandbackTestBase):
         self.assertIn("receipt is missing", handback.render(packet, "review"))
 
     def test_a_full_check_that_did_not_run_or_failed_before_the_diff_says_so_and_a_passed_one_prints_nothing(self):
-        for full_check in ("not run (CI)", "not run (timeout)", "not run (environment gap: No module named 'ruff')",
-                           "not run (check-command error: fatal: ambiguous argument 'web/schema.json')",
-                           "pre-existing failure (the check fails the same way without this diff, so it did not "
-                           "verify this diff)", "passed (check only; CI runs the full suite)"):
-            with self.subTest(full_check=full_check):
-                packet = handback.load(packet_text(CONVERGED_FIELDS, full_check=full_check))
+        for check_result in ("not run (CI)", "not run (timeout)",
+                             "not run (environment gap: No module named 'ruff')",
+                             "not run (check-command error: fatal: ambiguous argument 'web/schema.json')",
+                             "pre-existing failure (the check fails the same way without this diff, so it did not "
+                             "verify this diff)", "passed (check only; CI runs the full suite)"):
+            with self.subTest(full_check=check_result):
+                packet = handback.load(packet_text(CONVERGED_FIELDS, full_check=check_result))
 
-                self.assertIn(f"Full check: {full_check}", handback.render(packet, "review"))
+                self.assertIn(f"Full check: {check_result}", handback.render(packet, "review"))
         passed = handback.load(packet_text(CONVERGED_FIELDS, full_check="passed"))
         self.assertNotIn("Full check", handback.render(passed, "review"))
 
@@ -1386,6 +1438,32 @@ class ReviewerRequiredTest(HandbackTestBase):
 
         self.assertTrue(handback_store.latest(SESSION)["handback"]["unreviewed_fix"])
 
+    def test_a_capped_packet_reads_deferred_on_a_valid_full_check_receipt_without_a_packet_fingerprint(self):
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo)
+        plan_finding = {"finding": "x", "file_line": "docs/plans/p/spec.md:3"}
+        capped = handback.load(json_packet(status="cap-reached", findings_remaining=[plan_finding]))
+
+        self.assertEqual(capped_review.effective_status(capped, repo), capped_review.DEFERRED)
+
+    def test_a_capped_packet_stays_capped_when_the_valid_receipt_did_not_pass(self):
+        repo = receipt_repo.make_repo(self)
+        receipt_repo.plant_receipt(repo, result=full_check.NOT_RUN_NO_CHECK, satisfied=True)
+        capped = handback.load(json_packet(status="cap-reached",
+                                           findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}]))
+
+        self.assertEqual(capped_review.effective_status(capped, repo), capped_review.CAP_REACHED)
+
+    def test_a_capped_packet_stays_capped_when_the_receipt_is_older_than_the_tree_or_absent(self):
+        repo = receipt_repo.make_repo(self)
+        capped = handback.load(json_packet(status="cap-reached",
+                                           findings_remaining=[{"finding": "x", "file_line": "a.ts:1"}]))
+        self.assertEqual(capped_review.effective_status(capped, repo), capped_review.CAP_REACHED, "no receipt")
+
+        receipt_repo.plant_receipt(repo)
+        pathlib.Path(repo, "app.py").write_text("x = 2\n")
+        self.assertEqual(capped_review.effective_status(capped, repo), capped_review.CAP_REACHED, "stale receipt")
+
     def test_a_capped_packet_that_reads_deferred_with_no_reviewer_is_denied_once_then_flagged(self):
         repo, capped = self.capped_packet_on_a_fresh_repo()
         self.dispatch("review-loop", prompt=f"repo: {repo}\n")
@@ -1560,13 +1638,13 @@ class ReviewerRequiredTest(HandbackTestBase):
     def test_a_clean_status_with_a_failed_full_check_is_refused(self):
         leftover = [{"finding": "x", "file_line": "a.ts:1", "blocker": False}]
         for status in handback.CLEAN_STATUSES:
-            for full_check in ("failed (3 tests)", "setup fault (exit 2)"):
+            for check_result in ("failed (3 tests)", "setup fault (exit 2)"):
                 with (
-                    self.subTest(status=status, full_check=full_check),
+                    self.subTest(status=status, full_check=check_result),
                     self.assertRaisesRegex(handback.PacketError, "full_check is"),
                 ):
                     handback.load(packet_text(CONVERGED_FIELDS, status=status, findings_remaining=leftover,
-                                              full_check=full_check))
+                                              full_check=check_result))
 
     def test_unreviewed_streak_counts_the_latest_flagged_hand_backs_and_a_reviewed_one_ends_it(self):
         self.dispatch("review-loop")

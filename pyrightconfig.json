@@ -1,0 +1,15 @@
+{
+  "pythonVersion": "3.10",
+  "extraPaths": [
+    "claude/.claude/scripts/code",
+    "claude/.claude/scripts/gates",
+    "claude/.claude/scripts/lib",
+    "claude/.claude/scripts/review",
+    "claude/.claude/scripts/telemetry",
+    "claude/.claude/scripts/tools",
+    "claude/.claude/skills/adr/scripts",
+    "claude/.claude/skills/close-branch/scripts",
+    "claude/.claude/skills/refactor/scripts",
+    "tests/scripts"
+  ]
+}

@@ -2,7 +2,8 @@
 
 The loop runs its fix coder as `claude -p`, which leaves no subagent transcript, so this record is the only way to tell
 that coder's new files from another session's. The loop adds to it (`add_paths`); code_review_start.py reads it
-(`recorded`) and reviews a recorded path as the run's own; phase_start.py `--new-run` empties it (`clear`).
+(`recorded`) and reviews a recorded path as the run's own; review_loop_untracked.guarded_untracked reads it and
+leaves a recorded path deletable across loop processes; phase_start.py `--new-run` empties it (`clear`).
 """
 import json
 

@@ -28,6 +28,7 @@ import json
 import pathlib
 import re
 
+import message_text
 import script_utils
 import source_text
 from ask_outcome_words import RELAY_USAGE
@@ -36,7 +37,8 @@ from ask_outcome_words import RELAY_USAGE
 # ticks. Prose holds many bare names that name no file (`os.path`, `row.ts`), so most readers take a bare name only from
 # a `**File**:` entry or when the repo holds it (named_paths). The one reader that takes every backticked name is
 # expected_red.section_paths (own-path exclusion).
-PATH_IN_BACKTICKS = re.compile(r"`([\w.@+-]+(?:/[\w.@\[\]()+-]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
+PATH_IN_BACKTICKS = re.compile(
+    rf"`([{script_utils.PATH_CHARS}]+(?:/[{script_utils.PATH_CHARS}\[\]()]+)*\.\w+)(?::\d+(?:-\d+)?)?`")
 FILE_ENTRY = re.compile(r"^\s*(?:[-*]\s+)?\*\*Files?\*\*:?")
 TOP_LEVEL_BULLET = re.compile(r"^[-*]\s+")
 PHASE_ID = r"(?=[A-Za-z0-9.-]*\d)[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*"
@@ -66,7 +68,7 @@ SESSION_RULING_OWNER = "the session, not the user"
 # plan holds, so it is no plan change; `PLAN-IMPACT: no index on ...` still is one.
 LINE_RANGE = r"\d+(?:[-\N{EN DASH}]\d+)?(?:,\d+(?:[-\N{EN DASH}]\d+)?)*"
 PLAN_CHANGE_MARK = re.compile(
-    rf"(?:(?:`?[\w./-]+\.\w+:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
+    rf"(?:(?:`?{script_utils.PATH_TEXT}:{LINE_RANGE}`?|\[[\w-]+\])[\s—\N{{EN DASH}}:-]*)*[`*_]*plan[-_ ]?impact"
     r"(?![*`_]*:[ \t*`_]*(?:none\b|no(?:[.;,)*`_]|[ \t]*$)))", re.I | re.M)
 PLAN_IMPACT_BLOCK_HEADER = "PLAN-IMPACT:\n"
 # `none` with its closing marks and separators, then except/but/beyond and the rest of the line: the answer
@@ -778,7 +780,9 @@ def plan_folder_exclude(plan):
 
 def append_deviation(plan_path, entry):
     """Add the entry lines at the end of the plan's `## Plan Deviations` section, creating the section before
-    `## References` (or at the end) when the plan has none."""
+    `## References` (or at the end) when the plan has none. A plan folder stands for the plan file inside it; a folder
+    with no plan file raises PlanFormatError."""
+    plan_path = plan_file_of(plan_path)
     lines = plan_path.read_text().split("\n")
     sections = script_utils.top_level_sections(lines)
     existing = next((i for i in sections if lines[i].strip() == "## Plan Deviations"), None)
@@ -1040,6 +1044,63 @@ def criteria_by_id(criteria_text, name=CRITERIA_FILE_NAME):
             raise PlanFormatError(f"{name}:{number}: {criterion_id} is defined twice; give each criterion its own id")
         criteria[criterion_id] = match.group(2)
     return criteria
+
+
+def ac_quotes(text):
+    """The inner text of each quoted span of `text` (double quotes, curly quotes, backticks), in order and without
+    repeats. A backtick span counts only when its inner text holds whitespace; an empty or blank span is skipped."""
+    spans = []
+    for match in message_text.QUOTED_SPAN.finditer(text):
+        span = match.group()
+        inner = span[1:-1]
+        if not inner.strip():
+            continue
+        if span.startswith("`") and not any(char.isspace() for char in inner):
+            continue
+        if inner not in spans:
+            spans.append(inner)
+    return spans
+
+
+def _read_utf8(file_path):
+    """The text of the file. A file that is not UTF-8 raises a PlanFormatError whose message starts with its full
+    path; an OSError propagates naming its file."""
+    try:
+        return file_path.read_text()
+    except UnicodeDecodeError as error:
+        raise PlanFormatError(f"{file_path}: not UTF-8 ({error.reason} at byte {error.start})") from error
+
+
+def plan_ac_quotes(plan_path):
+    """{span: [labels]} for the quoted spans of the criteria beside the plan: `AC<n>` for each criterion of its
+    acceptance-criteria.md and `Ticket #n` for each criterion of the ticket beside it. A missing file, and a ticket
+    with no criteria heading, add nothing. Any other PlanFormatError propagates, its message starting with the file's
+    full path and the line (a file that is not UTF-8 has no line); an OSError propagates naming its file."""
+    plan_path = pathlib.Path(plan_path)
+    labelled = []
+    criteria_path = plan_path.parent / CRITERIA_FILE_NAME
+    if criteria_path.is_file():
+        criteria = criteria_by_id(_read_utf8(criteria_path), name=str(criteria_path))
+        labelled += list(criteria.items())
+    ticket_path = ticket_beside(plan_path)
+    if ticket_path is not None:
+        labelled += _ticket_labelled_texts(ticket_path)
+    quotes = {}
+    for label, text in labelled:
+        for span in ac_quotes(text):
+            quotes.setdefault(span, [])
+            if label not in quotes[span]:
+                quotes[span].append(label)
+    return quotes
+
+
+def _ticket_labelled_texts(ticket_path):
+    """[(label, text)] of the ticket's criteria, or [] for a ticket with no criteria heading."""
+    try:
+        items = ticket_criteria(_read_utf8(ticket_path), name=str(ticket_path))
+    except NoCriteriaHeadingError:
+        return []
+    return [(item["label"], item["text"]) for item in items]
 
 
 def content_words(text):
@@ -1432,8 +1493,8 @@ def ticket_comments(ticket_text, name="ticket"):
 
 
 # Who owns a ticket's criteria, and so who may cut or reword one. A ticket that is itself a queue item carries its own
-# `generated.by`. A ticket copied from a queue item names the item in a `Source:` line and takes that item's
-# `generated.by`. Either way it says whether a person or a session wrote the criteria.
+# `generated.by`. A ticket copied from a queue item names the item in a `Source:` line, or as a queue path in its
+# free text, and takes that item's `generated.by`. Either way it says whether a person or a session wrote the criteria.
 CRITERIA_OWNER_USER = "user"
 CRITERIA_OWNER_PLAN = "plan"
 CRITERIA_OWNER_SESSION = "session"
@@ -1447,7 +1508,8 @@ CRITERIA_OWNER_RULES = {
                             "records the ruling; no user sign-off is needed",
 }
 QUEUE_SOURCE_PREFIX = "~/agent-evals/queue/"
-QUEUE_SOURCE_FORM = re.compile(r"^~/agent-evals/queue/[a-z0-9-]+\.md(?: .*)?$")
+QUEUE_SLUG_FORM = r"[a-z0-9-]+\.md"
+QUEUE_SOURCE_FORM = re.compile(rf"^{re.escape(QUEUE_SOURCE_PREFIX)}{QUEUE_SLUG_FORM}(?: .*)?$")
 SOURCE_LINE = re.compile(r"^(?:-\s+)?source:\s*(.*)$", re.I)
 GENERATED_FORM = 'generated: {"by": "<author>", ...}'
 HUMAN_AUTHOR_PREFIX = "human:"
@@ -1459,12 +1521,19 @@ def home_queue_prefix():
     return str(pathlib.Path.home()) + QUEUE_SOURCE_PREFIX[1:]
 
 
+def tilde_queue_path(value):
+    """The value with a leading home-folder queue spelling turned into `~`; any other value unchanged."""
+    home_prefix = home_queue_prefix()
+    if value.startswith(home_prefix):
+        return QUEUE_SOURCE_PREFIX + value[len(home_prefix):]
+    return value
+
+
 def queue_source_lines(ticket_lines):
     """(line number, value) of each of the ticket's `Source:` lines whose value starts with the queue folder (spelled
     `~/agent-evals/queue/` or with the home folder), in ticket order, with markdown marks stripped from its ends and
     the home spelling turned into `~`; empty when no line does. Marks are stripped only from the ends of the path
     word, never inside it: a path may hold an underscore."""
-    home_prefix = home_queue_prefix()
     queue_sources = []
     for number, line in enumerate(ticket_lines, 1):
         if not SOURCE_LINE.match(MARKDOWN_MARKS.sub("", line).strip()):
@@ -1472,18 +1541,31 @@ def queue_source_lines(ticket_lines):
         after_label = line.split(":", 1)[1].strip().lstrip("*_`").strip()
         path_word, _, trailing_text = after_label.partition(" ")
         path = path_word.strip("*_`")
-        value = f"{path} {trailing_text}".strip()
-        if value.startswith(home_prefix):
-            value = QUEUE_SOURCE_PREFIX + value[len(home_prefix):]
+        value = tilde_queue_path(f"{path} {trailing_text}".strip())
         if value.startswith(QUEUE_SOURCE_PREFIX):
             queue_sources.append((number, value))
     return queue_sources
 
 
+def queue_path_mentions(ticket_lines):
+    """(line number, value) of each existing queue item path named anywhere in the ticket's text, in ticket order,
+    spelled `~/agent-evals/queue/<slug>.md` or with the home folder (turned into `~`). A path whose file does not
+    exist is left out: free text may name an item that was never queued here."""
+    prefix_forms = f"(?:{re.escape(QUEUE_SOURCE_PREFIX)}|{re.escape(home_queue_prefix())})"
+    mention_form = re.compile(rf"(?<![\w/~.-]){prefix_forms}{QUEUE_SLUG_FORM}(?![\w-]|\.\w)")
+    mentions = []
+    for number, line in enumerate(ticket_lines, 1):
+        for found in mention_form.finditer(line):
+            value = tilde_queue_path(found.group(0))
+            if pathlib.Path(value).expanduser().is_file():
+                mentions.append((number, value))
+    return mentions
+
+
 def queue_item_author(ticket_name, number, source_value):
-    """The `generated.by` author of the queue item a `Source:` line names. Raises PlanFormatError
-    (`ticket_name:line:`) naming the queue file and the expected form when the line, the file or its frontmatter
-    breaks the form."""
+    """The `generated.by` author of the queue item a `Source:` line or a free-text queue path names. Raises
+    PlanFormatError (`ticket_name:line:`) naming the queue file and the expected form when the line, the file or its
+    frontmatter breaks the form."""
     where = f"{ticket_name}:{number}:"
     if not QUEUE_SOURCE_FORM.match(source_value):
         raise PlanFormatError(f"{where} Source line `{source_value}` is not the queue form; expected "
@@ -1538,9 +1620,9 @@ def owner_record(ticket_path, owner, source):
 
 
 def queue_sources_owner(ticket_path, ticket_name, queue_sources):
-    """The owner record for a ticket's queue `Source:` lines. Every line is checked first, so a broken later line
-    raises even when an earlier one names a human item: the user owns the criteria when any named item has a
-    `human:` author."""
+    """The owner record for (line number, queue path) pairs from `Source:` lines or free-text mentions. Every pair
+    is checked first, so a broken later line raises even when an earlier one names a human item:
+    the user owns the criteria when any named item has a `human:` author."""
     owners = []
     for number, source_value in queue_sources:
         author = queue_item_author(ticket_name, number, source_value)
@@ -1557,9 +1639,10 @@ def queue_sources_owner(ticket_path, ticket_name, queue_sources):
 def criteria_owner(ticket_path):
     """{"owner", "ticket", "source", "rule"} for the ticket's criteria. A ticket that is itself a queue item
     (frontmatter `type: "QueueItem"`) takes its own `generated.by` the same way, with `source` None. A ticket with
-    queue `Source:` lines checks every one: it is `user`, with `source` the first line a `human:` author wrote, when
-    any named item has a `human:` `generated.by`, else `session` with `source` the first line. Without one, a ticket
-    with no criteria heading is `plan`, and any other ticket is `user`.
+    queue `Source:` lines, or an existing queue item path named anywhere in the text that no `Source:` line names,
+    checks every one, `Source:` lines first: it is `user`, with `source` the first one a `human:` author wrote, when
+    any named item has a `human:` `generated.by`, else `session` with `source` the first one. Without either, a
+    ticket with no criteria heading is `plan`, and any other ticket is `user`.
     A `Source:` line outside the queue folder never changes the owner. Raises PlanFormatError on a queue line the
     item cannot back, a queue item with no readable `generated.by`, and on a ticket the criteria reader cannot parse."""
     ticket_name = str(ticket_path)
@@ -1570,9 +1653,14 @@ def criteria_owner(ticket_path):
         author = queue_text_author(where, "queue item", ticket_text)
         return owner_record(ticket_path, author_owner(author), None)
 
-    queue_sources = queue_source_lines(ticket_text.splitlines())
-    if queue_sources:
-        return queue_sources_owner(ticket_path, ticket_name, queue_sources)
+    ticket_lines = ticket_text.splitlines()
+    queue_sources = queue_source_lines(ticket_lines)
+    source_paths = {source_value.split(" ")[0] for _number, source_value in queue_sources}
+    new_mentions = [(number, value) for number, value in queue_path_mentions(ticket_lines)
+                    if value not in source_paths]
+    named_items = queue_sources + new_mentions
+    if named_items:
+        return queue_sources_owner(ticket_path, ticket_name, named_items)
 
     try:
         ticket_criteria(ticket_text, ticket_name)
@@ -1583,6 +1671,36 @@ def criteria_owner(ticket_path):
 
 DECISION_LOG_NAME = "03-decisions.md"
 TICKET_FILE_NAME = "00-ticket.md"
+
+
+PLAN_FILE_NAMES = (SPEC_FILE_NAME, PLAN_ONLY_PLAN_NAME)
+PLAN_GLOB = "*-05-plan.md"
+PLAN_NAMES_TEXT = ", ".join(PLAN_FILE_NAMES) + f" or {PLAN_GLOB}"
+
+
+def find_plan_in_dir(task_dir):
+    """The first task-dir file named in `PLAN_FILE_NAMES`, else the single `PLAN_GLOB` match (legacy
+    `<KEY>-05-plan.md` name); None when there is none. Raises PlanFormatError when several `PLAN_GLOB` files match."""
+    for fixed_name in PLAN_FILE_NAMES:
+        fixed = task_dir / fixed_name
+        if fixed.is_file():
+            return fixed
+    matches = sorted(task_dir.glob(PLAN_GLOB))
+    if len(matches) > 1:
+        raise PlanFormatError(f"{task_dir} holds several {PLAN_GLOB}: {', '.join(m.name for m in matches)}")
+    return matches[0] if matches else None
+
+
+def plan_file_of(plan_path):
+    """`plan_path` itself when it is not a folder; else the plan file inside the folder. Raises PlanFormatError naming
+    the expected plan-file names when the folder holds none."""
+    folder = pathlib.Path(plan_path)
+    if not folder.is_dir():
+        return folder
+    plan_file = find_plan_in_dir(folder)
+    if plan_file is None:
+        raise PlanFormatError(f"{folder}: no plan file; expected {PLAN_NAMES_TEXT}")
+    return plan_file
 
 
 def ticket_beside(plan_path):
@@ -1617,9 +1735,13 @@ def plan_author_criteria_missing(plan_path):
 def plan_criteria_owner(plan_path):
     """`criteria_owner` of the ticket beside the plan. With no ticket beside it, `ticket: None` and the owner is `plan`
     when the plan is an existing file named `plan.md` and its folder holds `acceptance-criteria.md` (the plan author
-    wrote the criteria), else `user`."""
-    ticket_path = ticket_beside(plan_path)
+    wrote the criteria), else `user`. A plan folder stands for the plan file inside it, and its ticket is read even
+    when no plan file exists yet; only a folder with neither raises PlanFormatError."""
+    plan_path = pathlib.Path(plan_path)
+    ticket_anchor = plan_path / SPEC_FILE_NAME if plan_path.is_dir() else plan_path
+    ticket_path = ticket_beside(ticket_anchor)
     if ticket_path is None:
+        plan_path = plan_file_of(plan_path)
         author_wrote = not plan_author_criteria_missing(plan_path)
         owner = CRITERIA_OWNER_PLAN if author_wrote else CRITERIA_OWNER_USER
         return owner_record(None, owner, None)

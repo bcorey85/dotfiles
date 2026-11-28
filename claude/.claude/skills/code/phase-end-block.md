@@ -8,6 +8,9 @@ Phase <N> complete. Risk: <high | low | low — Phase 1 calibration | low — ex
 Behavior delta (observable change + its proof, max 3 — no internals, no paths):
 - <before → after, user-visible>. See it: <test name / command / UI flow>.
 
+Check yourself (answer each in your head; open the file only for one you cannot):
+- <question about this phase's code>? `<path>:<line>`
+
 Models: <each writing agent (phase coder, review loop fix coder, asks coder) — the model it ran on, or its own default>
 
 Plan changes adopted (no criterion changed):
@@ -54,3 +57,5 @@ All phases complete. Next: read the queue, stage what you've read, then commit i
 Verification items come from the just-finished phase's `#### Manual Verification:` section, split by the `agent-verified` / `human-only` tags. When that section is empty, omit both lists and replace step 1 with "Read the /stage queue."
 
 Skill-invoke `/stage` to build the "Read first" queue and render it verbatim, in its order. The behavior delta comes from the coder's handoff (absent one, derive it from the diff and mark `derived from diff`).
+
+Write two or three check-yourself questions from the coder's `WHY:` notes and the phase's diff. Each asks what calls a new function, what happens when a new branch fails, or what state a new write changes, and ends with the `path:line` that answers it. Never answer a question in the block.

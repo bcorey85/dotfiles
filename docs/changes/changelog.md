@@ -7,7 +7,7 @@ description: "Every toolkit change, newest week first, in the Keep a Changelog g
 
 # Changelog
 
-1304 changes
+1305 changes
 
 Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog groups: Added (a new agent, skill, script or hook), Changed (a behavior change to an existing one), Removed (deleted), Fixed (a defect repaired), Security and Deprecated. A line that starts with Regression: is a fix for a bug that an earlier change caused. A line that ends with (reverted by ...) was undone by the change named there.
 
@@ -15,6 +15,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ### Added
 
+* [The code phase end asks two or three check-yourself questions with file lines](notes/2026-11-27-the-code-phase-end-asks-two-or-three-check.md) [skill/code] A /code phase stop block now carries two or three check-yourself questions about the phase's code, each ending on the path:line that answers it, written from the coder's WHY notes and the diff. No new agent and no change to the coder report.
 * [suite_receipt dirty stops a merge into a checkout that holds changes the merge touches](notes/2026-11-26-suite-receipt-dirty-stops-a-merge-into-a-checkout.md) [script/suite-receipt] A pre-merge check names the staged, unstaged or untracked files the branch's merge would touch, prints the fix, exits 3 and starts no merge.
 * [Scripts CLAUDE.md names the owner of the dirty-file holder](notes/2026-11-26-scripts-claude-md-names-the-owner-of-the-dirty.md) [rule/scripts-claude-md, script/dirty-writers] The owners list in the toolkit scripts guide now points to the module that names which live session wrote a repo's dirty files, with the cutoff commit it reads, so a later edit reuses it in place of naming a holder by working folder.
 * [a memory sample log every minute and lane-status marks finished idle lanes with their Claude RSS](notes/2026-11-25-a-memory-sample-log-every-minute-and-lane-status.md) [script/memory-sample, script/process-table, script/lane-status, script/install-memory-sample] A per-minute memory sample log names the top RSS holders by command and herdr workspace, and lane-status --git marks merged lanes with an idle agent as finished idle with their Claude RSS.
@@ -1503,6 +1504,7 @@ Changes to the Claude Code toolkit, newest week first, in the Keep a Changelog g
 
 ## Unmeasured behavior changes
 
+* [The code phase end asks two or three check-yourself questions with file lines](notes/2026-11-27-the-code-phase-end-asks-two-or-three-check.md) - No intake metric reads whether a user answers the questions or catches a misread phase with them; the final keep or drop is the user's try on one real branch.
 * [The coder's core drops its why-comment line, which the comment gate now enforces](notes/2026-11-26-the-coder-s-core-drops-its-why-comment-line-which.md) - No intake number reads comment kinds the coder writes; the comment gate blocks them per edit. The opencode code-reviewer keeps its why-comment lines: opencode runs no Claude hooks, so those lines are its only guard.
 * [The code reviewer cuts new docs and test modules no plan step asks for](notes/2026-11-25-the-code-reviewer-cuts-new-docs-and-test-modules.md) - No intake metric counts the unasked docs or test modules a review cuts.
 * [cc skill is user-invoked only](notes/2026-11-24-cc-skill-is-user-invoked-only.md) - No intake number counts how often the model loads cc on its own; the user reaches it by typing /cc.

@@ -510,8 +510,12 @@ def check_merged(repo, world, tree):
     counted = git(repo.main_path, "rev-list", "--count", tree.head, "--not", *target_hashes)
     count = counted.stdout.strip() if counted.returncode == 0 else "an unknown number of"
     missing_from = not_on_text(repo, tree.branch, linked)
-    return Keep(NOT_MERGED, f"{count} commits not on {missing_from}; a squash or rebase merge looks "
-                            "the same, check by hand")
+    reason = (f"{count} commits not on {missing_from}; a squash or rebase merge looks "
+              "the same, check by hand")
+    if world.lanes.worktrees is None and world.worktrees[1:]:
+        reason += ("; linked worktree branches were not counted: the lane list could not be read: "
+                   f"{world.lanes.problem}")
+    return Keep(NOT_MERGED, reason)
 
 
 def check_tree_state(repo, world, tree):

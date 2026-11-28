@@ -27,6 +27,6 @@ Criteria owner: session.
 ## Decision log
 
 - 2026-11-27, lane fork fix/lane-close-integration-merge (session; criteria owner session): the queue item's Done when allows either a linked-worktree branch or a lane-file target; the linked-worktree rule is picked since it needs no new lane state.
-- 2026-11-27, lane fork fix/lane-close-integration-merge (session; criteria owner session): plan folder names do not follow the worktree folder name, so `<lane>` is the branch's last `/` segment, the name herdr-worktree gives the folder after the repo prefix.
+- 2026-11-27, lane fork fix/lane-close-integration-merge (session; criteria owner session): plan folder names do not follow the worktree folder name, so `<lane>` is the branch's last `/` segment.
 - 2026-11-27, lane fork fix/lane-close-integration-merge (session; criteria owner session): the review's two asks (an integration or stacked parent tree read as merged into a lane cut from it) are accepted, overriding the earlier rejection. AC2 now gives no credit from a branch whose worktree is an open lane: the integration worktree is not a lane, and a closing lane's entry is gone before the prune runs.
 - 2026-11-27, lane fork fix/lane-close-integration-merge (session; criteria owner session): the review's ask about a child lane closed while unmerged (its tree stays with no lane entry, so an idle parent tree reads as merged into it) is left as is. Only a reviewer raised it, the toolkit script rules send such a case to no new code, and the parent's commits stay in the child branch and on origin.

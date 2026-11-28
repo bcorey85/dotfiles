@@ -652,6 +652,7 @@ class LinkedIntegrationMergeTest(PruneTestCase):
 
         self.assertEqual(checked["verdict"], "keep", checked)
         self.assertEqual(checked["code"], "not merged", checked)
+        self.assertIn("the lane list could not be read", checked["reason"])
 
     def test_apply_keeps_a_linked_lane_when_the_lane_list_cannot_be_read(self):
         integration = self.integration_lab()

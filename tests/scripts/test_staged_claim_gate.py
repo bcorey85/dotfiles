@@ -449,6 +449,7 @@ class StagedClaimGateTest(GateRepoCase):
 
         self.assertEqual(decision["decision"], "block")
         self.assertIn(gate.announced_step.REASON, decision["reason"])
+        self.assertIn('Flagged line: "Next I\'ll look at the nits."', decision["reason"])
         self.assertIn("staged-claim-gate: staged_claim_reason skipped: RuntimeError: boom", errors)
 
     def test_a_crash_in_the_permission_check_keeps_the_staged_claim_reason(self):

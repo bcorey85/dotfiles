@@ -10,10 +10,11 @@ Rust `//!` lines included), or a line with a URL. A run of consecutive non-kept 
 (new or old; a blank, delimiter, suppression, directive or URL line inside a comment block keeps the run going
 without counting; a license header, a public-symbol doc line or a gap ends it) passes
 while at most MAX_FREE_BLOCK_LINES of them are lines HEAD lacks; a run with more is blocked, only its new lines
-listed, and the message sends architecture prose to the repo's architecture docs. Heredoc bodies in shell files are
-data, not comments. Files under a docs/ folder skip the comment check but not the marker check. On an Edit, only
-comment lines inside the span new_string occupies in the file are charged (the whole file when new_string is not
-found in it). Only whole comment lines count, never a trailing comment.
+listed, and the message sends architecture prose to the repo's architecture docs. A run of exactly
+MAX_FREE_BLOCK_LINES such lines passes with an additionalContext nudge to recheck the block. Heredoc bodies in
+shell files are data, not comments. Files under a docs/ folder skip the comment check but not the marker check. On an
+Edit, only comment lines inside the span new_string occupies in the file are charged (the whole file when new_string is
+not found in it). Only whole comment lines count, never a trailing comment.
 Exit 2 with the reason on stderr blocks; every other path exits 0. Gate policy: fail-open, so an error exits 0
 after main reports it on stderr.
 """
@@ -32,7 +33,7 @@ import source_text
 from hook_input import emit_stderr
 
 GIT_PROBE_TIMEOUT_SECONDS = 2
-MAX_FREE_BLOCK_LINES = 2
+MAX_FREE_BLOCK_LINES = 3
 
 SPACE = r"\s"
 NONBLANK = re.compile(r"\S")
@@ -507,10 +508,17 @@ def kept_through_line(file_path, file_lines, block, header, comment_lines):
     return first - 1
 
 
+class UnkeptLines(NamedTuple):
+    """(number, stripped text) rows of new non-kept comment lines, in line order: `blocked` sit in runs over
+    MAX_FREE_BLOCK_LINES counted lines, `at_cap` in runs of exactly that many."""
+    blocked: list
+    at_cap: list
+
+
 def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_numbers, counting):
-    """(number, stripped text) of each comment line in the charged span whose stripped text is in `added` that is not a
-    kept kind and sits in a run of consecutive non-kept comment lines holding more than MAX_FREE_BLOCK_LINES lines
-    whose stripped text is in `counting`, in line order. The run extends past the charged span through contiguous
+    """UnkeptLines of each comment line in the charged span whose stripped text is in `added` that is not a
+    kept kind, split by the size of its run of consecutive non-kept comment lines, counted as lines
+    whose stripped text is in `counting`. The run extends past the charged span through contiguous
     comment lines; only new lines inside the span are listed. A blank, delimiter, suppression, directive or URL line
     inside a comment block keeps the run going without counting; a license header or public-doc line ends it.
     `edited_numbers`, when given, limits the listed lines to those line numbers."""
@@ -535,24 +543,28 @@ def unkept_comment_lines(file_path, file_lines, comment_lines, added, edited_num
                 bridges.add(number)
                 continue
             unkept.append((number, line.strip()))
-    long_numbers = in_long_runs(unkept, bridges, counting)
-    return [(number, text) for number, text in unkept
-            if number in long_numbers and number in charged and text in added]
+    long_numbers, at_cap_numbers = numbers_by_run_size(unkept, bridges, counting)
+    new_rows = [(number, text) for number, text in unkept if number in charged and text in added]
+    return UnkeptLines(blocked=[row for row in new_rows if row[0] in long_numbers],
+                       at_cap=[row for row in new_rows if row[0] in at_cap_numbers])
 
 
-def in_long_runs(unkept, bridges, counting):
-    """The numbers of the `unkept` lines that sit in a run of consecutive line numbers holding more than
-    MAX_FREE_BLOCK_LINES lines whose text is in `counting`. A line outside `counting` stays in the run without
-    counting; a bridge number (a blank, delimiter, suppression, directive or URL line) joins the runs on either side
-    without counting."""
-    long_numbers = set()
+def numbers_by_run_size(unkept, bridges, counting):
+    """(over, at_cap): the numbers of the `unkept` lines that sit in a run of consecutive line numbers holding more
+    than MAX_FREE_BLOCK_LINES lines whose text is in `counting`, and in a run holding exactly that many. A line
+    outside `counting` stays in the run without counting; a bridge number (a blank, delimiter, suppression, directive
+    or URL line) joins the runs on either side without counting."""
+    over = set()
+    at_cap = set()
     run_numbers = sorted({number for number, _ in unkept} | bridges)
     for first, last in source_text.contiguous_runs(run_numbers):
         run = [number for number, text in unkept if first <= number <= last]
         counted = [number for number, text in unkept if first <= number <= last and text in counting]
         if len(counted) > MAX_FREE_BLOCK_LINES:
-            long_numbers.update(run)
-    return long_numbers
+            over.update(run)
+        elif len(counted) == MAX_FREE_BLOCK_LINES:
+            at_cap.update(run)
+    return over, at_cap
 
 
 def counting_texts(file_lines, added, committed):
@@ -592,14 +604,26 @@ def touches_comment_line(tool_input, file_lines, comment_lines, added_lines, edi
     return any(file_lines[number - 1].strip() in candidates for number in charged)
 
 
+def is_scratch_file(file_path):
+    """True for a file outside a git work tree or one git ignores: a scratch probe there is free to name plan paths
+    and other workflow strings, and to comment as it likes."""
+    return (not script_utils.inside_git_work_tree(file_path, GIT_PROBE_TIMEOUT_SECONDS)
+            or script_utils.is_git_ignored(file_path, GIT_PROBE_TIMEOUT_SECONDS))
+
+
 def block_inside_repo(file_path, reason):
-    """Exit 2 with the reason, except for a file outside a git work tree or one git ignores: a scratch probe there is
-    free to name plan paths and other workflow strings."""
-    if (not script_utils.inside_git_work_tree(file_path, GIT_PROBE_TIMEOUT_SECONDS)
-            or script_utils.is_git_ignored(file_path, GIT_PROBE_TIMEOUT_SECONDS)):
+    """Exit 2 with the reason, except for a scratch file."""
+    if is_scratch_file(file_path):
         return 0
     emit_stderr(reason)
     return 2
+
+
+def nudge_inside_repo(file_path, text):
+    """Pass the edit with `text` as additionalContext, except for a scratch file."""
+    if not is_scratch_file(file_path):
+        hook_input.emit_added_context("PostToolUse", text)
+    return 0
 
 
 def check(raw):
@@ -659,12 +683,20 @@ def check(raw):
     added_stripped = stripped_added(added_lines, old_lines)
     counting = counting_texts(file_lines, added_stripped, committed)
     unkept = unkept_comment_lines(file_path, file_lines, comment_lines, added_stripped, edited_numbers, counting)
-    if not unkept:
+    if unkept.at_cap and not unkept.blocked:
+        at_cap_listing = "".join(f"  {number}: {text}\n" for number, text in unkept.at_cap)
+        return nudge_inside_repo(
+            file_path,
+            f"comment-bloat-gate: {name} now holds a {MAX_FREE_BLOCK_LINES}-line comment block, the most the gate "
+            "allows. Reread it before you go on: keep it only if a busy engineer new to this code needs it to change "
+            "the code safely. Otherwise delete it, cut it to fewer lines, or turn it into a name.\n" + at_cap_listing,
+        )
+    if not unkept.blocked:
         return 0
-    listing = "".join(f"  {number}: {text}\n" for number, text in unkept)
+    listing = "".join(f"  {number}: {text}\n" for number, text in unkept.blocked)
     return block_inside_repo(
         file_path,
-        f"comment-bloat-gate: {len(unkept)} comment line(s) added to {name} sit in blocks of "
+        f"comment-bloat-gate: {len(unkept.blocked)} comment line(s) added to {name} sit in blocks of "
         f"{MAX_FREE_BLOCK_LINES + 1}+ lines that are not a kept kind (license header, lint or format suppression or "
         "tool directive, comment block on an exported or public symbol, line with a URL). Architecture goes in the "
         "repo's architecture docs, never in code comments (comment rule: skills/coder-core/SKILL.md). Delete each "

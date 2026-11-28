@@ -51,7 +51,7 @@ Rule meter, sonnet, 3 runs per cell, detector `lane_start_is_fresh` (COMPLIED is
 | WRB5 (old) | neutral | 0/3 | 0/3 |
 | WRB5 (old) | competing | 0/3 | 0/3 |
 
-New line on 6/9 against old line on 1/9 fresh starts. The new clause alone moves nothing against its own off arm: the task quotes the new `--help` text. The competing level asks that the lane know the whole conversation, and every arm then forks.
+New line on 6/9 against old line on 1/9 fresh starts. The new clause alone moves nothing against its own off arm: the task quotes the new `--help` text. The competing level asks that the lane know the whole conversation, and every arm then forks. The script default does the work; the orchestration line is navigation only.
 
 ## Watch
 

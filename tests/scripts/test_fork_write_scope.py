@@ -245,6 +245,15 @@ class ResumeReviewTest(unittest.TestCase):
         self.assertIn("fork-write-scope", result.stdout)
         self.assertIn("1 path(s)", result.stdout)
 
+    def test_the_resume_deny_reason_opens_with_one_gate_tag(self):
+        self.edit_source()
+
+        result = self.write_stop()
+
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertTrue(reason.startswith("[fork-write-scope] "), reason)
+        self.assertNotIn("fork-write-scope:", reason)
+
     def test_a_deleted_source_file_is_denied_naming_the_file(self):
         (self.repo / "app.py").unlink()
 

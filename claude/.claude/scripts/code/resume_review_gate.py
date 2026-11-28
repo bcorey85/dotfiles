@@ -31,7 +31,7 @@ class ResumeRecordError(ValueError):
 RESUME_FILE = "resume.json"
 RESUME_KEYS = ("repo", "head", "tree", "at", "denied")
 SHOWN_PATHS = 5
-DENY_TEXT = ("fork-write-scope: this /code resume changed source since phase_start.py --resume ({count} path(s): "
+DENY_TEXT = ("[fork-write-scope] this /code resume changed source since phase_start.py --resume ({count} path(s): "
              "{shown}), and no review loop ran on it. Run step 5 (code_review_start.py ... --base <phase base>, "
              "the sha phase_start.py printed) before the stop; write the stop again only when the run ends before "
              "review.")

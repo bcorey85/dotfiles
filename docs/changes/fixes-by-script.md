@@ -214,6 +214,7 @@ Recent: the 7 days up to 2026-11-27, the newest note.
 | script/refactor-log-input | 1 | 1 |
 | script/reply-json | 1 | 0 |
 | script/resolve-task-dir | 1 | 1 |
+| script/resume-review-gate | 1 | 1 |
 | script/review | 1 | 0 |
 | script/review-fix-names | 1 | 0 |
 | script/review-loop-docs-kind | 1 | 0 |

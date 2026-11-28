@@ -29,7 +29,10 @@ class JqError(Exception):
 
 
 def hook_name():
-    """The name stderr messages open with. Scripts are snake_case files; the name stays the kebab-case hook id."""
+    """The name stderr messages open with; it also supplies the deny reason's [name] tag.
+
+    Scripts are snake_case files; the name stays the kebab-case hook id.
+    """
     script_stem = os.path.splitext(os.path.basename(sys.argv[0] or "hook"))[0]
     return script_stem.replace("_", "-")
 

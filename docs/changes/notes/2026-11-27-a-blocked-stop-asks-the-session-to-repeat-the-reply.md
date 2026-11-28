@@ -24,6 +24,10 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 Live, 2026-11-27: the gate blocked a main-session Stop for an announced step. Fed the same reply by hand, the gate printed `systemMessage` with the reply. The user's pane showed "Stop hook reported a problem" and the reason only. Public reports describe the same gap: https://claudeissues.com/issue/50542-stop-hook-systemmessage-json-not-rendered-as-visible-line-in-v2-1-114-plugin-sco and https://claudeissues.com/issue/35707-systemmessage-from-stop-hooks-not-displayed-in-remote-mode. The session's next reply is the one channel that always reaches the pane.
 
+## Result
+
+Tests pin the reason text; the next live block shows whether the session repeats the reply.
+
 ## Watch
 
 None: tests pin the reason text.

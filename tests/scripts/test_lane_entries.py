@@ -262,17 +262,37 @@ class LaneEntriesTest(unittest.TestCase):
     def test_a_non_utf8_main_checkout_or_worktree_is_refused_naming_the_field(self):
         bad_path = "/tmp/\udcff"
         good_worktree = self.make_worktree("one")
+        main = str(self.root / "main")
         cases = {
-            "main_checkout": (good_worktree, bad_path),
-            "worktree": (bad_path, str(self.root / "main")),
+            "main_checkout": (good_worktree, bad_path, "b", "do the work"),
+            "worktree": (bad_path, main, "b", "do the work"),
+            "branch": (good_worktree, main, "\udcff", "do the work"),
+            "brief": (good_worktree, main, "b", "\udcff"),
         }
-        for field, (worktree, main_checkout) in cases.items():
+        for field, (worktree, main_checkout, branch, brief) in cases.items():
             with self.subTest(field=field):
                 with self.assertRaises(lane_entries.LaneFileError) as raised:
-                    lane_entries.add_entry("one", worktree, main_checkout, "b", "do the work", "boss")
+                    lane_entries.add_entry("one", worktree, main_checkout, branch, brief, "boss")
                 self.assertEqual(field, raised.exception.field)
                 self.assertIn("UTF-8 text", str(raised.exception))
                 self.assertIsNone(lane_entries.entry("one"))
+
+    def test_a_non_utf8_reports_to_is_refused_naming_the_field(self):
+        good_worktree = self.make_worktree("one")
+        main = str(self.root / "main")
+        with self.assertRaises(lane_entries.LaneFileError) as raised:
+            lane_entries.add_entry("one", good_worktree, main, "b", "do the work", "\udcff")
+        self.assertEqual("reports_to", raised.exception.field)
+        self.assertIn("UTF-8 text", str(raised.exception))
+        self.assertIsNone(lane_entries.entry("one"))
+
+    def test_a_non_utf8_session_id_is_refused_naming_the_field(self):
+        self.add("one")
+        with self.assertRaises(lane_entries.LaneFileError) as raised:
+            lane_entries.set_session("one", "\udcff")
+        self.assertEqual("session_id", raised.exception.field)
+        self.assertIn("UTF-8 text", str(raised.exception))
+        self.assertEqual("", lane_entries.entry("one")["session_id"])
 
 
 if __name__ == "__main__":

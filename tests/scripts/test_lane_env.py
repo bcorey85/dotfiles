@@ -120,9 +120,9 @@ class LaneEnvTest(unittest.TestCase):
         self.write_lane_file(self.worktree, xdg_state=False)
         self.assertEqual(self.read_cron(xdg_state=False), "1")
 
-    def test_relative_state_home_falls_back_to_home_local_state(self):
+    def test_a_relative_state_home_is_ignored_like_the_writer_does(self):
         self.write_lane_file(self.worktree, xdg_state=False)
-        self.assertEqual(self.read_cron(xdg_state=False, state_home="state"), "1")
+        self.assertEqual(self.read_cron(xdg_state=False, state_home="relative/state"), "1")
 
 
 if __name__ == "__main__":

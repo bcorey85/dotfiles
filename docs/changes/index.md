@@ -5,7 +5,7 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1303 changes, 25 with a measured gain, 282 behavior changes that no intake metric reads.
+1304 changes, 25 with a measured gain, 282 behavior changes that no intake metric reads.
 
 Latest change: 2026-11-27, [pyright resolves the toolkit's bare-name imports](notes/2026-11-27-pyright-resolves-the-toolkit-s-bare-name-imports.md).
 

@@ -13,7 +13,7 @@ method, what it found, and every toolkit change the findings caused.
 ## Method
 
 Prospective A/B on the **whole working loop** — `/eng-spec` → `/code` →
-`/review` → phase gates → `/branch-recap` — run end to end on purpose-written
+`/review` → phase gates → `/close-branch` — run end to end on purpose-written
 tickets in purpose-written repos (never clones of anything real, so telemetry
 describes the loop and not the eval harness).
 

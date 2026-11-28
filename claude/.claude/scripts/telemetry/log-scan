@@ -34,7 +34,7 @@
 #       prohibition = a banned pattern that must not appear at all (a plan's
 #       "git grep <X> returns zero hits" criterion). candidates is the hit
 #       count, so a passing run is exit=1 with candidates=0.
-#     stage=branch-recap|code-phase|refactor|manual
+#     stage=code-phase|refactor|manual
 #     exit=<the scan's actual exit code — see above>
 #   required when the scan RAN (exit=0 or exit=1):
 #     candidates=<rows the scan printed>

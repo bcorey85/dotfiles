@@ -87,6 +87,8 @@ Run the deferred queue read in its own Bash call with a `timeout` of `600000` (o
 ~/.claude/scripts/tools/ledger_deferred.py
 ```
 
+Companion branches: for each other repo the spec's phases or handover list name, run `gh pr list --repo <owner/name> --head <branch> --state all` on the branch the plan names. Tell a pushed branch from a never-pushed one with `git ls-remote --heads <remote-url> <branch>` (empty output: not pushed). A pushed branch with no PR goes first under **Companion branches** as `<repo>@<branch> — no PR`, and the recap's `Next:` line starts with opening that PR. A branch that is not pushed is listed as `<repo>@<branch> — not pushed`, and `Next:` never says to open a PR for it; it says to push it. No other repo named → `none` under **Companion branches**.
+
 Print one recap, assembled from what you already hold. Never dispatch an agent for it and never re-read code for it:
 
 ```
@@ -99,6 +101,7 @@ Print one recap, assembled from what you already hold. Never dispatch an agent f
 ### Criteria changes              (each sign-off line rg printed: the criterion, what changed, who signed, when)
 ### Concentration                 (largest module and branch counts, and the Diff split line)
 ### Deferred findings             (ledger_deferred.py's line as printed, or each row triaged fixed / stale / carried)
+### Companion branches            (<repo>@<branch> — <PR url, or "no PR", or "not pushed">; or "none")
 ### Smoke-test checklist          (verify-log's checklist skeleton, every human-only item with concrete steps)
 ### Open items                    (asks, REQUIRES-MUTATION culls not run, Step 7's status line when it is not `adr: done`)
 ### Still unstaged                (from stage.mjs, blast-radius order)

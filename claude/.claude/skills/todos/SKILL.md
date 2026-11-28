@@ -1,6 +1,6 @@
 ---
 name: todos
-description: Recap the session's open work as a routable action list — one line per item, grouped by what the user does next. Use for "recap todos", "todos", "what's open", "where are we", "/todos". Session-scoped and conversational; NOT the branch closing phase (that is /branch-recap, which reads process residue and emits a handoff sheet).
+description: Recap the session's open work as a routable action list — one line per item, grouped by what the user does next. Use for "recap todos", "todos", "what's open", "where are we", "/todos". Session-scoped and conversational; NOT the branch closing phase (that is /close-branch, which reviews and fixes the whole branch and prints a recap sheet).
 allowed-tools: [Bash, Read, Grep, Glob]
 ---
 

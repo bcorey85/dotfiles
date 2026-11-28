@@ -12,7 +12,7 @@ A scope box diffs two recorded commit ids, never a branch name (`main...HEAD` is
 
 When the skill reports no open finding, a coder writes one line of evidence under each open Success Criteria item.
 
-A plan written with the older four closing phases (Refactor pass, Test audit, Verify pass, Recap) runs them as written.
+A plan written with the older four closing phases (Refactor pass, Test audit, Verify pass, Recap) runs them as written, except its Recap phase runs `/close-branch`.
 
 Nothing after this is a phase. `/adr` runs at branch end, after the PR is open (`/verify-branch` points to it and `/close-branch` runs it once the PR is open; the branch is not finished until `adr_flow.py status <plan folder>` prints `adr: done`).
 

@@ -401,10 +401,10 @@ class PhaseSectionsTest(unittest.TestCase):
     def test_parse_plan_fails_a_status_entry_with_no_section_unless_it_is_a_closing_phase(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"- [ ] Phase {self.TWO}: Recap", ""]
         def closing(title):
-            return "/branch-recap" if title.startswith("Recap") else None
+            return "/close-branch" if title.startswith("Recap") else None
         plan = plan_format.parse_plan(lines, closing)
         self.assertEqual([(1, "missing-section")], [(f["line"] - 1, f["kind"]) for f in plan["failures"]])
-        self.assertEqual([None, "/branch-recap"], [e["closing"] for e in plan["entries"]])
+        self.assertEqual([None, "/close-branch"], [e["closing"] for e in plan["entries"]])
 
     def test_parse_plan_fails_a_section_the_status_list_does_not_name(self):
         lines = ["## Phase Status", f"- [ ] Phase {self.ONE}: build", f"## Phase {self.ONE}: build",
@@ -1439,7 +1439,7 @@ class ClosingPhaseHelpersTest(unittest.TestCase):
         self.assertEqual("/refactor +deep", plan_format.closing_skill("Refactor pass"))
         self.assertEqual("/test-audit", plan_format.closing_skill("test audit"))
         self.assertEqual("/verify-branch", plan_format.closing_skill("Verify pass"))
-        self.assertEqual("/branch-recap", plan_format.closing_skill("Recap"))
+        self.assertEqual("/close-branch", plan_format.closing_skill("Recap"))
         self.assertEqual("/close-branch",
                          plan_format.closing_skill("Close pass — /close-branch parallel review, one fix (risk: high)"))
         self.assertIsNone(plan_format.closing_skill("Verify pass for the orders API"))

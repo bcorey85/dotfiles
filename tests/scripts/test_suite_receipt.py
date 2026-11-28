@@ -139,6 +139,20 @@ class SuiteReceiptTest(LaneRepoCase):
         self.assertIn("changed during the run", recorded.stderr)
         self.assertEqual(EXIT_RERUN, finished.returncode, finished.stdout)
 
+    def test_a_row_that_is_not_an_object_with_the_result_fields_stops_the_check_with_exit_2(self):
+        self.commit("feature.txt", "feature\n", repo=self.lane)
+        common_dir = pathlib.Path(git(self.repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+        receipts_file = common_dir / "suite-receipts.jsonl"
+        for row_text in ("[]", '{"tree": "abc"}', '{"exit": 0, "failed": 0}'):
+            with self.subTest(row=row_text):
+                receipts_file.write_text(row_text + "\n")
+
+                finished = self.check_lane()
+
+                self.assertEqual(EXIT_FAILED, finished.returncode, finished.stdout + finished.stderr)
+                self.assertIn("receipt row", finished.stderr)
+                self.assertNotIn("Traceback", finished.stderr)
+
     def test_the_tree_hash_leaves_the_repo_index_untouched(self):
         (self.lane / "untracked.txt").write_text("not staged\n")
         status_before = git(self.lane, "status", "--porcelain")

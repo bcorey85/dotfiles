@@ -36,8 +36,8 @@
      shared clone (shared_clones.py); --amend passes (rule 2 judges it), and so does a commit without -a/-i that
      ends an open merge as the command's only step besides `cd`/`pushd`/`popd` in a folder the gate read, when
      its staged paths all belong to the merge (merge_in_progress.py)
- 12. a step that runs tools/land_lane.py (land_lane_calls.py), which pushes to master where rule 7 cannot see it; only
-     the user runs it, as a `!` line
+ 12. a step that runs tools/land_lane.py (land_lane_calls.py), which pushes to master inside Python, where no git-push
+     rule sees it; only the user runs it, as a `!` line
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -433,7 +433,7 @@ def run(raw):
 
 
 def check_land_lane(command):
-    """Rule 12: a step that runs tools/land_lane.py, which pushes to master from inside Python where rule 7 cannot see
+    """Rule 12: a step that runs tools/land_lane.py, which pushes to master inside Python, where no git-push rule sees
     the push. Fails closed like the rest of the gate: a step the parser cannot read is still cut on its operators."""
     if not land_lane_calls.runs_land_lane(command):
         return

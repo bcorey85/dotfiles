@@ -56,9 +56,18 @@ DOCKER_VALUE_OPTIONS = {
 }
 GROUP_WORDS = {"{", "!", "if", "then", "elif", "else", "while", "until", "do"}
 SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
-# Programs that run the command named after their own words (`find -exec` is read apart:
-# git_commit_calls.runs_through_launcher).
+# Programs that run the command named after their own words (`find -exec` is read apart: runs_through_launcher).
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
+
+
+def runs_through_launcher(words):
+    """True when the command's words start with a LAUNCHER_PROGRAMS program or a `find` with `-exec`/`-execdir`."""
+    if not words:
+        return False
+    program = posixpath.basename(words[0])
+    if program in LAUNCHER_PROGRAMS:
+        return True
+    return program == "find" and any(word in ("-exec", "-execdir") for word in words)
 # Container programs: `exec` and `run` run the command named after them inside a container.
 CONTAINER_PROGRAMS = ("docker", "podman")
 # Programs whose `exec` and `run` take a service, container or image (`docker` itself, and the compose launcher).

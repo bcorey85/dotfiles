@@ -344,6 +344,31 @@ class LandLaneTest(unittest.TestCase):
         self.assertFalse(self.marker.exists())
         self.assertEqual(self.origin_master(), before)
 
+    def test_receipt_row_that_is_not_a_complete_object_stops_before_the_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        common_dir = self.git(self.lane, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        receipts_file = pathlib.Path(common_dir) / suite_receipt.RECEIPTS_FILE
+        before = self.origin_master()
+        for row_text in ("[]", '{"tree": "abc"}'):
+            with self.subTest(row=row_text):
+                receipts_file.write_text(row_text + "\n")
+                finished = self.land()
+                self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+                self.assertIn("; repair or remove that row", finished.stdout)
+                self.assertNotIn("Traceback", finished.stderr)
+                self.assertFalse(self.marker.exists())
+                self.assertEqual(self.origin_master(), before)
+
+    def test_main_that_is_not_a_repository_stops_as_a_git_step_not_a_detached_head(self):
+        self.lane_commit("lane.txt", "lane\n")
+        not_a_repo = self.tmp / "plain-folder"
+        not_a_repo.mkdir()
+        finished = self.land(extra_arguments=("--main", str(not_a_repo)))
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertNotIn("detached", finished.stdout)
+        self.assertIn("inspect with", finished.stdout)
+        self.assertNotIn("Traceback", finished.stderr)
+
     def test_main_changed_during_the_suite_stops_before_the_push(self):
         self.write(self.lane, "shared.txt", "lane\n")
         self.git(self.lane, "commit", "-qam", "lane edit")

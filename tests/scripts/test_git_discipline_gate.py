@@ -1250,6 +1250,10 @@ class LandLaneGateTest(GateCaseBase):
             "python3 -X dev tools/land_lane.py x",
             "python3 -W ignore tools/land_lane.py x",
             "xargs python3 tools/land_lane.py",
+            r"find . -name x -exec python3 tools/land_lane.py {} \;",
+            "watch python3 tools/land_lane.py x",
+            "parallel python3 tools/land_lane.py ::: a",
+            "cd claude/.claude/scripts/tools && python3 -m land_lane ~/lane",
         )
         for form in forms:
             with self.subTest(form=form):

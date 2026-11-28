@@ -22,7 +22,8 @@ Steps, in order:
   7. `pull_keep_index.py <main>` runs and its exit code is the exit code of this run.
 Every stop in steps 0 to 6 prints the state, then `rerun: <command>` on its own line. A failure in step 7 prints
 none: pull_keep_index.py prints its own recovery.
-Exit 0 prints one summary line, then the output of pull_keep_index.py."""
+Exit 0 prints one summary line, then the output of pull_keep_index.py. Bad arguments print this text to stderr and
+exit 2."""
 import argparse
 import os
 import pathlib
@@ -33,7 +34,7 @@ import tempfile
 from typing import NamedTuple
 
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
-sys.path[:0] = [str(TOOLS_DIR.parent / "lib"), str(TOOLS_DIR.parent / "review")]
+sys.path[:0] = [str(TOOLS_DIR.parent / "lib")]
 import memory_cap_scope
 import script_utils
 import suite_receipt
@@ -171,9 +172,11 @@ def push_lane(lane, remote, base, commit):
 
 
 def checked_out_branch(repo):
-    """The branch repo has checked out, or "" for a detached HEAD."""
-    named = land_git(repo, "symbolic-ref", "--short", "HEAD", check=False)
-    return named.stdout.strip() if named.returncode == 0 else ""
+    """The branch repo has checked out, or "" for a detached HEAD; a git failure raises GitStepError."""
+    branch = script_utils.current_branch(repo)
+    if branch is None:
+        raise GitStepError(f"git branch --show-current failed in {repo}")
+    return branch
 
 
 def stop_on_dirty_lane(lane):

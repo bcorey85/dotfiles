@@ -38,6 +38,10 @@ class ReceiptError(Exception):
     """A git call or a receipt file could not give its answer."""
 
 
+class ReceiptRowError(ReceiptError):
+    """A row of the receipts file is corrupt; the row is the thing to repair or remove."""
+
+
 def receipt_git(repo, *args, env=None):
     """Standard output of `git <args>` in repo without its trailing newline; raise ReceiptError when git fails."""
     try:
@@ -117,7 +121,7 @@ def latest_suite_receipt(repo, tree):
         try:
             row = json.loads(line)
         except ValueError as error:
-            raise ReceiptError(f"{path}:{number} is not a JSON receipt row: {error}") from error
+            raise ReceiptRowError(f"{path}:{number} is not a JSON receipt row: {error}") from error
         if row.get("tree") == tree:
             found = row
     return found

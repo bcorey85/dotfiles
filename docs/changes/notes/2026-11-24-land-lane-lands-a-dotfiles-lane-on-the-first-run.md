@@ -6,7 +6,7 @@ description: "tools/land_lane.py lands a lane in one command: it stops before an
 generated: {"by": "claude-code/claude-opus-5-5", "at": "2026-11-24T09:26:16-06:00"}
 seq: 1
 kind: "fix"
-components: ["script/land-lane", "script/pull-keep-index", "rule/orchestration"]
+components: ["script/land-lane", "script/pull-keep-index"]
 evidence: ["judgment"]
 watches: []
 test: "tests/scripts/test_land_lane.py::LandLaneTest::test_origin_ahead_lands_in_one_run"
@@ -19,11 +19,19 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 ## Change
 
 New `claude/.claude/scripts/tools/land_lane.py <lane worktree> [--main ~/dotfiles] [--base master] [--remote origin]`.
-It fetches, then lists the files the lane's commits touch and stops when the main checkout holds any of them staged or
-unstaged, naming each file and the way out. It merges `origin/master` into the lane when behind; a conflict aborts and
+It stops when the main checkout does not have the base branch checked out. It fetches, then lists the files the
+lane's commits touch and stops when the main checkout holds any of them staged or unstaged, naming each file and the
+way out. It merges `origin/master` into the lane when behind; a conflict aborts and
 names the files. The suite runs unless a green `suite_receipt.py check` covers HEAD's tree. It checks the main
-checkout again, pushes `HEAD:master` (up to three tries on a non-fast-forward), then runs `pull_keep_index.py` on the
-main checkout. `pull_keep_index.py` is unchanged. Status lines come from `worktree_snapshot.status_entries`.
+checkout again and stops when the lane is dirty or its commit or branch moved since the merge, then pushes the commit
+the suite vouched for (up to three tries on a non-fast-forward) and runs `pull_keep_index.py` on the main checkout.
+There is no suite override: the suite is the lane's own `tests/run.sh`. A corrupt receipt row stops with a repair hint;
+a git failure while reading receipts stops with the inspect hint. The `rerun:` line uses the resolved paths.
+`pull_keep_index.py` is unchanged. Status lines come from `worktree_snapshot.status_entries`.
+
+Only the user runs it: `git_discipline_gate.py` rule 11 denies a session's Bash call that runs `land_lane.py`
+(`lib/land_lane_calls.py` reads the command through the shell parsing owners), since its push happens inside Python
+where rule 7 cannot see it. Tests: `LandLaneGateTest` in `tests/scripts/test_git_discipline_gate.py`.
 
 ## Evidence
 
@@ -33,7 +41,7 @@ main checkout. Each failure cost the user a rerun.
 
 ## Result
 
-Before: no tool did these steps; the line failed mid-way. After: 24 tests in `tests/scripts/test_land_lane.py` pass.
+Before: no tool did these steps; the line failed mid-way. After: 30 tests in `tests/scripts/test_land_lane.py` pass.
 `test_origin_ahead_lands_in_one_run` lands with origin one commit ahead, and
 `test_main_changes_to_lane_files_stop_before_the_push` names a staged deletion and a dirty file and pushes nothing.
 `test_merge_leaving_the_tree_unchanged_runs_the_suite_without_a_receipt` and

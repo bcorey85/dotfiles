@@ -1101,5 +1101,45 @@ class UnnamedDockerRunGateTest(GateCaseBase):
         self.assert_allowed("docker exec c cmd")
 
 
+class LandLaneGateTest(GateCaseBase):
+    """Rule 11: a step that runs land_lane.py is denied; a mention that runs nothing passes."""
+
+    DENIED = "[git-discipline-gate] land_lane.py pushes to master"
+
+    def test_every_form_that_runs_the_script_is_denied(self):
+        forms = (
+            "python3 claude/.claude/scripts/tools/land_lane.py my-lane",
+            "python3 -u ~/.claude/scripts/tools/land_lane.py my-lane",
+            "~/.claude/scripts/tools/land_lane.py my-lane",
+            "cd /tmp && python3 tools/land_lane.py my-lane",
+            "echo hi; python3 tools/land_lane.py my-lane",
+            "env FOO=1 python3 tools/land_lane.py my-lane",
+            "systemd-run --user --scope --quiet -p MemoryMax=8G python3 tools/land_lane.py my-lane",
+            "timeout 600 python3 tools/land_lane.py my-lane",
+            "(cd /x && python3 tools/land_lane.py my-lane)",
+        )
+        for form in forms:
+            with self.subTest(form=form):
+                reason = self.assert_denied(form, self.DENIED)
+                self.assertIn("only the user runs it, as a `!` line", reason)
+
+    def test_a_mention_that_runs_nothing_passes(self):
+        mentions = (
+            'echo "python3 tools/land_lane.py my-lane"',
+            "rg land_lane.py claude",
+            "grep -n 'land_lane.py' notes.md",
+            "cat claude/.claude/scripts/tools/land_lane.py",
+            "python3 tests/parallel_tests.py test_land_lane.py",
+            "python3 -m unittest test_land_lane",
+            "python3 tools/other.py land_lane.py",
+            "git status",
+            "cat <<'EOF'\npython3 tools/land_lane.py my-lane\nEOF",
+            'git log --grep "python3 tools/land_lane.py"',
+        )
+        for mention in mentions:
+            with self.subTest(mention=mention):
+                self.assert_allowed(mention)
+
+
 if __name__ == "__main__":
     unittest.main()

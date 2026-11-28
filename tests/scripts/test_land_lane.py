@@ -14,6 +14,7 @@ from toolkit_paths import LAND_LANE_SCRIPT, TOOLS_DIR
 
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
+import land_lane
 import suite_receipt
 
 SUITE_RECEIPT_SCRIPT = TOOLS_DIR / "suite_receipt.py"
@@ -45,6 +46,7 @@ class LandLaneTest(unittest.TestCase):
         self.git(self.main, "push", "-q", "-u", "origin", "HEAD:master")
         self.lane = self.clone("lane")
         self.git(self.lane, "checkout", "-q", "-b", "lane")
+        self.write_suite(f"touch {self.marker}")
 
     def git(self, folder, *arguments):
         finished = subprocess.run(["git", "-C", str(folder), *arguments], capture_output=True, text=True)
@@ -72,9 +74,17 @@ class LandLaneTest(unittest.TestCase):
         self.git(other, "push", "-q", "origin", "HEAD:master")
         shutil.rmtree(other)
 
+    def write_suite(self, commands):
+        """Commit the lane's own tests/run.sh, the suite land_lane.py runs."""
+        (self.lane / "tests").mkdir(exist_ok=True)
+        self.write(self.lane / "tests", "run.sh", commands + "\n")
+        self.git(self.lane, "add", "tests/run.sh")
+        self.git(self.lane, "commit", "-qm", "lane suite")
+
     def land(self, suite=None, extra_env=None, extra_arguments=()):
-        suite_command = suite or f"touch {self.marker}"
-        env = {**os.environ, "LAND_LANE_SUITE": suite_command, **(extra_env or {})}
+        if suite:
+            self.write_suite(suite)
+        env = {**os.environ, **(extra_env or {})}
         return subprocess.run([sys.executable, str(LAND_LANE_SCRIPT), str(self.lane), "--main", str(self.main),
                                *extra_arguments], capture_output=True, text=True, env=env)
 
@@ -291,6 +301,65 @@ class LandLaneTest(unittest.TestCase):
         self.assertEqual(finished.returncode, 1)
         self.assertIn("shared.txt", finished.stdout)
         self.assertEqual(self.origin_master(), before)
+
+    def test_suite_that_commits_in_the_lane_stops_before_the_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        before = self.origin_master()
+        finished = self.land(suite="git commit --allow-empty -qm untested")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("moved during the suite", finished.stdout)
+        self.assertIn("rerun: ", finished.stdout)
+        self.assertEqual(self.origin_master(), before)
+
+    def test_suite_that_dirties_the_lane_stops_before_the_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        before = self.origin_master()
+        finished = self.land(suite="echo x > untested.txt")
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("uncommitted changes", finished.stdout)
+        self.assertEqual(self.origin_master(), before)
+
+    def test_main_on_another_branch_stops_before_any_merge_or_push(self):
+        self.lane_commit("lane.txt", "lane\n")
+        self.push_from_elsewhere("elsewhere.txt", "e\n")
+        before = self.origin_master()
+        lane_head = self.git(self.lane, "rev-parse", "HEAD")
+        self.git(self.main, "checkout", "-q", "-b", "side")
+        finished = self.land()
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("side", finished.stdout)
+        self.assertIn("master", finished.stdout)
+        self.assertEqual(self.git(self.lane, "rev-parse", "HEAD"), lane_head)
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self.origin_master(), before)
+
+    def test_main_with_a_detached_head_stops(self):
+        self.lane_commit("lane.txt", "lane\n")
+        before = self.origin_master()
+        self.git(self.main, "checkout", "-q", "--detach")
+        finished = self.land()
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        self.assertIn("detached", finished.stdout)
+        self.assertEqual(self.origin_master(), before)
+
+    def test_rerun_line_uses_resolved_paths_and_the_given_options(self):
+        self.lane_commit("lane.txt", "lane\n")
+        self.write_suite("exit 3")
+        finished = subprocess.run([sys.executable, str(LAND_LANE_SCRIPT), "lane", "--main", "main", "--remote",
+                                   "origin"], capture_output=True, text=True, cwd=self.tmp)
+        self.assertEqual(finished.returncode, 1, finished.stdout + finished.stderr)
+        rerun_line = next(line for line in finished.stdout.splitlines() if line.startswith("rerun: "))
+        self.assertIn(str(self.lane), rerun_line)
+        self.assertIn(str(self.main), rerun_line)
+        self.assertIn("--base master", rerun_line)
+        self.assertIn("--remote origin", rerun_line)
+
+    def test_git_failure_reading_the_receipt_is_a_git_step_not_a_row_repair(self):
+        failure = suite_receipt.ReceiptError("git rev-parse failed in lane: boom")
+        patched_check = unittest.mock.patch.object(land_lane.suite_receipt, "check", side_effect=failure)
+        with patched_check, self.assertRaises(land_lane.GitStepError) as raised:
+            land_lane.receipt_covers_tree("lane", "origin/master")
+        self.assertNotIn("repair or remove", str(raised.exception))
 
     def record_green_receipt(self):
         """A green suite receipt for the lane's work tree, written through suite_receipt.py record."""

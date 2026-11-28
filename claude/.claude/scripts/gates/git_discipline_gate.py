@@ -32,6 +32,8 @@
  10. a `docker run`, `docker container run`, `podman run` or `podman container run` step with no `--name`
      (docker_run_names.py), denied with the fixed form `--rm --name <ticket>-<purpose>`; `docker compose run` and
      `docker exec` pass
+ 11. a step that runs tools/land_lane.py (land_lane_calls.py), which pushes to master where rule 7 cannot see it; only
+     the user runs it, as a `!` line
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -52,6 +54,7 @@ import_guard.guard("git-discipline-gate", __name__)
 import directory_emptying_deletes
 import docker_run_names
 import hook_input
+import land_lane_calls
 import reviewed_tree
 import script_utils
 import shell_command
@@ -412,9 +415,19 @@ def run(raw):
         check_destructive(call)
         check_branch(call)
 
+    check_land_lane(command)
     check_push_reviewed(command, calls, payload_cwd)
     check_directory_emptying(command, payload_cwd)
     check_docker_run_names(command, payload_cwd)
+
+
+def check_land_lane(command):
+    """Rule 11: a step that runs tools/land_lane.py, which pushes to master from inside Python where rule 7 cannot see
+    the push. Fails closed like the rest of the gate: a step the parser cannot read is still cut on its operators."""
+    if not land_lane_calls.runs_land_lane(command):
+        return
+    raise DenyError("[git-discipline-gate] land_lane.py pushes to master, so only the user runs it, as a `!` line. "
+                    "Do not run it. Hand the user the `!` line that runs it instead.")
 
 
 def check_docker_run_names(command, payload_cwd):

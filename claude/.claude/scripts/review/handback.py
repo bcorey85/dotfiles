@@ -42,7 +42,6 @@ from typing import NamedTuple
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import reviewed_tree
 import script_utils
-from agent_names import REVIEW_LOOP_AGENT_TYPE
 from capped_review import CAP_REACHED, DEFERRED, effective_status
 from handback_store import (
     NO_DISPATCH,
@@ -102,7 +101,6 @@ PLAN_DRIFT_CLASS = "plan-drift"
 DOCS_CLASS = "docs"
 CLASSES = ["bug", "smell", "duplication", "complexity", PLAN_DRIFT_CLASS, "test-gap", "weak-assertion", "security",
            "perf", "correctness", DOCS_CLASS, "other"]
-REVIEW_LOOP = REVIEW_LOOP_AGENT_TYPE
 DEFAULT_GATE = "code-reviewer"
 
 

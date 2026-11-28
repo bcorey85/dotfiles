@@ -10,13 +10,14 @@ import unittest
 
 import toolkit_paths
 
-sys.path.insert(0, str(toolkit_paths.LIB_DIR))
-sys.path.insert(0, str(toolkit_paths.GATES_DIR))
-from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
-from wait_loop_gate import BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON
-
 SCRIPT = pathlib.Path(os.environ.get("WAIT_LOOP_GATE_SCRIPT")
                       or toolkit_paths.GATES_DIR / "wait_loop_gate.py")
+
+sys.path.insert(0, str(SCRIPT.parent.parent / "lib"))
+sys.path.insert(0, str(SCRIPT.parent))
+from agent_names import FORK_AGENT_TYPE, REVIEW_LOOP_AGENT_TYPE
+from harness_limits import BACKGROUND_AFTER_SECONDS
+from wait_loop_gate import BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON, LOOP_REASON
 
 
 def run_hook(stdin):
@@ -123,6 +124,8 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assertEqual(decision["permissionDecision"], "deny")
         self.assertEqual(decision["permissionDecisionReason"], BACKGROUND_REASON)
         self.assertNotIn("600000", decision["permissionDecisionReason"])
+        self.assertIn(str(BACKGROUND_AFTER_SECONDS), decision["permissionDecisionReason"])
+        self.assertIn("in the foreground", decision["permissionDecisionReason"])
 
     def test_review_loop_background_flag_as_the_string_true_denied(self):
         payload = {"tool_name": "Bash", "agent_type": REVIEW_LOOP_AGENT_TYPE, "agent_id": "abc123",
@@ -151,7 +154,11 @@ class WaitLoopGateTest(unittest.TestCase):
         finished = run_command("make test", agent_type=FORK_AGENT_TYPE, in_background=True)
         decision = json.loads(finished.stdout)["hookSpecificOutput"]
         self.assertEqual(decision["permissionDecision"], "deny")
-        self.assertEqual(decision["permissionDecisionReason"], CODE_FORK_BACKGROUND_REASON)
+        reason = decision["permissionDecisionReason"]
+        self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
+        self.assertIn(str(BACKGROUND_AFTER_SECONDS), reason)
+        self.assertIn("foreground", reason)
+        self.assertNotIn("600000", reason)
 
     def test_code_fork_shell_background_denied(self):
         finished = run_command("make test &", agent_type=FORK_AGENT_TYPE)
@@ -172,11 +179,14 @@ class WaitLoopGateTest(unittest.TestCase):
         self.assertEqual(reason, BACKGROUND_REASON)
         self.assertNotEqual(BACKGROUND_REASON, CODE_FORK_BACKGROUND_REASON)
 
-    def test_code_fork_seat_without_an_agent_id_is_denied_too(self):
-        # The table keys on agent_type alone, as review-loop's does, so the seat is covered.
+    def test_a_foreground_code_fork_unbounded_loop_still_gets_the_loop_reason(self):
+        finished = run_command("until make ready; do sleep 5; done", agent_type=FORK_AGENT_TYPE)
+        reason = json.loads(finished.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertEqual(reason, LOOP_REASON)
+
+    def test_code_fork_seat_without_an_agent_id_passes(self):
         payload = {"agent_type": FORK_AGENT_TYPE, "tool_input": {"command": "make test &"}}
-        reason = json.loads(run_hook(json.dumps(payload)).stdout)["hookSpecificOutput"]["permissionDecisionReason"]
-        self.assertEqual(reason, CODE_FORK_BACKGROUND_REASON)
+        self.assertEqual(run_hook(json.dumps(payload)).stdout, "")
 
     def test_background_commands_pass_for_a_coder_and_the_main_session(self):
         for command in ("make test &", "nohup make test"):

@@ -15,6 +15,7 @@ import handback
 import handback_store
 import review_loop_coder
 import script_utils
+from agent_names import REVIEW_LOOP_AGENT_TYPE
 from ask_outcome_words import USER_ONLY_KEY, WANTED_CHANGE_KEY
 from review_loop_findings import UNLOCATED, ask_parts
 
@@ -173,7 +174,7 @@ def write_usage_row(repo, started, calls):
     row = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "repo": pathlib.Path(repo).name,
-        "agent": handback.REVIEW_LOOP,
+        "agent": REVIEW_LOOP_AGENT_TYPE,
         "model": "script",
         "desc": "scripted review loop",
         "tokens": sum(call["tokens"] for call in finished_calls),

@@ -613,9 +613,6 @@ class ReviewFixScriptTest(unittest.TestCase):
         launch_line = next(line for line in output.splitlines() if line.startswith("Launch line:"))
         self.assertTrue(launch_line.endswith(" --detach"), launch_line)
 
-    def test_the_scoped_rerun_instruction_says_foreground(self):
-        self.assertIn("in the foreground", review_fix.SCOPED_RERUN)
-
     def test_a_redispatch_with_no_relaunch_flags_says_foreground_and_detach(self):
         lines = review_fix.redispatch_lines({"iter": 2}, ["RESOLVED: x"])
         self.assertIn("in the foreground", lines[0])

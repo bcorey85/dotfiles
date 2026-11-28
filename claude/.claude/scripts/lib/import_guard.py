@@ -17,7 +17,7 @@ code. A `SystemExit` is not touched.
 import os
 import sys
 
-RECOVERY = ("fix the file the error names with the Edit tool (every Bash call is blocked while a shared gate "
+RECOVERY = ("fix the file the error names with the Edit tool (every {tool} call is blocked while a shared gate "
             "module is broken), or ask the user to run `git restore <file>`")
 
 READ_STEP = "before it could read the call"
@@ -26,16 +26,16 @@ JUDGING_STEP = "while judging the call"
 JUDGING_RECOVERY = "fix the file the error names with the Edit tool, or ask the user to run `git restore <file>`"
 
 
-def crash_line(gate_name, error, before_read=True):
+def crash_line(gate_name, error, before_read=True, tool="Bash"):
     """The stderr line of a gate that crashed, before it read the call (the default) or while it judged it."""
     when = READ_STEP if before_read else JUDGING_STEP
-    recovery = RECOVERY if before_read else JUDGING_RECOVERY
+    recovery = RECOVERY.format(tool=tool) if before_read else JUDGING_RECOVERY
     return (f"[{gate_name}] crashed {when} "
             f"({type(error).__name__}: {error}) - exit 2 (a call that has not run yet is blocked). "
             f"Recovery: {recovery}.\n")
 
 
-def guard(gate_name, module_name="__main__"):
+def guard(gate_name, module_name="__main__", tool="Bash"):
     """Turn an uncaught exception at the module's top level into exit 2 with a stderr line that names the gate.
 
     Does nothing unless `module_name` is `__main__`: a gate imported as a library keeps the caller's excepthook.
@@ -45,7 +45,7 @@ def guard(gate_name, module_name="__main__"):
         return lambda: None
 
     def block_on_crash(_error_type, error, _traceback):
-        sys.stderr.write(crash_line(gate_name, error))
+        sys.stderr.write(crash_line(gate_name, error, tool=tool))
         sys.stderr.flush()
         os._exit(2)
 

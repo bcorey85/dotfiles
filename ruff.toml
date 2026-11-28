@@ -36,6 +36,9 @@ max-complexity = 10
 # HOOK_SCRIPTS_DIR can point the test at another copy of makefile_text, so sys.path is set after the assignments that
 # read it and the import that follows cannot sit at the top.
 "tests/scripts/test_makefile_text.py" = ["E402"]
+# WAIT_LOOP_GATE_SCRIPT can point the test at another copy of the gate, so sys.path is set after SCRIPT is read and the
+# imports that follow cannot sit at the top.
+"tests/scripts/test_wait_loop_gate.py" = ["E402"]
 # The scripts folders go on sys.path first, so the review_loop_plan import that follows cannot sit at the top.
 "tests/scripts/test_change_size_bar.py" = ["E402"]
 "tests/scripts/test_shell_command.py" = ["E402"]

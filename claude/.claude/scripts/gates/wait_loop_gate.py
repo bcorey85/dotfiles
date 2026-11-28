@@ -10,7 +10,8 @@ six shapes, only when the payload shows a subagent (agent_type or agent_id is se
      unless the whole call starts with `timeout N` and N <= 120
   4. a standalone sleep longer than 30 seconds
   5. any background job from review-loop or code-fork (run_in_background, a lone &, nohup, setsid, detach, disown): it
-     ends its turn waiting on jobs whose results never come back
+     ends its turn waiting on jobs whose results never come back. A code-fork payload with no agent_id is the main
+     session's `--agent code-fork` seat and stays exempt
   6. pkill, killall, and kill with any target that is not a literal pid or `$!` (a job spec, a variable, a
      substitution, a process group, or targets fed by xargs). Only agent_id marks a subagent here: agent_type alone
      is the main session's `--agent` seat.
@@ -259,8 +260,10 @@ def starts_detached_job(command):
 
 def subagent_reason(payload, tool_input, command):
     in_background = tool_call_flags.runs_in_background(tool_input) or starts_detached_job(command)
-    background_reason = BACKGROUND_REASONS.get(payload.get("agent_type"))
-    if in_background and background_reason:
+    agent_type = payload.get("agent_type")
+    background_reason = BACKGROUND_REASONS.get(agent_type)
+    is_fork_seat = agent_type == FORK_AGENT_TYPE and not payload.get("agent_id")
+    if in_background and background_reason and not is_fork_seat:
         return background_reason
     if payload.get("agent_id"):
         reason = kill_reason(command)

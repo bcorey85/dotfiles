@@ -34,7 +34,7 @@ sys.path.insert(0, LIB_DIR)
 import import_guard
 
 GATE_NAME = "fork-write-scope"
-import_guard.guard(GATE_NAME, __name__)
+import_guard.guard(GATE_NAME, __name__, tool="Write")
 from agent_names import FORK_AGENT_TYPE
 
 RUN_FOLDER_NAME = "code-phase"
@@ -203,8 +203,8 @@ def main():
 
 
 if __name__ == "__main__":
-    # A crash before the code-fork check (unreadable stdin) exits 0 with a stderr line: fail-open. The unread-overwrite
-    # check fails open on its own inside main; only the code-fork path fails closed, and exits 2 inside main.
+    # The gate's imports and the code-fork path fail closed (exit 2); the unread-overwrite check and an unreadable
+    # stdin fail open (exit 0 with a stderr line).
     try:
         exit_code = main()
     except Exception as crash:

@@ -25,6 +25,7 @@ from typing import NamedTuple
 
 import loop_transcript
 import script_utils
+from agent_names import FORK_AGENT_TYPE
 from code_run_names import PHASE_START_SCRIPT, REVIEW_START_SCRIPT, WAIT_AGENT_VERB, WAIT_REVIEW_VERB, WAIT_SCRIPT
 from shell_command_words import command_call_arguments, script_call_arguments, unquoted_word, variable_assignments
 from shell_expansion import redirect_target_words
@@ -204,7 +205,7 @@ def missing_review_reason(hook):
         return None
 
     agent_type = hook.get("agent_type") or loop_transcript.agent_meta(transcript_path).get("agentType")
-    if agent_type != script_utils.FORK_AGENT_TYPE:
+    if agent_type != FORK_AGENT_TYPE:
         return None
 
     try:

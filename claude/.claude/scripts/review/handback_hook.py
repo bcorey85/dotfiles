@@ -8,12 +8,12 @@ import sys
 sys.path[:0] = [str(pathlib.Path(__file__).resolve().parent / folder) for folder in (".", "../lib")]
 import loop_transcript
 import script_utils
+from agent_names import REVIEW_LOOP_AGENT_TYPE
 from capped_review import CAP_REACHED, effective_status
 from handback import (
     CLEAN_STATUSES,
     INVALID_STATUS,
     PLAN_IMPACT_STATUS,
-    REVIEW_LOOP,
     PacketError,
     load,
 )
@@ -219,11 +219,11 @@ def transcript_gates(transcript, event, session_id, agent_id, message, packet, c
 def handle_dispatch(event, session_id, tool_input):
     """Record a review-loop dispatch, or a coder or reviewer step inside one."""
     subagent_type = str(tool_input.get("subagent_type") or "")
-    if event.get("agent_type") == REVIEW_LOOP:
+    if event.get("agent_type") == REVIEW_LOOP_AGENT_TYPE:
         step = "coder" if script_utils.CODERS.match(subagent_type) else "reviewer"
         if step == "coder" or script_utils.REVIEWERS.match(subagent_type):
             record(session_id, "step", agent_id=event.get("agent_id") or "unknown", step=step)
-    elif subagent_type == REVIEW_LOOP:
+    elif subagent_type == REVIEW_LOOP_AGENT_TYPE:
         prompt = str(tool_input.get("prompt") or "")
         record(session_id, "dispatch", no_review=loop_transcript.NO_REVIEW_MODE.search(prompt) is not None,
                repo=loop_transcript.reviewed_repo(prompt, event.get("cwd")), tool_use_id=event.get("tool_use_id"))
@@ -233,8 +233,8 @@ def handle_dispatch_ran(event, session_id):
     """PostToolUse on Agent: the call ran, so the dispatch row it named at PreToolUse now counts. Only a review-loop
     dispatch from outside the loop has such a row."""
     tool_use_id = event.get("tool_use_id")
-    is_loop_dispatch = (event.get("tool_input") or {}).get("subagent_type") == REVIEW_LOOP
-    if tool_use_id and is_loop_dispatch and event.get("agent_type") != REVIEW_LOOP:
+    is_loop_dispatch = (event.get("tool_input") or {}).get("subagent_type") == REVIEW_LOOP_AGENT_TYPE
+    if tool_use_id and is_loop_dispatch and event.get("agent_type") != REVIEW_LOOP_AGENT_TYPE:
         record(session_id, DISPATCH_RAN, tool_use_id=tool_use_id)
 
 
@@ -265,7 +265,7 @@ def handle_hook(event, kind):
     if kind == "ran":
         handle_dispatch_ran(event, session_id)
         return None
-    if kind != "handback" or event.get("agent_type") != REVIEW_LOOP:
+    if kind != "handback" or event.get("agent_type") != REVIEW_LOOP_AGENT_TYPE:
         return None
     message = str(tool_input.get("message", ""))
     agent_id = event.get("agent_id") or "unknown"

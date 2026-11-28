@@ -81,7 +81,8 @@ import import_guard
 
 # Fail-closed on a broken import (exit 2, the call does not run). After the imports the hook verbs run inside
 # hook_input.run_gate, which blocks on a judging crash; the `set`, `summary` and `clear` CLI verbs keep their traceback.
-release_import_guard = import_guard.guard("coder-gate", __name__)
+guarded_tool = "SubagentHandback" if sys.argv[1:2] == ["hook"] else "Bash"
+release_import_guard = import_guard.guard("coder-gate", __name__, tool=guarded_tool)
 import check_output
 import check_scope
 import collision_retry
@@ -93,6 +94,7 @@ import script_utils
 import shell_command
 import shell_command_words
 import test_run_output
+from agent_names import FORK_AGENT_TYPE
 from ansi_text import strip_ansi
 from check_output import (
     failing_test_lines,
@@ -878,7 +880,7 @@ def run_hook():
     event = json.load(sys.stdin)
     # A /code fork is judged on its own transcript, never on the coder gate file.
     # Fail closed: a crash here exits 2 through run_gate and denies the hand-back.
-    if event.get("agent_type") == script_utils.FORK_AGENT_TYPE:
+    if event.get("agent_type") == FORK_AGENT_TYPE:
         reason = fork_review.missing_review_reason(event)
         if reason:
             script_utils.pre_tool_use_deny(reason)

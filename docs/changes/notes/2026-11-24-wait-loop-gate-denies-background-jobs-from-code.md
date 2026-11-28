@@ -27,8 +27,8 @@ a lone `&`, nohup, setsid, detach and disown. The main session, coder and every 
 The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
 `lib/agent_names.py`, and `REVIEW_LOOP_AGENT_TYPE` lives there beside it. Importing it from `script_utils` cost the
 gate 10 to 13 ms.
-`claude/.claude/scripts/CLAUDE.md` gains the owner lines for `lib/agent_names.py` and `lib/harness_limits.py`. `fork_write_scope`,
-`open_child_gate` and `fork_children` import the name from there and no longer hold their own `"code-fork"`
+`claude/.claude/scripts/CLAUDE.md` gains the owner line for `lib/agent_names.py`. `fork_write_scope`,
+`open_child_gate`, `fork_children`, `coder_gate` and `fork_review` import the name from there and no longer hold their own `"code-fork"`
 constant. The review scripts' printed instructions that said to run a command in the background (the redispatch and
 scoped-rerun launch lines) now say to run it in the foreground, with `--detach` on the
 launch lines.
@@ -43,7 +43,7 @@ refused (one report per result), so the blocker reached the caller only through 
 
 Tests: `test_code_fork_background_call_denied_with_the_foreground_form` and `test_code_fork_shell_background_denied`
 fail on the old gate and pass now; `test_background_commands_pass_for_a_coder_and_the_main_session` passes on both. The review-loop tests
-now assert the reason text from the gate. Full suite: 6253 tests, 0 failed. Lint clean.
+now assert the reason text from the gate.
 
 Gate median wall time on a matched call (code-fork, `run_in_background: true`), 40 runs each, before and after in
 the same run: 34.0 vs 33.0 ms (bare Python start 10.4 ms), and 36.2 vs 36.5 ms (bare 12.8 ms). No added cost.

@@ -11,10 +11,12 @@ closing phase with a second recap template.
   Step 6; remove the references in `skills/todos/SKILL.md`, `skills/test-audit/SKILL.md`, `skills/audit/review.md`,
   `scripts/tools/resolve-task-dir.sh`, `scripts/lib/plan_format.py`, `scripts/telemetry/log-scan`,
   `skills/_shared/closing-phases.md`; update `tests/scripts/test_guidance_rules.py`,
-  `tests/scripts/test_telemetry_switch.py`, `tests/scripts/test_plan_format.py`.
+  `tests/scripts/test_telemetry_switch.py`, `tests/scripts/test_plan_format.py`; `docs/agent-evals.md` (it describes
+  the current loop); `tests/scripts/test_review_fixes.py` (repair of two comment-gate fixtures, unrelated to
+  branch-recap).
 - Out: herdr scripts, `orchestration.md`, `lane-brief.md`, every CLAUDE.md; the ledger and the agent-evals readers of
   `branch-recap-receipts.jsonl` and of `stage=branch-recap` rows, which keep reading old rows unchanged; history docs
-  under `docs/backlog/`, `docs/changes/`, `docs/plans/` and `docs/agent-evals.md`.
+  under `docs/backlog/`, `docs/changes/` and `docs/plans/`.
 
 ## Phase Status
 
@@ -22,7 +24,7 @@ closing phase with a second recap template.
 
 ## Phase 1: retire branch-recap and fold its companion-branches step into close-branch
 
-1. Delete `claude/.claude/skills/branch-recap/SKILL.md` and the opencode command `branch-recap.md`.
+1. Delete `claude/.claude/skills/branch-recap/SKILL.md` and the opencode command `branch-recap.md`; the new opencode command `close-branch.md` replaces the deleted one.
 2. In `close-branch/SKILL.md` Step 6, add the companion-branches check from branch-recap Step 2b with its text kept
    (the `gh pr list` and `git ls-remote` reads, the `no PR` and `not pushed` lines, the `Next:` line rule), and a
    `### Companion branches` section in the recap template. The rest of branch-recap's template is already covered:
@@ -34,7 +36,8 @@ closing phase with a second recap template.
    drop the hand-off to `/branch-recap`; its receipt line goes in its report. `audit/review.md`,
    `resolve-task-dir.sh`, `log-scan`: drop `branch-recap` from the caller lists and the documented stage values.
 5. Tests: the companion-branches guidance test reads close-branch; the branch-recap receipt test and its path
-   variables go; the plan-format tests expect `/close-branch` for `Recap`.
+   variables go; the plan-format tests expect `/close-branch` for `Recap`. `tests/scripts/test_review_fixes.py`: repair of two comment-gate fixtures for the
+   gate's raised free block at commit 905a88fe1, unrelated to branch-recap.
 
 #### Automated Verification
 

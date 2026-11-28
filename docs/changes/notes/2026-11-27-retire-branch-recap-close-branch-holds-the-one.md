@@ -18,7 +18,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 
 ## Change
 
-- Deleted `claude/.claude/skills/branch-recap/SKILL.md` and `opencode/.config/opencode/commands/branch-recap.md`.
+- Deleted `claude/.claude/skills/branch-recap/SKILL.md` and `opencode/.config/opencode/commands/branch-recap.md`; added `opencode/.config/opencode/commands/close-branch.md` in its place.
 - `claude/.claude/skills/close-branch/SKILL.md`: the companion-branches step moved into Step 6.
 - `claude/.claude/skills/_shared/closing-phases.md`: the Recap closing phase names /close-branch.
 - Stale references removed from the todos and test-audit skills, `skills/audit/review.md`, `scripts/tools/resolve-task-dir.sh`, `scripts/telemetry/log-scan`, `scripts/lib/plan_format.py` and `docs/agent-evals.md`.

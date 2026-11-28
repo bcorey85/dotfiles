@@ -8,6 +8,9 @@
 - The companion-branches step moves into close-branch with its wording kept, so it is a move, not a reworded rule,
   and needs no rule-meter arms; the closing-phases.md line only renames the skill the retired phase runs. Ruled by
   this lane, 2026-11-27.
+- An old plan's Recap phase runs the whole `/close-branch`, not only its Steps 6-7: a Recap-only route would be a
+  new rule in close-branch needing rule-meter arms, and the full pass is a superset of the old Recap. Review ask
+  ruled by this lane, 2026-11-27.
 - Telemetry readers stay as they are: the ledger, `scrub_stream.py`, `deferred_followthrough.py` and
   `work-intake.sh` in agent-evals keep reading old `branch-recap` rows; only the writer goes. Ruled by this lane,
   2026-11-27.

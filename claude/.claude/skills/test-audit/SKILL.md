@@ -1,6 +1,6 @@
 ---
 name: test-audit
-description: The cross-phase test gate: culls test spam and sweeps weak or absent assertions against the plan at branch scope; routes findings to /fix, hands its receipt to /branch-recap. `review [be|fe|fs|branch] [focus]` instead reviews a test suite for coverage gaps, weak assertions and stale tests. Use for "test audit", "review the tests", "test suite health", "coverage check", "cull the branch's tests".
+description: The cross-phase test gate: culls test spam and sweeps weak or absent assertions against the plan at branch scope; routes findings to /fix, reports its receipt line. `review [be|fe|fs|branch] [focus]` instead reviews a test suite for coverage gaps, weak assertions and stale tests. Use for "test audit", "review the tests", "test suite health", "coverage check", "cull the branch's tests".
 allowed-tools: [Bash, Read, Glob, Grep, Agent, Skill]
 ---
 
@@ -10,7 +10,7 @@ The one test question no phase answers locally: do the branch's tests, taken who
 
 If `$ARGUMENTS` starts with `review`, run **Review mode** below and skip the rest. Otherwise run the audit.
 
-Output: findings to `/fix`, a flywheel log row, a receipt line for `/branch-recap`.
+Output: findings to `/fix`, a flywheel log row, a receipt line in its report.
 
 ## The audit
 
@@ -26,7 +26,7 @@ Verdicts are defined in `mutation-tester.md` — read them there, never restate.
   malformed and no test could ever settle it. Do **not** commission coverage to chase it.
 - **INDETERMINATE** is still open. Report it open; do not downgrade it to a pass.
 
-Receipt line (hand to `/branch-recap`): `test audit: <n> culled, <n> weak of <N> plan promises walked | clean | skipped — no test files`.
+Receipt line (in your report): `test audit: <n> culled, <n> weak of <N> plan promises walked | clean | skipped — no test files`.
 
 ## Logging
 
@@ -82,7 +82,7 @@ Ad-hoc suite review, off the closing pipeline. Dispatch `test-reviewer` (omit `m
 ## What NOT to do
 
 - **Never edit code or tests** — findings route to `/fix`; this phase dispatches.
-- **Never `git add`, commit, or open a PR** — residue + recap are `/branch-recap`'s.
+- **Never `git add`, commit, or open a PR** — residue + recap are `/close-branch`'s.
 - **No bug-pinning half** — `scope: cull` only.
 
 ## Arguments

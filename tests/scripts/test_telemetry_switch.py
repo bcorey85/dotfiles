@@ -14,7 +14,6 @@ name (the draft directory). Unset, the files under claude/.claude in this tree a
 import json
 import os
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -26,11 +25,6 @@ import toolkit_paths
 
 REAL_CLAUDE = toolkit_paths.CLAUDE_DIR
 DRAFT_DIR = os.environ.get("TELEMETRY_SWITCH_DRAFT_DIR")
-RECEIPT_SKILL = pathlib.Path(
-    os.environ.get("BRANCH_RECAP_SKILL") or REAL_CLAUDE / "skills" / "branch-recap" / "SKILL.md"
-)
-if DRAFT_DIR and not os.environ.get("BRANCH_RECAP_SKILL"):
-    RECEIPT_SKILL = pathlib.Path(DRAFT_DIR) / "branch-recap-SKILL.md"
 
 SCRIPT_FOLDERS = {"telemetry_enabled.sh": "telemetry", "telemetry_enabled.py": "telemetry", "hook_input.py": "lib",
                   "repo-name": "tools", "log_agent_usage.py": "telemetry",
@@ -494,31 +488,6 @@ class SwitchTest(unittest.TestCase):
         self.assertEqual(finished.stdout, f"run_id={row['run_id']}\n")
         self.assertFalse(target.exists())
         self.assertEqual(self.lines("review-findings.jsonl"), [])
-
-    # ---- branch-recap receipt line
-
-    def receipt_block(self):
-        text = RECEIPT_SKILL.read_text()
-        found = re.search(r"Persist \(non-blocking[^\n]*\n\n```bash\n(.*?)```", text, re.S)
-        self.assertIsNotNone(found, "receipt block not found in branch-recap SKILL.md")
-        block = found.group(1)
-        for placeholder, value in (("<clean|n culled|n weak>", "clean"), ("<unstaged count>", "0"),
-                                   ("<changed-file count>", "0")):
-            block = block.replace(placeholder, value)
-        return block
-
-    def test_branch_recap_receipt(self):
-        repo = self.work / "repo"
-        repo.mkdir()
-        self.run_command(["git", "init", "-q"], cwd=repo)
-        self.run_command(
-            ["git", "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo
-        )
-        installed_helper = self.home / ".claude" / "scripts" / "telemetry" / "telemetry_enabled.sh"
-        installed_helper.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.script_path("telemetry_enabled.sh"), installed_helper)
-        block = self.receipt_block()
-        self.assert_switch("branch-recap-receipts.jsonl", lambda: self.run_command(["bash", "-c", block], cwd=repo))
 
     # ---- helpers
 

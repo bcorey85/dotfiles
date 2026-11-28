@@ -204,9 +204,9 @@ class GuidanceRulesTest(unittest.TestCase):
         self.assertIn("plan_check.py check --final ", text)
         self.assertIn("Exit 1 is an unresolved planning gate", text)
 
-    def test_branch_recap_lists_companion_branches_that_have_no_pr(self):
-        text = guidance_text("skills/branch-recap/SKILL.md")
-        self.assertIn("## Step 2b: Companion branches", text)
+    def test_close_branch_lists_companion_branches_that_have_no_pr(self):
+        text = guidance_text("skills/close-branch/SKILL.md")
+        self.assertIn("Companion branches: for each other repo", text)
         self.assertIn("gh pr list --repo <owner/name> --head <branch> --state all", text)
         self.assertIn("### Companion branches", text)
         self.assertIn("git ls-remote --heads <remote-url> <branch>", text)

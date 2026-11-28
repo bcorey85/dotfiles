@@ -98,9 +98,9 @@ class InvalidUtf8StdinTest(HookRunTest):
         # finding 6
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        source.write_text("value = 0\n# note 1\n# note 1\n# note 1\n")
-        body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
-                                                              "new_string": "# note 1\n# note 1\n# note 1\n@@"}})
+        source.write_text("value = 0\n# note 1\n# note 1\n# note 1\n# note 1\n")
+        new_string = "# note 1\n# note 1\n# note 1\n# note 1\n@@"
+        body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source), "new_string": new_string}})
         stdin = body.encode("utf-8").replace(b"@@", self.BAD)
         finished = self.run_hook("comment-bloat-gate", stdin)
         self.assertEqual(finished.returncode, 2)
@@ -139,7 +139,7 @@ class IdeographicSpaceTest(HookRunTest):
         # finding 8: `[[:space:]]*` before the comment marker matches U+3000
         subprocess.run(["git", "init", "-q", str(self.work)], check=True)
         source = self.work / "a.py"
-        note = "　# note 1\n" * 3
+        note = "　# note 1\n" * 4
         source.write_text("value = 0\n" + note)
         body = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(source),
                                                               "new_string": note}})

@@ -56,9 +56,18 @@ DOCKER_VALUE_OPTIONS = {
 }
 GROUP_WORDS = {"{", "!", "if", "then", "elif", "else", "while", "until", "do"}
 SHELL_INTERPRETERS = {"sh", "bash", "zsh", "dash", "ksh"}
-# Programs that run the command named after their own words (`find -exec` is read apart:
-# git_commit_calls.runs_through_launcher).
+# Programs that run the command named after their own words (`find -exec` is read apart: runs_through_launcher).
 LAUNCHER_PROGRAMS = ("xargs", "parallel", "watch", "flock")
+
+
+def runs_through_launcher(words):
+    """True when the command's words start with a LAUNCHER_PROGRAMS program or a `find` with `-exec`/`-execdir`."""
+    if not words:
+        return False
+    program = posixpath.basename(words[0])
+    if program in LAUNCHER_PROGRAMS:
+        return True
+    return program == "find" and any(word in ("-exec", "-execdir") for word in words)
 # Container programs: `exec` and `run` run the command named after them inside a container.
 CONTAINER_PROGRAMS = ("docker", "podman")
 # Programs whose `exec` and `run` take a service, container or image (`docker` itself, and the compose launcher).
@@ -819,6 +828,24 @@ def shell_code_argument(words):
         # cluster ending in `o` or `O` (`-o`, `+o`, `-euo`).
         takes_value = word in SHELL_VALUE_OPTIONS or (not word.startswith("--") and word[-1] in "oO")
         index += 2 if takes_value else 1
+    return None
+
+
+def nested_code_text(words):
+    """The command text a step hands to another command line: a shell's `-c` code (shell_code_argument), an `eval`
+    step's joined arguments, or an `ssh` step's last word when it holds a blank. None when the step carries none."""
+    shell_code = shell_code_argument(words)
+    if shell_code is not None:
+        return shell_code
+
+    program_words = command_after_wrappers(words)
+    if len(program_words) < 2:
+        return None
+    program = os.path.basename(program_words[0])
+    if program == "eval":
+        return " ".join(program_words[1:])
+    if program == "ssh" and re.search(r"\s", program_words[-1]):
+        return program_words[-1]
     return None
 
 

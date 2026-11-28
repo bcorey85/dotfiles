@@ -42,6 +42,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "lib"))
 import script_utils
 
 RECEIPTS_FILE = "suite-receipts.jsonl"
+# The keys is_green reads from every row.
+REQUIRED_ROW_KEYS = ("exit", "failed", "tests")
 EXIT_SKIP = 0
 EXIT_RERUN = 1
 EXIT_FAILED = 2
@@ -50,6 +52,10 @@ EXIT_DIRTY = 3
 
 class ReceiptError(Exception):
     """A git call or a receipt file could not give its answer."""
+
+
+class ReceiptRowError(ReceiptError):
+    """A row of the receipts file is corrupt; the row is the thing to repair or remove."""
 
 
 def receipt_git(repo, *args, env=None):
@@ -121,6 +127,13 @@ def command_record(repo, start_tree, exit_code, scope, summary_file):
         receipts.write(json.dumps(row) + "\n")
 
 
+def missing_row_keys(row):
+    """The keys a receipt row must hold that `row` lacks; every key when the row is no object."""
+    if not isinstance(row, dict):
+        return list(REQUIRED_ROW_KEYS)
+    return [key for key in REQUIRED_ROW_KEYS if key not in row]
+
+
 def latest_suite_receipt(repo, tree):
     """The last row in the receipts file for `tree`, or None when no row names it."""
     path = suite_receipts_file(repo)
@@ -131,7 +144,11 @@ def latest_suite_receipt(repo, tree):
         try:
             row = json.loads(line)
         except ValueError as error:
-            raise ReceiptError(f"{path}:{number} is not a JSON receipt row: {error}") from error
+            raise ReceiptRowError(f"{path}:{number} is not a JSON receipt row: {error}") from error
+        missing = missing_row_keys(row)
+        if missing:
+            raise ReceiptRowError(f"{path}:{number} is not a JSON receipt row: expected an object with "
+                                  f"{', '.join(missing)}")
         if row.get("tree") == tree:
             found = row
     return found

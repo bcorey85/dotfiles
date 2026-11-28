@@ -1,14 +1,12 @@
 """git_commit_calls.py: whether a git call makes a commit, read from its words (git_call_commits) or its text
 (COMMITTING_CALL). The one owner of which subcommands commit and which flags stop them, and of the placement of
 each committing call in the directory it lands in (git_commit_dirs)."""
-import posixpath
 import re
 from typing import NamedTuple
 
 import script_utils
 import shell_statements
 from shell_command import (
-    LAUNCHER_PROGRAMS,
     command_after_wrappers,
     flags_before_value,
     git_c_directory,
@@ -16,6 +14,7 @@ from shell_command import (
     git_options,
     is_git_word,
     options_before_separator,
+    runs_through_launcher,
     value_letter_ends_cluster,
     without_flag_values,
     wrapper_moves_directory,
@@ -215,16 +214,6 @@ class PlacedCall(NamedTuple):
     """Whether a git call makes a commit, and the directory it lands in (None when it cannot be placed)."""
     committing: bool
     directory: str | None
-
-
-def runs_through_launcher(words):
-    """True when the command's words start with a LAUNCHER_PROGRAMS program or a `find` with `-exec`/`-execdir`."""
-    if not words:
-        return False
-    program = posixpath.basename(words[0])
-    if program in LAUNCHER_PROGRAMS:
-        return True
-    return program == "find" and any(word in ("-exec", "-execdir") for word in words)
 
 
 def git_call_starts(words):

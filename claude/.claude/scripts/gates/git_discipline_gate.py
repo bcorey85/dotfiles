@@ -36,6 +36,8 @@
      shared clone (shared_clones.py); --amend passes (rule 2 judges it), and so does a commit without -a/-i that
      ends an open merge as the command's only step besides `cd`/`pushd`/`popd` in a folder the gate read, when
      its staged paths all belong to the merge (merge_in_progress.py)
+ 12. a step that runs tools/land_lane.py (land_lane_calls.py), which pushes to master inside Python, where no git-push
+     rule sees it; only the user runs it, as a `!` line
 
 Rules 4 and 5 read the branch of the repo each call runs in. How the gate finds git calls and the directory each runs
 in is documented in git_calls.py.
@@ -58,6 +60,7 @@ import directory_emptying_deletes
 import docker_run_names
 import git_commit_calls
 import hook_input
+import land_lane_calls
 import merge_in_progress
 import reviewed_tree
 import script_utils
@@ -423,9 +426,19 @@ def run(raw):
         check_branch(call)
 
     check_shared_clone_commit(command, calls, payload_cwd)
+    check_land_lane(command)
     check_push_reviewed(command, calls, payload_cwd)
     check_directory_emptying(command, payload_cwd)
     check_docker_run_names(command, payload_cwd)
+
+
+def check_land_lane(command):
+    """Rule 12: a step that runs tools/land_lane.py, which pushes to master inside Python, where no git-push rule sees
+    the push. Fails closed like the rest of the gate: a step the parser cannot read is still cut on its operators."""
+    if not land_lane_calls.runs_land_lane(command):
+        return
+    raise DenyError("[git-discipline-gate] land_lane.py pushes to master, so only the user runs it, as a `!` line. "
+                    "Do not run it. Hand the user the `!` line that runs it instead.")
 
 
 def bare_commit_in_shared_clone(call, directory, sole_step=None):

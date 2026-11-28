@@ -23,13 +23,16 @@ to deny reason. Both reasons now name the 180-second foreground limit (the harne
 background; `lib/harness_limits.py` owns the number, shared with `code_wait.py`). `code-fork` gets a reason that says
 a background job ends the fork's turn and hands back before the phase ends, and gives the approved path: run in the foreground with each call under 180 seconds, and split a longer
 job into steps that each fit. The jobs covered are unchanged: `run_in_background`,
-a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt.
+a lone `&`, nohup, setsid, detach and disown. The main session, coder and every other agent type stay exempt. A
+code-fork payload with no agent_id (the main session's `--agent code-fork` seat) stays exempt.
 The `code-fork` key is `FORK_AGENT_TYPE`, moved from `lib/script_utils.py` into a new no-import module,
 `lib/agent_names.py`, and `REVIEW_LOOP_AGENT_TYPE` lives there beside it. Importing it from `script_utils` cost the
 gate 10 to 13 ms.
-`claude/.claude/scripts/CLAUDE.md` gains the owner line for `lib/agent_names.py`. `fork_write_scope`,
-`open_child_gate`, `fork_children`, `coder_gate` and `fork_review` import the name from there and no longer hold their own `"code-fork"`
-constant. The review scripts' printed instructions that said to run a command in the background (the redispatch and
+`claude/.claude/scripts/CLAUDE.md` gains the owner lines for `lib/agent_names.py` (`FORK_AGENT_TYPE`, `REVIEW_LOOP_AGENT_TYPE`) and
+`lib/harness_limits.py` (`BACKGROUND_AFTER_SECONDS`). `fork_write_scope`
+and `open_child_gate` import the name from there and no longer hold their own `"code-fork"` constant;
+`fork_children` imports it from there in place of `open_child_gate.CODE_FORK`, and `coder_gate` and `fork_review`
+in place of `script_utils`. The review scripts' printed instructions that said to run a command in the background (the redispatch and
 scoped-rerun launch lines) now say to run it in the foreground, with `--detach` on the
 launch lines.
 

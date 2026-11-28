@@ -22,7 +22,7 @@ RECOVERY = ("fix the file the error names with the Edit tool (every {tool} call 
 
 READ_STEP = "before it could read the call"
 JUDGING_STEP = "while judging the call"
-# A crash after the call was read says nothing about every Bash call, so it gets no claim about them.
+# A crash after the call was read says nothing about every call of the gate's tool, so it gets no claim about them.
 JUDGING_RECOVERY = "fix the file the error names with the Edit tool, or ask the user to run `git restore <file>`"
 
 

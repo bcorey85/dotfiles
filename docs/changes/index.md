@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1299 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
+1300 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
+Latest change: 2026-11-27, [Review finding parser keeps the case list under a colon-ended finding](notes/2026-11-27-review-finding-parser-keeps-the-case-list-under-a.md).
 
 ## Top gains
 

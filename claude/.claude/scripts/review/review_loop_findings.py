@@ -137,11 +137,13 @@ def item_start_lines(lines, is_ask_section=False):
     file:line, and the bullets under it are its points: when the section opens with one (in an Ask-type section, also a
     `PLAN-IMPACT:` line), each such line at its indent starts an item. Otherwise a bullet or numbered marker at the
     first marker's indent starts one. A marker indented deeper is a sub-bullet, and it and any other line, after a
-    blank line too, continue the item before it.
-    A line at the item indent that ends in a colon, after an item or as an Ask section's first line, leads in a list
-    of the reviewer's notes ("The other claims check out:"): the markers under it continue the item too, until one opens
-    with a file:line or a plain line at the item indent closes the list. In an Ask-type section, an unbulleted
-    `PLAN-IMPACT:` line at the item indent starts an item and closes a notes list."""
+    blank line too, continue the item before it. A line at the item indent that ends in a colon, whether an item of
+    its own or a plain line after an item or as an Ask section's first line, leads in a list of the reviewer's notes
+    ("The other claims check out:"): the markers under it continue the item too, until one opens with a file:line or,
+    in an Ask section, states an ask, or a plain line at the item indent closes the list. A located item (one that
+    opens with a file:line) or a plain line opens the list. When a colon-ended item's notes start deeper than the item
+    indent, the next marker at the item indent closes the list. In an Ask-type section, an unbulleted `PLAN-IMPACT:`
+    line at the item indent starts an item and closes a notes list."""
     first_line = next(line for line in lines if line.strip())
     if is_bare_finding_head(first_line, is_ask_section):
         return {index for index, line in enumerate(lines)
@@ -151,9 +153,16 @@ def item_start_lines(lines, is_ask_section=False):
     item_indent = marker_indents[0] if marker_indents else 0
     starts = set()
     in_notes_list = False
+    notes_list_nested = False
+    awaiting_first_note = False
     opens_section = is_ask_section
     for index, line in enumerate(lines):
-        if not line.strip() or indent_of(line) > item_indent:
+        if not line.strip():
+            continue
+        if indent_of(line) > item_indent:
+            if awaiting_first_note:
+                notes_list_nested = in_notes_list
+                awaiting_first_note = False
             continue
         if not ITEM_MARKER.match(line):
             if is_ask_section and indent_of(line) == item_indent and PLAN_CHANGE_MARK.match(line.strip()):
@@ -162,17 +171,24 @@ def item_start_lines(lines, is_ask_section=False):
                 in_notes_list = False
                 continue
             in_notes_list = (bool(starts) or opens_section) and line.rstrip().endswith(":")
+            notes_list_nested = False
+            awaiting_first_note = False
             opens_section = False
             continue
         opens_section = False
 
+        if notes_list_nested:
+            in_notes_list = False
+            notes_list_nested = False
         item_text = ITEM_MARKER_STRIP.sub("", line).strip()
         # Only the Ask section's notes list holds bullets that state asks; a Fix or Nit list holds just file:line items.
         states_ask = is_ask_section and states_an_ask(item_text)
         if in_notes_list and not FINDING_HEAD.match(item_text) and not states_ask:
+            awaiting_first_note = False
             continue
         starts.add(index)
-        in_notes_list = False
+        in_notes_list = item_text.endswith(":") and bool(FINDING_HEAD.match(item_text))
+        awaiting_first_note = in_notes_list
     return starts
 
 
@@ -249,6 +265,14 @@ def tagged_bullets_leave_items_out(lines):
     return False
 
 
+class OpenBullet(NamedTuple):
+    """The tagged bullet that untagged list lines may still continue: the disposition list it sits in (its text is the
+    list's last entry), its indent, and whether its text ends in a colon that leads into a list of cases."""
+    texts: list
+    indent: int
+    leads_in_list: bool
+
+
 def parse_tagged_bullets(text):
     """Reviewers that tag each bullet with its disposition (the test reviewer) instead of using Fix/Ask/Nit sections.
     Returns None, so the disposition call reads the text, unless the tagged bullets account for every item: a tagged
@@ -258,10 +282,27 @@ def parse_tagged_bullets(text):
     if tagged_bullets_leave_items_out(lines):
         return None
     found = {"fix": [], "ask": [], "nit": []}
+    open_bullet = None
     for line in lines:
         match = TAGGED_BULLET.match(line)
         if match:
-            found[match.group(1).lower()].append(match.group(2).strip())
+            bullet_text = match.group(2).strip()
+            disposition = match.group(1).lower()
+            found[disposition].append(bullet_text)
+            open_bullet = OpenBullet(found[disposition], indent_of(line), bullet_text.endswith(":"))
+            continue
+        if open_bullet is None or not line.strip():
+            continue
+        if not ITEM_MARKER.match(line):
+            if indent_of(line) <= open_bullet.indent:
+                open_bullet = None
+            continue
+        continues_bullet = indent_of(line) > open_bullet.indent or open_bullet.leads_in_list
+        if not continues_bullet:
+            open_bullet = None
+            continue
+        item_text = ITEM_MARKER_STRIP.sub("", line).strip()
+        open_bullet.texts[-1] = f"{open_bullet.texts[-1]} {item_text}"
     if not any(found.values()):
         return None
     return {**found, "assessment": ""}

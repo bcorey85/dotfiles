@@ -571,6 +571,113 @@ class AskChangeMarkShapesTest(unittest.TestCase):
         self.assertTrue(review_loop_findings.states_an_ask(f"Remove it. Change if not accepted: {self.CHANGE}"))
 
 
+class ColonEndedFindingTest(unittest.TestCase):
+    LOCATION = "lib/a.py:10"
+    LEAD = f"{LOCATION} [bug] the parser mishandles these cases:"
+    NEXT = "lib/b.py:20 [bug] a separate finding"
+
+    def assert_one_finding_with_cases(self, items):
+        self.assertEqual(items, [f"{self.LEAD} first case second case", self.NEXT])
+        located = finding_record.parse_finding(items[0])
+        self.assertEqual((located.path, located.line), ("lib/a.py", 10))
+
+    def test_section_format_keeps_case_bullets_at_the_lead_indent_and_nested(self):
+        cases = {
+            "same indent": ["- first case", "- second case"],
+            "nested": ["  - first case", "  - second case"],
+        }
+        for name, case_lines in cases.items():
+            with self.subTest(name):
+                text = "## Fix\n" + "\n".join([f"- {self.LEAD}", *case_lines, f"- {self.NEXT}"]) + "\n"
+
+                fixes = review_loop_findings.parse_review_texts(text)["fix"]
+
+                self.assert_one_finding_with_cases(fixes)
+
+    def test_tagged_format_keeps_untagged_case_bullets_at_the_lead_indent_and_nested(self):
+        cases = {
+            "same indent": ["- first case", "- second case"],
+            "nested": ["  - first case", "  - second case"],
+        }
+        for name, case_lines in cases.items():
+            with self.subTest(name):
+                text = "\n".join([f"- fix: {self.LEAD}", *case_lines, f"- fix: {self.NEXT}"]) + "\n"
+
+                fixes = review_loop_findings.parse_tagged_bullets(text)["fix"]
+
+                self.assert_one_finding_with_cases(fixes)
+
+    def test_a_tagged_bullet_without_a_colon_drops_untagged_bullets_at_its_indent(self):
+        text = "- fix: lib/a.py:10 [bug] wrong\n- stray note\n- fix: lib/b.py:2 [bug] other\n"
+
+        fixes = review_loop_findings.parse_tagged_bullets(text)["fix"]
+
+        self.assertEqual(fixes, ["lib/a.py:10 [bug] wrong", "lib/b.py:2 [bug] other"])
+
+    def test_a_plain_line_at_the_top_indent_ends_the_tagged_continuation(self):
+        text = f"- fix: {self.LEAD}\n- first case\nSummary line\n- second case\n- fix: {self.NEXT}\n"
+
+        fixes = review_loop_findings.parse_tagged_bullets(text)["fix"]
+
+        self.assertEqual(fixes, [f"{self.LEAD} first case", self.NEXT])
+
+    def test_nested_cases_do_not_swallow_an_unlocated_bullet_at_the_item_indent(self):
+        unlocated = "unrelated nit about wording"
+        for section_name in ("Fix", "Nit"):
+            with self.subTest(section_name):
+                text = f"## {section_name}\n- {self.LEAD}\n  - first case\n  - second case\n- {unlocated}\n"
+
+                items = review_loop_findings.parse_review_texts(text)[section_name.lower()]
+
+                self.assertEqual(items, [f"{self.LEAD} first case second case", unlocated])
+
+    def test_sub_bullets_and_plain_lead_ins_keep_the_notes_list_open_to_the_next_located_item(self):
+        plain = "The other claims check out:"
+        cases = {
+            "plain lead-in, nested notes, then a note": (
+                f"- {self.LOCATION} [bug] x\n{plain}\n  - note one\n- note two\n",
+                [f"{self.LOCATION} [bug] x {plain} note one note two"],
+            ),
+            "plain lead-in, sub-bullet under a note": (
+                f"- {self.LOCATION} [bug] x\n{plain}\n- note one\n  - detail\n- note two\n",
+                [f"{self.LOCATION} [bug] x {plain} note one detail note two"],
+            ),
+            "colon item, sub-bullet under a case": (
+                f"- {self.LEAD}\n- case1\n  - detail\n- case2\n- {self.NEXT}\n",
+                [f"{self.LEAD} case1 detail case2", self.NEXT],
+            ),
+        }
+        for name, (body, expected) in cases.items():
+            with self.subTest(name):
+                fixes = review_loop_findings.parse_review_texts("## Fix\n" + body)["fix"]
+
+                self.assertEqual(fixes, expected)
+
+    def test_a_stated_ask_closes_the_notes_list_of_a_located_colon_ask(self):
+        text = "## Ask\n- lib/a.py:1 [bug] Two questions:\n- Should X? Change if accepted: do y\n- plain note\n"
+
+        asks = review_loop_findings.parse_review_texts(text)["ask"]
+
+        self.assertEqual(asks, ["lib/a.py:1 [bug] Two questions:", "Should X? Change if accepted: do y",
+                                "plain note"])
+
+    def test_a_tagged_bullet_without_a_colon_takes_a_deeper_untagged_bullet_as_its_detail(self):
+        text = "- fix: lib/a.py:10 [bug] wrong\n  - detail\n- fix: lib/b.py:2 [bug] other\n"
+
+        fixes = review_loop_findings.parse_tagged_bullets(text)["fix"]
+
+        self.assertEqual(fixes, ["lib/a.py:10 [bug] wrong detail", "lib/b.py:2 [bug] other"])
+
+    def test_a_tilde_range_parses_whole_with_its_path_and_line_zero(self):
+        text = "## Fix\n- lib/a.py:~441-452 [bug] the range is approximate\n- lib/b.py:3 [bug] other\n"
+
+        fixes = review_loop_findings.parse_review_texts(text)["fix"]
+        located = finding_record.parse_finding(fixes[0])
+
+        self.assertEqual(len(fixes), 2, fixes)
+        self.assertEqual((located.path, located.line), ("lib/a.py", 0))
+
+
 class FindingLocationTest(unittest.TestCase):
     QUOTED_FIXTURE = ('— the test passes with the bug in place. FINDING ("a.py:1 [plan-drift] PLAN-IMPACT: the '
                       'plan changes")')

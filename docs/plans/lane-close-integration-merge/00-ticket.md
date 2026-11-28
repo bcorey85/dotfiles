@@ -7,6 +7,8 @@ lane's leftover untracked plan files also make a plain `git worktree remove` ref
 `Repo.merge_targets`, and `scripts/.local/lib/worktree_branches.py` `delete_branch`). herdr-lane-resume calls it
 (`--check` before an entry-less close, `--apply` after every close). Fix the rule there, never in a copy.
 
+Source: ~/agent-evals/queue/herdr-lane-resume-close-keeps-a-lane-worktree.md
+
 Criteria owner: session.
 
 ## Acceptance Criteria

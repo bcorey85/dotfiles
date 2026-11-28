@@ -19,7 +19,7 @@ hl.config({
     },
 })
 
--- Attach to the desktop's herdr session over SSH ("pc" is a Host in ~/.ssh/config).
+-- Attach to the desktop's herdr session over SSH (herdr-remote-pc picks "pc" or "pc-away").
 -- Launched from Hyprland, not a pane, so no HERDR_* vars trip herdr's nesting guard.
 -- Server keybindings: with local ones, herdr drops [[keys.command]] binds (popups).
-hl.bind("SUPER + SHIFT + R", hl.dsp.exec_cmd("ghostty -e " .. os.getenv("HOME") .. "/.local/bin/herdr --remote pc --remote-keybindings server"), { description = "Remote herdr on PC" })
+hl.bind("SUPER + SHIFT + R", hl.dsp.exec_cmd("ghostty -e " .. os.getenv("HOME") .. "/.local/bin/herdr-remote-pc"), { description = "Remote herdr on PC" })

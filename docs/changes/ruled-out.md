@@ -7,9 +7,9 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 # Ruled out
 
-129 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
+131 ideas that were tried and set aside. Rejected means removed or not adopted; on hold means kept as it is until new evidence comes.
 
-156 further findings are left out of this page.
+157 further findings are left out of this page.
 
 ## Rejected
 
@@ -62,6 +62,10 @@ description: "Ideas that were tried and dropped or put on hold, and what would r
 
 ## On hold
 
+* 2026-11-26 [Cutting the research stage from planning keeps every trap caught but costs 27% more Opus output](../../../agent-evals/findings/2026-11-26-cutting-the-research-stage-from-planning-keeps.md) - HOLD: 8 runs per arm on the bidvault-recovery plan trap: with no research stage, all 8 plans still avoid every trap (8 of 8 both arms), but Opus output rises 27%, cost 12% and plan-review blockers and gaps 39%, so the research stage stays. [watch: no watch]
+  What would reopen it: none recorded
+* 2026-11-26 [Cutting the code reviewer's nit section saves 0.8% output and adds 19% more fix items](../../../agent-evals/findings/2026-11-26-cutting-the-code-reviewer-s-nit-section-saves-0-8.md) - HOLD: A smoke pair on the 41 regret-pair trees: the code reviewer without its nit section writes 0.8% less output, 19% more fix items and the same catches, so the round was dropped before seal. [watch: no watch]
+  What would reopen it: none recorded
 * 2026-11-25 [The code reviewer's unasked-files rule moves the cut of an unasked doc from 2 of 8 to 8 of 8](../../../agent-evals/findings/2026-11-25-the-code-reviewer-s-unasked-files-rule-moves-the.md) - HOLD: With code-reviewer Step 3 item 7 on, Opus flagged a planted doc that no plan step asks for, and that restates the code, as a cut in 8 of 8 runs; with the item removed, 2 of 8 (UF01, neutral prompt). [watch: no watch]
   What would reopen it: none recorded
 * 2026-11-23 [The hunk watch viewer grows with every reload in 0.24.1 and 0.25.0 alike](../../../agent-evals/findings/2026-11-23-the-hunk-watch-viewer-grows-about-1-7-mb-per.md) - HOLD: Upgrading hunk to 0.25.0 does not stop the lane viewer's memory growth: RSS climbs about 0.7 MB per small reload and 1.4 to 5 MB per big-diff reload, and never falls back, so the lane viewer keeps its memory cap [watch: no watch]

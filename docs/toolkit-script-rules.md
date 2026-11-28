@@ -53,4 +53,4 @@ These rules apply to every script under `claude/.claude/scripts/` and `claude/.c
 - Run a changed test file through `python3 tests/parallel_tests.py <test file name>`, never through `python3 -m unittest` alone: the runner caps the workers and keeps each run inside a 600 s tool call.
 - Add a test that fails without the change. Copy each real input shape that broke into a fixture.
 - Before hand-over, run the draft over every real input that you collected and report "parsed N of M". Name each failure as a bad input or a script gap. For the plan format, `REAL_PLANS=1 bash tests/run.sh` runs that sweep over `~/dev`; the default run never reads `~/dev`.
-- Run `bash ~/dotfiles/tests/run.sh` before you say that the change is done.
+- Before you say that the change is done, run the tests the Quality check line of `~/dotfiles/CLAUDE.md` names for it: one script's change runs its own test file, not the full suite.

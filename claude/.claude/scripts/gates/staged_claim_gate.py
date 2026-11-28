@@ -269,7 +269,7 @@ def main():
         reasons.append(guarded("permission_question", permission_question_reason, hook, message))
         announced = guarded("announced_step", announced_step.announced_step, message, hook.get("transcript_path"))
         if announced:
-            reasons.append(announced_step.REASON)
+            reasons.append(f'{announced_step.REASON} Flagged line: "{announced}"')
     if hook.get("hook_event_name") == "SubagentStop":
         reasons.append(guarded("fork_review", fork_review.missing_review_reason, hook))
 

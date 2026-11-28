@@ -27,6 +27,8 @@ claude/.claude/skills/synced/
 claude/.claude/skills/herdr/
 # tuios's agent skill, regenerated from `tuios --skill` by install/tuios.
 claude/.claude/skills/tuios/
+# Skills the CLI removed from the synced set, moved here instead of deleted.
+claude/.claude/skills/.trash/
 !claude/.claude/hooks/
 !claude/.claude/rules/
 !claude/.claude/scripts/

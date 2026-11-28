@@ -5,9 +5,9 @@ okf_version: "0.2"
 
 # Toolkit change log
 
-1300 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
+1302 changes, 25 with a measured gain, 281 behavior changes that no intake metric reads.
 
-Latest change: 2026-11-27, [The comment gate reads HEAD once and counts every comment line of a new file](notes/2026-11-27-the-comment-gate-reads-new-lines-through-one.md).
+Latest change: 2026-11-27, [The comment gate passes a three-line comment block with a nudge to recheck it](notes/2026-11-27-the-comment-gate-passes-three-comment-lines-with-a.md).
 
 ## Top gains
 

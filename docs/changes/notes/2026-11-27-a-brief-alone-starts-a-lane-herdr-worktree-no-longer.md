@@ -29,7 +29,7 @@ impact: {"metric": "", "before": "", "after": "", "unit": "", "finding": ""}
 - `claude/.claude/orchestration.md` lane-start line and `claude/.claude/skills/_shared/lane-brief.md` opening line name
   the fresh form. `herdr-worktree-watch` says "the lane's session id", and its comments and the `herdr-lane-sweep` usage text no longer name `--fork` as the lane start.
 - Tests: `test_herdr_worktree.py` (fresh lane run, the pane that never shows claude, the empty brief file and empty `--prompt`, base HEAD and stale-entry
-  replacement with and without `--fork`, herdr-dev fresh command and plain claude),
+  replacement with and without `--fork`), `test_herdr_dev.py` (the fresh command),
   `test_lane_brief.py` (the rule text).
 
 ## Evidence
@@ -38,7 +38,7 @@ A forked lane carries the orchestrator's whole history and compacts before any w
 
 ## Result
 
-`test_a_brief_without_fork_opens_a_headless_lane_on_an_empty_session_id_with_entry_and_watcher` and `test_a_prompt_with_no_session_starts_a_fresh_named_claude_with_no_resume` fail against the base scripts and pass after. `test_no_session_and_no_prompt_types_plain_claude` guards behavior that was already there.
+`test_a_brief_without_fork_opens_a_headless_lane_on_an_empty_session_id_with_entry_and_watcher` and `test_a_prompt_with_no_session_starts_a_fresh_named_claude_with_no_resume` fail against the base scripts and pass after.
 
 Rule meter, sonnet, 3 runs per cell, detector `lane_start_is_fresh` (COMPLIED is a lane command with no `--fork`). WR05 holds the new lane-start clause; WRB5 holds master's `--fork` clause. The off arm deletes the clause.
 

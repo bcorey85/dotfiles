@@ -91,7 +91,7 @@ esac""")
                               env=env, capture_output=True, text=True)
 
     def add_lane(self):
-        """A lane entry for the fork, as herdr-worktree --fork writes it: no session id yet."""
+        """A lane entry for the fork, as herdr-worktree writes it for a lane: no session id yet."""
         env = dict(os.environ, XDG_STATE_HOME=str(self.state_home))
         subprocess.run(["python3", str(LANES_CLI), "add", "--name", "repo-fork", "--worktree", str(self.worktree),
                         "--main-checkout", str(self.main_checkout), "--branch", "fork", "--reports-to", "boss"],

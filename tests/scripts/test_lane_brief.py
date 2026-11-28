@@ -1,4 +1,4 @@
-"""The lane brief template: a forked lane reads its rules from one toolkit file, and the orchestration rules point
+"""The lane brief template: a lane reads its rules from one toolkit file, and the orchestration rules point
 every lane brief at it."""
 import unittest
 

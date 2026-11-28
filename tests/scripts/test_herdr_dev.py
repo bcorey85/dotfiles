@@ -95,6 +95,20 @@ esac""")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.typed_into_claude_pane(), ["claude"])
 
+    def test_a_prompt_with_no_session_starts_a_fresh_named_claude_with_no_resume(self):
+        result = self.run_dev(str(self.worktree), "w1", "", "Fix it.")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        typed = self.typed_into_claude_pane()[0]
+        prompt_file = re.search(r"cat '([^']+)'", typed)
+        if prompt_file is None:
+            self.fail(f"no prompt file in: {typed}")
+        prompt_path = pathlib.Path(prompt_file.group(1))
+        self.addCleanup(prompt_path.unlink, missing_ok=True)
+        self.assertTrue(typed.startswith(f"{NO_CRON} claude --name my-lane -- "), typed)
+        self.assertNotIn("--resume", typed)
+        self.assertEqual(prompt_path.read_text(), "Fix it.")
+
     def test_the_script_finds_its_library_when_run_through_a_stow_symlink(self):
         finished = run_through_stow_symlink(HERDR_DEV, self.root / "symlink-run", "/nonexistent")
 

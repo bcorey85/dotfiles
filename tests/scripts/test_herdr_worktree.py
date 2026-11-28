@@ -973,26 +973,6 @@ esac""")
         expected_start = f"CLAUDE_CODE_DISABLE_CRON=1 claude --resume s1 --fork-session --name {self.root.name} -- "
         self.assertTrue(claude_command.startswith(expected_start), claude_command)
 
-    def test_a_prompt_with_no_session_starts_a_fresh_named_claude_with_no_resume(self):
-        finished = self.run_herdr_dev("", "Fix it.")
-
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        claude_command = finished.stdout.splitlines()[1]
-        prompt_match = re.search(r"cat '([^']+)'", claude_command)
-        self.assertIsNotNone(prompt_match, claude_command)
-        prompt_file = prompt_match.group(1)
-        self.addCleanup(os.remove, prompt_file)
-        self.assertTrue(claude_command.startswith(
-            f"CLAUDE_CODE_DISABLE_CRON=1 claude --name {self.root.name} -- "), claude_command)
-        self.assertNotIn("--resume", claude_command)
-        self.assertTrue(claude_command.endswith(f"&& rm -f '{prompt_file}'"), claude_command)
-
-    def test_no_session_and_no_prompt_types_plain_claude(self):
-        finished = self.run_herdr_dev("", "")
-
-        self.assertEqual(finished.returncode, 0, finished.stderr)
-        self.assertEqual(finished.stdout.splitlines()[1], "claude")
-
     def test_a_worktree_folder_with_shell_special_characters_is_typed_as_one_name_argument(self):
         folder_name = "my repo $x's"
         worktree = self.root / folder_name
